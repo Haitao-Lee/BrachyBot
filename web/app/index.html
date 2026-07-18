@@ -52,6 +52,7 @@
     <link rel="stylesheet" href="static/css/brachybot-panels-viewers.css?v=6">
     <link rel="stylesheet" href="static/css/brachybot-report-controls.css?v=6">
     <link rel="stylesheet" href="static/css/brachybot-responsive.css?v=3">
+    <link rel="stylesheet" href="static/css/brachybot-auth.css?v=3">
 </head>
 <!--
   The remaining inline styles belong to fixed report/form geometry whose
@@ -60,6 +61,24 @@
   time into the existing CSS modules.
 -->
 <body>
+<div id="authOverlay" hidden role="dialog" aria-modal="true" aria-labelledby="authTitle">
+    <div class="auth-card">
+        <div class="auth-brand" id="authTitle"><img src="_assets/brachybot-avatar.png" alt="">BrachyBot workspace</div>
+        <label>Username<input id="authUsername" autocomplete="username" minlength="3" maxlength="64"></label>
+        <label>Password<input id="authPassword" type="password" autocomplete="current-password" minlength="12"></label>
+        <div class="auth-actions"><button id="authLogin" type="button">Sign in</button><button id="authRegister" class="secondary" type="button">Create account</button></div>
+        <div id="authStatus" aria-live="polite"></div>
+    </div>
+</div>
+<div id="passwordOverlay" hidden role="dialog" aria-modal="true" aria-labelledby="passwordTitle">
+    <div class="auth-card">
+        <div class="auth-brand" id="passwordTitle">Change password</div>
+        <label>Current password<input id="currentPassword" type="password" autocomplete="current-password"></label>
+        <label>New password<input id="newPassword" type="password" autocomplete="new-password" minlength="12"></label>
+        <div class="auth-actions"><button id="passwordSave" type="button">Update password</button><button id="passwordCancel" class="secondary" type="button">Cancel</button></div>
+        <div id="passwordStatus" aria-live="polite"></div>
+    </div>
+</div>
 
 <!-- ============ HEADER ============ -->
 <header class="header">
@@ -86,8 +105,13 @@
             <button class="lang-btn" data-lang-btn="en" onclick="window.setUiLanguage && window.setUiLanguage('en')" aria-pressed="true">EN</button>
             <button class="lang-btn" data-lang-btn="zh" onclick="window.setUiLanguage && window.setUiLanguage('zh')" aria-pressed="false">中</button>
         </div>
+        <div class="status-chip" id="accountStatus" hidden><span id="accountName"></span><button type="button" class="lang-btn" id="importLegacyWorkspace" title="Import legacy browser data">Import</button><button type="button" class="lang-btn" id="accountPassword" title="Change password">Password</button><button type="button" class="lang-btn" id="accountLogout" title="Sign out">Sign out</button></div>
     </div>
 </header>
+<div id="workspaceLockNotice" class="workspace-lock-notice" hidden role="status">
+    This case is open read-only because it is being edited in another browser window.
+</div>
+<div id="workspaceRecoveryNotice" class="workspace-recovery-notice" hidden role="status"></div>
 
 <!-- ============ APP BODY ============ -->
 <div class="app-body">
@@ -98,11 +122,17 @@
             <span class="session-sidebar-title" data-i18n-zh="对话" data-i18n-en="Chats">Chats</span>
             <div class="session-sidebar-actions">
                 <button class="new-chat-btn" onclick="newChat()"><span data-i18n-zh="+ 新建" data-i18n-en="+ New">+ New</span></button>
+                <button class="session-sidebar-close" type="button" onclick="openRecycleBin()"
+                        aria-label="Open recycle bin" title="Recycle bin">&#8635;</button>
                 <button class="session-sidebar-close" type="button" onclick="closeSessionSidebar()"
                         aria-label="Close chat history" title="Close chat history">&times;</button>
             </div>
         </div>
         <div class="session-list" id="sessionList"></div>
+        <div id="recycleBinPanel" class="recycle-bin-panel" hidden aria-live="polite">
+            <div class="recycle-bin-header"><strong>Recycle bin</strong><button type="button" onclick="closeRecycleBin()" title="Close">&times;</button></div>
+            <div id="recycleBinList" class="recycle-bin-list"></div>
+        </div>
         <div class="sidebar-resize-handle" id="sidebarResizeHandle" data-splitter-version="v3-2026-06-15" style="cursor:col-resize;pointer-events:auto !important;isolation:isolate;transform:translateZ(0);" title="Drag to resize the chat history sidebar"></div>
         <div class="context-panel" id="contextPanel" style="display:none">
             <div class="context-panel-header">
@@ -116,9 +146,9 @@
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
                 Context
             </button>
-            <button class="context-toggle-btn" onclick="clearLocalChatData()" title="Wipe ALL local chat sessions, report forms, layout prefs. Server-side state (CT, planning) is untouched.">
+            <button class="context-toggle-btn" onclick="clearLocalChatData()" title="Clear only browser display preferences. Case data is retained in the secure workspace.">
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6h14z"/></svg>
-                Clear
+                Browser
             </button>
         </div>
     </div>
@@ -1097,16 +1127,18 @@
   strict mode to isolated files; migrate the bundle to ES modules as one
   versioned change so implicit legacy bindings cannot break selectively.
 -->
-<script src="static/js/brachybot-chat-core.js?v=7"></script>
+<script src="static/js/brachybot-chat-core.js?v=8"></script>
 <script src="static/js/brachybot-chat-todo.js?v=8"></script>
-<script src="static/js/brachybot-ui-api.js?v=8"></script>
+<script src="static/js/brachybot-ui-api.js?v=10"></script>
+<script src="static/js/brachybot-auth.js?v=4"></script>
 <script src="static/js/brachybot-viewer-volume.js?v=8"></script>
 <script src="static/js/brachybot-viewer-layout.js?v=6"></script>
 <script src="static/js/brachybot-3d-manual.js?v=12"></script>
-<script src="static/js/brachybot-manual-annotation.js?v=6"></script>
+<script src="static/js/brachybot-manual-annotation.js?v=7"></script>
 <script src="static/js/brachybot-dvh-planning.js?v=9"></script>
-<script src="static/js/brachybot-report-shell.js?v=9"></script>
+<script src="static/js/brachybot-report-shell.js?v=10"></script>
 <script src="static/js/brachybot-report-editor.js?v=8"></script>
-<script src="static/js/brachybot-report-export.js?v=8"></script>
+<script src="static/js/brachybot-workspace.js?v=3"></script>
+<script src="static/js/brachybot-report-export.js?v=10"></script>
 </body>
 </html>

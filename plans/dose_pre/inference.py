@@ -16,11 +16,24 @@ so the established LPS/voxel coordinate chain is not changed at its callers.
 
 from __future__ import annotations
 
-from typing import Any, Dict, Iterable, List, Sequence, Tuple
+import time
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 import numpy as np
 import SimpleITK as sitk
 import torch
+
+
+class DoseInferenceDeadlineExceeded(TimeoutError):
+    """Raised between DoseUNet windows when an interactive planning budget expires."""
+
+
+def _ensure_before_deadline(deadline: Optional[float]) -> None:
+    """Fail between independently executable inference windows, never mid-forward."""
+    if deadline is not None and time.monotonic() >= float(deadline):
+        raise DoseInferenceDeadlineExceeded(
+            "DoseUNet inference exceeded the interactive planning time budget"
+        )
 
 
 def normalize_ct(ct: np.ndarray) -> np.ndarray:
@@ -207,7 +220,15 @@ def crop_or_pad(array: np.ndarray, start: Sequence[int], patch_size: Sequence[in
 
 
 @torch.no_grad()
-def sliding_window_predict(model: torch.nn.Module, inputs: np.ndarray, patch_size: Sequence[int], overlap: float, device: torch.device) -> np.ndarray:
+def sliding_window_predict(
+    model: torch.nn.Module,
+    inputs: np.ndarray,
+    patch_size: Sequence[int],
+    overlap: float,
+    device: torch.device,
+    *,
+    deadline: Optional[float] = None,
+) -> np.ndarray:
     shape = tuple(int(v) for v in inputs.shape[1:])
     patch_size = tuple(int(v) for v in patch_size)
     if len(patch_size) != 3 or any(v <= 0 for v in patch_size):
@@ -221,6 +242,7 @@ def sliding_window_predict(model: torch.nn.Module, inputs: np.ndarray, patch_siz
     for z in starts[0]:
         for y in starts[1]:
             for x in starts[2]:
+                _ensure_before_deadline(deadline)
                 start = (z, y, x)
                 patch = np.stack([crop_or_pad(channel, start, patch_size) for channel in inputs], axis=0)
                 tensor = torch.from_numpy(patch[None].astype(np.float32, copy=False)).to(device)
@@ -229,6 +251,71 @@ def sliding_window_predict(model: torch.nn.Module, inputs: np.ndarray, patch_siz
                 pred_sum[z:z1, y:y1, x:x1] += prediction[:z1-z, :y1-y, :x1-x]
                 pred_count[z:z1, y:y1, x:x1] += 1.0
     return pred_sum / np.maximum(pred_count, 1.0)
+
+
+@torch.no_grad()
+def sliding_window_predict_batch(
+    model: torch.nn.Module,
+    inputs: np.ndarray,
+    patch_size: Sequence[int],
+    overlap: float,
+    device: torch.device,
+    *,
+    deadline: Optional[float] = None,
+) -> np.ndarray:
+    """Run sliding-window inference for equally shaped seed crops in batches.
+
+    Every seed retains its own physical crop and post-processing.  Only the
+    independent CNN forward passes for corresponding windows are batched.  This
+    keeps the trained model contract and coordinate chain intact while avoiding
+    the accidental one-seed-at-a-time GPU execution that made RL planning scale
+    with ``candidate trajectories * seeds * sliding windows``.
+    """
+    inputs = np.asarray(inputs, dtype=np.float32)
+    if inputs.ndim != 5 or inputs.shape[0] < 1:
+        raise ValueError(
+            "Batched DoseUNet input must have shape [batch, channels, z, y, x]"
+        )
+
+    shape = tuple(int(v) for v in inputs.shape[2:])
+    patch_size = tuple(int(v) for v in patch_size)
+    if len(patch_size) != 3 or any(v <= 0 for v in patch_size):
+        raise ValueError(f"Invalid DoseUNet patch size: {patch_size}")
+    overlap = min(max(float(overlap), 0.0), 0.95)
+    stride = tuple(max(1, int(round(p * (1.0 - overlap)))) for p in patch_size)
+    starts = [starts_for_dim(shape[i], patch_size[i], stride[i]) for i in range(3)]
+
+    batch_size = int(inputs.shape[0])
+    pred_sum = np.zeros((batch_size, *shape), dtype=np.float32)
+    pred_count = np.zeros(shape, dtype=np.float32)
+    model.eval()
+    for z in starts[0]:
+        for y in starts[1]:
+            for x in starts[2]:
+                _ensure_before_deadline(deadline)
+                start = (z, y, x)
+                patch = np.stack(
+                    [
+                        np.stack(
+                            [crop_or_pad(channel, start, patch_size) for channel in sample],
+                            axis=0,
+                        )
+                        for sample in inputs
+                    ],
+                    axis=0,
+                )
+                tensor = torch.from_numpy(patch).to(device)
+                prediction = model(tensor).detach().cpu().numpy()[:, 0]
+                z1, y1, x1 = (
+                    min(z + patch_size[0], shape[0]),
+                    min(y + patch_size[1], shape[1]),
+                    min(x + patch_size[2], shape[2]),
+                )
+                pred_sum[:, z:z1, y:y1, x:x1] += prediction[
+                    :, : z1 - z, : y1 - y, : x1 - x
+                ]
+                pred_count[z:z1, y:y1, x:x1] += 1.0
+    return pred_sum / np.maximum(pred_count[None, ...], 1.0)
 
 
 def resample_crop_to_full(crop_image: sitk.Image, crop_array: np.ndarray, full_image: sitk.Image) -> np.ndarray:
@@ -261,46 +348,170 @@ def _model_contract(model: torch.nn.Module) -> Dict[str, Any]:
     return contract
 
 
-def predict_seed_dose(position_xyz: Sequence[float], direction_lps: Sequence[float], dose_image: sitk.Image, model: torch.nn.Module, seed_weight: float = 1.0) -> np.ndarray:
-    contract = _model_contract(model)
+def _prepare_seed_input(
+    position_xyz: Sequence[float],
+    direction_lps: Sequence[float],
+    dose_image: sitk.Image,
+    contract: Dict[str, Any],
+) -> Tuple[sitk.Image, np.ndarray]:
+    """Build one trained-model input without changing physical coordinates."""
     target_spacing = contract["target_spacing"]
-    patch_size = contract["patch_size"]
     output_size_cm = float(contract.get("output_size_cm", 12.0))
     line_length = float(contract.get("line_length", 4.5))
-    overlap = float(contract.get("overlap", 0.5))
+    crop_image = crop_ct_center_on_seed(dose_image, position_xyz, output_size_cm)
+    network_image = resample_image_to_spacing(
+        crop_image, target_spacing, sitk.sitkLinear, -1000.0
+    )
+    ct_crop = sitk.GetArrayFromImage(network_image).astype(np.float32)
+    soft = sitk.GetArrayFromImage(
+        generate_soft_pos(
+            network_image,
+            position_xyz,
+            float(contract.get("seed_soft_radius", 4.0)),
+        )
+    ).astype(np.float32)
+    line = sitk.GetArrayFromImage(
+        generate_line_map(network_image, position_xyz, direction_lps, line_length)
+    ).astype(np.float32)
+    inputs = np.stack(
+        [normalize_unit(line), normalize_ct(ct_crop), normalize_unit(soft)], axis=0
+    )
+    return network_image, inputs
+
+
+def _scale_and_restore_prediction(
+    network_image: sitk.Image,
+    prediction_scaled: np.ndarray,
+    dose_image: sitk.Image,
+    contract: Dict[str, Any],
+    seed_weight: float,
+) -> np.ndarray:
+    """Apply the checkpoint calibration and restore one output to the CT grid."""
     dose_multiplier = float(contract["dose_multiplier"])
     planning_output_scale = float(contract.get("planning_output_scale", 1.0))
-    device = next(model.parameters()).device
-
-    crop_image = crop_ct_center_on_seed(dose_image, position_xyz, output_size_cm)
-    network_image = resample_image_to_spacing(crop_image, target_spacing, sitk.sitkLinear, -1000.0)
-    ct_crop = sitk.GetArrayFromImage(network_image).astype(np.float32)
-    soft = sitk.GetArrayFromImage(generate_soft_pos(
-        network_image,
-        position_xyz,
-        float(contract.get("seed_soft_radius", 4.0)),
-    )).astype(np.float32)
-    line = sitk.GetArrayFromImage(generate_line_map(network_image, position_xyz, direction_lps, line_length)).astype(np.float32)
-    inputs = np.stack([normalize_unit(line), normalize_ct(ct_crop), normalize_unit(soft)], axis=0)
-    prediction_scaled = sliding_window_predict(model, inputs, patch_size, overlap, device)
-    # ``prediction_scaled / dose_multiplier`` is the raw upstream predictor
-    # output. The planner explicitly consumes training-scaled model units, so
-    # apply the contract's reversible planning scale at this boundary.
     prediction = (
-        prediction_scaled / dose_multiplier * planning_output_scale * float(seed_weight)
+        np.asarray(prediction_scaled, dtype=np.float32)
+        / dose_multiplier
+        * planning_output_scale
+        * float(seed_weight)
     )
     prediction = np.nan_to_num(prediction, nan=0.0, posinf=0.0, neginf=0.0)
     prediction[prediction < 0.0] = 0.0
     return resample_crop_to_full(network_image, prediction, dose_image)
 
 
-def predict_seed_doses(particles: Iterable[Tuple[Sequence[float], Sequence[float], float]], dose_image: sitk.Image, model: torch.nn.Module) -> List[np.ndarray]:
-    outputs = []
-    for position, direction, weight in particles:
-        if not particle_inside_image(dose_image, position):
-            continue
-        outputs.append(predict_seed_dose(position, direction, dose_image, model, weight))
+def predict_seed_dose(
+    position_xyz: Sequence[float],
+    direction_lps: Sequence[float],
+    dose_image: sitk.Image,
+    model: torch.nn.Module,
+    seed_weight: float = 1.0,
+    *,
+    deadline: Optional[float] = None,
+) -> np.ndarray:
+    _ensure_before_deadline(deadline)
+    contract = _model_contract(model)
+    device = next(model.parameters()).device
+    network_image, inputs = _prepare_seed_input(
+        position_xyz, direction_lps, dose_image, contract
+    )
+    prediction_scaled = sliding_window_predict(
+        model,
+        inputs,
+        contract["patch_size"],
+        float(contract.get("overlap", 0.5)),
+        device,
+        deadline=deadline,
+    )
+    _ensure_before_deadline(deadline)
+    return _scale_and_restore_prediction(
+        network_image, prediction_scaled, dose_image, contract, seed_weight
+    )
+
+
+def predict_seed_doses(
+    particles: Iterable[Tuple[Sequence[float], Sequence[float], float]],
+    dose_image: sitk.Image,
+    model: torch.nn.Module,
+    *,
+    deadline: Optional[float] = None,
+) -> List[np.ndarray]:
+    """Predict multiple seed dose maps with batched GPU sliding windows.
+
+    The returned order always matches ``particles``.  Keeping this contract is
+    important because the planner pairs every dose map with its seed position.
+    """
+    particles = list(particles)
+    if not particles:
+        return []
+
+    contract = _model_contract(model)
+    device = next(model.parameters()).device
+    requested_batch_size = int(contract.get("inference_batch_size", 4))
+    batch_size = max(1, requested_batch_size)
+    prepared = []
+    for index, particle in enumerate(particles):
+        _ensure_before_deadline(deadline)
+        if len(particle) != 3:
+            raise ValueError("Each seed particle must contain position, direction, and weight")
+        position, direction, weight = particle
+        network_image, inputs = _prepare_seed_input(position, direction, dose_image, contract)
+        prepared.append((index, network_image, inputs, float(weight)))
+
+    outputs: List[np.ndarray] = [None] * len(prepared)  # type: ignore[list-item]
+    groups: Dict[Tuple[int, int, int], List[Tuple[int, sitk.Image, np.ndarray, float]]] = {}
+    for item in prepared:
+        groups.setdefault(tuple(int(v) for v in item[2].shape[1:]), []).append(item)
+
+    for group in groups.values():
+        for start in range(0, len(group), batch_size):
+            _ensure_before_deadline(deadline)
+            chunk = group[start : start + batch_size]
+            input_batch = np.stack([item[2] for item in chunk], axis=0)
+            try:
+                predictions = sliding_window_predict_batch(
+                    model,
+                    input_batch,
+                    contract["patch_size"],
+                    float(contract.get("overlap", 0.5)),
+                    device,
+                    deadline=deadline,
+                )
+            except RuntimeError as exc:
+                # A deployment with less free VRAM still gets the correct model
+                # result.  Retry individual windows instead of silently falling
+                # back to a different dose engine.
+                if len(chunk) == 1 or "out of memory" not in str(exc).lower():
+                    raise
+                if device.type == "cuda":
+                    torch.cuda.empty_cache()
+                predictions = np.stack(
+                    [
+                        sliding_window_predict(
+                            model,
+                            item[2],
+                            contract["patch_size"],
+                            float(contract.get("overlap", 0.5)),
+                            device,
+                            deadline=deadline,
+                        )
+                        for item in chunk
+                    ],
+                    axis=0,
+                )
+            for item, prediction_scaled in zip(chunk, predictions):
+                _ensure_before_deadline(deadline)
+                index, network_image, _, weight = item
+                outputs[index] = _scale_and_restore_prediction(
+                    network_image, prediction_scaled, dose_image, contract, weight
+                )
     return outputs
 
 
-__all__ = ["predict_seed_dose", "predict_seed_doses"]
+__all__ = [
+    "predict_seed_dose",
+    "predict_seed_doses",
+    "sliding_window_predict",
+    "sliding_window_predict_batch",
+    "DoseInferenceDeadlineExceeded",
+]

@@ -96,41 +96,31 @@ async function exportReport() {
 //   9. View Results (trajectories / seeds / dose / DVH / metrics)
 //  10. Export (DICOM-RT / STL / Report PDF)
 //
-// Each step is a separate button so the user can stop and inspect
-// at any point. The system also remembers the last completed step
-// in localStorage so the user can resume after a refresh.
+// Each step is a separate button so the user can stop and inspect at any
+// point. Its progress belongs to the active server workspace, not localStorage.
 // =============================================================================
 
-// Manual planning state persists across reloads but is isolated per case.
-function _manualStateStorageKey() {
-    return typeof caseStorageKey === 'function'
-        ? caseStorageKey('brachybot_manual_state')
-        : 'brachybot_manual_state:web';
-}
-
 function _manualState() {
-    try {
-        const s = localStorage.getItem(_manualStateStorageKey());
-        if (s) return JSON.parse(s);
-    } catch (_) {}
-    return {
-        ct_loaded: false,
-        ctv_segmentation: false,
-        oar_segmentation: false,
-        trajectory_init: false,
-        trajectory_refine: false,
-        seed_planning: false,
-        dose_calc: false,
-        dose_eval: false,
-        last_step: null,
-    };
+    if (!window.__manualWorkspaceState) {
+        window.__manualWorkspaceState = {
+            ct_loaded: false,
+            ctv_segmentation: false,
+            oar_segmentation: false,
+            trajectory_init: false,
+            trajectory_refine: false,
+            seed_planning: false,
+            dose_calc: false,
+            dose_eval: false,
+            last_step: null,
+        };
+    }
+    return window.__manualWorkspaceState;
 }
 function _saveManualState(patch) {
-    try {
-        const s = _manualState();
-        Object.assign(s, patch);
-        localStorage.setItem(_manualStateStorageKey(), JSON.stringify(s));
-    } catch (_) {}
+    Object.assign(_manualState(), patch || {});
+    if (typeof window.scheduleWorkspaceSave === 'function') {
+        window.scheduleWorkspaceSave('manual.progress');
+    }
 }
 
 function toggleStepButtons() {

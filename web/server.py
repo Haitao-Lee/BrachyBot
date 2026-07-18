@@ -29,8 +29,11 @@ try:
         require_api_key,
     )
     from web import server_support as _server_support
+    from web.auth import configure_auth, current_user, register_auth_routes
     from web.routes.viewer_routes import register_viewer_routes
     from web.routes.planning_routes import register_planning_routes
+    from web.routes.session_routes import register_session_routes
+    from web.workspace_store import WorkspaceError, WorkspaceLeaseConflict, WorkspaceQuotaExceeded, WorkspaceStore
 except ImportError:  # pragma: no cover - supports direct script execution.
     from server_support import (  # type: ignore
         APP_DIR,
@@ -43,8 +46,11 @@ except ImportError:  # pragma: no cover - supports direct script execution.
         require_api_key,
     )
     import server_support as _server_support  # type: ignore
+    from web.auth import configure_auth, current_user, register_auth_routes
     from routes.viewer_routes import register_viewer_routes
     from routes.planning_routes import register_planning_routes
+    from web.routes.session_routes import register_session_routes
+    from web.workspace_store import WorkspaceError, WorkspaceLeaseConflict, WorkspaceQuotaExceeded, WorkspaceStore
 
 _TRUST_NETWORK = _server_support._TRUST_NETWORK
 _is_loopback_host = _server_support._is_loopback_host
@@ -62,7 +68,7 @@ def _sanitize_upload_filename(name: str) -> str:
 def create_app(config: Optional[Dict] = None):
     """Create and configure the Flask application."""
     try:
-        from flask import Flask, request, jsonify, send_from_directory, Response, has_request_context
+        from flask import Flask, request, jsonify, send_from_directory, Response, has_request_context, g, session as flask_session
         from flask_cors import CORS
         import logging
         logging.getLogger('werkzeug').setLevel(logging.WARNING)
@@ -70,6 +76,9 @@ def create_app(config: Optional[Dict] = None):
     except ImportError:
         logger.warning("Flask not installed. API endpoints will not be available.")
         return None
+
+    if config is None:
+        config = {}
 
     app = Flask(__name__, static_folder=APP_DIR, static_url_path="")
     # CORS: restrict to localhost by default. Trusted LAN mode permits
@@ -92,8 +101,34 @@ def create_app(config: Optional[Dict] = None):
             "http://localhost:8080",
             "http://127.0.0.1:8080",
         ]
-    CORS(app, origins=_allowed_origins)
+    CORS(app, origins=_allowed_origins, supports_credentials=True)
     app.config["MAX_CONTENT_LENGTH"] = 500 * 1024 * 1024  # 500MB max upload
+
+    workspace_store = WorkspaceStore(config.get("runtime_dir"))
+    # A process cannot safely resume GPU/LLM work that disappeared during a
+    # restart.  Preserve the last checkpoint and expose it as interrupted.
+    workspace_store.mark_running_sessions_interrupted()
+    workspace_store.purge_expired_trash()
+    configure_auth(app, workspace_store, config)
+    register_auth_routes(app, workspace_store)
+
+    if config.get("workspace_maintenance", True):
+        maintenance_interval = max(300, int(os.environ.get("BRACHYBOT_WORKSPACE_MAINTENANCE_SECONDS", "3600")))
+
+        def workspace_maintenance() -> None:
+            """Purge expired workspace trash without coupling cleanup to traffic."""
+            try:
+                workspace_store.purge_expired_trash()
+            except Exception:
+                logger.warning("Workspace retention cleanup failed", exc_info=True)
+            finally:
+                timer = threading.Timer(maintenance_interval, workspace_maintenance)
+                timer.daemon = True
+                timer.start()
+
+        timer = threading.Timer(maintenance_interval, workspace_maintenance)
+        timer.daemon = True
+        timer.start()
 
     @app.errorhandler(RequestEntityTooLarge)
     def handle_request_entity_too_large(_error):
@@ -107,73 +142,119 @@ def create_app(config: Optional[Dict] = None):
         logger.error("Unhandled server error: %s", error, exc_info=True)
         return jsonify({"error": "Internal server error"}), 500
 
-    if config is None:
-        config = {}
-
-    # Session management: each session gets its own agent instance
-    _sessions: Dict[str, Any] = {}  # session_id -> BrachyAgent
-    _session_timestamps: Dict[str, float] = {}  # session_id -> last access time
+    # Active agents are an LRU cache over durable account-owned workspaces.
+    # The cache key includes the account ID so a client-controlled case ID can
+    # never cause two users to share an in-memory BrachyAgent.
+    _sessions: Dict[tuple, Any] = {}
+    _session_timestamps: Dict[tuple, float] = {}
     _sessions_lock = threading.RLock()
-    _default_session_id = config.get("session_id", "web")
     _max_sessions = 50  # Maximum number of concurrent sessions
     _session_timeout = 3600  # Session timeout in seconds (1 hour)
+
     def _normalize_session_id(value: Any) -> str:
-        text = str(value or _default_session_id).strip()
-        if not re.fullmatch(r"[A-Za-z0-9_.:-]{1,128}", text):
+        text = str(value or "").strip()
+        if not re.fullmatch(r"[a-f0-9]{32}", text):
             raise ValueError("Invalid session_id")
         return text
 
-    def _request_session_id() -> str:
-        if not has_request_context():
-            return _default_session_id
-        candidate = request.headers.get("X-BrachyBot-Session") or request.args.get("session_id")
-        if candidate is None and request.is_json:
-            payload = request.get_json(silent=True) or {}
-            candidate = payload.get("session_id") if isinstance(payload, dict) else None
-        return _normalize_session_id(candidate)
+    def _request_session_context(explicit_session_id: Optional[str] = None):
+        """Return the authenticated owner's currently selected case.
+
+        The signed login cookie, not a browser-provided session identifier, is
+        authoritative.  Legacy payload/header IDs are accepted only when they
+        exactly match the selected case, which keeps old request shapes
+        compatible without allowing arbitrary owned-session hopping.
+        """
+        user = current_user(workspace_store)
+        if not user:
+            raise WorkspaceError("Authentication required")
+        selected = flask_session.get("bb_session_id")
+        if not selected:
+            entry = workspace_store.create_session(user["id"], "New case")
+            flask_session["bb_session_id"] = entry.id
+            return user, entry.id
+        session_id = _normalize_session_id(selected)
+        if explicit_session_id:
+            requested = _normalize_session_id(explicit_session_id)
+            if requested != session_id:
+                raise WorkspaceError("Select the requested case before modifying it")
+        workspace_store.get_session(user["id"], session_id)
+        return user, session_id
 
     def get_agent(session_id: str = None):
-        """Get or create an agent for the given session."""
+        """Get a hydrated agent for the authenticated user's selected case."""
         nonlocal _sessions, _session_timestamps
 
         try:
-            session_id = _request_session_id() if session_id is None else _normalize_session_id(session_id)
-        except ValueError as exc:
-            logger.warning("Rejected invalid session id: %s", exc)
+            user, resolved_session_id = _request_session_context(session_id)
+        except (ValueError, WorkspaceError) as exc:
+            logger.warning("Rejected case session: %s", exc)
             return None
+        cache_key = (user["id"], resolved_session_id)
 
         with _sessions_lock:
             # Clean up old sessions periodically
             _cleanup_old_sessions()
 
             # Return existing agent if session exists
-            if session_id in _sessions:
-                _session_timestamps[session_id] = time.time()
-                return _sessions[session_id]
+            if cache_key in _sessions:
+                _session_timestamps[cache_key] = time.time()
+                if has_request_context():
+                    g.brachybot_agent = _sessions[cache_key]
+                    g.brachybot_workspace = (user["id"], resolved_session_id)
+                return _sessions[cache_key]
 
             # Check if we've hit the max sessions limit
             if len(_sessions) >= _max_sessions:
                 # Remove the oldest session
                 oldest_session = min(_session_timestamps, key=_session_timestamps.get)
-                _sessions.pop(oldest_session, None)
+                evicted = _sessions.pop(oldest_session, None)
+                if evicted is not None:
+                    try:
+                        workspace_store.flush_agent_checkpoint(oldest_session[0], oldest_session[1], evicted, "agent.cache_evicted")
+                    except WorkspaceError:
+                        logger.warning("Failed to persist evicted case workspace", exc_info=True)
                 _session_timestamps.pop(oldest_session, None)
-                _server_support._drop_ui_bucket(oldest_session)
+                _server_support._drop_ui_bucket(oldest_session[1])
                 logger.info(f"Removed oldest session: {oldest_session}")
 
             # Create new agent for this session
             try:
                 from AgenticSys import BrachyAgent
-                agent = BrachyAgent(
-                    session_id=session_id,
-                    config=config.get("agent_config", {})
+                agent_config = dict(config.get("agent_config", {}) or {})
+                agent_config["_workspace_state_dir"] = str(
+                    workspace_store.workspace_root(user["id"], resolved_session_id, create=True) / "agent_state"
                 )
-                _sessions[session_id] = agent
-                _session_timestamps[session_id] = time.time()
-                logger.info(f"Created new agent for session: {session_id}")
+                agent = BrachyAgent(
+                    session_id=resolved_session_id,
+                    config=agent_config,
+                )
+                hydrated_snapshot = workspace_store.hydrate_agent(user["id"], resolved_session_id, agent)
+                # UI-controller events and training feedback are not part of
+                # AgentMemory. Restore their per-case bridge before any tool
+                # reads UI state after a server restart or cache eviction.
+                bridge = ((hydrated_snapshot.get("ui") or {}).get("bridge") or {})
+                if isinstance(bridge, dict):
+                    bucket = _server_support._ui_bucket(resolved_session_id)
+                    with _server_support._UI_BRIDGE_LOCK:
+                        bucket["state"] = dict(bridge.get("state") or {})
+                        bucket["events"] = list(bridge.get("events") or [])
+                        bucket["training"] = dict(bridge.get("training") or {})
+                        bucket["updated_at"] = bridge.get("updated_at") or time.time()
+                agent.memory.set_persistence_callback(
+                    lambda reason, owner=user["id"], case_id=resolved_session_id, current=agent:
+                    workspace_store.schedule_agent_checkpoint(owner, case_id, current, reason)
+                )
+                _sessions[cache_key] = agent
+                _session_timestamps[cache_key] = time.time()
+                if has_request_context():
+                    g.brachybot_agent = agent
+                    g.brachybot_workspace = (user["id"], resolved_session_id)
+                logger.info("Created hydrated agent for account case session %s", resolved_session_id)
                 return agent
             except Exception as e:
                 import traceback
-                logger.error(f"Failed to initialize BrachyAgent for session {session_id}: {e}")
+                logger.error(f"Failed to initialize BrachyAgent for session {resolved_session_id}: {e}")
                 logger.error(traceback.format_exc())
                 return None
 
@@ -187,10 +268,72 @@ def create_app(config: Optional[Dict] = None):
                 if current_time - timestamp > _session_timeout
             ]
             for sid in expired_sessions:
-                _sessions.pop(sid, None)
+                expired = _sessions.pop(sid, None)
+                if expired is not None:
+                    try:
+                        workspace_store.flush_agent_checkpoint(sid[0], sid[1], expired, "agent.cache_expired")
+                    except WorkspaceError:
+                        logger.warning("Failed to persist expired case workspace", exc_info=True)
                 _session_timestamps.pop(sid, None)
-                _server_support._drop_ui_bucket(sid)
+                _server_support._drop_ui_bucket(sid[1])
                 logger.info(f"Removed expired session: {sid}")
+
+    def drop_agent(session_id: str) -> None:
+        """Drop only the current user's cached agent; durable data remains intact."""
+        try:
+            user = current_user(workspace_store)
+            if not user:
+                return
+            resolved_session_id = _normalize_session_id(session_id)
+            workspace_store.get_session(user["id"], resolved_session_id)
+        except (WorkspaceError, ValueError):
+            return
+        key = (user["id"], resolved_session_id)
+        with _sessions_lock:
+            agent = _sessions.pop(key, None)
+            _session_timestamps.pop(key, None)
+            if agent is not None:
+                try:
+                    workspace_store.flush_agent_checkpoint(user["id"], resolved_session_id, agent, "agent.cache_dropped")
+                except WorkspaceError:
+                    logger.warning("Failed to persist dropped case workspace", exc_info=True)
+            _server_support._drop_ui_bucket(resolved_session_id)
+
+    @app.after_request
+    def _checkpoint_mutating_workspace(response):
+        if request.method in {"POST", "PUT", "PATCH", "DELETE"} and response.status_code < 400:
+            agent = getattr(g, "brachybot_agent", None)
+            workspace = getattr(g, "brachybot_workspace", None)
+            if agent is not None and workspace is not None:
+                workspace_store.schedule_agent_checkpoint(workspace[0], workspace[1], agent, "request.completed")
+        return response
+
+    @app.before_request
+    def _protect_live_workspace_lease():
+        """Keep a second browser read-only while an editor lease is active."""
+        if request.method not in {"POST", "PUT", "PATCH", "DELETE"}:
+            return None
+        if request.path.startswith("/api/auth/") or request.path == "/api/workspace/lease":
+            return None
+        if request.path.startswith("/api/sessions"):
+            # Session management has target-specific ownership/lease checks in
+            # ``session_routes``. Do not let a lock on case A prevent a user
+            # from opening or creating an independent case B.
+            return None
+        if not request.path.startswith("/api/"):
+            return None
+        try:
+            user, session_id = _request_session_context()
+            workspace_store.assert_editable(
+                user["id"], session_id, request.headers.get("X-BrachyBot-Editor", ""),
+            )
+        except WorkspaceLeaseConflict as exc:
+            return jsonify({"error": str(exc), "code": "workspace_locked", "editable": False}), 409
+        except WorkspaceError:
+            # Authentication middleware returns the canonical user-facing
+            # response before a route is invoked.
+            return None
+        return None
 
     @app.route("/")
     def index():
@@ -223,8 +366,7 @@ def create_app(config: Optional[Dict] = None):
             if len(files) > MAX_UPLOAD_FILES:
                 return jsonify({"error": f"Too many files; max is {MAX_UPLOAD_FILES}"}), 400
 
-            upload_dir = UPLOAD_DIR
-            os.makedirs(upload_dir, exist_ok=True)
+            user, session_id = _request_session_context()
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
             if len(files) == 1:
@@ -240,23 +382,25 @@ def create_app(config: Optional[Dict] = None):
                     base = os.path.splitext(base)[0]
                     ext = ".nii.gz"
                 save_name = f"{base}_{timestamp}{ext}"
-                save_path = os.path.join(upload_dir, save_name)
-                f.save(save_path)
-                abs_path = os.path.abspath(save_path)
+                abs_path = workspace_store.write_upload(
+                    user["id"], session_id, save_name, f.stream,
+                    expected_bytes=f.content_length,
+                )
                 return jsonify({
                     "success": True,
-                    "path": abs_path,
+                    "path": str(abs_path),
                     "kind": "single_file",
                     "filename": save_name,
                     "size": os.path.getsize(abs_path),
                     "file_count": 1,
+                    "session_id": session_id,
                 })
 
             # Multiple files → treat as a DICOM folder
-            sub_dir = os.path.join(upload_dir, f"dicom_{timestamp}")
-            os.makedirs(sub_dir, exist_ok=True)
+            sub_dir_name = f"dicom_{timestamp}"
             saved = 0
             first_relative = None
+            saved_names = set()
             for f in files:
                 if not f.filename:
                     continue
@@ -268,29 +412,38 @@ def create_app(config: Optional[Dict] = None):
                     continue
                 if not _validate_upload_name(leaf, dicom_series=True):
                     return jsonify({"error": f"Unsupported DICOM series file type: {leaf}"}), 400
-                save_path = os.path.join(sub_dir, leaf)
-                # Avoid collision: append counter
-                if os.path.exists(save_path):
+                save_name = leaf
+                # Avoid collision without probing a shared directory.
+                if save_name in saved_names:
                     stem, ext2 = os.path.splitext(leaf)
                     i = 1
-                    while os.path.exists(os.path.join(sub_dir, f"{stem}_{i}{ext2}")):
+                    while f"{stem}_{i}{ext2}" in saved_names:
                         i += 1
-                    save_path = os.path.join(sub_dir, f"{stem}_{i}{ext2}")
-                f.save(save_path)
+                    save_name = f"{stem}_{i}{ext2}"
+                workspace_store.write_upload(
+                    user["id"], session_id, f"{sub_dir_name}/{save_name}", f.stream,
+                    expected_bytes=f.content_length,
+                )
+                saved_names.add(save_name)
                 saved += 1
                 if first_relative is None:
                     first_relative = rel
             if saved == 0:
                 return jsonify({"error": "No files saved"}), 400
-            abs_dir = os.path.abspath(sub_dir)
+            abs_dir = workspace_store.workspace_root(user["id"], session_id) / "inputs" / sub_dir_name
             return jsonify({
                 "success": True,
-                "path": abs_dir,
+                "path": str(abs_dir),
                 "kind": "dicom_folder",
-                "directory": abs_dir,
+                "directory": str(abs_dir),
                 "file_count": saved,
-                "filename": os.path.basename(first_relative or abs_dir),
+                "filename": os.path.basename(first_relative or str(abs_dir)),
+                "session_id": session_id,
             })
+        except WorkspaceQuotaExceeded as exc:
+            return jsonify({"error": str(exc)}), 413
+        except WorkspaceError as exc:
+            return jsonify({"error": str(exc)}), 400
         except Exception as e:
             import traceback
             logger.error(f"Upload error: {e}\n{traceback.format_exc()}")
@@ -313,6 +466,12 @@ def create_app(config: Optional[Dict] = None):
         if not _validate_path(image_path, purpose="read"):
             return jsonify({"error": "Access denied"}), 403
         real_image_path = os.path.realpath(image_path)
+        try:
+            user, session_id = _request_session_context()
+            if not workspace_store.owns_path(user["id"], session_id, real_image_path):
+                return jsonify({"error": "Case artifact access denied"}), 403
+        except WorkspaceError:
+            return jsonify({"error": "Case artifact access denied"}), 403
 
         try:
             from flask import send_file
@@ -512,6 +671,12 @@ def create_app(config: Optional[Dict] = None):
             return jsonify({"error": "ct_path is required"}), 400
         if not _validate_path(ct_path, purpose="read"):
             return jsonify({"error": "Invalid ct_path"}), 400
+        try:
+            user, session_id = _request_session_context()
+            if not workspace_store.owns_path(user["id"], session_id, ct_path):
+                return jsonify({"error": "Case artifact access denied"}), 403
+        except WorkspaceError:
+            return jsonify({"error": "Case artifact access denied"}), 403
         try:
             img, kind, meta = _load_ct_image(ct_path)
             # For series reads, the assembled volume has empty metadata.
@@ -891,27 +1056,22 @@ def create_app(config: Optional[Dict] = None):
 
     register_viewer_routes(app, get_agent, _load_ct_image, _extract_dicom_tags)
     register_planning_routes(app, get_agent)
+    register_session_routes(app, workspace_store, get_agent, drop_agent)
 
     @app.route("/api/reset", methods=["POST"])
     @require_api_key
     def api_reset():
         """Reset agent state for a session."""
-        nonlocal _sessions, _session_timestamps
         data = request.get_json(silent=True) or {}
         try:
-            session_id = _normalize_session_id(data.get("session_id") or _request_session_id())
-        except ValueError as exc:
+            _user, session_id = _request_session_context(data.get("session_id"))
+        except (ValueError, WorkspaceError) as exc:
             return jsonify({"error": str(exc)}), 400
-
-        with _sessions_lock:
-            _server_support._drop_ui_bucket(session_id)
-            if session_id in _sessions:
-                _sessions.pop(session_id, None)
-                _session_timestamps.pop(session_id, None)
-                logger.info(f"Reset session: {session_id}")
-                return jsonify({"success": True, "message": f"Session {session_id} reset"})
-            else:
-                return jsonify({"success": True, "message": "Session not found"})
+        drop_agent(session_id)
+        return jsonify({
+            "success": True,
+            "message": "The in-memory agent was released. The durable case workspace was retained.",
+        })
 
     @app.errorhandler(404)
     def not_found(e):

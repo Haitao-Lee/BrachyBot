@@ -586,6 +586,7 @@ class ChatWorkflowMixin:
         step_id = [0]
         response = ""  # Initialize response variable
         llm_meta = {"usage": {}, "latency_ms": 0, "llm_calls": 0}
+        workflow_turn_token = self._current_turn_token()
 
         def add_step(step_type, title, content, status="done", **kwargs):
             step_id[0] += 1
@@ -602,6 +603,30 @@ class ChatWorkflowMixin:
 
         def yield_event(event_type, data):
             return f"event: {event_type}\ndata: {json.dumps(data, default=str)}\n\n"
+
+        def workflow_cancelled() -> bool:
+            """Check cancellation while the workflow enforcer waits on a tool."""
+            return self._is_turn_cancelled(workflow_turn_token)
+
+        def cancelled_workflow_events(step):
+            """Finish SSE cleanly when a daemonized workflow tool is cancelled.
+
+            Python cannot safely kill an in-flight GPU inference thread.  The
+            old request therefore stops receiving events immediately and never
+            schedules downstream OAR/planning work; the daemon may only finish
+            its already-started operation in the background.
+            """
+            step["status"] = "error"
+            step["content"] = "Stopped by user"
+            step["result"] = "Cancelled before workflow completion"
+            yield yield_event("step", step)
+            message_text = (
+                "已停止本次请求。已启动的底层推理可能在后台自然结束，但不会再触发后续规划步骤。"
+                if self.memory.user_lang == "zh"
+                else "This request was stopped. Any already-started inference may finish in the background, but no downstream planning steps will run."
+            )
+            yield yield_event("response", {"response": message_text, "steps": steps, "llm_meta": llm_meta})
+            yield yield_event("done", {"cancelled": True, "context": {"ui_state": self.memory.get_ui_state()}})
 
         # Start
         # Include the detected language so the frontend can pick
@@ -1171,10 +1196,13 @@ class ChatWorkflowMixin:
                                     _ctv_th.start()
                                     _ctv_hb = 0
                                     while _ctv_th.is_alive():
-                                        _ctv_th.join(timeout=10)
+                                        _ctv_th.join(timeout=1)
+                                        if workflow_cancelled():
+                                            yield from cancelled_workflow_events(ctv_step)
+                                            return
                                         if _ctv_th.is_alive():
                                             _ctv_hb += 1
-                                            ctv_step["content"] = f"CTV segmentation running... ({_ctv_hb * 10}s)"
+                                            ctv_step["content"] = f"CTV segmentation running... ({_ctv_hb}s)"
                                             yield yield_event("step", ctv_step)
                                     if _ctv_ebox[0] is not None:
                                         raise _ctv_ebox[0]
@@ -1243,10 +1271,13 @@ class ChatWorkflowMixin:
                                 _oar2_th.start()
                                 _oar_hb = 0
                                 while _oar2_th.is_alive():
-                                    _oar2_th.join(timeout=10)
+                                    _oar2_th.join(timeout=1)
+                                    if workflow_cancelled():
+                                        yield from cancelled_workflow_events(oar_step)
+                                        return
                                     if _oar2_th.is_alive():
                                         _oar_hb += 1
-                                        oar_step["content"] = f"OAR segmentation running... ({_oar_hb * 10}s)"
+                                        oar_step["content"] = f"OAR segmentation running... ({_oar_hb}s)"
                                         yield yield_event("step", oar_step)
                                 if _oar2_ebox[0] is not None:
                                     raise _oar2_ebox[0]
@@ -1290,10 +1321,13 @@ class ChatWorkflowMixin:
                                 _plan_th.start()
                                 _plan_hb = 0
                                 while _plan_th.is_alive():
-                                    _plan_th.join(timeout=10)
+                                    _plan_th.join(timeout=1)
+                                    if workflow_cancelled():
+                                        yield from cancelled_workflow_events(planning_step)
+                                        return
                                     if _plan_th.is_alive():
                                         _plan_hb += 1
-                                        planning_step["content"] = f"Planning pipeline running... ({_plan_hb * 10}s)"
+                                        planning_step["content"] = f"Planning pipeline running... ({_plan_hb}s)"
                                         yield yield_event("step", planning_step)
                                 if _plan_ebox[0] is not None:
                                     raise _plan_ebox[0]

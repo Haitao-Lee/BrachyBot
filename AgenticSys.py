@@ -84,6 +84,14 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
         self.memory = AgentMemory(session_id)
         self.registry = ToolRegistry()
         self.config = config or {}
+        # Web workspaces supply this directory from the authenticated case
+        # root. Standalone/CLI agents keep the historical defaults, while a
+        # web case never leaks interaction or learned-clinical state into the
+        # repository-wide ``memory/data`` tree.
+        workspace_state_dir = self.config.get("_workspace_state_dir")
+        self._workspace_state_dir = os.path.abspath(str(workspace_state_dir)) if workspace_state_dir else None
+        if self._workspace_state_dir:
+            os.makedirs(self._workspace_state_dir, exist_ok=True)
         self._load_tools()
         self._cancel_requested = False
         self._turn_generation = 0
@@ -106,8 +114,14 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
             LiverFullSkill, LungFullSkill,
         )
 
-        self.interaction_memory = InteractionMemory(session_id=session_id)
-        self.preference_store = PreferenceStore(user_id=session_id)
+        self.interaction_memory = InteractionMemory(
+            session_id=session_id,
+            storage_dir=(os.path.join(self._workspace_state_dir, "interaction") if self._workspace_state_dir else None),
+        )
+        self.preference_store = PreferenceStore(
+            user_id=session_id,
+            storage_dir=(os.path.join(self._workspace_state_dir, "preferences") if self._workspace_state_dir else None),
+        )
         self.skill_registry = SkillRegistry()
         self.skill_learner = SkillLearner(memory=self.interaction_memory)
 
@@ -416,7 +430,10 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
         self.evolution_engine = None
         try:
             from memory import ExperienceMemory, SelfEvolutionEngine
-            self.exp_memory = ExperienceMemory(session_id=self.memory.session_id)
+            self.exp_memory = ExperienceMemory(
+                session_id=self.memory.session_id,
+                data_dir=(os.path.join(self._workspace_state_dir, "experience") if self._workspace_state_dir else None),
+            )
             self.evolution_engine = SelfEvolutionEngine(
                 experience_memory=self.exp_memory,
                 skill_registry=self.skill_registry,
@@ -438,7 +455,10 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
                     return resp.content if hasattr(resp, "content") else str(resp)
                 llm_callback = _llm_cb
             self.enhanced = EnhancedAgentIntegration(
-                agent=self, session_id=self.memory.session_id, llm_callback=llm_callback,
+                agent=self,
+                session_id=self.memory.session_id,
+                llm_callback=llm_callback,
+                storage_dir=(os.path.join(self._workspace_state_dir, "enhanced") if self._workspace_state_dir else None),
             )
             logger.info("Enhanced self-evolving integration initialized")
         except Exception as e:
@@ -982,34 +1002,40 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
             planning_state = ui_state.get("planning") if isinstance(ui_state.get("planning"), dict) else {}
             ui_mode = ui_state.get("plan_mode")
             planning_params["mode"] = ui_mode or "rule_based"
+            planning_overrides = {}
 
             seed_info = planning_state.get("seed_info")
             if seed_info:
                 planning_params["seed_info"] = seed_info
             radiation_params = planning_state.get("radiation_params")
             if radiation_params:
-                planning_params["radiation_array_params"] = radiation_params
+                planning_overrides["radiation_array_params"] = radiation_params
             in_lo = planning_state.get("in_lowest_energy")
             if in_lo is not None:
-                planning_params["in_lowest_energy"] = in_lo
+                planning_overrides["in_lowest_energy"] = in_lo
             out_hi = planning_state.get("out_highest_energy")
             if out_hi is not None:
-                planning_params["out_highest_energy"] = out_hi
+                planning_overrides["out_highest_energy"] = out_hi
             dvh_rate = planning_state.get("dvh_rate")
             if dvh_rate is not None:
-                planning_params["DVH_rate"] = dvh_rate
+                planning_overrides["DVH_rate"] = dvh_rate
             max_iter = planning_state.get("max_iter")
             if max_iter is not None:
-                planning_params["max_iter"] = max_iter
+                planning_overrides["max_iter"] = max_iter
             iter_rate = planning_state.get("iter_rate")
             if iter_rate is not None:
-                planning_params["iter_rate"] = iter_rate
+                planning_overrides["iter_rate"] = iter_rate
             replan_rate = planning_state.get("replan_rate")
             if replan_rate is not None:
-                planning_params["replan_rate"] = replan_rate
+                planning_overrides["replan_rate"] = replan_rate
             dist_filter = planning_state.get("distance_filter")
             if dist_filter:
-                planning_params["distance_filter"] = dist_filter
+                planning_overrides["distance_filter"] = dist_filter
+            if planning_overrides:
+                # The pipeline treats this nested object as a per-run,
+                # immutable override snapshot. This prevents different
+                # pipeline stages from mixing live UI changes with defaults.
+                planning_params["planning_params"] = planning_overrides
 
             # Preserve the live UI direction for both rule-based and RL
             # planning. The auto checkbox is an explicit geometric request;
@@ -1031,6 +1057,81 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
                 " -> ".join(call.get("tool", "") for call in ordered),
             )
         return ordered + rest
+
+    def _current_planning_obstacle_context(self):
+        """Build the active case's obstacle policy for direct planning tools.
+
+        The unified planning pipeline owns this logic, but the public
+        ``trajectory_planning`` and ``seed_planning`` tools can still be
+        called directly by an LLM. Keeping the same Data Tree-derived mask
+        here prevents those legacy entry points from reintroducing paths that
+        the unified pipeline would reject.
+        """
+        from tool_factory.seed_plan.planning_pipeline import (
+            _build_radiation_volume,
+            _merge_embedded_hard_obstacles,
+            _resolve_data_tree_obstacle_labels,
+        )
+        from plans.config import setting
+
+        ctv_mask = self.memory.retrieve("ctv_array")
+        oar_mask = self.memory.retrieve("oar_array")
+        ct_image = self.memory.retrieve("ct_image")
+        if ctv_mask is None or ct_image is None:
+            return None
+
+        merged_oar, embedded_labels = _merge_embedded_hard_obstacles(oar_mask, self)
+        obstacle_labels, obstacle_source = _resolve_data_tree_obstacle_labels(self)
+        obstacle_labels.update(embedded_labels)
+        args = setting()
+        obstacle_value = args.radiation_array_params["obstacle_value"]
+        radiation_volume = _build_radiation_volume(
+            np.asarray(ctv_mask),
+            None if merged_oar is None else np.asarray(merged_oar),
+            target_value=args.radiation_array_params["target_value"],
+            obstacle_value=obstacle_value,
+            obstacle_labels=obstacle_labels,
+            obstacle_source=obstacle_source,
+        )
+        return {
+            "ct_image": ct_image,
+            "ctv_mask": np.asarray(ctv_mask),
+            "oar_mask": None if merged_oar is None else np.asarray(merged_oar),
+            "radiation_volume": radiation_volume,
+            "obstacle_labels": obstacle_labels,
+            "obstacle_value": obstacle_value,
+        }
+
+    def _filter_direct_planning_trajectories(self, trajectories, context):
+        """Apply the pipeline's candidate and physical safety gates.
+
+        Direct tool calls use the original CT grid, so the CT image is also
+        the planning image for the world-coordinate check. If a caller has no
+        active case context, the direct tool's historical behavior is kept;
+        active web sessions always have the context and fail closed when no
+        candidate remains.
+        """
+        if context is None:
+            return list(trajectories or []), None
+        from tool_factory.seed_plan.planning_pipeline import (
+            _filter_safe_trajectories,
+            _filter_world_safe_trajectories,
+        )
+
+        candidates = _filter_safe_trajectories(
+            trajectories,
+            context["radiation_volume"],
+            context["obstacle_value"],
+        )
+        candidates = _filter_world_safe_trajectories(
+            candidates,
+            context["ct_image"],
+            context["ct_image"],
+            context["ctv_mask"],
+            context["oar_mask"],
+            context["obstacle_labels"],
+        )
+        return candidates, context
 
     def _execute_tool_with_memory(self, tool_name: str, params: Dict, progress_callback=None, step_callback=None) -> Any:
         """Execute a tool, automatically injecting memory-stored data.
@@ -1090,7 +1191,15 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
         elif tool_name == "trajectory_planning":
             if "dose_image" not in params and ct_image is not None:
                 params["dose_image"] = ct_image
-            if "radiation_volume" not in params:
+            direct_obstacle_context = self._current_planning_obstacle_context()
+            if direct_obstacle_context is not None:
+                # Replace stale/client-supplied geometry with the current
+                # Data Tree policy. This is the direct-tool equivalent of the
+                # unified pipeline's candidate-generation safety gate.
+                params["radiation_volume"] = direct_obstacle_context["radiation_volume"]
+                params["obstacle_value"] = direct_obstacle_context["obstacle_value"]
+                self.memory.store("radiation_volume", direct_obstacle_context["radiation_volume"])
+            elif "radiation_volume" not in params:
                 if radiation_volume is None and ctv_array is not None:
                     radiation_volume = np.zeros_like(ctv_array, dtype=np.float64)
                     radiation_volume[ctv_array > 0] = 1.0
@@ -1101,10 +1210,27 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
                     self.memory.store("radiation_volume", radiation_volume)
                 if radiation_volume is not None:
                     params["radiation_volume"] = radiation_volume
-        elif tool_name == "seed_planning":
+        elif tool_name in {"seed_planning", "seed_planning_rule_based", "seed_planning_rl"}:
             if "dose_image" not in params and ct_image is not None:
                 params["dose_image"] = ct_image
-            if "radiation_volume" not in params and radiation_volume is not None:
+            direct_obstacle_context = self._current_planning_obstacle_context()
+            if direct_obstacle_context is not None:
+                params["radiation_volume"] = direct_obstacle_context["radiation_volume"]
+                params["obstacle_value"] = direct_obstacle_context["obstacle_value"]
+                source_trajectories = params.get("trajectories") or trajectories
+                filtered, _ = self._filter_direct_planning_trajectories(
+                    source_trajectories, direct_obstacle_context
+                )
+                if not filtered:
+                    return ToolResult(
+                        success=False,
+                        error=(
+                            "No candidate trajectories remain after validating "
+                            "the current Data Tree non-traversable masks."
+                        ),
+                    )
+                params["trajectories"] = filtered
+            elif "radiation_volume" not in params and radiation_volume is not None:
                 params["radiation_volume"] = radiation_volume
             if "trajectories" not in params and trajectories is not None:
                 params["trajectories"] = trajectories
@@ -1231,10 +1357,35 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
         if result.success:
             metadata = result.metadata or {}
             logger.info("Tool %s succeeded. Metadata keys: %s", tool_name, list(metadata))
+            if tool_name == "trajectory_planning" and metadata.get("trajectories") is not None:
+                # The trajectory tool itself generates paths, but the agent
+                # must still enforce the current Data Tree policy before any
+                # downstream seed optimizer can consume its output.
+                context = locals().get("direct_obstacle_context")
+                filtered, _ = self._filter_direct_planning_trajectories(
+                    metadata.get("trajectories") or [], context
+                )
+                if not filtered:
+                    return ToolResult(
+                        success=False,
+                        error=(
+                            "Trajectory generation produced no path that is "
+                            "safe against the current Data Tree non-traversable masks."
+                        ),
+                    )
+                metadata["trajectories"] = filtered
+                metadata["num_trajectories"] = len(filtered)
+                result.data = filtered
             if tool_name == "ctv_segmentation" and "ctv_array" in metadata:
                 self.memory.store("ctv_array", metadata["ctv_array"])
                 if "ctv_mask" in metadata:
                     self.memory.store("ctv_mask", metadata["ctv_mask"])
+                # Some CTV models emit additional hard structures (for
+                # example artery/vein) alongside the tumor label. Preserve
+                # that mask separately so a later full OAR segmentation
+                # cannot overwrite the model-specific obstacle source.
+                if metadata.get("oar_array") is not None:
+                    self.memory.store("ctv_embedded_oar_array", metadata["oar_array"])
                 if "label_stats" in metadata:
                     self.memory.store("ctv_label_stats", metadata["label_stats"])
                 if "label_map" in metadata:

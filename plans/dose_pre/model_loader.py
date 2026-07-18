@@ -91,6 +91,19 @@ def load_dose_model(explicit_path: Optional[str] = None,
         if planning_output_scale <= 0:
             raise ValueError("BRACHYBOT_DOSE_MODEL_PLANNING_SCALE must be positive")
 
+        try:
+            inference_batch_size = int(
+                os.environ.get("BRACHYBOT_DOSE_INFERENCE_BATCH_SIZE", "4")
+            )
+        except ValueError as exc:
+            raise ValueError(
+                "BRACHYBOT_DOSE_INFERENCE_BATCH_SIZE must be an integer"
+            ) from exc
+        if inference_batch_size <= 0:
+            raise ValueError(
+                "BRACHYBOT_DOSE_INFERENCE_BATCH_SIZE must be positive"
+            )
+
         from .dose_unet import DoseUNet
 
         # Architecture is part of the deployed checkpoint contract. Ignore
@@ -113,6 +126,10 @@ def load_dose_model(explicit_path: Optional[str] = None,
             "output_size_cm": 12.0,
             "line_length": 4.5,
             "seed_soft_radius": 4.0,
+            # This is only a GPU execution batch. Each seed retains its own
+            # physical crop and output resampling, so it does not alter dose
+            # normalization or the trained model's coordinate contract.
+            "inference_batch_size": inference_batch_size,
         }
         model.to(device)
         model.eval()

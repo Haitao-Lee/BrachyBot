@@ -319,10 +319,16 @@ function startRenameSession(id, event) {
     input.select();
 
     // Handle save on Enter or blur
-    const saveRename = () => {
+    const saveRename = async () => {
         const newTitle = input.value.trim() || 'Untitled';
         session.title = newTitle;
-        saveSessions();
+        try {
+            if (typeof renameServerSession === 'function') await renameServerSession(id, newTitle);
+            else saveSessions();
+        } catch (error) {
+            console.warn('Case rename failed:', error);
+            return;
+        }
         renderSessionList();
         if (id === activeSessionId) {
             document.getElementById('chatSessionTitle').textContent = newTitle;

@@ -18,11 +18,31 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 from tool_factory import BaseTool, ToolResult
 import numpy as np
 import SimpleITK as sitk
-import nibabel as nib
 from typing import Dict
 
 
 logger = logging.getLogger(__name__)
+
+
+def _align_segmentation_to_reference(segmentation_path: str, reference_image: sitk.Image) -> np.ndarray:
+    """Return labels resampled into the exact input CT grid.
+
+    TotalSegmentator writes NIfTI output with an affine/canonical orientation.
+    A raw nibabel array transpose preserves values but can discard that affine
+    relationship, leaving a plausible-looking yet spatially displaced mask.
+    Nearest-neighbour resampling through SimpleITK preserves label IDs and
+    returns the unambiguous (Z, Y, X) array used by the planner.
+    """
+    label_image = sitk.ReadImage(segmentation_path)
+    aligned = sitk.Resample(
+        label_image,
+        reference_image,
+        sitk.Transform(),
+        sitk.sitkNearestNeighbor,
+        0,
+        sitk.sitkUInt16,
+    )
+    return sitk.GetArrayFromImage(aligned).astype(np.int32, copy=False)
 
 
 # TotalSegmentator v2 label mapping (117 structures)
@@ -269,12 +289,12 @@ class TotalSegmentatorOARTool(BaseTool):
             organ_counts[organ_name] = count
             organ_volumes[organ_name] = count * voxel_volume_mm3
 
-        # Convert from nibabel (X,Y,Z) to SimpleITK (Z,Y,X) order for consistency
-        oar_array_ordered = np.transpose(oar_array, (2, 1, 0))
-        oar_mask = sitk.GetImageFromArray(oar_array_ordered)
-        oar_mask.SetSpacing(spacing)
-        oar_mask.SetOrigin(image.GetOrigin())
-        oar_mask.SetDirection(image.GetDirection())
+        # _align_segmentation_to_reference already returns SimpleITK's array
+        # order (Z, Y, X), so a second transpose would reintroduce a spatial
+        # mismatch between the OAR labels and the CT used for planning.
+        oar_array_ordered = oar_array
+        oar_mask = sitk.GetImageFromArray(oar_array_ordered.astype(np.uint16))
+        oar_mask.CopyInformation(image)
 
         num_organs = len(organ_volumes)
         return ToolResult(
@@ -392,10 +412,12 @@ class TotalSegmentatorOARTool(BaseTool):
                     f"Last output: {_output_lines[-5:] if _output_lines else '(none)'}"
                 )
 
-            seg_img = nib.load(output_path)
-            seg_data = seg_img.get_fdata()
+            # Restore the output through its NIfTI affine. A raw nibabel
+            # transpose is unsafe because TotalSegmentator may canonicalize
+            # the output orientation independently of the input CT.
+            seg_data = _align_segmentation_to_reference(output_path, image)
 
-            oar_array = np.zeros_like(seg_data, dtype=np.float64)
+            oar_array = np.zeros_like(seg_data, dtype=np.int32)
 
             if organ_filter is not None:
                 organ_filter_lower = [o.lower() for o in organ_filter]

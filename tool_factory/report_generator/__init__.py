@@ -156,6 +156,7 @@ Capabilities:
 
         if isinstance(prescription_rationale, dict):
             sources = prescription_rationale.get("sources", []) or []
+            source_records = prescription_rationale.get("source_records", []) or []
             lines += [
                 "",
                 "## Prescription Dose Rationale",
@@ -165,8 +166,17 @@ Capabilities:
             ]
             if prescription_rationale.get("target_criteria"):
                 lines.append(f"- **Target Criteria:** {prescription_rationale.get('target_criteria')}")
-            for i, url in enumerate(sources[:5], start=1):
-                lines.append(f"- **Source {i}:** {url}")
+            if source_records:
+                for item in source_records[:5]:
+                    if isinstance(item, dict) and item.get("url"):
+                        title = item.get("title") or item["url"]
+                        lines.append(f"- **Source:** [{title}]({item['url']})")
+            else:
+                for url in sources[:5]:
+                    if isinstance(url, dict) and url.get("url"):
+                        lines.append(f"- **Source:** [{url.get('title') or url['url']}]({url['url']})")
+                    else:
+                        lines.append(f"- **Source:** {url}")
             lines.append(f"- **Boundary:** {prescription_rationale.get('clinical_boundary', 'Clinician must confirm prescription appropriateness')}")
 
         oar_violations = metrics.get("oar_violations", [])

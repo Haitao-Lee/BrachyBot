@@ -56,6 +56,7 @@ logs/
 uploads/
 screenshots/
 test_screenshots/
+.runtime/
 
 # Documentation generated for this project is tracked.
 brain/knowledge/

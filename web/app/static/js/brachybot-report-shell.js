@@ -741,20 +741,13 @@ window.Report = (function () {
 
     // ---------- Audit log (P11) ----------
     const audit = {
-        storageKey() {
-            return typeof caseStorageKey === 'function'
-                ? caseStorageKey('brachyplan_report_audit')
-                : 'brachyplan_report_audit:web';
-        },
         log(action, key, before, after) {
-            try {
-                const storageKey = this.storageKey();
-                const arr = JSON.parse(localStorage.getItem(storageKey) || '[]');
-                arr.push({ t: Date.now(), action, key, before, after, lang: stateProxy.language });
-                localStorage.setItem(storageKey, JSON.stringify(arr.slice(-500)));
-            } catch (e) {}
+            const arr = window.__reportWorkspaceAudit || (window.__reportWorkspaceAudit = []);
+            arr.push({ t: Date.now(), action, key, before, after, lang: stateProxy.language });
+            window.__reportWorkspaceAudit = arr.slice(-500);
+            if (typeof window.scheduleWorkspaceSave === 'function') window.scheduleWorkspaceSave('report.audit');
         },
-        list() { try { return JSON.parse(localStorage.getItem(this.storageKey()) || '[]'); } catch (e) { return []; } },
+        list() { return Array.isArray(window.__reportWorkspaceAudit) ? window.__reportWorkspaceAudit : []; },
         openModal() {
             const list = this.list();
             const html = list.slice().reverse().slice(0, 100).map(e => {
@@ -769,25 +762,20 @@ window.Report = (function () {
 
     // ---------- Snapshots (P11) ----------
     const snapshots = {
-        storageKey() {
-            return typeof caseStorageKey === 'function'
-                ? caseStorageKey('brachyplan_report_snapshots')
-                : 'brachyplan_report_snapshots:web';
-        },
         save(label = '') {
             try {
                 const f = window.reportForm;
                 if (!f) return -1;
-                const storageKey = this.storageKey();
-                const arr = JSON.parse(localStorage.getItem(storageKey) || '[]');
+                const arr = window.__reportWorkspaceSnapshots || (window.__reportWorkspaceSnapshots = []);
                 const clone = JSON.parse(JSON.stringify(f, (k, v) => v instanceof Set ? Array.from(v) : v));
                 arr.push({ t: Date.now(), label, form: clone });
-                localStorage.setItem(storageKey, JSON.stringify(arr.slice(-30)));
+                window.__reportWorkspaceSnapshots = arr.slice(-30);
+                if (typeof window.scheduleWorkspaceSave === 'function') window.scheduleWorkspaceSave('report.snapshot');
                 _setReportStatus('Snapshot saved', 'ok');
                 return arr.length - 1;
             } catch (e) { _setReportStatus('Snapshot failed: ' + e.message, 'error'); return -1; }
         },
-        list() { try { return JSON.parse(localStorage.getItem(this.storageKey()) || '[]'); } catch (e) { return []; } },
+        list() { return Array.isArray(window.__reportWorkspaceSnapshots) ? window.__reportWorkspaceSnapshots : []; },
         restore(idx) {
             const arr = this.list();
             const snap = arr[idx];
@@ -960,11 +948,12 @@ window.Report = (function () {
             try {
                 const f = window.reportForm;
                 if (!f) return;
-                const clone = JSON.parse(JSON.stringify(f, (k, v) => v instanceof Set ? Array.from(v) : v));
-                const key = typeof caseStorageKey === 'function'
-                    ? caseStorageKey('brachyplan_reportForm')
-                    : 'brachyplan_reportForm:web';
-                localStorage.setItem(key, JSON.stringify(clone));
+                // Clinical report content is case data. The durable workspace
+                // snapshot owns it; localStorage is reserved for account-level
+                // display preferences such as language and panel geometry.
+                if (typeof window.scheduleWorkspaceSave === 'function') {
+                    window.scheduleWorkspaceSave('report.shell_changed');
+                }
                 const t = document.getElementById('reportAutoSaveText');
                 if (t) t.textContent = 'Auto-save: ' + new Date().toLocaleTimeString();
             } catch (e) {

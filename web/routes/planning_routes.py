@@ -9,7 +9,10 @@ from typing import Any, Dict, Optional
 
 import numpy as np
 import SimpleITK as sitk
-from flask import Response, jsonify, request, send_from_directory
+from flask import Response, current_app, jsonify, request, send_file, session as flask_session, stream_with_context
+
+from web.auth import current_user
+from web.workspace_store import WorkspaceError, WorkspaceQuotaExceeded
 
 try:
     from web.server_support import (
@@ -55,17 +58,179 @@ _valid_screenshot_request = _server_support._valid_screenshot_request
 _validate_path = _server_support._validate_path
 
 
+def _snapshot_from_seed_plan(serialized_plan, needle_geometry):
+    """Convert an automatic serialized plan to the frontend world snapshot."""
+    seeds = []
+    needles = []
+    for trajectory_index, entry in enumerate(serialized_plan or []):
+        if not isinstance(entry, dict):
+            continue
+        trajectory_id = f"traj_{trajectory_index + 1}"
+        for seed_index, seed in enumerate(entry.get("seeds") or []):
+            if isinstance(seed, dict):
+                position = seed.get("position") or seed.get("pos")
+                direction = seed.get("direction") or seed.get("dir")
+            elif isinstance(seed, (list, tuple)) and len(seed) >= 2:
+                position, direction = seed[0], seed[1]
+            else:
+                continue
+            if not isinstance(position, (list, tuple)) or not isinstance(direction, (list, tuple)):
+                continue
+            if len(position) < 3 or len(direction) < 3:
+                continue
+            seeds.append({
+                "id": f"seed_{trajectory_index}_{seed_index}",
+                "position": [float(v) for v in position[:3]],
+                "direction": [float(v) for v in direction[:3]],
+                "trajectory_id": trajectory_id,
+            })
+        points = (needle_geometry or {}).get(str(trajectory_index))
+        if isinstance(points, list) and len(points) >= 2:
+            needles.append({
+                "id": f"needle_{trajectory_index}",
+                "points": [[float(v) for v in point[:3]] for point in points[:2]],
+                "trajectory_id": trajectory_id,
+            })
+    return {"seeds": seeds, "needles": needles}
+
+
+def _current_planning_snapshot(agent):
+    """Return the current manual snapshot, or the automatic baseline."""
+    memory = agent.memory
+    manual_seeds = memory.retrieve("manual_seeds") or []
+    manual_needles = memory.retrieve("manual_needles") or []
+    if manual_seeds or manual_needles:
+        return {"seeds": list(manual_seeds), "needles": list(manual_needles)}
+    baseline = memory.retrieve("algorithm_plan_snapshot")
+    if isinstance(baseline, dict):
+        return {
+            "seeds": list(baseline.get("seeds") or []),
+            "needles": list(baseline.get("needles") or []),
+        }
+    return _snapshot_from_seed_plan(
+        memory.retrieve("seed_plan_serialized") or [],
+        memory.retrieve("verified_needle_geometry") or {},
+    )
+
+
 def register_planning_routes(app, get_agent):
 
+    def workspace_output_dir(category: str) -> str:
+        """Return an owned artifact directory; client paths are never trusted."""
+        store = current_app.extensions.get("brachybot_workspace_store")
+        user = current_user(store) if store is not None else None
+        session_id = str(flask_session.get("bb_session_id") or "")
+        if not user or not session_id:
+            raise WorkspaceError("Authentication required")
+        # Direct exporters write into tool-owned directories, unlike browser
+        # artifacts which pass through ``write_artifact``. Refuse a new export
+        # when the account is already at its quota.
+        store.ensure_capacity(user["id"], 0)
+        root = store.workspace_root(user["id"], session_id, create=True) / "artifacts" / category
+        root.mkdir(parents=True, exist_ok=True)
+        return str(root)
+
+    def validate_workspace_output(category: str) -> None:
+        """Verify a direct exporter did not exceed the selected user's quota.
+
+        Scientific exporters often require a filesystem directory instead of a
+        stream. They remain constrained to the selected workspace and are
+        checked before the result is exposed as a downloadable artifact.
+        """
+        _ = category
+        store = current_app.extensions.get("brachybot_workspace_store")
+        user = current_user(store) if store is not None else None
+        if not store or not user:
+            raise WorkspaceError("Authentication required")
+        store.ensure_capacity(user["id"], 0)
+
+    def artifact_download_url(relative_path: str) -> str:
+        """Return the authenticated download route for an active-case artifact."""
+        session_id = str(flask_session.get("bb_session_id") or "")
+        safe_path = "/".join(part for part in str(relative_path).replace("\\", "/").split("/") if part and part not in {".", ".."})
+        return f"/api/sessions/{session_id}/artifacts/{safe_path}"
+
+    def checkpoint_operation(agent: Any, state: str, message: str, *, checkpoint: Optional[Dict[str, Any]] = None) -> None:
+        """Record a recoverable long-operation state without blocking planning."""
+        store = current_app.extensions.get("brachybot_workspace_store")
+        user = current_user(store) if store is not None else None
+        session_id = str(flask_session.get("bb_session_id") or "")
+        if not store or not user or not session_id or agent is None:
+            return
+        operation = {
+            "state": state,
+            "message": message,
+            "updated_at": time.time(),
+            "checkpoint": checkpoint or {},
+        }
+        if state == "running":
+            operation["started_at"] = time.time()
+        try:
+            store.mark_operation(user["id"], session_id, agent, operation)
+        except WorkspaceError:
+            logger.warning("Unable to checkpoint workspace operation", exc_info=True)
+
+    def owned_case_path(path: str) -> bool:
+        store = current_app.extensions.get("brachybot_workspace_store")
+        user = current_user(store) if store is not None else None
+        session_id = str(flask_session.get("bb_session_id") or "")
+        return bool(user and session_id and store.owns_path(user["id"], session_id, path))
+
     def request_ui_session_id(data: Optional[Dict[str, Any]] = None) -> str:
-        """Resolve UI bridge state from body, query, or the global API header."""
-        payload = data if isinstance(data, dict) else {}
-        return _ui_session_id(
-            payload.get("session_id")
-            or request.args.get("session_id")
-            or request.headers.get("X-BrachyBot-Session")
-            or "web"
-        )
+        """Resolve UI bridge state from the signed selected-case cookie.
+
+        UI bridge events used to trust a client-side ``session_id``.  That is
+        unsafe once multiple accounts share one server: even a rejected agent
+        lookup could otherwise expose an in-memory bridge bucket.  Existing
+        payloads retain their field for compatibility but it is deliberately
+        ignored here.
+        """
+        _ = data
+        selected = str(flask_session.get("bb_session_id") or "")
+        return _ui_session_id(selected or "web")
+
+    def task_workspace_owner() -> Optional[str]:
+        """Return the server-derived owner key for transient progress tasks."""
+        store = current_app.extensions.get("brachybot_workspace_store")
+        user = current_user(store) if store is not None else None
+        session_id = str(flask_session.get("bb_session_id") or "")
+        if not user or not session_id:
+            return None
+        return f"{user['id']}:{session_id}"
+
+    def checkpoint_ui_bridge(session_id: str, reason: str) -> None:
+        """Persist UI-controller events that do not live in AgentMemory.
+
+        Training feedback and UI execution events are stored in the bridge so
+        tools can respond immediately. They are also clinical case state and
+        therefore need a JSON checkpoint before the process can be restarted
+        or the case can be reopened in a different browser.
+        """
+        store = current_app.extensions.get("brachybot_workspace_store")
+        user = current_user(store) if store is not None else None
+        selected = str(flask_session.get("bb_session_id") or "")
+        if not store or not user or not selected or session_id != _ui_session_id(selected):
+            return
+        # ``_ui_bucket`` initializes its map while holding the same lock, so
+        # obtain the bucket before taking a second snapshot lock.
+        bucket = _ui_bucket(session_id)
+        with _UI_BRIDGE_LOCK:
+            bridge = {
+                "state": dict(bucket.get("state") or {}),
+                "events": list(bucket.get("events") or []),
+                "training": dict(bucket.get("training") or {}),
+                "updated_at": bucket.get("updated_at"),
+            }
+        try:
+            store.save_snapshot_patch(
+                user["id"],
+                selected,
+                {"ui": {"bridge": bridge}},
+                expected_revision=None,
+                reason=reason,
+            )
+        except WorkspaceError:
+            logger.warning("Unable to persist UI bridge state", exc_info=True)
 
     @app.route("/api/planning/clear", methods=["POST"])
     @require_api_key
@@ -318,11 +483,17 @@ def register_planning_routes(app, get_agent):
         label_path = data.get("label_path")
         if not image_path:
             return jsonify({"error": "image_path is required"}), 400
-        if not _validate_path(image_path, purpose="read"):
+        if not _validate_path(image_path, purpose="read") or not owned_case_path(image_path):
             return jsonify({"error": "Invalid image_path"}), 400
-        if label_path and not _validate_path(label_path, purpose="read"):
+        if label_path and (not _validate_path(label_path, purpose="read") or not owned_case_path(label_path)):
             return jsonify({"error": "Invalid label_path"}), 400
 
+        checkpoint_operation(
+            agent,
+            "running",
+            f"Manual {kind.upper()} segmentation is running",
+            checkpoint={"kind": "segmentation", "segmentation_kind": kind, "tumor_type": tumor_type},
+        )
         try:
             # Dispatch to the appropriate tool.
             if kind == "ctv":
@@ -344,6 +515,16 @@ def register_planning_routes(app, get_agent):
                 return jsonify({"error": f"Unknown segmentation kind: {kind}"}), 400
 
             if not result.success:
+                checkpoint_operation(
+                    agent,
+                    "interrupted",
+                    f"Manual {kind.upper()} segmentation did not complete",
+                    checkpoint={
+                        "kind": "segmentation",
+                        "segmentation_kind": kind,
+                        "error": str(result.error or result.message or "unknown error"),
+                    },
+                )
                 return jsonify({
                     "success": False,
                     "kind": kind,
@@ -376,6 +557,12 @@ def register_planning_routes(app, get_agent):
                             agent.memory.store("ctv_label_map", meta["label_map"])
                         if meta.get("label_stats"):
                             agent.memory.store("ctv_label_stats", meta["label_stats"])
+                        if meta.get("oar_array") is not None:
+                            # Preserve model-emitted hard structures such as
+                            # artery/vein independently from a later OAR run.
+                            agent.memory.store("ctv_embedded_oar_array", meta["oar_array"])
+                        if meta.get("full_label_array") is not None:
+                            agent.memory.store("ctv_full_labels", meta["full_label_array"])
                         if meta.get("ctv_volume_mm3") is not None:
                             agent.memory.store("ctv_volume_mm3", meta["ctv_volume_mm3"])
                         if meta.get("ctv_voxel_count") is not None:
@@ -400,6 +587,12 @@ def register_planning_routes(app, get_agent):
 
             meta = getattr(result, "metadata", {}) or {}
             label_counts = meta.get("organ_counts", {}) or meta.get("label_counts", {}) or meta.get("labels_found", {}) or {}
+            checkpoint_operation(
+                agent,
+                "ready",
+                f"Manual {kind.upper()} segmentation completed",
+                checkpoint={"kind": "segmentation", "segmentation_kind": kind, "completed": True},
+            )
             return jsonify({
                 "success": True,
                 "kind": kind,
@@ -409,6 +602,12 @@ def register_planning_routes(app, get_agent):
             })
         except Exception as e:
             logger.error(f"Manual segmentation ({kind}) failed: {e}")
+            checkpoint_operation(
+                agent,
+                "interrupted",
+                f"Manual {kind.upper()} segmentation failed",
+                checkpoint={"kind": "segmentation", "segmentation_kind": kind, "error": str(e)},
+            )
             return jsonify({"error": str(e)}), 500
 
     @app.route("/api/ctv/models", methods=["GET"])
@@ -441,7 +640,7 @@ def register_planning_routes(app, get_agent):
 
         if not ct_image_path:
             return jsonify({"error": "ct_image_path is required"}), 400
-        if not _validate_path(ct_image_path, purpose="read"):
+        if not _validate_path(ct_image_path, purpose="read") or not owned_case_path(ct_image_path):
             return jsonify({"error": "Invalid ct_image_path"}), 400
 
         try:
@@ -482,6 +681,12 @@ def register_planning_routes(app, get_agent):
             if live_ref is None:
                 live_ref = _cfg("reference_direc")
 
+            checkpoint_operation(
+                agent,
+                "running",
+                f"Planning step '{step}' is in progress",
+                checkpoint={"kind": "planning", "step": step, "mode": _cfg("mode", "rule_based")},
+            )
             result = tool._execute(
                 ct_image_path=ct_image_path,
                 step=step,
@@ -508,6 +713,12 @@ def register_planning_routes(app, get_agent):
                     if isinstance(_v, (_np.ndarray, list, tuple)):
                         continue  # skip heavy / non-serializable
                     _meta[_k] = _v
+                checkpoint_operation(
+                    agent,
+                    "ready",
+                    f"Planning step '{step}' completed",
+                    checkpoint={"kind": "planning", "step": step},
+                )
                 return jsonify({
                     "success": True,
                     "step": step,
@@ -515,9 +726,21 @@ def register_planning_routes(app, get_agent):
                     "metadata": _meta,
                 })
             else:
+                checkpoint_operation(
+                    agent,
+                    "interrupted",
+                    f"Planning step '{step}' did not complete",
+                    checkpoint={"kind": "planning", "step": step, "error": str(result.error or "unknown error")},
+                )
                 return jsonify({"success": False, "error": result.error}), 400
 
         except Exception as e:
+            checkpoint_operation(
+                agent,
+                "interrupted",
+                f"Planning step '{step}' failed",
+                checkpoint={"kind": "planning", "step": step, "error": str(e)},
+            )
             logger.error(f"Run planning step failed: {e}")
             return jsonify({"error": str(e)}), 500
 
@@ -1077,6 +1300,7 @@ def register_planning_routes(app, get_agent):
                     agent.memory.set_ui_state(bucket["state"])
                 except Exception as e:
                     logger.debug(f"ui_state memory update failed: {e}")
+            checkpoint_ui_bridge(session_id, "ui.state_saved")
             return jsonify({
                 "success": True,
                 "session_id": session_id,
@@ -1142,7 +1366,7 @@ def register_planning_routes(app, get_agent):
                 "dose_eval",
             ],
             "manual_3d_planning": {
-                "needles": ["create", "drag_endpoints", "toggle_visibility", "set_opacity"],
+                "needles": ["create", "drag_endpoints", "restore_algorithm_position", "toggle_visibility", "set_opacity"],
                 "seeds": ["add", "drag", "toggle_visibility", "set_opacity"],
                 "dose_recompute": "dose_unet_spacing1mm",
             },
@@ -1188,6 +1412,7 @@ def register_planning_routes(app, get_agent):
                 if training.get("active"):
                     training.setdefault("feedback", []).append({"ts": time.time(), "message": feedback})
                     training["feedback"] = training["feedback"][-100:]
+        checkpoint_ui_bridge(session_id, "ui.event_saved")
         return jsonify({
             "success": True,
             "event": event,
@@ -1215,6 +1440,7 @@ def register_planning_routes(app, get_agent):
                 "feedback": [],
             }
         _append_ui_event(session_id, {"type": "training.start", "label": "Training started", "detail": {"goal": goal}})
+        checkpoint_ui_bridge(session_id, "training.started")
         return jsonify({
             "success": True,
             "session_id": session_id,
@@ -1255,6 +1481,7 @@ def register_planning_routes(app, get_agent):
             report_lines.append("Issues: " + " ".join(advice["issues"][:5]))
         if advice.get("advice"):
             report_lines.append("Recommendations: " + " ".join(advice["advice"][:6]))
+        checkpoint_ui_bridge(session_id, "training.stopped")
         return jsonify({
             "success": True,
             "session_id": session_id,
@@ -1306,6 +1533,17 @@ def register_planning_routes(app, get_agent):
         previous_needles = data.get("previous_needles") or []
         reproject_seeds = bool(data.get("reproject_seeds")) or reason in {"needle_drag", "manual_replan"}
         try:
+            checkpoint_operation(
+                agent,
+                "running",
+                "Manual dose update is in progress",
+                checkpoint={
+                    "kind": "manual_planning",
+                    "reason": str(reason),
+                    "seed_count": len(seeds),
+                    "needle_count": len(needles),
+                },
+            )
             result = _compute_manual_ai_dose(
                 agent,
                 seeds,
@@ -1325,8 +1563,20 @@ def register_planning_routes(app, get_agent):
             })
             result["event"] = event
             result["advice"] = _build_plan_advice(agent, session_id)
+            checkpoint_operation(
+                agent,
+                "ready",
+                "Manual dose update completed",
+                checkpoint={"kind": "manual_planning", "reason": str(reason)},
+            )
             return jsonify(result)
         except Exception as e:
+            checkpoint_operation(
+                agent,
+                "interrupted",
+                "Manual dose update did not complete",
+                checkpoint={"kind": "manual_planning", "reason": str(reason), "error": str(e)},
+            )
             logger.error(f"Manual planning update failed: {e}")
             import traceback
             logger.error(traceback.format_exc())
@@ -1335,6 +1585,112 @@ def register_planning_routes(app, get_agent):
             if error_code:
                 response["code"] = error_code
                 response["rejected_needle_ids"] = getattr(e, "rejected_needle_ids", [])
+            return jsonify(response), 422 if error_code == "manual_needle_intersects_obstacle" else 500
+
+    @app.route("/api/manual_planning/restore_needle", methods=["POST"])
+    @require_api_key
+    @rate_limit
+    def api_manual_planning_restore_needle():
+        """Restore one needle and its seeds from the latest algorithm plan."""
+        data = request.get_json() or {}
+        session_id = request_ui_session_id(data)
+        agent = get_agent(session_id)
+        if agent is None:
+            return jsonify({"success": False, "error": "Agent not available"}), 500
+
+        needle_id = str(data.get("needle_id") or data.get("needleId") or "").strip()
+        if not needle_id:
+            return jsonify({"success": False, "error": "needle_id is required"}), 400
+
+        baseline = agent.memory.retrieve("algorithm_plan_snapshot") or {}
+        baseline_seeds = list(baseline.get("seeds") or []) if isinstance(baseline, dict) else []
+        baseline_needles = list(baseline.get("needles") or []) if isinstance(baseline, dict) else []
+        if not baseline_needles:
+            return jsonify({
+                "success": False,
+                "error": "No algorithm baseline is available. Run automatic planning first.",
+                "code": "algorithm_baseline_missing",
+            }), 409
+
+        current = _current_planning_snapshot(agent)
+        current_needles = list(current.get("needles") or [])
+        current_seeds = list(current.get("seeds") or [])
+        target = next((n for n in current_needles if str(n.get("id")) == needle_id), None)
+        if target is None:
+            target = next((n for n in baseline_needles if str(n.get("id")) == needle_id), None)
+        if target is None:
+            return jsonify({"success": False, "error": f"Unknown needle: {needle_id}"}), 404
+
+        target_trajectory = str(target.get("trajectory_id") or "")
+        baseline_needle = next((n for n in baseline_needles if str(n.get("id")) == needle_id), None)
+        if baseline_needle is None and target_trajectory:
+            baseline_needle = next(
+                (n for n in baseline_needles if str(n.get("trajectory_id")) == target_trajectory),
+                None,
+            )
+        if baseline_needle is None:
+            return jsonify({"success": False, "error": f"No baseline geometry for {needle_id}"}), 409
+
+        baseline_trajectory = str(baseline_needle.get("trajectory_id") or target_trajectory)
+        restored_seeds = [
+            dict(seed) for seed in baseline_seeds
+            if str(seed.get("trajectory_id") or "") == baseline_trajectory
+        ]
+        if not restored_seeds:
+            return jsonify({"success": False, "error": f"No baseline seeds for {needle_id}"}), 409
+
+        kept_seeds = [
+            seed for seed in current_seeds
+            if str(seed.get("trajectory_id") or "") != target_trajectory
+        ]
+        kept_needles = [
+            needle for needle in current_needles
+            if str(needle.get("id")) != needle_id
+        ]
+        new_seeds = kept_seeds + restored_seeds
+        new_needles = kept_needles + [dict(baseline_needle)]
+        try:
+            checkpoint_operation(
+                agent,
+                "running",
+                f"Restoring {needle_id} to the algorithm baseline",
+                checkpoint={"kind": "manual_planning", "reason": "restore_algorithm_needle", "needle_id": needle_id},
+            )
+            result = _compute_manual_ai_dose(
+                agent,
+                new_seeds,
+                new_needles,
+                previous_needles=current_needles,
+                reproject_seeds=False,
+            )
+            checkpoint_operation(
+                agent,
+                "ready",
+                f"Restored {needle_id} to the algorithm baseline",
+                checkpoint={"kind": "manual_planning", "reason": "restore_algorithm_needle", "needle_id": needle_id},
+            )
+            result["restored_needle_id"] = needle_id
+            result["needles"] = new_needles
+            result["seeds"] = new_seeds
+            result["event"] = _append_ui_event(session_id, {
+                "type": "manual.needle.restore",
+                "label": f"Restored {needle_id} to algorithm baseline",
+                "detail": {"needle_id": needle_id},
+            })
+            return jsonify(result)
+        except Exception as exc:
+            checkpoint_operation(
+                agent,
+                "interrupted",
+                f"Needle baseline restore failed for {needle_id}",
+                checkpoint={"kind": "manual_planning", "reason": "restore_algorithm_needle", "needle_id": needle_id, "error": str(exc)},
+            )
+            logger.exception("Needle baseline restore failed")
+            error_code = getattr(exc, "code", None)
+            response = {"success": False, "error": str(exc)}
+            if error_code:
+                response["code"] = error_code
+                response["rejected_needle_ids"] = getattr(exc, "rejected_needle_ids", [])
             return jsonify(response), 422 if error_code == "manual_needle_intersects_obstacle" else 500
 
     @app.route("/api/status", methods=["GET"])
@@ -1361,6 +1717,18 @@ def register_planning_routes(app, get_agent):
             status["devices"] = DeviceManager.instance().status()
         except Exception as _e:
             status["devices"] = {"cuda_available": False, "error": str(_e)}
+        store = current_app.extensions.get("brachybot_workspace_store")
+        user = current_user(store) if store is not None else None
+        if user:
+            try:
+                entry = store.get_session(user["id"], str(flask_session.get("bb_session_id") or ""))
+                status["workspace"] = {
+                    "revision": entry.revision,
+                    "recovery_status": entry.recovery_status,
+                    "checkpoint_state": (store.load_snapshot(user["id"], entry.id).get("operation") or {}).get("state", "idle"),
+                }
+            except WorkspaceError:
+                status["workspace"] = {"recovery_status": "unavailable"}
         return jsonify(status)
 
     @app.route("/api/plan/preoperative", methods=["POST"])
@@ -1377,23 +1745,31 @@ def register_planning_routes(app, get_agent):
         ctv_path = data.get("ctv_path")
         oar_path = data.get("oar_path")
         mode = data.get("mode", "rule_based")
-        output_dir = data.get("output_dir", "./output")
 
         if not ct_path:
             return jsonify({"error": "ct_path is required"}), 400
 
-        if not _validate_path(ct_path):
+        if not _validate_path(ct_path) or not owned_case_path(ct_path):
             return jsonify({"error": "Invalid ct_path"}), 400
-        if ctv_path and not _validate_path(ctv_path):
+        if ctv_path and (not _validate_path(ctv_path) or not owned_case_path(ctv_path)):
             return jsonify({"error": "Invalid ctv_path"}), 400
-        if oar_path and not _validate_path(oar_path):
+        if oar_path and (not _validate_path(oar_path) or not owned_case_path(oar_path)):
             return jsonify({"error": "Invalid oar_path"}), 400
-        safe_output_dir = _resolve_output_path(output_dir)
-        if safe_output_dir is None:
-            return jsonify({"error": "Invalid output_dir"}), 400
+        try:
+            safe_output_dir = workspace_output_dir("preoperative")
+        except WorkspaceQuotaExceeded as exc:
+            return jsonify({"error": str(exc)}), 413
+        except WorkspaceError as exc:
+            return jsonify({"error": str(exc)}), 403
         if mode not in ("rule_based", "rl", "auto"):
             return jsonify({"error": "Invalid mode. Use 'rule_based', 'rl', or 'auto'"}), 400
 
+        checkpoint_operation(
+            agent,
+            "running",
+            "Pre-operative planning is running",
+            checkpoint={"kind": "preoperative_plan", "mode": mode},
+        )
         try:
             # Get hyperparameters from agent config
             config = getattr(agent, 'config', {})
@@ -1425,9 +1801,30 @@ def register_planning_routes(app, get_agent):
                 rf_params=rf_params,
                 output_dir=safe_output_dir,
             )
+            validate_workspace_output("preoperative")
+            checkpoint_operation(
+                agent,
+                "ready",
+                "Pre-operative planning completed",
+                checkpoint={"kind": "preoperative_plan", "mode": plan_mode, "completed": True},
+            )
             return jsonify(result)
+        except WorkspaceQuotaExceeded as exc:
+            checkpoint_operation(
+                agent,
+                "interrupted",
+                "Pre-operative planning exceeded the account storage quota",
+                checkpoint={"kind": "preoperative_plan", "error": str(exc)},
+            )
+            return jsonify({"error": str(exc)}), 413
         except Exception as e:
             logger.error(f"Preoperative planning failed: {e}")
+            checkpoint_operation(
+                agent,
+                "interrupted",
+                "Pre-operative planning failed",
+                checkpoint={"kind": "preoperative_plan", "mode": mode, "error": str(e)},
+            )
             return jsonify({"error": str(e)}), 500
 
     @app.route("/api/plan/intraoperative", methods=["POST"])
@@ -1443,18 +1840,20 @@ def register_planning_routes(app, get_agent):
         ct_path = data.get("ct_path")
         original_plan = data.get("original_plan")
         threshold = data.get("deviation_threshold_mm", data.get("threshold", 2.0))
-        output_dir = data.get("output_dir", "./output")
 
         if not ct_path:
             return jsonify({"error": "ct_path is required"}), 400
         if not original_plan:
             return jsonify({"error": "original_plan with planned physical seed positions is required"}), 400
 
-        if not _validate_path(ct_path):
+        if not _validate_path(ct_path) or not owned_case_path(ct_path):
             return jsonify({"error": "Invalid ct_path"}), 400
-        safe_output_dir = _resolve_output_path(output_dir)
-        if safe_output_dir is None:
-            return jsonify({"error": "Invalid output_dir"}), 400
+        try:
+            safe_output_dir = workspace_output_dir("intraoperative")
+        except WorkspaceQuotaExceeded as exc:
+            return jsonify({"error": str(exc)}), 413
+        except WorkspaceError as exc:
+            return jsonify({"error": str(exc)}), 403
         try:
             threshold = float(threshold)
             if threshold <= 0:
@@ -1462,6 +1861,12 @@ def register_planning_routes(app, get_agent):
         except (ValueError, TypeError):
             return jsonify({"error": "Invalid threshold value"}), 400
 
+        checkpoint_operation(
+            agent,
+            "running",
+            "Intra-operative replanning is running",
+            checkpoint={"kind": "intraoperative_replan", "deviation_threshold_mm": threshold},
+        )
         try:
             result = agent.run_intraoperative_replan(
                 intra_op_ct_path=ct_path,
@@ -1469,9 +1874,30 @@ def register_planning_routes(app, get_agent):
                 deviation_threshold_mm=threshold,
                 output_dir=safe_output_dir,
             )
+            validate_workspace_output("intraoperative")
+            checkpoint_operation(
+                agent,
+                "ready",
+                "Intra-operative replanning completed",
+                checkpoint={"kind": "intraoperative_replan", "completed": True},
+            )
             return jsonify(result)
+        except WorkspaceQuotaExceeded as exc:
+            checkpoint_operation(
+                agent,
+                "interrupted",
+                "Intra-operative replanning exceeded the account storage quota",
+                checkpoint={"kind": "intraoperative_replan", "error": str(exc)},
+            )
+            return jsonify({"error": str(exc)}), 413
         except Exception as e:
             logger.error(f"Intraoperative replanning failed: {e}")
+            checkpoint_operation(
+                agent,
+                "interrupted",
+                "Intra-operative replanning failed",
+                checkpoint={"kind": "intraoperative_replan", "error": str(e)},
+            )
             return jsonify({"error": str(e)}), 500
 
     @app.route("/api/chat/abort", methods=["POST"])
@@ -1496,6 +1922,12 @@ def register_planning_routes(app, get_agent):
                     # Remove last user message (the one that triggered the aborted response)
                     if conv and conv[-1].get("role") == "user":
                         conv.pop()
+            checkpoint_operation(
+                agent,
+                "interrupted",
+                "Chat was cancelled by the user",
+                checkpoint={"kind": "chat", "cancelled": True},
+            )
             return jsonify({"success": True, "cancel_requested": True})
         except Exception as e:
             logger.error(f"Chat abort cleanup failed: {e}")
@@ -1511,6 +1943,12 @@ def register_planning_routes(app, get_agent):
         try:
             agent.memory.clear_all_data()
             agent.memory.clear_conversation()
+            checkpoint_operation(
+                agent,
+                "ready",
+                "Case data was cleared by the user",
+                checkpoint={"kind": "clear", "completed": True},
+            )
             return jsonify({"success": True, "message": "All data cleared"})
         except Exception as e:
             logger.error(f"Clear all data failed: {e}")
@@ -1528,15 +1966,18 @@ def register_planning_routes(app, get_agent):
         safety policy, and response schema cannot drift apart.
         """
         data = request.get_json() or {}
-        session_id = data.get("session_id")
-        agent = get_agent(session_id) if session_id else get_agent()
+        # Case selection is a server-side, signed-cookie concern. Keep accepting
+        # the old payload shape, but never let a client-selected ID choose data.
+        agent = get_agent()
         if agent is None:
             return jsonify({"error": "Agent not available"}), 500
 
-        output_dir = data.get("output_dir", "./output/dicom_rt")
-        safe_output_dir = _resolve_output_path(output_dir)
-        if safe_output_dir is None:
-            return jsonify({"error": "Invalid output_dir"}), 400
+        try:
+            safe_output_dir = workspace_output_dir("dicom_rt")
+        except WorkspaceQuotaExceeded as exc:
+            return jsonify({"error": str(exc)}), 413
+        except WorkspaceError as exc:
+            return jsonify({"error": str(exc)}), 403
 
         try:
             os.makedirs(safe_output_dir, exist_ok=True)
@@ -1629,6 +2070,7 @@ def register_planning_routes(app, get_agent):
             )
 
             if result.success:
+                validate_workspace_output("dicom_rt")
                 return jsonify({
                     "success": True,
                     "files": result.data,
@@ -1638,6 +2080,8 @@ def register_planning_routes(app, get_agent):
                     "manifest": result.metadata.get("manifest"),
                 })
             return jsonify({"success": False, "error": result.error}), 400
+        except WorkspaceQuotaExceeded as exc:
+            return jsonify({"error": str(exc)}), 413
         except Exception as e:
             logger.error(f"DICOM-RT export failed: {e}")
             return jsonify({"error": str(e)}), 500
@@ -1652,10 +2096,12 @@ def register_planning_routes(app, get_agent):
             return jsonify({"error": "Agent not available"}), 500
 
         data = request.get_json() or {}
-        output_dir = data.get("output_dir", "./output/stl")
-        safe_output_dir = _resolve_output_path(output_dir)
-        if safe_output_dir is None:
-            return jsonify({"error": "Invalid output_dir"}), 400
+        try:
+            safe_output_dir = workspace_output_dir("stl")
+        except WorkspaceQuotaExceeded as exc:
+            return jsonify({"error": str(exc)}), 413
+        except WorkspaceError as exc:
+            return jsonify({"error": str(exc)}), 403
 
         try:
             import os
@@ -1733,13 +2179,31 @@ def register_planning_routes(app, get_agent):
                     pos = np.array(seed[0])
                     direc = np.array(seed[1])
                     filename = f"seed_{i}_{j}.stl"
-                    output_path = os.path.join(safe_output_dir, filename)
-                    with open(output_path, "w", encoding="utf-8") as f:
-                        f.write(_seed_cylinder_stl(pos, direc))
+                    payload = _seed_cylinder_stl(pos, direc).encode("utf-8")
+                    store = current_app.extensions.get("brachybot_workspace_store")
+                    user = current_user(store) if store is not None else None
+                    session_id = str(flask_session.get("bb_session_id") or "")
+                    if not store or not user or not session_id:
+                        raise WorkspaceError("Authentication required")
+                    # Use the streaming writer so every generated STL obeys
+                    # the same replacement-aware quota policy as uploads.
+                    import io
+                    store.write_artifact(
+                        user["id"], session_id, "stl", filename,
+                        io.BytesIO(payload), expected_bytes=len(payload),
+                    )
                     files.append(filename)
                     count += 1
 
-            return jsonify({"success": True, "count": count, "files": files, "output_dir": safe_output_dir})
+            return jsonify({
+                "success": True,
+                "count": count,
+                "files": files,
+                "download_urls": [artifact_download_url(f"stl/{name}") for name in files],
+                "output_dir": safe_output_dir,
+            })
+        except WorkspaceQuotaExceeded as exc:
+            return jsonify({"error": str(exc)}), 413
         except Exception as e:
             logger.error(f"STL export failed: {e}")
             return jsonify({"error": str(e)}), 500
@@ -1755,10 +2219,9 @@ def register_planning_routes(app, get_agent):
         stream = data.get("stream", True)  # Default to streaming
         image_path = data.get("image_path", None)  # Optional image path
         clear_context = data.get("clear_context", False)  # Optional: clear conversation history
-        session_id = data.get("session_id", None)  # Optional: session ID for isolation
-
-        # Get or create agent for this session
-        agent = get_agent(session_id)
+        # ``session_id`` remains tolerated in older browser payloads, but the
+        # authenticated user's selected workspace is always authoritative.
+        agent = get_agent()
         if agent is None:
             return jsonify({"error": "Agent not available"}), 500
 
@@ -1773,6 +2236,9 @@ def register_planning_routes(app, get_agent):
         if not message and not image_path:
             return jsonify({"error": "message or image is required"}), 400
 
+        if image_path and (not _validate_path(image_path, purpose="read") or not owned_case_path(image_path)):
+            return jsonify({"error": "image_path must belong to the active case workspace"}), 403
+
         # If image provided but no message, use default prompt
         if image_path and not message:
             message = "Please analyze this image"
@@ -1783,11 +2249,20 @@ def register_planning_routes(app, get_agent):
             full_message = f"{message}\n\n[Uploaded image path: {image_path}]"
 
         if stream:
+            checkpoint_operation(
+                agent,
+                "running",
+                "Chat response is in progress",
+                checkpoint={"kind": "chat", "user_message": message[:500]},
+            )
+
             def generate():
                 agent.memory.set_ui_state(ui_state)
+                completed = False
                 try:
                     for event in agent.chat_with_stream(full_message):
                         yield event.encode("utf-8") if isinstance(event, str) else event
+                    completed = True
                 except GeneratorExit:
                     setattr(agent, "_cancel_requested", True)
                     logger.warning("SSE client disconnected (GeneratorExit)")
@@ -1795,9 +2270,16 @@ def register_planning_routes(app, get_agent):
                     logger.error(f"Chat stream failed: {e}")
                     import json
                     yield f"event: error\ndata: {json.dumps({'error': str(e)})}\n\n".encode("utf-8")
+                finally:
+                    checkpoint_operation(
+                        agent,
+                        "ready" if completed else "interrupted",
+                        "Chat response completed" if completed else "Chat response was interrupted",
+                        checkpoint={"kind": "chat"},
+                    )
 
             resp = Response(
-                generate(),
+                stream_with_context(generate()),
                 mimetype='text/event-stream',
                 headers={
                     'Cache-Control': 'no-cache',
@@ -1809,6 +2291,12 @@ def register_planning_routes(app, get_agent):
             return resp
         else:
             try:
+                checkpoint_operation(
+                    agent,
+                    "running",
+                    "Chat response is in progress",
+                    checkpoint={"kind": "chat", "user_message": message[:500]},
+                )
                 agent.memory.set_ui_state(ui_state)
                 result = agent.chat_with_trace(full_message)
 
@@ -1835,6 +2323,7 @@ def register_planning_routes(app, get_agent):
 
                 sanitized_result = _sanitize_for_json(result)
 
+                checkpoint_operation(agent, "ready", "Chat response completed", checkpoint={"kind": "chat"})
                 return jsonify({
                     "response": sanitized_result["response"],
                     "steps": sanitized_result["steps"],
@@ -1849,6 +2338,7 @@ def register_planning_routes(app, get_agent):
                     "brain_available": agent.brain_available,
                 })
             except Exception as e:
+                checkpoint_operation(agent, "interrupted", "Chat response failed", checkpoint={"kind": "chat"})
                 logger.error(f"Chat failed: {e}")
                 return jsonify({"error": str(e)}), 500
 
@@ -1865,7 +2355,7 @@ def register_planning_routes(app, get_agent):
             try:
                 while time.time() < deadline:
                     if task_id:
-                        task = task_manager.get_task(task_id)
+                        task = task_manager.get_task(task_id, workspace_owner=task_workspace_owner())
                         payload = {"task": task}
                         if task:
                             data = json.dumps(task)
@@ -1878,7 +2368,7 @@ def register_planning_routes(app, get_agent):
                             yield f"event: task\ndata: {json.dumps(payload)}\n\n".encode("utf-8")
                             break
                     else:
-                        tasks = task_manager.get_all_tasks()
+                        tasks = task_manager.get_all_tasks(workspace_owner=task_workspace_owner())
                         data = json.dumps(tasks)
                         if data != last_payload:
                             last_payload = data
@@ -1902,7 +2392,7 @@ def register_planning_routes(app, get_agent):
     @rate_limit
     def api_task_status(task_id):
         """Get task status."""
-        task = task_manager.get_task(task_id)
+        task = task_manager.get_task(task_id, workspace_owner=task_workspace_owner())
         if task is None:
             return jsonify({"error": "Task not found"}), 404
         return jsonify(task)
@@ -1912,7 +2402,7 @@ def register_planning_routes(app, get_agent):
     @rate_limit
     def api_tasks_list():
         """List all tasks."""
-        return jsonify(task_manager.get_all_tasks())
+        return jsonify(task_manager.get_all_tasks(workspace_owner=task_workspace_owner()))
 
     @app.route("/api/export/report", methods=["POST"])
     @require_api_key
@@ -1924,16 +2414,15 @@ def register_planning_routes(app, get_agent):
             return jsonify({"error": "Agent not available"}), 500
 
         data = request.get_json() or {}
-        output_path = data.get("output_path", "output/report.json")
         output_format = data.get("format", "json")
-        if not data.get("output_path") and output_format == "html":
-            output_path = "output/report.html"
-
-        safe_output_path = _resolve_output_path(output_path)
-        if safe_output_path is None:
-            return jsonify({"error": "Invalid output_path"}), 400
         if output_format not in ("json", "html", "pdf"):
             return jsonify({"error": "Invalid format. Use 'json', 'html', or 'pdf'"}), 400
+        try:
+            safe_output_path = os.path.join(workspace_output_dir("reports"), f"report.{output_format}")
+        except WorkspaceQuotaExceeded as exc:
+            return jsonify({"error": str(exc)}), 413
+        except WorkspaceError as exc:
+            return jsonify({"error": str(exc)}), 403
 
         try:
             if output_format == "pdf":
@@ -1972,30 +2461,42 @@ def register_planning_routes(app, get_agent):
                 "narrative_markdown": "\n\n".join([tumor_md, dose_md]),
             }
 
-            os.makedirs(os.path.dirname(safe_output_path), exist_ok=True)
+            rendered: bytes
             if output_format == "json":
-                with open(safe_output_path, "w", encoding="utf-8") as f:
-                    json.dump(payload, f, indent=2, ensure_ascii=False, default=str)
+                rendered = json.dumps(payload, indent=2, ensure_ascii=False, default=str).encode("utf-8")
             elif output_format == "html":
                 import html
                 body = html.escape(payload["narrative_markdown"]).replace("\n", "<br>\n")
-                with open(safe_output_path, "w", encoding="utf-8") as f:
-                    f.write(
-                        "<!doctype html><html><head><meta charset='utf-8'>"
-                        "<title>BrachyPlan Report</title></head><body>"
-                        "<h1>BrachyPlan Report</h1>"
-                        f"<pre>{html.escape(json.dumps(payload, indent=2, ensure_ascii=False, default=str))}</pre>"
-                        f"<hr><div>{body}</div>"
-                        "</body></html>"
-                    )
+                rendered = (
+                    "<!doctype html><html><head><meta charset='utf-8'>"
+                    "<title>BrachyPlan Report</title></head><body>"
+                    "<h1>BrachyPlan Report</h1>"
+                    f"<pre>{html.escape(json.dumps(payload, indent=2, ensure_ascii=False, default=str))}</pre>"
+                    f"<hr><div>{body}</div>"
+                    "</body></html>"
+                ).encode("utf-8")
+
+            store = current_app.extensions.get("brachybot_workspace_store")
+            user = current_user(store) if store is not None else None
+            session_id = str(flask_session.get("bb_session_id") or "")
+            if not store or not user or not session_id:
+                raise WorkspaceError("Authentication required")
+            import io
+            safe_output_path = str(store.write_artifact(
+                user["id"], session_id, "reports", f"report.{output_format}",
+                io.BytesIO(rendered), expected_bytes=len(rendered),
+            ))
 
             return jsonify({
                 "success": True,
                 "path": safe_output_path,
                 "report_path": safe_output_path,
+                "download_url": artifact_download_url(f"reports/report.{output_format}"),
                 "message": f"Report generated: {safe_output_path}",
             })
 
+        except WorkspaceQuotaExceeded as exc:
+            return jsonify({"error": str(exc)}), 413
         except Exception as e:
             logger.error(f"Report generation failed: {e}")
             return jsonify({"error": str(e)}), 500
@@ -2107,17 +2608,14 @@ def register_planning_routes(app, get_agent):
             import uuid
             img_bytes = _decode_png_data_url(image_data)
 
-            # Save to uploads/screenshots/
-            screenshots_dir = SCREENSHOTS_DIR
-            os.makedirs(screenshots_dir, exist_ok=True)
-
             filename = f"screenshot_{uuid.uuid4().hex[:12]}.png"
-            filepath = os.path.join(screenshots_dir, filename)
-
-            with open(filepath, "wb") as f:
-                f.write(img_bytes)
-
-            url = _make_screenshot_url(filename)
+            store = current_app.extensions.get("brachybot_workspace_store")
+            user = current_user(store) if store is not None else None
+            session_id = str(flask_session.get("bb_session_id") or "")
+            if not user or not session_id:
+                return jsonify({"error": "Authentication required"}), 401
+            filepath = store.write_screenshot(user["id"], session_id, filename, img_bytes)
+            url = f"/api/sessions/{session_id}/screenshots/{filename}"
             logger.info(f"Screenshot saved: {filepath} ({len(img_bytes)} bytes)")
 
             return jsonify({
@@ -2134,18 +2632,22 @@ def register_planning_routes(app, get_agent):
             logger.error(f"Screenshot save failed: {e}")
             return jsonify({"error": str(e)}), 500
 
-    @app.route("/api/screenshots/<filename>")
+    @app.route("/api/sessions/<session_id>/screenshots/<filename>")
     @rate_limit
-    def api_serve_screenshot(filename):
-        """Serve a saved screenshot file."""
-        if not _valid_screenshot_request(filename):
-            return jsonify({"error": "Invalid or expired screenshot link"}), 401
+    def api_serve_screenshot(session_id, filename):
+        """Serve an authenticated screenshot from its owning case workspace."""
+        if not filename.lower().endswith(".png") or "/" in filename or "\\" in filename:
+            return jsonify({"error": "Invalid screenshot filename"}), 400
+        store = current_app.extensions.get("brachybot_workspace_store")
+        user = current_user(store) if store is not None else None
+        if not user:
+            return jsonify({"error": "Authentication required"}), 401
         try:
-            filepath = _safe_screenshot_path(filename)
-        except ValueError as exc:
-            return jsonify({"error": str(exc)}), 400
+            filepath = store.session_artifact_path(user["id"], session_id, "screenshots", filename)
+        except WorkspaceError as exc:
+            return jsonify({"error": str(exc)}), 403
         if not os.path.exists(filepath):
             return jsonify({"error": "File not found"}), 404
-        response = send_from_directory(SCREENSHOTS_DIR, filename, mimetype="image/png")
+        response = send_file(filepath, mimetype="image/png")
         response.headers["Cache-Control"] = "private, max-age=300"
         return response

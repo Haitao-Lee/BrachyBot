@@ -84,7 +84,12 @@
         "bandwidth": 50,
         "hierarchical_optimization": true,
         "segmented_rewards": true,
-        "flip_ratio": 1
+        "flip_ratio": 1,
+        "candidate_limit": 20,
+        "dense_seed_limit": 24,
+        "max_hierarchy_depth": 4,
+        "max_actions_per_episode": 24,
+        "max_wall_seconds": 180
     },
     "color": [
         0.5019607843137255, 0.6823529411764706, 0.5019607843137255,

@@ -836,7 +836,13 @@ function init3DScene() {
         if (!updatePointerNdc(event)) return;
 
         raycaster.setFromCamera(mouse, scene3D.camera);
-        const intersects = raycaster.intersectObjects(Object.values(scene3D.meshes), true);
+        // Endpoint handles are the actionable object. Raycast them first so
+        // a deep OAR surface or the needle shaft cannot steal the context
+        // click from the selected needle endpoint.
+        const objects = Object.values(scene3D.meshes);
+        const handleObjects = objects.filter(obj => obj?.userData?.type === 'needle_handle');
+        const handleHits = raycaster.intersectObjects(handleObjects, true);
+        const intersects = handleHits.length ? handleHits : raycaster.intersectObjects(objects, true);
 
         if (intersects.length > 0) {
             let obj = intersects[0].object;
@@ -973,12 +979,22 @@ function init3DScene() {
     canvas.addEventListener('contextmenu', (event) => {
         event.preventDefault();
 
-        const rect = canvas.getBoundingClientRect();
+        // Use the renderer canvas, not the padded viewer wrapper, so the
+        // context-ray coordinates match the endpoint drag hit test.
+        const rect = interactionCanvas.getBoundingClientRect();
         mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
         mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
 
         raycaster.setFromCamera(mouse, scene3D.camera);
-        const intersects = raycaster.intersectObjects(Object.values(scene3D.meshes), true);
+        // Endpoint handles are the actionable object. Prefer them over a
+        // surface or needle shaft at the same pixel so the context menu can
+        // restore and edit the intended needle deterministically.
+        const objects = Object.values(scene3D.meshes);
+        const handleObjects = objects.filter(obj => obj?.userData?.type === 'needle_handle');
+        const handleHits = raycaster.intersectObjects(handleObjects, true);
+        const intersects = handleHits.length
+            ? handleHits
+            : raycaster.intersectObjects(objects, true);
 
         if (intersects.length > 0) {
             let obj = intersects[0].object;
@@ -986,7 +1002,7 @@ function init3DScene() {
                 obj = obj.parent;
             }
 
-            if (obj.userData.type === 'seed' || obj.userData.type === 'needle') {
+            if (obj.userData.type === 'seed' || obj.userData.type === 'needle' || obj.userData.type === 'needle_handle') {
                 show3DContextMenu(event.clientX, event.clientY, obj);
             }
         }
@@ -1002,6 +1018,7 @@ function init3DScene() {
 
         const type = obj.userData.type;
         const id = obj.userData.id;
+        const needleId = type === 'needle_handle' ? obj.userData.needleId : id;
 
         let items = `<div class="ctx-menu-item" style="opacity:0.5;cursor:default;font-size:0.6rem;">
             <span class="ctx-icon">${type === 'seed' ? '💊' : '📍'}</span> ${type}: ${id}</div>`;
@@ -1029,6 +1046,26 @@ function init3DScene() {
             // Delete needle
             items += `<div class="ctx-menu-item" onclick="hideContextMenu();deleteNeedle3D('${id}')">
                 <span class="ctx-icon">&#128465;</span> Delete</div>`;
+        }
+
+        if (type === 'needle' || type === 'needle_handle') {
+            items += `<div class="ctx-menu-item" onclick="hideContextMenu();restoreNeedleToAlgorithm('${needleId}')">
+                <span class="ctx-icon">&#8634;</span> Restore algorithm position</div>`;
+            items += `<div class="ctx-menu-item" onclick="hideContextMenu();setNeedleVisibilityFrom3D('${needleId}', true)">
+                <span class="ctx-icon">&#128065;</span> Show needle and seeds</div>`;
+            items += `<div class="ctx-menu-item" onclick="hideContextMenu();setNeedleVisibilityFrom3D('${needleId}', false)">
+                <span class="ctx-icon">&#128064;</span> Hide needle and seeds</div>`;
+            items += `<div class="ctx-menu-sep"></div>`;
+            items += `<div class="ctx-menu-item" style="opacity:0.5;cursor:default;font-size:0.6rem;">
+                <span class="ctx-icon">&#127912;</span> Opacity</div>`;
+            for (const opacity of [100, 75, 50, 25]) {
+                items += `<div class="ctx-menu-item" onclick="hideContextMenu();setNeedleOpacityFrom3D('${needleId}', ${opacity / 100})">
+                    <span class="ctx-icon">&#9632;</span> ${opacity}%</div>`;
+            }
+            if (type === 'needle_handle') {
+                items += `<div class="ctx-menu-item" onclick="hideContextMenu();deleteNeedle3D('${needleId}')">
+                    <span class="ctx-icon">&#128465;</span> Delete</div>`;
+            }
         }
 
         items += `<div class="ctx-menu-sep"></div>`;
@@ -2057,9 +2094,13 @@ function _getCurrentPrescriptionGy() {
 const COLORBAR_MIN_GY = 0.0;
 const COLORBAR_MAX_GY = 600.0;
 
-const DOSE_COLORBAR_STORAGE_KEY = 'brachybot.doseColorbar.v2';
+// Bump the preference key so existing browser-local "Hot" selections do not
+// silently override the clinical default selected for new case workspaces.
+// Bump the preference namespace so the new PET-rainbow 2D default is not
+// silently replaced by a palette saved by an older release.
+const DOSE_COLORBAR_STORAGE_KEY = 'brachybot.doseColorbar.v4';
 const _doseColorbarDefaults = Object.freeze({
-    twoD: Object.freeze({ minGy: COLORBAR_MIN_GY, maxGy: COLORBAR_MAX_GY, palette: 'hot' }),
+    twoD: Object.freeze({ minGy: COLORBAR_MIN_GY, maxGy: COLORBAR_MAX_GY, palette: 'petRainbow2' }),
     threeD: Object.freeze({ minGy: 0, maxGy: 200, palette: 'petRainbow2' }),
 });
 let _doseColorbarConfig = null;
@@ -2396,7 +2437,7 @@ async function applyDoseColorbarSettings() {
     const minGy = Number(document.getElementById('doseColorbarMinInput')?.value);
     const maxGy = Number(document.getElementById('doseColorbarMaxInput')?.value);
     const palette = document.getElementById('doseColorbarPalette')?.value
-        || (scope === 'twoD' ? 'hot' : 'petRainbow2');
+        || 'petRainbow2';
     if (!Number.isFinite(minGy) || !Number.isFinite(maxGy) || maxGy <= minGy) {
         alert('Colorbar maximum must be greater than minimum.');
         return;
@@ -2991,6 +3032,73 @@ function showNeedleSeeds(needleId) {
 
     // Highlight all seeds on this needle
     seedsOnNeedle.forEach(s => highlightSeed(s.id));
+}
+
+function setNeedleVisibilityFrom3D(needleId, visible) {
+    const needle = dataTreeState.planning.needles.find(n => n.id === needleId);
+    if (!needle) return;
+    needle.visible = !!visible;
+    const mesh = scene3D.meshes[needleId];
+    if (mesh) applyMeshVisibility(mesh, needle.visible, needle.opacity ?? 0.8);
+    if (typeof _setNeedleHandlesVisibility === 'function') {
+        _setNeedleHandlesVisibility(needleId, needle.visible, needle.opacity ?? 0.8);
+    }
+    dataTreeState.planning.seeds
+        .filter(seed => seed.trajectory_id === needle.trajectory_id)
+        .forEach(seed => {
+            seed.visible = !!visible;
+            const seedMesh = scene3D.meshes[seed.id];
+            if (seedMesh) applyMeshVisibility(seedMesh, seed.visible, seed.opacity ?? 1.0);
+        });
+    renderDataTree();
+    redrawSeedNeedleOverlays();
+    if (typeof syncUIBridgeState === 'function') syncUIBridgeState('planning.needle.visibility').catch(() => {});
+}
+
+function setNeedleOpacityFrom3D(needleId, opacity) {
+    const needle = dataTreeState.planning.needles.find(n => n.id === needleId);
+    if (!needle) return;
+    const value = Math.max(0, Math.min(1, Number(opacity)));
+    needle.opacity = value;
+    const mesh = scene3D.meshes[needleId];
+    if (mesh) applyMeshOpacity(mesh, value, needle.visible !== false);
+    if (typeof _setNeedleHandlesVisibility === 'function') {
+        _setNeedleHandlesVisibility(needleId, needle.visible !== false, value);
+    }
+    dataTreeState.planning.seeds
+        .filter(seed => seed.trajectory_id === needle.trajectory_id)
+        .forEach(seed => {
+            seed.opacity = Math.max(0.15, value);
+            const seedMesh = scene3D.meshes[seed.id];
+            if (seedMesh) applyMeshOpacity(seedMesh, seed.opacity, seed.visible !== false);
+        });
+    renderDataTree();
+    redrawSeedNeedleOverlays();
+    if (typeof syncUIBridgeState === 'function') syncUIBridgeState('planning.needle.opacity').catch(() => {});
+}
+
+async function restoreNeedleToAlgorithm(needleId) {
+    addChat('system', `Restoring ${needleId} and its seeds to the algorithm plan...`);
+    try {
+        const res = await fetch(API + '/manual_planning/restore_needle', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ session_id: _activeApiSessionId(), needle_id: needleId }),
+        });
+        const data = await res.json().catch(() => null);
+        if (!res.ok || !data || !data.success) {
+            throw new Error((data && data.error) || `HTTP ${res.status}`);
+        }
+        await loadSeeds3D();
+        if (typeof refreshPlanningUI === 'function') await refreshPlanningUI();
+        if (typeof loadAllSlices === 'function' && state.ctLoaded) await loadAllSlices();
+        addChat('system', `${needleId} restored to the algorithm position; associated seeds and dose were recomputed.`);
+        reportUIEvent('manual.needle.restore', needleId, {});
+        return data;
+    } catch (error) {
+        addChat('error', `Needle restore failed: ${error.message}`);
+        return null;
+    }
 }
 
 /******** VIEWER INTERACTIVE TOOLS (Slicer-like) ********/

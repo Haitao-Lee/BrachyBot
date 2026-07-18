@@ -335,6 +335,7 @@ def build_prescription_rationale(memory: Any) -> Dict[str, Any]:
                 "rationale has been applied. A clinician must confirm the site and prescription."
             )
 
+    source_records = [item for item in (_source_link_item(url) for url in sources) if item]
     return {
         "prescription_gy": rx_gy,
         "prescription_source": rx_source,
@@ -342,7 +343,10 @@ def build_prescription_rationale(memory: Any) -> Dict[str, Any]:
         "rationale": rationale,
         "target_criteria": target,
         "oar_criteria": oar,
-        "sources": [item for item in (_source_link_item(url) for url in sources) if item],
+        # Keep ``sources`` as URL strings for legacy callers and expose the
+        # verified human-readable title beside them for new report renderers.
+        "sources": [item["url"] for item in source_records],
+        "source_records": source_records,
         "clinical_boundary": (
             "A clinician-confirmed prescription dose or rationale overrides this generated text."
         ),

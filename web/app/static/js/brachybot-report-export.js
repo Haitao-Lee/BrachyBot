@@ -226,7 +226,7 @@ function reportReset() {
     renderReportEditor(); _updateReportPreview(); _scheduleReportAutoSave();
 }
 
-// ----- 14. Auto-save to localStorage -----
+// ----- 14. Durable workspace auto-save -----
 let _reportAutoSaveTimer = null;
 function _scheduleReportAutoSave() {
     if (_reportAutoSaveTimer) clearTimeout(_reportAutoSaveTimer);
@@ -238,13 +238,10 @@ function _reportAutoSave() {
     try {
         const f = window.reportForm;
         f.editedFields = Array.from(f.editedFields);
-        const key = typeof caseStorageKey === 'function'
-            ? caseStorageKey('brachyplan_reportForm')
-            : 'brachyplan_reportForm:web';
-        localStorage.setItem(key, JSON.stringify(f));
         f.editedFields = new Set(f.editedFields);
         const t = document.getElementById('reportAutoSaveText');
         if (t) t.textContent = 'Auto-save: ' + new Date().toLocaleTimeString();
+        if (typeof scheduleWorkspaceSave === 'function') scheduleWorkspaceSave('report.changed');
     } catch (e) {}
 }
 
@@ -318,45 +315,36 @@ function _localizedEmptyReportForm(language) {
     };
 }
 
-function _loadReportFromStorage() {
+// ----- 15. Save / Load JSON -----
+async function _persistGeneratedReportArtifact(blob, filename) {
+    if (!window.brachybotAuth?.user) return null;
     try {
-        const key = typeof caseStorageKey === 'function'
-            ? caseStorageKey('brachyplan_reportForm')
-            : 'brachyplan_reportForm:web';
-        const stored = localStorage.getItem(key);
-        if (!stored) return;
-        const parsed = JSON.parse(stored);
-        if (parsed && typeof parsed === 'object' && parsed.version) {
-            parsed.editedFields = new Set(parsed.editedFields || []);
-            // BUG FIX 2026-06-17: when restoring from localStorage,
-            // sync the report language with the GLOBAL UI language.
-            // Previously the report kept its stored language (often
-            // 'zh' from a prior session) even when the global default
-            // was 'en', leaving Chinese content visible until the
-            // user manually toggled. Now we align to global
-            // (window._i18nLang) on every restore.
-            try {
-                const globalLang = (typeof window._i18nLang === 'string')
-                    ? window._i18nLang : 'en';
-                if (parsed.language !== globalLang) {
-                    parsed.language = globalLang;
-                }
-            } catch (_) {}
-            window.reportForm = parsed;
-        }
-    } catch (e) {}
+        const form = new FormData();
+        form.append('category', 'reports');
+        form.append('file', new File([blob], filename, { type: blob.type || 'application/octet-stream' }));
+        const response = await fetch('/api/workspace/artifacts', { method: 'POST', body: form });
+        const data = await response.json().catch(() => null);
+        if (!response.ok) throw new Error(data?.error || `HTTP ${response.status}`);
+        return data;
+    } catch (error) {
+        // Downloads still succeed locally if a transient workspace upload
+        // fails; the durable form state remains checkpointed separately.
+        console.warn('[report] workspace artifact save failed:', error);
+        return null;
+    }
 }
 
-// ----- 15. Save / Load JSON -----
 function reportSaveJSON() {
     const f = window.reportForm;
     f.editedFields = Array.from(f.editedFields);
     const blob = new Blob([JSON.stringify(f, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = url; a.download = `brachybot-report-${(f.case.patientId || 'form')}-${new Date().toISOString().slice(0, 10)}.json`;
+    const filename = `brachybot-report-${(f.case.patientId || 'form')}-${new Date().toISOString().slice(0, 10)}.json`;
+    a.href = url; a.download = filename;
     document.body.appendChild(a); a.click(); document.body.removeChild(a);
     URL.revokeObjectURL(url);
+    void _persistGeneratedReportArtifact(blob, filename);
     f.editedFields = new Set(f.editedFields);
     _setReportStatus('Saved JSON', 'ok');
 }
@@ -828,9 +816,11 @@ function exportReportHTML() {
     const blob = new Blob([html], { type: 'text/html' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = url; a.download = `brachybot-report-${(f.case.patientId || 'form')}-${new Date().toISOString().slice(0, 10)}.html`;
+    const filename = `brachybot-report-${(f.case.patientId || 'form')}-${new Date().toISOString().slice(0, 10)}.html`;
+    a.href = url; a.download = filename;
     document.body.appendChild(a); a.click(); document.body.removeChild(a);
     URL.revokeObjectURL(url);
+    void _persistGeneratedReportArtifact(blob, filename);
     _setReportStatus('Saved HTML', 'ok');
 }
 
@@ -873,9 +863,11 @@ function exportReportMarkdown() {
     const blob = new Blob([md], { type: 'text/markdown' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = url; a.download = `brachybot-report-${(f.case.patientId || 'form')}-${new Date().toISOString().slice(0, 10)}.md`;
+    const filename = `brachybot-report-${(f.case.patientId || 'form')}-${new Date().toISOString().slice(0, 10)}.md`;
+    a.href = url; a.download = filename;
     document.body.appendChild(a); a.click(); document.body.removeChild(a);
     URL.revokeObjectURL(url);
+    void _persistGeneratedReportArtifact(blob, filename);
     _setReportStatus('Saved MD', 'ok');
 }
 
@@ -1045,14 +1037,21 @@ if (document.readyState === 'loading') {
 // the handler closure never ran — init() was never invoked.
 // =============================================================================
 uiDebugLog('[BOOT] BrachyBot starting…');
+let _brachyBotApplicationStarted = false;
+window.startBrachyBotApplication = async function startBrachyBotApplication() {
+    if (_brachyBotApplicationStarted) return;
+    if (window.brachybotAuth && !(await window.brachybotAuth.authenticated())) return;
+    _brachyBotApplicationStarted = true;
+    try { await init(); } catch (error) { console.error('[BOOT] init() rejected:', error); }
+};
 try {
     if (typeof init === 'function') {
         if (document.readyState === 'loading') {
-            document.addEventListener('DOMContentLoaded', () => init().catch(e => console.error('[BOOT] init() rejected:', e)));
+            document.addEventListener('DOMContentLoaded', () => window.startBrachyBotApplication());
         } else {
             // Fire after a tick so the report module (which also boots
             // at the end of this script) can finish its own setup first.
-            setTimeout(() => init().catch(e => console.error('[BOOT] init() rejected:', e)), 0);
+            setTimeout(() => window.startBrachyBotApplication(), 0);
         }
     } else {
         console.error('[BOOT] init() not declared');

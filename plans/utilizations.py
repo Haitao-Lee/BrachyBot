@@ -861,7 +861,7 @@ def single_dose_calculation_v2(pos, direc, dose_image, dose_cal_model):
     return pred_labels.squeeze(0).squeeze(0).detach().cpu().numpy()
 
 
-def single_seed_dose_calculation_dl(pos, direc, dose_image, dose_cal_model, infer_image_size, seed_info, image_normalize_min, image_normalize_max, image_normalize_scale, dose_context=None):
+def single_seed_dose_calculation_dl(pos, direc, dose_image, dose_cal_model, infer_image_size, seed_info, image_normalize_min, image_normalize_max, image_normalize_scale, dose_context=None, deadline=None):
     """Predict one seed with the deployed spacing-normalized DoseUNet.
 
     The long signature is retained for planner compatibility. The new model
@@ -890,6 +890,7 @@ def single_seed_dose_calculation_dl(pos, direc, dose_image, dose_cal_model, infe
         direction_lps / direction_norm,
         dose_image,
         dose_cal_model,
+        deadline=deadline,
     )
 
 
@@ -1008,7 +1009,8 @@ def _legacy_batch_seed_dose_calculation_dl(seeds, dose_image, dose_cal_model, in
 
 
 def batch_seed_dose_calculation_dl(seeds, dose_image, dose_cal_model, infer_image_size, seed_info,
-                                   image_normalize_min, image_normalize_max, image_normalize_scale):
+                                   image_normalize_min, image_normalize_max, image_normalize_scale,
+                                   deadline=None):
     """Predict dose maps with the deployed spacing-normalized DoseUNet.
 
     This public adapter preserves the old planner signature and input
@@ -1016,9 +1018,9 @@ def batch_seed_dose_calculation_dl(seeds, dose_image, dose_cal_model, infer_imag
     crop, so each seed is evaluated independently and returned on the original
     CT grid for unchanged DVH and visualization code.
     """
-    from .dose_pre.inference import predict_seed_dose
+    from .dose_pre.inference import predict_seed_doses
 
-    dose_maps = []
+    particles = []
     for seed in seeds:
         throttled_process_events()
         if len(seed) < 2:
@@ -1038,16 +1040,15 @@ def batch_seed_dose_calculation_dl(seeds, dose_image, dose_cal_model, infer_imag
         direction_norm = float(np.linalg.norm(direction_lps))
         if direction_norm <= 1e-8:
             raise ValueError("DoseUNet seed direction must be non-zero")
-        dose_maps.append(
-            predict_seed_dose(
-                position_xyz,
-                direction_lps / direction_norm,
-                dose_image,
-                dose_cal_model,
-                seed_weight=weight,
-            )
+        particles.append(
+            (position_xyz, direction_lps / direction_norm, weight)
         )
-    return dose_maps
+    return predict_seed_doses(
+        particles,
+        dose_image,
+        dose_cal_model,
+        deadline=deadline,
+    )
 
 
 
@@ -3040,7 +3041,9 @@ def generate_hierarchical_state_spaces(
     in_lowest_dose: float,
     target_DVH_rate: float,
     band_width: int,
-    progressDialog: Any
+    progressDialog: Any,
+    max_levels: int | None = None,
+    deadline: float | None = None,
 ):
     """
     Generate hierarchical non-interfering trajectory combinations.
@@ -3119,21 +3122,37 @@ def generate_hierarchical_state_spaces(
         prev_items.append((selected_list, dvh_rate, combined_vec))
     
 
-    # Hierarchical expansion loop
-    
-    while True:
+    # Every expansion adds a new unique trajectory, so the maximum possible
+    # combination depth is finite.  Keep that invariant explicit: formerly the
+    # ``while True`` exit depended solely on generated candidates, which made a
+    # malformed or duplicated trajectory list needlessly expensive to debug.
+    max_levels = n_traj if max_levels is None else max(1, min(int(max_levels), n_traj))
+    budget_exhausted = False
+    while n <= max_levels:
+        if deadline is not None and time.monotonic() >= deadline:
+            logger.warning(
+                "[rl] Hierarchical trajectory expansion reached its wall-clock budget at depth %d",
+                n,
+            )
+            break
         # print(f"Generating hierarchical level {n}...")
         new_triplets = []  # will collect tuples (new_selected_list, DVH_rate, combined_target_vec)
 
         # Expand each item from prev_items by adding one more trajectory
         # for base_selected_list, base_dvh, base_vec in tqdm(prev_items, total=len(prev_items)):
         for base_selected_list, _, base_vec in prev_items:
+            if deadline is not None and time.monotonic() >= deadline:
+                budget_exhausted = True
+                break
             # base_selected_list is like [[idx, traj, seeds, radiations, acc_radiation], ...]
             base_idxs = [int(elem[0]) for elem in base_selected_list]
             last_idx = base_idxs[-1]
 
             # Candidate loop over all trajectories (preserve original ordering constraints)
             for pos in range(n_traj):
+                if deadline is not None and time.monotonic() >= deadline:
+                    budget_exhausted = True
+                    break
                 progressDialog.setValue(55)
                 progressDialog.setLabelText("Initial Planning...")
                 throttled_process_events() 
@@ -3166,6 +3185,15 @@ def generate_hierarchical_state_spaces(
 
                 if DVH_rate_val >= target_DVH_rate:
                     DVH_sign = True
+
+            if budget_exhausted:
+                break
+
+        if budget_exhausted:
+            logger.warning(
+                "[rl] Hierarchical trajectory expansion stopped at its wall-clock budget"
+            )
+            break
 
         # if no new candidates, stop
         if not new_triplets:
@@ -3244,15 +3272,60 @@ def hierarchical_planning_rf(
     optimal_reward : float
         Best cumulative return achieved.
     """
-    
+    rf_params = dict(rf_params or {})
     
     
     
     
 
+    # ---- Interactive RL execution budget ----
+    # These bounds protect the clinical web workflow from an accidental
+    # combinatorial search.  They do not change the dose engine, coordinate
+    # transform, or configured episode count.  Explicit larger values remain
+    # available to offline research runs through ``rf_params``.
+    def _positive_int(name, default):
+        try:
+            value = int(rf_params.get(name, default))
+        except (TypeError, ValueError):
+            value = default
+        return value if value > 0 else default
+
+    candidate_limit = _positive_int("candidate_limit", 20)
+    dense_seed_limit = _positive_int("dense_seed_limit", 24)
+    max_hierarchy_depth = _positive_int("max_hierarchy_depth", 4)
+    try:
+        max_wall_seconds = float(rf_params.get("max_wall_seconds", 180.0))
+    except (TypeError, ValueError):
+        max_wall_seconds = 180.0
+    deadline = (
+        time.monotonic() + max_wall_seconds
+        if np.isfinite(max_wall_seconds) and max_wall_seconds > 0.0
+        else None
+    )
+    model_device = next(dose_cal_model.parameters()).device
+    logger.info(
+        "[rl] interactive budget: device=%s, wall=%.1fs, candidates=%d, "
+        "dense-seeds-per-trajectory=%d, actions-per-episode=%d",
+        model_device,
+        max_wall_seconds,
+        candidate_limit,
+        dense_seed_limit,
+        _positive_int("max_actions_per_episode", 24),
+    )
+
+    if len(candidate_trajectories) > candidate_limit:
+        logger.info(
+            "[rl] Restricting %d safety-validated trajectories to the top %d "
+            "for interactive RL planning",
+            len(candidate_trajectories), candidate_limit,
+        )
+        candidate_trajectories = list(candidate_trajectories[:candidate_limit])
+
     # ---- binary target mask & voxel count ----
     mask_volume = (radiation_volume == target_value).astype(float)
     target_v = int(mask_volume.sum())
+    if target_v <= 0:
+        return [], -np.inf
     
 
     # ---- 1.  Dense seed evaluation on every candidate trajectory ----
@@ -3266,7 +3339,14 @@ def hierarchical_planning_rf(
     #     enumerate(candidate_trajectories),
     #     total=len(candidate_trajectories),
     # ):
+    total_dense_seeds = 0
     for idx, traj in enumerate(candidate_trajectories):
+        if deadline is not None and time.monotonic() >= deadline:
+            logger.warning(
+                "[rl] Dense trajectory evaluation reached the %.1fs wall-clock budget after %d/%d candidates",
+                max_wall_seconds, idx, len(candidate_trajectories),
+            )
+            break
         try:
             
             radiation = np.zeros_like(radiation_volume, dtype=float)
@@ -3279,20 +3359,43 @@ def hierarchical_planning_rf(
             effective_range = get_available_position(traj, dense_seeds, seed_info, dose_image, distance_map)
             throttled_process_events()  
             target_v = np.sum(mask_volume)
+            dense_iterations = 0
             while len(effective_range) > 0:
+                if deadline is not None and time.monotonic() >= deadline:
+                    logger.warning("[rl] Dense seed evaluation reached its wall-clock budget")
+                    break
+                if dense_iterations >= dense_seed_limit:
+                    logger.info(
+                        "[rl] Dense seed evaluation capped trajectory %d at %d seeds",
+                        idx, dense_seed_limit,
+                    )
+                    break
                 progressDialog.setValue(55)
                 progressDialog.setLabelText("Initial Planning...")
                 throttled_process_events()   
                 
                 cur_point = np.copy(point)
                 cur_radiation = np.copy(radiation)
-                updated_point = np.array(point + effective_range[0] * update_direction)
+                previous_range = list(effective_range)
+                selected_length = previous_range[0]
+                updated_point = np.array(point + selected_length * update_direction)
                 cur_point = np.copy(updated_point)
                 dense_seeds.append((cur_point, direction))
                 radiation = cur_radiation
                 effective_range = get_available_position(traj, dense_seeds, seed_info, dose_image, distance_map)
                 throttled_process_events()  
+                dense_iterations += 1
+                # A selected candidate must be excluded by the new seed.  This
+                # makes termination independent of the historical geometric
+                # side effect and fails closed for invalid seed spacing.
+                if selected_length in effective_range or len(effective_range) >= len(previous_range):
+                    logger.error(
+                        "[rl] Dense seed range did not shrink for trajectory %d; stopping this candidate",
+                        idx,
+                    )
+                    break
             if len(dense_seeds) > 0:
+                dense_started = time.perf_counter()
                 cur_single_seed_radiations = batch_seed_dose_calculation_dl(dense_seeds, 
                                                                             dose_image, 
                                                                             dose_cal_model, 
@@ -3300,7 +3403,14 @@ def hierarchical_planning_rf(
                                                                             seed_info,
                                                                             image_normalize_min, 
                                                                             image_normalize_max, 
-                                                                            image_normalize_scale)
+                                                                            image_normalize_scale,
+                                                                            deadline=deadline)
+                logger.info(
+                    "[rl] dense DoseUNet evaluation: trajectory=%d seeds=%d elapsed=%.2fs",
+                    idx,
+                    len(dense_seeds),
+                    time.perf_counter() - dense_started,
+                )
                 cur_seeds_radiations = sum(cur_single_seed_radiations)
                 cur_DVH_rate = np.sum(cur_seeds_radiations*mask_volume > in_lowest_dose) / target_v
 
@@ -3308,13 +3418,26 @@ def hierarchical_planning_rf(
                     target_level = 1
 
                 traj_with_seeds.append([[[idx, traj, dense_seeds, cur_single_seed_radiations, cur_seeds_radiations]], cur_DVH_rate])
+                total_dense_seeds += len(dense_seeds)
                 del radiation, cur_radiation
         except Exception as e:
-            
+            from .dose_pre.inference import DoseInferenceDeadlineExceeded
+            if isinstance(e, DoseInferenceDeadlineExceeded):
+                logger.warning("[rl] Dense DoseUNet evaluation reached its wall-clock budget")
+                break
             print(f"hierarchical_planning_rf trajectory {idx} error: {str(e)}")
             continue
 
     
+
+    if not traj_with_seeds:
+        logger.warning("[rl] No trajectory produced a valid dense seed set")
+        return [], -np.inf
+
+    logger.info(
+        "[rl] Dense evaluation retained %d trajectories and %d seed candidates",
+        len(traj_with_seeds), total_dense_seeds,
+    )
 
     # ---- 2.  Build hierarchical state spaces when needed ----
     
@@ -3322,7 +3445,8 @@ def hierarchical_planning_rf(
         
         hierarchical_available_traj_with_seeds, target_level, DVH_res = generate_hierarchical_state_spaces(
             traj_with_seeds, seed_info, dose_image, interval_rate,
-            mask_volume, target_v, in_lowest_dose, DVH_rate, rf_params['bandwidth'], progressDialog
+            mask_volume, target_v, in_lowest_dose, DVH_rate, rf_params['bandwidth'], progressDialog,
+            max_levels=max_hierarchy_depth, deadline=deadline,
         )
         
         # if not DVH_res:
@@ -3386,7 +3510,9 @@ def hierarchical_planning_rf(
         image_normalize_max,
         image_normalize_scale,
         DVH_rate,
-        progressDialog
+        progressDialog,
+        deadline=deadline,
+        max_actions_per_episode=_positive_int("max_actions_per_episode", 24),
     )
 
     return optimal_plan, optimal_reward
@@ -3437,16 +3563,26 @@ def put_seeds(radiation_volume, dose_image, dose_cal_model, infer_img_size, radi
 
     effective_range = get_available_position(trajectory, seeds, seed_info, dose_image, distance_map)
     target_v = np.sum(mask_volume)
+    if target_v <= 0:
+        logger.warning("[put_seeds] Target mask is empty; no seeds can be placed")
+        return seeds, 0.0, single_seed_radiations
     cur_DVH_rate = np.sum(radiation * mask_volume > in_lowest_dose) / target_v
-    
-
+    max_iterations = len(effective_range)
+    iterations = 0
     while len(effective_range) > 0 and cur_DVH_rate < DVH_rate:
+        if iterations >= max_iterations:
+            logger.error(
+                "[put_seeds] Candidate range did not converge; stopping the trajectory"
+            )
+            break
         cur_point = np.copy(point)
         cur_seed_radiation = 0
         cur_radiation = np.copy(radiation)
         throttled_process_events()
 
-        updated_point = np.array(point + effective_range[0] * update_direction)
+        previous_range = list(effective_range)
+        selected_length = previous_range[0]
+        updated_point = np.array(point + selected_length * update_direction)
         
         cur_seed_radiation = single_seed_dose_calculation_dl(
             updated_point.astype(int).reshape(-1),
@@ -3471,6 +3607,12 @@ def put_seeds(radiation_volume, dose_image, dose_cal_model, infer_img_size, radi
         if cur_DVH_rate >= DVH_rate:
             break
         effective_range = get_available_position(trajectory, seeds, seed_info, dose_image, distance_map)
+        iterations += 1
+        if selected_length in effective_range or len(effective_range) >= len(previous_range):
+            logger.error(
+                "[put_seeds] Selected seed position was not retired from the candidate range"
+            )
+            break
 
 
     return seeds, cur_DVH_rate, single_seed_radiations
@@ -3503,22 +3645,36 @@ def get_available_position(trajectory, seeds, seed_info, dose_image, distance_ma
     excluding positions within the influence zone of already-placed seeds.
     """
     
-    spacing = np.array(dose_image.GetSpacing()).reshape(-1)
+    spacing = np.asarray(dose_image.GetSpacing(), dtype=np.float64).reshape(-1)
     # Convert the starting point of the trajectory into a flat NumPy array.
     point = np.array(trajectory[0]).reshape(-1)
     
-    world_p = position_transform(dose_image, point)[0]
-    
     # Normalize the trajectory direction vector to obtain a unit vector.
-    direction = np.array(trajectory[1]).reshape(-1)
-    direction = direction / np.linalg.norm(direction)
+    direction = np.asarray(trajectory[1], dtype=np.float64).reshape(-1)
+    direction_norm = float(np.linalg.norm(direction))
+    if direction.size != 3 or not np.isfinite(direction_norm) or direction_norm <= 1e-12:
+        logger.warning("[get_avail_pos] Invalid zero/non-finite trajectory direction; no seed positions are available")
+        return []
+    direction = direction / direction_norm
     
     # Identify the index of the component in the direction vector with the largest absolute value.
     max_index = np.argmax(np.abs(direction))
-    update_direction = direction / np.abs(direction[max_index])
+    dominant_component = float(np.abs(direction[max_index]))
+    if dominant_component <= 1e-12 or not np.isfinite(dominant_component):
+        logger.warning("[get_avail_pos] Trajectory direction cannot advance through voxel space")
+        return []
+    update_direction = direction / dominant_component
+
+    # Do not touch image geometry until the trajectory itself is valid.  This
+    # makes malformed user/manual input fail cheaply and deterministically.
+    world_p = position_transform(dose_image, point)[0]
 
     # Convert the seed's influence radius into the number of voxels along the trajectory direction.
-    seed_volume_length = seed_info['length']/spacing[2-max_index] #  spacing[max_index]
+    spacing_axis = float(spacing[2 - max_index])
+    if spacing_axis <= 0 or not np.isfinite(spacing_axis):
+        logger.warning("[get_avail_pos] Invalid image spacing; no seed positions are available")
+        return []
+    seed_volume_length = seed_info['length'] / spacing_axis #  spacing[max_index]
 
     # Extract target depths and background depths from the trajectory.
     target_depths = trajectory[2]

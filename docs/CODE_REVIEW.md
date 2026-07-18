@@ -4633,3 +4633,172 @@ its original mapping.
   `brachybot-chat-todo.js`; remote `git diff --check` passed.
 - A full clinical run and browser automation were not performed in this batch;
   the changes preserve the existing coordinate conversion and planning engines.
+
+## Round 22 Embedded hard-obstacle preservation and needle baseline restore (2026-07-18)
+
+### Confirmed findings
+
+The prior obstacle whitelist was correct for the installed TotalSegmentator
+label map, but it did not preserve hard structures emitted by a CTV model when
+a later full OAR segmentation replaced the shared `oar_array`. In particular,
+the pancreatic CTV model emits artery/vein voxels in its own local label
+namespace; those voxels could disappear from the planning obstacle volume.
+The 3D endpoint context menu also had no route back to the immutable automatic
+plan, and its context raycast could hit a shaft or surface before the endpoint
+handle.
+
+### Corrective changes
+
+- Preserve CTV-model hard structures in `ctv_embedded_oar_array` and merge them
+  into the planning OAR grid under a private, non-clinical label. The private
+  label is added to the active obstacle whitelist and is never exposed as a
+  clinical organ name.
+- Resolve hard obstacles from the installed TotalSegmentator names, the
+  current Data Tree `non_traversable` category, stored runtime organ names,
+  and the embedded CTV hard mask. The final original-grid physical needle
+  validator remains the last safety gate before automatic results are
+  published.
+- Save a compact `algorithm_plan_snapshot` after each successful automatic
+  seed plan. It contains world-coordinate seed positions/directions and the
+  validated 150 mm needle endpoints, without serializing dose tensors.
+- Add `POST /api/manual_planning/restore_needle`. It restores one needle and
+  only its associated seeds from that snapshot, recomputes the trained
+  DoseUNet dose, and returns the refreshed plan state. No client-supplied
+  geometry can replace the saved algorithm baseline.
+- Make 3D endpoint handles win right-click hit testing. Endpoint and needle
+  context menus now expose baseline restore, show/hide, opacity, seed listing,
+  and deletion; the Data Tree needle menu uses the same restore action.
+- Bump the dose colorbar preference namespace to v4 so existing browsers do
+  not retain an older palette as the new default; the 2D default is PET
+  Rainbow.
+
+### Round 22 verification
+
+- `tests/test_needle_obstacle_safety.py`, `tests/test_planning_loop_guards.py`,
+  and `tests/test_rl_termination_and_batched_dose.py`: **12 passed, 1 skipped**
+  (optional `gymnasium` dependency unavailable).
+- Python compilation passed for the planning pipeline, agent, planning routes,
+  and obstacle regression tests.
+- Node syntax checks passed for `brachybot-3d-manual.js` and
+  `brachybot-viewer-volume.js`.
+- `git diff --check` passed. A live WebGL session still needs the RTX host for
+  visual confirmation of endpoint right-click and rendered bone avoidance.
+
+## Round 23 Bone obstacle enforcement and verified-rendering hardening (2026-07-18)
+
+### Confirmed findings
+
+The prior safety logic correctly classified TotalSegmentator vertebrae, ribs,
+sternum, cartilage, and other hard structures, but two edge paths could still
+make the policy appear ineffective. First, the private label used to preserve
+CTV-model hard structures was converted to `uint8` during planning-grid
+resampling; values above 255 wrapped and no longer matched the whitelist.
+Second, the 3D seed endpoint API accepted explicit serialized trajectory points
+before consulting the automatic pipeline's validated geometry. That was safe
+for manually edited plans but could bypass the automatic validation contract
+if such a field appeared in an automatic record.
+
+### Corrective changes
+
+- Preserve OAR and embedded obstacle label values as `int32` during nearest
+  neighbour resampling. This keeps private embedded labels and all bone label
+  IDs lossless, so the candidate radiation volume and final physical needle
+  validator see the same hard-mask voxels.
+- Automatic 3D needles now require `verified_needle_geometry`; serialized
+  explicit trajectory points are accepted only when the workspace is in a
+  validated manual-needle state. The viewer can no longer render a second,
+  unchecked automatic needle geometry.
+- Right-click hit testing now prioritizes endpoint handles over anatomical
+  surfaces and needle shafts, making baseline restore deterministic even when
+  objects overlap in screen space.
+
+### Verification
+
+- Bone regression test: TotalSegmentator label 26 (`vertebrae_S1`) remains
+  label 26 after planning-grid resampling and is converted to an obstacle voxel.
+- `tests/test_needle_obstacle_safety.py`: **5 passed**.
+- The earlier liveness/obstacle suite remains green: **12 passed, 1 skipped**
+  (optional `gymnasium` dependency unavailable).
+- Python compilation, Node syntax checks, and `git diff --check` remain part of
+  the final verification. A live RTX WebGL run is still required to visually
+  confirm the exact patient case after deployment.
+
+## Round 24 Physical OAR alignment and display-time obstacle gate (2026-07-18)
+
+### Confirmed root cause
+
+The remaining report that needles crossed bone masks was consistent with a
+real spatial-contract defect in the TotalSegmentator adapter. Its output was
+read with nibabel and transposed from `(X, Y, Z)` to `(Z, Y, X)`, but the
+NIfTI affine was discarded. TotalSegmentator may canonicalize or reorient its
+NIfTI output, so equal array shapes did not guarantee equal physical
+locations. The CT, OAR Data Tree, and needle validator could therefore use
+different anatomical positions while all appearing internally valid.
+
+### Corrective changes
+
+- Removed the raw nibabel transpose path from
+  `tool_factory/OAR_seg/totalsegmentator_oar.py`.
+- Read the generated NIfTI with SimpleITK and resampled it onto the exact
+  input CT grid with the identity physical transform and nearest-neighbour
+  interpolation. Label IDs are preserved as `int32`/`uint16` and the returned
+  array is explicitly `(Z, Y, X)`.
+- Added a physical-origin regression test proving that a shifted exported
+  bone label lands on the corresponding CT voxel, rather than merely on the
+  same array index.
+- The `/api/planning/seeds_3d` response now revalidates every automatic and
+  manual needle against the current Data Tree hard-obstacle policy immediately
+  before rendering. If a category was changed after planning, or a stale
+  geometry record is unsafe, that needle is withheld instead of being drawn.
+  This uses the same SimpleITK physical-coordinate validator as planning and
+  does not introduce a second coordinate convention.
+
+### Verification
+
+- `tests/test_oar_spatial_alignment.py`, the obstacle policy tests, and the
+  needle safety tests: **10 passed**.
+- Full local suite: **153 passed, 1 skipped**. The skipped test requires the
+  optional `gymnasium` dependency.
+- Python compilation passed for the changed OAR adapter, planning pipeline,
+  and viewer routes. Node syntax checks passed for the 3D/viewer scripts, and
+  `git diff --check` passed.
+- A live patient run on the RTX host is still required to confirm the exact
+  current case after deployment; until then, the server intentionally fails
+  closed by withholding any needle whose physical validation cannot be
+  completed.
+
+## Round 25 Direct-tool obstacle-policy closure (2026-07-18)
+
+### Confirmed finding
+
+The unified `planning_pipeline` already removed unsafe candidates before seed
+optimization, but the legacy public entry points `trajectory_planning` and
+the standalone seed-planning tools could still be invoked directly by an LLM.
+Those calls consumed caller-provided or previously cached trajectories, so a
+stale list could bypass the current Data Tree non-traversable classification.
+The 3D rendering gate alone was therefore insufficient: it could hide an
+unsafe line after an optimizer had already used it.
+
+### Corrective changes
+
+- `BrachyAgent` now builds the active radiation volume from the current CTV,
+  OAR, embedded hard structures, mandatory bone/vessel baseline, and current
+  Data Tree additions before direct planning-tool execution.
+- Direct `trajectory_planning` calls receive that authoritative volume rather
+  than stale/client-supplied geometry. Returned candidates are filtered by the
+  same voxel-path gate and the complete physical 150 mm needle validator.
+- Direct `seed_planning`, `seed_planning_rule_based`, and `seed_planning_rl`
+  calls receive only candidates that pass both gates. If no safe candidate
+  remains, the operation fails explicitly and no optimizer is run.
+- The unified pipeline remains the canonical implementation; this change
+  closes legacy entry points without altering coordinate transforms or the
+  existing Data Tree categories.
+
+### Verification
+
+- Added a regression test proving a direct planning entry point rejects a
+  trajectory crossing a Data Tree hard mask.
+- Targeted obstacle/alignment suite: **11 passed**.
+- Full local suite and live RTX execution remain required after deployment;
+  the final renderer gate continues to fail closed when mask geometry cannot
+  be verified.
