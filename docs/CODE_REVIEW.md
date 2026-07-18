@@ -5458,3 +5458,5 @@ old case and was not a safe workspace isolation guarantee.
 - Added a frontend regression check requiring the awaited abort request in the
   active-turn stop path.
 - Parsed the changed browser module with Node.js syntax checking.
+- Remote `brachytherapy` full verification passes: **184 passed, 3 environment
+  warnings**. The warnings are SimpleITK SWIG type deprecations during import.
