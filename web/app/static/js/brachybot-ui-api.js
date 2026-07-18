@@ -1,3 +1,48 @@
+/**
+ * Present a short, non-blocking application notification.
+ *
+ * Native ``alert`` dialogs pause rendering and can leave a WebGL interaction
+ * or a long-running request looking frozen. Keeping notices in the document
+ * also makes their lifecycle predictable for remote and embedded browsers.
+ */
+function showBrachyBotNotice(message, kind = 'info', durationMs = 6000) {
+    const text = String(message || '').trim();
+    if (!text || typeof document === 'undefined') return;
+    let stack = document.getElementById('brachybotNoticeStack');
+    if (!stack) {
+        stack = document.createElement('div');
+        stack.id = 'brachybotNoticeStack';
+        stack.className = 'app-notice-stack';
+        stack.setAttribute('aria-live', 'polite');
+        stack.setAttribute('aria-relevant', 'additions');
+        document.body.appendChild(stack);
+    }
+    const notice = document.createElement('div');
+    const safeKind = ['info', 'success', 'warning', 'error'].includes(kind) ? kind : 'info';
+    notice.className = `app-notice app-notice-${safeKind}`;
+    notice.setAttribute('role', safeKind === 'error' ? 'alert' : 'status');
+    const label = document.createElement('span');
+    label.className = 'app-notice-message';
+    label.textContent = text;
+    const close = document.createElement('button');
+    close.type = 'button';
+    close.className = 'app-notice-close';
+    close.setAttribute('aria-label', 'Dismiss notification');
+    close.textContent = '?';
+    let timer = null;
+    const dismiss = () => {
+        if (timer) clearTimeout(timer);
+        notice.classList.add('leaving');
+        setTimeout(() => notice.remove(), 180);
+    };
+    close.addEventListener('click', dismiss);
+    notice.append(label, close);
+    stack.appendChild(notice);
+    requestAnimationFrame(() => notice.classList.add('visible'));
+    if (Number.isFinite(durationMs) && durationMs > 0) timer = setTimeout(dismiss, durationMs);
+}
+window.showBrachyBotNotice = showBrachyBotNotice;
+
 function collectUIState() {
     const gv = (id) => {
         const el = document.getElementById(id);
@@ -527,7 +572,7 @@ async function handleFileSelect(input, targetId) {
         overlay.classList.remove('active');
         pathInput.value = '';
         pathInput.disabled = false;
-        alert('File upload failed: ' + e.message);
+        showBrachyBotNotice(`File upload failed: ${e.message || e}`, 'error');
     }
 
     input.value = '';
