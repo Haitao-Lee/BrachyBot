@@ -706,3 +706,54 @@ body.workspace-transitioning #sessionList {
     color: var(--text-secondary);
     line-height: 1.55;
 }
+
+/* Shared non-blocking notifications for viewer and upload failures. */
+.app-notice-stack {
+    position: fixed;
+    z-index: 100100;
+    right: 18px;
+    bottom: 20px;
+    display: grid;
+    gap: 8px;
+    width: min(390px, calc(100vw - 36px));
+    pointer-events: none;
+}
+.app-notice {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: start;
+    gap: 10px;
+    padding: 10px 10px 10px 12px;
+    border: 1px solid var(--border-emphasis);
+    border-radius: var(--radius-sm);
+    background: color-mix(in srgb, var(--bg-elevated) 94%, transparent);
+    box-shadow: var(--shadow-floating);
+    color: var(--text);
+    font-size: 12px;
+    line-height: 1.42;
+    opacity: 0;
+    transform: translateY(8px);
+    transition: opacity var(--t-base) var(--ease), transform var(--t-base) var(--ease);
+    pointer-events: auto;
+}
+.app-notice.visible { opacity: 1; transform: translateY(0); }
+.app-notice.leaving { opacity: 0; transform: translateY(8px); }
+.app-notice-error { border-color: color-mix(in srgb, var(--danger) 58%, var(--border-emphasis)); }
+.app-notice-warning { border-color: color-mix(in srgb, var(--warning) 58%, var(--border-emphasis)); }
+.app-notice-success { border-color: color-mix(in srgb, var(--success) 58%, var(--border-emphasis)); }
+.app-notice-message { overflow-wrap: anywhere; }
+.app-notice-close {
+    width: 22px;
+    height: 22px;
+    border: 0;
+    border-radius: 5px;
+    background: transparent;
+    color: var(--text-dim);
+    cursor: pointer;
+    font-size: 17px;
+    line-height: 1;
+}
+.app-notice-close:hover { background: var(--bg-3); color: var(--text); }
+@media (prefers-reduced-motion: reduce) {
+    .app-notice { transition: none; }
+}

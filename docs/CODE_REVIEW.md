@@ -5712,3 +5712,30 @@ conditions can lead to unnecessary iterations and an incorrect fallback.
   last seed.
 - Local RL guard and dose-inference suite: **8 passed, 2 skipped, 3 existing
   SimpleITK import warnings**.
+
+## Round 51 non-blocking viewer failure feedback (2026-07-19)
+
+### Confirmed finding
+
+Three interactive paths still used browser-native `alert()` dialogs: failed
+dose-surface mapping, invalid colorbar limits, and upload failure. Native
+dialogs block the browser event loop; in this application that can make a
+WebGL camera/needle gesture or an asynchronous upload appear frozen and is
+visually inconsistent with the existing custom confirmation/modal system.
+
+### Corrective changes
+
+- Add one accessible, dismissible application-notice surface with automatic
+fade-out and a reduced-motion fallback.
+- Route the three verified viewer/upload failures through that surface while
+keeping their original failure recovery and console diagnostics intact.
+- Version the changed CSS and JavaScript resources in `index.html` so a
+remote browser does not retain the former native-dialog code from cache.
+
+### Verification
+
+- Added a frontend regression test that rejects native alerts in all three
+interactive modules and requires the shared notice surface.
+- Local workspace/auth frontend suite: **28 passed, 3 existing SimpleITK
+import warnings**.
+- Node.js syntax checks passed for all modified browser scripts.

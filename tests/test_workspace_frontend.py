@@ -176,6 +176,21 @@ def test_legacy_browser_actions_do_not_fall_back_to_native_confirm():
     assert "window._confirmAction" in chat_core
 
 
+def test_viewer_and_upload_failures_use_non_blocking_application_notices():
+    """Failure feedback must not freeze a WebGL gesture behind browser alerts."""
+    ui_api = read("web/app/static/js/brachybot-ui-api.js")
+    viewer = read("web/app/static/js/brachybot-viewer-layout.js")
+    manual = read("web/app/static/js/brachybot-3d-manual.js")
+    theme = read("web/app/static/css/brachybot-theme-layout.css")
+
+    assert "function showBrachyBotNotice" in ui_api
+    assert "window.showBrachyBotNotice" in ui_api
+    assert "alert(" not in ui_api
+    assert "alert(" not in viewer
+    assert "alert(" not in manual
+    assert ".app-notice-stack" in theme
+
+
 def test_deployment_api_key_has_a_session_scoped_login_path():
     """A protected deployment must not leave the account screen at a 401 dead end."""
     index = read("web/app/index.html")

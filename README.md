@@ -503,6 +503,9 @@ Task: "Generate prostate plan"
   image from another case.
 - **Auto Screenshots**: LLM proactively screenshots UI areas during `/help` and explanations
 - **Image Modal**: Click-to-enlarge fullscreen view of any chat image
+- **Non-blocking UI feedback**: Viewer, colorbar, and upload failures use
+  dismissible in-app notices instead of browser dialogs, so an error cannot
+  freeze a 3D gesture or obscure the active planning workspace.
 
 ### UI-Aware Manual Planning and Training Monitor
 

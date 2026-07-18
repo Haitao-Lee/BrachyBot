@@ -2458,7 +2458,9 @@ async function applyDoseColorbarSettings() {
     const palette = document.getElementById('doseColorbarPalette')?.value
         || 'petRainbow2';
     if (!Number.isFinite(minGy) || !Number.isFinite(maxGy) || maxGy <= minGy) {
-        alert('Colorbar maximum must be greater than minimum.');
+        if (typeof window.showBrachyBotNotice === 'function') {
+            window.showBrachyBotNotice('Colorbar maximum must be greater than minimum.', 'warning');
+        }
         return;
     }
     _loadDoseColorbarConfig()[scope] = { minGy, maxGy, palette };

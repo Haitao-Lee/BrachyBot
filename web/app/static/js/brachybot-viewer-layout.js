@@ -1164,7 +1164,11 @@ async function setDoseTextureMode(enabled, opts = {}) {
         }
     } catch (e) {
         console.warn('[DoseTexture] failed:', e);
-        if (!opts.silent) alert('Dose surface mapping failed: ' + (e.message || e));
+        if (!opts.silent) {
+            const message = `Dose surface mapping failed: ${e.message || e}`;
+            if (typeof window.showBrachyBotNotice === 'function') window.showBrachyBotNotice(message, 'error');
+            else console.error(message);
+        }
         _restoreDoseTextureMaterials();
         state.doseTexture.enabled = false;
         update3DColorbar(false);
