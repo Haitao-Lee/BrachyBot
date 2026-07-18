@@ -2128,8 +2128,7 @@ function _executeUIActionRaw(a) {
             return;
         }
         if (target === 'viewer.dose_peak' && command === 'run') {
-            navigateToDosePeakSlices();
-            return;
+            return navigateToDosePeakSlices();
         }
         if (target === 'viewer.transform') {
             const handlers = {
@@ -2237,7 +2236,7 @@ function _executeUIActionRaw(a) {
         if (target === 'tree.group.reconstruct3d') {
             // Reconstruct all organs in the group using the data tree method
             if (value === 'ctv') {
-                reconstructOrgan3D('ctv');
+                return reconstructOrgan3D('ctv');
             } else {
                 // For OAR groups, reconstruct all organs in the group
                 if (dataTreeState && dataTreeState.organs) {
@@ -2246,7 +2245,7 @@ function _executeUIActionRaw(a) {
                         if (value === 'traversable') return o.category === 'traversable';
                         return true;
                     });
-                    organs.forEach(o => reconstructOrgan3D(o.id, true));
+                    return Promise.all(organs.map(o => reconstructOrgan3D(o.id, true)));
                 }
             }
             return;
@@ -2323,13 +2322,13 @@ function _executeUIActionRaw(a) {
             return;
         }
         if (target === 'plan.reset') {
-            resetSession();
-            return;
+            return resetSession();
         }
         if (target === 'ui.state') {
-            syncUIBridgeState(command || 'ui_controller');
-            if (typeof addChat === 'function') addChat('system', 'UI state snapshot synced.');
-            return;
+            return Promise.resolve(syncUIBridgeState(command || 'ui_controller')).then(() => {
+                if (typeof addChat === 'function') addChat('system', 'UI state snapshot synced.');
+                return { success: true };
+            });
         }
         if (target === 'ui.catalog') {
             return { success: true, message: 'The server-side declarative UI catalog is already included in the ui_controller schema.' };
@@ -2338,9 +2337,12 @@ function _executeUIActionRaw(a) {
             return executeGenericUIControl('set', value);
         }
         if (target === 'training.mode') {
-            if (command === 'start') startTrainingMode(value || 'Monitor planning workflow');
-            else if (command === 'stop') stopTrainingMode();
-            else if (command === 'advice') requestPlanningAdvice();
+            if (command === 'start') return startTrainingMode(value || 'Monitor planning workflow')
+                .then(result => result || ({ success: false, error: 'Training monitor did not start.' }));
+            else if (command === 'stop') return stopTrainingMode()
+                .then(result => result || ({ success: false, error: 'Training monitor did not stop.' }));
+            else if (command === 'advice') return requestPlanningAdvice()
+                .then(result => result || ({ success: false, error: 'Planning advice is unavailable.' }));
             else if (typeof addChat === 'function') {
                 addChat('system', trainingMonitorState.active ? 'Monitor mode is active.' : 'Monitor mode is not active.');
             }
@@ -2374,25 +2376,25 @@ function _executeUIActionRaw(a) {
             return requestPlanningAdvice();
         }
         if (target === 'system.readiness') {
-            checkSystemReadiness();
-            return;
+            return checkSystemReadiness()
+                .then(result => result || ({ success: false, error: 'System readiness is unavailable.' }));
         }
         // ── Report ──
         if (target === 'report.autofill') {
-            if (typeof Report !== 'undefined' && Report.autoFill) Report.autoFill.fromAll();
-            else if (typeof reportAutoFill === 'function') reportAutoFill();
-            return;
+            if (typeof Report !== 'undefined' && Report.autoFill) return Report.autoFill.fromAll();
+            if (typeof reportAutoFill === 'function') return reportAutoFill();
+            return { success: false, error: 'Report auto-fill is unavailable.' };
         }
         if (target === 'report.export') {
             if (typeof Report !== 'undefined' && Report.export) {
                 const fn = Report.export[value];
-                if (fn) fn();
+                if (fn) return fn();
             }
-            return;
+            return { success: false, error: 'The requested report export is unavailable.' };
         }
         if (target === 'report.import') {
-            if (typeof Report !== 'undefined' && Report.persist) Report.persist.importJSON();
-            return;
+            if (typeof Report !== 'undefined' && Report.persist) return Report.persist.importJSON();
+            return { success: false, error: 'Report import is unavailable.' };
         }
         if (target === 'report.snapshot.save') {
             if (typeof Report !== 'undefined' && Report.snapshots) Report.snapshots.save();
@@ -2505,8 +2507,7 @@ function _executeUIActionRaw(a) {
         // ── Chat ──
         if (target === 'chat.language') { setUiLanguage(value); return; }
         if (target === 'chat.clear_history') {
-            clearCurrentChatHistory({ skipConfirm: true });
-            return;
+            return clearCurrentChatHistory({ skipConfirm: true });
         }
         if (target === 'chat.sidebar.toggle') { toggleSessionSidebar(); return; }
         // ── Screenshot ──
