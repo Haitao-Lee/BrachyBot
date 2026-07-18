@@ -53,6 +53,9 @@ class CodeExecutorTool(BaseTool):
         "result": {"type": "string"},
     }
 
+    def is_available(self) -> bool:
+        return _execution_enabled()
+
     def _sanitize_code(self, code: str) -> tuple:
         """Check for dangerous patterns. Returns (safe, warnings)."""
         warnings = []

@@ -5644,3 +5644,31 @@ GPU workstation or an intermittent network.
   harness is skipped only on deployments without Node.js.
 - Node.js syntax check passes for the workspace bridge.
 - Remote `brachytherapy` workspace frontend suite: **16 passed**.
+
+## Round 49 dynamic developer-tool availability (2026-07-19)
+
+### Confirmed finding
+
+`code_executor`, `shell_executor`, `env_manager`, and `tool_creator` checked
+their trusted-local environment gates only after the LLM had already received
+their function schemas. In a normal clinical deployment the model could choose
+one of those disabled tools, wait for a failed call, and then make a second
+attempt. This caused avoidable latency and misleading execution traces; it
+also explained requests that tried a disabled code executor for a UI task.
+
+### Corrective changes
+
+- Add a dynamic `BaseTool.is_available()` capability hook and make the tool
+  registry omit unavailable tools from LLM schemas, textual tool descriptions,
+  and rule-based help listings.
+- Make all four explicitly gated developer tools report their environment
+  state through that hook.
+- Keep the original execution-time gates as defense in depth, and retain full
+  code/tool/environment/shell capability whenever the corresponding explicit
+  `BRACHYBOT_ENABLE_*` environment variable is set.
+- Make the direct CT-analysis shortcut honor the same code-executor gate.
+
+### Verification
+
+- Added unit coverage for disabled-tool omission, explicit opt-in visibility,
+  and direct-analysis gating.

@@ -39,6 +39,18 @@ class ToolRegistry:
             raise KeyError(f"Tool not found: {name}. Available: {list(self._tools.keys())}")
         return self._tools[name]
 
+    def is_available(self, name: str) -> bool:
+        """Return dynamic tool availability without executing the tool."""
+        tool = self.get(name)
+        checker = getattr(tool, "is_available", None)
+        if not callable(checker):
+            return True
+        try:
+            return bool(checker())
+        except Exception:
+            logger.warning("Tool availability check failed for %s", name, exc_info=True)
+            return False
+
     def list_tools(self) -> List[Dict]:
         return [
             {
@@ -48,6 +60,7 @@ class ToolRegistry:
                 "output_schema": tool.output_schema,
             }
             for tool in self._tools.values()
+            if self.is_available(tool.name)
         ]
 
     def execute(self, tool_name: str, **kwargs):
@@ -67,6 +80,8 @@ class ToolRegistry:
         """
         openai_tools = []
         for tool in self._tools.values():
+            if not self.is_available(tool.name):
+                continue
             schema = tool.input_schema or {}
             # Detect format: if "type" key with "object" exists, treat as nested
             if "properties" in schema:
@@ -95,6 +110,8 @@ class ToolRegistry:
         """Generate human-readable tool descriptions for LLM prompts."""
         lines = []
         for tool in self._tools.values():
+            if not self.is_available(tool.name):
+                continue
             lines.append(f"- {tool.name}: {tool.description}")
             if tool.input_schema.get("properties"):
                 props = tool.input_schema["properties"]

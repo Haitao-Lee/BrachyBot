@@ -193,6 +193,9 @@ Capabilities:
         "data": {"type": "object"},
     }
 
+    def is_available(self) -> bool:
+        return _tool_creation_enabled()
+
     _TOOL_NAME_RE = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
 
     def _normalize_tool_name(self, tool_name: str) -> str:

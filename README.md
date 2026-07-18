@@ -28,6 +28,9 @@
   transition. The sidebar is briefly unavailable while the selected case is
   persisted and restored, preventing rapid clicks or out-of-order responses
   from mixing one case's chat with another case's viewer state.
+- Trusted-local developer tools are advertised to the LLM only after their
+  explicit `BRACHYBOT_ENABLE_*` opt-in is active. This preserves code-writing
+  workflows when enabled while preventing wasted tool calls in clinical mode.
 - 2D seed overlays use the finite physical seed-cylinder contour projected
   through the existing CT coordinate chain. The active plan's seed geometry is
   shared with the 3D viewer.
