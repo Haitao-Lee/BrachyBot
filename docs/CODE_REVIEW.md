@@ -5521,3 +5521,5 @@ while the server-side plan remained intact.
 - Added regression checks covering promise-returning viewer/manual-plan
   controller branches and structured manual planning results.
 - Parsed the changed browser modules with Node.js syntax checking.
+- Remote `brachytherapy` full verification passes: **187 passed, 3 environment
+  warnings**. The warnings are SimpleITK SWIG type deprecations during import.
