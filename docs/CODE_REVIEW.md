@@ -5431,3 +5431,30 @@ session appear to have lost chat history after a refresh.
 - Added a frontend regression check requiring adjacent-only comparison rather
   than a transcript-wide `seen` set.
 - Parsed the changed browser module with Node.js syntax checking.
+- Remote `brachytherapy` full verification passes: **183 passed, 3 environment
+  warnings**. The warnings are SimpleITK SWIG type deprecations during import.
+
+## Round 42 cancellation acknowledgement before case switch (2026-07-19)
+
+### Confirmed finding
+
+Switching cases requests cancellation of the current chat turn, but the
+browser previously fired `/api/chat/abort` without waiting for its response.
+The session switch could immediately update the signed server session cookie.
+That ordering relied on browser request timing to make the abort target the
+old case and was not a safe workspace isolation guarantee.
+
+### Corrective changes
+
+- Keep the local stop animation and fetch abort immediate.
+- Await the server cancellation acknowledgement before `sendChat()` resolves;
+  session switching already awaits this function before selecting another case.
+- Preserve an offline fallback: an abort transport failure does not resurrect
+  progress UI, and the turn-level cancellation token continues to suppress
+  late client events.
+
+### Verification
+
+- Added a frontend regression check requiring the awaited abort request in the
+  active-turn stop path.
+- Parsed the changed browser module with Node.js syntax checking.
