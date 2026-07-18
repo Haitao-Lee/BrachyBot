@@ -5296,3 +5296,8 @@ the current visible case state.
   now execute on every request and observe current state.
 - Added regression coverage that invokes `ui_inspector` twice and proves that
   the second result is not reused.
+
+### Verification
+
+- Remote `brachytherapy` verification passes: **179 passed, 3 environment
+  warnings**. The warnings are SimpleITK SWIG type deprecations during import.
