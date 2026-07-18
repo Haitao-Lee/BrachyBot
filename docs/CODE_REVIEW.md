@@ -5607,3 +5607,36 @@ planning, falsely suggesting that a safe needle crosses an obstacle.
   structures, and CTV embedded vessels.
 - Remote `brachytherapy` safety suite: **14 passed, 3 environment warnings**.
   Warnings are the existing SimpleITK SWIG type deprecations during import.
+
+## Round 48 atomic case transitions (2026-07-19)
+
+### Confirmed finding
+
+The durable-workspace bridge correctly persisted and restored case snapshots,
+but `newChat`, `switchSession`, and `deleteSession` were independent async
+flows. A user could initiate a second sidebar action while the first request
+was still waiting for persistence, lease release, server selection, and viewer
+restore. Since each flow clears and restores browser state, an older response
+could finish last and paint a previous case's chat or viewer state over the
+newly selected case. This is a genuine race condition, especially on a remote
+GPU workstation or an intermittent network.
+
+### Corrective changes
+
+- Serialize create, switch, and delete through one workspace-transition gate.
+- Cancel any deferred browser snapshot write before a transition starts, then
+  await the explicit current-case checkpoint before changing server selection.
+- Mark the sidebar busy and disable repeat case actions for the short atomic
+  transition; always release that state on success, cancellation, or failure.
+- Convert unhandled lifecycle exceptions into structured results while logging
+  the technical error. On a failed mid-transition request, reload the current
+  server-selected workspace before restoring interaction, so one failed
+  request cannot leave the sidebar permanently non-interactive or the chat and
+  viewer pointed at different cases.
+
+### Verification
+
+- Added source-level regression coverage for the serialization gate, deferred
+  save cancellation, lifecycle wrapping, and busy sidebar state.
+- Node.js syntax check passes for the workspace bridge.
+- Remote `brachytherapy` workspace frontend suite: **16 passed**.

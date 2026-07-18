@@ -24,6 +24,10 @@
 - Session switching clears stale canvases, meshes, overlays, and charts before
   restoring the selected workspace; late image callbacks cannot repaint an
   older case.
+- Case creation, switching, and deletion are serialized as one workspace
+  transition. The sidebar is briefly unavailable while the selected case is
+  persisted and restored, preventing rapid clicks or out-of-order responses
+  from mixing one case's chat with another case's viewer state.
 - 2D seed overlays use the finite physical seed-cylinder contour projected
   through the existing CT coordinate chain. The active plan's seed geometry is
   shared with the 3D viewer.
