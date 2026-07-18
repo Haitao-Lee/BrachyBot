@@ -65,6 +65,16 @@ def test_manual_case_rename_waits_for_durable_confirmation():
     assert "session.title = currentTitle;" in block
 
 
+def test_chat_restore_preserves_non_adjacent_repeated_messages():
+    """Historical retry cleanup must not erase legitimate later repeats."""
+    chat = read("web/app/static/js/brachybot-chat-core.js")
+    block = chat.split("function loadSessionChat", 1)[1].split("function saveSessionMessage", 1)[0]
+
+    assert "sameAdjacentMessage" in block
+    assert "canonicalType" in block
+    assert "const seen = new Set();" not in block
+
+
 def test_active_progress_animation_stops_only_for_terminal_or_reduced_motion_states():
     todo = read("web/app/static/js/brachybot-chat-todo.js")
     status_css = read("web/app/static/css/brachybot-chat-status.css")
