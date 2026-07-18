@@ -6,6 +6,48 @@
     let revision = null;
     let saveTimer = null;
     let restoring = false;
+    let workspaceTransition = null;
+
+    function clearScheduledWorkspaceSave() {
+        if (!saveTimer) return;
+        clearTimeout(saveTimer);
+        saveTimer = null;
+    }
+
+    function setWorkspaceTransitionState(active) {
+        document.body.classList.toggle('workspace-transitioning', active);
+        const sidebar = document.getElementById('sessionSidebar');
+        if (!sidebar) return;
+        sidebar.setAttribute('aria-busy', active ? 'true' : 'false');
+    }
+
+    async function runWorkspaceTransition(operation) {
+        // A case change coordinates several server and browser mutations.
+        // Serializing them prevents a late restore response from repainting a
+        // previously selected case over the user's most recent selection.
+        if (workspaceTransition) {
+            return { success: false, busy: true, error: 'A case transition is already in progress.' };
+        }
+        clearScheduledWorkspaceSave();
+        setWorkspaceTransitionState(true);
+        const transition = (async () => {
+            try {
+                return await operation();
+            } catch (error) {
+                console.error('[workspace] case transition failed:', error);
+                // A request can fail after the server has already selected a
+                // different case. Rehydrate from the authoritative server
+                // selection instead of leaving chat and viewer state split.
+                await recoverWorkspaceAfterTransitionFailure();
+                return { success: false, error: error?.message || 'Unable to change case.' };
+            } finally {
+                setWorkspaceTransitionState(false);
+                workspaceTransition = null;
+            }
+        })();
+        workspaceTransition = transition;
+        return transition;
+    }
 
     function jsonClone(value) {
         return JSON.parse(JSON.stringify(value, (_key, item) => {
@@ -224,7 +266,7 @@
     }
 
     function scheduleWorkspaceSave(reason) {
-        if (saveTimer) clearTimeout(saveTimer);
+        clearScheduledWorkspaceSave();
         saveTimer = setTimeout(() => persistWorkspace(reason || 'ui.changed'), 700);
     }
 
@@ -279,6 +321,24 @@
         return data.workspace;
     }
 
+    async function recoverWorkspaceAfterTransitionFailure() {
+        try {
+            await loadServerSessions();
+            const workspace = await loadActiveWorkspace();
+            if (typeof clearClientWorkspace === 'function') clearClientWorkspace({ clearReport: true });
+            renderSessionList();
+            if (typeof window.brachybotAuth?.acquireLease === 'function') await window.brachybotAuth.acquireLease();
+            if (typeof restoreActiveSessionWorkspace === 'function') {
+                await restoreActiveSessionWorkspace({ clearReport: false, workspace });
+            }
+            loadSessionChat(activeSessionId);
+        } catch (recoveryError) {
+            // Preserve the original failure as the user-facing result. This
+            // second log remains useful when the network itself is unavailable.
+            console.error('[workspace] case transition recovery failed:', recoveryError);
+        }
+    }
+
     window.loadSessions = async function loadSessions() {
         const data = await loadServerSessions();
         await loadActiveWorkspace();
@@ -292,48 +352,51 @@
     };
 
     window.newChat = async function newChat() {
-        if (!await prepareSessionChange()) return { success: false, cancelled: true };
-        if (typeof flushActiveReportState === 'function') flushActiveReportState();
-        await persistWorkspace('session.switching');
-        if (typeof window.brachybotAuth?.releaseLease === 'function') await window.brachybotAuth.releaseLease();
-        const response = await fetch('/api/sessions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: 'New case' }) });
-        const data = await response.json();
-        if (!response.ok) throw new Error(data.error || 'Unable to create case');
-        await loadServerSessions();
-        if (typeof clearClientWorkspace === 'function') clearClientWorkspace({ clearReport: true });
-        await loadActiveWorkspace();
-        renderSessionList();
-        if (typeof window.brachybotAuth?.acquireLease === 'function') await window.brachybotAuth.acquireLease();
-        if (typeof restoreActiveSessionWorkspace === 'function') await restoreActiveSessionWorkspace({ clearReport: false });
-        loadSessionChat(activeSessionId);
-        return { success: true, session_id: activeSessionId };
+        return runWorkspaceTransition(async () => {
+            if (!await prepareSessionChange()) return { success: false, cancelled: true };
+            if (typeof flushActiveReportState === 'function') flushActiveReportState();
+            await persistWorkspace('session.switching');
+            if (typeof window.brachybotAuth?.releaseLease === 'function') await window.brachybotAuth.releaseLease();
+            const response = await fetch('/api/sessions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: 'New case' }) });
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.error || 'Unable to create case');
+            await loadServerSessions();
+            if (typeof clearClientWorkspace === 'function') clearClientWorkspace({ clearReport: true });
+            await loadActiveWorkspace();
+            renderSessionList();
+            if (typeof window.brachybotAuth?.acquireLease === 'function') await window.brachybotAuth.acquireLease();
+            if (typeof restoreActiveSessionWorkspace === 'function') await restoreActiveSessionWorkspace({ clearReport: false });
+            loadSessionChat(activeSessionId);
+            return { success: true, session_id: activeSessionId };
+        });
     };
 
     window.switchSession = async function switchSession(id) {
         document.getElementById('sessionSidebar')?.classList.remove('mobile-open');
         if (id === activeSessionId) return { success: true, session_id: id, unchanged: true };
         if (!sessions[id]) return { success: false, error: 'The requested case does not exist.' };
-        if (!(await prepareSessionChange())) return { success: false, cancelled: true };
-        if (typeof flushActiveReportState === 'function') flushActiveReportState();
-        await persistWorkspace('session.switching');
-        if (typeof window.brachybotAuth?.releaseLease === 'function') await window.brachybotAuth.releaseLease();
-        const response = await fetch(`/api/sessions/${encodeURIComponent(id)}/select`, { method: 'POST' });
-        const data = await response.json();
-        if (!response.ok) throw new Error(data.error || 'Unable to open case');
-        activeSessionId = data.active_session_id;
-        revision = data.workspace?.session?.revision ?? null;
-        if (typeof clearClientWorkspace === 'function') clearClientWorkspace({ clearReport: true });
-        window._activeWorkspaceSnapshot = data.workspace;
-        renderSessionList();
-        if (typeof window.brachybotAuth?.acquireLease === 'function') await window.brachybotAuth.acquireLease();
-        if (typeof restoreActiveSessionWorkspace === 'function') await restoreActiveSessionWorkspace({ clearReport: false, workspace: data.workspace });
-        loadSessionChat(activeSessionId);
-        return { success: true, session_id: activeSessionId };
+        return runWorkspaceTransition(async () => {
+            if (!(await prepareSessionChange())) return { success: false, cancelled: true };
+            if (typeof flushActiveReportState === 'function') flushActiveReportState();
+            await persistWorkspace('session.switching');
+            if (typeof window.brachybotAuth?.releaseLease === 'function') await window.brachybotAuth.releaseLease();
+            const response = await fetch(`/api/sessions/${encodeURIComponent(id)}/select`, { method: 'POST' });
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.error || 'Unable to open case');
+            activeSessionId = data.active_session_id;
+            revision = data.workspace?.session?.revision ?? null;
+            if (typeof clearClientWorkspace === 'function') clearClientWorkspace({ clearReport: true });
+            window._activeWorkspaceSnapshot = data.workspace;
+            renderSessionList();
+            if (typeof window.brachybotAuth?.acquireLease === 'function') await window.brachybotAuth.acquireLease();
+            if (typeof restoreActiveSessionWorkspace === 'function') await restoreActiveSessionWorkspace({ clearReport: false, workspace: data.workspace });
+            loadSessionChat(activeSessionId);
+            return { success: true, session_id: activeSessionId };
+        });
     };
 
     window.deleteSession = async function deleteSession(id, options = {}) {
         if (!sessions[id]) return { success: false, error: 'The requested case does not exist.' };
-        if (!await prepareSessionChange()) return { success: false, cancelled: true };
         if (options.skipConfirm !== true) {
             const title = sessions[id].title || id;
             const confirmed = await confirmWorkspaceAction(
@@ -342,20 +405,23 @@
             );
             if (!confirmed) return { success: false, cancelled: true };
         }
-        if (id === activeSessionId && typeof flushActiveReportState === 'function') flushActiveReportState();
-        await persistWorkspace('session.delete');
-        if (id === activeSessionId && typeof window.brachybotAuth?.releaseLease === 'function') await window.brachybotAuth.releaseLease();
-        const response = await fetch(`/api/sessions/${encodeURIComponent(id)}`, { method: 'DELETE' });
-        const data = await response.json();
-        if (!response.ok) throw new Error(data.error || 'Unable to delete case');
-        await loadServerSessions();
-        if (typeof clearClientWorkspace === 'function') clearClientWorkspace({ clearReport: true });
-        await loadActiveWorkspace();
-        renderSessionList();
-        if (typeof window.brachybotAuth?.acquireLease === 'function') await window.brachybotAuth.acquireLease();
-        if (typeof restoreActiveSessionWorkspace === 'function') await restoreActiveSessionWorkspace({ clearReport: false });
-        loadSessionChat(activeSessionId);
-        return { success: true, active_session_id: activeSessionId };
+        return runWorkspaceTransition(async () => {
+            if (!await prepareSessionChange()) return { success: false, cancelled: true };
+            if (id === activeSessionId && typeof flushActiveReportState === 'function') flushActiveReportState();
+            await persistWorkspace('session.delete');
+            if (id === activeSessionId && typeof window.brachybotAuth?.releaseLease === 'function') await window.brachybotAuth.releaseLease();
+            const response = await fetch(`/api/sessions/${encodeURIComponent(id)}`, { method: 'DELETE' });
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.error || 'Unable to delete case');
+            await loadServerSessions();
+            if (typeof clearClientWorkspace === 'function') clearClientWorkspace({ clearReport: true });
+            await loadActiveWorkspace();
+            renderSessionList();
+            if (typeof window.brachybotAuth?.acquireLease === 'function') await window.brachybotAuth.acquireLease();
+            if (typeof restoreActiveSessionWorkspace === 'function') await restoreActiveSessionWorkspace({ clearReport: false });
+            loadSessionChat(activeSessionId);
+            return { success: true, active_session_id: activeSessionId };
+        });
     };
 
     window.renameServerSession = async function renameServerSession(id, title) {

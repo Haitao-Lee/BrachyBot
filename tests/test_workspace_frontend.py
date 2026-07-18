@@ -77,6 +77,21 @@ def test_session_ui_actions_wait_for_durable_case_transitions():
     assert "return { success: true, active_session_id: activeSessionId };" in workspace
 
 
+def test_server_workspace_serializes_case_transitions():
+    """Concurrent sidebar clicks must not restore a stale case snapshot."""
+    workspace = read("web/app/static/js/brachybot-workspace.js")
+    layout = read("web/app/static/css/brachybot-theme-layout.css")
+
+    assert "let workspaceTransition = null;" in workspace
+    assert "async function runWorkspaceTransition(operation)" in workspace
+    assert "await recoverWorkspaceAfterTransitionFailure();" in workspace
+    assert "async function recoverWorkspaceAfterTransitionFailure()" in workspace
+    assert "clearScheduledWorkspaceSave();" in workspace
+    assert workspace.count("return runWorkspaceTransition(async () => {") >= 3
+    assert "workspaceTransition = null;" in workspace
+    assert "body.workspace-transitioning #sessionList" in layout
+
+
 def test_ui_controller_waits_for_async_viewer_and_manual_planning_actions():
     """UI action progress must represent completion, not merely task launch."""
     ui_api = read("web/app/static/js/brachybot-ui-api.js")

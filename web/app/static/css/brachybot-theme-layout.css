@@ -510,6 +510,21 @@ body::before {
     transform: translateY(0) scale(0.97);
 }
 
+/* Session changes restore a complete case workspace asynchronously.  Block
+   repeat sidebar actions during that atomic transition so a stale response
+   cannot repaint a different case over the most recently selected one. */
+body.workspace-transitioning .new-chat-btn,
+body.workspace-transitioning #sessionList,
+body.workspace-transitioning .session-sidebar-actions {
+    pointer-events: none;
+}
+
+body.workspace-transitioning .new-chat-btn,
+body.workspace-transitioning #sessionList {
+    opacity: 0.58;
+    cursor: progress;
+}
+
 .session-list {
     flex: 1;
     overflow-y: auto;
