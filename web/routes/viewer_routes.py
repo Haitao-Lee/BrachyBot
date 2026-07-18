@@ -10,7 +10,9 @@ from typing import Any, Dict, Optional
 
 import numpy as np
 import SimpleITK as sitk
-from flask import Response, jsonify, request, send_from_directory
+from flask import Response, current_app, jsonify, request, send_from_directory, session as flask_session
+
+from web.auth import current_user
 
 try:
     from web.server_support import rate_limit, require_api_key
@@ -30,6 +32,12 @@ _validate_path = _server_support._validate_path
 
 
 def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
+    def owned_case_path(path: str) -> bool:
+        store = current_app.extensions.get("brachybot_workspace_store")
+        user = current_user(store) if store is not None else None
+        session_id = str(flask_session.get("bb_session_id") or "")
+        return bool(user and session_id and store.owns_path(user["id"], session_id, path))
+
     @app.route("/api/viewer/load", methods=["POST"])
     @require_api_key
     @rate_limit
@@ -46,7 +54,7 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
 
         if not ct_path:
             return jsonify({"error": "ct_path is required"}), 400
-        if not _validate_path(ct_path, purpose="read"):
+        if not _validate_path(ct_path, purpose="read") or not owned_case_path(ct_path):
             return jsonify({"error": "Invalid ct_path"}), 400
 
         # Per-patient memory isolation: if a DIFFERENT CT is being
@@ -1068,10 +1076,50 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
             seed_plan = agent.memory.retrieve("seed_plan")
             seed_plan_serialized = agent.memory.retrieve("seed_plan_serialized") or []
             verified_needle_geometry = agent.memory.retrieve("verified_needle_geometry") or {}
+            manual_needles = agent.memory.retrieve("manual_needles") or []
+            has_manual_geometry = bool(manual_needles)
             if seed_plan is None and not seed_plan_serialized:
                 return jsonify({"success": True, "seeds": [], "needles": [], "message": "No seed plan available"})
 
             ct_image = agent.memory.retrieve("ct_image")
+
+            # Revalidate the exact world-coordinate line before exposing it to
+            # the renderer. This is intentionally independent of the cached
+            # ``verified_needle_geometry`` snapshot: a Data Tree category can
+            # change after planning, and a stale snapshot must never make an
+            # unsafe needle visible. The planning pipeline uses the same
+            # physical-coordinate validator, so this is a display-time
+            # defense in depth rather than a second coordinate convention.
+            safety_ctv = None
+            safety_oar = None
+            obstacle_labels = set()
+            world_validator = None
+            try:
+                from tool_factory.seed_plan.planning_pipeline import (
+                    _merge_embedded_hard_obstacles,
+                    _resolve_data_tree_obstacle_labels,
+                    _world_segment_hits_obstacle,
+                )
+
+                safety_ctv = agent._get_label_array("ctv_full_labels")
+                if safety_ctv is None:
+                    safety_ctv = agent._get_label_array("ctv_array")
+                safety_oar = agent._get_label_array("oar_array")
+                safety_oar, embedded_labels = _merge_embedded_hard_obstacles(safety_oar, agent)
+                obstacle_labels, _ = _resolve_data_tree_obstacle_labels(agent)
+                obstacle_labels.update(embedded_labels)
+                world_validator = _world_segment_hits_obstacle
+            except Exception:
+                # A missing optional safety artifact must fail closed below;
+                # never silently fall back to rendering an unchecked line.
+                logger.exception("[seeds_3d] Unable to prepare current obstacle validator")
+
+            def _needle_is_safe(points):
+                if world_validator is None:
+                    return False
+                return not world_validator(
+                    points, ct_image, safety_ctv, safety_oar, obstacle_labels
+                )
 
             def _world_to_ct_voxel_index(world_pos):
                 """Return CT voxel index in numpy order [z, y, x]."""
@@ -1148,7 +1196,23 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
                 # pairs. Preserve them as the authoritative geometry; falling
                 # back to seed-derived geometry is only for legacy automatic
                 # plans that do not carry explicit needle points.
-                if explicit_needle_points is not None:
+                # Explicit trajectory points are only authoritative for the
+                # manually edited plan, whose endpoint update path performs
+                # its own obstacle validation. Automatic plans must always
+                # use the pipeline's verified original-grid geometry; an
+                # unverified serialized trajectory must never bypass that
+                # safety gate.
+                if explicit_needle_points is not None and has_manual_geometry:
+                    explicit_points = [
+                        np.asarray(point, dtype=np.float64).reshape(-1)[:3]
+                        for point in explicit_needle_points
+                    ]
+                    if len(explicit_points) != 2 or not _needle_is_safe(explicit_points):
+                        logger.error(
+                            "[seeds_3d] Withholding manual needle_%s because current Data Tree obstacles reject its geometry",
+                            i,
+                        )
+                        continue
                     needles.append({
                         "id": f"needle_{i}",
                         "points": explicit_needle_points,
@@ -1169,6 +1233,12 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
                     points = [np.asarray(point, dtype=np.float64).reshape(-1)[:3] for point in validated_points]
                     if len(points) != 2 or not all(point.size == 3 and np.all(np.isfinite(point)) for point in points):
                         raise ValueError("invalid validated needle points")
+                    if not _needle_is_safe(points):
+                        logger.error(
+                            "[seeds_3d] Withholding needle_%s because current Data Tree obstacles reject its geometry",
+                            i,
+                        )
+                        continue
                     needles.append({
                         "id": f"needle_{i}",
                         "points": [point.tolist() for point in points],

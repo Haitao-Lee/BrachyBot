@@ -1,0 +1,27 @@
+#authOverlay[hidden], #passwordOverlay[hidden] { display: none; }
+#authOverlay, #passwordOverlay { position: fixed; inset: 0; z-index: 99999; display: grid; place-items: center; padding: 20px; background: rgba(7, 12, 20, .86); backdrop-filter: blur(10px); }
+.auth-card { width: min(400px, 100%); border: 1px solid rgba(104, 174, 255, .35); border-radius: 10px; background: #111a28; box-shadow: 0 24px 72px rgba(0,0,0,.42); padding: 28px; }
+.auth-brand { display: flex; align-items: center; gap: 12px; margin-bottom: 22px; font: 600 20px/1.1 Inter, sans-serif; color: #e9f3ff; }
+.auth-brand img { width: 36px; height: 36px; border-radius: 8px; }
+.auth-card label { display: grid; gap: 6px; margin: 14px 0; color: #b8c8dc; font-size: 12px; }
+.auth-card input { min-height: 38px; border: 1px solid #2c4361; border-radius: 6px; background: #0b121d; color: #edf6ff; padding: 0 10px; }
+.auth-actions { display: flex; gap: 8px; margin-top: 20px; }
+.auth-actions button { flex: 1; min-height: 38px; border: 0; border-radius: 6px; color: #07111d; font-weight: 700; background: #82c7ff; cursor: pointer; }
+.auth-actions button.secondary { background: #263a53; color: #dcecff; }
+#authStatus { min-height: 18px; color: #8eb5d8; font-size: 12px; margin-top: 12px; }
+#authStatus.error { color: #ff9b9b; }
+#passwordStatus { min-height: 18px; color: #8eb5d8; font-size: 12px; margin-top: 12px; }
+#passwordStatus.error { color: #ff9b9b; }
+.workspace-readonly .viewer-card, .workspace-readonly .input-panel { outline: 1px solid rgba(245, 183, 79, .55); }
+.workspace-lock-notice { position: fixed; z-index: 1200; top: 58px; left: 50%; transform: translateX(-50%); max-width: min(680px, calc(100vw - 32px)); padding: 8px 12px; border: 1px solid rgba(245, 183, 79, .65); border-radius: 6px; background: #292012; color: #ffe1a6; box-shadow: 0 8px 24px rgba(0, 0, 0, .26); font-size: 12px; text-align: center; }
+.workspace-recovery-notice { position: fixed; z-index: 1199; top: 96px; left: 50%; transform: translateX(-50%); max-width: min(760px, calc(100vw - 32px)); padding: 8px 12px; border: 1px solid rgba(104, 174, 255, .58); border-radius: 6px; background: #112236; color: #d7ebff; box-shadow: 0 8px 24px rgba(0, 0, 0, .26); font-size: 12px; text-align: center; }
+.recycle-bin-panel { margin: 6px 8px; border: 1px solid #2c4361; border-radius: 6px; background: #0b121d; overflow: hidden; }
+.recycle-bin-header { display: flex; align-items: center; justify-content: space-between; padding: 7px 9px; color: #cfe2f7; background: #121e2e; font-size: 12px; }
+.recycle-bin-header button, .recycle-bin-actions button { border: 1px solid #36516f; border-radius: 4px; background: #17283b; color: #dcecff; cursor: pointer; font-size: 11px; padding: 3px 6px; }
+.recycle-bin-list { max-height: 180px; overflow: auto; }
+.recycle-bin-empty { padding: 12px; color: #8fa4bb; font-size: 12px; }
+.recycle-bin-item { display: grid; gap: 5px; padding: 8px 9px; border-top: 1px solid rgba(54, 81, 111, .55); }
+.recycle-bin-title { overflow: hidden; color: #dcecff; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.recycle-bin-meta { color: #8fa4bb; font-size: 10px; }
+.recycle-bin-actions { display: flex; gap: 6px; }
+.recycle-bin-actions button.danger { border-color: rgba(220, 100, 100, .65); color: #ffb9b9; }

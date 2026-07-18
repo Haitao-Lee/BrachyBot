@@ -289,9 +289,19 @@ def ray_tracing(image_array, surface_points, normals, obs_val, angle_range, ref_
     # Process each surface point and trace a ray in the direction of its normal vector
     for point in surface_points:
         x, y, z = point  # Extract surface point coordinates
-        normal = normals[x, y, z]  # Obtain the normal vector at this point
-        if np.linalg.norm(normal) == 0:  # Skip if the normal vector magnitude is zero
+        normal = np.asarray(normals[x, y, z], dtype=np.float64).reshape(-1)
+        normal_norm = float(np.linalg.norm(normal))
+        if not np.isfinite(normal_norm) or normal_norm <= 1e-12:
+            # A zero or non-finite normal cannot advance the voxel walk.
             continue
+
+        # Advance by at least one voxel in the dominant axis.  Using an
+        # unnormalised gradient here can revisit the same integer voxel for a
+        # huge number of iterations when the gradient magnitude is tiny.
+        dominant_component = float(np.max(np.abs(normal)))
+        if not np.isfinite(dominant_component) or dominant_component <= 1e-12:
+            continue
+        step_direction = normal / dominant_component
 
         # Flag indicating whether the ray remains valid
         available = True
@@ -303,9 +313,12 @@ def ray_tracing(image_array, surface_points, normals, obs_val, angle_range, ref_
             if angle > angle_range:
                 continue
 
-        while True:
+        # The dominant component advances by one voxel per iteration, so this
+        # is a strict upper bound before the ray must leave the volume.
+        max_steps = int(sum(image_array.shape)) + 1
+        for t in range(max_steps):
             # Determine the next point along the ray by advancing along the normal direction
-            next_point = np.array([x, y, z]) + t * normal
+            next_point = np.array([x, y, z], dtype=np.float64) + t * step_direction
             next_x, next_y, next_z = next_point.astype(int)  # Convert to integer indices
 
             # Terminate the ray if it exceeds image bounds
@@ -317,8 +330,11 @@ def ray_tracing(image_array, surface_points, normals, obs_val, angle_range, ref_
                 available = False
                 break
 
-            # Progress to the next point along the ray
-            t += 1
+        else:
+            # This should be unreachable for a finite image and the normalized
+            # dominant-axis stepping above.  Fail closed rather than accepting
+            # a ray whose traversal contract was violated.
+            available = False
 
         # Save the raw ray data for later clustering if it is valid
         if available:
@@ -328,7 +344,12 @@ def ray_tracing(image_array, surface_points, normals, obs_val, angle_range, ref_
     ray_coords = np.array(raw_rays)
     
     # Cluster the rays to reduce density
-    if len(ray_coords) > 0:
+    if len(ray_coords) == 1:
+        # Avoid initializing the clustering backend for a single candidate.
+        # Besides being unnecessary work, this keeps the ray helper usable in
+        # lightweight/headless environments with no threaded BLAS runtime.
+        sparse_rays = [(ray_coords[0, :3], ray_coords[0, 3:])]
+    elif len(ray_coords) > 1:
         clustering = DBSCAN(eps=epsilon, min_samples=min_samples).fit(ray_coords[:, :3])
         sparse_rays = []
         
@@ -895,21 +916,36 @@ def shrink_island_by_distance(input_array, target_percentage=0.98):
     Returns:
         numpy.ndarray: The shrunken 3D binary island.
     """
-    # Calculate the initial volume
-    output_array = input_array.copy()
-    original_volume = np.sum(output_array)
-    
-    # Calculate the target volume
+    output_array = np.asarray(input_array).copy()
+    if output_array.size == 0:
+        return output_array
+
+    try:
+        target_percentage = float(target_percentage)
+    except (TypeError, ValueError):
+        raise ValueError("target_percentage must be a finite number")
+    if not np.isfinite(target_percentage):
+        raise ValueError("target_percentage must be a finite number")
+    target_percentage = float(np.clip(target_percentage, 0.0, 1.0))
+
+    foreground = output_array > 0
+    original_volume = int(np.count_nonzero(foreground))
     target_volume = int(original_volume * target_percentage)
-    
-    # Compute the distance transform (distance to nearest zero, i.e., edge)
-    distance_map = distance_transform_edt(output_array)
-    while np.sum(output_array) > target_volume:
-        num2shrink = int(np.sum(output_array) - target_volume)
-        distance_map = keep_ones(distance_map, num2shrink)
-        output_array[distance_map==1] = 0
-        distance_map = distance_transform_edt(output_array)
-        
+    remove_count = max(0, original_volume - target_volume)
+    if remove_count == 0:
+        return output_array
+
+    # Remove the closest foreground voxels to the background in a single,
+    # deterministic operation.  The prior implementation passed a float
+    # distance map to ``keep_ones()``, which only recognizes exact value 1;
+    # for many masks no voxel changed and the volume-based while loop could
+    # never reach its termination condition.
+    distance_map = distance_transform_edt(foreground)
+    foreground_indices = np.argwhere(foreground)
+    foreground_distances = distance_map[tuple(foreground_indices.T)]
+    remove_count = min(remove_count, len(foreground_indices))
+    remove_order = np.argpartition(foreground_distances, remove_count - 1)[:remove_count]
+    output_array[tuple(foreground_indices[remove_order].T)] = 0
     return output_array
 
 
@@ -1054,12 +1090,18 @@ def get_trajectory_info(point, array, direction, target_value, background_value,
 
     # Find the index of the largest absolute value in the direction array for normalization
     max_index = np.argmax(np.abs(direction)) 
+    max_component = float(np.abs(direction[max_index]))
+    if not np.isfinite(max_component) or max_component <= 1e-12:
+        # A zero direction never advances either traversal loop.  Treat it as
+        # invalid/blocked rather than relying on a caller to avoid an infinite
+        # geometric walk.
+        return True, [], []
     
     # Copy the starting point for updates
     update_point = np.copy(point)  
     
     # Normalize the direction for consistent movement scaling
-    update_direction = direction / np.abs(direction[max_index])
+    update_direction = direction / max_component
 
     # Initialize variables to track the state
     obs_sign = False  # Flag to detect obstacles
@@ -1069,8 +1111,15 @@ def get_trajectory_info(point, array, direction, target_value, background_value,
     background_length = 0  # Length of the current background segment
     step = 0  # Step counter for movement
 
-    # Check for obstacles and ensure the point is within bounds of the array
-    while is_point_inside_array(update_point, array) and not obs_sign:
+    # A dominant voxel component moves by one every iteration. Keep an
+    # explicit bound as defense in depth so malformed array metadata cannot
+    # turn a geometric walk into an unbounded request thread.
+    max_steps = int(np.sum(array.shape)) + 1
+
+    # Check for obstacles and ensure the point is within bounds of the array.
+    for _ in range(max_steps):
+        if not is_point_inside_array(update_point, array) or obs_sign:
+            break
         int_coords = tuple(update_point.astype(int))  # Convert the point to integer coordinates
         step += 1
         if array[int_coords] == obstacle_value:
@@ -1079,7 +1128,9 @@ def get_trajectory_info(point, array, direction, target_value, background_value,
     
     step = 0  # Reset step for the main traversal loop
     update_point = (point + step * update_direction).astype(np.float64)    # Continue traversing the array if no obstacle was encountered and the point is within bounds
-    while is_point_inside_array(update_point, array) and not obs_sign:
+    for _ in range(max_steps):
+        if not is_point_inside_array(update_point, array) or obs_sign:
+            break
         int_coords = tuple(update_point.astype(int))  # Convert the point to integer coordinates
         step += 1
         # Check the value at the current position and update the respective segment lengths

@@ -2263,6 +2263,12 @@ function showContextMenu(x, y) {
         items += `<div class="ctx-menu-sep"></div>`;
     }
 
+    if (isSingle && firstId.startsWith('needle_')) {
+        items += `<div class="ctx-menu-item" onclick="hideContextMenu();restoreNeedleToAlgorithm('${firstId}')">
+            <span class="ctx-icon">&#8634;</span> Restore algorithm position</div>`;
+        items += `<div class="ctx-menu-sep"></div>`;
+    }
+
     // Change Color (for single item: organs, CTV labels, or planning items)
     if (isSingle && (firstId.startsWith('organ_') || firstId.startsWith('ctv_') || isPlanningItem)) {
         items += `<div class="ctx-menu-item" onclick="hideContextMenu();openColorPicker('${firstId}')">

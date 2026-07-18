@@ -76,10 +76,10 @@ class MultiAgentCritic:
         },
     ]
 
-    def __init__(self, llm_callback=None):
+    def __init__(self, llm_callback=None, history_path: str = None):
         self.llm_callback = llm_callback
         self.critique_history = []
-        self._history_path = os.path.join(
+        self._history_path = history_path or os.path.join(
             os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
             "memory", "data", "critique_history.json",
         )

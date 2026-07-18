@@ -1,6 +1,7 @@
 import asyncio
 import base64
 import os
+import threading
 from pathlib import Path
 
 import numpy as np
@@ -262,11 +263,21 @@ def test_dose_model_path_can_be_configured(tmp_path, monkeypatch):
     assert resolve_dose_model_path() == checkpoint.resolve()
 
 
-def test_web_config_route_reads_project_root_defaults():
+def test_web_config_route_reads_project_root_defaults(tmp_path):
     from web.server import create_app
 
-    app = create_app({"session_id": "config-route-test"})
-    response = app.test_client().get("/api/config")
+    app = create_app({
+        "runtime_dir": str(tmp_path / "runtime"),
+        "secret_key": "test-secret",
+        "workspace_maintenance": False,
+    })
+    client = app.test_client()
+    registered = client.post(
+        "/api/auth/register",
+        json={"username": "config_route_user", "password": "correct horse battery staple"},
+    )
+    assert registered.status_code == 201
+    response = client.get("/api/config")
 
     assert response.status_code == 200
     payload = response.get_json()
@@ -526,7 +537,7 @@ def test_report_generator_never_invents_unsourced_clinical_thresholds():
     assert "| D90 | 123.0 Gy | >=100% Rx (120.0 Gy) | Pass |" in sourced_report
 
 
-def test_web_api_isolates_agent_and_ui_state_by_session(monkeypatch):
+def test_web_api_isolates_agent_and_ui_state_by_session(monkeypatch, tmp_path):
     import AgenticSys
     from web.server import create_app
 
@@ -535,9 +546,29 @@ def test_web_api_isolates_agent_and_ui_state_by_session(monkeypatch):
             self.session_id = session_id
             self.planning_results = {}
             self.ui_state = {}
+            self._lock = threading.RLock()
+            self.patient_data = {}
+            self.conversation = []
+            self.tool_results = []
+            self.context_summary = ""
+            self.compaction_count = 0
+            self.conversation_state = {}
+            self.user_lang = "en"
+            self._ui_state = {}
+            self.current_phase = "idle"
+
+        def retrieve(self, key, default=None):
+            return self.planning_results.get(key, default)
 
         def set_ui_state(self, state):
             self.ui_state = dict(state)
+            self._ui_state = dict(state)
+
+        def set_persistence_callback(self, callback):
+            self._persistence_callback = callback
+
+        def get_ui_state(self):
+            return dict(self._ui_state)
 
         def clear_all_data(self):
             self.planning_results.clear()
@@ -549,6 +580,7 @@ def test_web_api_isolates_agent_and_ui_state_by_session(monkeypatch):
         def __init__(self, session_id, config=None):
             self.memory = Memory(session_id)
             self.brain_available = False
+            self.config = dict(config or {})
 
         def get_status(self):
             return {
@@ -560,22 +592,36 @@ def test_web_api_isolates_agent_and_ui_state_by_session(monkeypatch):
             }
 
     monkeypatch.setattr(AgenticSys, "BrachyAgent", FakeAgent)
-    app = create_app()
+    app = create_app({
+        "runtime_dir": str(tmp_path / "runtime"),
+        "secret_key": "test-secret",
+        "workspace_maintenance": False,
+    })
     app.testing = True
-    client = app.test_client()
+    first = app.test_client()
+    second = app.test_client()
+    first_auth = first.post(
+        "/api/auth/register",
+        json={"username": "session_owner_a", "password": "correct horse battery staple"},
+    ).get_json()
+    second_auth = second.post(
+        "/api/auth/register",
+        json={"username": "session_owner_b", "password": "correct horse battery staple"},
+    ).get_json()
+    a = {"X-CSRF-Token": first_auth["csrf_token"]}
+    b = {"X-CSRF-Token": second_auth["csrf_token"]}
+    assert first.get("/api/status").get_json()["session_id"] == first_auth["active_session_id"]
+    assert second.get("/api/status").get_json()["session_id"] == second_auth["active_session_id"]
 
-    a = {"X-BrachyBot-Session": "session-a"}
-    b = {"X-BrachyBot-Session": "session-b"}
-    assert client.get("/api/status", headers=a).get_json()["session_id"] == "session-a"
-    assert client.get("/api/status", headers=b).get_json()["session_id"] == "session-b"
-
-    response = client.post("/api/ui/state", headers=a, json={"state": {"zoom": 1.5}})
+    response = first.post("/api/ui/state", headers=a, json={"state": {"zoom": 1.5}})
     assert response.status_code == 200
-    assert client.get("/api/ui/state", headers=a).get_json()["state"] == {"zoom": 1.5}
-    assert client.get("/api/ui/state", headers=b).get_json()["state"] == {}
+    assert first.get("/api/ui/state").get_json()["state"] == {"zoom": 1.5}
+    assert second.get("/api/ui/state").get_json()["state"] == {}
 
-    assert client.post("/api/reset", headers=a).status_code == 200
-    assert client.get("/api/ui/state", headers=a).get_json()["state"] == {}
+    assert first.post("/api/reset", headers=a).status_code == 200
+    # /api/reset releases only the in-memory agent. Durable workspace/UI state
+    # must survive so reopening the case restores the previous work.
+    assert first.get("/api/ui/state").get_json()["state"] == {"zoom": 1.5}
 
 
 def test_frontend_session_wrapper_and_dvh_do_not_drop_case_data():

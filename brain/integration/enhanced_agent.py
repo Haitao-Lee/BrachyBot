@@ -35,10 +35,19 @@ class EnhancedAgentIntegration:
     7. Auto-evolution scheduling
     """
 
-    def __init__(self, agent, session_id: str = "default", llm_callback: Callable = None):
+    def __init__(
+        self,
+        agent,
+        session_id: str = "default",
+        llm_callback: Callable = None,
+        storage_dir: Optional[str] = None,
+    ):
         self.agent = agent
         self.session_id = session_id
         self.llm_callback = llm_callback
+        self.storage_dir = os.path.abspath(storage_dir) if storage_dir else None
+        if self.storage_dir:
+            os.makedirs(self.storage_dir, exist_ok=True)
 
         from memory import (
             LayeredMemory, ReflexionEngine, ContextDensityOptimizer,
@@ -46,12 +55,26 @@ class EnhancedAgentIntegration:
         )
         from brain.core import MultiAgentCritic
 
-        self.layered_memory = LayeredMemory()
-        self.reflexion = ReflexionEngine(llm_callback=llm_callback)
+        self.layered_memory = LayeredMemory(
+            base_dir=(os.path.join(self.storage_dir, "layered") if self.storage_dir else None),
+        )
+        self.reflexion = ReflexionEngine(
+            memory_dir=(os.path.join(self.storage_dir, "reflexion") if self.storage_dir else None),
+            llm_callback=llm_callback,
+        )
         self.context_optimizer = ContextDensityOptimizer()
-        self.user_profile = UserProfile(user_id=session_id)
-        self.skill_crystallizer = SkillCrystallizer(llm_callback=llm_callback)
-        self.multi_agent_critic = MultiAgentCritic(llm_callback=llm_callback)
+        self.user_profile = UserProfile(
+            user_id=session_id,
+            profile_dir=(os.path.join(self.storage_dir, "profiles") if self.storage_dir else None),
+        )
+        self.skill_crystallizer = SkillCrystallizer(
+            skills_dir=(os.path.join(self.storage_dir, "skills") if self.storage_dir else None),
+            llm_callback=llm_callback,
+        )
+        self.multi_agent_critic = MultiAgentCritic(
+            llm_callback=llm_callback,
+            history_path=(os.path.join(self.storage_dir, "critic", "history.json") if self.storage_dir else None),
+        )
 
         self._setup_reflexion_llm()
         logger.info(f"Enhanced agent integration initialized (session: {session_id})")

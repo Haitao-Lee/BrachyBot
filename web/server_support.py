@@ -32,6 +32,9 @@ WEB_DIR = os.path.dirname(os.path.abspath(__file__))
 APP_DIR = os.path.join(WEB_DIR, "app")
 PROJECT_ROOT = os.path.realpath(os.path.join(WEB_DIR, ".."))
 UPLOAD_DIR = os.path.realpath(os.path.join(PROJECT_ROOT, "uploads"))
+RUNTIME_DIR = os.path.realpath(os.path.expanduser(
+    os.environ.get("BRACHYBOT_RUNTIME_DIR", os.path.join(PROJECT_ROOT, ".runtime"))
+))
 OUTPUT_DIRS = [
     os.path.realpath(os.path.join(PROJECT_ROOT, "output")),
     os.path.realpath(os.path.join(PROJECT_ROOT, "outputs")),
@@ -98,7 +101,20 @@ class TaskManager:
             for tid, _task in ordered[: len(self._tasks) - self._max_tasks]:
                 self._tasks.pop(tid, None)
 
-    def create_task(self, task_type: str, description: str) -> str:
+    def create_task(
+        self,
+        task_type: str,
+        description: str,
+        *,
+        workspace_owner: Optional[str] = None,
+    ) -> str:
+        """Create a task, optionally scoped to one authenticated workspace.
+
+        ``workspace_owner`` is deliberately server-generated (``user_id`` and
+        selected case id). It is never accepted from a browser request.
+        Keeping it with the transient task prevents the SSE status endpoints
+        from becoming a cross-account progress feed.
+        """
         task_id = secrets.token_hex(8)
         with self._lock:
             self._prune_locked()
@@ -114,6 +130,7 @@ class TaskManager:
                 "error": None,
                 "created_at": now,
                 "updated_at": now,
+                "workspace_owner": workspace_owner,
             }
         return task_id
 
@@ -140,16 +157,28 @@ class TaskManager:
                 self._tasks[task_id]["error"] = error
                 self._tasks[task_id]["updated_at"] = time.time()
 
-    def get_task(self, task_id: str) -> Optional[Dict[str, Any]]:
+    @staticmethod
+    def _public_task(task: Dict[str, Any]) -> Dict[str, Any]:
+        public = dict(task)
+        public.pop("workspace_owner", None)
+        return public
+
+    def get_task(self, task_id: str, *, workspace_owner: Optional[str] = None) -> Optional[Dict[str, Any]]:
         with self._lock:
             self._prune_locked()
             task = self._tasks.get(task_id)
-            return dict(task) if task else None
+            if not task or (workspace_owner is not None and task.get("workspace_owner") != workspace_owner):
+                return None
+            return self._public_task(task)
 
-    def get_all_tasks(self) -> Dict[str, Dict[str, Any]]:
+    def get_all_tasks(self, *, workspace_owner: Optional[str] = None) -> Dict[str, Dict[str, Any]]:
         with self._lock:
             self._prune_locked()
-            return {tid: dict(task) for tid, task in self._tasks.items()}
+            return {
+                tid: self._public_task(task)
+                for tid, task in self._tasks.items()
+                if workspace_owner is None or task.get("workspace_owner") == workspace_owner
+            }
 
 
 task_manager = TaskManager()
@@ -1101,6 +1130,7 @@ def _is_under_root(path: str, roots: Iterable[str]) -> bool:
 def _allowed_read_roots() -> list:
     return _real_roots([
         UPLOAD_DIR,
+        RUNTIME_DIR,
         "/tmp",
         "/data",
         *_env_paths("BRACHYBOT_DATA_ROOTS"),
@@ -1111,6 +1141,7 @@ def _allowed_write_roots() -> list:
     return _real_roots([
         *OUTPUT_DIRS,
         SCREENSHOTS_DIR,
+        RUNTIME_DIR,
         "/tmp",
         *_env_paths("BRACHYBOT_OUTPUT_ROOTS"),
     ])
@@ -1272,6 +1303,7 @@ __all__ = [
     "PROJECT_ROOT",
     "RATE_LIMIT_REQUESTS",
     "RATE_LIMIT_WINDOW",
+    "RUNTIME_DIR",
     "SCREENSHOTS_DIR",
     "TRUE_VALUES",
     "TaskManager",

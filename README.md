@@ -32,6 +32,7 @@
 - [API Reference](#-api-reference)
 - [Configuration](#-configuration)
 - [Web Interface](#-web-interface)
+- [Account-Owned Case Workspaces](#-account-owned-case-workspaces)
 - [Code Quality](#-code-quality)
 - [Testing](#-testing)
 - [Product Readiness & Clinical KB Governance](#product-readiness--clinical-kb-governance)
@@ -660,6 +661,36 @@ The server defaults to `127.0.0.1`. To bind to a LAN/public interface, set
 `BRACHYBOT_API_KEY` first. `BRACHYBOT_ALLOW_INSECURE_REMOTE=1` is an explicit
 unsafe override for isolated trusted networks; `BRACHYBOT_TRUST_NETWORK=1`
 only broadens CORS/rate-limit policy and never disables a configured API key.
+
+### Step 3b: Configure Account-Owned Case Workspaces
+
+The web UI uses server-side accounts and persistent case workspaces. Register
+an account on first use, then every case in the sidebar restores its own CT,
+segmentation, planning result, dose, Data Tree, viewer state, report, chat,
+and completed progress after a browser or server restart.
+
+```bash
+# Required for a stable deployment login cookie. Generate a long random value.
+export BRACHYBOT_SECRET_KEY="replace-with-a-long-random-secret"
+
+# Runtime clinical data is intentionally separate from the Git repository.
+# Default: .runtime/ below the project root.
+export BRACHYBOT_RUNTIME_DIR="/srv/brachybot-runtime"
+
+# Per-account capacity and recoverable deletion window.
+export BRACHYBOT_USER_STORAGE_QUOTA_BYTES=$((20 * 1024 * 1024 * 1024))
+export BRACHYBOT_TRASH_RETENTION_DAYS=7
+
+# Enable only behind HTTPS in production.
+export BRACHYBOT_COOKIE_SECURE=1
+```
+
+Browser login is protected by `HttpOnly`/`SameSite=Lax` cookies and CSRF
+validation. `BRACHYBOT_API_KEY` remains a deployment perimeter control; it is
+not a substitute for user identity or case ownership. Two users cannot access
+one another's sessions or artifacts. See
+[Account-Owned Persistent Case Workspaces](docs/ACCOUNT_WORKSPACES_2026-07-17.md)
+for lifecycle, recovery, edit leases, API details, and migration notes.
 
 ### Step 4: Download Pre-trained Models (Optional)
 
@@ -1397,6 +1428,17 @@ critic.format_report_for_display(report)
 ```
 
 ---
+
+## 🔐 Account-Owned Case Workspaces
+
+The Web UI is account-aware and stores each case in a durable, isolated
+workspace. Select a case from the sidebar to restore its complete clinical and
+visual state; delete it to move it to a seven-day recovery bin. Long-running
+tasks interrupted by a server restart retain their last reliable checkpoint and
+are marked for explicit continuation rather than silently rerun.
+
+See [Account-Owned Persistent Case Workspaces](docs/ACCOUNT_WORKSPACES_2026-07-17.md)
+for operational and security details.
 
 ## ⚙️ Configuration
 

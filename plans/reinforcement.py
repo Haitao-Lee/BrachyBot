@@ -5,9 +5,11 @@ import torch.optim as optim
 from torch.distributions import Categorical
 import gymnasium as gym
 import logging
+import time
 from gymnasium import spaces
 from tqdm import tqdm
 from . import utilizations
+from .dose_pre.inference import DoseInferenceDeadlineExceeded
 from .reward_metrics import normalized_oar_damage
 try:
     from . import _reward_core
@@ -193,7 +195,8 @@ class SeedPlacementReward:
                  image_normalize_min: float,
                  target_valueimage_normalize_max: float,  # typo kept
                  image_normalize_scale: float,
-                 DVH_rate: float
+                 DVH_rate: float,
+                 deadline=None,
                  ) -> None:
 
         self.dose_cal_model = dose_cal_model
@@ -208,11 +211,18 @@ class SeedPlacementReward:
         self.target_valueimage_normalize_max = target_valueimage_normalize_max
         self.image_normalize_scale = image_normalize_scale
         self.DVH_rate = DVH_rate
+        self.deadline = deadline
 
         # one-time masks
         self.mask_volume = (radiation_volume == target_value).astype(float)
         self.non_target_mask  = (radiation_volume != target_value).astype(float)
         self.seed_cache: dict[tuple, np.ndarray] = {}
+        # Runtime telemetry distinguishes a bounded but expensive RL run from
+        # an actual control-flow stall. It is intentionally aggregate-only so
+        # no patient geometry is emitted to logs.
+        self.cache_hits = 0
+        self.cache_misses = 0
+        self.model_inference_seconds = 0.0
 
         # flat indices for JIT speed
         self.target_idx = np.where(self.mask_volume.ravel() > 0)[0].astype(np.int32)
@@ -238,15 +248,20 @@ class SeedPlacementReward:
             key = tuple(seed_point_int)
 
             cur_seed_radiation = self.seed_cache.get(key, None)
+            if cur_seed_radiation is not None:
+                self.cache_hits += 1
 
             if cur_seed_radiation is None:
                 for cached_seed, cached_dose in zip(traj[2], traj[3]):
                     if np.linalg.norm(np.asarray(cached_seed[0]).ravel() - seed_point) < 1e-3:
                         cur_seed_radiation = cached_dose
                         self.seed_cache[key] = cur_seed_radiation.copy()
+                        self.cache_hits += 1
                         break
 
             if cur_seed_radiation is None:
+                self.cache_misses += 1
+                inference_started = time.perf_counter()
                 cur_seed_radiation = utilizations.single_seed_dose_calculation_dl(
                     seed_point_int.reshape(-1),
                     direction,
@@ -256,8 +271,10 @@ class SeedPlacementReward:
                     self.seed_info,
                     self.image_normalize_min,
                     self.target_valueimage_normalize_max,
-                    self.image_normalize_scale
+                    self.image_normalize_scale,
+                    deadline=self.deadline,
                 )
+                self.model_inference_seconds += time.perf_counter() - inference_started
                 self.seed_cache[key] = cur_seed_radiation.copy()
 
         # 4.  accumulate dose (in-place to save memory)
@@ -289,6 +306,10 @@ class SeedPlacementReward:
                          ((cur_DVH_rate - self.DVH_rate) >= 0) * (1.0 - out_damage)
 
             return reward, cur_radiation, cur_DVH_rate, cur_seed_radiation
+        except DoseInferenceDeadlineExceeded:
+            # The caller owns the episode boundary and will return its best
+            # valid plan. Do not convert an expired budget into fake zero dose.
+            raise
         except Exception as e:
             logger.exception("Seed-placement reward calculation failed: %s", e)
             # A single-seed dose map has the same full-volume shape as the
@@ -394,13 +415,18 @@ class LowLevelEnv(gym.Env):
     """
     Low-level env: pick candidate positions along a fixed needle path.
     """
-    def __init__(self, candidate_positions):
+    def __init__(self, candidate_positions, max_steps=None):
         super().__init__()
         self.candidate_positions = candidate_positions
         self.used_mask = np.ones(len(candidate_positions), dtype=bool)  # True = available
         self.cur_step = 0
         self.done = False
-        self.action_space = spaces.Discrete(len(candidate_positions))
+        requested_max_steps = len(candidate_positions) if max_steps is None else int(max_steps)
+        candidate_count = len(candidate_positions)
+        self.max_steps = max(1, min(candidate_count, requested_max_steps)) if candidate_count else 0
+        # Gym requires ``n >= 1`` even though an empty candidate space is
+        # immediately completed by the caller before an action is selected.
+        self.action_space = spaces.Discrete(max(1, candidate_count))
         self.observation_space = spaces.Box(low=0, high=1, shape=(1,), dtype=np.float32)
 
     # ------------------------------------------------------
@@ -415,7 +441,7 @@ class LowLevelEnv(gym.Env):
         # mark used and advance
         self.used_mask[action] = False
         self.cur_step += 1
-        if not self.used_mask.any():
+        if not self.used_mask.any() or self.cur_step >= self.max_steps:
             self.done = True
         # keep same return signature as original code expects: (state, done, {})
         return np.array([0.0], dtype=np.float32), self.done, {}
@@ -439,7 +465,9 @@ class HighLevelEnv(gym.Env):
                  seed_info,
                  reward_calculator,
                  DVH_rate,
-                 protect_OAR):
+                 protect_OAR,
+                 max_actions_per_episode=None,
+                 deadline=None):
         super().__init__()
         self.level = target_level
         self.range_length = range_length
@@ -463,6 +491,8 @@ class HighLevelEnv(gym.Env):
         self.planned_directions = [np.array([0, 0, 1]) for _ in range(self.level)]
         self.cur_radiation = np.zeros_like(radiation_volume)
         self.reward_calculator = reward_calculator
+        self.max_actions_per_episode = max_actions_per_episode
+        self.deadline = deadline
         
         # Precompute candidate positions (img coords and world coords) per group and level
         # Structure:
@@ -524,7 +554,7 @@ class HighLevelEnv(gym.Env):
         return merged
 
     # ------------------------------------------------------
-    def generate_mask(self):
+    def generate_mask(self, used_mask=None):
         """
         Build boolean mask for low-level actions.
         True  = position is available (not inside exclusion zone).
@@ -564,7 +594,18 @@ class HighLevelEnv(gym.Env):
                     lv_mask[(candidate_dists > start) & (candidate_dists < end)] = False
 
             mask.extend(lv_mask)
-        return np.array(mask)
+        mask = np.array(mask, dtype=bool)
+        if used_mask is not None:
+            used_mask = np.asarray(used_mask, dtype=bool)
+            if used_mask.shape != mask.shape:
+                raise ValueError(
+                    f"Low-level action mask shape mismatch: {used_mask.shape} vs {mask.shape}"
+                )
+            # Geometric exclusion is not the only convergence mechanism.  A
+            # selected action is always retired even if a malformed seed length
+            # would otherwise leave its position geometrically available.
+            mask &= used_mask
+        return mask
 
     # ------------------------------------------------------
     def update_planned_position(self, action, high_level=False):
@@ -655,7 +696,10 @@ class HighLevelEnv(gym.Env):
         """
         try:
             self.low_level_state_space = self.generate_low_level_state_space(action)
-            low_env = LowLevelEnv(self.low_level_state_space)
+            low_env = LowLevelEnv(
+                self.low_level_state_space,
+                max_steps=self.max_actions_per_episode,
+            )
             low_agent = REINFORCE(n_actions=len(self.low_level_state_space), device=device)
 
             state = low_env.reset()
@@ -666,24 +710,31 @@ class HighLevelEnv(gym.Env):
             cur_DVH_rate = 0.0
             while not low_env.done:
                 try:
+                    if self.deadline is not None and time.monotonic() >= self.deadline:
+                        low_env.done = True
+                        break
                     slicer.app.processEvents()
-                    mask = self.generate_mask()
+                    mask = self.generate_mask(low_env.used_mask)
                     if mask.any():
                         a = low_agent.select_action(state, mask=mask)
                         state, _, _ = low_env.step(a)
                         r, cur_DVH_rate = self.update_planned_position(a, high_level=False)
                         low_agent.record_reward(r)
                         total_reward += r
-                        if cur_DVH_rate > self.DVH_rate:
+                        if cur_DVH_rate >= self.DVH_rate:
                             low_env.done = True
                     else:
                         low_env.done = True
+                except DoseInferenceDeadlineExceeded:
+                    raise
                 except Exception:
                     logger.debug("Low-level environment step failed", exc_info=True)
                     low_env.done = True
 
             planned_res = self.planned_position2planned_res()
             return total_reward, planned_res, cur_DVH_rate, mask, self.group_idx, self.low_level_state_space, low_env, low_agent
+        except DoseInferenceDeadlineExceeded:
+            raise
         except Exception:
             logger.debug("High-level environment step failed", exc_info=True)
             planned_res = self.planned_position2planned_res() if self.group_idx is not None else []
@@ -791,7 +842,9 @@ def reinforcement_planning(
         image_normalize_max,
         image_normalize_scale,
         DVH_rate,
-        progressDialog):
+        progressDialog,
+        deadline=None,
+        max_actions_per_episode=None):
     """
     Hierarchical reinforcement learning driver for a single patient case.
     Logic preserved; internal calls use optimized env and caches.
@@ -814,13 +867,15 @@ def reinforcement_planning(
             dose_cal_model, dose_image, radiation_volume, target_value,
             in_lowest_dose, out_highest_dose, infer_img_size, seed_info,
             image_normalize_min, image_normalize_max,
-            image_normalize_scale, DVH_rate
+            image_normalize_scale, DVH_rate, deadline=deadline
         )
 
         env = HighLevelEnv(
             target_level_traj, high_level_state_spaces, low_level_state_spaces,
             range_length, target_level, dose_image, radiation_volume,
-            seed_info, reward_calculator, DVH_rate, rf_params['segmented_rewards']
+            seed_info, reward_calculator, DVH_rate, rf_params['segmented_rewards'],
+            max_actions_per_episode=max_actions_per_episode,
+            deadline=deadline,
         )
 
         best_group_idx = None
@@ -829,6 +884,9 @@ def reinforcement_planning(
         best_low_agent = None
 
         for idx, elem in enumerate(target_level_traj):
+            if deadline is not None and time.monotonic() >= deadline:
+                logger.warning("[rl] Baseline trajectory scoring reached its wall-clock budget")
+                break
             try:
                 progressDialog.setValue(65)
                 progressDialog.setLabelText("Learning-based Planning...")
@@ -869,11 +927,17 @@ def reinforcement_planning(
         if best_low_level_state_space is None or best_plan is None:
             return [], -np.inf
 
-        best_low_env = LowLevelEnv(best_low_level_state_space)
+        best_low_env = LowLevelEnv(
+            best_low_level_state_space,
+            max_steps=max_actions_per_episode,
+        )
         best_low_agent = REINFORCE(n_actions=len(best_low_level_state_space), device=device)
         
         if rf_params['hierarchical_optimization']:
             for _ in range(rf_params['max_episodes'] // 2):
+                if deadline is not None and time.monotonic() >= deadline:
+                    logger.warning("[rl] Hierarchical RL episode loop reached its wall-clock budget")
+                    break
                 try:
                     progressDialog.setValue(70)
                     progressDialog.setLabelText("Reinforcement Planning...")
@@ -896,6 +960,9 @@ def reinforcement_planning(
                         best_reward = low_agent.rewards[-1]
                     
                     low_agent.finish_episode()
+                except DoseInferenceDeadlineExceeded:
+                    logger.warning("[rl] Hierarchical RL stopped at the DoseUNet deadline")
+                    break
                 except Exception:
                     logger.debug("Hierarchical RL episode failed", exc_info=True)
                     try:
@@ -935,6 +1002,9 @@ def reinforcement_planning(
                         pos_cache[(lv, length)] = utilizations.position_transform(dose_image, img_position)[0]
 
             for ep in range(rf_params['max_episodes'] // 2):
+                if deadline is not None and time.monotonic() >= deadline:
+                    logger.warning("[rl] Low-level RL episode loop reached its wall-clock budget")
+                    break
                 try:
                     progressDialog.setValue(80)
                     progressDialog.setLabelText("Reinforcement Planning...")
@@ -948,6 +1018,9 @@ def reinforcement_planning(
 
                     while not best_low_env.done:
                         try:
+                            if deadline is not None and time.monotonic() >= deadline:
+                                best_low_env.done = True
+                                break
                             mask = []
                             slicer.app.processEvents()  
                             for lv in range(target_level):
@@ -964,7 +1037,12 @@ def reinforcement_planning(
 
                                 mask.extend(lv_mask)
 
-                            mask = np.array(mask)
+                            mask = np.array(mask, dtype=bool)
+                            if mask.shape != best_low_env.used_mask.shape:
+                                raise ValueError(
+                                    "Best low-level action mask does not match its candidate space"
+                                )
+                            mask &= best_low_env.used_mask
                             if np.any(mask):
                                 a = best_low_agent.select_action(state, mask=mask)
                                 state, _, _ = best_low_env.step(a)
@@ -988,10 +1066,14 @@ def reinforcement_planning(
                                 planned_seed_radiations[lv].append(cur_seed_radiation)
                                 planned_directions[lv] = np.array(utilizations.direction_transform(dose_image, direction))[0]
 
-                                if cur_DVH_rate > DVH_rate:
+                                if cur_DVH_rate >= DVH_rate:
                                     best_low_env.done = True
                             else:
                                 best_low_env.done = True
+                        except DoseInferenceDeadlineExceeded:
+                            logger.warning("[rl] Low-level RL stopped at the DoseUNet deadline")
+                            best_low_env.done = True
+                            break
                         except Exception:
                             logger.debug("RL seed placement step failed", exc_info=True)
                             best_low_env.done = True
@@ -1009,6 +1091,9 @@ def reinforcement_planning(
 
                     del cur_radiation
                     best_low_agent.finish_episode()
+                except DoseInferenceDeadlineExceeded:
+                    logger.warning("[rl] Low-level optimization stopped at the DoseUNet deadline")
+                    break
                 except Exception:
                     logger.debug("Low-level RL optimization episode failed", exc_info=True)
                     try:
@@ -1019,6 +1104,9 @@ def reinforcement_planning(
 
         else:
             for ep in range(rf_params['max_episodes']):
+                if deadline is not None and time.monotonic() >= deadline:
+                    logger.warning("[rl] Flat RL episode loop reached its wall-clock budget")
+                    break
                 try:
                     progressDialog.setValue(70)
                     progressDialog.setLabelText("Reinforcement Planning...")
@@ -1036,6 +1124,9 @@ def reinforcement_planning(
                         best_reward = low_agent.rewards[-1]
                         best_plan = plan
                     low_agent.finish_episode()
+                except DoseInferenceDeadlineExceeded:
+                    logger.warning("[rl] Flat RL stopped at the DoseUNet deadline")
+                    break
                 except Exception:
                     logger.debug("Flat RL optimization episode failed", exc_info=True)
                     try:
@@ -1043,7 +1134,16 @@ def reinforcement_planning(
                     except Exception:
                         pass
                     continue
+        logger.info(
+            "[rl] seed-dose cache: %d hits, %d model evaluations, %.2fs uncached inference",
+            reward_calculator.cache_hits,
+            reward_calculator.cache_misses,
+            reward_calculator.model_inference_seconds,
+        )
         return best_plan, best_reward
+    except DoseInferenceDeadlineExceeded:
+        logger.warning("[rl] Reinforcement planning reached the DoseUNet deadline")
+        return ([] if best_plan is None else best_plan), best_reward
     except Exception:
         logger.exception("Reinforcement planning failed")
         if best_plan is not None:

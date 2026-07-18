@@ -86,6 +86,28 @@ def _default_obstacle_label_ids():
 OBSTACLE_ORGAN_LABELS = _default_obstacle_label_ids()
 
 
+def _memory_value(memory, key, default=None):
+    """Read memory values across production and lightweight integrations.
+
+    The mandatory bone/vessel safety baseline must not depend on optional
+    AgentMemory methods being present in a test or embedding environment.
+    """
+    if memory is None:
+        return default
+    getter = getattr(memory, "retrieve", None)
+    if callable(getter):
+        try:
+            value = getter(key)
+        except Exception:
+            value = None
+        return default if value is None else value
+    for attribute in ("values", "planning_results"):
+        values = getattr(memory, attribute, None)
+        if isinstance(values, dict) and key in values:
+            return values[key]
+    return default
+
+
 def _resolve_data_tree_obstacle_labels(agent):
     """Resolve the current Data tree non-traversable OAR whitelist.
 
@@ -98,6 +120,28 @@ def _resolve_data_tree_obstacle_labels(agent):
     defaults = set(OBSTACLE_ORGAN_LABELS or _default_obstacle_label_ids())
     if agent is None or not getattr(agent, "memory", None):
         return defaults, "default"
+    stored_extra = _memory_value(agent.memory, "embedded_obstacle_label_ids")
+    if isinstance(stored_extra, (list, tuple, set)):
+        defaults.update(int(value) for value in stored_extra if str(value).lstrip("-").isdigit())
+    organ_names = _memory_value(agent.memory, "organ_names") or {}
+    if isinstance(organ_names, dict):
+        for raw_id, name in organ_names.items():
+            if _is_default_non_traversable_name(name):
+                try:
+                    defaults.add(int(raw_id))
+                except (TypeError, ValueError):
+                    continue
+    # Some CTV models emit additional anatomical labels (for example bone or
+    # cartilage) in the CTV label namespace. Treat named hard structures as
+    # obstacles even when the OAR segmenter did not reproduce them.
+    ctv_label_map = _memory_value(agent.memory, "ctv_label_map") or {}
+    if isinstance(ctv_label_map, dict):
+        for raw_id, name in ctv_label_map.items():
+            if _is_default_non_traversable_name(name):
+                try:
+                    defaults.add(int(raw_id))
+                except (TypeError, ValueError):
+                    continue
     try:
         ui_state = agent.memory.get_ui_state() or {}
     except Exception as exc:
@@ -116,11 +160,15 @@ def _resolve_data_tree_obstacle_labels(agent):
             continue
         source = str(item.get("source") or "oar").strip().lower()
         item_id = str(item.get("id") or "").strip().lower()
-        if source == "ctv" or item_id.startswith("ctv_"):
-            continue
         try:
             label_id = int(item.get("label_id", item.get("labelId")))
         except (TypeError, ValueError):
+            continue
+        is_ctv_label = source == "ctv" or item_id.startswith("ctv_")
+        # Label 1 is the target and must remain traversable as the planning
+        # target. Other CTV sub-labels can be hard anatomy and must obey the
+        # same Data Tree category policy as OAR nodes.
+        if is_ctv_label and label_id == 1:
             continue
         usable_oar_entries += 1
         category = str(item.get("category") or "traversable").strip().lower()
@@ -137,6 +185,96 @@ def _resolve_data_tree_obstacle_labels(agent):
         len(resolved), len(selected), usable_oar_entries,
     )
     return resolved, "data_tree_plus_default"
+
+
+def _merge_embedded_hard_obstacles(oar_mask, agent):
+    """Merge model-emitted hard structures into the planning OAR grid.
+
+    CTV models may provide a small auxiliary mask for vessels or other hard
+    structures. TotalSegmentator uses a different label namespace, so those
+    voxels cannot safely be represented by reusing a numeric label from the
+    full OAR mask. They receive a private label above the current maximum and
+    the caller adds that label to the obstacle whitelist. This preserves the
+    existing coordinate chain while preventing a later OAR pass from erasing
+    model-specific safety information.
+    """
+    if agent is None or not getattr(agent, "memory", None):
+        return oar_mask, set()
+
+    embedded = _memory_value(agent.memory, "ctv_embedded_oar_array")
+    full_labels = _memory_value(agent.memory, "ctv_full_labels")
+    label_map = _memory_value(agent.memory, "ctv_label_map") or {}
+    hard_ids = set()
+    if isinstance(label_map, dict):
+        for raw_id, name in label_map.items():
+            if _is_default_non_traversable_name(name):
+                try:
+                    hard_ids.add(int(raw_id))
+                except (TypeError, ValueError):
+                    continue
+    # A user may explicitly classify a CTV sub-label as non-traversable even
+    # when its name is not in the default vocabulary. Preserve that choice.
+    try:
+        ui_state = agent.memory.get_ui_state() or {}
+    except Exception:
+        ui_state = {}
+    organs = ((ui_state.get("data_tree") or {}).get("organs") or {}) if isinstance(ui_state, dict) else {}
+    if isinstance(organs, list):
+        for item in organs:
+            if not isinstance(item, dict):
+                continue
+            source = str(item.get("source") or "").strip().lower()
+            item_id = str(item.get("id") or "").strip().lower()
+            category = str(item.get("category") or "").strip().lower()
+            if category != "non_traversable" or (source != "ctv" and not item_id.startswith("ctv_")):
+                continue
+            try:
+                label_id = int(item.get("label_id", item.get("labelId")))
+            except (TypeError, ValueError):
+                continue
+            if label_id != 1:
+                hard_ids.add(label_id)
+
+    derived = None
+    if full_labels is not None and hard_ids:
+        full = np.asarray(full_labels)
+        derived = np.where(np.isin(full, list(hard_ids)), 1, 0).astype(np.uint8)
+    if embedded is None and derived is None:
+        return oar_mask, set()
+
+    embedded_array = np.asarray(embedded) if embedded is not None else np.zeros_like(derived, dtype=np.uint8)
+    if embedded_array.ndim != 3:
+        logger.warning("[OAR filter] embedded hard-obstacle mask is not 3D; ignoring it")
+        return oar_mask, set()
+    if derived is not None:
+        if derived.shape != embedded_array.shape:
+            logger.error(
+                "[OAR filter] CTV hard-label shape %s does not match embedded shape %s; ignoring derived labels",
+                derived.shape, embedded_array.shape,
+            )
+        else:
+            embedded_array = np.logical_or(embedded_array > 0, derived > 0).astype(np.uint8)
+    if oar_mask is not None:
+        current = np.asarray(oar_mask)
+        if current.shape != embedded_array.shape:
+            logger.error(
+                "[OAR filter] embedded hard-obstacle shape %s does not match OAR shape %s; ignoring it",
+                embedded_array.shape,
+                current.shape,
+            )
+            return oar_mask, set()
+        merged = current.astype(np.int32, copy=True)
+    else:
+        merged = np.zeros(embedded_array.shape, dtype=np.int32)
+
+    hard_voxels = embedded_array > 0
+    if not np.any(hard_voxels):
+        return oar_mask, set()
+    next_label = int(np.max(merged)) + 1
+    next_label = max(next_label, 10000)
+    merged[hard_voxels] = next_label
+    logger.info("[OAR filter] merged %d embedded hard-obstacle voxels as label %d", int(hard_voxels.sum()), next_label)
+    return merged, {next_label}
 
 
 def _safe_dicom_orient(image, target_orientation='LPI', context=""):
@@ -169,6 +307,107 @@ def load_config() -> Dict:
 
 
 CONFIG = load_config()
+
+
+# Invocation-level planning settings are intentionally narrow.  CT/CTV/OAR
+# label semantics remain owned by the pipeline, while the UI may adjust
+# clinically meaningful optimization inputs without mutating global config.
+_RADIATION_PARAM_KEYS = {
+    "backlit_angle", "maximum_candidate_trajectories", "min_depth", "min_depth_rate",
+}
+_RF_PARAM_KEYS = {
+    "lr", "gamma", "max_episodes", "print_every", "bandwidth",
+    "hierarchical_optimization", "segmented_rewards", "flip_ratio",
+    "candidate_limit", "dense_seed_limit", "max_hierarchy_depth",
+    "max_actions_per_episode", "max_wall_seconds",
+}
+_PLANNING_PARAM_KEYS = {
+    "in_lowest_energy", "out_highest_energy", "DVH_rate", "iter_rate",
+    "max_iter", "replan_rate", "distance_filtter", "distance_filter",
+    "radiation_array_params", "rf_params",
+}
+
+
+def _finite_number(value, name, *, minimum=None, maximum=None):
+    """Validate a finite numeric override before it reaches the optimizer."""
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        raise ValueError(f"{name} must be numeric")
+    if not np.isfinite(parsed):
+        raise ValueError(f"{name} must be finite")
+    if minimum is not None and parsed < minimum:
+        raise ValueError(f"{name} must be >= {minimum}")
+    if maximum is not None and parsed > maximum:
+        raise ValueError(f"{name} must be <= {maximum}")
+    return parsed
+
+
+def _apply_planning_overrides(args, overrides):
+    """Apply validated per-call UI settings to a fresh ``plans.config`` object.
+
+    Every pipeline stage receives a new config object.  Centralizing this
+    merge prevents trajectory generation from using defaults while seed
+    planning uses user inputs, which previously made a replan appear to ignore
+    its changed reference/candidate settings.
+    """
+    if not isinstance(overrides, dict):
+        return args
+
+    for key in ("in_lowest_energy", "out_highest_energy"):
+        if key in overrides:
+            setattr(args, key, _finite_number(overrides[key], key, minimum=0.0))
+    if "DVH_rate" in overrides:
+        args.DVH_rate = _finite_number(overrides["DVH_rate"], "DVH_rate", minimum=0.0, maximum=1.0)
+    for key in ("iter_rate", "max_iter"):
+        if key in overrides:
+            setattr(args, key, int(_finite_number(overrides[key], key, minimum=1, maximum=1000)))
+    if "replan_rate" in overrides:
+        args.replan_rate = _finite_number(overrides["replan_rate"], "replan_rate", minimum=0.0, maximum=1.0)
+
+    seed_info = overrides.get("seed_info")
+    if isinstance(seed_info, dict):
+        for key in ("radius", "length", "margin_rate"):
+            if key in seed_info:
+                args.seed_info[key] = _finite_number(seed_info[key], f"seed_info.{key}", minimum=1e-6)
+
+    radiation = overrides.get("radiation_array_params")
+    if isinstance(radiation, dict):
+        for key in _RADIATION_PARAM_KEYS:
+            if key not in radiation:
+                continue
+            if key == "backlit_angle":
+                args.radiation_array_params[key] = _finite_number(radiation[key], key, minimum=0.0, maximum=np.pi)
+            elif key == "maximum_candidate_trajectories":
+                args.radiation_array_params[key] = int(_finite_number(radiation[key], key, minimum=1, maximum=2000))
+            else:
+                args.radiation_array_params[key] = _finite_number(radiation[key], key, minimum=0.0, maximum=1000.0)
+
+    distance = overrides.get("distance_filter", overrides.get("distance_filtter"))
+    if isinstance(distance, dict):
+        target = args.distance_filtter
+        for key in ("lower_bound", "upper_bound", "distance_rate", "interval_rate"):
+            if key in distance:
+                target[key] = _finite_number(distance[key], f"distance_filter.{key}", minimum=0.0, maximum=1000.0)
+
+    rf_params = overrides.get("rf_params")
+    if isinstance(rf_params, dict):
+        for key in _RF_PARAM_KEYS:
+            if key not in rf_params:
+                continue
+            value = rf_params[key]
+            if key in {"hierarchical_optimization", "segmented_rewards"}:
+                args.rf_params[key] = bool(value)
+            elif key in {
+                "max_episodes", "print_every", "bandwidth", "candidate_limit",
+                "dense_seed_limit", "max_hierarchy_depth", "max_actions_per_episode",
+                "max_wall_seconds",
+            }:
+                args.rf_params[key] = int(_finite_number(value, f"rf_params.{key}", minimum=1, maximum=1000))
+            elif key in {"lr", "gamma", "flip_ratio"}:
+                args.rf_params[key] = _finite_number(value, f"rf_params.{key}", minimum=0.0, maximum=1.0)
+
+    return args
 
 
 def _resample_for_planning(ct_image, ctv_mask, oar_mask, new_size=[128, 128, 64]):
@@ -217,7 +456,10 @@ def _resample_for_planning(ct_image, ctv_mask, oar_mask, new_size=[128, 128, 64]
     # Resample OAR (nearest neighbor for labels)
     resampled_oar = None
     if oar_mask is not None:
-        oar_sitk = sitk.GetImageFromArray(oar_mask.astype(np.uint8))
+        # Keep the label namespace lossless. Embedded hard structures use a
+        # private label (>=10000); uint8 would wrap it and silently disable
+        # the obstacle whitelist during resampling.
+        oar_sitk = sitk.GetImageFromArray(oar_mask.astype(np.int32))
         oar_sitk.SetSpacing(ct_image.GetSpacing())
         oar_sitk.SetOrigin(ct_image.GetOrigin())
         oar_sitk.SetDirection(ct_image.GetDirection())
@@ -844,6 +1086,53 @@ def _validated_needle_geometry(plan_res, ct_image, ctv_mask, oar_mask, obstacle_
     return geometry, unsafe_indices
 
 
+def _build_algorithm_plan_snapshot(seed_plan_serialized, verified_needle_geometry):
+    """Create a compact immutable baseline for per-needle restoration."""
+    seeds = []
+    needles = []
+    for trajectory_index, entry in enumerate(seed_plan_serialized or []):
+        if not isinstance(entry, dict):
+            continue
+        trajectory_id = f"traj_{trajectory_index + 1}"
+        for seed_index, seed in enumerate(entry.get("seeds") or []):
+            if isinstance(seed, dict):
+                position = seed.get("position") or seed.get("pos")
+                direction = seed.get("direction") or seed.get("dir")
+            elif isinstance(seed, (list, tuple)) and len(seed) >= 2:
+                position, direction = seed[0], seed[1]
+            else:
+                continue
+            try:
+                pos = np.asarray(position, dtype=np.float64).reshape(-1)[:3]
+                direc = np.asarray(direction, dtype=np.float64).reshape(-1)[:3]
+                if pos.size != 3 or direc.size != 3 or not np.all(np.isfinite(pos)) or not np.all(np.isfinite(direc)):
+                    continue
+                seeds.append({
+                    "id": f"seed_{trajectory_index}_{seed_index}",
+                    "position": pos.tolist(),
+                    "direction": direc.tolist(),
+                    "trajectory_id": trajectory_id,
+                })
+            except Exception:
+                continue
+        points = (verified_needle_geometry or {}).get(str(trajectory_index))
+        if isinstance(points, list) and len(points) >= 2:
+            try:
+                normalized_points = [
+                    np.asarray(point, dtype=np.float64).reshape(-1)[:3].tolist()
+                    for point in points[:2]
+                ]
+                if all(len(point) == 3 and np.all(np.isfinite(point)) for point in normalized_points):
+                    needles.append({
+                        "id": f"needle_{trajectory_index}",
+                        "points": normalized_points,
+                        "trajectory_id": trajectory_id,
+                    })
+            except Exception:
+                continue
+    return {"seeds": seeds, "needles": needles}
+
+
 class PlanningPipelineTool(BaseTool):
     """
     Unified brachytherapy planning pipeline orchestrator.
@@ -907,7 +1196,11 @@ class PlanningPipelineTool(BaseTool):
                 },
                 "planning_params": {
                     "type": "object",
-                    "description": "Planning parameters override {in_lowest_energy, out_highest_energy, DVH_rate}",
+                    "description": (
+                        "Invocation-only overrides: {in_lowest_energy, out_highest_energy, DVH_rate, "
+                        "iter_rate, max_iter, replan_rate, distance_filter, radiation_array_params, rf_params}. "
+                        "Only trajectory-generation and optimization settings are accepted; target/OAR label semantics remain fixed."
+                    ),
                 },
                 "ref_direc": {
                     "type": "array",
@@ -1028,6 +1321,13 @@ class PlanningPipelineTool(BaseTool):
                         error=f"OAR mask is required but CT path not found. Please upload a CT image first."
                     )
 
+        # Preserve hard structures emitted by the CTV model even when the
+        # full OAR segmentation ran afterwards. The synthetic label is kept
+        # local to this planning mask and never changes clinical label names.
+        oar_mask, embedded_obstacle_labels = _merge_embedded_hard_obstacles(oar_mask, agent)
+        if agent:
+            agent.memory.store("embedded_obstacle_label_ids", sorted(embedded_obstacle_labels))
+
         # Build an invocation-local configuration. Planning overrides belong to
         # this tool call and must never mutate the session-wide agent config.
         agent_config = copy.deepcopy(getattr(agent, 'config', {}) or {}) if agent else {}
@@ -1040,17 +1340,39 @@ class PlanningPipelineTool(BaseTool):
         if planning_params is not None:
             if not isinstance(planning_params, dict):
                 return ToolResult(success=False, error="planning_params must be an object")
-            allowed_planning_params = {
-                "in_lowest_energy", "out_highest_energy", "DVH_rate",
-                "reference_direc", "iter_rate", "distance_filtter",
-            }
-            unknown = sorted(set(planning_params) - allowed_planning_params)
+            unknown = sorted(set(planning_params) - _PLANNING_PARAM_KEYS)
             if unknown:
                 return ToolResult(
                     success=False,
                     error=f"Unsupported planning_params: {', '.join(unknown)}",
                 )
+            try:
+                # Validate on an isolated default object. The actual fresh
+                # stage configs are merged below through the same helper.
+                from plans.config import setting
+                _apply_planning_overrides(setting(), planning_params)
+            except ValueError as exc:
+                return ToolResult(success=False, error=f"Invalid planning_params: {exc}")
             agent_config.update(copy.deepcopy(planning_params))
+
+        # Accept the former top-level spellings for one release so existing
+        # LLM/provider prompts do not silently lose UI values. They are folded
+        # into the canonical nested form before any stage reads configuration.
+        legacy_overrides = {
+            key: kwargs[key]
+            for key in _PLANNING_PARAM_KEYS
+            if key in kwargs and kwargs[key] is not None
+        }
+        if legacy_overrides:
+            logger.warning("planning_pipeline received legacy top-level planning overrides; normalizing them")
+            merged_overrides = dict(agent_config)
+            merged_overrides.update(copy.deepcopy(legacy_overrides))
+            try:
+                from plans.config import setting
+                _apply_planning_overrides(setting(), merged_overrides)
+            except ValueError as exc:
+                return ToolResult(success=False, error=f"Invalid planning override: {exc}")
+            agent_config.update(copy.deepcopy(legacy_overrides))
 
         # Get reference direction — accepts explicit array, "auto", or "auto_detect"
         ref_direc_input = kwargs.get("ref_direc")
@@ -1071,7 +1393,7 @@ class PlanningPipelineTool(BaseTool):
         elif step == "trajectory_init":
             return self._step_trajectory_init(ct_image, ctv_mask, oar_mask, ref_direc, agent_config, agent)
         elif step == "trajectory_refine":
-            return self._step_trajectory_refine(ct_image, ctv_mask, oar_mask, agent)
+            return self._step_trajectory_refine(ct_image, ctv_mask, oar_mask, agent_config, agent)
         elif step == "seed_planning":
             return self._step_seed_planning(ct_image, ctv_mask, oar_mask, mode, agent_config, agent)
         elif step == "dose_calc":
@@ -1257,7 +1579,7 @@ class PlanningPipelineTool(BaseTool):
 
         # Get config
         from plans.config import setting
-        args = setting()
+        args = _apply_planning_overrides(setting(), agent_config)
 
         # Resample to planning grid
         logger.info("Resampling to planning grid [128, 128, 64]...")
@@ -1376,7 +1698,7 @@ class PlanningPipelineTool(BaseTool):
             },
         )
 
-    def _step_trajectory_refine(self, ct_image, ctv_mask, oar_mask, agent):
+    def _step_trajectory_refine(self, ct_image, ctv_mask, oar_mask, agent_config, agent):
         """Step 2: Refine trajectories (filter by quality).
 
         Prerequisites:
@@ -1398,7 +1720,7 @@ class PlanningPipelineTool(BaseTool):
             ref_direc = _resolve_ref_direc(ref_input, ct_image, ctv_mask, agent)
             init_result = self._step_trajectory_init(
                 ct_image, ctv_mask, oar_mask, ref_direc,
-                copy.deepcopy(getattr(agent, "config", {}) or {}), agent,
+                agent_config or copy.deepcopy(getattr(agent, "config", {}) or {}), agent,
             )
             if not init_result.success:
                 return ToolResult(success=False, error=f"[trajectory_refine] Cannot generate trajectories: {init_result.error}")
@@ -1416,7 +1738,7 @@ class PlanningPipelineTool(BaseTool):
         obstacle_labels = set(OBSTACLE_ORGAN_LABELS)
         if resampled_ctv is not None:
             from plans.config import setting
-            args = setting()
+            args = _apply_planning_overrides(setting(), agent_config)
             obstacle_labels, obstacle_source = _resolve_data_tree_obstacle_labels(agent)
             radiation_volume = _build_radiation_volume(
                 resampled_ctv, resampled_oar,
@@ -1432,7 +1754,7 @@ class PlanningPipelineTool(BaseTool):
 
         # Filter trajectories by depth
         from plans.config import setting
-        args = setting()
+        args = _apply_planning_overrides(setting(), agent_config)
         min_depth = args.radiation_array_params.get('min_depth_rate', 5)
 
         depth_candidates = [t for t in trajectories if t[4] >= min_depth]
@@ -1517,7 +1839,9 @@ class PlanningPipelineTool(BaseTool):
             init_result = self._step_trajectory_init(ct_image, ctv_mask, oar_mask, auto_ref_direc, agent_config, agent)
             if not init_result.success:
                 return ToolResult(success=False, error=f"[seed_planning] Cannot generate trajectories: {init_result.error}")
-            refine_result = self._step_trajectory_refine(ct_image, ctv_mask, oar_mask, agent)
+            refine_result = self._step_trajectory_refine(
+                ct_image, ctv_mask, oar_mask, agent_config, agent,
+            )
             if not refine_result.success:
                 return ToolResult(success=False, error=f"[seed_planning] Cannot refine trajectories: {refine_result.error}")
             trajectories = refine_result.metadata.get("refined_trajectories", [])
@@ -1537,7 +1861,7 @@ class PlanningPipelineTool(BaseTool):
                 ct_image, ctv_mask, oar_mask, new_size=[128, 128, NEW_SLICES_ROUNDED]
             )
             from plans.config import setting
-            args_tmp = setting()
+            args_tmp = _apply_planning_overrides(setting(), agent_config)
             obstacle_labels, obstacle_source = _resolve_data_tree_obstacle_labels(agent)
             radiation_volume = _build_radiation_volume(
                 resampled_ctv, resampled_oar,
@@ -1556,7 +1880,7 @@ class PlanningPipelineTool(BaseTool):
         # Data tree category change is honored without restarting the session.
         if resampled_ctv is not None:
             from plans.config import setting
-            args_current = setting()
+            args_current = _apply_planning_overrides(setting(), agent_config)
             obstacle_labels, obstacle_source = _resolve_data_tree_obstacle_labels(agent)
             radiation_volume = _build_radiation_volume(
                 resampled_ctv, resampled_oar,
@@ -1572,7 +1896,10 @@ class PlanningPipelineTool(BaseTool):
 
         obstacle_labels = set(locals().get("obstacle_labels", OBSTACLE_ORGAN_LABELS))
         if radiation_volume is not None:
-            obstacle_args = args_current if 'args_current' in locals() else setting()
+            obstacle_args = (
+                args_current if 'args_current' in locals()
+                else _apply_planning_overrides(setting(), agent_config)
+            )
             trajectories = _filter_safe_trajectories(
                 trajectories,
                 radiation_volume,
@@ -1599,17 +1926,7 @@ class PlanningPipelineTool(BaseTool):
 
         # Get config
         from plans.config import setting
-        args = setting()
-
-        # Override with agent config
-        if "seed_info" in agent_config:
-            args.seed_info.update(agent_config["seed_info"])
-        if "in_lowest_energy" in agent_config:
-            args.in_lowest_energy = agent_config["in_lowest_energy"]
-        if "out_highest_energy" in agent_config:
-            args.out_highest_energy = agent_config["out_highest_energy"]
-        if "DVH_rate" in agent_config:
-            args.DVH_rate = agent_config["DVH_rate"]
+        args = _apply_planning_overrides(setting(), agent_config)
 
         # Run planning using core.init_plan + core.optimal_plan directly.
         # We CANNOT use brachy_plan because it rebuilds the radiation volume
@@ -1751,6 +2068,13 @@ class PlanningPipelineTool(BaseTool):
             # The viewer consumes these already validated world-coordinate
             # endpoints instead of reconstructing an unchecked 150 mm line.
             agent.memory.store("verified_needle_geometry", verified_needle_geometry)
+            # Keep a compact algorithm baseline. Manual edits intentionally
+            # update seed_plan later, but this snapshot remains the reference
+            # used by the per-needle "Restore algorithm result" action.
+            agent.memory.store(
+                "algorithm_plan_snapshot",
+                _build_algorithm_plan_snapshot(seed_plan, verified_needle_geometry),
+            )
             agent.memory.store("dose_distribution", sum_image)
             agent.memory.store("total_seeds", total_seeds)
             agent.memory.store("num_trajectories", num_trajectories)
@@ -2303,7 +2627,9 @@ class PlanningPipelineTool(BaseTool):
         logger.info("Step 2/5: Trajectory refinement...")
         _notify("trajectory_refine", "pending", "Refining candidate trajectories")
         t0 = time.time()
-        refine_result = self._step_trajectory_refine(ct_image, ctv_mask, oar_mask, agent)
+        refine_result = self._step_trajectory_refine(
+            ct_image, ctv_mask, oar_mask, agent_config, agent,
+        )
         substep_timings["trajectory_refine"] = round(time.time() - t0, 2)
         _notify("trajectory_refine", "done" if refine_result.success else "error",
                 f"elapsed_ms={int(substep_timings['trajectory_refine']*1000)}")

@@ -257,6 +257,7 @@ async function syncUIBridgeState(reason = 'snapshot') {
                 state: (typeof collectUIState === 'function') ? collectUIState() : {},
             }),
         });
+        if (typeof scheduleWorkspaceSave === 'function') scheduleWorkspaceSave(reason);
     } catch (e) {
         console.debug('[ui-state] sync skipped:', e);
     }
@@ -286,6 +287,12 @@ async function reportUIEvent(type, label, detail = {}, options = {}) {
                 const ss = data.suggested_screenshot;
                 setTimeout(() => _interceptScreenshot(ss.target || 'dose-overview', ss.question || ss.description || 'Monitor screenshot'), 500);
             }
+        }
+        // UI events include viewer, Data Tree, manual-planning and form
+        // interactions. Coalesce their workspace checkpoint after the API
+        // event succeeds so a reload restores the visible case state.
+        if (typeof window.scheduleWorkspaceSave === 'function') {
+            window.scheduleWorkspaceSave(`ui.event:${type}`);
         }
         if (options.returnData) return data;
     } catch (e) {
@@ -593,6 +600,9 @@ function clearClientWorkspace(options = {}) {
     state.metrics = {};
     state.seeds = [];
     state.trajectories = [];
+    // Manual workflow progress is case data. Drop the in-browser copy before
+    // applying the next workspace snapshot so it cannot bleed into a session.
+    window.__manualWorkspaceState = null;
     if (typeof volumeShape !== 'undefined') volumeShape = null;
     if (typeof volumeSpacing !== 'undefined') volumeSpacing = null;
     if (typeof updateSeeds === 'function') updateSeeds([]);
@@ -992,10 +1002,12 @@ async function loadCTToViewers(ctPath, options = {}) {
 async function restoreActiveSessionWorkspace(options = {}) {
     const sessionAtStart = _activeApiSessionId();
     clearClientWorkspace({ clearReport: options.clearReport !== false });
-    if (options.clearReport !== false && typeof _loadReportFromStorage === 'function') {
-        _loadReportFromStorage();
-        try { renderReportEditor(); } catch (_) {}
-        try { _updateReportPreview(); } catch (_) {}
+    let workspace = options.workspace || window._activeWorkspaceSnapshot || null;
+    if (!workspace) {
+        try {
+            const workspaceResponse = await fetch(API + '/workspace/snapshot');
+            if (workspaceResponse.ok) workspace = (await workspaceResponse.json()).workspace || null;
+        } catch (error) { console.debug('[session restore] Workspace snapshot unavailable:', error); }
     }
 
     let status = options.status || null;
@@ -1028,6 +1040,7 @@ async function restoreActiveSessionWorkspace(options = {}) {
     const ctPath = String(status.ct_path || '').trim();
     if (_activeApiSessionId() !== sessionAtStart) return null;
     if (!ctPath) {
+        if (workspace && typeof applyWorkspaceSnapshot === 'function') await applyWorkspaceSnapshot(workspace);
         if (typeof _saveManualState === 'function') {
             _saveManualState({
                 ct_loaded: false,
@@ -1091,6 +1104,13 @@ async function restoreActiveSessionWorkspace(options = {}) {
             try { renderSliceFromVolume(axis, state.slices[axis]); } catch (_) {}
         });
     }
+    if (_activeApiSessionId() !== sessionAtStart) return null;
+    if (workspace && typeof applyWorkspaceSnapshot === 'function') await applyWorkspaceSnapshot(workspace);
+    // Re-render after the saved slice indices, visibility, and material state
+    // have been applied.  This avoids a transient old-case frame on switch.
+    ['axial', 'sagittal', 'coronal'].forEach(axis => {
+        try { if (state.slices && Number.isFinite(Number(state.slices[axis]))) renderSliceFromVolume(axis, Number(state.slices[axis])); } catch (_) {}
+    });
     return status;
 }
 window.restoreActiveSessionWorkspace = restoreActiveSessionWorkspace;
@@ -1112,24 +1132,16 @@ for (const [name, fn] of Object.entries(_staticUiHelpers)) {
 async function init() {
     try { instrumentUIControls(); } catch (e) { console.warn('instrumentUIControls failed:', e); }
 
-    // --- PRIORITY 0: Restore chat history IMMEDIATELY (no await) ---
-    // Sessions live in localStorage; rendering them must NOT be blocked
-    // by any server round-trip.  Previously, loadSessions() was called
-    // AFTER three sequential await fetch() calls (/status, /planning/clear,
-    // /config), which meant the user saw a blank chat area for 1-3s on
-    // every page refresh.
+    // The authenticated server is the case-session source of truth.  Do not
+    // render a localStorage transcript before the selected case is known.
     try {
-        if (typeof loadSessions === 'function') loadSessions();
+        if (typeof loadSessions === 'function') await loadSessions();
         if (typeof renderSessionList === 'function') renderSessionList();
-        if (typeof loadSessionChat === 'function' && activeSessionId) {
-            loadSessionChat(activeSessionId);
-        }
     } catch (e) { console.warn('Session init failed:', e); }
 
     // --- PRIORITY 1: Server init — run /status, /planning/clear, /config
-    // in parallel instead of sequentially.  The /status response is needed
-    // by downstream UI, so we await it; /planning/clear and /config are
-    // fire-and-forget.
+    // There is intentionally no startup call to /planning/clear: an existing
+    // durable case must be restored rather than reset by a browser refresh.
     let _statusData = null;
     const _statusPromise = fetch(API + '/status').then(async resp => {
         if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
@@ -1148,7 +1160,7 @@ async function init() {
     // Fire-and-forget: load config defaults
     loadDefaultParams().catch(e => console.warn('loadDefaultParams failed:', e));
 
-    // Wait for /status (needed by UI below); clear/config run in background.
+    // Wait for /status (needed by UI below); config defaults are background-only.
     await _statusPromise;
 
     // Clear frontend state (runs once per page load)
@@ -1254,6 +1266,7 @@ async function init() {
         console.warn('Active session workspace restore failed:', error);
         clearClientWorkspace({ clearReport: true });
     }
+    if (typeof loadSessionChat === 'function' && activeSessionId) loadSessionChat(activeSessionId);
     syncUIBridgeState('init').catch(e => console.warn('Initial UI state sync failed:', e));
 
     // New workspaces open with 3D on top and all orthogonal 2D viewers below.

@@ -6,7 +6,7 @@ import os
 import re
 import threading
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 
 logger = logging.getLogger(__name__)
@@ -116,6 +116,11 @@ class AgentMemory:
         self._lock = threading.RLock()
         self.patient_data: Dict = {}
         self.planning_results: Dict = {}
+        # Workspace persistence uses these monotonically increasing versions to
+        # reuse unchanged array sidecars. Clinical arrays are replaced through
+        # ``store`` rather than mutated in place, so a version change is the
+        # durable boundary for CTV/OAR/dose artifacts.
+        self._planning_versions: Dict[str, int] = {}
         self.tool_results: List[Dict] = []
         self.conversation: List[Dict] = []
         self.context_summary: str = ""
@@ -123,6 +128,10 @@ class AgentMemory:
         self.current_phase: PlanningPhase = PlanningPhase.IDLE
         self.deviation_threshold_mm: float = 2.0
         self._ui_state: Dict = {}
+        # The web workspace layer installs a debounced callback here.  Agent
+        # memory remains usable without the web server, so persistence is an
+        # optional observer rather than a hard dependency of core state.
+        self._persistence_callback: Optional[Callable[[str], None]] = None
         self.user_lang: str = "en"  # Detected once per message, used everywhere
         # Structured conversation state — tracks what has been done
         # so the router and context builder can make state-aware decisions.
@@ -142,9 +151,27 @@ class AgentMemory:
             self.smart_context = None
             logger.warning("SmartContextManager not available, using basic conversation")
 
+    def set_persistence_callback(self, callback: Optional[Callable[[str], None]]):
+        """Install a non-blocking observer for durable workspace checkpoints."""
+        with self._lock:
+            self._persistence_callback = callback
+
+    def _notify_persistence(self, reason: str) -> None:
+        callback = self._persistence_callback
+        if callback is None:
+            return
+        try:
+            callback(reason)
+        except Exception:
+            # Persistence is intentionally best-effort at this low level.
+            # Request/operation boundaries perform the synchronous checkpoint
+            # that reports a real storage failure to the caller.
+            logger.debug("Agent memory persistence observer failed", exc_info=True)
+
     def store(self, key: str, value: Any):
         with self._lock:
             self.planning_results[key] = value
+            self._planning_versions[key] = self._planning_versions.get(key, 0) + 1
             # Keep router-visible state synchronized without copying clinical
             # arrays into the prompt context. Only the available key names are
             # exposed through conversation_state.
@@ -154,6 +181,7 @@ class AgentMemory:
             else:
                 available.add(key)
             self.conversation_state["data_available"] = sorted(available)
+        self._notify_persistence(f"memory.store:{key}")
 
     def retrieve(self, key: str, default: Any = None) -> Any:
         with self._lock:
@@ -376,6 +404,7 @@ class AgentMemory:
                 "message": result.message,
                 "execution_time": result.execution_time,
             })
+        self._notify_persistence(f"tool:{tool_name}")
 
     def add_message(self, role: str, content: str):
         """Add a message with smart context tracking."""
@@ -385,11 +414,13 @@ class AgentMemory:
         # Also add to smart context manager
         if self.smart_context:
             self.smart_context.add_message(role, content)
+        self._notify_persistence(f"message:{role}")
 
     def set_ui_state(self, state: Dict):
         """Update UI state from frontend (selected files, etc)."""
         with self._lock:
             self._ui_state.update(state)
+        self._notify_persistence("ui_state")
 
     def get_ui_state(self) -> Dict:
         with self._lock:
@@ -547,12 +578,14 @@ class AgentMemory:
         if hasattr(self, 'exp_memory') and self.exp_memory:
             self.exp_memory.clear()
             logger.info("Experience memory cleared")
+        self._notify_persistence("conversation.cleared")
 
     def clear_all_data(self):
         """Clear all loaded data (CT, CTV, OAR, planning results) for a completely fresh start."""
         # Clear planning results (stores CT, CTV, OAR, dose, seeds, etc.)
         with self._lock:
             self.planning_results.clear()
+            self._planning_versions.clear()
             # Clear patient data
             self.patient_data.clear()
             # Clear tool results
@@ -567,6 +600,7 @@ class AgentMemory:
                 "data_available": [],
             })
         logger.info("All data cleared (CT, CTV, OAR, planning results)")
+        self._notify_persistence("case.cleared")
 
         # Clear all enhanced integration components
         if hasattr(self, 'enhanced') and self.enhanced:
