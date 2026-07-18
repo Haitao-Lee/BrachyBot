@@ -41,6 +41,9 @@ memory/data/
 # source modules named "output". The prior unanchored rule silently excluded
 # tool_factory/output/dicom_rt_exporter.py from releases.
 /output/
+# DICOM/report artifacts emitted by the export tools are runtime data, while
+# the Python source modules under tool_factory/output remain versioned.
+tool_factory/output/reports/
 outputs/
 *.nii.gz
 *.nii

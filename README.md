@@ -1221,9 +1221,9 @@ tool_factory/
 ├── ui_annotate/          # Image annotation (arrows, circles, text labels)
 │
 └── output/               # Export tools
+    ├── __init__.py
     ├── dicom_rt_exporter.py
-    ├── dose_exporter.py
-    └── report_generator.py
+    └── report_auto_fill.py
 ```
 
 ### Tool Interface
