@@ -13,9 +13,13 @@ def read(path: str) -> str:
 def test_authenticated_boot_uses_server_session_loader():
     ui_api = read("web/app/static/js/brachybot-ui-api.js")
     workspace = read("web/app/static/js/brachybot-workspace.js")
+    index = read("web/app/index.html")
     assert "window.loadSessions" in ui_api
     assert "window.__serverWorkspaceReady = true" in workspace
     assert "window.loadServerSessions" in workspace
+    # The workspace bridge must load before report-export starts init(), or a
+    # first page load can transiently select the legacy localStorage session.
+    assert index.index("brachybot-workspace.js") < index.index("brachybot-report-export.js")
 
 
 def test_legacy_chat_bindings_delegate_to_durable_workspace():
@@ -63,3 +67,25 @@ def test_report_modal_has_keyboard_safe_close_path():
     assert "event.key === 'Escape'" in report_shell
     assert "const focusable" in report_shell
     assert ".rp-modal-overlay" in report_css
+
+
+def test_report_actions_use_the_app_confirmation_modal_not_browser_confirm():
+    report_shell = read("web/app/static/js/brachybot-report-shell.js")
+    report_export = read("web/app/static/js/brachybot-report-export.js")
+    assert "window._confirmAction" in report_shell
+    assert "window._confirmAction" in report_export
+    assert "confirm(" not in report_shell
+    assert "confirm(" not in report_export
+
+
+def test_deployment_api_key_has_a_session_scoped_login_path():
+    """A protected deployment must not leave the account screen at a 401 dead end."""
+    index = read("web/app/index.html")
+    auth = read("web/app/static/js/brachybot-auth.js")
+    ui_api = read("web/app/static/js/brachybot-ui-api.js")
+
+    assert 'id="authDeploymentKey"' in index
+    assert "setDeploymentAccessKey" in auth
+    assert "revealDeploymentKeyHelp" in auth
+    assert "sessionStorage.setItem('BRACHYBOT_API_KEY'" in ui_api
+    assert "localStorage.setItem('BRACHYBOT_API_KEY'" not in ui_api

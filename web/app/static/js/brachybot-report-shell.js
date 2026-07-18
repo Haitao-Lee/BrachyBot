@@ -776,11 +776,17 @@ window.Report = (function () {
             } catch (e) { _setReportStatus('Snapshot failed: ' + e.message, 'error'); return -1; }
         },
         list() { return Array.isArray(window.__reportWorkspaceSnapshots) ? window.__reportWorkspaceSnapshots : []; },
-        restore(idx) {
+        async restore(idx) {
             const arr = this.list();
             const snap = arr[idx];
-            if (!snap) return;
-            if (!confirm(`Restore snapshot from ${new Date(snap.t).toLocaleString()}?`)) return;
+            if (!snap) return false;
+            const confirmed = typeof window._confirmAction === 'function'
+                ? await window._confirmAction(
+                    `恢复 ${new Date(snap.t).toLocaleString()} 的报告快照？`,
+                    `Restore snapshot from ${new Date(snap.t).toLocaleString()}?`,
+                )
+                : false;
+            if (!confirmed) return false;
             const clone = JSON.parse(JSON.stringify(snap.form));
             clone.editedFields = new Set(clone.editedFields || []);
             const f = window.reportForm;
@@ -793,6 +799,7 @@ window.Report = (function () {
             panels.editor(); panels.preview();
             persist.autoSave();
             _setReportStatus('Snapshot restored', 'ok');
+            return true;
         },
         openModal() {
             const arr = this.list();
@@ -800,7 +807,7 @@ window.Report = (function () {
                 const realIdx = arr.length - 1 - i;
                 return `<div style="display:flex;justify-content:space-between;padding:6px;border-bottom:1px solid var(--card-border,#334155);font-size:0.7rem;">
                     <span><b style="color:var(--text,#e2e8f0);">${new Date(s.t).toLocaleString()}</b> · <span style="color:var(--text-dim,#94a3b8);">${_escHtml(s.label || '(no label)')}</span></span>
-                    <button onclick="Report.snapshots.restore(${realIdx}); Report._closeModal();" style="background:#0ea5e9;color:#fff;border:none;padding:3px 10px;border-radius:3px;cursor:pointer;">Restore</button>
+                    <button onclick="Report.snapshots.restore(${realIdx}).then(ok => { if (ok) Report._closeModal(); });" style="background:#0ea5e9;color:#fff;border:none;padding:3px 10px;border-radius:3px;cursor:pointer;">Restore</button>
                 </div>`;
             }).join('');
             _showModal('版本快照 / Snapshots (' + arr.length + ')', html || '<i>No snapshots</i>');
@@ -993,8 +1000,14 @@ window.Report = (function () {
         },
         exportJSON() { const fn = _legacy('reportSaveJSON'); if (fn) fn(); },
         importJSON() { const fn = _legacy('reportLoadJSON'); if (fn) fn(); },
-        clear() {
-            if (!confirm('Reset all report fields? (A snapshot will be saved.)')) return;
+        async clear() {
+            const confirmed = typeof window._confirmAction === 'function'
+                ? await window._confirmAction(
+                    '重置所有报告字段？系统将先保存一个快照。',
+                    'Reset all report fields? A snapshot will be saved first.',
+                )
+                : false;
+            if (!confirmed) return false;
             snapshots.save('pre-reset');
             const lang = stateProxy.language;
             const fn = _legacy('_newEmptyReportForm');
@@ -1012,6 +1025,7 @@ window.Report = (function () {
                 this.autoSave();
                 _setReportStatus('Reset complete', 'ok');
             }
+            return true;
         },
     };
 

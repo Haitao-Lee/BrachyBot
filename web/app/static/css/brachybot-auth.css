@@ -5,6 +5,11 @@
 .auth-brand img { width: 36px; height: 36px; border-radius: 8px; }
 .auth-card label { display: grid; gap: 6px; margin: 14px 0; color: #b8c8dc; font-size: 12px; }
 .auth-card input { min-height: 38px; border: 1px solid #2c4361; border-radius: 6px; background: #0b121d; color: #edf6ff; padding: 0 10px; }
+.auth-access-key { margin-top: 12px; color: #98abc1; font-size: 12px; }
+.auth-access-key summary { cursor: pointer; color: #b8c8dc; user-select: none; }
+.auth-access-key summary:hover { color: #d9ebff; }
+.auth-access-key label { margin: 10px 0 6px; }
+.auth-access-key p { margin: 0; color: #7f93aa; font-size: 11px; line-height: 1.45; }
 .auth-actions { display: flex; gap: 8px; margin-top: 20px; }
 .auth-actions button { flex: 1; min-height: 38px; border: 0; border-radius: 6px; color: #07111d; font-weight: 700; background: #82c7ff; cursor: pointer; }
 .auth-actions button.secondary { background: #263a53; color: #dcecff; }

@@ -220,10 +220,14 @@ function _autoFillInterpretation() {
 }
 
 // ----- 13. Reset -----
-function reportReset() {
-    if (!confirm('Reset all report fields?')) return;
+async function reportReset() {
+    const confirmed = typeof window._confirmAction === 'function'
+        ? await window._confirmAction('重置所有报告字段？', 'Reset all report fields?')
+        : false;
+    if (!confirmed) return false;
     window.reportForm = _newEmptyReportForm();
     renderReportEditor(); _updateReportPreview(); _scheduleReportAutoSave();
+    return true;
 }
 
 // ----- 14. Durable workspace auto-save -----

@@ -710,6 +710,11 @@ one another's sessions or artifacts. See
 [Account-Owned Persistent Case Workspaces](docs/ACCOUNT_WORKSPACES_2026-07-17.md)
 for lifecycle, recovery, edit leases, API details, and migration notes.
 
+When a deployment key is configured, open the workspace with
+`?api_key=...` or expand **Deployment access key** on the sign-in screen. New
+browser-provided keys are retained only in `sessionStorage`; they are never
+stored in a case workspace or sent to the planning agent.
+
 ### Step 4: Download Pre-trained Models (Optional)
 
 VoCo segmentation model weights are not included in the repository due to size (~18GB). To use VoCo models:
