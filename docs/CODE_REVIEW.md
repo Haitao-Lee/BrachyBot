@@ -5523,3 +5523,37 @@ while the server-side plan remained intact.
 - Parsed the changed browser modules with Node.js syntax checking.
 - Remote `brachytherapy` full verification passes: **187 passed, 3 environment
   warnings**. The warnings are SimpleITK SWIG type deprecations during import.
+
+## Round 45 workspace-scoped multimodal screenshots (2026-07-19)
+
+### Confirmed finding
+
+The workspace migration correctly changed browser screenshot persistence to
+`/api/sessions/<case>/screenshots/<file>`, but the LLM multimodal loader still
+recognized only the retired shared `/api/screenshots/<file>` URL and read only
+from `uploads/screenshots`. Consequently, a screenshot could appear in chat
+while the analysis follow-up received no image and could only respond that the
+visual context was unavailable.
+
+### Corrective changes
+
+- Bind each hydrated web agent to its authenticated workspace root and case ID.
+- Accept both the legacy URL and the durable case-scoped URL, while resolving a
+  case-scoped image only from the current workspace's `screenshots` directory.
+- Reject a screenshot URL whose case ID does not match the active agent case;
+  this prevents cross-case image access through prompt text.
+- Retain legacy screenshot loading for standalone/CLI deployments that do not
+  create durable web workspaces.
+
+### Verification
+
+- Added a regression test for workspace image loading and cross-case rejection.
+- Executed a remote `brachytherapy` smoke test using real workspace layout:
+  the current-case PNG produced an OpenAI-compatible image block and a second
+  case ID was rejected.
+- `py_compile` and browser syntax checks remain part of the deployment gate.
+- A subsequent isolated pytest invocation hit a pre-existing environment
+  import-shadowing condition (`/home/lht/snap/brachyplan/config.py` taking the
+  top-level `config` name). It is unrelated to the modified screenshot code;
+  the earlier clean full-suite result remains the baseline and this invocation
+  is not counted as a regression pass.

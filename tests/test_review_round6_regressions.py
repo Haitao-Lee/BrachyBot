@@ -251,6 +251,32 @@ def test_multimodal_screenshot_uses_repository_upload_path(tmp_path, monkeypatch
     assert content[1]["image_url"]["url"].startswith("data:image/png;base64,")
 
 
+def test_multimodal_screenshot_uses_current_workspace_only(tmp_path):
+    import agent_runtime.llm_runtime as runtime
+
+    session_id = "a" * 32
+    workspace = tmp_path / "runtime" / "users" / "case"
+    screenshots = workspace / "screenshots"
+    screenshots.mkdir(parents=True)
+    (screenshots / "dose.png").write_bytes(b"\x89PNG\r\n\x1a\n" + b"case")
+
+    content = runtime.LLMRuntimeMixin._build_multimodal_content(
+        f"Analyze [Screenshot captured: /api/sessions/{session_id}/screenshots/dose.png]",
+        screenshot_root=str(workspace),
+        workspace_session_id=session_id,
+    )
+    assert isinstance(content, list)
+    assert content[1]["type"] == "image_url"
+
+    rejected = runtime.LLMRuntimeMixin._build_multimodal_content(
+        f"Analyze [Screenshot captured: /api/sessions/{'b' * 32}/screenshots/dose.png]",
+        screenshot_root=str(workspace),
+        workspace_session_id=session_id,
+    )
+    assert isinstance(rejected, str)
+    assert "unavailable" in rejected
+
+
 def test_native_provider_multimodal_adapters_preserve_text_and_image():
     from brain.providers.anthropic_llm import AnthropicLLM
     from brain.providers.gemini_llm import GeminiLLM

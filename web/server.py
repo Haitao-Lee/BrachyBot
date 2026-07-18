@@ -222,9 +222,14 @@ def create_app(config: Optional[Dict] = None):
             try:
                 from AgenticSys import BrachyAgent
                 agent_config = dict(config.get("agent_config", {}) or {})
+                workspace_root = workspace_store.workspace_root(user["id"], resolved_session_id, create=True)
                 agent_config["_workspace_state_dir"] = str(
-                    workspace_store.workspace_root(user["id"], resolved_session_id, create=True) / "agent_state"
+                    workspace_root / "agent_state"
                 )
+                # Multimodal follow-ups must read screenshots from this case,
+                # never from the legacy shared uploads directory or another case.
+                agent_config["_workspace_root"] = str(workspace_root)
+                agent_config["_workspace_session_id"] = resolved_session_id
                 agent = BrachyAgent(
                     session_id=resolved_session_id,
                     config=agent_config,
