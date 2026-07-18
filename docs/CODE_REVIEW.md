@@ -20,9 +20,10 @@ This intentionally changes presentation timing only; it does not alter
 persisted clinical data, coordinate transforms, planning state, or viewer reset
 semantics.
 
-**Verification:** Added regression assertions for generation-scoped deferred
-restoration. Focused workspace/auth browser-bridge tests and JavaScript syntax
-checks pass locally.
+**Verification:** Added a Node runtime regression that restores case A, then
+immediately restores case B and waits for all deferred callbacks; the final
+camera remains case B's. Focused workspace/auth browser-bridge tests and
+JavaScript syntax checks pass locally.
 
 ---
 
