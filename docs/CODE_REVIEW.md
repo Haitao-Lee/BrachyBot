@@ -5217,3 +5217,32 @@ real usability failure, not a reason to remove the perimeter guard.
 - The complete remote `brachytherapy` suite passes: **174 passed, 3
   environment warnings**. The warnings are SimpleITK SWIG type deprecations
   emitted during import, not authentication or report behavior.
+
+## Round 35 public-project scope lock and confirmation consistency (2026-07-19)
+
+### Confirmed finding
+
+The runtime already had the correct external-project scope lock: named public
+projects and short follow-ups such as "its code" are forced through public web
+tools and filtered away from local filesystem, shell, and code-execution
+tools. The earlier DeepRare incident therefore required regression protection,
+not a second routing implementation. Separately, old compatibility actions
+could still fall back to browser-native confirmation dialogs when reached
+outside the durable workspace bridge. Those dialogs were visually inconsistent
+with the authenticated workspace and could block embedded-browser use.
+
+### Corrective changes
+
+- Added executable regression coverage for a DeepRare-style pronoun follow-up
+  and for the explicit BrachyBot-local-code exemption.
+- Replaced the remaining `window.confirm` fallbacks in legacy browser-cache,
+  chat-history, and compatibility-session paths with the existing in-app
+  confirmation dialog. If that dialog is unavailable, the action fails closed.
+- Clarified the browser-cache action: it removes only legacy browser display
+  caches and preserves CT, plan, and durable server workspace data.
+
+### Verification
+
+- Added focused Python and static frontend regression tests.
+- Local JavaScript syntax and the complete remote test suite are run before
+  release synchronization.

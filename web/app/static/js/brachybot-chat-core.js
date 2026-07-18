@@ -146,16 +146,17 @@ function generateSessionId() {
 // Input panel. The user asked for clean data isolation between
 // page loads; this is the manual way to enforce it if the
 // auto-clear-on-page-load behavior isn't enough.
-function clearLocalChatData(options = {}) {
-    const ok = options.skipConfirm === true || window.confirm(
-        'Clear all locally stored chat data?\n' +
-        'This will delete:\n' +
-        '  · All saved chat sessions\n' +
-        '  · Report form content\n' +
-        '  · Layout preferences (column widths)\n' +
-        '\n' +
-        'Note: This will NOT affect CT/planning data on the server.\n\n' +
-        'Proceed?'
+async function clearLocalChatData(options = {}) {
+    const message = 'Clear only locally stored browser display data?\n' +
+        'This will remove legacy chat caches, report form caches, and layout preferences.\n\n' +
+        'Case CT, planning, and server workspace data will be retained.';
+    const ok = options.skipConfirm === true || (
+        typeof window._confirmAction === 'function'
+            ? await window._confirmAction(
+                '清除浏览器本地显示缓存？病例 CT、规划和服务端工作区数据不会删除。',
+                message,
+            )
+            : false
     );
     if (!ok) return;
     try {
@@ -271,9 +272,9 @@ async function deleteSession(id, options = {}) {
     if (Object.keys(sessions).length <= 1 || !sessions[id] || !_canChangeChatSession()) return;
     if (options.skipConfirm !== true) {
         const prompt = `Delete session "${sessions[id].title || id}"? This cannot be undone.`;
-        const confirmed = typeof _confirmAction === 'function'
-            ? await _confirmAction(prompt)
-            : window.confirm(prompt);
+        const confirmed = typeof window._confirmAction === 'function'
+            ? await window._confirmAction(prompt, prompt)
+            : false;
         if (!confirmed) return;
     }
     const wasActive = activeSessionId === id;
@@ -306,9 +307,9 @@ async function clearCurrentChatHistory(options = {}) {
     if (!activeSessionId || !sessions[activeSessionId] || !_canChangeChatSession()) return false;
     if (options.skipConfirm !== true) {
         const prompt = 'Clear the current conversation history? Planning and image data will be retained.';
-        const confirmed = typeof _confirmAction === 'function'
-            ? await _confirmAction(prompt)
-            : window.confirm(prompt);
+        const confirmed = typeof window._confirmAction === 'function'
+            ? await window._confirmAction(prompt, prompt)
+            : false;
         if (!confirmed) return false;
     }
     sessions[activeSessionId].messages = [];
