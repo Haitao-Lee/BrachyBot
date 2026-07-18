@@ -373,6 +373,7 @@ function resetViewer() {
 }
 
 function renderSliceToCanvas(axis, sliceData) {
+    const renderGeneration = window.__viewerRenderGeneration || 0;
     const canvasId = 'sliceCanvas' + capitalize(axis);
     const canvas = document.getElementById(canvasId);
     if (!canvas) return;
@@ -384,6 +385,7 @@ function renderSliceToCanvas(axis, sliceData) {
     if (typeof sliceData === 'string' && sliceData.startsWith('data:image/png;base64,')) {
         const img = new Image();
         img.onload = () => {
+            if (renderGeneration !== (window.__viewerRenderGeneration || 0)) return;
             // Calculate display size maintaining aspect ratio
             const containerRect = container.getBoundingClientRect();
             const containerW = containerRect.width;

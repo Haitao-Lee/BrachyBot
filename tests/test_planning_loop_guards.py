@@ -118,6 +118,7 @@ class PlanningLoopGuardTests(unittest.TestCase):
                 "max_hierarchy_depth": 3,
                 "max_actions_per_episode": 7,
                 "max_wall_seconds": 95,
+                "fallback_to_rule_based": False,
             }
         }
 
@@ -128,6 +129,12 @@ class PlanningLoopGuardTests(unittest.TestCase):
         self.assertEqual(args.rf_params["max_hierarchy_depth"], 3)
         self.assertEqual(args.rf_params["max_actions_per_episode"], 7)
         self.assertEqual(args.rf_params["max_wall_seconds"], 95)
+        self.assertIs(args.rf_params["fallback_to_rule_based"], False)
+
+        string_args = _apply_planning_overrides(setting(), {
+            "rf_params": {"fallback_to_rule_based": "false"}
+        })
+        self.assertIs(string_args.rf_params["fallback_to_rule_based"], False)
 
 
 if __name__ == "__main__":

@@ -319,7 +319,7 @@ _RF_PARAM_KEYS = {
     "lr", "gamma", "max_episodes", "print_every", "bandwidth",
     "hierarchical_optimization", "segmented_rewards", "flip_ratio",
     "candidate_limit", "dense_seed_limit", "max_hierarchy_depth",
-    "max_actions_per_episode", "max_wall_seconds",
+    "max_actions_per_episode", "max_wall_seconds", "fallback_to_rule_based",
 }
 _PLANNING_PARAM_KEYS = {
     "in_lowest_energy", "out_highest_energy", "DVH_rate", "iter_rate",
@@ -396,8 +396,11 @@ def _apply_planning_overrides(args, overrides):
             if key not in rf_params:
                 continue
             value = rf_params[key]
-            if key in {"hierarchical_optimization", "segmented_rewards"}:
-                args.rf_params[key] = bool(value)
+            if key in {"hierarchical_optimization", "segmented_rewards", "fallback_to_rule_based"}:
+                if isinstance(value, str):
+                    args.rf_params[key] = value.strip().lower() not in {"0", "false", "no", "off"}
+                else:
+                    args.rf_params[key] = bool(value)
             elif key in {
                 "max_episodes", "print_every", "bandwidth", "candidate_limit",
                 "dense_seed_limit", "max_hierarchy_depth", "max_actions_per_episode",
@@ -1072,17 +1075,34 @@ def _filter_world_safe_trajectories(
     return safe
 
 
-def _validated_needle_geometry(plan_res, ct_image, ctv_mask, oar_mask, obstacle_labels):
-    """Return display geometry only when every final automatic needle is safe."""
+def _validated_needle_geometry(plan_res, ct_image, planning_image, ctv_mask, oar_mask, obstacle_labels):
+    """Return geometry from the final algorithm trajectory only when it is safe.
+
+    A previous implementation reconstructed a line from the returned seed
+    positions. That is not equivalent to the optimizer's trajectory: seed
+    directions can be transformed to world space independently and the
+    reconstructed line may therefore differ from the candidate that was
+    filtered. The trajectory is the authoritative needle geometry and must be
+    validated and rendered as-is.
+    """
     geometry = {}
     unsafe_indices = []
-    extension = _needle_extension_mm()
     for index, entry in enumerate(plan_res or []):
-        points = _seed_plan_entry_needle_points(entry, extension)
+        trajectory = None
+        if isinstance(entry, dict):
+            trajectory = entry.get("trajectory")
+        elif isinstance(entry, (list, tuple)) and entry:
+            trajectory = entry[0]
+        points = _candidate_world_needle_points(
+            trajectory, planning_image, _needle_extension_mm()
+        )
         if _world_segment_hits_obstacle(points, ct_image, ctv_mask, oar_mask, obstacle_labels):
             unsafe_indices.append(index)
             continue
-        geometry[str(index)] = [point.tolist() for point in points]
+        if points is None:
+            unsafe_indices.append(index)
+            continue
+        geometry[str(index)] = [np.asarray(point, dtype=float).tolist() for point in points]
     return geometry, unsafe_indices
 
 
@@ -1131,6 +1151,28 @@ def _build_algorithm_plan_snapshot(seed_plan_serialized, verified_needle_geometr
             except Exception:
                 continue
     return {"seeds": seeds, "needles": needles}
+
+
+def _plan_target_coverage(plan_res, radiation_volume, target_value, dose_threshold):
+    """Compute the target coverage of a plan from the AI dose maps it contains."""
+    try:
+        target = np.asarray(radiation_volume) == target_value
+        target_count = int(np.count_nonzero(target))
+        if target_count <= 0:
+            return 0.0
+        accumulated = np.zeros_like(np.asarray(radiation_volume), dtype=np.float32)
+        for entry in plan_res or []:
+            if not isinstance(entry, (list, tuple)) or len(entry) < 3:
+                continue
+            for dose_map in entry[2] or []:
+                arr = np.asarray(dose_map)
+                if arr.shape != accumulated.shape:
+                    return 0.0
+                accumulated += arr
+        return float(np.count_nonzero(accumulated[target] > float(dose_threshold))) / target_count
+    except Exception:
+        logger.exception("[planning] Unable to evaluate plan target coverage")
+        return 0.0
 
 
 class PlanningPipelineTool(BaseTool):
@@ -2009,6 +2051,60 @@ class PlanningPipelineTool(BaseTool):
                     args.image_normalize[2],
                     _MockProgressDialog()
                 )
+            effective_mode = mode
+            rl_fallback_used = False
+            rl_target_coverage = None
+            if mode == "rl":
+                rl_target_coverage = _plan_target_coverage(
+                    plan_res,
+                    radiation_volume,
+                    args.radiation_array_params['target_value'],
+                    args.in_lowest_energy,
+                )
+                rf_params = getattr(args, "rf_params", {}) or {}
+                fallback_enabled = rf_params.get("fallback_to_rule_based", True)
+                if isinstance(fallback_enabled, str):
+                    fallback_enabled = fallback_enabled.strip().lower() not in {"0", "false", "no", "off"}
+                if fallback_enabled and rl_target_coverage + 1e-6 < float(args.DVH_rate):
+                    logger.warning(
+                        "[rl] Target coverage %.4f is below %.4f; using the same safety-filtered "
+                        "candidate set for deterministic AI-dose rule-based fallback",
+                        rl_target_coverage, float(args.DVH_rate),
+                    )
+                    fallback_plan = core.optimal_plan(
+                        trajectories,
+                        radiation_volume,
+                        dose_image,
+                        dose_model,
+                        args.dl_params,
+                        args.distance_filtter['lower_bound'],
+                        args.distance_filtter['upper_bound'],
+                        args.distance_filtter['distance_rate'],
+                        args.radiation_array_params['target_value'],
+                        args.radiation_array_params['background_value'],
+                        args.radiation_array_params['obstacle_value'],
+                        args.radiation_array_params['infer_img_size'],
+                        args.in_lowest_energy,
+                        args.out_highest_energy,
+                        args.DVH_rate,
+                        args.seed_info,
+                        args.iter_rate,
+                        args.image_normalize[0],
+                        args.image_normalize[1],
+                        args.image_normalize[2],
+                        _MockProgressDialog(),
+                    )
+                    fallback_coverage = _plan_target_coverage(
+                        fallback_plan,
+                        radiation_volume,
+                        args.radiation_array_params['target_value'],
+                        args.in_lowest_energy,
+                    )
+                    if fallback_coverage >= rl_target_coverage:
+                        plan_res = fallback_plan
+                        effective_mode = "rule_based_fallback"
+                        rl_fallback_used = True
+                        logger.info("[rl] Rule-based fallback coverage=%.4f", fallback_coverage)
             # Compute dose distribution
             sum_image = np.zeros_like(radiation_volume, dtype=np.float32)
             for entry in plan_res:
@@ -2024,6 +2120,7 @@ class PlanningPipelineTool(BaseTool):
         verified_needle_geometry, unsafe_needle_indices = _validated_needle_geometry(
             plan_res,
             ct_image,
+            resampled_ct,
             ctv_mask,
             oar_mask,
             obstacle_labels,
@@ -2080,6 +2177,10 @@ class PlanningPipelineTool(BaseTool):
             agent.memory.store("num_trajectories", num_trajectories)
             # Store actual config used — so reviewer agents can read real thresholds
             agent.memory.store("plan_config", {
+                "mode": mode,
+                "effective_mode": effective_mode,
+                "rl_fallback_used": bool(rl_fallback_used),
+                "rl_target_coverage": rl_target_coverage,
                 "in_lowest_energy": float(args.in_lowest_energy),
                 "out_highest_energy": float(args.out_highest_energy),
                 "DVH_rate": float(args.DVH_rate),
@@ -2091,9 +2192,16 @@ class PlanningPipelineTool(BaseTool):
             })
             logger.info(f"[seed_planning] Stored in agent id={id(agent)}: seed_plan={len(plan_res)} entries, total_seeds={total_seeds}")
 
+        final_target_coverage = _plan_target_coverage(
+            plan_res,
+            radiation_volume,
+            args.radiation_array_params['target_value'],
+            args.in_lowest_energy,
+        )
         summary = (
             f"Step 3/5: Seed planning completed. "
-            f"{total_seeds} seeds across {num_trajectories} trajectories. Mode: {mode}."
+            f"{total_seeds} seeds across {num_trajectories} trajectories. "
+            f"Mode: {effective_mode}; target coverage: {final_target_coverage:.1%}."
         )
 
         return ToolResult(
@@ -2107,6 +2215,10 @@ class PlanningPipelineTool(BaseTool):
                 "total_seeds": total_seeds,
                 "num_trajectories": num_trajectories,
                 "mode": mode,
+                "effective_mode": effective_mode,
+                "rl_fallback_used": bool(rl_fallback_used),
+                "rl_target_coverage": rl_target_coverage,
+                "target_coverage": final_target_coverage,
             },
         )
 

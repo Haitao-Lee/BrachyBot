@@ -335,12 +335,18 @@ def build_prescription_rationale(memory: Any) -> Dict[str, Any]:
                 "rationale has been applied. A clinician must confirm the site and prescription."
             )
 
+    rationale_zh = (
+        f"当前处方剂量为 {rx_gy:.1f} Gy，来源为 {rx_source}。"
+        + (f"在未提供病例特异性处方理由时，系统依据当前规划约定，并参考 {standard_site} 的适用临床资料评估靶区覆盖。"
+           if standard else "当前部位未明确，因此未套用跨部位剂量阈值或选择理由，请由临床医生确认部位和处方。")
+    )
     source_records = [item for item in (_source_link_item(url) for url in sources) if item]
     return {
         "prescription_gy": rx_gy,
         "prescription_source": rx_source,
         "site": standard_site,
         "rationale": rationale,
+        "rationale_zh": rationale_zh,
         "target_criteria": target,
         "oar_criteria": oar,
         # Keep ``sources`` as URL strings for legacy callers and expose the
@@ -407,6 +413,12 @@ def format_prescription_rationale_markdown(context: Dict[str, Any], lang: str = 
         if key.endswith("_min") or key.endswith("_max") or key.endswith("_target"):
             criteria_parts.append(f"{key}={value}")
     sources = rx.get("sources", []) or []
+    if str(lang or "").lower().startswith("zh"):
+        # Keep deterministic dose rationale and boundary text in the report's
+        # selected language while preserving the verified numeric values.
+        rx = dict(rx)
+        rx["rationale"] = rx.get("rationale_zh") or rx.get("rationale")
+        rx["clinical_boundary"] = "处方剂量或理由如有临床确认内容，应以临床确认内容为准。"
     source_links = [item for item in (_source_link_item(source) for source in sources[:5]) if item]
     source_text = ", ".join(f"[{item['title']}]({item['url']})" for item in source_links)
     if str(lang or "").lower().startswith("zh"):

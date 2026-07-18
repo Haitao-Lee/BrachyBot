@@ -4802,3 +4802,104 @@ unsafe line after an optimizer had already used it.
 - Full local suite and live RTX execution remain required after deployment;
   the final renderer gate continues to fail closed when mask geometry cannot
   be verified.
+
+## Round 26 RL outcome, session isolation, and seed-projection closure (2026-07-18)
+
+### Confirmed findings
+
+The reported RL delay was not caused by an unreachable `while` condition. The
+RL path has finite candidate, hierarchy-depth, episode, action, and wall-clock
+limits, and the DoseUNet inference adapter checks its deadline between windows.
+The real product issue was that a bounded RL result below the requested target
+could still be published as a normal successful plan, and its report could
+still say `rule_based`. Separately, the final automatic needle geometry was
+being re-derived from seed positions rather than taken from the already
+filtered optimizer trajectory. That made the display and the candidate safety
+domain disagree for oblique or transformed trajectories.
+
+### Corrective changes
+
+- RL now measures target coverage from its actual AI dose maps. When coverage
+  is below `DVH_rate`, the same Data Tree-filtered candidate domain is sent to
+  the AI-dose rule-based optimizer as a deterministic fallback. The stored
+  plan configuration records `mode`, `effective_mode`, fallback usage, RL
+  coverage, and final coverage. The pipeline summary no longer hides the
+  effective mode.
+- `fallback_to_rule_based` is now an explicit validated planning parameter and
+  defaults to enabled in `plans/config.json`. It can be disabled for a research
+  run, but the report then preserves the fact that RL did not meet the target.
+- Final automatic needle geometry is built from the optimizer's trajectory and
+  validated in patient physical space against the current non-traversable Data
+  Tree masks. Seed positions no longer define or silently replace the accepted
+  needle path.
+- New-session switching invalidates pending image callbacks, clears all slice
+  and overlay canvases, purges 3D meshes and the DVH chart, and dismisses
+  transient context menus before restoring the selected workspace. This stops
+  late image callbacks from repainting the previous case.
+- Context menus now dismiss on capture-phase pointer events, Escape, scroll,
+  and case switches, including endpoint menus whose canvas handlers stop event
+  propagation.
+- 2D seed overlays now sample and clip the actual finite seed cylinder against
+  the current MPR plane, then draw its contour using the existing physical
+  coordinate chain. The old fixed-radius point marker is no longer used.
+- Chinese prescription rationale and tumor-geometry boundary text are kept in
+  the selected output language; pathology, stage, and malignancy are not
+  inferred from CT geometry.
+
+### Verification
+
+- Full local suite: **154 passed, 1 skipped** before the final regression additions.
+- New trajectory-authority regression proves a seed payload inside a hard mask
+  cannot override a safe optimizer trajectory, and proves the old reconstructed
+  line would have been rejected.
+- New prescription-language regression proves Chinese output does not fall
+  back to the English rationale or boundary statement.
+- Planning-loop regression verifies the explicit RL fallback switch is
+  validated and preserved per run.
+- Python compilation, Node syntax checks, and `git diff --check` are required
+  before deployment. A live RTX patient run remains the final visual check;
+  the pipeline continues to fail closed rather than render an unvalidated
+  needle.
+
+## Round 27 final UI and geometry review (2026-07-18)
+
+### Confirmed findings and fixes
+
+- The 3D endpoint context menu was not registered with the Data Tree context
+  menu owner. The shared dismissal boundary therefore could not see it when a
+  user clicked elsewhere. 3D menus now publish a window-level handle, and the
+  common `hideContextMenu()` removes both menu types on outside pointer input,
+  Escape, scroll, and session changes.
+- The 2D seed overlay now receives the active plan's validated seed length and
+  radius from `/api/planning/seeds_3d`. It samples the finite cylindrical
+  surface in patient-world coordinates and clips that surface against the
+  current MPR plane. The 3D cylinder uses the same dimensions, eliminating
+  the previous point-circle approximation and the 2D/3D geometry mismatch.
+- Invalid or non-positive persisted seed dimensions are rejected in the route
+  and replaced with the documented physical defaults (`3.7 mm` length and
+  `0.4 mm` radius). This is a display fallback only; it does not alter the
+  planning result or dose engine inputs.
+
+### Verification
+
+- Python route and planning modules compile successfully.
+- Browser JavaScript syntax checks cover the changed 2D overlay, 3D scene,
+  context-menu, layout, and session-isolation modules.
+- Full regression tests must pass before deployment; a live patient case is
+  still required for visual confirmation of oblique-cylinder contours.
+
+## Round 28 language-consistency follow-up (2026-07-18)
+
+The quality-review agent had a real localization gap: its dynamic target and
+OAR issue strings were assembled in English after the fixed-string translation
+table had already run. Chinese conversations could therefore contain English
+fragments such as `required` and `limit=` even when the rest of the review was
+Chinese.
+
+The reviewer now formats dynamic metric and OAR issues through language-aware
+formatters, uses Chinese percentage/operator/status text for `zh`, and sends a
+plain UTF-8 Chinese-language instruction to the optional LLM reviewer. English
+output and metric names/units remain unchanged.
+
+Verification: the focused reviewer suite passed (**77 passed** including the
+new dynamic-localization regression), followed by the final full-suite run.

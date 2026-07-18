@@ -20,6 +20,7 @@ from tool_factory.seed_plan.planning_pipeline import (
     _resample_for_planning,
     _build_radiation_volume,
     _filter_world_safe_trajectories,
+    _validated_needle_geometry,
     _seed_plan_entry_needle_points,
     _world_segment_hits_obstacle,
     _resolve_data_tree_obstacle_labels,
@@ -121,6 +122,36 @@ class NeedleObstacleSafetyTests(unittest.TestCase):
         points = _seed_plan_entry_needle_points(entry, 150.0)
         self.assertTrue(np.allclose(points[0], [20.0, 8.0, 6.0]))
         self.assertTrue(np.allclose(points[1], [-140.0, 8.0, 6.0]))
+
+    def test_final_geometry_uses_candidate_trajectory_not_seed_reconstruction(self):
+        image, ctv, oar = _image_and_masks()
+        # The optimizer trajectory is clear at y=0.  The seed payload is
+        # deliberately placed in the hard mask at y=10.  A validator that
+        # reconstructs a needle from seeds would reject this plan; the
+        # authoritative candidate trajectory must be accepted instead.
+        trajectory = [
+            np.array([10.0, 0.0, 10.0]),
+            np.array([0.0, 1.0, 0.0]),
+            [3.0],
+            [],
+        ]
+        plan_res = [[
+            trajectory,
+            [(np.array([10.0, 10.0, 10.0]), np.array([0.0, 1.0, 0.0]))],
+            [],
+        ]]
+
+        old_seed_geometry = _seed_plan_entry_needle_points(plan_res[0], 150.0)
+        self.assertTrue(_world_segment_hits_obstacle(old_seed_geometry, image, ctv, oar, {77}))
+
+        geometry, unsafe = _validated_needle_geometry(
+            plan_res, image, image, ctv, oar, {77}
+        )
+        self.assertEqual(unsafe, [])
+        self.assertIn("0", geometry)
+        self.assertFalse(_world_segment_hits_obstacle(
+            geometry["0"], image, ctv, oar, {77}
+        ))
 
     def test_manual_needles_cannot_bypass_data_tree_hard_obstacles(self):
         image, ctv, oar = _image_and_masks()

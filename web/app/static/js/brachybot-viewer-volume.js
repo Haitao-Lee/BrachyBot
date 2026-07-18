@@ -1308,6 +1308,23 @@ function classifyOrgan(organName) {
 // Context menu state
 let activeContextMenu = null;
 
+// Context menus are transient UI, not state. A single capture-phase boundary
+// closes them for clicks, touch/pointer presses, Escape, scrolling, and case
+// switches. The old one-shot bubble listeners were bypassed by canvas and
+// stopPropagation handlers, leaving some endpoint menus stuck on screen.
+if (!window.__brachyContextMenuDismissalBound) {
+    window.__brachyContextMenuDismissalBound = true;
+    document.addEventListener('pointerdown', event => {
+        const menu = activeContextMenu || window.__brachyContextMenuElement;
+        if (!menu || menu.contains(event.target)) return;
+        hideContextMenu();
+    }, true);
+    document.addEventListener('keydown', event => {
+        if (event.key === 'Escape') hideContextMenu();
+    }, true);
+    document.addEventListener('scroll', () => hideContextMenu(), true);
+}
+
 // Multi-select state (like Windows Explorer)
 const selectedItems = new Set();  // Set of organ IDs (e.g., 'organ_1', 'ctv')
 let lastClickedId = null;  // For shift+click range selection
@@ -2334,6 +2351,12 @@ function hideContextMenu() {
         activeContextMenu.remove();
         activeContextMenu = null;
     }
+    // 3D endpoint menus are created by brachybot-3d-manual.js, which cannot
+    // safely share this file's lexical `let activeContextMenu` across load
+    // orders. Keep a window-level reference as the cross-module contract.
+    const externalMenu = window.__brachyContextMenuElement;
+    if (externalMenu && externalMenu !== activeContextMenu) externalMenu.remove();
+    window.__brachyContextMenuElement = null;
 }
 
 function batchToggleVisibility(visible) {

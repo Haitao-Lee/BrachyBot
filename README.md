@@ -13,6 +13,20 @@
 
 </div>
 
+## Recent safety and viewer hardening
+
+- Candidate needle trajectories are filtered against the current Data Tree
+  non-traversable masks before optimization and are revalidated in physical
+  coordinates before display.
+- Session switching clears stale canvases, meshes, overlays, and charts before
+  restoring the selected workspace; late image callbacks cannot repaint an
+  older case.
+- 2D seed overlays use the finite physical seed-cylinder contour projected
+  through the existing CT coordinate chain. The active plan's seed geometry is
+  shared with the 3D viewer.
+- 3D endpoint context menus now close reliably on outside click, Escape,
+  scrolling, and session changes.
+
 ---
 
 ## 📋 Table of Contents

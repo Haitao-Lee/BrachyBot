@@ -848,7 +848,75 @@ function _worldToIndex(wx, wy, wz) {
     return [idx_z, idx_y, idx_x]; // numpy (Z, Y, X) order
 }
 
-// Product overlay override: finite needle segment projection + in-plane marker.
+function _seedCylinderSliceOutline(seed, axis, sliceIndex, orientIdx, toDisplay, axisIdx) {
+    const pos = Array.isArray(seed?.position) ? seed.position.map(Number) : null;
+    const rawDir = Array.isArray(seed?.direction) ? seed.direction.map(Number) : [0, 0, 1];
+    if (!pos || pos.length < 3 || !pos.every(Number.isFinite)) return [];
+    const dirLength = Math.hypot(...rawDir);
+    if (!Number.isFinite(dirLength) || dirLength < 1e-8) return [];
+    const d = rawDir.map(v => v / dirLength);
+    const geometry = state.seedsOverlay.geometry || {};
+    const length = Math.max(0.1, Number(geometry.length || document.getElementById('seedLength')?.value || 3.7));
+    const radius = Math.max(0.05, Number(geometry.radius || document.getElementById('seedRadius')?.value || 0.4));
+
+    // Build an orthonormal basis around the physical seed axis. Sampling the
+    // real cylinder surface and clipping it to the current MPR plane keeps
+    // the 2D contour faithful for oblique seeds, unlike the old point-circle.
+    const ref = Math.abs(d[2]) < 0.9 ? [0, 0, 1] : [0, 1, 0];
+    const cross = (a, b) => [
+        a[1] * b[2] - a[2] * b[1],
+        a[2] * b[0] - a[0] * b[2],
+        a[0] * b[1] - a[1] * b[0],
+    ];
+    const norm = v => Math.hypot(...v) || 1;
+    let u = cross(d, ref); const un = norm(u); u = u.map(v => v / un);
+    let v = cross(d, u); const vn = norm(v); v = v.map(x => x / vn);
+    const worldPoint = (t, angle) => {
+        const ca = Math.cos(angle), sa = Math.sin(angle);
+        return pos.map((base, i) => base + d[i] * t + radius * (u[i] * ca + v[i] * sa));
+    };
+    const toPlane = world => {
+        const idx = _worldToIndex(world[0], world[1], world[2]);
+        if (!idx) return null;
+        const flipped = orientIdx(idx);
+        return { value: flipped[axisIdx], point: toDisplay(flipped) };
+    };
+    const rows = 12, cols = 24, clipped = [];
+    const planeTolerance = 0.75;
+    const grid = [];
+    for (let row = 0; row <= rows; row++) {
+        const t = -length / 2 + length * row / rows;
+        grid[row] = [];
+        for (let col = 0; col < cols; col++) {
+            grid[row][col] = toPlane(worldPoint(t, 2 * Math.PI * col / cols));
+        }
+    }
+    const addCrossing = (a, b) => {
+        if (!a || !b) return;
+        const da = a.value - sliceIndex, db = b.value - sliceIndex;
+        if (Math.abs(da) <= planeTolerance) clipped.push(a.point);
+        if (da * db < 0 || Math.abs(db) <= planeTolerance) {
+            const t = da === db ? 0.5 : Math.max(0, Math.min(1, da / (da - db)));
+            clipped.push({ x: a.point.x + t * (b.point.x - a.point.x), y: a.point.y + t * (b.point.y - a.point.y) });
+        }
+    };
+    for (let row = 0; row <= rows; row++) {
+        for (let col = 0; col < cols; col++) {
+            addCrossing(grid[row][col], grid[row][(col + 1) % cols]);
+            if (row < rows) addCrossing(grid[row][col], grid[row + 1][col]);
+        }
+    }
+    if (clipped.length < 3) return clipped;
+    const points = [...new Map(clipped.map(p => [`${p.x.toFixed(3)}:${p.y.toFixed(3)}`, p])).values()];
+    const cross2 = (o, a, b) => (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
+    points.sort((a, b) => a.x - b.x || a.y - b.y);
+    const lower = [], upper = [];
+    for (const p of points) { while (lower.length >= 2 && cross2(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) lower.pop(); lower.push(p); }
+    for (let i = points.length - 1; i >= 0; i--) { const p = points[i]; while (upper.length >= 2 && cross2(upper[upper.length - 2], upper[upper.length - 1], p) <= 0) upper.pop(); upper.push(p); }
+    return lower.slice(0, -1).concat(upper.slice(0, -1));
+}
+
+// Product overlay: finite needle projection + true seed-cylinder contour.
 // This is the canonical seed/needle overlay implementation.
 function renderSeedsOverlay(axis, sliceIndex) {
     if (!state.seedsOverlay || !state.ctShape) return;
@@ -954,32 +1022,27 @@ function renderSeedsOverlay(axis, sliceIndex) {
         ctx.restore();
     }
 
-    const seedTolerance = 3.0;
     const seeds = state.seedsOverlay.seeds || [];
     for (const seed of seeds) {
         const seedState = dataTreeState.planning.seeds.find(s => s.id === seed.id);
         if (seedState && seedState.visible === false) continue;
-        const pos = seed.position;
-        if (!pos || pos.length < 3) continue;
-        const idx = (Array.isArray(seed.voxel_index) && seed.voxel_index.length >= 3)
-            ? seed.voxel_index.map(v => Number(v))
-            : _worldToIndex(pos[0], pos[1], pos[2]);
-        if (!idx) continue;
-        const flippedIdx = orientIdx(idx);
-        const dist = Math.abs(flippedIdx[axisIdx] - sliceIndex);
-        if (dist > seedTolerance) continue;
         const baseOpacity = seedState?.opacity ?? seed.opacity ?? 1.0;
         if (baseOpacity <= 0.001) continue;
-        const alpha = baseOpacity * Math.max(0.35, 1 - dist / seedTolerance);
+        const outline = _seedCylinderSliceOutline(seed, axis, sliceIndex, orientIdx, toDisplay, axisIdx);
+        if (outline.length < 3) continue;
         const seedRgb = _hexToRgbArray(seedState?.color || seed.color || '#ffcc00', [255, 204, 0]);
-        const p = toDisplay(flippedIdx);
+        ctx.save();
         ctx.beginPath();
-        ctx.arc(p.x, p.y, 5, 0, 2 * Math.PI);
-        ctx.fillStyle = `rgba(${seedRgb[0]}, ${seedRgb[1]}, ${seedRgb[2]}, ${alpha})`;
+        ctx.moveTo(outline[0].x, outline[0].y);
+        outline.slice(1).forEach(p => ctx.lineTo(p.x, p.y));
+        ctx.closePath();
+        const alpha = 0.95 * baseOpacity;
+        ctx.fillStyle = `rgba(${seedRgb[0]}, ${seedRgb[1]}, ${seedRgb[2]}, ${0.18 * alpha})`;
         ctx.fill();
-        ctx.strokeStyle = `rgba(255, 255, 255, ${0.75 * alpha})`;
-        ctx.lineWidth = 1.3;
+        ctx.strokeStyle = `rgba(${seedRgb[0]}, ${seedRgb[1]}, ${seedRgb[2]}, ${alpha})`;
+        ctx.lineWidth = 1.4;
         ctx.stroke();
+        ctx.restore();
     }
 }
 
