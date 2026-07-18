@@ -285,7 +285,11 @@ class LLMRuntimeMixin:
         # This ensures the LLM always has the current query to respond to
         if not messages or messages[-1].get("content") != message:
             # Check if message contains screenshot URL for multimodal content
-            user_content = self._build_multimodal_content(message)
+            user_content = self._build_multimodal_content(
+                message,
+                screenshot_root=(self.config or {}).get("_workspace_root"),
+                workspace_session_id=(self.config or {}).get("_workspace_session_id"),
+            )
             messages.append({"role": "user", "content": user_content})
 
         # External-project requests are source-bound to public web tools.  Do
@@ -813,7 +817,11 @@ class LLMRuntimeMixin:
         }
 
     @staticmethod
-    def _build_multimodal_content(message: str):
+    def _build_multimodal_content(
+        message: str,
+        screenshot_root: Optional[str] = None,
+        workspace_session_id: Optional[str] = None,
+    ):
         """Build multimodal content array if message contains screenshot URLs.
 
         OpenAI-compatible APIs support multimodal content:
@@ -828,18 +836,25 @@ class LLMRuntimeMixin:
         """
         import base64
 
-        # Detect screenshot URLs in message
-        screenshot_pattern = r'\[Screenshot captured:\s*(/api/screenshots/[^\]]+)\]'
+        # Workspaces persist screenshots under a per-case endpoint.  The
+        # legacy shared endpoint remains accepted for CLI/older deployments,
+        # but a web workspace is deliberately restricted to its own root.
+        screenshot_pattern = r'\[Screenshot captured:\s*((?:/api/screenshots/[^\]]+)|(?:/api/sessions/[a-f0-9]{32}/screenshots/[^\]]+))\]'
         matches = list(re.finditer(screenshot_pattern, message))
 
         if not matches:
             return message  # Plain text, no multimodal needed
 
-        # agent_runtime is a package under the repository root; screenshots
-        # live in <repo>/uploads/screenshots, not agent_runtime/uploads.
-        screenshots_dir = os.path.realpath(os.path.join(
+        # agent_runtime is a package under the repository root; historical
+        # non-workspace screenshots live in <repo>/uploads/screenshots.
+        legacy_screenshots_dir = os.path.realpath(os.path.join(
             os.path.dirname(os.path.abspath(__file__)), "..", "uploads", "screenshots"
         ))
+        workspace_screenshots_dir = None
+        if screenshot_root:
+            workspace_screenshots_dir = os.path.realpath(
+                os.path.join(str(screenshot_root), "screenshots")
+            )
         image_blocks = []
         loaded_names = []
         for match in matches[:4]:
@@ -847,9 +862,25 @@ class LLMRuntimeMixin:
             parsed_url = urlparse(screenshot_url)
             screenshot_path = parsed_url.path or screenshot_url
             filename = os.path.basename(unquote(screenshot_path))
+            workspace_match = re.fullmatch(
+                r"/api/sessions/([a-f0-9]{32})/screenshots/([^/?#]+)",
+                screenshot_path,
+            )
+            if workspace_match:
+                requested_session_id, requested_name = workspace_match.groups()
+                if not workspace_screenshots_dir or requested_session_id != str(workspace_session_id or ""):
+                    logger.warning("Rejected screenshot from another or unavailable workspace: %s", screenshot_url)
+                    continue
+                filename = unquote(requested_name)
+                screenshots_dir = workspace_screenshots_dir
+            else:
+                screenshots_dir = legacy_screenshots_dir
+            if filename != os.path.basename(filename):
+                logger.warning("Rejected screenshot filename outside its expected directory: %s", screenshot_url)
+                continue
             image_path = os.path.realpath(os.path.join(screenshots_dir, filename))
             if os.path.commonpath((screenshots_dir, image_path)) != screenshots_dir:
-                logger.warning("Rejected screenshot path outside upload directory: %s", screenshot_url)
+                logger.warning("Rejected screenshot path outside its expected directory: %s", screenshot_url)
                 continue
             if not os.path.isfile(image_path):
                 logger.warning("Screenshot file not found for multimodal analysis: %s", image_path)
@@ -1324,7 +1355,11 @@ class LLMRuntimeMixin:
         # This ensures the LLM always has the current query to respond to
         if not messages or messages[-1].get("content") != message:
             # Check if message contains screenshot URL for multimodal content
-            user_content = self._build_multimodal_content(message)
+            user_content = self._build_multimodal_content(
+                message,
+                screenshot_root=(self.config or {}).get("_workspace_root"),
+                workspace_session_id=(self.config or {}).get("_workspace_session_id"),
+            )
             messages.append({"role": "user", "content": user_content})
 
         # Force web search for real-time queries and named external projects.
