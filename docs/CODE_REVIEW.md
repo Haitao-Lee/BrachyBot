@@ -4943,7 +4943,10 @@ boundary.
 
 - **Training lifecycle event counted as user planning activity: confirmed and
   fixed.** `training.start` remains in the global UI audit log but is excluded
-  from the active training action list and its final activity counts.
+  from the active training action list and its final activity counts. The stop
+  route also no longer falls back from an empty training-event list to the
+  global event list, which prevents pre-training events from reappearing in a
+  zero-action training report.
 
 - **B5, `question || description`: not a defect.** Current server payloads use
   `question`, but `description` is a deliberate backward-compatible fallback
