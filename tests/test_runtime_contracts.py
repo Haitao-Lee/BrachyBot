@@ -170,10 +170,10 @@ def test_local_turn_policy_shortcuts_only_low_risk_requests():
     from agent_runtime.turn_policy import classify_local_turn, filter_tool_schemas
 
     greeting = classify_local_turn("\u4f60\u597d")
-    assert greeting.fast_response
-    assert greeting.intent == "local_fast_path"
+    assert greeting.intent == "small_talk"
     assert not greeting.use_router
     assert not greeting.use_completeness
+    assert filter_tool_schemas([{"function": {"name": "web_search"}}], greeting) == []
 
     planning = classify_local_turn("\u8bf7\u6267\u884c\u653e\u5c04\u6027\u7c92\u5b50\u690d\u5165\u89c4\u5212")
     assert planning.intent == "clinical_planning"

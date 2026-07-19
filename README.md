@@ -47,9 +47,11 @@
   shared with the 3D viewer.
 - 3D endpoint context menus now close reliably on outside click, Escape,
   scrolling, and session changes.
-- Low-risk greetings and self-description requests use a deterministic local
-  fast path; ordinary knowledge and UI requests use intent-specific tool
-  schemas instead of advertising the full registry on every turn.
+- Low-risk greetings and self-description requests use local intent
+  classification to bypass unnecessary routing/review overhead, while the
+  configured LLM still generates the answer; ordinary knowledge and UI
+  requests use intent-specific tool schemas instead of advertising the full
+  registry on every turn.
 - Long conversations retain a compact session summary plus recent turns and
   structured case state. Prompt, tool-schema, and cleaned-summary caches reduce
   repeated preparation work without caching live viewer inspection results.
