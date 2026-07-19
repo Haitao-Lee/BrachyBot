@@ -192,19 +192,40 @@
         transition-duration: 0.01ms !important;
     }
 
-    /* Preserve a clear active state without overriding an explicit operating
-       system request for less motion. A static highlight communicates the
-       same live status without a perpetual pulse. */
+    /* Keep a subtle live-state signal even in reduced-motion mode. The
+       fallback uses only low-amplitude opacity/shadow changes; stopping every
+       animation made long-running work look frozen after one cycle. */
     .chat-todo-item.active,
-    .chat-todo-item.active .chat-todo-label,
     .chat-todo-item.active::before,
     .chat-todo-item.active .chat-todo-dot,
     .chat-todo-item.active .chat-todo-gpu,
     .pipeline-step.active,
     .pipeline-step.active .pipeline-step-dot {
-        animation: none !important;
+        animation-iteration-count: infinite !important;
+        animation-duration: 2.4s !important;
+        animation-timing-function: ease-in-out !important;
+    }
+    .chat-todo-item.active {
+        animation-name: todo-active-breathe-soft !important;
+    }
+    .chat-todo-item.active::before {
+        animation-name: todo-bar-breathe-soft !important;
+    }
+    .chat-todo-item.active .chat-todo-dot,
+    .chat-todo-item.active .chat-todo-gpu {
+        animation-name: todo-dot-breathe-soft !important;
+    }
+    .pipeline-step.active {
+        animation-name: pipeline-active-glow-soft !important;
+    }
+    .pipeline-step.active .pipeline-step-dot {
+        animation-name: pipeline-dot-breathe-soft !important;
+    }
+    .thinking-dot {
+        animation-name: dot-bounce-soft !important;
+        animation-duration: 2.4s !important;
+        animation-iteration-count: infinite !important;
         transition: none !important;
     }
-    .chat-todo-item.active { box-shadow: inset 0 0 0 1px var(--primary) !important; }
     .chat-todo-item.active::before { opacity: 1 !important; }
 }

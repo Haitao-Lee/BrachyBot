@@ -1953,6 +1953,14 @@ agentic planner and a standalone planning workstation:
   progress events reset the idle window.
 - Workspace recovery is generation-scoped, so a late response from a failed
   transition cannot repaint an older case over the currently selected case.
+- Segmentation image objects injected from the active workspace are declared
+  explicitly as server-owned tool inputs. The runtime validates ordinary JSON
+  objects strictly while accepting these canonical SimpleITK objects without
+  corrupting the CT geometry contract.
+- Active Todo, pipeline, and execution-trace progress indicators continue
+  breathing until a terminal event. Browsers that request reduced motion use a
+  smaller continuous opacity/shadow pulse, so long-running work remains
+  visibly alive without distracting layout movement.
 - A remote deployment still requires the web server process to be running.
   When it is unavailable, the UI reports the operational error instead of
   pretending that a case was loaded. See the latest evidence in

@@ -198,7 +198,7 @@ def test_chat_restore_preserves_non_adjacent_repeated_messages():
     assert "const seen = new Set();" not in block
 
 
-def test_active_progress_animation_stops_only_for_terminal_or_reduced_motion_states():
+def test_active_progress_animation_remains_continuous_with_a_low_motion_fallback():
     todo = read("web/app/static/js/brachybot-chat-todo.js")
     status_css = read("web/app/static/css/brachybot-chat-status.css")
     report_css = read("web/app/static/css/brachybot-report-controls.css")
@@ -207,9 +207,10 @@ def test_active_progress_animation_stops_only_for_terminal_or_reduced_motion_sta
     assert "todo-active-breathe 1.8s ease-in-out infinite" in status_css
     assert "item.node.classList.remove('pending', 'active', 'predicted')" in todo
     assert "item.node.classList.add(item.status)" in todo
-    assert "animation-duration: 2.4s !important" not in report_css
-    assert "animation: none !important" in report_css
-    assert "animation: none !important" in responsive_css
+    assert "animation-iteration-count: infinite !important" in report_css
+    assert "animation-name: pill-breathe-soft !important" in report_css
+    assert "animation-name: todo-active-breathe-soft !important" in responsive_css
+    assert "animation-name: pipeline-dot-breathe-soft !important" in responsive_css
 
 
 def test_report_modal_has_keyboard_safe_close_path():

@@ -68,7 +68,11 @@ class OARSegmentationTool(BaseTool):
         return {
             "type": "object",
             "properties": {
-                "image": {"type": "object", "description": "SimpleITK Image of CT scan"},
+                "image": {
+                    "type": "object",
+                    "description": "Server-injected SimpleITK Image of CT scan",
+                    "x-server-injected": True,
+                },
                 "image_path": {"type": "string", "description": "Path to CT file (.nii.gz, .mhd)"},
                 "label_path": {"type": "string", "description": "Path to existing OAR label file (optional)"},
                 "organ_type": {

@@ -364,6 +364,14 @@ class ToolCallGateway:
             if field not in call.params or not isinstance(definition, Mapping):
                 continue
             value = call.params[field]
+            # Clinical image objects are injected by the server from the
+            # workspace memory. They are deliberately not JSON values and
+            # must never be supplied by an LLM or validated as a mapping.
+            # The schema marker keeps this exception explicit and scoped to
+            # trusted server-owned fields instead of weakening object checks
+            # for every tool parameter.
+            if definition.get("x-server-injected") is True:
+                continue
             if not self._matches_type(value, definition.get("type", "")):
                 return ToolResult(False, error=f"Invalid parameter type for {field}", message=f"Invalid parameter type for {field}")
             allowed = definition.get("enum")
