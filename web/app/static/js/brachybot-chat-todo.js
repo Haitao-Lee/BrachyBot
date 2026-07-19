@@ -1347,66 +1347,29 @@ async function sendChat(prefill, options) {
                         scrollToBottom();
                     } else if (currentEvent === 'text_chunk' && data && data.text) {
                         responseText += data.text;
-                        // Show streaming text as it arrives, not just after
-                        // completeness check. The initial text is displayed
-                        // with a "preliminary" style until the check passes.
-                        // Equivalent guard: if (!finalResponseReceived) { create once; }
-                        if (!finalResponseReceived && !responseEl) {
-                            // First text_chunk: create the streaming response
-                            // bubble immediately (not after completeness).
+                        // Keep model draft chunks out of the chat answer. The
+                        // server may still be executing tools or checking
+                        // completeness, so rendering them as an answer makes
+                        // users see a response that is later replaced. The
+                        // execution trace remains live; only the reviewed
+                        // `response` event creates the answer bubble.
+                    } else if (currentEvent === 'response' && data && data.response) {
+                        // The final response event is emitted only after the
+                        // required review gate. Create the answer bubble here,
+                        // rather than on the first draft chunk.
+                        if (!finalResponseReceived) {
+                            finalResponseReceived = true;
+                        } else {
+                            continue;
+                        }
+                        responseText = data.response;
+                        if (!responseEl && typeof createStreamingResponse === 'function') {
                             if (thinkingEl && typeof removeThinkingIndicator === 'function') removeThinkingIndicator(thinkingEl);
-                            if (!chainEl && typeof createLiveThinkingChain === 'function') {
-                                const r = createLiveThinkingChain();
-                                chainEl = r.chainEl; stepsDiv = r.stepsDiv; headerEl = r.headerEl;
-                                window._brachyLiveTrace = {
-                                    steps, chainEl, stepsDiv, headerEl,
-                                    getTodo: () => todo,
-                                };
-                            }
-                            if (typeof createStreamingResponse === 'function') {
-                                responseEl = createStreamingResponse();
-                                // Mark as preliminary: add a class so CSS can
-                                // dim the text until the check is done.
-                                responseEl.classList.add('preliminary-response');
-                                // Append a small check indicator placeholder
-                                const checkBadge = document.createElement('span');
-                                checkBadge.className = 'check-badge pending';
-                                checkBadge.innerHTML = '&#8987;';  // hourglass
-                                checkBadge.title = 'Completeness check pending...';
-                                responseEl.parentElement?.insertBefore(checkBadge, responseEl.nextSibling);
-                            } else {
-                                responseEl = { innerHTML: '' };
-                            }
-                            if (todo && responseEl && responseEl.parentElement) {
-                                responseEl.parentElement.appendChild(todo.root);
-                                scrollToBottom();
-                            }
+                            responseEl = createStreamingResponse();
+                            if (todo && responseEl.parentElement) responseEl.parentElement.appendChild(todo.root);
                         }
                         if (responseEl && typeof updateStreamingResponse === 'function') {
                             updateStreamingResponse(responseEl, responseText);
-                        }
-                        scrollToBottom();
-                    } else if (currentEvent === 'response' && data && data.response) {
-                        // Completeness check done. Remove preliminary style,
-                        // update the check badge, and show final text.
-                        finalResponseReceived = true;
-                        // Update the check badge from hourglass to checkmark
-                        const badge = responseEl?.parentElement?.querySelector('.check-badge');
-                        if (badge) {
-                            badge.className = 'check-badge done';
-                            badge.innerHTML = '&#10003;';  // checkmark
-                            badge.title = 'Completeness check passed';
-                            setTimeout(() => { badge.style.opacity = '0'; }, 3000);
-                        }
-                        // Remove preliminary dimming class
-                        if (responseEl) responseEl.classList.remove('preliminary-response');
-                        // If the final response differs from streamed text,
-                        // update the panel content.
-                        if (data.response !== responseText) {
-                            responseText = data.response;
-                            if (responseEl && typeof updateStreamingResponse === 'function') {
-                                updateStreamingResponse(responseEl, responseText);
-                            }
                         }
                         window._lastResponseText = null;
                         // usage-bar footer (token counts, latency, tool

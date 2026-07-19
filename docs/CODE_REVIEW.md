@@ -5902,3 +5902,55 @@ indicator visible forever. This was a genuine frontend liveness defect.
 - `git diff --check` passes. The local Windows shell does not have pytest
   installed, so the Python suite is run in the configured remote
   `brachytherapy` environment during deployment verification.
+
+## Round 56 response latency and review-gate optimization (2026-07-19)
+
+### Confirmed findings
+
+- **Short harmless turns paid for an unnecessary remote routing call.** The
+  streaming workflow still invoked the multi-agent router unconditionally,
+  despite an old comment claiming that short messages were skipped. This was
+  a real latency defect, not an intentional clinical safety gate.
+- **The direct-tool branch ran completeness review for every direct request.**
+  That added avoidable latency to low-risk UI and status operations. Clinical
+  planning, segmentation, dose evaluation, evidence-backed clinical advice,
+  and external-project research remain reviewed.
+- **The browser rendered model draft chunks as an answer before review.**
+  Although the server emitted the reviewed `response` event later, the draft
+  bubble made the UI look as if BrachyBot answered and then regenerated it.
+- **Provider clients were recreated for every request.** Existing retries were
+  finite, but repeated client construction discarded HTTP connection pools.
+
+### Corrective changes
+
+- Added `agent_runtime/turn_policy.py` with a conservative local classifier.
+  Greetings, thanks, and self-description use a deterministic bilingual fast
+  response. Clinical and planning language cannot use this bypass.
+- Added intent-specific tool allowlists for clinical planning, clinical
+  knowledge, external projects, and UI control. The allowlist is applied after
+  existing CT/session safety filters, so it cannot re-enable a removed tool.
+  External-project requests remain restricted to public web tools and cannot
+  fall through to BrachyBot filesystem inspection.
+- Kept the existing bounded conversation compaction and added a cache for the
+  cleaned session summary. Static system prompts and provider-shaped tool
+  schemas are cached with invalidation on registry changes and availability
+  changes.
+- Buffered `text_chunk` events in the frontend and create the answer bubble
+  only on the final reviewed `response` event. The execution trace remains
+  available while the answer is being generated and checked.
+- Added phase telemetry in `llm_meta.phase_timings_ms` for router, context
+  preparation, first token, generation, checker, and final SSE emission.
+- Reused OpenAI-compatible and Anthropic clients, capped provider retries at
+  two, and retained the configured request timeout. A stream is retried only
+  before its first chunk, preventing duplicate partial answers.
+
+### Verification
+
+- Python byte-compilation passes for the changed runtime, workflow, and
+  provider modules.
+- Node syntax check passes for the modified SSE renderer.
+- `git diff --check` passes.
+- Added regression coverage for local routing boundaries, external-project
+  tool isolation, and tool-schema cache invalidation. The full pytest suite
+  must be run in the remote `brachytherapy` environment because the local
+  Windows shells do not have pytest installed.

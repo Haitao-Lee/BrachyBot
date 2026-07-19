@@ -85,8 +85,23 @@ class AnthropicLLM(BaseLLM):
         self.model = model
         self.base_url = base_url
         self.timeout = timeout
-        self.max_retries = max_retries
+        self.max_retries = min(max(int(max_retries), 0), 2)
         self.extra_kwargs = kwargs
+        self._client = None
+        self._client_key = None
+
+    def _get_client(self, api_key: str):
+        """Reuse the Anthropic HTTP client and its connection pool."""
+        from anthropic import Anthropic
+
+        key = (api_key, self.base_url, self.timeout)
+        if self._client is None or self._client_key != key:
+            client_kwargs = {"api_key": api_key, "timeout": self.timeout}
+            if self.base_url:
+                client_kwargs["base_url"] = self.base_url
+            self._client = Anthropic(**client_kwargs)
+            self._client_key = key
+        return self._client
 
     @property
     def name(self) -> str:
@@ -109,12 +124,8 @@ class AnthropicLLM(BaseLLM):
         if not api_key:
             return LLMResponse(content="Error: No API key provided", finish_reason="error")
 
-        client_kwargs = {"api_key": api_key, "timeout": self.timeout}
-        if self.base_url:
-            client_kwargs["base_url"] = self.base_url
-
         try:
-            client = Anthropic(**client_kwargs)
+            client = self._get_client(api_key)
         except Exception as e:
             return LLMResponse(content=f"Error creating client: {str(e)}", finish_reason="error")
 
@@ -314,12 +325,8 @@ class AnthropicLLM(BaseLLM):
             yield {"type": "error", "content": "Error: No API key provided"}
             return
 
-        client_kwargs = {"api_key": api_key, "timeout": self.timeout}
-        if self.base_url:
-            client_kwargs["base_url"] = self.base_url
-
         try:
-            client = Anthropic(**client_kwargs)
+            client = self._get_client(api_key)
         except Exception as e:
             yield {"type": "error", "content": f"Error creating client: {str(e)}"}
             return

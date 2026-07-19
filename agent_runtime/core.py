@@ -27,13 +27,22 @@ class ToolRegistry:
 
     def __init__(self):
         self._tools: Dict[str, Any] = {}
+        # Tool schemas are static for the lifetime of an agent in normal
+        # operation. Cache the provider-shaped copy, while keeping dynamic
+        # availability in the cache key so optional tools remain safe.
+        self._openai_tools_cache_key = None
+        self._openai_tools_cache: List[Dict] = []
 
     def register(self, tool):
         self._tools[tool.name] = tool
+        self._openai_tools_cache_key = None
 
     def unregister(self, name: str) -> bool:
         """Remove a runtime-generated tool without exposing registry internals."""
-        return self._tools.pop(name, None) is not None
+        removed = self._tools.pop(name, None) is not None
+        if removed:
+            self._openai_tools_cache_key = None
+        return removed
 
     def get(self, name: str):
         if name not in self._tools:
@@ -79,6 +88,22 @@ class ToolRegistry:
         - Nested: {"type": "object", "properties": {...}, "required": [...]}
         - Flat:   {"param1": {...}, "param2": {...}}  (auto-wrapped)
         """
+        availability = tuple(
+            (tool.name, self.is_available(tool.name))
+            for tool in self._tools.values()
+        )
+        schema_key = tuple(
+            (
+                tool.name,
+                getattr(tool, "description", ""),
+                repr(tool.input_schema or {}),
+            )
+            for tool in self._tools.values()
+        )
+        cache_key = (availability, schema_key)
+        if cache_key == self._openai_tools_cache_key:
+            return self._openai_tools_cache
+
         openai_tools = []
         for tool in self._tools.values():
             if not self.is_available(tool.name):
@@ -101,7 +126,7 @@ class ToolRegistry:
                 "type": "function",
                 "function": {
                     "name": tool.name,
-                    "description": tool.description,
+                    "description": getattr(tool, "description", ""),
                     "parameters": {
                         "type": "object",
                         "properties": properties,
@@ -110,6 +135,8 @@ class ToolRegistry:
                 }
             }
             openai_tools.append(func_def)
+        self._openai_tools_cache_key = cache_key
+        self._openai_tools_cache = openai_tools
         return openai_tools
 
     def to_tool_descriptions(self) -> str:
@@ -167,6 +194,8 @@ class AgentMemory:
         self.tool_results: List[Dict] = []
         self.conversation: List[Dict] = []
         self.context_summary: str = ""
+        self._clean_context_cache_key = None
+        self._clean_context_cache_value = ""
         self.compaction_count: int = 0
         self.current_phase: PlanningPhase = PlanningPhase.IDLE
         self.deviation_threshold_mm: float = 2.0
@@ -584,6 +613,7 @@ class AgentMemory:
                 self.context_summary += "\n" + "\n".join(summary_parts)
             else:
                 self.context_summary = "Previous conversation summary:\n" + "\n".join(summary_parts)
+            self._clean_context_cache_key = None
 
             self.conversation = self.conversation[-keep_last:]
             self.compaction_count += 1
@@ -607,6 +637,8 @@ class AgentMemory:
         with self._lock:
             self.conversation = []
             self.context_summary = ""
+            self._clean_context_cache_key = None
+            self._clean_context_cache_value = ""
             self.compaction_count = 0
             self.tool_results = []
 
@@ -681,6 +713,8 @@ class AgentMemory:
         """Return context summary with memory artifacts removed."""
         with self._lock:
             context_summary = self.context_summary
+            if context_summary == self._clean_context_cache_key:
+                return self._clean_context_cache_value
         if not context_summary:
             return ""
         cleaned = context_summary
@@ -690,6 +724,9 @@ class AgentMemory:
         cleaned = re.sub(r'\[Tool result: [^\]]*\]', '', cleaned)
         # Remove multiple newlines
         cleaned = re.sub(r'\n{3,}', '\n\n', cleaned).strip()
+        with self._lock:
+            self._clean_context_cache_key = context_summary
+            self._clean_context_cache_value = cleaned
         return cleaned
 
     def get_smart_context(self, current_query: str = "") -> str:

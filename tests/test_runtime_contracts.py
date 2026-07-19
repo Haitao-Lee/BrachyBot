@@ -166,6 +166,45 @@ def test_provider_tool_schema_hides_server_injected_fields():
     assert "image_path" in tool["properties"]
 
 
+def test_local_turn_policy_shortcuts_only_low_risk_requests():
+    from agent_runtime.turn_policy import classify_local_turn, filter_tool_schemas
+
+    greeting = classify_local_turn("\u4f60\u597d")
+    assert greeting.fast_response
+    assert greeting.intent == "local_fast_path"
+    assert not greeting.use_router
+    assert not greeting.use_completeness
+
+    planning = classify_local_turn("\u8bf7\u6267\u884c\u653e\u5c04\u6027\u7c92\u5b50\u690d\u5165\u89c4\u5212")
+    assert planning.intent == "clinical_planning"
+    assert planning.use_router and planning.use_completeness
+    assert planning.requires_review
+
+    external = classify_local_turn("\u8bf7\u67e5\u8be2 DeepRare \u7684\u5f00\u6e90\u4ee3\u7801")
+    assert external.intent == "external_project_query"
+    assert filter_tool_schemas([
+        {"function": {"name": "web_search"}},
+        {"function": {"name": "filesystem_browser"}},
+    ], external) == [{"function": {"name": "web_search"}}]
+
+
+def test_tool_schema_cache_invalidates_when_registry_changes():
+    from agent_runtime.core import ToolRegistry
+
+    class _NamedTool(_Tool):
+        def __init__(self, name):
+            super().__init__({"type": "object", "properties": {}})
+            self.name = name
+            self.description = name
+
+    registry = ToolRegistry()
+    registry.register(_NamedTool("first"))
+    first = registry.to_openai_tools()
+    assert registry.to_openai_tools() is first
+    registry.register(_NamedTool("second"))
+    assert {item["function"]["name"] for item in registry.to_openai_tools()} == {"first", "second"}
+
+
 def test_restored_running_run_is_archived_as_interrupted_not_resumed():
     ledger = RunLedger()
     ledger.begin("start planning")
