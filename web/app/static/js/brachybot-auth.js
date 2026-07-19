@@ -2,6 +2,8 @@
 (function () {
     const state = { user: null, csrfToken: null, booted: false };
     const editorKey = 'brachybot_editor_token';
+    const AUTH_REQUEST_TIMEOUT_MS = 12000;
+    const LEASE_RELEASE_TIMEOUT_MS = 4000;
     let editorToken = sessionStorage.getItem(editorKey);
     if (!editorToken) {
         editorToken = (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`).replace(/-/g, '');
@@ -67,8 +69,25 @@
         if (notice) notice.hidden = !locked;
     }
 
+    async function authFetch(input, init = {}, timeoutMs = AUTH_REQUEST_TIMEOUT_MS) {
+        const controller = typeof AbortController === 'function' ? new AbortController() : null;
+        const timer = controller ? setTimeout(() => controller.abort(), timeoutMs) : null;
+        try {
+            const options = Object.assign({}, init);
+            if (controller) options.signal = controller.signal;
+            return await fetch(input, options);
+        } catch (error) {
+            if (error?.name === 'AbortError') {
+                throw new Error('The BrachyBot server did not respond. Check that the server is running.');
+            }
+            throw error;
+        } finally {
+            if (timer) clearTimeout(timer);
+        }
+    }
+
     async function request(path, body) {
-        const response = await fetch(path, {
+        const response = await authFetch(path, {
             method: 'POST',
             credentials: 'same-origin',
             headers: { 'Content-Type': 'application/json', ...(state.csrfToken ? { 'X-CSRF-Token': state.csrfToken } : {}) },
@@ -100,11 +119,19 @@
     async function releaseLease() {
         if (!state.user) return;
         try {
-            await fetch('/api/workspace/lease', {
+            await authFetch('/api/workspace/lease', {
                 method: 'DELETE',
-                headers: { 'Content-Type': 'application/json' },
+                credentials: 'same-origin',
+                // Keep this request self-contained. It is also called while
+                // changing cases, before the global fetch wrapper can be
+                // relied on after a cache refresh or script-order change.
+                headers: {
+                    'Content-Type': 'application/json',
+                    ...(state.csrfToken ? { 'X-CSRF-Token': state.csrfToken } : {}),
+                    'X-BrachyBot-Editor': editorToken,
+                },
                 body: JSON.stringify({ editor_token: editorToken }),
-            });
+            }, LEASE_RELEASE_TIMEOUT_MS);
         } catch (_) {
             // A short lease expiry is the fallback when the browser is offline.
         }
@@ -112,7 +139,7 @@
 
     async function authenticated() {
         try {
-            const response = await fetch('/api/auth/me', { credentials: 'same-origin' });
+            const response = await authFetch('/api/auth/me', { credentials: 'same-origin' });
             if (!response.ok) {
                 const data = await response.json().catch(() => ({}));
                 if (response.status === 401 && /api key/i.test(String(data.error || ''))) {

@@ -28,7 +28,7 @@ function showBrachyBotNotice(message, kind = 'info', durationMs = 6000) {
     close.type = 'button';
     close.className = 'app-notice-close';
     close.setAttribute('aria-label', 'Dismiss notification');
-    close.textContent = '?';
+    close.textContent = '×';
     let timer = null;
     const dismiss = () => {
         if (timer) clearTimeout(timer);
