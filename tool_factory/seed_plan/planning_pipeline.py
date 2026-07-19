@@ -1420,7 +1420,10 @@ class PlanningPipelineTool(BaseTool):
         ref_direc_input = kwargs.get("ref_direc")
         if ref_direc_input is None:
             # Try agent config first, then config file (preserves legacy behavior)
-            ref_direc_input = agent_config.get("reference_direc")
+            if agent_config.get("ref_direc_auto") is True or agent_config.get("reference_direc_mode") in {"auto", "auto_detect"}:
+                ref_direc_input = "auto"
+            else:
+                ref_direc_input = agent_config.get("reference_direc")
             if ref_direc_input is None:
                 ref_direc_input = CONFIG.get("reference_direc", "auto")
         # Resolve via the unified helper (handles organ defaults + auto_detect)
@@ -1756,9 +1759,11 @@ class PlanningPipelineTool(BaseTool):
 
         if not trajectories:
             logger.info("No trajectories found, running trajectory_init first...")
-            ref_input = (getattr(agent, "config", {}) or {}).get(
-                "reference_direc", CONFIG.get("reference_direc", "auto")
-            )
+            agent_config_current = getattr(agent, "config", {}) or {}
+            if agent_config_current.get("ref_direc_auto") is True or agent_config_current.get("reference_direc_mode") in {"auto", "auto_detect"}:
+                ref_input = "auto"
+            else:
+                ref_input = agent_config_current.get("reference_direc", CONFIG.get("reference_direc", "auto"))
             ref_direc = _resolve_ref_direc(ref_input, ct_image, ctv_mask, agent)
             init_result = self._step_trajectory_init(
                 ct_image, ctv_mask, oar_mask, ref_direc,
@@ -1874,7 +1879,11 @@ class PlanningPipelineTool(BaseTool):
         if not trajectories:
             logger.info("No trajectories found, running trajectory_init + refine first...")
             # Use the configured or organ-aware direction resolution.
-            ref_direc_input = agent_config.get("reference_direc") if agent_config else None
+            ref_direc_input = None
+            if agent_config and (agent_config.get("ref_direc_auto") is True or agent_config.get("reference_direc_mode") in {"auto", "auto_detect"}):
+                ref_direc_input = "auto"
+            elif agent_config:
+                ref_direc_input = agent_config.get("reference_direc")
             if ref_direc_input is None:
                 ref_direc_input = CONFIG.get("reference_direc", "auto")
             auto_ref_direc = _resolve_ref_direc(ref_direc_input, ct_image, ctv_mask, agent)
@@ -1984,7 +1993,10 @@ class PlanningPipelineTool(BaseTool):
         # entry here would silently reintroduce paths through bones/vessels.
         if not trajectories:
             logger.warning("[seed_planning] No trajectories found in memory, running trajectory_init...")
-            ref_input = agent_config.get("reference_direc", CONFIG.get("reference_direc", "auto"))
+            if agent_config.get("ref_direc_auto") is True or agent_config.get("reference_direc_mode") in {"auto", "auto_detect"}:
+                ref_input = "auto"
+            else:
+                ref_input = agent_config.get("reference_direc", CONFIG.get("reference_direc", "auto"))
             ref_direc = _resolve_ref_direc(ref_input, ct_image, ctv_mask, agent)
             init_result = self._step_trajectory_init(
                 ct_image, ctv_mask, oar_mask, ref_direc, agent_config, agent

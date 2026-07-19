@@ -17,6 +17,16 @@ logger = logging.getLogger(__name__)
 
 
 class ResponseToolMixin:
+    def _normalize_ctv_tool_params(self, params: Dict) -> Dict:
+        """Normalize legacy CTV site parameters before contract validation."""
+        normalized = dict(params or {})
+        if not normalized.get("tumor_type") and normalized.get("tumor_site"):
+            mapped = self._map_tumor_type(str(normalized.get("tumor_site")))
+            if mapped in self._SUPPORTED_AUTOMATIC_CTV_TYPES:
+                normalized["tumor_type"] = mapped
+            normalized.pop("tumor_site", None)
+        return normalized
+
     @staticmethod
     def _format_tool_result(tool_name: str, result, lang: str = "en") -> str:
         """Format tool result for display. Uses result.display, then auto-generates from metadata."""
@@ -78,6 +88,12 @@ print(json.dumps(result))
         # Bilingual patterns: Chinese terms match Chinese user input.
         # zh: 分割=segment, 靶区=target, 肿瘤=tumor, 器官=organ, 危及器官=OAR
         ACTION_PATTERNS = [
+            # UTF-8-safe aliases; legacy mojibake patterns remain below for
+            # compatibility with old transcripts.
+            (r'(ctv|clinical\s+target\s+volume).{0,8}(segment|seg|\u5206\u5272)', 'segment_ctv'),
+            (r'(segment|seg|\u5206\u5272).{0,8}(ctv|clinical\s+target\s+volume)', 'segment_ctv'),
+            (r'(oar|organs?|\u5371\u53ca\u5668\u5b98).{0,8}(segment|seg|\u5206\u5272)', 'segment_oar'),
+            (r'(segment|seg|\u5206\u5272).{0,8}(oar|organs?|\u5371\u53ca\u5668\u5b98)', 'segment_oar'),
             (r'(分析|analyze)', 'analyze'),
             (r'(ctv|靶区|临床靶区|病灶|肿瘤|tumor|lesion).{0,8}(分割|segment)', 'segment_ctv'),
             (r'(分割|segment).{0,8}(ctv|靶区|临床靶区|病灶|肿瘤|tumor|lesion)', 'segment_ctv'),
@@ -134,7 +150,19 @@ print(json.dumps(result))
                     ordered_actions.append('segment_ctv')
 
         if not ordered_actions:
-            return None
+            # A clarification reply such as "胰腺" has no action verb. It
+            # becomes a CTV action only after the previous turn asked for a
+            # tumor site; a bare site in a new case must remain non-executing.
+            pending = self.memory.retrieve("pending_clarification") or {}
+            if (
+                isinstance(pending, dict)
+                and pending.get("kind") == "tumor_site"
+                and tumor_type
+                and ct_path
+            ):
+                ordered_actions.append("segment_ctv")
+            else:
+                return None
 
         # CTV model selection is a clinical input, not a recoverable tool
         # default. Leave ambiguous or unsupported target requests to the LLM,
@@ -143,6 +171,15 @@ print(json.dumps(result))
         if not tumor_type and any(
             action in {"segment_ctv", "segment_all"} for action in ordered_actions
         ):
+            # Some legacy test/integration memory adapters are read-only. The
+            # marker is an optimization for the next clarification turn, not
+            # a prerequisite for safe behavior, so do not make it a hard
+            # dependency of CTV ambiguity handling.
+            if hasattr(self.memory, "store"):
+                self.memory.store(
+                    "pending_clarification",
+                    {"kind": "tumor_site", "requested_tool": "ctv_segmentation"},
+                )
             return None
 
         # Map actions to tool calls
@@ -197,6 +234,8 @@ print(json.dumps(result))
                 tool_step["result"] = self._format_tool_result(tc['tool'], result, lang=_lang)
                 tool_step["metadata"] = result.metadata if result.success else {}
                 tool_step["data"] = result.data if result.success else {}
+                if tc["tool"] == "ctv_segmentation" and result.success:
+                    self.memory.store("pending_clarification", None)
                 # Store tool call + result in conversation for context persistence
                 self.memory.add_message("assistant", f"[Called {tc['tool']}]")
                 result_summary = result.message[:500] if result.success else f"Error: {result.error}"
@@ -971,6 +1010,26 @@ Output (JSON array of strings):"""
     def _detect_tumor_type_from_message(self, message: str) -> Optional[str]:
         """Detect tumor type from user message for CTV segmentation routing."""
         msg = message.lower()
+        # These aliases are deliberately kept separate from the legacy
+        # transcript map above: they are real Unicode user input, not the
+        # mojibake spellings found in older persisted prompts.
+        unicode_aliases = (
+            ("\u80f0\u817a\u764c", "nnunet_pancreatic"),
+            ("\u80f0\u817a\u80bf\u7624", "nnunet_pancreatic"),
+            ("\u80f0\u817a", "nnunet_pancreatic"),
+            ("\u809d\u764c", "voco_liver"),
+            ("\u809d\u810f", "voco_liver"),
+            ("\u80be\u764c", "voco_kidney"),
+            ("\u80be", "voco_kidney"),
+            ("\u80ba\u764c", "voco_lung"),
+            ("\u80ba", "voco_lung"),
+            ("\u7ed3\u80a0\u764c", "voco_colon"),
+            ("\u7ed3\u80a0", "voco_colon"),
+            ("\u524d\u5217\u817a", "prostate_tumor"),
+        )
+        for keyword, tool_name in unicode_aliases:
+            if keyword in msg:
+                return tool_name
         # Check each keyword in the mapping
         for keyword, tool_name in self._TUMOR_TYPE_MAP.items():
             if keyword in msg:

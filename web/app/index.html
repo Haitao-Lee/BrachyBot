@@ -297,6 +297,22 @@
                     <input type="file" id="fileCTV" accept=".nii,.nii.gz,.mha,.nrrd,.mhd,image/*" onchange="handleFileSelect(this, 'ctvPath')">
                 </div>
 
+                <!-- The selected model is part of the manual segmentation
+                     request, not a display-only hint. -->
+                <div class="form-group">
+                    <label class="form-label" data-i18n-zh="CTV 分割模型" data-i18n-en="CTV segmentation model">CTV segmentation model</label>
+                    <select class="form-input" id="ctvModelSelect" aria-describedby="ctvModelHelp">
+                        <option value="nnunet_pancreatic" data-i18n-zh="胰腺肿瘤 · nnU-Net（生产路径）" data-i18n-en="Pancreatic tumor · nnU-Net (production path)">Pancreatic tumor · nnU-Net (production path)</option>
+                        <option value="voco_pancreatic" data-i18n-zh="胰腺肿瘤 · VoCo（需本地权重）" data-i18n-en="Pancreatic tumor · VoCo (local weights required)">Pancreatic tumor · VoCo (local weights required)</option>
+                        <option value="voco_liver" data-i18n-zh="肝脏肿瘤 · VoCo（需本地权重）" data-i18n-en="Liver tumor · VoCo (local weights required)">Liver tumor · VoCo (local weights required)</option>
+                        <option value="voco_kidney" data-i18n-zh="肾脏肿瘤 · VoCo（需本地权重）" data-i18n-en="Kidney tumor · VoCo (local weights required)">Kidney tumor · VoCo (local weights required)</option>
+                        <option value="voco_lung" data-i18n-zh="肺部肿瘤 · VoCo（需本地权重）" data-i18n-en="Lung tumor · VoCo (local weights required)">Lung tumor · VoCo (local weights required)</option>
+                        <option value="voco_colon" data-i18n-zh="结肠肿瘤 · VoCo（需本地权重）" data-i18n-en="Colon tumor · VoCo (local weights required)">Colon tumor · VoCo (local weights required)</option>
+                        <option value="prostate_tumor" data-i18n-zh="前列腺肿瘤 · 专用模型" data-i18n-en="Prostate tumor · dedicated model">Prostate tumor · dedicated model</option>
+                    </select>
+                    <div id="ctvModelHelp" style="font-size:0.58rem;color:var(--text-dim);margin-top:3px;" data-i18n-zh="请在手动 CTV 分割前选择模型；若本地未安装对应权重，服务器会返回明确错误。" data-i18n-en="Choose a model before manual CTV segmentation. The server reports a clear error when its local weights are unavailable.">Choose a model before manual CTV segmentation. The server reports a clear error when its local weights are unavailable.</div>
+                </div>
+
                 <!-- OAR file picker -->
                 <div class="form-group">
                     <label class="form-label">OAR Mask</label>

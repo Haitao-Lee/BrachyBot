@@ -27,6 +27,12 @@
 - Deferred mesh, DVH, and dose-surface restoration is case-generation scoped,
   so a late presentation callback from the prior workspace cannot repaint a
   newly selected case.
+- 2D volume, label-volume, server-slice, and batch-preload callbacks now carry
+  the same case generation/session fence. A delayed old CT or segmentation
+  response is discarded instead of repopulating the new case's canvases.
+- Asynchronous 3D segmentation prewarm requests are invalidated on case
+  changes before their results can add meshes. This prevents old OAR/CTV
+  surfaces from reappearing after a new session is created.
 - Case creation, switching, and deletion are serialized as one workspace
   transition. The sidebar is briefly unavailable while the selected case is
   persisted and restored, preventing rapid clicks or out-of-order responses
@@ -49,9 +55,15 @@
   scrolling, and session changes.
 - Low-risk greetings and self-description requests use local intent
   classification to bypass unnecessary routing/review overhead, while the
-  configured LLM still generates the answer; ordinary knowledge and UI
-  requests use intent-specific tool schemas instead of advertising the full
-  registry on every turn.
+  configured LLM still generates the answer; there is no canned greeting
+  response. If no provider is configured, the assistant reports that state
+  instead of pretending a rule-based answer came from the LLM. Ordinary
+  knowledge and UI requests use intent-specific tool schemas instead of
+  advertising the full registry on every turn.
+- Manual CTV segmentation exposes an explicit bilingual model selector. The
+  selected stable model ID is sent to `/api/segmentation`, persisted with the
+  planning configuration, and the manual step buttons refresh immediately
+  after a programmatic CT upload.
 - Long conversations retain a compact session summary plus recent turns and
   structured case state. Prompt, tool-schema, and cleaned-summary caches reduce
   repeated preparation work without caching live viewer inspection results.
@@ -460,7 +472,10 @@ Task: "Generate prostate plan"
 - **15+ built-in providers**: OpenAI, Anthropic, OpenRouter, Qwen, Kimi, MiniMax, GLM, Gemini, Groq, Grok, Mimo, DeepSeek, Tencent, Ollama, vLLM
 - **Anthropic-compatible proxies**: Also supports Anthropic protocol (`/v1/messages`) via custom `base_url`
 - **Function calling**: LLM discovers and invokes tools via `tool_call` blocks
-- **Fallback mode**: Rule-based keyword matching when LLM unavailable
+- **Operational fallback**: Rule-based parsing is limited to explicit clinical
+  workflow operations when the LLM is unavailable; conversational questions
+  never receive a canned answer and instead report the provider configuration
+  problem clearly
 
 ### 📚 Layered Memory System
 - **L0 Meta Rules**: 8 core behavioral rules always in context

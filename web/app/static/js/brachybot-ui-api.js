@@ -123,6 +123,7 @@ function collectUIState() {
             // auto-detection — expose that intent so the LLM knows the
             // actual planning input (not just the stale manual vector).
             ref_direc_auto: !!(document.getElementById('refDirecAuto')?.checked),
+            reference_direc_mode: (document.getElementById('refDirecAuto')?.checked) ? 'auto' : 'manual',
             reference_direc: (document.getElementById('refDirecAuto')?.checked)
                 ? 'auto'
                 : [
@@ -638,6 +639,25 @@ function resetAllState() {
         });
         scene3D.meshes = {};
     }
+    // Some legacy reconstruction paths keep the optional skin surface
+    // outside scene3D.meshes. Remove it explicitly so a new case cannot
+    // inherit an untracked surface from the previous case.
+    if (typeof scene3D !== 'undefined' && scene3D.skinMesh) {
+        try { scene3D.scene?.remove(scene3D.skinMesh); } catch (_) {}
+        try { scene3D.skinMesh.geometry?.dispose(); } catch (_) {}
+        try { scene3D.skinMesh.material?.dispose(); } catch (_) {}
+        scene3D.skinMesh = null;
+    }
+    // Keep lights and the renderer, but remove any untracked renderable
+    // objects left by an asynchronous reconstruction callback.
+    if (typeof scene3D !== 'undefined' && scene3D.scene) {
+        [...scene3D.scene.children].forEach(child => {
+            if (!child.isLight) {
+                scene3D.scene.remove(child);
+                try { child.traverse?.(node => { node.geometry?.dispose?.(); node.material?.dispose?.(); }); } catch (_) {}
+            }
+        });
+    }
 
     // Clear slice caches
     if (typeof sliceCache !== 'undefined') {
@@ -670,6 +690,15 @@ function resetAllState() {
  * the previously active case.
  */
 function clearClientWorkspace(options = {}) {
+    // Invalidate asynchronous 3D mesh fetches before removing current-case
+    // objects. A late response from the previous session may still complete,
+    // but it is no longer allowed to add geometry to the new case.
+    if (typeof invalidateSegmentationMeshPrewarm === 'function') {
+        invalidateSegmentationMeshPrewarm();
+    }
+    if (typeof invalidateViewerDataLoads === 'function') {
+        invalidateViewerDataLoads();
+    }
     resetAllState();
     state.ctLoaded = false;
     state.ctPath = null;
@@ -705,6 +734,13 @@ function clearClientWorkspace(options = {}) {
     if (dvhPlaceholder) dvhPlaceholder.style.display = '';
     document.querySelectorAll('.dose-colorbar').forEach(el => { el.style.display = 'none'; });
     document.querySelectorAll('.viewer-no-data').forEach(el => { el.style.display = ''; });
+    const clinicalHost = document.getElementById('clinicalEvaluationContent');
+    if (clinicalHost) {
+        const text = typeof _t === 'function'
+            ? _t('规划完成后此处显示详细评估', 'Detailed evaluation will appear here after planning completes.')
+            : 'Detailed evaluation will appear here after planning completes.';
+        clinicalHost.innerHTML = `<div style="color:var(--text-dim);font-style:italic;">${text}</div>`;
+    }
     if (options.clearReport !== false && typeof _newEmptyReportForm === 'function') {
         window.reportForm = _newEmptyReportForm();
         try { renderReportEditor(); } catch (_) {}
@@ -1054,7 +1090,14 @@ async function loadCTToViewers(ctPath, options = {}) {
             }, 100);
 
             const ctPathInput = document.getElementById('ctPath');
-            if (ctPathInput) ctPathInput.value = ctPath;
+            if (ctPathInput) {
+                ctPathInput.value = ctPath;
+                // Programmatic uploads do not fire native input/change
+                // events. Refresh manual-step prerequisites explicitly so
+                // the CTV button becomes usable immediately after upload.
+                ctPathInput.dispatchEvent(new Event('input', { bubbles: true }));
+                ctPathInput.dispatchEvent(new Event('change', { bubbles: true }));
+            }
             if (announce) {
                 addChat('system', `CT loaded: ${data.shape.join(' × ')} voxels, ${data.hu_range[0].toFixed(0)} to ${data.hu_range[1].toFixed(0)} HU`);
             }
@@ -1444,6 +1487,10 @@ async function loadDefaultParams() {
             const el = document.getElementById(id);
             if (el && val !== undefined && val !== null) el.value = val;
         };
+
+        // Keep the manual selector aligned with the server-side default.
+        // The value is a model identifier, not a translated display label.
+        setVal('ctvModelSelect', d.tumor_type || 'nnunet_pancreatic');
 
         // Seed info
         if (d.seed_info) {

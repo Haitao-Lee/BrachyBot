@@ -188,6 +188,17 @@ def test_local_turn_policy_shortcuts_only_low_risk_requests():
     ], external) == [{"function": {"name": "web_search"}}]
 
 
+def test_segmentation_intent_and_site_followup_are_not_knowledge_queries():
+    from agent_runtime.turn_policy import classify_local_turn
+
+    direct = classify_local_turn("\u8bf7\u6267\u884cCTV\u5206\u5272")
+    assert direct.intent == "segmentation"
+    assert "ctv_segmentation" in direct.allow_tools
+    followup = classify_local_turn("\u80f0\u817a", pending_tumor_site=True)
+    assert followup.intent == "segmentation"
+    assert followup.use_completeness
+
+
 def test_tool_schema_cache_invalidates_when_registry_changes():
     from agent_runtime.core import ToolRegistry
 

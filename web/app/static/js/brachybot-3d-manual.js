@@ -1866,7 +1866,17 @@ const _segmentationMeshPrewarm = {
     tasks: new Map(),
     statusEl: null,
     activeRuns: 0,
+    // Fetches cannot always be aborted safely, but their results must never
+    // mutate a newer case after a session transition.
+    generation: 0,
 };
+
+function invalidateSegmentationMeshPrewarm() {
+    _segmentationMeshPrewarm.generation += 1;
+    _segmentationMeshPrewarm.tasks.clear();
+    _setMeshPrewarmStatus('', false);
+    return _segmentationMeshPrewarm.generation;
+}
 
 function _meshTaskKey(source, labelId, smoothing = 1) {
     return `${source}:${labelId}:${smoothing}`;
@@ -1934,7 +1944,7 @@ function _labelIdInMask(labelData, labelId) {
     return labelData._uniqueLabelSet.has(labelId);
 }
 
-async function _fetchAndAddOrganMesh({ labelId, source, organId, label, color, opacity, force = false, smoothing = 1 }) {
+async function _fetchAndAddOrganMesh({ labelId, source, organId, label, color, opacity, force = false, smoothing = 1, generation = _segmentationMeshPrewarm.generation, sessionId = null }) {
     if (labelId === undefined || labelId === null || !source || !organId) return { status: 'invalid' };
     if (!force && _sceneHasMesh(organId)) return { status: 'exists', id: organId };
 
@@ -1965,6 +1975,10 @@ async function _fetchAndAddOrganMesh({ labelId, source, organId, label, color, o
                 console.warn(`[3D mesh] ${organId}: skipping (${data.face_count} faces > 100K limit)`);
                 return { status: 'too_large', id: organId };
             }
+            if (generation !== _segmentationMeshPrewarm.generation
+                || (sessionId != null && sessionId !== state.sessionId)) {
+                return { status: 'stale', id: organId };
+            }
             data.color = color;
             data.organ_id = organId;
             data.label = label || organId;
@@ -1987,6 +2001,9 @@ async function prewarmSegmentationMeshes(kind = 'all', opts = {}) {
     if (!state.ctLoaded && !state.ctPath) return;
     init3DScene();
 
+    const generation = _segmentationMeshPrewarm.generation;
+    const sessionId = state.sessionId || null;
+
     const includeCTV = kind === 'ctv' || kind === 'oar' || kind === 'all';
     const includeOAR = kind === 'oar' || kind === 'all';
     const showStatus = opts.showStatus !== false;
@@ -2008,6 +2025,8 @@ async function prewarmSegmentationMeshes(kind = 'all', opts = {}) {
                     label: (window._ctvLabelMap || {})[lid] || `CTV Label ${lid}`,
                     color: c ? ((c[0] << 16) | (c[1] << 8) | c[2]) : 0xff6b6b,
                     force,
+                    generation,
+                    sessionId,
                 }));
             }
         }
@@ -2031,6 +2050,8 @@ async function prewarmSegmentationMeshes(kind = 'all', opts = {}) {
                         color: _parseTreeColorValue(organ && organ.color, 0xff4444),
                         opacity: organ && typeof organ.opacity === 'number' ? organ.opacity : undefined,
                         force,
+                        generation,
+                        sessionId,
                     });
                 });
                 promises.push(Promise.all(batch));

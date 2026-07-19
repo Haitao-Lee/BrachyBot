@@ -52,7 +52,7 @@ def _contains_any(text: str, phrases: Iterable[str]) -> bool:
     return any(phrase.lower() in lowered for phrase in phrases)
 
 
-def classify_local_turn(message: str) -> LocalTurnPolicy:
+def classify_local_turn(message: str, pending_tumor_site: bool = False) -> LocalTurnPolicy:
     """Classify a turn without an LLM, using conservative intent boundaries."""
     text = str(message or "").strip()
     lower = text.lower()
@@ -74,6 +74,22 @@ def classify_local_turn(message: str) -> LocalTurnPolicy:
         "deeprare", "github", "gitlab", "repository", "repo", "source code",
         "外部项目", "项目代码", "开源代码",
     ))
+    # Segmentation is an execution request, not a generic knowledge query.
+    # Keep the Chinese aliases as Unicode escapes because this module must
+    # remain ASCII-safe even when deployed with a non-UTF-8 locale.
+    segmentation = _contains_any(lower, (
+        "ctv", "oar segmentation", "segment ctv", "segment oar", "segmentation",
+        "\u5206\u5272", "\u6267\u884cctv\u5206\u5272", "\u6267\u884coar\u5206\u5272",
+        "\u9776\u533a", "\u5371\u53ca\u5668\u5b98", "\u80bf\u7624\u90e8\u4f4d",
+    ))
+    # A site-only follow-up is actionable only after the agent explicitly
+    # asked for the tumor site. This prevents a bare site name in a new case
+    # from silently starting a clinical workflow.
+    if pending_tumor_site and _contains_any(lower, (
+        "pancreas", "pancreatic", "liver", "kidney", "lung", "colon", "prostate",
+        "\u80f0\u817a", "\u809d", "\u80be", "\u80ba", "\u7ed3\u80a0", "\u524d\u5217\u817a",
+    )):
+        segmentation = True
     planning = _contains_any(lower, (
         "执行规划", "开始规划", "重新规划", "粒子植入规划", "治疗计划",
         "planning_pipeline", "brachytherapy plan", "treatment plan", "replan",
@@ -88,6 +104,8 @@ def classify_local_turn(message: str) -> LocalTurnPolicy:
         "viewer", "slice", "zoom", "show", "hide", "opacity", "screenshot",
         "set", "adjust", "toggle", "drag",
     ))
+    if segmentation:
+        return LocalTurnPolicy("segmentation", "medium", True, False, True, CLINICAL_TOOLS)
     if planning:
         return LocalTurnPolicy("clinical_planning", "high", True, True, True, CLINICAL_TOOLS)
     if external:

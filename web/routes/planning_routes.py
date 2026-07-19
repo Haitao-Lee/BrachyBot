@@ -13,6 +13,7 @@ from flask import Response, current_app, jsonify, request, send_file, session as
 
 from web.auth import current_user
 from web.workspace_store import WorkspaceError, WorkspaceQuotaExceeded
+from agent_runtime.core import resolve_reference_direction_input
 
 try:
     from web.server_support import (
@@ -675,11 +676,11 @@ def register_planning_routes(app, get_agent):
             ui_state = agent.memory.get_ui_state() or {}
             planning_state = ui_state.get("planning") if isinstance(ui_state, dict) else {}
             planning_state = planning_state if isinstance(planning_state, dict) else {}
-            live_ref = planning_state.get("reference_direc")
-            if planning_state.get("ref_direc_auto"):
-                live_ref = "auto"
-            if live_ref is None:
-                live_ref = _cfg("reference_direc")
+            live_ref = resolve_reference_direction_input(
+                planning_state,
+                {**config, **_default_cfg},
+                default="auto",
+            )
 
             checkpoint_operation(
                 agent,
@@ -1266,6 +1267,8 @@ def register_planning_routes(app, get_agent):
             # Store all parameter groups
             param_keys = [
                 "seed_info", "radiation_array_params", "reference_direc",
+                "ref_direc_auto", "reference_direc_mode",
+                "tumor_type",
                 "in_lowest_energy", "out_highest_energy", "DVH_rate",
                 "max_iter", "rf_params", "distance_filter",
                 "direc_resolution", "dl_params", "iter_rate", "replan_rate",
@@ -1794,7 +1797,11 @@ def register_planning_routes(app, get_agent):
             # UI input takes priority over agent.config for ALL params.
             ui_state = agent.memory.get_ui_state() if hasattr(agent, 'memory') and hasattr(agent.memory, 'get_ui_state') else {}
             planning_state = ui_state.get("planning") if isinstance(ui_state.get("planning"), dict) else {}
-            reference_direc = planning_state.get("reference_direc") if planning_state.get("reference_direc") is not None else config.get('reference_direc')
+            reference_direc = resolve_reference_direction_input(
+                planning_state,
+                config,
+                default="auto",
+            )
             plan_mode = ui_state.get("plan_mode") or mode or "rule_based"
             seed_info = planning_state.get("seed_info") or config.get('seed_info')
             radiation_array_params = planning_state.get("radiation_params") or config.get('radiation_array_params')

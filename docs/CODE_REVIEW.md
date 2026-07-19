@@ -5987,3 +5987,102 @@ indicator visible forever. This was a genuine frontend liveness defect.
 
 - Remote `brachytherapy` environment: `207 passed, 2 skipped, 3 warnings`.
 - Changed Python files pass byte-compilation and `git diff --check`.
+
+## Round 58: cross-session viewer cleanup and review-output boundary (2026-07-19)
+
+### Confirmed findings
+
+- Creating or switching a case did clear the tracked Data Tree meshes and the
+  clinical evaluation host, but an in-flight 3D segmentation prewarm request
+  could still finish later and add an old CTV/OAR surface to the newly selected
+  case. This was a real asynchronous workspace-isolation defect.
+- The existing 2D render-generation fence covered the server-rendered slice
+  path and CT loading, but not all client volume and label-volume responses or
+  batch slice preloads. A late response could therefore repopulate a canvas,
+  label array, or slice cache after a case transition.
+- Reviewer/checker prose was being collected correctly, but was also appended
+  verbatim to the user-facing planning response. That made the final answer
+  appear to be regenerated after the quality gate and exposed internal review
+  wording instead of a single polished answer.
+
+### Corrective changes
+
+- `clearClientWorkspace()` now invalidates segmentation prewarm tasks and
+  client-side viewer data loads before clearing the current scene, canvases,
+  caches, metrics, report, and Clinical Evaluation panel.
+- 3D prewarm jobs capture the current generation and session ID. Their result
+  is discarded unless both still match when the mesh response arrives. This
+  intentionally does not require aborting the HTTP request: cancellation of
+  the mutation is sufficient and avoids unsafe WebGL/fetch teardown.
+- Volume loading, label-volume loading, server slice loading, and slice
+  preloading now use generation/session checks before mutating data or drawing.
+- Reference-direction precedence is centralized in
+  `resolve_reference_direction_input()`: explicit auto mode wins over stale
+  vectors, while explicit manual mode preserves the current UI vector across
+  manual, chat, and re-planning entry points.
+- 2D needle overlays now draw only the physical entry-to-slice segment; the
+  existing world-coordinate chain remains unchanged and the old cross marker
+  is removed.
+- Quality-review and completeness-check text is retained as internal memory and
+  trace metadata only. The final response remains single-speaker and does not
+  print raw reviewer output.
+
+### Verification
+
+- Full local suite: `210 passed, 2 skipped, 3 warnings`.
+- Node syntax checks pass for the changed UI/API, viewer-volume, 3D manual, and
+  manual-annotation scripts.
+- `git diff --check` passes.
+- Regression tests cover clinical-panel clearing, stale 2D data callbacks,
+  stale 3D mesh callbacks, review-output isolation, auto-reference precedence,
+  and entry-clipped needle overlays.
+
+## Round 59: preserve agentic small talk and explicit CTV model selection (2026-07-19)
+
+### Confirmed findings
+
+- The local classifier was a real source of ambiguity: it was allowed to
+  bypass the expensive router, but a previous deployment also used that
+  classification as a canned-answer path. That made greetings and
+  self-description look like mechanical keyword replies and obscured whether
+  the configured LLM was actually reachable.
+- The manual CTV button had no model selector and posted only `kind` and
+  `image_path`. The server therefore could not reliably choose the requested
+  CT-based CTV model. Separately, programmatic CT uploads changed the input
+  field without firing native input/change events, leaving the manual buttons
+  disabled until another user interaction.
+- Chinese requests such as “请执行CTV分割” were not consistently routed as
+  segmentation, and a clarification answer such as “胰腺” could be treated as
+  a generic knowledge turn. Legacy model prompts could also send `tumor_site`
+  while the canonical tool contract uses `tumor_type`.
+
+### Corrective changes
+
+- `small_talk` remains an execution policy only: it skips the router and tool
+  schemas, but `_run_llm_function_calling` still performs the user-facing
+  answer generation whenever a provider is available. When no provider is
+  available, both synchronous and streaming paths now show an explicit LLM
+  availability error and never emit a canned greeting.
+- Added bilingual `ctvModelSelect` options for the production pancreatic
+  nnU-Net model and explicitly marked optional research models as requiring
+  local weights. The selected stable identifier is sent to the segmentation
+  endpoint and persisted through `/api/config`.
+- Programmatic CT loading now dispatches input/change events so manual-step
+  prerequisites are recomputed immediately. The selector also follows the
+  server default (`nnunet_pancreatic`) on startup.
+- Added UTF-8-safe segmentation intent aliases, a pending tumor-site
+  clarification marker, safe continuation on a site-only follow-up, and
+  `tumor_site` compatibility normalization to canonical `tumor_type`.
+  Ambiguous CTV requests still stop for user clarification and do not invent a
+  model.
+- The legacy non-trace `chat()` entry point now follows the same policy: when
+  no provider is configured it reports the unavailable LLM explicitly instead
+  of falling back to a canned greeting. This keeps all public chat entry
+  points consistent.
+
+### Verification
+
+- Full local suite: `213 passed, 2 skipped, 3 warnings`.
+- Targeted runtime/workspace/regression suite: `128 passed`.
+- Python byte-compilation passes for changed runtime, CTV tool, and route
+  modules; Node syntax checks pass for the changed manual and UI API scripts.

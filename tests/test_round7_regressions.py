@@ -51,6 +51,27 @@ def test_chat_renders_only_reviewed_response_event():
     assert "const finalText = finalResponseReceived" in source
 
 
+def test_review_feedback_stays_internal_and_needle_overlay_is_entry_clipped():
+    workflows = (ROOT / "agent_runtime/chat_workflows.py").read_text(encoding="utf-8")
+    overlay = (ROOT / "web/app/static/js/brachybot-manual-annotation.js").read_text(encoding="utf-8")
+    assert "review_feedback = []" in workflows
+    assert 'self.memory.store("last_review_feedback", review_feedback)' in workflows
+    assert "response += \"\\n\\n---\\n\"" not in workflows
+    assert "const segmentStart = p1" in overlay
+    assert "const segmentEnd = hit" in overlay
+    assert "ctx.arc(hit.x" not in overlay
+
+
+def test_reference_direction_mode_is_explicit_and_auto_wins_stale_vectors():
+    core = (ROOT / "agent_runtime/core.py").read_text(encoding="utf-8")
+    ui_api = (ROOT / "web/app/static/js/brachybot-ui-api.js").read_text(encoding="utf-8")
+    routes = (ROOT / "web/routes/planning_routes.py").read_text(encoding="utf-8")
+    assert "def resolve_reference_direction_input" in core
+    assert "ref_direc_auto: refAuto" in (ROOT / "web/app/static/js/brachybot-manual-annotation.js").read_text(encoding="utf-8")
+    assert "reference_direc_mode" in ui_api
+    assert "resolve_reference_direction_input(" in routes
+
+
 def test_viewer_and_data_tree_regressions_are_explicitly_covered():
     index = (ROOT / "web/app/index.html").read_text(encoding="utf-8")
     ui_api = (ROOT / "web/app/static/js/brachybot-ui-api.js").read_text(encoding="utf-8")

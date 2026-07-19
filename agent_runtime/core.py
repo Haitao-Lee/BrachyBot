@@ -12,6 +12,49 @@ from typing import Any, Callable, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
+
+def resolve_reference_direction_input(
+    planning_state: Optional[Dict] = None,
+    config: Optional[Dict] = None,
+    default: Any = "auto",
+) -> Any:
+    """Return the canonical reference-direction request for a planning run.
+
+    ``ref_direc_auto`` is deliberately treated as an explicit mode flag.  A
+    checked auto-direction control must win over any stale numeric vector
+    retained by an older UI snapshot or by ``plans/config.json``.  Conversely,
+    an explicit ``False`` means the current UI vector is authoritative.  This
+    small precedence rule is shared by every planning entry point so manual,
+    chat, and re-planning requests cannot silently disagree.
+    """
+    state = planning_state if isinstance(planning_state, dict) else {}
+    settings = config if isinstance(config, dict) else {}
+
+    mode = state.get("reference_direc_mode")
+    if isinstance(mode, str) and mode.strip().lower() in {"auto", "auto_detect"}:
+        return "auto"
+    if state.get("ref_direc_auto") is True:
+        return "auto"
+
+    # When the UI explicitly selected manual mode, preserve its vector even
+    # if the server configuration still contains a different default.
+    if state.get("ref_direc_auto") is False:
+        value = state.get("reference_direc")
+        if isinstance(value, (list, tuple)) and len(value) == 3:
+            return list(value)
+        return settings.get("reference_direc", default)
+
+    # Backward-compatible snapshots may only contain reference_direc.
+    value = state.get("reference_direc")
+    if value is not None:
+        return value
+    config_mode = settings.get("reference_direc_mode")
+    if isinstance(config_mode, str) and config_mode.strip().lower() in {"auto", "auto_detect"}:
+        return "auto"
+    if settings.get("ref_direc_auto") is True:
+        return "auto"
+    return settings.get("reference_direc", default)
+
 class PlanningPhase(Enum):
     """Phases of the brachytherapy planning workflow."""
     IDLE = "idle"

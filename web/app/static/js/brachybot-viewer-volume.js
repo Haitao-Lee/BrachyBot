@@ -203,6 +203,12 @@ let ctvLabelData = null;   // Uint8Array, shape (Z, Y, X)
 let oarLabelData = null;   // Uint8Array, shape (Z, Y, X)
 let labelColorLUT = {};    // {label_id: [R, G, B]}
 let organMetaFromServer = {};  // {label_id: {name, color, voxels}}
+let viewerDataLoadGeneration = 0;
+
+function invalidateViewerDataLoads() {
+    viewerDataLoadGeneration += 1;
+    return viewerDataLoadGeneration;
+}
 function _getMprGeometry(axis, shape, spacing) {
     const [Z, Y, X] = shape;
     const sp = spacing || [0.68, 0.68, 5.0];
@@ -227,6 +233,8 @@ function _volumeZToDisplayY(z, resampleRatio) {
 }
 
 async function loadVolumeData() {
+    const generation = viewerDataLoadGeneration;
+    const sessionId = state.sessionId || null;
     // Threshold is an optional display filter, not a segmentation result.
     // Reset it when a new volume is loaded so a stale session setting cannot
     // create an unexplained red whole-body overlay.
@@ -235,6 +243,7 @@ async function loadVolumeData() {
     if (thresholdInput) thresholdInput.value = '';
     const res = await fetch(API + '/viewer/volume');
     if (!res.ok) throw new Error('Failed to load volume');
+    if (generation !== viewerDataLoadGeneration || (sessionId != null && sessionId !== state.sessionId)) return false;
 
     const shapeZ = parseInt(res.headers.get('X-Shape-Z'));
     const shapeY = parseInt(res.headers.get('X-Shape-Y'));
@@ -247,6 +256,7 @@ async function loadVolumeData() {
     ];
 
     const buffer = await res.arrayBuffer();
+    if (generation !== viewerDataLoadGeneration || (sessionId != null && sessionId !== state.sessionId)) return false;
     volumeData = new Int16Array(buffer);
     uiDebugLog(`Volume loaded: ${shapeZ}x${shapeY}x${shapeX}, ${volumeData.length} voxels`);
 
@@ -273,9 +283,12 @@ async function loadVolumeData() {
 }
 
 async function loadLabelVolumes() {
+    const generation = viewerDataLoadGeneration;
+    const sessionId = state.sessionId || null;
     try {
         const res = await fetch(API + '/viewer/label_volume');
         if (!res.ok) { uiDebugLog('No label volumes available'); return; }
+        if (generation !== viewerDataLoadGeneration || (sessionId != null && sessionId !== state.sessionId)) return false;
 
         const shapeZ = parseInt(res.headers.get('X-Shape-Z'));
         const shapeY = parseInt(res.headers.get('X-Shape-Y'));
@@ -307,6 +320,7 @@ async function loadLabelVolumes() {
         organMetaFromServer = JSON.parse(res.headers.get('X-Organ-Meta') || '{}');
 
         const buffer = await res.arrayBuffer();
+        if (generation !== viewerDataLoadGeneration || (sessionId != null && sessionId !== state.sessionId)) return false;
         const allBytes = new Uint8Array(buffer);
         const sliceSize = shapeY * shapeX;
 
@@ -960,6 +974,8 @@ function renderCachedSlice(axis, sliceIndex) {
 
 async function loadSlice(axis, sliceIndex) {
     if (!state.ctPath) return;
+    const generation = window.__viewerRenderGeneration || 0;
+    const sessionId = state.sessionId || null;
 
     const cached = sliceCache[axis][sliceIndex];
     if (cached) {
@@ -983,6 +999,8 @@ async function loadSlice(axis, sliceIndex) {
         if (!res.ok) return;
 
         const data = await res.json();
+        if (generation !== (window.__viewerRenderGeneration || 0)
+            || (sessionId != null && sessionId !== state.sessionId)) return;
         if (data.success) {
             sliceCache[axis][sliceIndex] = data.data;
             renderSliceToCanvas(axis, data.data);
@@ -995,6 +1013,8 @@ async function loadSlice(axis, sliceIndex) {
 async function preloadAxis(axis) {
     const slider = document.getElementById('slider' + capitalize(axis));
     if (!slider) return;
+    const generation = window.__viewerRenderGeneration || 0;
+    const sessionId = state.sessionId || null;
     const max = parseInt(slider.max) || 48;
     sliceCache[axis] = {};
 
@@ -1017,6 +1037,8 @@ async function preloadAxis(axis) {
                 })
                 .then(res => res.ok ? res.json() : null)
                 .then(data => {
+                    if (generation !== (window.__viewerRenderGeneration || 0)
+                        || (sessionId != null && sessionId !== state.sessionId)) return;
                     if (data && data.success) {
                         sliceCache[axis][i] = data.data;
                     }

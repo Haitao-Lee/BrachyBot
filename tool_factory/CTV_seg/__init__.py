@@ -117,6 +117,13 @@ class CTVSegmentationTool(BaseTool):
                     "description": f"Tumor type for specialized model. Options: {self._tumor_types}. Required unless label_path is provided.",
                     "enum": self._tumor_types,
                 },
+                # Backward-compatible alias for older model prompts. The
+                # executor normalizes it immediately to tumor_type; new
+                # callers should use tumor_type so the contract stays clear.
+                "tumor_site": {
+                    "type": "string",
+                    "description": "Deprecated alias for tumor_type; accepts a site such as pancreas or liver.",
+                },
                 "target_value": {"type": "number", "default": 1, "description": "Label value for tumor voxels"},
                 "fast_mode": {"type": "boolean", "default": False, "description": "Disable TTA, reduce threads"},
                 "allow_empty": {"type": "boolean", "default": False, "description": "Only for tests; never allow empty clinical CTV by default"},
@@ -145,7 +152,23 @@ class CTVSegmentationTool(BaseTool):
         image = kwargs.get("image")
         image_path = kwargs.get("image_path")
         label_path = kwargs.get("label_path")
-        tumor_type = (kwargs.get("tumor_type") or "").strip()
+        tumor_type = (kwargs.get("tumor_type") or kwargs.get("tumor_site") or "").strip()
+        site_aliases = {
+            "pancreas": "nnunet_pancreatic",
+            "pancreatic": "nnunet_pancreatic",
+            "\u80f0\u817a": "nnunet_pancreatic",
+            "liver": "voco_liver",
+            "\u809d\u810f": "voco_liver",
+            "kidney": "voco_kidney",
+            "\u80be": "voco_kidney",
+            "lung": "voco_lung",
+            "\u80ba": "voco_lung",
+            "colon": "voco_colon",
+            "\u7ed3\u80a0": "voco_colon",
+            "prostate": "prostate_tumor",
+            "\u524d\u5217\u817a": "prostate_tumor",
+        }
+        tumor_type = site_aliases.get(tumor_type.lower(), tumor_type)
         target_value = kwargs.get("target_value", 1)
         fast_mode = kwargs.get("fast_mode", False)
         allow_empty = bool(kwargs.get("allow_empty", False))
