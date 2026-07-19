@@ -400,23 +400,11 @@ class ChatWorkflowMixin:
 
         add_step("user", "User Input", message)
 
-        # Deterministic low-risk turns should not spend an LLM round-trip on
-        # routing, context assembly, or completeness review. Clinical and
-        # evidence-based requests are intentionally excluded by the policy.
+        # Local classification only controls expensive routing/review/tool
+        # policy. The configured LLM still generates the user-facing answer,
+        # including greetings and self-description requests.
         local_policy = classify_local_turn(message)
         self._active_turn_policy = local_policy
-        if local_policy.fast_response is not None:
-            add_step("thinking", "Local Fast Path", "Answered locally; no model call required.")
-            self._finish_turn(local_policy.fast_response)
-            return {
-                "response": local_policy.fast_response,
-                "steps": steps,
-                "llm_meta": {
-                    "usage": {}, "latency_ms": 0, "llm_calls": 0,
-                    "route": "local_fast_path",
-                    "phase_timings_ms": {"local_response": 0},
-                },
-            }
 
         if self.enhanced:
             pre_ctx = self.enhanced.pre_task_hook(message)
@@ -700,27 +688,14 @@ class ChatWorkflowMixin:
         add_step("user", "User Input", message)
         yield yield_event("step", steps[-1])
 
+        # The local policy is an execution hint only. It does not synthesize
+        # an answer; all user-facing text continues through the configured LLM.
         local_policy = classify_local_turn(message)
         self._active_turn_policy = local_policy
-        if local_policy.fast_response is not None:
-            fast_step = add_step(
-                "thinking", "Local Fast Path",
-                "Answered locally; no model call or remote review required.",
-            )
-            yield yield_event("step", fast_step)
-            response = local_policy.fast_response
-            self._finish_turn(response)
-            llm_meta.update({
-                "route": "local_fast_path",
-                "phase_timings_ms": {"local_response": 0},
-            })
-            yield yield_event("response", {"response": response, "llm_meta": llm_meta})
-            yield yield_event("done", {"context": {"message_count": len(self.memory.conversation)}})
-            return
 
-        # Multi-agent routing (if available). The local policy has already
-        # handled deterministic greetings and decides whether this expensive
-        # route is needed for the current intent.
+        # Multi-agent routing (if available). The local policy decides whether
+        # this expensive route is needed for the current intent, while the LLM
+        # remains responsible for the final answer.
         _ma_routing = None
         _route_started = time.perf_counter()
         if (

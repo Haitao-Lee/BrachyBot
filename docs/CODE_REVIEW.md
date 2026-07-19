@@ -5924,8 +5924,10 @@ indicator visible forever. This was a genuine frontend liveness defect.
 ### Corrective changes
 
 - Added `agent_runtime/turn_policy.py` with a conservative local classifier.
-  Greetings, thanks, and self-description use a deterministic bilingual fast
-  response. Clinical and planning language cannot use this bypass.
+  Greetings, thanks, and self-description use local intent classification to
+  bypass unnecessary remote routing and completeness review, but the
+  configured LLM still generates the answer. Clinical and planning language
+  cannot use this bypass.
 - Added intent-specific tool allowlists for clinical planning, clinical
   knowledge, external projects, and UI control. The allowlist is applied after
   existing CT/session safety filters, so it cannot re-enable a removed tool.
@@ -5954,3 +5956,34 @@ indicator visible forever. This was a genuine frontend liveness defect.
   tool isolation, and tool-schema cache invalidation. The full pytest suite
   must be run in the remote `brachytherapy` environment because the local
   Windows shells do not have pytest installed.
+
+## Round 57: restore LLM-generated small-talk answers (2026-07-19)
+
+### Confirmed finding
+
+- The first latency optimization accidentally made the local classifier an
+  answer generator for greetings and self-description requests. This caused
+  BrachyBot to emit canned text and skip the configured LLM entirely. It was a
+  real product regression: classification and answer generation had been
+  coupled.
+
+### Corrective change
+
+- Removed the synchronous and streaming `Local Fast Path` early returns from
+  `agent_runtime/chat_workflows.py`. `small_talk` now only means that the
+  remote router and completeness checker may be bypassed and that no tool
+  schemas are advertised. The configured LLM still receives the user request
+  and generates the final answer in the user's language.
+- Preserved the empty allowlist semantics in
+  `agent_runtime/turn_policy.py`: `None` means unrestricted, while an empty
+  set means no tools. This prevents harmless conversational turns from
+  loading or calling clinical/filesystem tools without weakening normal LLM
+  response generation.
+- Updated the README and regression test to document and enforce this
+  separation. Clinical planning, clinical advice, and external-project
+  research continue to use their existing safety and review gates.
+
+### Verification
+
+- Remote `brachytherapy` environment: `207 passed, 2 skipped, 3 warnings`.
+- Changed Python files pass byte-compilation and `git diff --check`.
