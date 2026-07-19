@@ -25,6 +25,15 @@ class _Registry:
                 "type": "object",
                 "properties": {"scope": {"type": "string"}},
             }),
+            "ctv_segmentation": _Tool({
+                "type": "object",
+                "properties": {
+                    "image": {
+                        "type": "object",
+                        "x-server-injected": True,
+                    },
+                },
+            }),
         }
 
     @property
@@ -110,6 +119,51 @@ def test_gateway_never_caches_live_ui_inspection_without_a_fresh_snapshot():
     assert first.success and second.success
     assert calls == ["first", "second"]
     assert not second.metadata.get("reused_idempotent_result")
+
+
+def test_gateway_accepts_server_injected_opaque_image_but_keeps_object_validation_strict():
+    """SimpleITK images are trusted server values, not JSON object payloads."""
+    ledger = RunLedger()
+    ledger.begin("segment ctv")
+    gateway = ToolCallGateway(ledger)
+    registry = _Registry()
+
+    result = gateway.execute(
+        registry,
+        "ctv_segmentation",
+        {"image": object()},
+        lambda: ToolResult(True, data={"ok": True}),
+    )
+    assert result.success
+
+    invalid = gateway.execute(
+        registry,
+        "ui_inspector",
+        {"scope": object()},
+        lambda: ToolResult(True),
+    )
+    assert not invalid.success
+    assert invalid.error == "Invalid parameter type for scope"
+
+
+def test_provider_tool_schema_hides_server_injected_fields():
+    """Providers must never be asked to serialize workspace-owned images."""
+    from agent_runtime.core import ToolRegistry
+
+    class _NamedTool(_Tool):
+        name = "ctv_segmentation"
+
+    registry = ToolRegistry()
+    registry.register(_NamedTool({
+        "type": "object",
+        "properties": {
+            "image": {"type": "object", "x-server-injected": True},
+            "image_path": {"type": "string"},
+        },
+    }))
+    tool = registry.to_openai_tools()[0]["function"]["parameters"]
+    assert "image" not in tool["properties"]
+    assert "image_path" in tool["properties"]
 
 
 def test_restored_running_run_is_archived_as_interrupted_not_resumed():

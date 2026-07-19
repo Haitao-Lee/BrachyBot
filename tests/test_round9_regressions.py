@@ -41,12 +41,10 @@ class Round9RegressionTests(unittest.TestCase):
         self.assertIn("animation-play-state: running !important", css)
         responsive = self.read("web/app/static/css/brachybot-responsive.css")
         self.assertIn(".chat-todo-item.active .chat-todo-gpu", responsive)
-        # The running state is persistent for standard motion, but an explicit
-        # OS reduced-motion preference must use a static active highlight.
-        # Re-enabling an infinite animation after the global one-cycle rule
-        # causes the misleading "pulse once, then stall" behavior.
-        self.assertIn("animation: none !important", responsive)
-        self.assertNotIn("animation-iteration-count: infinite !important", responsive)
+        # Reduced-motion mode still gets a deliberately small continuous
+        # status pulse; a static row made long-running work look stalled.
+        self.assertIn("animation-iteration-count: infinite !important", responsive)
+        self.assertIn("todo-active-breathe-soft", responsive)
 
     def test_planning_dose_model_uses_centralized_device_selection(self):
         source = self.read("tool_factory/seed_plan/planning_pipeline.py")

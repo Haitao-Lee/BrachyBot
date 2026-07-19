@@ -5,6 +5,7 @@ import logging
 import os
 import re
 import threading
+from collections.abc import Mapping
 from enum import Enum
 from typing import Any, Callable, Dict, List, Optional
 
@@ -85,11 +86,16 @@ class ToolRegistry:
             schema = tool.input_schema or {}
             # Detect format: if "type" key with "object" exists, treat as nested
             if "properties" in schema:
-                properties = schema["properties"]
-                required = schema.get("required", [])
+                properties = self._llm_properties(schema["properties"])
+                required = [
+                    name for name in schema.get("required", [])
+                    if name in properties
+                ]
             else:
                 # Flat dict: each key is a property name
-                properties = {k: v for k, v in schema.items() if isinstance(v, dict)}
+                properties = self._llm_properties(
+                    {k: v for k, v in schema.items() if isinstance(v, dict)}
+                )
                 required = []
             func_def = {
                 "type": "function",
@@ -114,7 +120,7 @@ class ToolRegistry:
                 continue
             lines.append(f"- {tool.name}: {tool.description}")
             if tool.input_schema.get("properties"):
-                props = tool.input_schema["properties"]
+                props = self._llm_properties(tool.input_schema["properties"])
                 req = tool.input_schema.get("required", [])
                 param_strs = []
                 for pname, pdef in props.items():
@@ -123,6 +129,26 @@ class ToolRegistry:
                     param_strs.append(f"    {pname}: {ptype}{tag}")
                 lines.extend(param_strs)
         return "\n".join(lines)
+
+    @staticmethod
+    def _llm_properties(properties: Any) -> Dict[str, Dict[str, Any]]:
+        """Return only model-supplied fields from a tool schema.
+
+        Some clinical tools receive opaque values from the active workspace
+        (for example a SimpleITK image). Those values are intentionally kept
+        in the runtime schema for gateway validation, but exposing them to a
+        provider invites the model to serialize an internal object repr as a
+        fake argument. The explicit marker is therefore removed at the
+        provider boundary, while ordinary fields retain their full schema.
+        """
+        if not isinstance(properties, Mapping):
+            return {}
+        return {
+            str(name): dict(definition)
+            for name, definition in properties.items()
+            if isinstance(definition, Mapping)
+            and definition.get("x-server-injected") is not True
+        }
 
 
 class AgentMemory:

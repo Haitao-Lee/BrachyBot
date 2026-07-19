@@ -1007,21 +1007,34 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
     outline-offset: 2px;
 }
 
-/* Accessibility: honor the operating system's reduced-motion preference.
-   The responsive stylesheet keeps active work legible with a static highlight;
-   do not re-enable a single animation cycle here, otherwise an active todo
-   appears to pulse once and then incorrectly looks stalled. */
+/* Accessibility: honor the operating system's reduced-motion preference while
+   retaining a deliberately low-amplitude progress pulse. A completely static
+   active row made long-running clinical work look stalled. */
 @media (prefers-reduced-motion: reduce) {
-    .chat-todo-item.active,
-    .chat-todo-item.active .chat-todo-label,
-    .chat-todo-item.active::before,
-    .step-status.pending,
-    .step-status.pending::before,
-    .step-block:has(.step-status.pending),
     .spinner-ring,
     .spinner-ring--sm {
         animation: none !important;
         transition: none !important;
+    }
+    /* Progress remains alive with a deliberately small pulse. This is a
+       status indicator, not decorative motion, and must not appear stalled
+       while a segmentation or planning step is still pending. */
+    .step-status.pending {
+        animation-name: pill-breathe-soft !important;
+        animation-duration: 2.4s !important;
+        animation-iteration-count: infinite !important;
+        animation-timing-function: ease-in-out !important;
+    }
+    .step-status.pending::before {
+        animation-name: dot-pulse-soft !important;
+        animation-duration: 2.4s !important;
+        animation-iteration-count: infinite !important;
+    }
+    .step-block:has(.step-status.pending) {
+        animation-name: step-glow-soft !important;
+        animation-duration: 2.4s !important;
+        animation-iteration-count: infinite !important;
+        animation-timing-function: ease-in-out !important;
     }
     * { transition-duration: 0.01ms !important; }
 }

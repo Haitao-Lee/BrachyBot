@@ -5860,4 +5860,45 @@ indicator visible forever. This was a genuine frontend liveness defect.
 - Focused workspace/auth/frontend transition suite: **36 passed**.
 - Added regression coverage proves that selecting a case does not hydrate an
   agent in the control-plane request and that the global language event
-  re-renders the dynamic clinical evaluation.
+   re-renders the dynamic clinical evaluation.
+
+## Round 55 server-injected image contracts and persistent progress motion (2026-07-19)
+
+### Confirmed findings
+
+- **CTV/OAR segmentation failed before execution.** The agent deliberately
+  injects the workspace-owned SimpleITK CT object into `ctv_segmentation` and
+  `oar_segmentation` so segmentation uses the session's canonical image
+  geometry. Their schemas described `image` as a normal JSON object, while
+  `ToolCallGateway` correctly rejected non-mapping values. The resulting
+  `Invalid parameter type for image` was a genuine contract mismatch, not a
+  model failure or a coordinate-conversion issue.
+- **Progress breathing stopped under reduced-motion settings.** The ordinary
+  CSS used infinite animations, but the global `prefers-reduced-motion` rules
+  changed active/pending progress to one iteration or `none`. This made a
+  long-running task visibly pulse once and then appear frozen, even though
+  the backend was still working.
+
+### Corrective changes
+
+- Mark only trusted, server-owned segmentation image fields with the explicit
+  `x-server-injected` schema annotation. The gateway skips JSON type matching
+  for that annotation while retaining strict object validation for all normal
+  tool arguments. This preserves the canonical in-memory CT and does not
+  broaden LLM-supplied payloads globally.
+- Keep the active Todo, pipeline, execution-trace pending state, and thinking
+  dots visibly alive until their terminal event. Standard motion remains
+  unchanged; reduced-motion mode uses a 2.4-second low-amplitude opacity/shadow
+  pulse without row resizing or large transforms.
+- Bump the relevant stylesheet cache versions so an existing browser cannot
+  silently retain the old one-cycle animation rules.
+
+### Verification
+
+- Added a gateway regression proving an opaque server-injected image is
+  accepted while an ordinary object field still rejects a non-mapping value.
+- Updated frontend regression assertions for the continuous low-motion
+  fallback and persistent active-state classes.
+- `git diff --check` passes. The local Windows shell does not have pytest
+  installed, so the Python suite is run in the configured remote
+  `brachytherapy` environment during deployment verification.
