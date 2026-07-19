@@ -31,6 +31,14 @@
   transition. The sidebar is briefly unavailable while the selected case is
   persisted and restored, preventing rapid clicks or out-of-order responses
   from mixing one case's chat with another case's viewer state.
+- The control-plane transition now paints the server-owned lightweight case
+  snapshot immediately; CT, meshes, dose arrays, and agent hydration continue
+  in a generation-scoped background task. A rapid second switch cancels the
+  old restore instead of blocking the sidebar for the full GPU/data load.
+- Dynamically generated clinical evaluation text follows the global EN/中文
+  switch, including metric labels, review items, source policy, and empty
+  states. Viewer resize handles keep their drag hit area while the divider
+  itself stays visually quiet until hover or active dragging.
 - Trusted-local developer tools are advertised to the LLM only after their
   explicit `BRACHYBOT_ENABLE_*` opt-in is active. This preserves code-writing
   workflows when enabled while preventing wasted tool calls in clinical mode.
@@ -1932,6 +1940,23 @@ agentic planner and a standalone planning workstation:
   constrained to the dynamic tool directory, preventing path traversal while
   preserving BrachyBot's ability to create code-based tools when that policy is
   enabled.
+
+### Session and Chat Reliability
+
+- Session switching, creation, deletion, workspace restore, authentication,
+  and lease release use bounded browser requests. A stopped or restarting
+  server cannot leave the sidebar permanently busy or the chat stuck on
+  `Thinking`.
+- Streaming chat has a connection deadline and an idle-event deadline. When a
+  stream stalls, the browser aborts the underlying request and clears its
+  progress state; long clinical tasks remain supported because normal server
+  progress events reset the idle window.
+- Workspace recovery is generation-scoped, so a late response from a failed
+  transition cannot repaint an older case over the currently selected case.
+- A remote deployment still requires the web server process to be running.
+  When it is unavailable, the UI reports the operational error instead of
+  pretending that a case was loaded. See the latest evidence in
+  [`docs/CODE_REVIEW.md`](docs/CODE_REVIEW.md), Round 53.
 
 Audit reports:
 

@@ -17,8 +17,10 @@ def _app(tmp_path):
     configure_auth(app, store, {"secret_key": "test-secret"})
     register_auth_routes(app, store)
     agents = {}
+    agent_calls = []
 
     def get_agent(session_id=None):
+        agent_calls.append(session_id)
         agents.setdefault(session_id or "active", object())
         return agents[session_id or "active"]
 
@@ -26,6 +28,7 @@ def _app(tmp_path):
         agents.pop(session_id, None)
 
     register_session_routes(app, store, get_agent, drop_agent)
+    app.extensions["test_agent_calls"] = agent_calls
 
     @app.route("/api/probe", methods=["GET", "POST"])
     def probe():
@@ -212,6 +215,24 @@ def test_locked_case_does_not_block_switching_to_an_independent_case(tmp_path):
     )
     assert switched.status_code == 200
     assert switched.get_json()["active_session_id"] == other.id
+
+
+def test_case_selection_returns_snapshot_without_blocking_on_agent_hydration(tmp_path):
+    """Control-plane selection must not synchronously rebuild a case agent."""
+    app = _app(tmp_path)
+    client = app.test_client()
+    auth = _register(client, "fast_switch_user")
+    store = app.extensions["brachybot_workspace_store"]
+    other = store.create_session(auth["user"]["id"], "Restorable case")
+
+    response = client.post(
+        f"/api/sessions/{other.id}/select",
+        headers={"X-CSRF-Token": auth["csrf_token"]},
+    )
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["workspace"]["session"]["id"] == other.id
+    assert app.extensions["test_agent_calls"] == []
 
 
 def test_transient_task_feed_filters_by_workspace_owner():

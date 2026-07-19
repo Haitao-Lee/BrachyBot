@@ -426,8 +426,8 @@ body::before {
     background: var(--glass-tint-cool);
     backdrop-filter: var(--blur-md);
     -webkit-backdrop-filter: var(--blur-md);
-    border-right: 1px solid var(--border-hairline);
-    box-shadow: var(--inset-top), 1px 0 0 rgba(15, 23, 42, 0.03);
+    border-right: 0;
+    box-shadow: var(--inset-top);
     display: flex;
     flex-direction: column;
     flex-shrink: 0;
@@ -452,9 +452,9 @@ body::before {
     position: absolute;
     top: 0; bottom: 0; left: 50%;
     transform: translateX(-50%);
-    width: 2px;
-    background: var(--primary);
-    opacity: 0.35;
+    width: 1px;
+    background: var(--border-soft);
+    opacity: 0;
     transition: opacity var(--t-base) var(--ease), width var(--t-base) var(--ease);
     pointer-events: none;
 }
