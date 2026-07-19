@@ -1551,6 +1551,14 @@ class ChatWorkflowMixin:
                 except Exception as exc:
                     logger.debug("Post-enforcer review event loop restore failed: %s", exc)
 
+        if _workflow_enforced and _needs_review:
+            # Include the post-enforcer review in the single checker phase
+            # reported to the client; otherwise planning turns under-report
+            # their actual review latency.
+            self._turn_timings["checker_ms"] = round(
+                (time.perf_counter() - _review_started) * 1000, 1
+            )
+
         # Append review sections to response after any workflow enforcement so
         # the final message reflects the actual tool chain that ran.
         if review_sections:
