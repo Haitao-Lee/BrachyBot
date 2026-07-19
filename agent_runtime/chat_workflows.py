@@ -10,6 +10,8 @@ import logging
 import os
 import re
 import threading
+import time
+from types import SimpleNamespace
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
@@ -17,6 +19,7 @@ import SimpleITK as sitk
 
 from agent_runtime.core import PlanningPhase
 from agent_runtime.contracts import RunStatus
+from agent_runtime.turn_policy import classify_local_turn
 
 logger = logging.getLogger(__name__)
 
@@ -397,6 +400,24 @@ class ChatWorkflowMixin:
 
         add_step("user", "User Input", message)
 
+        # Deterministic low-risk turns should not spend an LLM round-trip on
+        # routing, context assembly, or completeness review. Clinical and
+        # evidence-based requests are intentionally excluded by the policy.
+        local_policy = classify_local_turn(message)
+        self._active_turn_policy = local_policy
+        if local_policy.fast_response is not None:
+            add_step("thinking", "Local Fast Path", "Answered locally; no model call required.")
+            self._finish_turn(local_policy.fast_response)
+            return {
+                "response": local_policy.fast_response,
+                "steps": steps,
+                "llm_meta": {
+                    "usage": {}, "latency_ms": 0, "llm_calls": 0,
+                    "route": "local_fast_path",
+                    "phase_timings_ms": {"local_response": 0},
+                },
+            }
+
         if self.enhanced:
             pre_ctx = self.enhanced.pre_task_hook(message)
             if self._planning_requested(message) and pre_ctx.get("matched_sop"):
@@ -564,7 +585,11 @@ class ChatWorkflowMixin:
                             logger.error(f"[WORKFLOW-ENFORCER] Planning auto-execution failed: {e}")
 
         # Run completeness check if multi-agent is available
-        if self.multi_agent_wrapper and self.multi_agent_wrapper.enabled:
+        if (
+            self.multi_agent_wrapper
+            and self.multi_agent_wrapper.enabled
+            and local_policy.use_completeness
+        ):
             try:
                 import asyncio
                 # REVIEW: previously called `asyncio.set_event_loop(_loop)`
@@ -613,6 +638,8 @@ class ChatWorkflowMixin:
         response = ""  # Initialize response variable
         llm_meta = {"usage": {}, "latency_ms": 0, "llm_calls": 0}
         workflow_turn_token = self._current_turn_token()
+        self._turn_started_at = time.perf_counter()
+        self._turn_timings = {}
 
         def add_step(step_type, title, content, status="done", **kwargs):
             step_id[0] += 1
@@ -673,11 +700,34 @@ class ChatWorkflowMixin:
         add_step("user", "User Input", message)
         yield yield_event("step", steps[-1])
 
-        # Multi-agent routing (if available)
-        # SKIP for short messages (< 15 chars) to save an LLM round-trip
-        # on greetings / simple questions.
+        local_policy = classify_local_turn(message)
+        self._active_turn_policy = local_policy
+        if local_policy.fast_response is not None:
+            fast_step = add_step(
+                "thinking", "Local Fast Path",
+                "Answered locally; no model call or remote review required.",
+            )
+            yield yield_event("step", fast_step)
+            response = local_policy.fast_response
+            self._finish_turn(response)
+            llm_meta.update({
+                "route": "local_fast_path",
+                "phase_timings_ms": {"local_response": 0},
+            })
+            yield yield_event("response", {"response": response, "llm_meta": llm_meta})
+            yield yield_event("done", {"context": {"message_count": len(self.memory.conversation)}})
+            return
+
+        # Multi-agent routing (if available). The local policy has already
+        # handled deterministic greetings and decides whether this expensive
+        # route is needed for the current intent.
         _ma_routing = None
-        if self.multi_agent_wrapper and self.multi_agent_wrapper.enabled:
+        _route_started = time.perf_counter()
+        if (
+            self.multi_agent_wrapper
+            and self.multi_agent_wrapper.enabled
+            and local_policy.use_router
+        ):
             try:
                 import asyncio
                 loop = asyncio.new_event_loop()
@@ -697,6 +747,22 @@ class ChatWorkflowMixin:
                     yield yield_event("step", step)
             except Exception as e:
                 logger.debug(f"Multi-agent routing failed: {e}")
+        elif not local_policy.use_router:
+            # Keep the trace explicit while avoiding a second remote model
+            # call for low-risk turns.
+            _ma_routing = SimpleNamespace(
+                intent=local_policy.intent,
+                complexity=local_policy.complexity,
+                requires_review=local_policy.requires_review,
+            )
+            self.memory._last_routing_intent = local_policy.intent
+            local_route_step = add_step(
+                "thinking", "Local Intent",
+                f"Intent: {local_policy.intent}, Complexity: {local_policy.complexity}, "
+                f"Review: {'Required' if local_policy.requires_review else 'Optional'}",
+            )
+            yield yield_event("step", local_route_step)
+        self._turn_timings["router_ms"] = round((time.perf_counter() - _route_started) * 1000, 1)
 
         # Direct tool execution for explicit tool requests
         _direct_tool_calls = self._detect_tool_request(message)
@@ -800,7 +866,11 @@ class ChatWorkflowMixin:
             # same user-visible completeness check here before the final
             # response event. This keeps the UI order consistent:
             # tools -> requirement coverage -> final answer.
-            if self.multi_agent_wrapper and self.multi_agent_wrapper.enabled:
+            if (
+                self.multi_agent_wrapper
+                and self.multi_agent_wrapper.enabled
+                and local_policy.use_completeness
+            ):
                 step_id[0] += 1
                 _direct_cc_step = {
                     "id": step_id[0],
@@ -848,7 +918,9 @@ class ChatWorkflowMixin:
                     yield yield_event("step", _direct_cc_step)
 
             self._finish_turn(response)
-            yield yield_event("response", {"response": response})
+            llm_meta["phase_timings_ms"] = dict(getattr(self, "_turn_timings", {}) or {})
+            llm_meta["route"] = "direct_tool"
+            yield yield_event("response", {"response": response, "llm_meta": llm_meta})
             yield yield_event("done", {"context": {"message_count": len(self.memory.conversation)}})
             return
 
@@ -940,6 +1012,7 @@ class ChatWorkflowMixin:
         review_sections = []
         _needs_review = False
         _review_reason = ""
+        _review_started = time.perf_counter()
 
         # Smart review decision based on tool usage and response complexity
         _high_value_tools = {
@@ -975,7 +1048,7 @@ class ChatWorkflowMixin:
         elif len(_tools_called) >= 3:
             _needs_review = True
             _review_reason = f"many_tools: {len(_tools_called)}"
-        elif _response_len > 500:
+        elif _response_len > 500 and local_policy.use_completeness:
             _needs_review = True
             _review_reason = f"long_response: {_response_len} chars"
         elif ("ui_screenshot" in _tools_called and _visual_analysis_request) or "[Screenshot captured:" in message:
@@ -1171,6 +1244,10 @@ class ChatWorkflowMixin:
                 yield yield_event("step", _cc_step)
             except Exception as e:
                 logger.debug(f"Fallback completeness check skipped: {e}")
+
+        self._turn_timings["checker_ms"] = round(
+            (time.perf_counter() - _review_started) * 1000, 1
+        ) if _needs_review else 0
 
         # WORKFLOW ENFORCER: If user requested planning but LLM didn't execute tools, force-execute
         is_planning_request = self._planning_requested(message)
@@ -1481,6 +1558,11 @@ class ChatWorkflowMixin:
 
         # Final response
         self._finish_turn(response)
+        llm_meta.setdefault("phase_timings_ms", {}).update(self._turn_timings)
+        llm_meta["phase_timings_ms"]["sse_push_ms"] = round(
+            (time.perf_counter() - getattr(self, "_turn_started_at", time.perf_counter())) * 1000,
+            1,
+        )
         yield yield_event("response", {"response": response, "steps": steps, "llm_meta": llm_meta})
         yield yield_event("done", {
             "context": {

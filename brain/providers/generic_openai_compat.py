@@ -43,8 +43,26 @@ class GenericOpenAICompatLLM(BaseLLM):
         self.model = model
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
-        self.max_retries = max_retries
+        # Keep retries bounded so a transient provider outage cannot hold a
+        # clinical turn for an unbounded amount of time.
+        self.max_retries = min(max(int(max_retries), 0), 2)
         self.extra_kwargs = kwargs
+        self._client = None
+        self._client_key = None
+
+    def _get_client(self):
+        """Reuse one OpenAI client so its HTTP connection pool is reused."""
+        import openai
+
+        key = (self.api_key, self.base_url, self.timeout)
+        if self._client is None or self._client_key != key:
+            self._client = openai.OpenAI(
+                api_key=self.api_key,
+                base_url=self.base_url,
+                timeout=self.timeout,
+            )
+            self._client_key = key
+        return self._client
 
     @property
     def name(self) -> str:
@@ -63,12 +81,10 @@ class GenericOpenAICompatLLM(BaseLLM):
         if not self.api_key:
             return LLMResponse(content="Error: No API key provided", finish_reason="error")
 
-        client_kwargs = {"api_key": self.api_key, "base_url": self.base_url, "timeout": self.timeout}
-
         for attempt in range(self.max_retries + 1):
             start_time = time.time()
             try:
-                client = openai.OpenAI(**client_kwargs)
+                client = self._get_client()
 
                 request_kwargs = {
                     "model": kwargs.get("model", self.model),
@@ -149,12 +165,10 @@ class GenericOpenAICompatLLM(BaseLLM):
             yield {"type": "error", "content": "Error: No API key provided"}
             return
 
-        client_kwargs = {"api_key": self.api_key, "base_url": self.base_url, "timeout": self.timeout}
-
         for attempt in range(self.max_retries + 1):
             start_time = time.time()
             try:
-                client = openai.OpenAI(**client_kwargs)
+                client = self._get_client()
 
                 request_kwargs = {
                     "model": kwargs.get("model", self.model),

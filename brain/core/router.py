@@ -134,6 +134,8 @@ class LLMRouter:
                 api_key=cfg.get("api_key", os.environ.get("ANTHROPIC_API_KEY", "") or os.environ.get("ANTHROPIC_AUTH_TOKEN", "")),
                 model=cfg.get("model", os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-20250514")),
                 base_url=cfg.get("base_url", os.environ.get("ANTHROPIC_BASE_URL", None)),
+                timeout=cfg.get("timeout", 120.0),
+                max_retries=cfg.get("max_retries", 3),
             )
         elif name == "local":
             from ..providers.local_llm import LocalLLM

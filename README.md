@@ -47,6 +47,16 @@
   shared with the 3D viewer.
 - 3D endpoint context menus now close reliably on outside click, Escape,
   scrolling, and session changes.
+- Low-risk greetings and self-description requests use a deterministic local
+  fast path; ordinary knowledge and UI requests use intent-specific tool
+  schemas instead of advertising the full registry on every turn.
+- Long conversations retain a compact session summary plus recent turns and
+  structured case state. Prompt, tool-schema, and cleaned-summary caches reduce
+  repeated preparation work without caching live viewer inspection results.
+- Intermediate model text is kept out of the answer bubble until the server's
+  required review gate has completed. Phase timings for routing, context build,
+  first token, generation, checker, and SSE completion are returned in
+  `llm_meta.phase_timings_ms`.
 
 ---
 
