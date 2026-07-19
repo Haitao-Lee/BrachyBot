@@ -751,6 +751,24 @@ function handleChatInput(el) {
 // If streaming isn't supported (server doesn't return text/event-stream,
 // or `ReadableStream` API is missing), fall back to a single JSON call
 // and render the final response.
+const CHAT_CONNECT_TIMEOUT_MS = 30000;
+const CHAT_IDLE_TIMEOUT_MS = 90000;
+const CHAT_ABORT_TIMEOUT_MS = 4000;
+
+function readChatChunk(reader, timeoutMs = CHAT_IDLE_TIMEOUT_MS, onTimeout = null) {
+    let timer = null;
+    return new Promise((resolve, reject) => {
+        timer = setTimeout(() => {
+            // Close the underlying request as well as the local read promise.
+            // Otherwise a stalled SSE stream could keep a server-side planning
+            // task alive after the UI has already shown an error.
+            try { if (typeof onTimeout === 'function') onTimeout(); } catch (_) {}
+            reject(new Error('Chat stream timed out while waiting for the next event.'));
+        }, timeoutMs);
+        reader.read().then(resolve, reject).finally(() => clearTimeout(timer));
+    });
+}
+
 function _isMonitorStartRequest(text) {
     return /(?:monitor|training|coach|guide|supervise|watch|observe|培训|训练|监测|监督|指导|教我|带我)/i.test(text || '')
         && !/(?:stop|finish|end|停止|结束|关闭)/i.test(text || '');
@@ -878,7 +896,17 @@ async function sendChat(prefill, options) {
             // Session changes await this branch. Confirm that the server has
             // cancelled the old case before its signed-cookie selection can
             // move to another workspace.
-            const response = await fetch(API + '/chat/abort', { method: 'POST' });
+            const abortController = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+            const abortTimer = abortController ? setTimeout(() => abortController.abort(), CHAT_ABORT_TIMEOUT_MS) : null;
+            let response;
+            try {
+                response = await fetch(API + '/chat/abort', {
+                    method: 'POST',
+                    signal: abortController ? abortController.signal : undefined,
+                });
+            } finally {
+                if (abortTimer) clearTimeout(abortTimer);
+            }
             if (!response.ok) console.warn('Chat abort was not acknowledged:', response.status);
         } catch (_) {
             // The local abort and progress cleanup have already completed.
@@ -979,12 +1007,20 @@ async function sendChat(prefill, options) {
         setStreamingState(true);
         thinkingEl = (typeof showThinkingIndicator === 'function') ? showThinkingIndicator() : null;
 
-        const resp = await fetch(API + '/chat', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ message: text, ui_state: uiState, stream: true, clear_context: false }),
-            signal: turnAbortController ? turnAbortController.signal : undefined,
-        });
+        const connectTimer = turnAbortController
+            ? setTimeout(() => turnAbortController.abort(), CHAT_CONNECT_TIMEOUT_MS)
+            : null;
+        let resp;
+        try {
+            resp = await fetch(API + '/chat', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ message: text, ui_state: uiState, stream: true, clear_context: false }),
+                signal: turnAbortController ? turnAbortController.signal : undefined,
+            });
+        } finally {
+            if (connectTimer) clearTimeout(connectTimer);
+        }
 
         if (!resp.ok) {
             if (thinkingEl && typeof removeThinkingIndicator === 'function') removeThinkingIndicator(thinkingEl);
@@ -1027,7 +1063,9 @@ async function sendChat(prefill, options) {
         let currentEvent = null;
 
         while (true) {
-            const { done, value } = await reader.read();
+            const { done, value } = await readChatChunk(reader, CHAT_IDLE_TIMEOUT_MS, () => {
+                try { turnAbortController.abort(); } catch (_) {}
+            });
             if (done) break;
             buffer += decoder.decode(value, { stream: true });
             const lines = buffer.split('\n');
