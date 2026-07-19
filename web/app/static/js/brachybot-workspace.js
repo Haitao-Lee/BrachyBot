@@ -7,8 +7,72 @@
     let saveTimer = null;
     let restoring = false;
     let workspaceTransition = null;
+    let workspaceTransitionGeneration = 0;
     let workspaceRestoreGeneration = 0;
     const workspaceRestoreTimers = new Set();
+    let backgroundRestoreGeneration = 0;
+    let backgroundRestoreTimer = null;
+    const WORKSPACE_REQUEST_TIMEOUT_MS = 15000;
+    const WORKSPACE_RECOVERY_TIMEOUT_MS = 5000;
+
+    async function workspaceFetch(input, init = {}, timeoutMs = WORKSPACE_REQUEST_TIMEOUT_MS) {
+        const controller = typeof AbortController === 'function' ? new AbortController() : null;
+        const timer = controller ? setTimeout(() => controller.abort(), timeoutMs) : null;
+        try {
+            const options = Object.assign({}, init);
+            if (controller) options.signal = controller.signal;
+            return await fetch(input, options);
+        } catch (error) {
+            if (error?.name === 'AbortError') {
+                throw new Error('Workspace request timed out. Check that the BrachyBot server is running.');
+            }
+            throw error;
+        } finally {
+            if (timer) clearTimeout(timer);
+        }
+    }
+
+    function isCurrentTransition(generation) {
+        return generation === workspaceTransitionGeneration;
+    }
+
+    function cancelBackgroundWorkspaceRestore() {
+        backgroundRestoreGeneration += 1;
+        if (backgroundRestoreTimer) {
+            clearTimeout(backgroundRestoreTimer);
+            backgroundRestoreTimer = null;
+        }
+        document.body.classList.remove('workspace-hydrating');
+    }
+
+    function scheduleBackgroundWorkspaceRestore(workspace, sessionId) {
+        const generation = ++backgroundRestoreGeneration;
+        if (backgroundRestoreTimer) clearTimeout(backgroundRestoreTimer);
+        document.body.classList.add('workspace-hydrating');
+        // Let the lightweight case transition paint before loading CT,
+        // meshes, dose arrays, and the hydrated agent. The selected case is
+        // checked again before and after this task so a rapid second switch
+        // cannot let an old restore repaint the current case.
+        backgroundRestoreTimer = setTimeout(async () => {
+            backgroundRestoreTimer = null;
+            if (generation !== backgroundRestoreGeneration || sessionId !== activeSessionId) return;
+            try {
+                if (typeof restoreActiveSessionWorkspace === 'function') {
+                    await restoreActiveSessionWorkspace({
+                        clearReport: false,
+                        workspace,
+                        background: true,
+                    });
+                }
+            } catch (error) {
+                console.warn('[workspace] background case restore failed:', error);
+            } finally {
+                if (generation === backgroundRestoreGeneration) {
+                    document.body.classList.remove('workspace-hydrating');
+                }
+            }
+        }, 0);
+    }
 
     function clearScheduledWorkspaceSave() {
         if (!saveTimer) return;
@@ -50,9 +114,11 @@
         if (workspaceTransition) {
             return { success: false, busy: true, error: 'A case transition is already in progress.' };
         }
+        cancelBackgroundWorkspaceRestore();
         clearScheduledWorkspaceSave();
         invalidateDeferredWorkspaceRestore();
         setWorkspaceTransitionState(true);
+        const transitionGeneration = ++workspaceTransitionGeneration;
         const transition = (async () => {
             try {
                 return await operation();
@@ -61,9 +127,25 @@
                 // A request can fail after the server has already selected a
                 // different case. Rehydrate from the authoritative server
                 // selection instead of leaving chat and viewer state split.
-                await recoverWorkspaceAfterTransitionFailure();
+                // Recovery is bounded: an offline server must never leave the
+                // sidebar permanently marked as busy.
+                try {
+                    await Promise.race([
+                        recoverWorkspaceAfterTransitionFailure(transitionGeneration),
+                        new Promise(resolve => setTimeout(resolve, WORKSPACE_RECOVERY_TIMEOUT_MS)),
+                    ]);
+                } catch (recoveryError) {
+                    console.error('[workspace] case transition recovery failed:', recoveryError);
+                }
                 return { success: false, error: error?.message || 'Unable to change case.' };
             } finally {
+                // A timed-out recovery may still be unwinding in the
+                // background. Invalidate it before releasing the busy gate so
+                // a late response cannot repaint an older case after the UI
+                // has already reported the transition result.
+                if (workspaceTransitionGeneration === transitionGeneration) {
+                    workspaceTransitionGeneration += 1;
+                }
                 setWorkspaceTransitionState(false);
                 workspaceTransition = null;
             }
@@ -277,7 +359,7 @@
     async function persistWorkspace(reason) {
         if (restoring || !window.brachybotAuth?.user || !activeSessionId) return;
         try {
-            const response = await fetch('/api/workspace/state', {
+            const response = await workspaceFetch('/api/workspace/state', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ revision, ui_state: workspaceUiState(), report: reportState(), chat: chatState(), reason }),
@@ -321,13 +403,10 @@
         return Promise.resolve(false);
     }
 
-    async function loadServerSessions() {
-        const response = await fetch('/api/sessions');
-        if (!response.ok) throw new Error(`Session list failed: HTTP ${response.status}`);
-        const data = await response.json();
-        sessions = {};
+    function sessionMapFromPayload(data) {
+        const next = {};
         (data.sessions || []).forEach(entry => {
-            sessions[entry.id] = {
+            next[entry.id] = {
                 id: entry.id,
                 title: entry.title,
                 created: Math.round(Number(entry.created_at || Date.now() / 1000) * 1000),
@@ -336,26 +415,45 @@
                 recoveryStatus: entry.recovery_status,
             };
         });
+        return next;
+    }
+
+    function applySessionList(data) {
+        sessions = sessionMapFromPayload(data);
         activeSessionId = data.active_session_id;
+    }
+
+    async function loadServerSessions({ commit = true, timeoutMs = WORKSPACE_REQUEST_TIMEOUT_MS } = {}) {
+        const response = await workspaceFetch('/api/sessions', {}, timeoutMs);
+        if (!response.ok) throw new Error(`Session list failed: HTTP ${response.status}`);
+        const data = await response.json();
+        if (commit) applySessionList(data);
         return data;
     }
 
-    async function loadActiveWorkspace() {
-        const response = await fetch('/api/workspace/snapshot');
+    async function loadActiveWorkspace({ commit = true, timeoutMs = WORKSPACE_REQUEST_TIMEOUT_MS } = {}) {
+        const response = await workspaceFetch('/api/workspace/snapshot', {}, timeoutMs);
         if (!response.ok) throw new Error(`Workspace snapshot failed: HTTP ${response.status}`);
         const data = await response.json();
-        revision = data.workspace?.session?.revision ?? null;
-        window._activeWorkspaceSnapshot = data.workspace;
+        if (commit) {
+            revision = data.workspace?.session?.revision ?? null;
+            window._activeWorkspaceSnapshot = data.workspace;
+        }
         return data.workspace;
     }
 
-    async function recoverWorkspaceAfterTransitionFailure() {
+    async function recoverWorkspaceAfterTransitionFailure(generation) {
         try {
-            await loadServerSessions();
-            const workspace = await loadActiveWorkspace();
+            const sessionData = await loadServerSessions({ commit: false, timeoutMs: WORKSPACE_RECOVERY_TIMEOUT_MS });
+            const workspace = await loadActiveWorkspace({ commit: false, timeoutMs: WORKSPACE_RECOVERY_TIMEOUT_MS });
+            if (!isCurrentTransition(generation)) return;
+            applySessionList(sessionData);
+            revision = workspace?.session?.revision ?? null;
+            window._activeWorkspaceSnapshot = workspace;
             if (typeof clearClientWorkspace === 'function') clearClientWorkspace({ clearReport: true });
             renderSessionList();
             if (typeof window.brachybotAuth?.acquireLease === 'function') await window.brachybotAuth.acquireLease();
+            if (!isCurrentTransition(generation)) return;
             if (typeof restoreActiveSessionWorkspace === 'function') {
                 await restoreActiveSessionWorkspace({ clearReport: false, workspace });
             }
@@ -385,16 +483,20 @@
             if (typeof flushActiveReportState === 'function') flushActiveReportState();
             await persistWorkspace('session.switching');
             if (typeof window.brachybotAuth?.releaseLease === 'function') await window.brachybotAuth.releaseLease();
-            const response = await fetch('/api/sessions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: 'New case' }) });
+            const response = await workspaceFetch('/api/sessions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: 'New case' }) });
             const data = await response.json();
             if (!response.ok) throw new Error(data.error || 'Unable to create case');
             await loadServerSessions();
             if (typeof clearClientWorkspace === 'function') clearClientWorkspace({ clearReport: true });
-            await loadActiveWorkspace();
+            activeSessionId = data.active_session_id || data.session?.id || activeSessionId;
+            revision = data.workspace?.session?.revision ?? null;
+            window._activeWorkspaceSnapshot = data.workspace || null;
             renderSessionList();
             if (typeof window.brachybotAuth?.acquireLease === 'function') await window.brachybotAuth.acquireLease();
-            if (typeof restoreActiveSessionWorkspace === 'function') await restoreActiveSessionWorkspace({ clearReport: false });
-            loadSessionChat(activeSessionId);
+            if (data.workspace && typeof applyWorkspaceSnapshot === 'function') {
+                await applyWorkspaceSnapshot(data.workspace);
+            }
+            scheduleBackgroundWorkspaceRestore(data.workspace || null, activeSessionId);
             return { success: true, session_id: activeSessionId };
         });
     };
@@ -408,7 +510,7 @@
             if (typeof flushActiveReportState === 'function') flushActiveReportState();
             await persistWorkspace('session.switching');
             if (typeof window.brachybotAuth?.releaseLease === 'function') await window.brachybotAuth.releaseLease();
-            const response = await fetch(`/api/sessions/${encodeURIComponent(id)}/select`, { method: 'POST' });
+            const response = await workspaceFetch(`/api/sessions/${encodeURIComponent(id)}/select`, { method: 'POST' });
             const data = await response.json();
             if (!response.ok) throw new Error(data.error || 'Unable to open case');
             activeSessionId = data.active_session_id;
@@ -417,8 +519,8 @@
             window._activeWorkspaceSnapshot = data.workspace;
             renderSessionList();
             if (typeof window.brachybotAuth?.acquireLease === 'function') await window.brachybotAuth.acquireLease();
-            if (typeof restoreActiveSessionWorkspace === 'function') await restoreActiveSessionWorkspace({ clearReport: false, workspace: data.workspace });
-            loadSessionChat(activeSessionId);
+            if (typeof applyWorkspaceSnapshot === 'function') await applyWorkspaceSnapshot(data.workspace);
+            scheduleBackgroundWorkspaceRestore(data.workspace, activeSessionId);
             return { success: true, session_id: activeSessionId };
         });
     };
@@ -438,22 +540,26 @@
             if (id === activeSessionId && typeof flushActiveReportState === 'function') flushActiveReportState();
             await persistWorkspace('session.delete');
             if (id === activeSessionId && typeof window.brachybotAuth?.releaseLease === 'function') await window.brachybotAuth.releaseLease();
-            const response = await fetch(`/api/sessions/${encodeURIComponent(id)}`, { method: 'DELETE' });
+            const response = await workspaceFetch(`/api/sessions/${encodeURIComponent(id)}`, { method: 'DELETE' });
             const data = await response.json();
             if (!response.ok) throw new Error(data.error || 'Unable to delete case');
             await loadServerSessions();
             if (typeof clearClientWorkspace === 'function') clearClientWorkspace({ clearReport: true });
-            await loadActiveWorkspace();
+            activeSessionId = data.active_session_id || activeSessionId;
+            revision = data.workspace?.session?.revision ?? null;
+            window._activeWorkspaceSnapshot = data.workspace || null;
             renderSessionList();
             if (typeof window.brachybotAuth?.acquireLease === 'function') await window.brachybotAuth.acquireLease();
-            if (typeof restoreActiveSessionWorkspace === 'function') await restoreActiveSessionWorkspace({ clearReport: false });
-            loadSessionChat(activeSessionId);
+            if (data.workspace && typeof applyWorkspaceSnapshot === 'function') {
+                await applyWorkspaceSnapshot(data.workspace);
+            }
+            scheduleBackgroundWorkspaceRestore(data.workspace || null, activeSessionId);
             return { success: true, active_session_id: activeSessionId };
         });
     };
 
     window.renameServerSession = async function renameServerSession(id, title) {
-        const response = await fetch(`/api/sessions/${encodeURIComponent(id)}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title }) });
+        const response = await workspaceFetch(`/api/sessions/${encodeURIComponent(id)}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title }) });
         const data = await response.json();
         if (!response.ok) throw new Error(data.error || 'Unable to rename case');
         if (sessions[id]) sessions[id].title = data.session.title;

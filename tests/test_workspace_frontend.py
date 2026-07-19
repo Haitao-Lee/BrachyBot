@@ -84,12 +84,60 @@ def test_server_workspace_serializes_case_transitions():
 
     assert "let workspaceTransition = null;" in workspace
     assert "async function runWorkspaceTransition(operation)" in workspace
-    assert "await recoverWorkspaceAfterTransitionFailure();" in workspace
-    assert "async function recoverWorkspaceAfterTransitionFailure()" in workspace
+    assert "recoverWorkspaceAfterTransitionFailure(transitionGeneration)" in workspace
+    assert "async function recoverWorkspaceAfterTransitionFailure(generation)" in workspace
     assert "clearScheduledWorkspaceSave();" in workspace
     assert workspace.count("return runWorkspaceTransition(async () => {") >= 3
     assert "workspaceTransition = null;" in workspace
     assert "body.workspace-transitioning #sessionList" in layout
+
+
+def test_workspace_network_failures_cannot_leave_case_controls_stuck():
+    """Session requests need deadlines and bounded recovery after a restart."""
+    workspace = read("web/app/static/js/brachybot-workspace.js")
+    auth = read("web/app/static/js/brachybot-auth.js")
+
+    assert "async function workspaceFetch" in workspace
+    assert "WORKSPACE_REQUEST_TIMEOUT_MS = 15000" in workspace
+    assert "WORKSPACE_RECOVERY_TIMEOUT_MS = 5000" in workspace
+    assert "new Promise(resolve => setTimeout(resolve, WORKSPACE_RECOVERY_TIMEOUT_MS))" in workspace
+    assert "if (!isCurrentTransition(generation)) return;" in workspace
+    assert "async function authFetch" in auth
+    assert "AUTH_REQUEST_TIMEOUT_MS = 12000" in auth
+
+
+def test_lease_release_does_not_depend_on_fetch_wrapper_side_effects():
+    """Case changes must release only this browser's lease after cache refreshes."""
+    auth = read("web/app/static/js/brachybot-auth.js")
+    block = auth.split("async function releaseLease()", 1)[1].split("async function authenticated()", 1)[0]
+    assert "credentials: 'same-origin'" in block
+    assert "'X-CSRF-Token': state.csrfToken" in block
+    assert "'X-BrachyBot-Editor': editorToken" in block
+    assert "await authFetch('/api/workspace/lease'" in block
+    assert "LEASE_RELEASE_TIMEOUT_MS = 4000" in auth
+
+
+def test_chat_network_failures_finish_the_turn_and_unlock_case_navigation():
+    """A half-open chat connection must not leave Thinking or transitions alive."""
+    chat = read("web/app/static/js/brachybot-chat-todo.js")
+    assert "CHAT_CONNECT_TIMEOUT_MS = 30000" in chat
+    assert "CHAT_IDLE_TIMEOUT_MS = 90000" in chat
+    assert "CHAT_ABORT_TIMEOUT_MS = 4000" in chat
+    assert "function readChatChunk(reader" in chat
+    assert "await readChatChunk(reader, CHAT_IDLE_TIMEOUT_MS" in chat
+    assert "turnAbortController.abort()" in chat
+    assert "workspaceTransitionGeneration += 1" in read("web/app/static/js/brachybot-workspace.js")
+    assert "signal: abortController ? abortController.signal : undefined" in chat
+
+
+def test_dynamic_clinical_evaluation_uses_global_language_switch():
+    """Metric review text must be rerendered, not left in a stale language."""
+    dvh = read("web/app/static/js/brachybot-dvh-planning.js")
+    assert "window._t(zh, en)" in dvh
+    assert "function updateClinicalEvaluation()" in dvh
+    assert "Planning Review Items" in dvh
+    assert "规划复核项目" in dvh
+    assert "window.addEventListener('i18nchange'" in dvh
 
 
 def test_delayed_scene_restore_is_scoped_to_its_case_generation():

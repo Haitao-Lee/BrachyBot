@@ -75,7 +75,15 @@ def register_session_routes(
         except WorkspaceError as exc:
             return jsonify({"error": str(exc)}), 400
         session["bb_session_id"] = entry.id
-        return jsonify({"success": True, "session": session_payload(entry), "active_session_id": entry.id}), 201
+        # A new case has an empty, cheap snapshot. Return it directly so the
+        # browser can paint the new workspace without constructing a GPU agent.
+        snapshot = store.load_snapshot(user["id"], entry.id)
+        return jsonify({
+            "success": True,
+            "session": session_payload(entry),
+            "active_session_id": entry.id,
+            "workspace": snapshot,
+        }), 201
 
     @app.route("/api/sessions/<session_id>", methods=["PATCH"])
     def rename_case_session(session_id: str):
@@ -100,9 +108,10 @@ def register_session_routes(
         try:
             entry = store.get_session(user["id"], session_id)
             session["bb_session_id"] = entry.id
-            # Hydrate now so the first viewer/status request sees a coherent
-            # agent instead of a partially restored workspace.
-            get_agent(entry.id)
+            # Do not hydrate the Python/GPU agent in the selection request.
+            # Selecting a case is a control-plane operation and must remain
+            # responsive; the data-plane agent is hydrated lazily by the first
+            # status/planning request after the lightweight snapshot is shown.
             snapshot = store.load_snapshot(user["id"], entry.id)
         except WorkspaceError as exc:
             return jsonify({"error": str(exc)}), 404
@@ -125,7 +134,13 @@ def register_session_routes(
             remaining = store.list_sessions(user["id"])
             replacement = remaining[0] if remaining else store.create_session(user["id"], "New case")
             session["bb_session_id"] = replacement.id
-        return jsonify({"success": True, "active_session_id": session.get("bb_session_id")})
+        active_session_id = session.get("bb_session_id")
+        snapshot = store.load_snapshot(user["id"], str(active_session_id))
+        return jsonify({
+            "success": True,
+            "active_session_id": active_session_id,
+            "workspace": snapshot,
+        })
 
     @app.route("/api/sessions/trash", methods=["GET"])
     def list_trashed_sessions():

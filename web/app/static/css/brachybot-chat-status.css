@@ -24,8 +24,8 @@
         linear-gradient(180deg, var(--bg-1) 0%, var(--bg-sunken) 100%),
         radial-gradient(ellipse at 50% 0%, rgba(96, 165, 250, 0.04) 0%, transparent 60%);
     position: relative;
-    border-left: 1px solid var(--border-hairline);
-    border-right: 1px solid var(--border-hairline);
+    border-left: 0;
+    border-right: 0;
 }
 /* Subtle inner glow at the top of the chat panel for the
    "depth" effect the user asked for. */
@@ -70,9 +70,9 @@
     position: absolute;
     top: 0; bottom: 0; left: 50%;
     transform: translateX(-50%);
-    width: 2px;
-    background: var(--primary);
-    opacity: 0.35;
+    width: 1px;
+    background: var(--border-soft);
+    opacity: 0;
     transition: opacity var(--t-base) var(--ease), width var(--t-base) var(--ease);
     pointer-events: none;
 }
@@ -95,6 +95,7 @@
     width: 2px;
     height: 40px;
     background: var(--border-soft);
+    opacity: 0;
     border-radius: 1px;
     transition: background var(--t-base) var(--ease), height var(--t-base) var(--ease);
 }
@@ -102,6 +103,7 @@
 .chat-area-resize-handle.dragging::after {
     background: var(--primary);
     height: 56px;
+    opacity: 1;
 }
 
 .chat-header {

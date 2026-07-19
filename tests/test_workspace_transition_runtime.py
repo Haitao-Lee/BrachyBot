@@ -33,7 +33,7 @@ const bodyClasses = new Set();
 const sidebar = {{ setAttribute() {{}} }};
 global.window = {{ _chatTurnActive: false, _chatStreaming: false }};
 global.document = {{
-  body: {{ classList: {{ toggle(name, active) {{ active ? bodyClasses.add(name) : bodyClasses.delete(name); }} }} }},
+  body: {{ classList: {{ toggle(name, active) {{ active ? bodyClasses.add(name) : bodyClasses.delete(name); }}, add(name) {{ bodyClasses.add(name); }}, remove(name) {{ bodyClasses.delete(name); }} }} }},
   getElementById(id) {{ return id === 'sessionSidebar' ? sidebar : null; }},
   querySelectorAll() {{ return []; }},
 }};

@@ -7,7 +7,8 @@ async function render3D() {
     const canvas = document.getElementById('canvas3D');
     if (!canvas) return;
     if (!state.ctLoaded) {
-        canvas.innerHTML = '<div class="viewer-no-data"><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg><span>Load CT first</span></div>';
+        const noCtText = typeof window._t === 'function' ? window._t('请先加载 CT', 'Load CT first') : 'Load CT first';
+        canvas.innerHTML = `<div class="viewer-no-data"><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg><span>${escHtml(noCtText)}</span></div>`;
         return;
     }
     init3DScene();
@@ -1301,7 +1302,8 @@ function _getOrganColor(name) {
 function updateOARTable(oarMetrics) {
     const tbody = document.getElementById('oarTableBody');
     if (!oarMetrics || Object.keys(oarMetrics).length === 0) {
-        tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--text-dim);padding:0.75rem;">No OAR data</td></tr>';
+        const noOarText = typeof window._t === 'function' ? window._t('暂无 OAR 数据', 'No OAR data') : 'No OAR data';
+        tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;color:var(--text-dim);padding:0.75rem;">${escHtml(noOarText)}</td></tr>`;
         return;
     }
     tbody.innerHTML = Object.entries(oarMetrics).map(([name, m]) => {
@@ -1370,12 +1372,15 @@ function updateClinicalEvaluation() {
     const metrics = state.metrics || {};
     const oarMetrics = metrics.oar_metrics || {};
     const rxGy = _getCurrentPrescriptionGyForDvh();
+    const ui = (zh, en) => typeof window._t === 'function'
+        ? window._t(zh, en)
+        : (effectiveUiLanguage() === 'zh' ? zh : en);
     const h = (typeof escHtml === 'function')
         ? escHtml
         : (s) => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
     if (!metrics.v100 && !metrics.d90 && !Object.keys(oarMetrics).length) {
-        host.innerHTML = '<div style="color:var(--text-dim);font-style:italic;">Detailed evaluation will appear here after planning completes.</div>';
+        host.innerHTML = `<div style="color:var(--text-dim);font-style:italic;">${h(ui('规划完成后此处显示详细评估', 'Detailed evaluation will appear here after planning completes.'))}</div>`;
         return;
     }
 
@@ -1384,24 +1389,36 @@ function updateClinicalEvaluation() {
         return `${Number(value).toFixed(digits)}${suffix}`;
     };
     const headline = [
-        ['Plan Score', metrics.plan_score != null ? `${Number(metrics.plan_score).toFixed(0)} / 100` : '--'],
+        [ui('计划评分', 'Plan Score'), metrics.plan_score != null ? `${Number(metrics.plan_score).toFixed(0)} / 100` : '--'],
         ['D90', metrics.d90 != null ? `${Number(metrics.d90).toFixed(2)} Gy` : '--'],
         ['V100', metrics.v100 != null ? `${(Number(metrics.v100) * 100).toFixed(1)} %` : '--'],
         ['V150', metrics.v150 != null ? `${(Number(metrics.v150) * 100).toFixed(1)} %` : '--'],
         ['V200', metrics.v200 != null ? `${(Number(metrics.v200) * 100).toFixed(1)} %` : '--'],
-        ['D2 (max)', metrics.d2 != null ? `${Number(metrics.d2).toFixed(2)} Gy` : '--'],
-        ['Dmean', metrics.dmean != null ? `${Number(metrics.dmean).toFixed(2)} Gy` : '--'],
-        ['CI', metrics.ci != null ? Number(metrics.ci).toFixed(2) : '--'],
-        ['HI', metrics.hi != null ? Number(metrics.hi).toFixed(2) : '--'],
-        ['Seeds', state.seeds ? state.seeds.length : '--'],
-        ['Prescription', `${Number(rxGy).toFixed(0)} Gy`],
+        [ui('D2（最大剂量）', 'D2 (max)'), metrics.d2 != null ? `${Number(metrics.d2).toFixed(2)} Gy` : '--'],
+        [ui('平均剂量', 'Dmean'), metrics.dmean != null ? `${Number(metrics.dmean).toFixed(2)} Gy` : '--'],
+        [ui('适形指数', 'CI'), metrics.ci != null ? Number(metrics.ci).toFixed(2) : '--'],
+        [ui('均匀指数', 'HI'), metrics.hi != null ? Number(metrics.hi).toFixed(2) : '--'],
+        [ui('粒子数', 'Seeds'), state.seeds ? state.seeds.length : '--'],
+        [ui('处方剂量', 'Prescription'), `${Number(rxGy).toFixed(0)} Gy`],
     ];
 
     const observations = [];
-    if (metrics.v100 != null) observations.push(`CTV V100 observed at ${(Number(metrics.v100) * 100).toFixed(1)}%. Compare against source-backed criteria for this tumor site.`);
-    if (metrics.d90 != null) observations.push(`CTV D90 observed at ${Number(metrics.d90).toFixed(2)} Gy. Current report prescription is ${Number(rxGy).toFixed(0)} Gy.`);
-    if (metrics.v200 != null) observations.push(`CTV V200 observed at ${(Number(metrics.v200) * 100).toFixed(1)}%. Inspect corresponding hot spots in 2D/3D before changing seeds.`);
-    if (metrics.plan_score != null) observations.push(`Plan score is ${Number(metrics.plan_score).toFixed(0)}/100. Treat this as an advisory QA ranking signal only.`);
+    if (metrics.v100 != null) observations.push(ui(
+        `CTV V100 当前为 ${(Number(metrics.v100) * 100).toFixed(1)}%。请与该肿瘤部位的有来源依据的标准进行比较。`,
+        `CTV V100 observed at ${(Number(metrics.v100) * 100).toFixed(1)}%. Compare against source-backed criteria for this tumor site.`,
+    ));
+    if (metrics.d90 != null) observations.push(ui(
+        `CTV D90 当前为 ${Number(metrics.d90).toFixed(2)} Gy；当前报告处方剂量为 ${Number(rxGy).toFixed(0)} Gy。`,
+        `CTV D90 observed at ${Number(metrics.d90).toFixed(2)} Gy. Current report prescription is ${Number(rxGy).toFixed(0)} Gy.`,
+    ));
+    if (metrics.v200 != null) observations.push(ui(
+        `CTV V200 当前为 ${(Number(metrics.v200) * 100).toFixed(1)}%。调整粒子前请先在 2D/3D 中检查对应的热点位置。`,
+        `CTV V200 observed at ${(Number(metrics.v200) * 100).toFixed(1)}%. Inspect corresponding hot spots in 2D/3D before changing seeds.`,
+    ));
+    if (metrics.plan_score != null) observations.push(ui(
+        `计划评分为 ${Number(metrics.plan_score).toFixed(0)}/100。该分数仅用于质量排序和复核提示，不代表临床批准。`,
+        `Plan score is ${Number(metrics.plan_score).toFixed(0)}/100. Treat this as an advisory QA ranking signal only.`,
+    ));
 
     const topOars = Object.entries(oarMetrics)
         .filter(([_, m]) => m)
@@ -1411,9 +1428,15 @@ function updateClinicalEvaluation() {
         const name = _resolveOARDisplayName(rawName, m);
         const dmax = Number(m.dmax || m.max_dose || m.Dmax || 0);
         const d2cc = Number(m.d2cc || 0);
-        observations.push(`${name}: Dmax ${fmt(dmax, 2, ' Gy')}, D2cc ${fmt(d2cc, 2, ' Gy')}. Interpret using applicable site-specific OAR limits.`);
+        observations.push(ui(
+            `${name}：最大剂量 ${fmt(dmax, 2, ' Gy')}，D2cc ${fmt(d2cc, 2, ' Gy')}。请依据适用的部位特异性 OAR 限值判读。`,
+            `${name}: Dmax ${fmt(dmax, 2, ' Gy')}, D2cc ${fmt(d2cc, 2, ' Gy')}. Interpret using applicable site-specific OAR limits.`,
+        ));
     });
-    if (!topOars.length) observations.push('No OAR dose metrics are available yet. Run OAR segmentation and dose evaluation before OAR review.');
+    if (!topOars.length) observations.push(ui(
+        '当前没有可用的 OAR 剂量指标。请先完成 OAR 分割和剂量评估，再进行 OAR 复核。',
+        'No OAR dose metrics are available yet. Run OAR segmentation and dose evaluation before OAR review.',
+    ));
 
     const headlineHtml = `
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:6px;margin-bottom:10px;">
@@ -1427,7 +1450,7 @@ function updateClinicalEvaluation() {
     `;
     const observationsHtml = `
         <div style="margin-bottom:10px;">
-            <div style="font-weight:600;color:var(--text);margin-bottom:4px;">Planning Review Items (${observations.length})</div>
+            <div style="font-weight:600;color:var(--text);margin-bottom:4px;">${h(ui('规划复核项目', 'Planning Review Items'))} (${observations.length})</div>
             <ul style="margin:0;padding-left:16px;line-height:1.6;">
                 ${observations.map(msg => `<li><span>${h(msg)}</span></li>`).join('')}
             </ul>
@@ -1435,10 +1458,10 @@ function updateClinicalEvaluation() {
     `;
     const refsHtml = `
         <div style="border-top:1px solid var(--border-hairline);padding-top:8px;">
-            <div style="font-weight:600;color:var(--text);margin-bottom:4px;">Source policy</div>
+            <div style="font-weight:600;color:var(--text);margin-bottom:4px;">${h(ui('来源依据政策', 'Source policy'))}</div>
             <div style="line-height:1.7;font-size:0.66rem;color:var(--text-secondary);">
-                <div>Clinical pass/fail labels require source-backed, site-specific guidance or confirmed case-protocol limits.</div>
-                <div>General references: AAPM TG-43/TG-229 ${_refLinkHtml('TG43')}, ICRU Report 89 ${_refLinkHtml('ICRU89')}, ABS ${_refLinkHtml('ABS')}, NCCN ${_refLinkHtml('NCCN_PANC')}.</div>
+                <div>${h(ui('临床通过/不通过标签必须基于有来源依据的部位特异性指南或确认的病例方案限值。', 'Clinical pass/fail labels require source-backed, site-specific guidance or confirmed case-protocol limits.'))}</div>
+                <div>${h(ui('通用参考：', 'General references: '))}AAPM TG-43/TG-229 ${_refLinkHtml('TG43')}，ICRU Report 89 ${_refLinkHtml('ICRU89')}，ABS ${_refLinkHtml('ABS')}，NCCN ${_refLinkHtml('NCCN_PANC')}。</div>
             </div>
         </div>
     `;
@@ -1928,3 +1951,14 @@ const REPORT_STRINGS = {
         planScoreFormLabel: 'Plan score',
     },
 };
+
+// Clinical evaluation is generated dynamically from metrics rather than from
+// static `data-i18n-*` attributes. Re-render it on the same global language
+// event used by the report and execution-trace surfaces, so a language switch
+// cannot leave an old English/Chinese evaluation mixed into the new UI.
+if (!window._clinicalEvaluationI18nListener) {
+    window._clinicalEvaluationI18nListener = true;
+    window.addEventListener('i18nchange', () => {
+        try { updateClinicalEvaluation(); } catch (_) {}
+    });
+}
