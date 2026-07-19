@@ -55,6 +55,20 @@ def test_chat_snapshot_is_redrawn_after_restore():
     assert "sessions[activeSessionId].pending = false" in workspace
 
 
+def test_case_clear_removes_untracked_surfaces_and_clinical_evaluation():
+    ui_api = read("web/app/static/js/brachybot-ui-api.js")
+    viewer = read("web/app/static/js/brachybot-viewer-volume.js")
+    manual_3d = read("web/app/static/js/brachybot-3d-manual.js")
+    assert "scene3D.skinMesh = null" in ui_api
+    assert "clinicalEvaluationContent" in ui_api
+    assert "Detailed evaluation will appear here after planning completes." in ui_api
+    assert "invalidateViewerDataLoads" in ui_api
+    assert "viewerDataLoadGeneration" in viewer
+    assert "generation !== viewerDataLoadGeneration" in viewer
+    assert "invalidateSegmentationMeshPrewarm" in ui_api
+    assert "generation !== _segmentationMeshPrewarm.generation" in manual_3d
+
+
 def test_llm_case_rename_uses_the_durable_session_api():
     """A chat-driven rename must survive refresh just like a manual rename."""
     ui_api = read("web/app/static/js/brachybot-ui-api.js")
@@ -177,6 +191,26 @@ def test_legacy_session_clear_action_is_honest_about_its_scope():
     assert "Persistent server cases will be retained" in ui_api
     assert '"browser_cache.clear"' in registry
     assert "durable server cases are retained" in registry
+
+
+def test_manual_ctv_model_is_explicit_and_uploaded_ct_enables_steps():
+    index = read("web/app/index.html")
+    manual = read("web/app/static/js/brachybot-manual-annotation.js")
+    ui_api = read("web/app/static/js/brachybot-ui-api.js")
+    routes = read("web/routes/planning_routes.py")
+
+    assert 'id="ctvModelSelect"' in index
+    assert "tumor_type: document.getElementById('ctvModelSelect')?.value" in manual
+    assert "ctPathInput.dispatchEvent(new Event('input'" in ui_api
+    assert '"tumor_type"' in routes
+
+
+def test_small_talk_never_uses_a_canned_answer_when_llm_is_unavailable():
+    workflow = read("agent_runtime/chat_workflows.py")
+    assert "def _llm_unavailable_message()" in workflow
+    assert "no canned answer was generated" in workflow
+    assert "Local Fast Path" not in workflow
+    assert "Answered locally; no model call" not in workflow
 
 
 def test_manual_case_rename_waits_for_durable_confirmation():

@@ -147,8 +147,10 @@ function _num(id, fallback = null) {
 }
 
 async function applyHyperparams() {
+    const refAuto = !!document.getElementById('refDirecAuto')?.checked;
     const config = {
         mode: document.getElementById('useRLToggle')?.checked ? 'rl' : 'rule_based',
+        tumor_type: document.getElementById('ctvModelSelect')?.value || 'nnunet_pancreatic',
         seed_info: {
             radius: _num('seedRadius', 0.4),
             length: _num('seedLength', 4.5),
@@ -161,7 +163,9 @@ async function applyHyperparams() {
             obstacle_value: Math.round(_num('obstacleValue', 2)),
             background_value: Math.round(_num('backgroundValue', 0)),
         },
-        reference_direc: document.getElementById('refDirecAuto')?.checked
+        ref_direc_auto: refAuto,
+        reference_direc_mode: refAuto ? 'auto' : 'manual',
+        reference_direc: refAuto
             ? 'auto'
             : [_num('refDirecX', 0), _num('refDirecY', 1), _num('refDirecZ', 0)],
         in_lowest_energy: _num('inLowestEnergy', 1),
@@ -513,7 +517,13 @@ async function runSegmentationStep(kind) {
         const res = await fetch(API + '/segmentation', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ kind: apiKind, image_path: ctPath.trim() }),
+            body: JSON.stringify({
+                kind: apiKind,
+                image_path: ctPath.trim(),
+                ...(apiKind === 'ctv' ? {
+                    tumor_type: document.getElementById('ctvModelSelect')?.value || 'nnunet_pancreatic',
+                } : {}),
+            }),
         });
         if (!res.ok) {
             const t = await res.text();
@@ -993,9 +1003,17 @@ function renderSeedsOverlay(axis, sliceIndex) {
 
         const p0 = toDisplay(idx0);
         const p1 = toDisplay(idx1);
-        const lineLen = Math.hypot(p1.x - p0.x, p1.y - p0.y);
+        // Needle geometry is stored as target/internal first and entry/outer
+        // second.  The 2D view intentionally shows only the physical segment
+        // from the outer entry to the current slice plane; the full needle is
+        // still preserved in world coordinates for 3D editing and replanning.
+        const t = Math.abs(s1 - s0) < 1e-6 ? 0.5 : Math.max(0, Math.min(1, (sliceIndex - s0) / (s1 - s0)));
+        const hit = { x: p0.x + t * (p1.x - p0.x), y: p0.y + t * (p1.y - p0.y) };
+        const segmentStart = p1;
+        const segmentEnd = hit;
+        const lineLen = Math.hypot(segmentEnd.x - segmentStart.x, segmentEnd.y - segmentStart.y);
         const needleRgb = _hexToRgbArray(needleState?.color || needle.color || '#ff2266', [255, 34, 102]);
-        const grad = ctx.createLinearGradient(p0.x, p0.y, p1.x, p1.y);
+        const grad = ctx.createLinearGradient(segmentStart.x, segmentStart.y, segmentEnd.x, segmentEnd.y);
         grad.addColorStop(0, `rgba(56, 189, 248, ${0.25 + 0.55 * needleOpacity})`);
         grad.addColorStop(1, `rgba(${needleRgb[0]}, ${needleRgb[1]}, ${needleRgb[2]}, ${0.25 + 0.65 * needleOpacity})`);
 
@@ -1006,35 +1024,17 @@ function renderSeedsOverlay(axis, sliceIndex) {
             ctx.strokeStyle = 'rgba(2, 6, 23, 0.85)';
             ctx.lineWidth = 4.2;
             ctx.beginPath();
-            ctx.moveTo(p0.x, p0.y);
-            ctx.lineTo(p1.x, p1.y);
+            ctx.moveTo(segmentStart.x, segmentStart.y);
+            ctx.lineTo(segmentEnd.x, segmentEnd.y);
             ctx.stroke();
             ctx.strokeStyle = grad;
             ctx.lineWidth = 2.2;
             ctx.beginPath();
-            ctx.moveTo(p0.x, p0.y);
-            ctx.lineTo(p1.x, p1.y);
+            ctx.moveTo(segmentStart.x, segmentStart.y);
+            ctx.lineTo(segmentEnd.x, segmentEnd.y);
             ctx.stroke();
             ctx.restore();
         }
-
-        const t = Math.abs(s1 - s0) < 1e-6 ? 0.5 : Math.max(0, Math.min(1, (sliceIndex - s0) / (s1 - s0)));
-        const hit = { x: p0.x + t * (p1.x - p0.x), y: p0.y + t * (p1.y - p0.y) };
-        ctx.save();
-        ctx.strokeStyle = `rgba(255, 255, 255, ${0.95 * needleOpacity})`;
-        ctx.lineWidth = 2.0;
-        ctx.beginPath();
-        ctx.moveTo(hit.x - 5.5, hit.y - 5.5);
-        ctx.lineTo(hit.x + 5.5, hit.y + 5.5);
-        ctx.moveTo(hit.x + 5.5, hit.y - 5.5);
-        ctx.lineTo(hit.x - 5.5, hit.y + 5.5);
-        ctx.stroke();
-        ctx.strokeStyle = `rgba(${needleRgb[0]}, ${needleRgb[1]}, ${needleRgb[2]}, ${0.95 * needleOpacity})`;
-        ctx.lineWidth = 1.1;
-        ctx.beginPath();
-        ctx.arc(hit.x, hit.y, 7, 0, 2 * Math.PI);
-        ctx.stroke();
-        ctx.restore();
     }
 
     const seeds = state.seedsOverlay.seeds || [];

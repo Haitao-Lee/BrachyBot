@@ -17,7 +17,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 import SimpleITK as sitk
 
-from agent_runtime.core import PlanningPhase
+from agent_runtime.core import PlanningPhase, resolve_reference_direction_input
 from agent_runtime.contracts import RunStatus
 from agent_runtime.turn_policy import classify_local_turn
 
@@ -25,6 +25,28 @@ logger = logging.getLogger(__name__)
 
 
 class ChatWorkflowMixin:
+    @staticmethod
+    def _llm_unavailable_message() -> str:
+        """Explain an unavailable model instead of fabricating an LLM answer.
+
+        Greetings and self-description are conversational requests. A static
+        reply here would make the product look like a keyword bot and could
+        hide a broken provider configuration. The UI can still use explicit
+        direct tools while the user fixes the provider.
+        """
+        return (
+            "当前 LLM 服务未连接，因此我不能生成可靠的自然语言回答。"
+            "请检查 ANTHROPIC_API_KEY/OPENAI_API_KEY 与对应的 BASE_URL、MODEL 配置后重试。"
+        )
+
+    def _pending_tumor_site_clarification(self) -> bool:
+        """Return whether the previous turn is waiting for a tumor site."""
+        try:
+            pending = self.memory.retrieve("pending_clarification") or {}
+            return isinstance(pending, dict) and pending.get("kind") == "tumor_site"
+        except Exception:
+            return False
+
     @staticmethod
     def _is_3d_status_request(message: str) -> bool:
         """Recognize questions that require a concrete 3D viewer diagnosis."""
@@ -362,7 +384,18 @@ class ChatWorkflowMixin:
             _result = self._run_llm_function_calling(message, [], [0])
             response = _result[0] if isinstance(_result, tuple) else _result
         else:
-            response = self._rule_based_chat(message)
+            # The non-trace API is still used by a few integrations. Keep its
+            # behavior aligned with chat_with_trace/stream: a conversational
+            # request must never receive a fabricated keyword-bot greeting
+            # merely because the configured provider is unavailable.
+            local_policy = classify_local_turn(
+                message,
+                pending_tumor_site=self._pending_tumor_site_clarification(),
+            )
+            if local_policy.intent == "small_talk":
+                response = self._llm_unavailable_message()
+            else:
+                response = self._rule_based_chat(message)
 
         self._record_experience(message, response)
 
@@ -403,7 +436,10 @@ class ChatWorkflowMixin:
         # Local classification only controls expensive routing/review/tool
         # policy. The configured LLM still generates the user-facing answer,
         # including greetings and self-description requests.
-        local_policy = classify_local_turn(message)
+        local_policy = classify_local_turn(
+            message,
+            pending_tumor_site=self._pending_tumor_site_clarification(),
+        )
         self._active_turn_policy = local_policy
 
         if self.enhanced:
@@ -435,8 +471,12 @@ class ChatWorkflowMixin:
                 response = f"Error: {e}"
                 llm_meta = {"usage": {}, "latency_ms": 0, "llm_calls": 0}
         else:
-            add_step("thinking", "Rule Matcher", "Brain unavailable — using rule-based parsing")
-            response = self._rule_based_chat_with_steps(message, steps, step_id)
+            if local_policy.intent == "small_talk":
+                add_step("error", "LLM Unavailable", "No configured model; no canned answer was generated.", status="error")
+                response = self._llm_unavailable_message()
+            else:
+                add_step("thinking", "Rule Matcher", "Brain unavailable — using rule-based parsing")
+                response = self._rule_based_chat_with_steps(message, steps, step_id)
             llm_meta = {"usage": {}, "latency_ms": 0, "llm_calls": 0}
 
         self._record_experience(message, response, steps)
@@ -690,7 +730,10 @@ class ChatWorkflowMixin:
 
         # The local policy is an execution hint only. It does not synthesize
         # an answer; all user-facing text continues through the configured LLM.
-        local_policy = classify_local_turn(message)
+        local_policy = classify_local_turn(
+            message,
+            pending_tumor_site=self._pending_tumor_site_clarification(),
+        )
         self._active_turn_policy = local_policy
 
         # Multi-agent routing (if available). The local policy decides whether
@@ -930,7 +973,12 @@ class ChatWorkflowMixin:
                 llm_meta = {"usage": {}, "latency_ms": 0, "llm_calls": 0}
                 yield yield_event("error", {"message": str(e)})
         else:
-            response = self._rule_based_chat_with_steps_stream(message, steps, step_id, yield_event)
+            if local_policy.intent == "small_talk":
+                step = add_step("error", "LLM Unavailable", "No configured model; no canned answer was generated.", status="error")
+                yield yield_event("step", step)
+                response = self._llm_unavailable_message()
+            else:
+                response = self._rule_based_chat_with_steps_stream(message, steps, step_id, yield_event)
             llm_meta = {"usage": {}, "latency_ms": 0, "llm_calls": 0}
 
         # A low-level status question must still receive a concrete answer if
@@ -984,7 +1032,9 @@ class ChatWorkflowMixin:
         # - If planning tools were used (_has_plan) → always review plan quality
         # - If complexity is "high" or "medium" → review for quality
         # - Skip for "low" complexity or simple Q&A → save latency + tokens
-        review_sections = []
+        # Reviewer/checker output is internal orchestration feedback. It is
+        # never appended verbatim to the user-facing answer.
+        review_feedback = []
         _needs_review = False
         _review_reason = ""
         _review_started = time.perf_counter()
@@ -1153,14 +1203,14 @@ class ChatWorkflowMixin:
                         _cc_result = ""
 
                     if isinstance(_plan_result, str) and _plan_result:
-                        review_sections.append(_plan_result)
+                        review_feedback.append({"kind": "plan_review", "text": _plan_result})
                     if _review_step:
                         _review_step["status"] = "done"
                         _review_step["content"] = "Reviewed" if _plan_result else "No issues"
                         yield yield_event("step", _review_step)
 
                     if isinstance(_cc_result, str) and _cc_result:
-                        review_sections.append(_cc_result)
+                        review_feedback.append({"kind": "completeness", "text": _cc_result})
                     if _cc_step:
                         _cc_step["status"] = "done"
                         _cc_step["content"] = "Checked" if not (isinstance(_cc_result, str) and _cc_result) else "Issues found"
@@ -1502,9 +1552,9 @@ class ChatWorkflowMixin:
                     logger.error(f"[Post-enforcer review] Completeness check failed: {_post_cc_result}")
                     _post_cc_result = ""
                 if isinstance(_post_plan_result, str) and _post_plan_result:
-                    review_sections.append(_post_plan_result)
+                    review_feedback.append({"kind": "plan_review", "text": _post_plan_result})
                 if isinstance(_post_cc_result, str) and _post_cc_result:
-                    review_sections.append(_post_cc_result)
+                    review_feedback.append({"kind": "completeness", "text": _post_cc_result})
                 if _post_review_step:
                     _post_review_step["status"] = "done"
                     _post_review_step["content"] = "Reviewed" if _post_plan_result else "No issues"
@@ -1534,10 +1584,19 @@ class ChatWorkflowMixin:
                 (time.perf_counter() - _review_started) * 1000, 1
             )
 
-        # Append review sections to response after any workflow enforcement so
-        # the final message reflects the actual tool chain that ran.
-        if review_sections:
-            response += "\n\n---\n" + "\n\n".join(review_sections)
+        # Store review feedback for diagnostics and future orchestration, but
+        # keep the final response single-speaker: the main response or the
+        # structured planning report is what the user should read. Raw
+        # reviewer prose belongs in Execution Trace only.
+        if review_feedback:
+            try:
+                self.memory.store("last_review_feedback", review_feedback)
+            except Exception as exc:
+                logger.debug("Could not persist internal review feedback: %s", exc)
+            llm_meta["review_feedback"] = [
+                {"kind": item.get("kind"), "text_length": len(item.get("text") or "")}
+                for item in review_feedback
+            ]
 
         # Final response
         self._finish_turn(response)
@@ -1960,11 +2019,14 @@ class ChatWorkflowMixin:
         default_seed_info = {"radius": 0.4, "length": 3.7, "seed_avr_dose": 50}
         seed_info = seed_info or self.config.get("seed_info") or default_seed_info
         radiation_array_params = radiation_array_params or self.config.get("radiation_array_params", {})
-        reference_direc = reference_direc or self.config.get("reference_direc")
         if reference_direc is None:
             ui_state = self.memory.get_ui_state() if hasattr(self, 'memory') and hasattr(self.memory, 'get_ui_state') else {}
             planning_state = ui_state.get("planning") if isinstance(ui_state.get("planning"), dict) else {}
-            reference_direc = planning_state.get("reference_direc") or [0, 1, 0]
+            reference_direc = resolve_reference_direction_input(
+                planning_state,
+                self.config,
+                default="auto",
+            )
         in_lowest_energy = in_lowest_energy if in_lowest_energy is not None else self.config.get("in_lowest_energy", 1)
         out_highest_energy = out_highest_energy if out_highest_energy is not None else self.config.get("out_highest_energy", 1)
         DVH_rate = DVH_rate if DVH_rate is not None else self.config.get("DVH_rate", 0.9)
@@ -2452,7 +2514,7 @@ class ChatWorkflowMixin:
             ui_state = self.memory.get_ui_state() if hasattr(self, 'memory') and hasattr(self.memory, 'get_ui_state') else {}
             planning_state = ui_state.get("planning") if isinstance(ui_state.get("planning"), dict) else {}
             ref_direction = _resolve_ref_direc(
-                planning_state.get("reference_direc") or self.config.get("reference_direc", "auto"),
+                resolve_reference_direction_input(planning_state, self.config, default="auto"),
                 resampled_ct,
                 ctv_grid,
                 self,

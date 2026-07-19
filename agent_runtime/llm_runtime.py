@@ -591,6 +591,9 @@ class LLMRuntimeMixin:
             for tc in tool_calls:
                 tool_name = tc.get("tool", "")
                 params = tc.get("params", {})
+                if tool_name == "ctv_segmentation":
+                    params = self._normalize_ctv_tool_params(params)
+                    tc["params"] = params
                 tool_id = tc.get("id", f"tool_{step_id_ref[0]}")
                 tool_succeeded = True
 
@@ -614,6 +617,10 @@ class LLMRuntimeMixin:
                 # Pre-execution check: if ctv_segmentation is called without
                 # tumor_type, intercept and ask instead of running and failing.
                 if tool_name == "ctv_segmentation" and not params.get("tumor_type"):
+                    self.memory.store(
+                        "pending_clarification",
+                        {"kind": "tumor_site", "requested_tool": "ctv_segmentation"},
+                    )
                     logger.info("[TOOL-LOOP] ctv_segmentation missing tumor_type — intercepting")
                     if getattr(self, "run_ledger", None) is not None:
                         from agent_runtime.contracts import RunStatus
@@ -1964,9 +1971,16 @@ class LLMRuntimeMixin:
                             append_callback_event("step", substep_step)
 
                 tool_result = None  # Track result for metadata
+                if tool_name == "ctv_segmentation":
+                    params = self._normalize_ctv_tool_params(params)
+                    steps[-1]["params"] = params
                 # Pre-execution check: if ctv_segmentation is called without
                 # tumor_type, intercept and ask instead of running and failing.
                 if tool_name == "ctv_segmentation" and not params.get("tumor_type"):
+                    self.memory.store(
+                        "pending_clarification",
+                        {"kind": "tumor_site", "requested_tool": "ctv_segmentation"},
+                    )
                     logger.info("[TOOL-LOOP] ctv_segmentation missing tumor_type — intercepting")
                     if getattr(self, "run_ledger", None) is not None:
                         from agent_runtime.contracts import RunStatus
@@ -2044,6 +2058,8 @@ class LLMRuntimeMixin:
                         # _store_tool_result is never called.
                         tool_result = result
                         if tool_result is not None and tool_result.success:
+                            if tool_name == "ctv_segmentation":
+                                self.memory.store("pending_clarification", None)
                             # _execute_tool_with_memory stores the successful
                             # result before returning, so it remains durable
                             # even if the SSE consumer disconnects here.

@@ -1,4 +1,5 @@
 {
+  "tumor_type": "nnunet_pancreatic",
   "seed_info": {
     "radius": 0.4,
     "length": 4.5,
