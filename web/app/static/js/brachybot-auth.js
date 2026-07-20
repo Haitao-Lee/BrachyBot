@@ -64,9 +64,30 @@
         if (name) name.textContent = state.user?.username || '';
     }
 
+    let workspaceLockDismissedKey = '';
+
+    function workspaceLockKey() {
+        const session = document.getElementById('sessionDisplay');
+        return `brachybot:lock-notice:${String(session?.textContent || 'current').trim()}`;
+    }
+
+    function dismissWorkspaceLockNotice() {
+        // Dismissing this banner hides presentation only; the lease remains
+        // read-only until the server grants edit ownership.
+        workspaceLockDismissedKey = workspaceLockKey();
+        const notice = document.getElementById('workspaceLockNotice');
+        if (notice) notice.hidden = true;
+    }
+
     function renderWorkspaceLock(locked) {
         const notice = document.getElementById('workspaceLockNotice');
-        if (notice) notice.hidden = !locked;
+        if (!notice) return;
+        if (!locked) {
+            workspaceLockDismissedKey = '';
+            notice.hidden = true;
+            return;
+        }
+        notice.hidden = workspaceLockDismissedKey === workspaceLockKey();
     }
 
     async function authFetch(input, init = {}, timeoutMs = AUTH_REQUEST_TIMEOUT_MS) {
@@ -223,6 +244,7 @@
         get csrfToken() { return state.csrfToken; },
         get editorToken() { return editorToken; },
         renderWorkspaceLock,
+        dismissWorkspaceLockNotice,
         authenticated,
         acquireLease,
         applyLeaseResult,

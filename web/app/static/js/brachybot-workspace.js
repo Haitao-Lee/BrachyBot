@@ -14,6 +14,7 @@
     let backgroundRestoreTimer = null;
     const WORKSPACE_REQUEST_TIMEOUT_MS = 15000;
     const WORKSPACE_RECOVERY_TIMEOUT_MS = 5000;
+    let recoveryNoticeDismissKey = '';
 
     async function workspaceFetch(input, init = {}, timeoutMs = WORKSPACE_REQUEST_TIMEOUT_MS) {
         const controller = typeof AbortController === 'function' ? new AbortController() : null;
@@ -233,17 +234,58 @@
     }
 
     function renderRecoveryNotice(operation) {
+        bindWorkspaceNoticeControls();
         const target = document.getElementById('workspaceRecoveryNotice');
         if (!target) return;
         if (operation?.state !== 'interrupted') {
             target.hidden = true;
-            target.textContent = '';
+            const message = document.getElementById('workspaceRecoveryMessage');
+            if (message) message.textContent = '';
+            recoveryNoticeDismissKey = '';
+            return;
+        }
+        const session = String(typeof activeSessionId !== 'undefined' ? activeSessionId : 'current');
+        const identity = String(operation.interrupted_at || operation.updated_at || operation.revision || operation.message || 'interrupted');
+        const dismissKey = `brachybot:recovery-notice:${session}:${identity}`;
+        recoveryNoticeDismissKey = dismissKey;
+        if (readRecoveryDismissal(dismissKey)) {
+            target.hidden = true;
             return;
         }
         const checkpoint = operation.checkpoint || {};
         const step = checkpoint.step ? ` Resume from ${checkpoint.step}.` : '';
-        target.textContent = `${operation.message || 'The previous task was interrupted.'}${step} The last saved case state is available; rerun the unfinished action when ready.`;
+        const message = document.getElementById('workspaceRecoveryMessage');
+        const text = `${operation.message || 'The previous task was interrupted.'}${step} The last saved case state is available; rerun the unfinished action when ready.`;
+        if (message) message.textContent = text;
+        else target.textContent = text;
         target.hidden = false;
+    }
+
+    function readRecoveryDismissal(key) {
+        try { return sessionStorage.getItem(key) === '1'; } catch (_) { return false; }
+    }
+
+    function dismissWorkspaceRecoveryNotice() {
+        // A dismissed recovery banner never acknowledges or clears the
+        // interrupted operation; the saved checkpoint remains authoritative.
+        if (recoveryNoticeDismissKey) {
+            try { sessionStorage.setItem(recoveryNoticeDismissKey, '1'); } catch (_) {}
+        }
+        const target = document.getElementById('workspaceRecoveryNotice');
+        if (target) target.hidden = true;
+    }
+
+    function bindWorkspaceNoticeControls() {
+        const recoveryClose = document.getElementById('workspaceRecoveryDismiss');
+        if (recoveryClose && !recoveryClose.dataset.bound) {
+            recoveryClose.dataset.bound = 'true';
+            recoveryClose.addEventListener('click', dismissWorkspaceRecoveryNotice);
+        }
+        const lockClose = document.getElementById('workspaceLockDismiss');
+        if (lockClose && !lockClose.dataset.bound) {
+            lockClose.dataset.bound = 'true';
+            lockClose.addEventListener('click', () => window.brachybotAuth?.dismissWorkspaceLockNotice?.());
+        }
     }
 
     function chatState() {
