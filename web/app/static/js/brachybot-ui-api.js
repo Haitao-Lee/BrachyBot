@@ -1475,8 +1475,18 @@ async function init() {
         }
         if (stale) {
             const banner = document.createElement('div');
+            banner.id = 'assetVersionNotice';
+            banner.setAttribute('role', 'status');
             banner.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99999;background:#dc2626;color:white;padding:12px 20px;font-size:14px;text-align:center;font-family:system-ui;box-shadow:0 2px 8px rgba(0,0,0,0.2);';
             banner.innerHTML = '⚠️ 您的浏览器加载了 <b>旧版</b> BrachyBot 页面（' + reason + '）。请按 <kbd style="background:#fff;color:#dc2626;padding:2px 6px;border-radius:3px;font-family:monospace;">Ctrl+Shift+R</kbd>（Mac: <kbd style="background:#fff;color:#dc2626;padding:2px 6px;border-radius:3px;font-family:monospace;">Cmd+Shift+R</kbd>）强刷。';
+            const close = document.createElement('button');
+            close.type = 'button';
+            close.textContent = 'x';
+            close.setAttribute('aria-label', 'Dismiss outdated-page notice');
+            close.title = 'Dismiss';
+            close.style.cssText = 'position:absolute;right:10px;top:7px;width:28px;height:28px;border:0;border-radius:5px;background:rgba(255,255,255,.15);color:#fff;cursor:pointer;font-size:18px;line-height:1;';
+            close.addEventListener('click', () => banner.remove());
+            banner.appendChild(close);
             document.body.appendChild(banner);
             setTimeout(() => { try { banner.remove(); } catch (_) {} }, 30000);
         }
