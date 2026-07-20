@@ -6174,3 +6174,42 @@ coordinate-chain defect.
   The remote `brachytherapy` environment passed the focused suite after
   synchronization: `38 passed, 3 warnings`; remote Python byte-compilation
   also passed and the worktree was clean at the published commit.
+
+## Round 62: make persistent status banners explicitly dismissible (2026-07-20)
+
+### Confirmed finding
+
+The blue `Server restarted before the task completed` message is a valid
+recovery status, not an error or timeout. The server marks a running operation
+as `interrupted` during startup so that an unfinished clinical action is never
+reported as completed. The frontend rendered that state as a persistent banner
+without a close control, which made a correct status look like a stuck modal.
+
+The same presentation defect existed in the read-only lease notice and in the
+stale-asset/cache diagnostic banner. The normal application notification stack
+already had an explicit dismiss button, so it did not need a second mechanism.
+
+### Corrective changes
+
+- Added accessible close buttons to the recovery and read-only lease banners.
+- Added a dismissible close button to the stale-page diagnostic banner.
+- Recovery dismissal is keyed by the current case and interruption record in
+  `sessionStorage`; a new interruption remains visible even after an earlier
+  one was dismissed.
+- Read-only dismissal is scoped to the displayed case and does not change the
+  server lease or make the workspace writable. Refreshing the lease continues
+  to enforce the authoritative server state.
+- Recovery dismissal hides presentation only. It does not clear the
+  interrupted checkpoint, mark the operation complete, or suppress rerun
+  capability.
+- Added frontend regression assertions for all three close paths and for the
+  notice-only semantics.
+
+### Verification
+
+- Node syntax checks pass for `brachybot-auth.js`, `brachybot-workspace.js`,
+  and `brachybot-ui-api.js`.
+- `git diff --check` passes.
+- Focused Python tests are executed in the remote `brachytherapy` environment
+  because the local Windows Python runtime is missing its standard-library
+  `encodings` module.

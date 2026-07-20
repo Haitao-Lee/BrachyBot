@@ -114,9 +114,13 @@
     </div>
 </header>
 <div id="workspaceLockNotice" class="workspace-lock-notice" hidden role="status">
-    This case is open read-only because it is being edited in another browser window.
+    <span class="workspace-notice-message">This case is open read-only because it is being edited in another browser window.</span>
+    <button id="workspaceLockDismiss" type="button" class="workspace-notice-close" aria-label="Dismiss read-only notice" title="Dismiss">x</button>
 </div>
-<div id="workspaceRecoveryNotice" class="workspace-recovery-notice" hidden role="status"></div>
+<div id="workspaceRecoveryNotice" class="workspace-recovery-notice" hidden role="status">
+    <span id="workspaceRecoveryMessage" class="workspace-notice-message"></span>
+    <button id="workspaceRecoveryDismiss" type="button" class="workspace-notice-close" aria-label="Dismiss recovery notice" title="Dismiss">x</button>
+</div>
 
 <!-- ============ APP BODY ============ -->
 <div class="app-body">

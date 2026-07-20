@@ -20,6 +20,8 @@ def test_authenticated_boot_uses_server_session_loader():
     # The workspace bridge must load before report-export starts init(), or a
     # first page load can transiently select the legacy localStorage session.
     assert index.index("brachybot-workspace.js") < index.index("brachybot-report-export.js")
+    assert 'id="workspaceLockDismiss"' in index
+    assert 'id="workspaceRecoveryDismiss"' in index
 
 
 def test_legacy_chat_bindings_delegate_to_durable_workspace():
@@ -138,6 +140,20 @@ def test_workspace_network_failures_cannot_leave_case_controls_stuck():
     assert "if (!isCurrentTransition(generation)) return;" in workspace
     assert "async function authFetch" in auth
     assert "AUTH_REQUEST_TIMEOUT_MS = 12000" in auth
+
+
+def test_workspace_notices_are_explicitly_dismissible_without_changing_state():
+    """Recovery and lease notices hide only their presentation layer."""
+    workspace = read("web/app/static/js/brachybot-workspace.js")
+    auth = read("web/app/static/js/brachybot-auth.js")
+    ui_api = read("web/app/static/js/brachybot-ui-api.js")
+    assert "function dismissWorkspaceRecoveryNotice()" in workspace
+    assert "sessionStorage.setItem(recoveryNoticeDismissKey, '1')" in workspace
+    assert "function dismissWorkspaceLockNotice()" in auth
+    assert "workspaceLockDismissedKey = workspaceLockKey()" in auth
+    assert "typeof activeSessionId !== 'undefined'" in auth
+    assert "banner.id = 'assetVersionNotice'" in ui_api
+    assert "Dismiss outdated-page notice" in ui_api
 
 
 def test_lease_release_does_not_depend_on_fetch_wrapper_side_effects():
