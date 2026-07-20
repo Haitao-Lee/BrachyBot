@@ -389,6 +389,13 @@
                 if (typeof loadSessionChat === 'function') loadSessionChat(activeSessionId);
             }
             renderRecoveryNotice(snapshot.operation);
+            if (snapshot.operation?.state === 'running' && typeof window.resumeSessionChatTask === 'function') {
+                // A page refresh may be the first client to subscribe after
+                // the task started. The task endpoint decides whether the
+                // in-process worker is still alive; interrupted server-start
+                // checkpoints remain recoverable but are not auto-rerun.
+                setTimeout(() => window.resumeSessionChatTask(), 0);
+            }
             if (typeof setViewerLayout === 'function' && state?.viewerSettings?.layout) setViewerLayout(state.viewerSettings.layout);
             if (typeof renderDataTree === 'function') renderDataTree();
             if (typeof _refreshManualStepUI === 'function') _refreshManualStepUI();
@@ -428,13 +435,15 @@
         const pendingFollowUps = (Array.isArray(window._pendingHiddenChats)
             && window._pendingHiddenChats.length > 0) || !!window._hiddenChatFlushRunning;
         if (!active && !pendingFollowUps) return true;
-        // Switching cases is an explicit user action. Stop the current
-        // response first so its late SSE events cannot mutate the next case.
-        if (typeof window.cancelActiveChatTurn === 'function') {
-            await window.cancelActiveChatTurn('Session changed');
-            return true;
+        // A case switch changes the visible workspace, not the case-owned
+        // computation. Detach the browser stream without calling /chat/abort;
+        // the task remains alive and is replayed when this case is selected.
+        if (active && typeof window.detachActiveChatTurn === 'function') {
+            window.detachActiveChatTurn('Session changed');
         }
-        return false;
+        // Hidden screenshot/visual follow-ups are queued per case. They must
+        // wait for that case to become active again, never leak into the next.
+        return true;
     }
 
     function confirmWorkspaceAction(messageZh, messageEn) {
@@ -610,6 +619,12 @@
         }
 
         return runWorkspaceTransition(async () => {
+            // Deletion is the one case-management action that must cancel
+            // the case-owned task: there will be no workspace to resume it
+            // from after the recycle-bin move.
+            if (id === activeSessionId && typeof window.cancelActiveChatTurn === 'function') {
+                await window.cancelActiveChatTurn('Session deleted');
+            }
             if (!await prepareSessionChange()) return { success: false, cancelled: true };
             if (id === activeSessionId && typeof flushActiveReportState === 'function') flushActiveReportState();
             await persistWorkspace('session.delete');

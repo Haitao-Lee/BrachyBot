@@ -4739,6 +4739,9 @@ if such a field appeared in an automatic record.
 
 ### Verification
 
+- Added a regression contract for the report language and verified-source
+  behavior. Remote Python and JavaScript checks pass.
+
 - Bone regression test: TotalSegmentator label 26 (`vertebrae_S1`) remains
   label 26 after planning-grid resampling and is converted to an obstacle voxel.
 - `tests/test_needle_obstacle_safety.py`: **5 passed**.
@@ -6478,3 +6481,43 @@ still present.
   URLs, source metadata propagation, and removal of placeholder generation.
 - `node --check` is required for all changed report scripts; Python compilation
   is required for the report context and server; `git diff --check` must pass.
+
+## Round 70: case-isolated background chat tasks (2026-07-20)
+
+### Confirmed finding
+
+The streaming `/api/chat` route executed `agent.chat_with_stream()` inside the
+request-bound Flask generator. When the browser changed cases, the old SSE
+connection was closed and `GeneratorExit` set the Agent cancellation flag. The
+workflow was therefore genuinely stopped, not merely hidden. Its in-flight
+trace and final answer were also absent from the restored browser transcript.
+
+### Corrective changes
+
+- Added `web/chat_tasks.py`, a bounded, session-scoped background task manager.
+  Each task is owned by `(user_id, session_id)`, rejects concurrent turns in
+  the same case, records ordered SSE events, and retains completed events for
+  replay during the server process lifetime.
+- `/api/chat` now starts the worker before returning the SSE subscription. A
+  client disconnect is logged as a detach and never calls Agent cancellation.
+  An explicit `/api/chat/abort` still cancels only the selected case's task.
+- Added `/api/chat/task` and `/api/chat/tasks/<task_id>/stream` for secure
+  selected-case status lookup and replay. The server never accepts an
+  arbitrary client case ID to authorize a task.
+- Finalized detached tasks persist the Agent checkpoint, operation status,
+  execution trace, user turn, and validated response into the owning workspace.
+  Internal uploaded-image paths are removed from the durable user transcript.
+- The frontend now detaches the active stream on case switch, keeps hidden
+  screenshot follow-ups keyed by their source session, and reconnects to a
+  still-running task after the case is selected again. Creating or switching a
+  case no longer invokes the Stop path; deleting the active case remains an
+  intentional cancellation because its workspace is being removed.
+- A start gate orders the initial `running` checkpoint before the worker can
+  finish, preventing fast turns from racing and leaving a stale running state.
+
+### Verification
+
+- Added `tests/test_chat_tasks.py` covering ordered replay, ownership
+  isolation, explicit cancellation, and same-case concurrency protection.
+- Remote full suite: `226 passed, 2 skipped, 3 warnings`.
+- Remote Python compilation and `git diff --check` pass.

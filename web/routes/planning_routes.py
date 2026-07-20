@@ -3,6 +3,7 @@
 import json
 import logging
 import os
+import threading
 import time
 from datetime import datetime
 from typing import Any, Dict, Optional
@@ -12,6 +13,7 @@ import SimpleITK as sitk
 from flask import Response, current_app, jsonify, request, send_file, session as flask_session, stream_with_context
 
 from web.auth import current_user
+from web.chat_tasks import ChatTask, ChatTaskManager
 from web.workspace_store import WorkspaceError, WorkspaceQuotaExceeded
 from agent_runtime.core import resolve_reference_direction_input
 
@@ -116,6 +118,14 @@ def _current_planning_snapshot(agent):
 
 def register_planning_routes(app, get_agent):
 
+    # Chat workers are case-scoped and outlive an individual browser stream.
+    # Switching the selected case therefore only changes presentation; it
+    # cannot cancel a task that belongs to another case.
+    chat_tasks = app.extensions.get("brachybot_chat_tasks")
+    if chat_tasks is None:
+        chat_tasks = ChatTaskManager()
+        app.extensions["brachybot_chat_tasks"] = chat_tasks
+
     def workspace_output_dir(category: str) -> str:
         """Return an owned artifact directory; client paths are never trusted."""
         store = current_app.extensions.get("brachybot_workspace_store")
@@ -170,6 +180,85 @@ def register_planning_routes(app, get_agent):
             store.mark_operation(user["id"], session_id, agent, operation)
         except WorkspaceError:
             logger.warning("Unable to checkpoint workspace operation", exc_info=True)
+
+    def finalize_chat_task(task: ChatTask) -> None:
+        """Persist the detached task's result without relying on a browser.
+
+        The browser normally persists its visible transcript.  That writer is
+        absent while the user is viewing another case, so the background task
+        must also write the user turn, trace, and final answer to the owning
+        workspace.  Adjacent duplicate suppression keeps this compatible with
+        a browser that remained connected for the whole turn.
+        """
+        store = current_app.extensions.get("brachybot_workspace_store")
+        if store is None:
+            return
+        state = "ready" if task.status == "completed" else "interrupted"
+        operation = {
+            "state": state,
+            "message": (
+                "Chat response completed" if state == "ready"
+                else (task.error or "Chat response was interrupted")
+            ),
+            "updated_at": time.time(),
+            "checkpoint": {
+                "kind": "chat",
+                "task_id": task.task_id,
+                "status": task.status,
+                "event_count": task.event_count(),
+            },
+        }
+        try:
+            # Store the Agent checkpoint first so clinical arrays/results and
+            # the transcript are never advertised as complete independently.
+            store.mark_operation(task.user_id, task.session_id, task.agent, operation)
+            snapshot = store.load_snapshot(task.user_id, task.session_id)
+            chat = snapshot.get("chat") if isinstance(snapshot.get("chat"), dict) else {}
+            messages = list(chat.get("messages") or [])
+
+            def append_message(message_type: str, content: str, steps: Any = None) -> None:
+                content = str(content or "")
+                if not content and message_type != "thinking":
+                    return
+                candidate = {
+                    "type": message_type,
+                    "content": content,
+                    "steps": steps,
+                    "timestamp": int(task.finished_at or time.time()) * 1000,
+                }
+                previous = messages[-1] if messages else None
+                if previous and previous.get("type") == candidate["type"] and str(previous.get("content") or "") == content:
+                    return
+                messages.append(candidate)
+
+            # Do not expose an internal uploaded-image path in the durable
+            # transcript; the browser's visible user bubble contains the
+            # original request without that server detail.
+            display_message = task.message.split("\n\n[Uploaded image path:", 1)[0]
+            append_message("user", display_message)
+            if task.steps:
+                append_message("thinking", "", task.steps)
+            if task.response:
+                append_message("bot-response", task.response)
+            elif task.error:
+                append_message("error", "AI error: " + task.error)
+
+            store.save_snapshot_patch(
+                task.user_id,
+                task.session_id,
+                {
+                    "chat": {
+                        "messages": messages,
+                        "task_id": task.task_id,
+                        "task_status": task.status,
+                    },
+                    "operation": operation,
+                },
+                expected_revision=None,
+                reason="chat.task.finalized",
+            )
+        except WorkspaceError:
+            logger.warning("Unable to persist detached chat task %s", task.task_id, exc_info=True)
 
     def owned_case_path(path: str) -> bool:
         store = current_app.extensions.get("brachybot_workspace_store")
@@ -2040,6 +2129,11 @@ def register_planning_routes(app, get_agent):
         if agent is None:
             return jsonify({"error": "Agent not available"}), 500
         try:
+            store = current_app.extensions.get("brachybot_workspace_store")
+            user = current_user(store) if store is not None else None
+            session_id = str(flask_session.get("bb_session_id") or "")
+            if user and session_id:
+                chat_tasks.cancel(chat_tasks.active(user["id"], session_id))
             agent._cancel_active_turn()
             # Remove the last incomplete conversation turn
             # AgentMemory owns the lock that protects conversation state.
@@ -2380,37 +2474,67 @@ def register_planning_routes(app, get_agent):
             full_message = f"{message}\n\n[Uploaded image path: {image_path}]"
 
         if stream:
-            checkpoint_operation(
-                agent,
-                "running",
-                "Chat response is in progress",
-                checkpoint={"kind": "chat", "user_message": message[:500]},
-            )
+            store = current_app.extensions.get("brachybot_workspace_store")
+            user = current_user(store) if store is not None else None
+            session_id = str(flask_session.get("bb_session_id") or "")
+            if not user or not session_id:
+                return jsonify({"error": "Authentication required"}), 401
+            start_gate = threading.Event()
+            try:
+                task = chat_tasks.start(
+                    current_app._get_current_object(),
+                    user["id"],
+                    session_id,
+                    agent,
+                    full_message,
+                    ui_state,
+                    on_finish=finalize_chat_task,
+                    start_gate=start_gate,
+                )
+            except RuntimeError as exc:
+                return jsonify({
+                    "error": str(exc),
+                    "code": "chat_task_running",
+                }), 409
 
-            def generate():
-                agent.memory.set_ui_state(ui_state)
-                completed = False
+            try:
+                checkpoint_operation(
+                    agent,
+                    "running",
+                    "Chat response is in progress",
+                    checkpoint={
+                        "kind": "chat",
+                        "task_id": task.task_id,
+                        "user_message": message[:500],
+                    },
+                )
+            finally:
+                # Release the worker only after the running checkpoint has
+                # been written, preventing a fast Q&A turn from overwriting
+                # its final ready checkpoint with a late running state.
+                start_gate.set()
+
+            def generate_task(task_to_stream: ChatTask, after_seq: int = 0):
+                # The task metadata is deliberately sent before the Agent's
+                # own start event so the browser can detach/reconnect without
+                # ever guessing which case owns the stream.
+                yield (
+                    "event: task_meta\ndata: "
+                    + json.dumps(task_to_stream.public_state())
+                    + "\n\n"
+                ).encode("utf-8")
                 try:
-                    for event in agent.chat_with_stream(full_message):
-                        yield event.encode("utf-8") if isinstance(event, str) else event
-                    completed = True
+                    for event in task_to_stream.iter_events(after_seq):
+                        yield event.encode("utf-8")
                 except GeneratorExit:
-                    setattr(agent, "_cancel_requested", True)
-                    logger.warning("SSE client disconnected (GeneratorExit)")
-                except Exception as e:
-                    logger.error(f"Chat stream failed: {e}")
-                    import json
-                    yield f"event: error\ndata: {json.dumps({'error': str(e)})}\n\n".encode("utf-8")
-                finally:
-                    checkpoint_operation(
-                        agent,
-                        "ready" if completed else "interrupted",
-                        "Chat response completed" if completed else "Chat response was interrupted",
-                        checkpoint={"kind": "chat"},
-                    )
+                    # Disconnecting a browser is not a user cancellation. The
+                    # background worker and its event journal continue, and a
+                    # later case selection can subscribe again.
+                    logger.info("Chat SSE detached for task %s; task continues", task_to_stream.task_id)
+                    raise
 
             resp = Response(
-                stream_with_context(generate()),
+                stream_with_context(generate_task(task)),
                 mimetype='text/event-stream',
                 headers={
                     'Cache-Control': 'no-cache',
@@ -2472,6 +2596,60 @@ def register_planning_routes(app, get_agent):
                 checkpoint_operation(agent, "interrupted", "Chat response failed", checkpoint={"kind": "chat"})
                 logger.error(f"Chat failed: {e}")
                 return jsonify({"error": str(e)}), 500
+
+    @app.route("/api/chat/task", methods=["GET"])
+    @require_api_key
+    @rate_limit
+    def api_chat_task():
+        """Return the latest in-process task for the selected case."""
+        store = current_app.extensions.get("brachybot_workspace_store")
+        user = current_user(store) if store is not None else None
+        session_id = str(flask_session.get("bb_session_id") or "")
+        if not user or not session_id:
+            return jsonify({"error": "Authentication required"}), 401
+        task = chat_tasks.active(user["id"], session_id) or chat_tasks.latest(user["id"], session_id)
+        return jsonify({"task": task.public_state() if task is not None else None})
+
+    @app.route("/api/chat/tasks/<task_id>/stream", methods=["GET"])
+    @require_api_key
+    @rate_limit
+    def api_chat_task_stream(task_id: str):
+        """Replay/follow one selected-case task after a case switch."""
+        store = current_app.extensions.get("brachybot_workspace_store")
+        user = current_user(store) if store is not None else None
+        session_id = str(flask_session.get("bb_session_id") or "")
+        if not user or not session_id:
+            return jsonify({"error": "Authentication required"}), 401
+        task = chat_tasks.get(task_id, user["id"], session_id)
+        if task is None:
+            return jsonify({"error": "Chat task not found for the selected case"}), 404
+        try:
+            after_seq = max(0, int(request.args.get("after_seq", "0")))
+        except ValueError:
+            after_seq = 0
+
+        def generate():
+            yield (
+                "event: task_meta\ndata: "
+                + json.dumps(task.public_state())
+                + "\n\n"
+            ).encode("utf-8")
+            try:
+                for event in task.iter_events(after_seq):
+                    yield event.encode("utf-8")
+            except GeneratorExit:
+                logger.info("Chat task %s replay stream detached; task continues", task.task_id)
+                raise
+
+        return Response(
+            stream_with_context(generate()),
+            mimetype="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "X-Accel-Buffering": "no",
+                "Connection": "keep-alive",
+            },
+        )
 
     @app.route("/api/tasks/stream")
     @require_api_key
