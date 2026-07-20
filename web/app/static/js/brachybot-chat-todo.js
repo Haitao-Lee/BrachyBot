@@ -30,6 +30,11 @@ function _todoLabelForStep(step) {
     // Pick labels from the explicit workstation language preference.
     const i18n = _todoI18n();
     if (step.type === 'tool' && step.tool) {
+        // Keep the internal evidence phase readable even when an older
+        // localized dictionary does not yet contain the tool name.
+        if (step.tool === 'fact_checker') {
+            return _activeTodoLang === 'zh' ? 'Source verification' : 'Source verification';
+        }
         return i18n.tools[step.tool] || (i18n.call_prefix + step.tool);
     }
     if (step.type === 'thinking') {
@@ -1061,8 +1066,10 @@ async function sendChat(prefill, options) {
         const decoder = new TextDecoder();
         let buffer = '';
         let currentEvent = null;
-
-        while (true) {
+        // `done` is the server's terminal SSE event.  The old reader handled
+        // its side effects but continued waiting for another chunk, so a
+        // successful planning turn later looked like a timeout/error.
+        readLoop: while (true) {
             const { done, value } = await readChatChunk(reader, CHAT_IDLE_TIMEOUT_MS, () => {
                 try { turnAbortController.abort(); } catch (_) {}
             });
@@ -1408,6 +1415,10 @@ async function sendChat(prefill, options) {
                                 window._planningRefreshScheduled = false;
                             }, 500);
                         }
+                        // Do not wait for a post-terminal chunk.  Flask may
+                        // keep the HTTP connection reusable, but the chat
+                        // turn is complete at this protocol boundary.
+                        break readLoop;
                     }
                 }
             }

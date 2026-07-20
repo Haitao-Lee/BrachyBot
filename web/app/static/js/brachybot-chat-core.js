@@ -2160,6 +2160,7 @@ const _TODO_I18N = {
             web_fetch: 'Web fetch',
             ui_screenshot: 'Screenshot',
             ui_controller: 'UI control',
+            fact_checker: 'Source verification',
             ui_annotate: 'Image annotation',
             shell_executor: 'Shell command',
             env_manager: 'Environment management',

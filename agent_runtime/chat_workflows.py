@@ -811,10 +811,29 @@ class ChatWorkflowMixin:
                             tc['tool'], dict(tc['params'])
                         )
                         step["status"] = "done"
-                        # Inject FactChecker feedback for search tools
+                        # Fact checking may perform additional model work.  It
+                        # is therefore a first-class trace phase rather than
+                        # hidden work after the search tool is marked done.
                         _fmt = self._format_tool_result(tc['tool'], result, lang=_lang)
                         if tc['tool'] in ("web_search", "web_fetch", "web_access") and result.success:
-                            _fmt = self._check_search_reliability(tc['tool'], _fmt)
+                            step_id[0] += 1
+                            _fact_step = add_step(
+                                "tool",
+                                "Source Verification",
+                                "Checking search claims and source reliability...",
+                                status="pending",
+                                tool="fact_checker",
+                            )
+                            yield yield_event("step", _fact_step)
+                            try:
+                                _fmt = self._check_search_reliability(tc['tool'], _fmt)
+                                _fact_step["status"] = "done"
+                                _fact_step["content"] = "Source reliability checked"
+                            except Exception as _fact_exc:
+                                logger.debug("Fact-check phase failed: %s", _fact_exc)
+                                _fact_step["status"] = "error"
+                                _fact_step["content"] = f"Source check unavailable: {str(_fact_exc)[:80]}"
+                            yield yield_event("step", _fact_step)
                         step["result"] = _fmt
                         step["metadata"] = result.metadata if result.success else {}
                         yield yield_event("step", step)

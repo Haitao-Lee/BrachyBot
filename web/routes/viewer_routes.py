@@ -1123,7 +1123,8 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
                 except (TypeError, ValueError):
                     return default
             seed_geometry = {
-                "length": _positive_geometry_value("length", 3.7),
+                # Keep the fallback aligned with config/default_params.json.
+                "length": _positive_geometry_value("length", 4.5),
                 "radius": _positive_geometry_value("radius", 0.4),
             }
             verified_needle_geometry = agent.memory.retrieve("verified_needle_geometry") or {}

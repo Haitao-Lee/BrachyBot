@@ -1603,6 +1603,112 @@ def register_planning_routes(app, get_agent):
                 response["rejected_needle_ids"] = getattr(e, "rejected_needle_ids", [])
             return jsonify(response), 422 if error_code == "manual_needle_intersects_obstacle" else 500
 
+    @app.route("/api/manual_planning/update_geometry", methods=["POST"])
+    @require_api_key
+    @rate_limit
+    def api_manual_planning_update_geometry():
+        """Persist moved needle geometry without recomputing dose.
+
+        A drag is not implicit consent to launch the expensive dose engine.
+        This endpoint updates only world-coordinate needle geometry and the
+        matching manual snapshot, while reusing the Data Tree obstacle gate.
+        """
+        data = request.get_json(silent=True) or {}
+        session_id = request_ui_session_id(data)
+        agent = get_agent(session_id)
+        if agent is None:
+            return jsonify({"success": False, "error": "Agent not available"}), 500
+
+        raw_needles = data.get("needles") or []
+        if not isinstance(raw_needles, list) or not raw_needles:
+            return jsonify({"success": False, "error": "needles must be a non-empty list"}), 400
+
+        normalized_needles = []
+        try:
+            for index, needle in enumerate(raw_needles):
+                if not isinstance(needle, dict):
+                    raise ValueError(f"Invalid needle at index {index}")
+                points = needle.get("points")
+                if not isinstance(points, list) or len(points) < 2:
+                    raise ValueError(f"Needle {needle.get('id') or index} needs two endpoints")
+                endpoints = []
+                for point in (points[0], points[-1]):
+                    values = np.asarray(point, dtype=np.float64).reshape(-1)[:3]
+                    if values.size != 3 or not np.all(np.isfinite(values)):
+                        raise ValueError(f"Invalid endpoint for needle {needle.get('id') or index}")
+                    endpoints.append(values.tolist())
+                normalized_needles.append({
+                    "id": str(needle.get("id") or f"needle_{index}"),
+                    "points": endpoints,
+                    "trajectory_id": needle.get("trajectory_id"),
+                })
+
+            memory = agent.memory
+            ct_image = memory.retrieve("ct_image")
+            if ct_image is None:
+                raise ValueError("No CT image loaded")
+            ctv_mask = None
+            for key in ("ctv_mask", "ctv_array", "ctv_full_labels"):
+                candidate = memory.retrieve(key)
+                if candidate is not None:
+                    ctv_mask = candidate
+                    break
+            oar_mask = None
+            for key in ("oar_array", "oar_label_data"):
+                candidate = memory.retrieve(key)
+                if candidate is not None:
+                    oar_mask = candidate
+                    break
+            _server_support._validate_manual_needle_safety(
+                agent, normalized_needles, ct_image, ctv_mask, oar_mask
+            )
+
+            current = _current_planning_snapshot(agent)
+            current_seeds = list(current.get("seeds") or [])
+            # Keep seeds and geometry coherent for later explicit replanning,
+            # restore, reload, and session switching.
+            memory.store("manual_seeds", current_seeds)
+            memory.store("manual_needles", normalized_needles)
+            memory.store("manual_geometry_only", True)
+            reason = str(data.get("reason") or "needle_position_only")
+            event = _append_ui_event(session_id, {
+                "type": "manual.needle.position_only",
+                "label": reason,
+                "detail": {
+                    "needle_count": len(normalized_needles),
+                    "dose_recomputed": False,
+                },
+            })
+            checkpoint_operation(
+                agent,
+                "ready",
+                "Needle geometry updated without dose recomputation",
+                checkpoint={
+                    "kind": "manual_planning",
+                    "reason": reason,
+                    "needle_count": len(normalized_needles),
+                    "dose_recomputed": False,
+                },
+            )
+            return jsonify({
+                "success": True,
+                "needles": normalized_needles,
+                "seeds": current_seeds,
+                "dose_recomputed": False,
+                "event": event,
+            })
+        except _server_support.ManualNeedleSafetyError as exc:
+            logger.warning("Position-only needle update rejected: %s", exc)
+            return jsonify({
+                "success": False,
+                "error": str(exc),
+                "code": exc.code,
+                "rejected_needle_ids": exc.rejected_needle_ids,
+            }), 422
+        except Exception as exc:
+            logger.exception("Position-only needle update failed")
+            return jsonify({"success": False, "error": str(exc)}), 422
+
     @app.route("/api/manual_planning/restore_needle", methods=["POST"])
     @require_api_key
     @rate_limit

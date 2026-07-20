@@ -2248,10 +2248,38 @@ class LLMRuntimeMixin:
                                 f"Downstream planning may fail with 'No CT image available'."
                             )
 
-                # Inject FactChecker feedback for search tools
+                # Inject FactChecker feedback for search tools.  Fact checking
+                # can itself perform an LLM call and therefore must be visible
+                # as a real pending phase.  Previously the search step was
+                # emitted as done before this synchronous work started, which
+                # left the UI at N/N with no active step while the response was
+                # still being prepared.
                 _fc_text = result_text
+                _fact_step = None
                 if tool_name in ("web_search", "web_fetch", "web_access"):
-                    _fc_text = self._check_search_reliability(tool_name, result_text)
+                    step_id_ref[0] += 1
+                    _fact_step = {
+                        "id": step_id_ref[0],
+                        "type": "tool",
+                        "title": "Source Verification",
+                        "tool": "fact_checker",
+                        "content": "Checking search claims and source reliability...",
+                        "status": "pending",
+                    }
+                    steps.append(_fact_step)
+                    yield yield_event("step", _fact_step)
+                    try:
+                        _fc_text = self._check_search_reliability(tool_name, result_text)
+                        _fact_step["status"] = "done"
+                        _fact_step["content"] = "Source reliability checked"
+                    except Exception as _fact_exc:
+                        # Reliability checking is advisory.  Preserve the
+                        # searched evidence and make the phase terminal rather
+                        # than leaving a misleading spinner in the trace.
+                        logger.debug("Fact-check phase failed: %s", _fact_exc)
+                        _fact_step["status"] = "error"
+                        _fact_step["content"] = f"Source check unavailable: {str(_fact_exc)[:80]}"
+                    yield yield_event("step", _fact_step)
 
                 # Append tool call and result to messages in Anthropic-compatible format
                 tool_id = tc.get("id", f"tool_{step_id_ref[0]}")
