@@ -1275,7 +1275,15 @@ function _resolveOARDisplayName(name, metric = {}) {
             );
             if (match && match.label && !/^(oar|organ|label)[_\s-]?\d+$/i.test(match.label)) return match.label;
         }
-        return `Organ ${labelId}`;
+        // Do not turn an unknown numeric label into a plausible anatomical
+        // name. The label id is useful for debugging, but its anatomy must
+        // come from model metadata or the Data Tree. Keep this explicit and
+        // localizable so an unmapped structure cannot be mistaken for a real
+        // clinical organ in the report.
+        const lang = String(window._i18nLang || (window.reportForm && window.reportForm.language) || 'en').toLowerCase();
+        return lang.startsWith('zh')
+            ? `未映射结构（标签 ${labelId}）`
+            : `Unmapped structure (label ${labelId})`;
     }
 
     return String(name || '');

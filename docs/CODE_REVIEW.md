@@ -6468,6 +6468,9 @@ still present.
   references.
 - The clinical KB raw record was corrected to the consensus article's real
   authors, journal, year, pages, PMID, DOI, and DOI landing page.
+- Unknown numeric OAR labels are no longer presented as anatomical names such
+  as `Organ 10000`; they are rendered as an explicit localized unmapped
+  structure while preserving the numeric label for traceability.
 
 ### Verification
 

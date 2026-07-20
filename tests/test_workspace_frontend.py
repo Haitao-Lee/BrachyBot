@@ -210,6 +210,11 @@ def test_report_language_is_single_locale_and_references_have_real_metadata():
     assert "https://pubmed.ncbi.nlm.nih.gov/39206973/" in planning
     assert "https://doi.org/10.4103/jcrt.JCRT_96_18" in planning
     assert "https://doi.org/10.3748/wjg.v24.i46.5280" in planning
+    assert "PANCREAS_GUIDELINE_2024: {" in planning
+    assert "PANCREAS_CONSENSUS_2018: {" in planning
+    assert "PANCREAS_TEMPLATE_2018: {" in planning
+    assert "Unmapped structure (label ${labelId})" in planning
+    assert "未映射结构（标签 ${labelId}）" in planning
     assert "Clinical knowledge-base reference" in context
 
 
