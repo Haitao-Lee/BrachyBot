@@ -59,6 +59,8 @@ def test_new_case_creation_avoids_empty_workspace_hydration_and_redundant_round_
     assert "applyLeaseResult" in new_case
     assert "function applyLeaseResult" in auth
     assert '"lease": lease' in sessions
+    assert "sessions[createdSession.id] = sessionStateFromPayload(createdSession)" in new_case
+    assert new_case.index("sessions[createdSession.id]") < new_case.index("renderSessionList()")
 
 
 def test_session_switch_waits_for_server_chat_abort_acknowledgement():
