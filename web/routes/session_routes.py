@@ -70,19 +70,42 @@ def register_session_routes(
         if error:
             return error
         data = request.get_json(silent=True) or {}
+        previous_session_id = str(session.get("bb_session_id") or "")
+        editor_token = str(
+            request.headers.get("X-BrachyBot-Editor")
+            or data.get("editor_token")
+            or ""
+        )
         try:
             entry = store.create_session(user["id"], str(data.get("title") or "New case"))
+            # The browser persists the previous case before calling this
+            # endpoint. Transfer this browser's lease as part of creation so
+            # the UI does not need a serial release request followed by a
+            # second acquire request. A different browser's lease is never
+            # touched because release_lease matches the owner token.
+            if previous_session_id and editor_token:
+                store.release_lease(user["id"], previous_session_id, editor_token)
         except WorkspaceError as exc:
             return jsonify({"error": str(exc)}), 400
         session["bb_session_id"] = entry.id
         # A new case has an empty, cheap snapshot. Return it directly so the
         # browser can paint the new workspace without constructing a GPU agent.
         snapshot = store.load_snapshot(user["id"], entry.id)
+        lease = None
+        if editor_token:
+            try:
+                lease = store.acquire_lease(user["id"], entry.id, editor_token, 75)
+            except WorkspaceError:
+                # A brand-new case should be available to the creator. Keep
+                # the response successful even if the optional lease transfer
+                # cannot be recorded; the normal lease refresh will recover.
+                lease = {"editable": False}
         return jsonify({
             "success": True,
             "session": session_payload(entry),
             "active_session_id": entry.id,
             "workspace": snapshot,
+            "lease": lease,
         }), 201
 
     @app.route("/api/sessions/<session_id>", methods=["PATCH"])
