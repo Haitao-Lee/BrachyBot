@@ -86,6 +86,14 @@ def test_workspace_ownership_trash_and_lease_boundaries(tmp_path):
     except WorkspaceLeaseConflict:
         pass
     store.assert_editable(first["id"], case.id, "a" * 20)
+    takeover = store.acquire_lease(first["id"], case.id, "b" * 20, force=True)
+    assert takeover["editable"] is True
+    assert takeover["taken_over"] is True
+    try:
+        store.assert_editable(first["id"], case.id, "a" * 20)
+        assert False, "the previous editor must lose write ownership after takeover"
+    except WorkspaceLeaseConflict:
+        pass
 
     store.move_to_trash(first["id"], case.id)
     assert store.get_session(first["id"], case.id, include_trashed=True).status == "trashed"

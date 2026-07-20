@@ -831,7 +831,20 @@ class WorkspaceStore:
             except WorkspaceError:
                 continue
 
-    def acquire_lease(self, user_id: str, session_id: str, owner_token: str, ttl_seconds: int = 75) -> Dict[str, Any]:
+    def acquire_lease(
+        self,
+        user_id: str,
+        session_id: str,
+        owner_token: str,
+        ttl_seconds: int = 75,
+        force: bool = False,
+    ) -> Dict[str, Any]:
+        """Acquire a case edit lease, optionally transferring it explicitly.
+
+        ``force`` is only exposed through the authenticated takeover action.
+        Normal heartbeat/acquire calls must continue rejecting a live owner so
+        two browsers cannot silently overwrite a clinical workspace.
+        """
         self.get_session(user_id, session_id)
         token = str(owner_token or "").strip()
         if len(token) < 16:
@@ -841,7 +854,8 @@ class WorkspaceStore:
         with self._connection() as connection:
             connection.execute("BEGIN IMMEDIATE")
             row = connection.execute("SELECT * FROM workspace_leases WHERE session_id = ?", (session_id,)).fetchone()
-            if row and float(row["expires_at"]) > now and row["owner_token"] != token:
+            replaced_owner = bool(row and float(row["expires_at"]) > now and row["owner_token"] != token)
+            if replaced_owner and not force:
                 connection.execute("ROLLBACK")
                 raise WorkspaceLeaseConflict("This case is being edited in another browser")
             connection.execute(
@@ -850,7 +864,10 @@ class WorkspaceStore:
                 (session_id, token, expiry, now),
             )
             connection.execute("COMMIT")
-        return {"editable": True, "expires_at": expiry}
+        if replaced_owner and force:
+            # Never record editor tokens in the audit trail.
+            self._audit(user_id, session_id, "workspace.lease_taken_over", {})
+        return {"editable": True, "expires_at": expiry, "taken_over": replaced_owner and force}
 
     def release_lease(self, user_id: str, session_id: str, owner_token: str) -> None:
         self.get_session(user_id, session_id)
