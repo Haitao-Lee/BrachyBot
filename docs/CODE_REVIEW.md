@@ -6170,5 +6170,7 @@ coordinate-chain defect.
   `brachybot-auth.js`.
 - Python byte-compilation passes for `session_routes.py` and `server.py`.
 - Full Flask integration tests were not runnable in the local Windows
-  environment because the available Python environments lack `flask_cors`;
-  the remote SSH host was unavailable during this verification attempt.
+  environment because the available Python environments lack `flask_cors`.
+  The remote `brachytherapy` environment passed the focused suite after
+  synchronization: `38 passed, 3 warnings`; remote Python byte-compilation
+  also passed and the worktree was clean at the published commit.

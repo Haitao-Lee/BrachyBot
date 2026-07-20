@@ -235,6 +235,34 @@ def test_case_selection_returns_snapshot_without_blocking_on_agent_hydration(tmp
     assert app.extensions["test_agent_calls"] == []
 
 
+def test_new_case_creation_transfers_the_current_browser_lease(tmp_path):
+    """Creating an empty case should not require a second lease round trip."""
+    app = _app(tmp_path)
+    client = app.test_client()
+    auth = _register(client, "fast_create_user")
+    editor_token = "create-browser-editor-token"
+    csrf = auth["csrf_token"]
+
+    acquired = client.post(
+        "/api/workspace/lease",
+        json={"editor_token": editor_token},
+        headers={"X-CSRF-Token": csrf, "X-BrachyBot-Editor": editor_token},
+    )
+    assert acquired.status_code == 200
+    assert acquired.get_json()["editable"] is True
+
+    created = client.post(
+        "/api/sessions",
+        json={"title": "Fast empty case"},
+        headers={"X-CSRF-Token": csrf, "X-BrachyBot-Editor": editor_token},
+    )
+    assert created.status_code == 201
+    payload = created.get_json()
+    assert payload["lease"]["editable"] is True
+    assert payload["active_session_id"] == payload["session"]["id"]
+    assert app.extensions["test_agent_calls"] == []
+
+
 def test_transient_task_feed_filters_by_workspace_owner():
     tasks = TaskManager()
     first = tasks.create_task("planning", "First case", workspace_owner="user-a:case-a")
