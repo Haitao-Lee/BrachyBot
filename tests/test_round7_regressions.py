@@ -72,6 +72,46 @@ def test_reference_direction_mode_is_explicit_and_auto_wins_stale_vectors():
     assert "resolve_reference_direction_input(" in routes
 
 
+def test_planning_pipeline_reads_live_ui_direction_before_provider_vector():
+    from tool_factory.seed_plan.planning_pipeline import _ui_reference_direction_input
+
+    class Memory:
+        def __init__(self, state):
+            self.state = state
+
+        def get_ui_state(self):
+            return self.state
+
+    class Agent:
+        def __init__(self, state):
+            self.memory = Memory(state)
+
+    assert _ui_reference_direction_input(Agent({
+        "planning": {
+            "ref_direc_auto": True,
+            "reference_direc": [0, -1, 0],
+            "reference_direc_mode": "auto",
+        }
+    })) == "auto"
+    assert _ui_reference_direction_input(Agent({
+        "planning": {
+            "ref_direc_auto": False,
+            "reference_direc": [0, -1, 0],
+            "reference_direc_mode": "manual",
+        }
+    })) == [0.0, -1.0, 0.0]
+    assert _ui_reference_direction_input(Agent({})) is None
+
+
+def test_reference_direction_schema_accepts_auto_and_numeric_vectors():
+    source = (ROOT / "tool_factory/seed_plan/planning_pipeline.py").read_text(encoding="utf-8")
+    assert '"oneOf": [' in source
+    assert '"enum": ["auto", "auto_detect"]' in source
+    assert "_reference_direction_user_override" in source
+    ui_api = (ROOT / "web/app/static/js/brachybot-ui-api.js").read_text(encoding="utf-8")
+    assert "referenceDirectionSyncBound" in ui_api
+
+
 def test_viewer_and_data_tree_regressions_are_explicitly_covered():
     index = (ROOT / "web/app/index.html").read_text(encoding="utf-8")
     ui_api = (ROOT / "web/app/static/js/brachybot-ui-api.js").read_text(encoding="utf-8")

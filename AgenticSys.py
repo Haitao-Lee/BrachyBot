@@ -1060,6 +1060,7 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
 
             if replan_requested:
                 planning_params["ref_direc"] = self._reversed_reference_direction()
+                planning_params["_reference_direction_user_override"] = True
             ordered.append(ensure_call("planning_pipeline", planning_params))
 
         if ordered:

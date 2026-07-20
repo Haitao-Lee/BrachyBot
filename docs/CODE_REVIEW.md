@@ -6086,3 +6086,44 @@ indicator visible forever. This was a genuine frontend liveness defect.
 - Targeted runtime/workspace/regression suite: `128 passed`.
 - Python byte-compilation passes for changed runtime, CTV tool, and route
   modules; Node syntax checks pass for the changed manual and UI API scripts.
+
+## Round 60: live UI auto-reference direction is authoritative (2026-07-20)
+
+### Confirmed finding
+
+The reported symptom was a real precedence defect. The browser correctly
+serialized `reference_direc_mode="auto"` and `ref_direc_auto=true`, but a
+provider-generated planning tool call could still carry the stale numeric
+vector from the form. The unified pipeline accepted that explicit tool
+argument before consulting the live UI state. Workflow-enforcer and
+auto-recovery paths could also read the session-wide `agent.config` vector,
+so a checked Auto control was not guaranteed to survive every planning entry
+point. The supplied execution log did not print the resolved direction, so
+the log alone cannot prove which vector was used; the code path independently
+confirms the precedence bug.
+
+### Corrective changes
+
+- Added `_ui_reference_direction_input()` as the pipeline boundary helper.
+  An explicit live UI Auto/Auto-detect mode now resolves to geometric
+  auto-detection, while explicit Manual mode resolves to the current numeric
+  UI vector. If no UI mode exists, legacy direct-tool/config fallback remains
+  available.
+- The resolved UI mode is copied into an invocation-local configuration so
+  trajectory auto-recovery cannot silently restore a stale session config.
+- Added an internal, non-schema user-override marker for the explicit
+  reverse-direction replan command, preserving that intentional command
+  without allowing ordinary stale LLM arguments to override the checkbox.
+- Corrected the planning tool schema to accept either a validated 3-vector or
+  the supported `auto`/`auto_detect` string values.
+- Added immediate browser-side state synchronization for the four reference
+  direction controls, preventing a just-changed checkbox from racing a chat
+  request before the next general UI checkpoint.
+- Added regression tests for live UI precedence, manual vectors, absent UI
+  state, schema support, and the synchronization hook.
+
+### Verification
+
+- Targeted regression suite: `16 passed, 3 warnings`.
+- Python byte-compilation passes for `planning_pipeline.py` and `AgenticSys.py`.
+- Node syntax check passes for `brachybot-ui-api.js`.

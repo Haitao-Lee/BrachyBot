@@ -1411,6 +1411,18 @@ async function init() {
     if (typeof loadSessionChat === 'function' && activeSessionId) loadSessionChat(activeSessionId);
     syncUIBridgeState('init').catch(e => console.warn('Initial UI state sync failed:', e));
 
+    // Persist reference-direction changes immediately. Chat requests may
+    // start before the next general UI checkpoint, leaving a stale manual
+    // vector beside a newly checked Auto box on the server.
+    ['refDirecAuto', 'refDirecX', 'refDirecY', 'refDirecZ'].forEach(id => {
+        const control = document.getElementById(id);
+        if (!control || control.dataset.referenceDirectionSyncBound === '1') return;
+        control.dataset.referenceDirectionSyncBound = '1';
+        control.addEventListener('change', () => {
+            syncUIBridgeState(`planning.${id}`).catch(() => {});
+        });
+    });
+
     // New workspaces open with 3D on top and all orthogonal 2D viewers below.
     // A persisted user choice is intentionally retained across session restores.
     setViewerLayout(state.viewerSettings.layout || '3d-top');
