@@ -445,17 +445,21 @@
         return Promise.resolve(false);
     }
 
+    function sessionStateFromPayload(entry) {
+        return {
+            id: entry.id,
+            title: entry.title,
+            created: Math.round(Number(entry.created_at || Date.now() / 1000) * 1000),
+            updated: Math.round(Number(entry.updated_at || Date.now() / 1000) * 1000),
+            messages: [],
+            recoveryStatus: entry.recovery_status,
+        };
+    }
+
     function sessionMapFromPayload(data) {
         const next = {};
         (data.sessions || []).forEach(entry => {
-            next[entry.id] = {
-                id: entry.id,
-                title: entry.title,
-                created: Math.round(Number(entry.created_at || Date.now() / 1000) * 1000),
-                updated: Math.round(Number(entry.updated_at || Date.now() / 1000) * 1000),
-                messages: [],
-                recoveryStatus: entry.recovery_status,
-            };
+            next[entry.id] = sessionStateFromPayload(entry);
         });
         return next;
     }
@@ -528,7 +532,14 @@
             const data = await response.json();
             if (!response.ok) throw new Error(data.error || 'Unable to create case');
             if (typeof clearClientWorkspace === 'function') clearClientWorkspace({ clearReport: true });
-            activeSessionId = data.active_session_id || data.session?.id || activeSessionId;
+            const createdSession = data.session;
+            if (createdSession?.id) {
+                // The create endpoint returns the authoritative session entry.
+                // Upsert it before rendering so the sidebar reacts immediately
+                // without a second list request or a delayed chat checkpoint.
+                sessions[createdSession.id] = sessionStateFromPayload(createdSession);
+            }
+            activeSessionId = data.active_session_id || createdSession?.id || activeSessionId;
             revision = data.workspace?.session?.revision ?? null;
             window._activeWorkspaceSnapshot = data.workspace || null;
             renderSessionList();

@@ -6245,3 +6245,31 @@ Taking over while another browser is actively editing can discard unsaved
 client-side UI changes from that browser. The action is therefore explicit and
 visible; it does not happen automatically on login. Persisted server
 checkpoints remain authoritative and are not deleted by takeover.
+
+## Round 64: render newly created cases immediately (2026-07-20)
+
+### Confirmed finding
+
+The reported delayed sidebar update was a real frontend state synchronization
+bug. `POST /api/sessions` returned the new case successfully, but
+`newChat()` only changed `activeSessionId` and then called `renderSessionList()`.
+The new server entry had never been inserted into the browser's `sessions` map,
+so the renderer continued to receive the old list until a later request or
+chat action refreshed it.
+
+### Corrective changes
+
+- Added a shared `sessionStateFromPayload()` normalizer for server session
+  entries.
+- Immediately upsert the authoritative `data.session` returned by creation
+  into the client session map before rendering the sidebar.
+- Kept the no-extra-list-request optimization and empty-workspace fast path;
+  this fixes the visible latency without reintroducing agent hydration.
+- Added a regression assertion that the upsert occurs before
+  `renderSessionList()`.
+
+### Verification
+
+- Local `node --check` passes for `brachybot-workspace.js`.
+- `git diff --check` passes.
+- The focused workspace/auth/store suite is rerun remotely after this change.
