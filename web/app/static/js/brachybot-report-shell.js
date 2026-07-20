@@ -382,18 +382,41 @@ window.Report = (function () {
             }
             _setByPath(f, key, value);
             sources.set(key, source);
-            if (key === 'planning.prescriptionRationale' && value && Array.isArray(value.sources)) {
+            if (key === 'planning.prescriptionRationale' && value && (Array.isArray(value.source_records) || Array.isArray(value.sources))) {
                 if (!Array.isArray(f.references)) f.references = [];
-                value.sources.forEach((sourceItem, index) => {
+                // Prefer the KB's verified source records. The legacy `sources`
+                // array contains URLs only; using it without metadata caused
+                // the fake "Clinical criterion source" labels in old reports.
+                const sourceItems = Array.isArray(value.source_records) && value.source_records.length
+                    ? value.source_records
+                    : value.sources;
+                const verifiedPlaceholder = ref => ref && (
+                    ref.publisher === 'Verified clinical source'
+                    || /^Clinical criterion source(?:\s|\()/i.test(String(ref.title || ''))
+                );
+                sourceItems.forEach((sourceItem, index) => {
                     const url = typeof sourceItem === 'string' ? sourceItem : sourceItem?.url;
                     const title = typeof sourceItem === 'string' ? '' : sourceItem?.title;
+                    const publisher = typeof sourceItem === 'string' ? '' : sourceItem?.publisher;
+                    const year = typeof sourceItem === 'string' ? '' : sourceItem?.year;
                     if (typeof url !== 'string' || !/^https?:\/\//i.test(url)) return;
-                    if (f.references.some(ref => ref && ref.url === url)) return;
+                    const existing = f.references.find(ref => ref && ref.url === url);
+                    if (existing) {
+                        if (verifiedPlaceholder(existing) && title) {
+                            Object.assign(existing, { title, publisher: publisher || existing.publisher, year: year || existing.year, custom: false });
+                        }
+                        return;
+                    }
+                    // Remove stale generated placeholders when the KB source URL
+                    // was corrected (for example, an old invalid PubMed URL was
+                    // replaced by the verified DOI landing page).
+                    f.references = f.references.filter(ref => !verifiedPlaceholder(ref));
+                    if (!title) return;
                     f.references.push({
                         citeKey: `clinical-kb-${value.site || 'case'}-${index + 1}`,
-                        title: title || `Clinical criterion source (${value.site || 'case'})`,
-                        publisher: 'Verified clinical source',
-                        year: '',
+                        title,
+                        publisher: publisher || 'Clinical knowledge base',
+                        year: year || '',
                         url,
                         custom: false,
                     });

@@ -6384,3 +6384,94 @@ accepted geometry as its seed-reprojection baseline.
   no-dose behavior, and frontend invocation.
 - Focused backend tests pass (`56 passed, 3 warnings`); Python compilation,
   JavaScript syntax checks, and `git diff --check` also pass.
+
+## Round 68: canonical 2D needle/seed projection (2026-07-20)
+
+### Confirmed finding
+
+The 2D overlay used the two returned needle endpoints directly and assumed
+that `points[0]` was always the deep endpoint and `points[1]` was always the
+outside entry endpoint. It also used only those two endpoints to decide the
+visible slice range. This was fragile for legacy/manual geometry and for
+plans where the validated needle endpoint was rounded or extended slightly
+away from the final seed. The result could be a needle that stopped before a
+visible seed, or disappeared on the next slice while the seed contour was
+still present.
+
+### Corrective changes
+
+- Added one canonical `_needleSliceSegment` projection helper in
+  `brachybot-manual-annotation.js`.
+- Associated seeds and needles by normalized trajectory identity before
+  projection, so a needle is resolved against the particles it carries.
+- The helper converts both needle endpoints and associated seed positions
+  through the existing world-to-index and MPR orientation chain. It infers
+  the outside endpoint from the seed cluster instead of relying on endpoint
+  order.
+- If a final seed is within the validated needle line but falls just beyond
+  an endpoint because of resampling/rounding, the display segment is extended
+  only along that same line. No lateral correction or coordinate convention
+  change is introduced.
+- Slice clipping now handles half-voxel boundary tolerance and needles that
+  run parallel to a slice plane. The visible segment remains strictly
+  outside-entry to-current-slice, with no endpoint cross marker; the actual
+  cylindrical seed contour remains the target-side annotation.
+- The 3D geometry and backend safety validator are unchanged. This patch only
+  fixes the 2D projection of already validated patient-world geometry.
+
+### Verification
+
+- `node --check` passes for the annotation, volume viewer, and manual 3D
+  scripts.
+- A focused runtime geometry check passed for reversed endpoint order,
+  endpoint truncation before the final seed, and the expected outer-to-slice
+  segment.
+- Remote focused tests pass: `18 passed, 3 warnings` for the projection,
+  workflow, and needle-safety regression subset.
+
+## Round 69: single-locale reports and verified pancreatic references (2026-07-20)
+
+### Confirmed findings
+
+- The report auto-fill path localized the server interpretation, but the
+  browser report renderer still appended English secondary headings and English
+  report metadata while the global locale was Chinese.
+- The pancreatic report template used a generic ASCO journal landing page and
+  generated clinical-reference records with placeholder labels such as
+  `Clinical criterion source (pancreatic)` and `Verified clinical source`.
+  Those labels were not bibliographic records and were not acceptable report
+  citations.
+- The older CSTRO/CSCO knowledge-base record pointed to a generic society
+  homepage and had placeholder publication metadata, even though the actual
+  peer-reviewed consensus article is identifiable by PMID/DOI.
+
+### Corrective changes
+
+- Chinese report output is now a single locale: English secondary headings are
+  suppressed, the report subtitle/confidentiality/technique labels are Chinese,
+  and the byline is localized. Technical identifiers such as CTV, OAR, DVH,
+  Gy, and model/checkpoint names remain unchanged because they are scientific
+  notation rather than untranslated UI prose.
+- Prescription rationale source records now carry verified title, publisher,
+  year, and URL metadata. Legacy placeholder records are upgraded or removed
+  when a real KB record arrives; a URL-only legacy source is not turned into a
+  fabricated title.
+- The pancreatic template now uses three site-specific publications:
+  `Guidelines for permanent iodine-125 seed interstitial brachytherapy for
+  pancreatic cancer (2023 edition): The Chinese expert consensus workshop
+  report` (PubMed 39206973), `Chinese expert consensus on radioactive 125I
+  seeds interstitial implantation brachytherapy for pancreatic cancer` (DOI
+  10.4103/jcrt.JCRT_96_18), and `Preliminary application of 3D-printed
+  coplanar template for iodine-125 seed implantation therapy in patients with
+  advanced pancreatic cancer` (DOI 10.3748/wjg.v24.i46.5280). Generic
+  oncology landing pages are no longer default pancreatic brachytherapy
+  references.
+- The clinical KB raw record was corrected to the consensus article's real
+  authors, journal, year, pages, PMID, DOI, and DOI landing page.
+
+### Verification
+
+- Added a regression contract for single-locale report rendering, real source
+  URLs, source metadata propagation, and removal of placeholder generation.
+- `node --check` is required for all changed report scripts; Python compilation
+  is required for the report context and server; `git diff --check` must pass.

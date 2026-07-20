@@ -173,24 +173,33 @@ function _autoFillInterpretation() {
     const d90 = m.d90 || null;
     const score = m.plan_score;
     const oarMetrics = m.oar_metrics || {};
+    const zh = f.language === 'zh';
     const lines = [];
 
-    lines.push('**Planning metric interpretation**');
+    lines.push(zh ? '**剂量学评估与临床解读**' : '**Planning metric interpretation**');
     lines.push('');
-    lines.push('This section summarizes observed planning metrics only. Clinical pass/fail decisions must use source-backed thresholds from applicable site-specific guidance or the confirmed case protocol.');
+    lines.push(zh
+        ? '本节仅报告观测到的计划指标。临床通过/不通过结论必须引用适用的部位特异性指南，或使用已确认的病例方案限值。'
+        : 'This section summarizes observed planning metrics only. Clinical pass/fail decisions must use source-backed thresholds from applicable site-specific guidance or the confirmed case protocol.');
     lines.push('');
 
     if (v100 !== null) {
-        lines.push(`- CTV V100: ${v100.toFixed(1)}%. This is an observed coverage metric, not a local-template pass/fail verdict.`);
+        lines.push(zh
+            ? `- CTV V100：${v100.toFixed(1)}%。这是观测到的覆盖指标，不是本地模板的通过/不通过结论。`
+            : `- CTV V100: ${v100.toFixed(1)}%. This is an observed coverage metric, not a local-template pass/fail verdict.`);
     }
     if (d90 !== null) {
         const rxGy = typeof _getCurrentPrescriptionGy === 'function'
             ? _getCurrentPrescriptionGy()
             : 120;
-        lines.push(`- CTV D90: ${d90.toFixed(2)} Gy; current report prescription is ${rxGy.toFixed(0)} Gy. Interpret the threshold from the cited source.`);
+        lines.push(zh
+            ? `- CTV D90：${d90.toFixed(2)} Gy；当前报告处方剂量为 ${rxGy.toFixed(0)} Gy。阈值应依据引用来源判读。`
+            : `- CTV D90: ${d90.toFixed(2)} Gy; current report prescription is ${rxGy.toFixed(0)} Gy. Interpret the threshold from the cited source.`);
     }
     if (score !== undefined) {
-        lines.push(`- Plan score: ${Number(score).toFixed(0)}/100. This score is for ranking and QA triage, not clinical approval.`);
+        lines.push(zh
+            ? `- 计划评分：${Number(score).toFixed(0)}/100。该分数仅用于排序和质量复核，不代表临床批准。`
+            : `- Plan score: ${Number(score).toFixed(0)}/100. This score is for ranking and QA triage, not clinical approval.`);
     }
     lines.push('');
 
@@ -199,24 +208,34 @@ function _autoFillInterpretation() {
         .sort((a, b) => ((b[1].d2cc || b[1].dmax || b[1].max_dose || 0) - (a[1].d2cc || a[1].dmax || a[1].max_dose || 0)))
         .slice(0, 5);
     if (sortedOars.length > 0) {
-        lines.push('**Organ-at-risk dose summary** (highest available OAR metrics):');
+        lines.push(zh ? '**危及器官剂量摘要**（按可用指标最高者列出）：' : '**Organ-at-risk dose summary** (highest available OAR metrics):');
         for (const [rawName, om] of sortedOars) {
             const name = _resolveOARDisplayName(rawName, om);
             const d2cc = om.d2cc || 0;
             const dmax = om.dmax || om.max_dose || 0;
-            lines.push(`- **${name}**: D2cc = ${d2cc.toFixed(2)} Gy, Dmax = ${dmax.toFixed(2)} Gy; interpret with site-specific OAR limits.`);
+            lines.push(zh
+                ? `- **${name}**：D2cc = ${d2cc.toFixed(2)} Gy，Dmax = ${dmax.toFixed(2)} Gy；请结合部位特异性 OAR 限值判读。`
+                : `- **${name}**: D2cc = ${d2cc.toFixed(2)} Gy, Dmax = ${dmax.toFixed(2)} Gy; interpret with site-specific OAR limits.`);
         }
         lines.push('');
     }
 
-    lines.push('**Recommended next steps**:');
-    lines.push('- Verify prescription dose, V100/D90/V150/V200 criteria, and OAR limits against applicable site-specific guidance; include real links in report references.');
-    lines.push('- Radiation oncologist and physicist review should combine sourced thresholds, image registration, trajectory feasibility, and independent dose verification.');
+    lines.push(zh ? '**建议的下一步**：' : '**Recommended next steps**:');
+    lines.push(zh
+        ? '- 依据适用的部位特异性指南复核处方剂量、V100/D90/V150/V200 指标和 OAR 限值，并在报告参考文献中保留真实链接。'
+        : '- Verify prescription dose, V100/D90/V150/V200 criteria, and OAR limits against applicable site-specific guidance; include real links in report references.');
+    lines.push(zh
+        ? '- 放射肿瘤科医师和医学物理师应结合来源支持的阈值、图像配准、针道可行性和独立剂量复核共同审核。'
+        : '- Radiation oncologist and physicist review should combine sourced thresholds, image registration, trajectory feasibility, and independent dose verification.');
     lines.push('');
-    lines.push('_This is an auto-generated metric summary from BrachyBot; it does not replace a signed clinical treatment plan._');
+    lines.push(zh
+        ? '_本段由 BrachyBot 自动生成，不替代已签署的临床治疗计划。_'
+        : '_This is an auto-generated metric summary from BrachyBot; it does not replace a signed clinical treatment plan._');
 
     f.interpretation = lines.join('\n');
-    f.safety = '**Safety & Quality Control**\n\n- Seed activity and source strength require physicist verification.\n- Pre/post-treatment dose verification should use an independent method.\n- OAR limits and target coverage thresholds must come from applicable site-specific guidance or confirmed case-protocol settings, not local report defaults.\n- Informed consent and final sign-off follow institutional workflow.';
+    f.safety = zh
+        ? '**安全与质量控制**\n\n- 复核粒子活度和源强。\n- 治疗前后使用独立方法进行剂量复核。\n- OAR 限值和靶区覆盖阈值必须来自适用的部位特异性指南或已确认的病例方案，不使用本地报告默认值。\n- 知情同意和最终签署应遵循所在机构流程。'
+        : '**Safety & Quality Control**\n\n- Seed activity and source strength require physicist verification.\n- Pre/post-treatment dose verification should use an independent method.\n- OAR limits and target coverage thresholds must come from applicable site-specific guidance or confirmed case-protocol settings, not local report defaults.\n- Informed consent and final sign-off follow institutional workflow.';
 }
 
 // ----- 13. Reset -----
@@ -496,9 +515,10 @@ function _updateReportPreview() {
     const reportTotalPages = 4;
     const pageFooter = (pageNo) =>
         `<div class="hp-page-footer"><span class="pageno">— ${escHtml(s.page)} ${pageNo} ${escHtml(s.pageOf)} ${reportTotalPages} —</span></div>`;
-    const secondaryTitle = (label) => f.language === 'zh'
-        ? `<span class="hp-section-title-en">${escHtml(label)}</span>`
-        : '';
+    // A report has one language at a time. English secondary headings used to
+    // be appended to every Chinese heading, which made the exported report
+    // look partially translated even after the global language switch.
+    const secondaryTitle = () => '';
 
     // ============== PAGE 1: Letterhead + Patient ID + Imaging + Case ==============
     // BUG FIX 2026-06-17 (header redesign): the user requested a
@@ -511,8 +531,8 @@ function _updateReportPreview() {
     // BUG FIX 2026-06-17 (real logos): SJTU and Ruijin logos are
     // the real high-res PNGs in _assets/sjtu-real.png and
     // _assets/ruijin-real.png.
-    const bylineLine1 = 'Powered by BrachyBot';
-    const bylineLine2 = 'Developed by SJTU && Ruijin Hospital';
+    const bylineLine1 = f.language === 'zh' ? 'BrachyBot 智能近距离放疗规划' : 'Powered by BrachyBot';
+    const bylineLine2 = f.language === 'zh' ? '上海交通大学医学院附属瑞金医院联合开发' : 'Developed by SJTU && Ruijin Hospital';
     const githubUrl = 'https://github.com/Haitao-Lee/BrachyBot.git';
     let p1 = `
         <div class="report-page">

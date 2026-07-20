@@ -941,6 +941,85 @@ function _seedCylinderSliceOutline(seed, axis, sliceIndex, orientIdx, toDisplay,
     return lower.slice(0, -1).concat(upper.slice(0, -1));
 }
 
+function _overlayTrajectoryKey(value) {
+    if (value === null || value === undefined || value === '') return 'unassigned';
+    const text = String(value);
+    return /^\d+$/.test(text) ? `traj_${Number(text) + 1}` : text;
+}
+
+function _needleSliceSegment(needle, associatedSeeds, axisIdx, sliceIndex, orientIdx, toDisplay) {
+    const points = needle?.points;
+    if (!Array.isArray(points) || points.length < 2) return null;
+    const pointA = _worldToIndex(Number(points[0]?.[0]), Number(points[0]?.[1]), Number(points[0]?.[2]));
+    const pointB = _worldToIndex(Number(points[points.length - 1]?.[0]), Number(points[points.length - 1]?.[1]), Number(points[points.length - 1]?.[2]));
+    if (!pointA || !pointB) return null;
+
+    // The server preserves the algorithmic world line, but legacy plans and
+    // manually edited plans do not guarantee endpoint ordering. Determine the
+    // outside endpoint from the associated seed cluster instead of assuming
+    // that points[1] is always the entry point.
+    const orientedA = orientIdx(pointA);
+    const orientedB = orientIdx(pointB);
+    let outer = orientedB.slice();
+    let target = orientedA.slice();
+    const finiteSeeds = (associatedSeeds || []).map(seed => {
+        const pos = seed?.position || seed?.pos;
+        if (!Array.isArray(pos) || pos.length < 3) return null;
+        const raw = _worldToIndex(Number(pos[0]), Number(pos[1]), Number(pos[2]));
+        return raw ? orientIdx(raw) : null;
+    }).filter(Boolean);
+    if (finiteSeeds.length) {
+        const centroid = [0, 1, 2].map(axis => finiteSeeds.reduce((sum, p) => sum + p[axis], 0) / finiteSeeds.length);
+        const dist2 = point => point.reduce((sum, value, axis) => sum + Math.pow(value - centroid[axis], 2), 0);
+        const pointAIsOuter = dist2(orientedA) > dist2(orientedB);
+        outer = (pointAIsOuter ? orientedA : orientedB).slice();
+        target = (pointAIsOuter ? orientedB : orientedA).slice();
+    }
+
+    let line = target.map((value, axis) => value - outer[axis]);
+    let lineNorm2 = line.reduce((sum, value) => sum + value * value, 0);
+    if (!Number.isFinite(lineNorm2) || lineNorm2 < 1e-8) return null;
+
+    // A candidate trajectory can end a few planning-grid voxels beyond or
+    // before the final seed. Extend only along the same validated physical
+    // line, and only when a seed is close to that line. This keeps the 2D
+    // projection faithful to the 3D needle while eliminating one-slice gaps
+    // caused by endpoint rounding/resampling.
+    if (finiteSeeds.length) {
+        let minParam = 0;
+        let maxParam = 1;
+        finiteSeeds.forEach(seedPoint => {
+            const delta = seedPoint.map((value, axis) => value - outer[axis]);
+            const param = delta.reduce((sum, value, axis) => sum + value * line[axis], 0) / lineNorm2;
+            const residual2 = delta.reduce((sum, value, axis) => sum + Math.pow(value - param * line[axis], 2), 0);
+            if (Number.isFinite(param) && Number.isFinite(residual2) && residual2 <= 9.0) {
+                minParam = Math.min(minParam, param);
+                maxParam = Math.max(maxParam, param);
+            }
+        });
+        if (minParam < 0 || maxParam > 1) {
+            outer = outer.map((value, axis) => value + line[axis] * minParam);
+            target = outer.map((value, axis) => value + line[axis] * (maxParam - minParam));
+            line = target.map((value, axis) => value - outer[axis]);
+            lineNorm2 = line.reduce((sum, value) => sum + value * value, 0);
+        }
+    }
+
+    const outerSlice = outer[axisIdx];
+    const targetSlice = target[axisIdx];
+    const sliceTolerance = 0.5;
+    if (Math.abs(targetSlice - outerSlice) < 1e-6) {
+        if (Math.abs(sliceIndex - outerSlice) > sliceTolerance) return null;
+        return { start: toDisplay(outer), end: toDisplay(target) };
+    }
+    const low = Math.min(outerSlice, targetSlice) - sliceTolerance;
+    const high = Math.max(outerSlice, targetSlice) + sliceTolerance;
+    if (sliceIndex < low || sliceIndex > high) return null;
+    const t = Math.max(0, Math.min(1, (sliceIndex - outerSlice) / (targetSlice - outerSlice)));
+    const hit = outer.map((value, axis) => value + t * line[axis]);
+    return { start: toDisplay(outer), end: toDisplay(hit) };
+}
+
 // Product overlay: finite needle projection + true seed-cylinder contour.
 // This is the canonical seed/needle overlay implementation.
 function renderSeedsOverlay(axis, sliceIndex) {
@@ -981,36 +1060,35 @@ function renderSeedsOverlay(axis, sliceIndex) {
         y: (axis === 'axial' ? idx[dimB] : _volumeZToDisplayY(idx[dimB], geom.resampleRatio)) * scaleY,
     });
 
+    const seeds = state.seedsOverlay.seeds || [];
+    const seedsByTrajectory = new Map();
+    seeds.forEach(seed => {
+        const key = _overlayTrajectoryKey(seed?.trajectory_id);
+        if (!seedsByTrajectory.has(key)) seedsByTrajectory.set(key, []);
+        seedsByTrajectory.get(key).push(seed);
+    });
+
     const needles = state.seedsOverlay.needles || [];
     for (const needle of needles) {
         const needleState = dataTreeState.planning.needles.find(n => n.id === needle.id);
         if (needleState && needleState.visible === false) continue;
         const needleOpacity = needleState?.opacity ?? needle.opacity ?? 0.8;
         if (needleOpacity <= 0.001) continue;
-        const pts = needle.points;
-        if (!pts || pts.length < 2) continue;
-        const idx0_raw = _worldToIndex(pts[0][0], pts[0][1], pts[0][2]);
-        const lastPt = pts[pts.length - 1];
-        const idx1_raw = _worldToIndex(lastPt[0], lastPt[1], lastPt[2]);
-        if (!idx0_raw || !idx1_raw) continue;
-        const idx0 = orientIdx(idx0_raw);
-        const idx1 = orientIdx(idx1_raw);
-        const s0 = idx0[axisIdx];
-        const s1 = idx1[axisIdx];
-        const sMin = Math.min(s0, s1);
-        const sMax = Math.max(s0, s1);
-        if (sliceIndex < sMin || sliceIndex > sMax) continue;
-
-        const p0 = toDisplay(idx0);
-        const p1 = toDisplay(idx1);
-        // Needle geometry is stored as target/internal first and entry/outer
-        // second.  The 2D view intentionally shows only the physical segment
-        // from the outer entry to the current slice plane; the full needle is
-        // still preserved in world coordinates for 3D editing and replanning.
-        const t = Math.abs(s1 - s0) < 1e-6 ? 0.5 : Math.max(0, Math.min(1, (sliceIndex - s0) / (s1 - s0)));
-        const hit = { x: p0.x + t * (p1.x - p0.x), y: p0.y + t * (p1.y - p0.y) };
-        const segmentStart = p1;
-        const segmentEnd = hit;
+        const trajectoryKey = _overlayTrajectoryKey(needle?.trajectory_id);
+        const segment = _needleSliceSegment(
+            needle,
+            seedsByTrajectory.get(trajectoryKey) || [],
+            axisIdx,
+            sliceIndex,
+            orientIdx,
+            toDisplay,
+        );
+        if (!segment) continue;
+        // Only the outer-to-slice portion is shown. The endpoint at the
+        // current plane is deliberately not marked with a cross; the seed
+        // cylinder contour is the sole target-side annotation.
+        const segmentStart = segment.start;
+        const segmentEnd = segment.end;
         const lineLen = Math.hypot(segmentEnd.x - segmentStart.x, segmentEnd.y - segmentStart.y);
         const needleRgb = _hexToRgbArray(needleState?.color || needle.color || '#ff2266', [255, 34, 102]);
         const grad = ctx.createLinearGradient(segmentStart.x, segmentStart.y, segmentEnd.x, segmentEnd.y);
@@ -1037,7 +1115,6 @@ function renderSeedsOverlay(axis, sliceIndex) {
         }
     }
 
-    const seeds = state.seedsOverlay.seeds || [];
     for (const seed of seeds) {
         const seedState = dataTreeState.planning.seeds.find(s => s.id === seed.id);
         if (seedState && seedState.visible === false) continue;
