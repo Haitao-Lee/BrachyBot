@@ -59,8 +59,10 @@ def test_review_feedback_stays_internal_and_needle_overlay_is_entry_clipped():
     assert "review_feedback = []" in workflows
     assert 'self.memory.store("last_review_feedback", review_feedback)' in workflows
     assert "response += \"\\n\\n---\\n\"" not in workflows
-    assert "const segmentStart = p1" in overlay
-    assert "const segmentEnd = hit" in overlay
+    assert "function _needleSliceSegment" in overlay
+    assert "seedsByTrajectory" in overlay
+    assert "const segmentStart = segment.start" in overlay
+    assert "const segmentEnd = segment.end" in overlay
     assert "ctx.arc(hit.x" not in overlay
 
 

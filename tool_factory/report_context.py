@@ -18,11 +18,28 @@ from plans.dose_pre.model_loader import DOSE_MODEL_SCALE_GY
 
 
 # Keep report links human-readable while retaining the original verified URL.
-# These titles correspond to the PubMed records used by the pancreatic KB.
-_VERIFIED_SOURCE_TITLES = {
-    "https://pubmed.ncbi.nlm.nih.gov/39206973": "Guidelines for permanent iodine-125 seed interstitial brachytherapy for pancreatic cancer (2023 edition): The Chinese expert consensus workshop report",
-    "https://pubmed.ncbi.nlm.nih.gov/30589023": "Chinese expert consensus on radioactive 125I seeds interstitial implantation brachytherapy for pancreatic cancer",
-    "https://pubmed.ncbi.nlm.nih.gov/30581276": "Preliminary application of 3D-printed coplanar template for iodine-125 seed implantation therapy in patients with advanced pancreatic cancer",
+# These records correspond to the primary publications used by the pancreatic KB.
+_VERIFIED_SOURCE_METADATA = {
+    "https://pubmed.ncbi.nlm.nih.gov/39206973": {
+        "title": "Guidelines for permanent iodine-125 seed interstitial brachytherapy for pancreatic cancer (2023 edition): The Chinese expert consensus workshop report",
+        "publisher": "Journal of Cancer Research and Therapeutics",
+        "year": 2024,
+    },
+    "https://pubmed.ncbi.nlm.nih.gov/30589023": {
+        "title": "Chinese expert consensus on radioactive 125I seeds interstitial implantation brachytherapy for pancreatic cancer",
+        "publisher": "Journal of Cancer Research and Therapeutics",
+        "year": 2018,
+    },
+    "https://doi.org/10.4103/jcrt.jcrt_96_18": {
+        "title": "Chinese expert consensus on radioactive 125I seeds interstitial implantation brachytherapy for pancreatic cancer",
+        "publisher": "Journal of Cancer Research and Therapeutics",
+        "year": 2018,
+    },
+    "https://pubmed.ncbi.nlm.nih.gov/30581276": {
+        "title": "Preliminary application of 3D-printed coplanar template for iodine-125 seed implantation therapy in patients with advanced pancreatic cancer",
+        "publisher": "World Journal of Gastroenterology",
+        "year": 2018,
+    },
 }
 
 
@@ -36,8 +53,18 @@ def _source_link_item(source: Any) -> Optional[Dict[str, str]]:
     if not url.startswith(("http://", "https://")):
         return None
     normalized = url.rstrip("/")
-    title = title or _VERIFIED_SOURCE_TITLES.get(normalized) or "Clinical knowledge-base reference"
-    return {"title": title, "url": url}
+    metadata = _VERIFIED_SOURCE_METADATA.get(normalized, {})
+    if not metadata and normalized.lower().startswith("https://doi.org/"):
+        # DOI URLs are case-insensitive; normalize only DOI lookup keys while
+        # preserving the original hyperlink shown in the report.
+        metadata = _VERIFIED_SOURCE_METADATA.get(normalized.lower(), {})
+    title = title or metadata.get("title") or "Clinical knowledge-base reference"
+    record = {"title": title, "url": url}
+    if metadata.get("publisher"):
+        record["publisher"] = metadata["publisher"]
+    if metadata.get("year"):
+        record["year"] = metadata["year"]
+    return record
 
 
 def _retrieve(memory: Any, key: str, default: Any = None) -> Any:

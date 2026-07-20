@@ -44,7 +44,12 @@ global.loadSessionChat = () => {{}};
 global.fetch = async (url, options = {{}}) => {{
   if (url === '/api/sessions' && options.method === 'POST') {{
     await createGate;
-    return {{ ok: true, json: async () => ({{ success: true }}) }};
+    return {{ ok: true, json: async () => ({{
+      success: true,
+      session: {{ id: 'new', title: 'New case', created_at: 2, updated_at: 2 }},
+      active_session_id: 'new',
+      workspace: {{ session: {{ revision: 1 }} }},
+    }}) }};
   }}
   if (url === '/api/sessions') {{
     return {{ ok: true, json: async () => ({{

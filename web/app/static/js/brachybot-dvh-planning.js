@@ -1590,6 +1590,27 @@ const REPORT_REFERENCES = {
         year: 2024,
         jurisdiction: 'INTL',
     },
+    PANCREAS_GUIDELINE_2024: {
+        title: 'Guidelines for permanent iodine-125 seed interstitial brachytherapy for pancreatic cancer (2023 edition): The Chinese expert consensus workshop report',
+        publisher: 'Journal of Cancer Research and Therapeutics',
+        url: 'https://pubmed.ncbi.nlm.nih.gov/39206973/',
+        year: 2024,
+        jurisdiction: 'CN',
+    },
+    PANCREAS_CONSENSUS_2018: {
+        title: 'Chinese expert consensus on radioactive 125I seeds interstitial implantation brachytherapy for pancreatic cancer',
+        publisher: 'Journal of Cancer Research and Therapeutics',
+        url: 'https://doi.org/10.4103/jcrt.JCRT_96_18',
+        year: 2018,
+        jurisdiction: 'CN',
+    },
+    PANCREAS_TEMPLATE_2018: {
+        title: 'Preliminary application of 3D-printed coplanar template for iodine-125 seed implantation therapy in patients with advanced pancreatic cancer',
+        publisher: 'World Journal of Gastroenterology',
+        url: 'https://doi.org/10.3748/wjg.v24.i46.5280',
+        year: 2018,
+        jurisdiction: 'CN',
+    },
     IAEA_HB: {
         title: 'IAEA Human Health Series No. 30 — Brachytherapy',
         publisher: 'International Atomic Energy Agency',
@@ -1612,6 +1633,9 @@ const REPORT_CITATIONS = {
     IAEA_SAFETY: 'IAEA SRS No. 60 — Radiation Protection and Safety in Medical Uses of Ionizing Radiation.',
     ESTRO_DVH: 'GEC-ESTRO recommendations on DVH parameters for plan comparison (2018).',
     NCCN_PANC: 'NCCN Guidelines for Pancreatic Adenocarcinoma, version 2.2024.',
+    PANCREAS_GUIDELINE_2024: 'Chinese expert consensus workshop report on permanent iodine-125 seed interstitial brachytherapy for pancreatic cancer (2024).',
+    PANCREAS_CONSENSUS_2018: 'Chinese expert consensus on radioactive 125I seeds interstitial implantation brachytherapy for pancreatic cancer (2018).',
+    PANCREAS_TEMPLATE_2018: 'Preliminary application of a 3D-printed coplanar template for pancreatic iodine-125 seed implantation (2018).',
 };
 
 // Build a single combined "References" list for the report appendix, in
@@ -1672,6 +1696,9 @@ function _buildReportReferenceList(usedKeys) {
 const REPORT_REFERENCES_CATALOG = {
     GYN_GUIDE:    { citeKey: 'GYN_GUIDE',    title: 'ABS Consensus Guidelines for interstitial HDR brachytherapy for gynecologic and other pelvic cancers (2020)', publisher: 'American Brachytherapy Society', url: 'https://www.americanbrachytherapy.org/guidelines', year: 2020, jurisdiction: 'INTL' },
     PANCREAS_TRIAL: { citeKey: 'PANCREAS_TRIAL', title: 'ASCO Guidelines 2024 — systemic therapy for metastatic pancreatic adenocarcinoma', publisher: 'American Society of Clinical Oncology', url: 'https://ascopubs.org/journal/jco', year: 2024, jurisdiction: 'INTL' },
+    PANCREAS_GUIDELINE_2024: { citeKey: 'PANCREAS_GUIDELINE_2024', title: 'Guidelines for permanent iodine-125 seed interstitial brachytherapy for pancreatic cancer (2023 edition): The Chinese expert consensus workshop report', publisher: 'Journal of Cancer Research and Therapeutics', url: 'https://pubmed.ncbi.nlm.nih.gov/39206973/', year: 2024, jurisdiction: 'CN' },
+    PANCREAS_CONSENSUS_2018: { citeKey: 'PANCREAS_CONSENSUS_2018', title: 'Chinese expert consensus on radioactive 125I seeds interstitial implantation brachytherapy for pancreatic cancer', publisher: 'Journal of Cancer Research and Therapeutics', url: 'https://doi.org/10.4103/jcrt.JCRT_96_18', year: 2018, jurisdiction: 'CN' },
+    PANCREAS_TEMPLATE_2018: { citeKey: 'PANCREAS_TEMPLATE_2018', title: 'Preliminary application of 3D-printed coplanar template for iodine-125 seed implantation therapy in patients with advanced pancreatic cancer', publisher: 'World Journal of Gastroenterology', url: 'https://doi.org/10.3748/wjg.v24.i46.5280', year: 2018, jurisdiction: 'INTL' },
     PROSTATE:     { citeKey: 'PROSTATE',     title: 'ABS Consensus Guideline on permanent prostate brachytherapy (2017)', publisher: 'American Brachytherapy Society', url: 'https://www.americanbrachytherapy.org/guidelines', year: 2017, jurisdiction: 'INTL' },
     HEAD_NECK:    { citeKey: 'HEAD_NECK',    title: 'ABS Head & Neck Brachytherapy Consensus Guidelines (2018)', publisher: 'American Brachytherapy Society', url: 'https://www.americanbrachytherapy.org/guidelines', year: 2018, jurisdiction: 'INTL' },
     ICRU_DOSE:    { citeKey: 'ICRU_DOSE',    title: 'ICRU Report 89 — Prescribing, Recording, and Reporting Brachytherapy', publisher: 'International Commission on Radiation Units & Measurements', url: 'https://www.icru.org/report/icru-report-89-prescribing-recording-and-reporting-brachytherapy-for-cancer-of-the-cervix/', year: 2016, jurisdiction: 'INTL' },
@@ -1693,7 +1720,7 @@ const REPORT_TEMPLATES = {
             zh: '胰腺放射性粒子植入计划。覆盖率和 OAR 指标应结合胰腺部位适用的临床指南或已确认的病例方案判读。',
             en: 'Pancreatic seed brachytherapy plan. Coverage and OAR metrics must be interpreted using applicable pancreatic guidance or confirmed case-protocol limits.',
         },
-        defaultReferences: ['NCCN_PANC', 'PANCREAS_TRIAL', 'GBZ_DOSE', 'ICRU_DOSE', 'AAPM_DOSE', 'ESTRO_DVH'],
+        defaultReferences: ['PANCREAS_GUIDELINE_2024', 'PANCREAS_CONSENSUS_2018', 'PANCREAS_TEMPLATE_2018', 'ICRU_DOSE', 'AAPM_DOSE'],
     },
     prostate: {
         i125: true,
@@ -1737,7 +1764,7 @@ const REPORT_TEMPLATES = {
 const REPORT_STRINGS = {
     zh: {
         reportTitle: '放射性粒子植入治疗计划报告',
-        reportSubtitle: 'Brachytherapy Treatment Plan Report',
+        reportSubtitle: '放射性粒子植入治疗计划报告',
         // BUG FIX 2026-06-17 (report header redesign): the previous
         // header showed "Brachybot / Brachybot / Brachytherapy
         // Planning Platform · AI-Assisted" — three lines of redundant
@@ -1752,7 +1779,7 @@ const REPORT_STRINGS = {
         editFormTab: '✏️ 编辑表单',
         previewTab: '📄 预览',
         viewHint: '点击 预览 标签查看 A4 多页文档',
-        confidentiality: '机密 · Confidential',
+        confidentiality: '机密',
         page: '第',
         pageOf: '页 / 共',
         pages: '页',
@@ -1835,15 +1862,15 @@ const REPORT_STRINGS = {
         trajUnitWord: '条',
         defaultGender: '男',
         defaultDepartment: '放射治疗科',
-        defaultTechniqueI125: '放射性粒子植入 (¹²⁵I Radioactive Seed Implantation)',
+        defaultTechniqueI125: '放射性粒子植入（¹²⁵I）',
         defaultTechniqueHDR: 'HDR 近距离治疗 (Ir-192)',
         planSectionTitle: '治疗计划',
         imagingSectionTitle: '影像学资料',
         caseSectionTitle: '病例摘要',
         oarSectionTitle: '危及器官剂量',
-        addButtonLabel: '+ Add / 添加',
-        figuresSectionTitle: '🖼️ Figures / 图片',
-        planScoreFormLabel: 'Plan score / 计划评分',
+        addButtonLabel: '+ 添加',
+        figuresSectionTitle: '🖼️ 图像',
+        planScoreFormLabel: '计划评分',
     },
     en: {
         reportTitle: 'Brachytherapy Treatment Plan Report',

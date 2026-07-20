@@ -91,6 +91,34 @@ function renderReportEditor() {
     const _reportLang = (typeof window._i18nLang === 'string') ? window._i18nLang : (f.language || 'en');
     const s = (typeof REPORT_STRINGS !== 'undefined') ? REPORT_STRINGS[_reportLang] : null;
     if (!s) return;
+    const editorLabels = _reportLang === 'zh' ? {
+        markdown: '（Markdown）',
+        qaNotes: '质保备注',
+        open: '打开',
+        addReference: '添加参考文献',
+        selectReference: '选择目录文献',
+        orAddCustom: '或手动添加',
+        citeKey: '引用键',
+        publisher: '出版方',
+        jurisdiction: '适用范围',
+        title: '标题',
+        year: '年份',
+        url: '链接',
+        add: '添加',
+        capture2d: '📷 截取 2D',
+        capture3d: '📷 截取 3D',
+        upload: '📁 上传',
+        observedCoverage: '观测到的 CTV 覆盖率；请结合引用的病例标准判读',
+        observedDose: '观测到的剂量；请结合有来源支持的处方剂量判读',
+    } : {
+        markdown: ' (Markdown)', qaNotes: 'QA Notes', open: 'Open',
+        addReference: 'Add Reference', selectReference: 'Select catalog reference',
+        orAddCustom: 'or add custom', citeKey: 'Cite key', publisher: 'Publisher',
+        jurisdiction: 'Jurisdiction', title: 'Title', year: 'Year', url: 'URL',
+        add: 'Add', capture2d: '📷 Capture 2D', capture3d: '📷 Capture 3D', upload: '📁 Upload',
+        observedCoverage: 'Observed CTV coverage; assess against cited case criteria',
+        observedDose: 'Observed dose; compare with the sourced prescription',
+    };
 
     let html = '';
     // Hospital info
@@ -162,8 +190,8 @@ function renderReportEditor() {
     // Metrics
     html += _formSection('📊 ' + s.section2, 'metrics', `
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
-            ${_formField({key:'metrics.v100', label:'V100', value:f.metrics.v100, type:'number', step:'0.01', suffix:'%', hint:'Observed CTV coverage; assess against cited case criteria'})}
-            ${_formField({key:'metrics.d90', label:'D90', value:f.metrics.d90, type:'number', step:'0.01', suffix:'Gy', hint:'Observed dose; compare with the sourced prescription'})}
+            ${_formField({key:'metrics.v100', label:'V100', value:f.metrics.v100, type:'number', step:'0.01', suffix:'%', hint:editorLabels.observedCoverage})}
+            ${_formField({key:'metrics.d90', label:'D90', value:f.metrics.d90, type:'number', step:'0.01', suffix:'Gy', hint:editorLabels.observedDose})}
         </div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
             ${_formField({key:'metrics.d95', label:'D95', value:f.metrics.d95, type:'number', step:'0.01', suffix:'Gy'})}
@@ -210,9 +238,9 @@ function renderReportEditor() {
     `);
     // Narrative
     html += _formSection('📝 ' + s.section5 + ' / ' + s.section6, 'narrative', `
-        ${_formField({key:'interpretation', label:s.section5 + ' (Markdown)', value:f.interpretation, type:'textarea', rows:5, section:'narrative'})}
+        ${_formField({key:'interpretation', label:s.section5 + editorLabels.markdown, value:f.interpretation, type:'textarea', rows:5, section:'narrative'})}
         ${_formField({key:'safety', label:s.section6, value:f.safety, type:'textarea', rows:3, section:'narrative'})}
-        ${_formField({key:'qaNotes', label:'QA Notes', value:f.qaNotes, type:'textarea', rows:2, section:'narrative'})}
+        ${_formField({key:'qaNotes', label:editorLabels.qaNotes, value:f.qaNotes, type:'textarea', rows:2, section:'narrative'})}
     `);
     // References
     const refList = (f.references || []).map((r, i) => `
@@ -220,32 +248,32 @@ function renderReportEditor() {
             <div class="rp-ref-body">
                 <div><b>[${escHtml(r.citeKey || `ref${i+1}`)}]</b> ${escHtml(r.title || '')}</div>
                 <div class="rp-ref-meta">${escHtml(r.publisher || '')}${r.year ? ', ' + r.year : ''}</div>
-                ${_safeReportUrl(r.url) ? `<a href="${escHtml(_safeReportUrl(r.url))}" target="_blank" rel="noopener noreferrer">↗ Open</a>` : ''}
+                ${_safeReportUrl(r.url) ? `<a href="${escHtml(_safeReportUrl(r.url))}" target="_blank" rel="noopener noreferrer">↗ ${editorLabels.open}</a>` : ''}
             </div>
             <button onclick="removeReportReference(${i})" class="btn btn-outline" style="height:22px;padding:0 6px;font-size:0.65rem;color:var(--danger);">✕</button>
         </div>`).join('');
     html += _formSection('📚 ' + s.section7 + ` (${(f.references || []).length})`, 'references', `
         <div>${refList || '<div class="rp-empty">—</div>'}</div>
         <details style="margin-top:6px;">
-            <summary style="font-size:0.7rem;color:var(--primary);cursor:pointer;font-weight:500;">+ Add Reference</summary>
+            <summary style="font-size:0.7rem;color:var(--primary);cursor:pointer;font-weight:500;">+ ${editorLabels.addReference}</summary>
             <div style="margin-top:6px;padding:8px;background:var(--primary-soft);border:1px solid var(--primary);border-radius:var(--radius-xs);">
                 <select onchange="if(this.value){addReportReferenceFromCatalog(this.value);this.value='';}" class="form-select" style="font-size:0.7rem;margin-bottom:5px;">
-                    <option value="">— Select catalog reference —</option>
+                    <option value="">— ${editorLabels.selectReference} —</option>
                     ${Object.values(REPORT_REFERENCES_CATALOG).map(r => `<option value="${escHtml(r.citeKey)}">[${escHtml(r.citeKey)}] ${escHtml(r.title.substring(0, 70))}…</option>`).join('')}
                 </select>
-                <div style="font-size:0.65rem;color:var(--text-dim);margin:4px 0;">— or add custom —</div>
+                <div style="font-size:0.65rem;color:var(--text-dim);margin:4px 0;">— ${editorLabels.orAddCustom} —</div>
                 <div style="display:grid;grid-template-columns:1fr 2fr;gap:6px;margin-bottom:5px;">
-                    <input id="refCiteKey" placeholder="Cite key" class="form-input" style="font-size:0.7rem;"/>
-                    <input id="refTitle" placeholder="Title" class="form-input" style="font-size:0.7rem;"/>
+                    <input id="refCiteKey" placeholder="${editorLabels.citeKey}" class="form-input" style="font-size:0.7rem;"/>
+                    <input id="refTitle" placeholder="${editorLabels.title}" class="form-input" style="font-size:0.7rem;"/>
                 </div>
                 <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-top:5px;">
-                    <input id="refPublisher" placeholder="Publisher" class="form-input" style="font-size:0.7rem;"/>
-                    <input id="refYear" placeholder="Year" type="number" class="form-input" style="font-size:0.7rem;"/>
-                    <input id="refJurisdiction" placeholder="Jurisdiction" class="form-input" style="font-size:0.7rem;"/>
+                    <input id="refPublisher" placeholder="${editorLabels.publisher}" class="form-input" style="font-size:0.7rem;"/>
+                    <input id="refYear" placeholder="${editorLabels.year}" type="number" class="form-input" style="font-size:0.7rem;"/>
+                    <input id="refJurisdiction" placeholder="${editorLabels.jurisdiction}" class="form-input" style="font-size:0.7rem;"/>
                 </div>
-                <input id="refUrl" placeholder="URL" class="form-input" style="font-size:0.7rem;margin-top:5px;"/>
+                <input id="refUrl" placeholder="${editorLabels.url}" class="form-input" style="font-size:0.7rem;margin-top:5px;"/>
                 <div class="rp-btn-row">
-                    <button onclick="addReportReferenceCustom()" class="btn btn-primary">Add</button>
+                    <button onclick="addReportReferenceCustom()" class="btn btn-primary">${editorLabels.add}</button>
                 </div>
             </div>
         </details>
@@ -269,10 +297,10 @@ function renderReportEditor() {
     html += _formSection((s.figuresSectionTitle || '🖼️ Figures') + ' (' + (f.figures || []).length + ')', 'figures', `
         <div>${figList || '<div class="rp-empty">—</div>'}</div>
         <div class="rp-btn-row">
-            <button class="btn btn-outline" onclick="captureReportFigure2D()">📷 Capture 2D</button>
-            <button class="btn btn-outline" onclick="captureReportFigure3D()">📷 Capture 3D</button>
+            <button class="btn btn-outline" onclick="captureReportFigure2D()">${editorLabels.capture2d}</button>
+            <button class="btn btn-outline" onclick="captureReportFigure3D()">${editorLabels.capture3d}</button>
             <label class="btn btn-outline" style="cursor:pointer;">
-                📁 Upload
+                ${editorLabels.upload}
                 <input type="file" accept="image/png,image/jpeg,image/webp" onchange="uploadReportFigure(event)" style="display:none;"/>
             </label>
         </div>

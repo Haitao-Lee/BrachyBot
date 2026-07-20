@@ -195,6 +195,24 @@ def test_dynamic_clinical_evaluation_uses_global_language_switch():
     assert "window.addEventListener('i18nchange'" in dvh
 
 
+def test_report_language_is_single_locale_and_references_have_real_metadata():
+    """A Chinese export must not append English headings or fake source labels."""
+    export = read("web/app/static/js/brachybot-report-export.js")
+    shell = read("web/app/static/js/brachybot-report-shell.js")
+    planning = read("web/app/static/js/brachybot-dvh-planning.js")
+    context = read("tool_factory/report_context.py")
+
+    assert "const secondaryTitle = () => '';" in export
+    assert "source_records" in shell
+    assert "Clinical criterion source (" not in shell
+    assert "publisher: 'Verified clinical source'" not in shell
+    assert "PANCREAS_GUIDELINE_2024" in planning
+    assert "https://pubmed.ncbi.nlm.nih.gov/39206973/" in planning
+    assert "https://doi.org/10.4103/jcrt.JCRT_96_18" in planning
+    assert "https://doi.org/10.3748/wjg.v24.i46.5280" in planning
+    assert "Clinical knowledge-base reference" in context
+
+
 def test_delayed_scene_restore_is_scoped_to_its_case_generation():
     """A late mesh/DVH callback from an old case must not repaint the new one."""
     workspace = read("web/app/static/js/brachybot-workspace.js")
