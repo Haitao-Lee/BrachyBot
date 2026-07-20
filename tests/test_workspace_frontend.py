@@ -154,6 +154,9 @@ def test_workspace_notices_are_explicitly_dismissible_without_changing_state():
     assert "typeof activeSessionId !== 'undefined'" in auth
     assert "banner.id = 'assetVersionNotice'" in ui_api
     assert "Dismiss outdated-page notice" in ui_api
+    assert 'id="workspaceLockTakeover"' in read("web/app/index.html")
+    assert "takeover: true" in auth
+    assert "function takeoverLease()" in auth
 
 
 def test_lease_release_does_not_depend_on_fetch_wrapper_side_effects():

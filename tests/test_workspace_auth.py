@@ -81,6 +81,38 @@ def test_session_trash_restore_and_cookie_logout(tmp_path):
     assert client.get("/api/sessions").status_code == 401
 
 
+def test_authenticated_editor_can_explicitly_take_over_a_locked_case(tmp_path):
+    app = _app(tmp_path)
+    client = app.test_client()
+    created = _register(client, "takeover_user")
+    csrf = created["csrf_token"]
+    first_token = "a" * 20
+    second_token = "b" * 20
+    headers = {"X-CSRF-Token": csrf}
+
+    first = client.post(
+        "/api/workspace/lease",
+        json={"editor_token": first_token},
+        headers={**headers, "X-BrachyBot-Editor": first_token},
+    )
+    assert first.status_code == 200
+
+    blocked = client.post(
+        "/api/workspace/lease",
+        json={"editor_token": second_token},
+        headers={**headers, "X-BrachyBot-Editor": second_token},
+    )
+    assert blocked.status_code == 409
+
+    takeover = client.post(
+        "/api/workspace/lease",
+        json={"editor_token": second_token, "takeover": True},
+        headers={**headers, "X-BrachyBot-Editor": second_token},
+    )
+    assert takeover.status_code == 200
+    assert takeover.get_json()["taken_over"] is True
+
+
 def test_session_rename_persists_for_the_authenticated_case(tmp_path):
     """A case rename must survive a fresh server-side session listing."""
     app = _app(tmp_path)

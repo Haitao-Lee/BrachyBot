@@ -6213,3 +6213,35 @@ already had an explicit dismiss button, so it did not need a second mechanism.
 - Focused Python tests are executed in the remote `brachytherapy` environment
   because the local Windows Python runtime is missing its standard-library
   `encodings` module.
+
+## Round 63: explicit case lease takeover (2026-07-20)
+
+### Confirmed finding
+
+The read-only conflict was a real product gap, not a false positive. The
+lease correctly prevented two browsers from silently overwriting the same
+clinical workspace, but the locked browser had no safe recovery action. A
+second login could therefore leave the first page unusable until the 75-second
+lease expired, and a crashed or forgotten browser could make the delay feel
+indefinite.
+
+### Corrective changes
+
+- Added an explicit `Take over editing` action to the read-only banner.
+- Added an atomic authenticated lease-transfer path using
+  `POST /api/workspace/lease` with `takeover: true`.
+- Normal lease acquisition and heartbeat behavior is unchanged: a live owner
+  still blocks ordinary acquisition.
+- Takeover is scoped to the authenticated user's current case and never
+  exposes or records editor tokens in the audit trail.
+- The previous browser is not silently treated as writable; its subsequent
+  heartbeat or mutation receives the normal lease conflict and becomes
+  read-only.
+- Added store, route, and frontend regression coverage.
+
+### Safety boundary
+
+Taking over while another browser is actively editing can discard unsaved
+client-side UI changes from that browser. The action is therefore explicit and
+visible; it does not happen automatically on login. Persisted server
+checkpoints remain authoritative and are not deleted by takeover.
