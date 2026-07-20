@@ -6273,3 +6273,114 @@ chat action refreshed it.
 - Local `node --check` passes for `brachybot-workspace.js`.
 - `git diff --check` passes.
 - The focused workspace/auth/store suite is rerun remotely after this change.
+
+## Round 65: expose hidden source-verification work (2026-07-20)
+
+### Confirmed finding
+
+The reported progress gap was a real orchestration/UI contract defect. After a
+`web_search`, `web_fetch`, or `web_access` step was marked `done`, the runtime
+could synchronously run claim extraction and the FactChecker. Claim extraction
+may call the configured LLM, and the FactChecker may run another asynchronous
+agent call. Neither phase had an Execution Trace event. During that interval
+the frontend could show every visible step as complete even though the answer
+was still being prepared.
+
+### Corrective changes
+
+- Added a `fact_checker` / `Source Verification` trace step with explicit
+  `pending` and terminal `done` or `error` states in the streaming LLM tool
+  loop.
+- Added the same phase to the direct-tool chat path so both execution modes
+  expose identical progress semantics.
+- Kept source verification advisory: a checker failure does not discard valid
+  search evidence or block the final answer, but it is now visible and
+  terminally accounted for.
+- Added a readable frontend label for the internal evidence phase and a
+  regression test covering both backend paths and the UI mapping.
+
+### UX contract
+
+The final response remains withheld until the post-tool synthesis and any
+required completeness/quality review finish. The trace is now allowed to show
+`N/(N+1)` with an active source-verification step instead of falsely showing
+`N/N` during hidden work.
+
+## Round 66: terminal SSE cleanup and needle-drag confirmation (2026-07-20)
+
+### Confirmed findings
+
+Two independent interaction defects were confirmed from the reported behavior:
+
+1. The chat stream handled the server's terminal `done` event but continued
+   reading the HTTP stream. Flask kept the connection reusable, so the browser
+   waited until the idle timeout and could report a false `Send failed` after a
+   successful answer.
+2. A 3D needle endpoint release immediately called the expensive AI dose update
+   path. A small accidental drag therefore changed geometry, reprojected seeds,
+   and queued repeated calculations without explicit user intent. The accepted
+   needle baseline was also initialized too late, after the first drag had
+   already mutated the Data Tree.
+
+### Corrective changes
+
+- The frontend exits the SSE reader immediately after processing the terminal
+  `done` event. Final response rendering and any requested screenshot upload
+  still run within the same logical turn after the reader exits.
+- Needle endpoint drag now updates the visible/Data Tree geometry first and
+  opens the existing in-app confirmation dialog with explicit `Replan` and
+  `Keep position` actions.
+- Choosing `Keep position` persists the geometry-only edit and never calls
+  `/api/manual_planning/update`.
+- Choosing `Replan` submits only the latest coalesced endpoint position and uses
+  the last accepted dose geometry as the seed-reprojection baseline. Repeated
+  drags while the dialog is open do not create repeated dialogs or requests.
+- The accepted algorithm geometry is captured when `seeds_3d` loads, before any
+  endpoint can be edited.
+- Manual 3D seed meshes now use the active plan's returned `seed_geometry`
+  instead of a conflicting hard-coded radius/length pair.
+- The default seed geometry is now consistent with `config/default_params.json`:
+  radius `0.4 mm` (diameter `0.8 mm`) and length `4.5 mm`; an explicitly stored
+  plan geometry still takes precedence.
+
+### Verification
+
+- `node --check` passes for the changed chat, manual-3D, UI API, and viewer
+  layout scripts.
+- `git diff --check` passes.
+- Added static regression coverage for terminal SSE handling, explicit needle
+  confirmation, baseline capture, and seed geometry reuse.
+- The remote `brachytherapy` environment passes the focused suite: `56 passed,
+  3 warnings`. Remote Python byte-compilation passes for the changed route and
+  runtime modules. Node syntax checks pass locally; the remote machine does not
+  provide the `node` executable.
+
+## Round 67: persist an explicit keep-position needle edit (2026-07-20)
+
+### Confirmed finding
+
+Choosing `Keep position` previously changed the browser scene but did not have
+an authoritative server operation for the geometry-only edit. A reload or case
+switch could therefore lose the position, and a later replan could use an old
+accepted geometry as its seed-reprojection baseline.
+
+### Corrective changes
+
+- Added `/api/manual_planning/update_geometry`, which normalizes patient-world
+  endpoints, reuses the current Data Tree non-traversable obstacle validator,
+  stores the coherent manual seed/needle snapshot, and creates a recoverable
+  workspace checkpoint.
+- The endpoint explicitly does not call the dose engine or modify dose/DVH
+  results; it reports `dose_recomputed: false` for the UI state machine.
+- The frontend now calls this endpoint after the user chooses `Keep position`.
+  The accepted returned geometry becomes the next drag/replan baseline, while
+  repeated drags continue to share one confirmation prompt.
+- Rejected geometry is not persisted. The existing error path restores the last
+  accepted safe geometry rather than silently retaining an unsafe edit.
+
+### Verification
+
+- Added a static regression contract for the endpoint, obstacle validation,
+  no-dose behavior, and frontend invocation.
+- Focused backend tests pass (`56 passed, 3 warnings`); Python compilation,
+  JavaScript syntax checks, and `git diff --check` also pass.

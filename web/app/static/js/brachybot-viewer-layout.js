@@ -1242,7 +1242,12 @@ function _makeSeedMesh(seed) {
     init3DScene();
     const pos = new THREE.Vector3(..._vec3Array(seed.position || seed.pos));
     const dir = new THREE.Vector3(..._normalizeArray3(seed.direction || [0, 0, 1]));
-    const geometry = new THREE.CylinderGeometry(0.8, 0.8, 4.5, 16);
+    // Use the geometry returned by the active plan so manual edits and
+    // automatic-plan reloads render the same physical seed dimensions.
+    const configured = state?.seedsOverlay?.geometry || {};
+    const radius = Math.max(0.05, Number(seed.radius || configured.radius || 0.4));
+    const length = Math.max(0.1, Number(seed.length || configured.length || 4.5));
+    const geometry = new THREE.CylinderGeometry(radius, radius, length, 16);
     const material = new THREE.MeshPhysicalMaterial({
         color: 0xe6e64d,
         metalness: 0.5,

@@ -73,6 +73,19 @@ function _restoreManualNeedles(snapshot) {
     if (scene3D.requestRender) scene3D.requestRender(3);
 }
 
+async function _confirmNeedleReplan(needleId) {
+    if (typeof _confirmAction !== 'function') return false;
+    return _confirmAction(
+        `Needle ${needleId} was moved. Replan with the new geometry?`,
+        `Needle ${needleId} was moved. Replan with the new geometry?`,
+        {
+            yesEn: 'Replan',
+            noEn: 'Keep position',
+            titleEn: 'Needle position changed',
+        },
+    );
+}
+
 function _manualPayload(options = {}) {
     _syncSeedsOverlayFromDataTree();
     const payload = {
@@ -97,6 +110,35 @@ function _manualPayload(options = {}) {
         );
     }
     return payload;
+}
+
+async function _persistNeedleGeometryOnly() {
+    const payload = _manualPayload();
+    const res = await fetch(API + '/manual_planning/update_geometry', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            session_id: payload.session_id,
+            needles: payload.needles,
+            reason: 'needle_position_only',
+        }),
+    });
+    const data = await res.json().catch(() => null);
+    if (!res.ok || !data || !data.success) {
+        const error = new Error((data && data.error) || `HTTP ${res.status}`);
+        error.code = data && data.code;
+        throw error;
+    }
+    // Keep the browser and workspace snapshots on the same world geometry.
+    const byId = new Map((data.needles || []).map((needle) => [String(needle.id), needle]));
+    for (const needle of dataTreeState?.planning?.needles || []) {
+        const saved = byId.get(String(needle.id));
+        if (saved) needle.points = saved.points.map((point) => _vec3Array(point));
+    }
+    _syncSeedsOverlayFromDataTree();
+    manualPlanningState.lastDoseNeedles = _cloneNeedleGeometry(data.needles);
+    if (typeof scheduleWorkspaceSave === 'function') scheduleWorkspaceSave('manual.needle.position_only');
+    return data;
 }
 
 function addManualNeedle() {
@@ -342,12 +384,34 @@ async function onManualNeedleHandleEdited(handle) {
     renderDataTree();
     reportUIEvent('manual.needle.drag', needleId, { point_index: pointIndex, points: needle.points });
     const hasSeeds = dataTreeState.planning.seeds.some(s => s.trajectory_id === needle.trajectory_id);
-    if (hasSeeds) {
+    if (!hasSeeds) return;
+
+    // Endpoint dragging is a geometry edit, not consent to launch a costly
+    // AI replan. Coalesce repeated drags while the prompt is open and use the
+    // latest live geometry if the user explicitly chooses Replan.
+    if (manualPlanningState.needleReplanPrompt) return manualPlanningState.needleReplanPrompt.promise;
+    const prompt = { previousNeedles, promise: null };
+    prompt.promise = (async () => {
+        const shouldReplan = await _confirmNeedleReplan(needleId);
+        if (manualPlanningState.needleReplanPrompt !== prompt) return false;
+        manualPlanningState.needleReplanPrompt = null;
+        if (!shouldReplan) {
+            await _persistNeedleGeometryOnly();
+            addChat('system', `Needle ${needleId} position kept. Replanning skipped.`);
+            return false;
+        }
         await recomputeManualDose('needle_drag', {
             reprojectSeeds: true,
-            previousNeedles,
+            previousNeedles: prompt.previousNeedles,
         });
-    }
+        return true;
+    })().catch(error => {
+        if (manualPlanningState.needleReplanPrompt === prompt) manualPlanningState.needleReplanPrompt = null;
+        addChat('error', `Needle replanning failed: ${error.message}`);
+        return false;
+    });
+    manualPlanningState.needleReplanPrompt = prompt;
+    return prompt.promise;
 }
 
 function _manualUiPosition(rawPosition) {
@@ -1454,7 +1518,7 @@ async function loadSeeds3D() {
         state.seedsOverlay = {
             seeds: data.seeds || [],
             needles: data.needles || [],
-            geometry: data.seed_geometry || { length: 3.7, radius: 0.4 },
+            geometry: data.seed_geometry || { length: 4.5, radius: 0.4 },
         };
 
         init3DScene();
@@ -1490,6 +1554,11 @@ async function loadSeeds3D() {
             color: '#ff2266',
         }));
 
+        // Capture the accepted automatic geometry before endpoint dragging
+        // mutates the live Data Tree. This is the reference used for seed
+        // reprojection when the user later confirms a replan.
+        manualPlanningState.lastDoseNeedles = _cloneNeedleGeometry(dataTreeState.planning.needles);
+
         state.seeds = dataTreeState.planning.seeds.map(seed => ({
             id: seed.id,
             pos: seed.position,
@@ -1512,7 +1581,7 @@ async function loadSeeds3D() {
         // seed cannot appear as a point in 2D while having different bounds
         // in the 3D viewer.
         const seedRadius = Math.max(0.05, Number(data.seed_geometry?.radius || 0.4));
-        const seedLength = Math.max(0.1, Number(data.seed_geometry?.length || 3.7));
+        const seedLength = Math.max(0.1, Number(data.seed_geometry?.length || 4.5));
         data.seeds.forEach(seed => {
             const pos = new THREE.Vector3(...seed.position);
             // direction may be [[x,y,z]] (nested) or [x,y,z] (flat) — flatten it

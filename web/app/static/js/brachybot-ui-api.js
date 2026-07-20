@@ -277,6 +277,9 @@ var manualPlanningState = {
     seedCounter: 0,
     needleCounter: 0,
     doseEngine: 'dose_unet_spacing1mm',
+    // Keep the last accepted geometry separate from the live drag preview.
+    lastDoseNeedles: [],
+    needleReplanPrompt: null,
 };
 
 function _activeApiSessionId() {
@@ -2029,9 +2032,15 @@ function setupMetricsResize() {
 // UI Controller action executor
 // ============================================================
 // Confirmation dialog for destructive operations (i18n-aware)
-function _confirmAction(msgZh, msgEn) {
+function _confirmAction(msgZh, msgEn, options = {}) {
     return new Promise(resolve => {
         const t = window._t || ((zh) => zh);
+        const yesZh = options.yesZh || '纭';
+        const yesEn = options.yesEn || 'Yes';
+        const noZh = options.noZh || '鍙栨秷';
+        const noEn = options.noEn || 'Cancel';
+        const titleZh = options.titleZh || '纭鎿嶄綔';
+        const titleEn = options.titleEn || 'Confirm';
         const overlay = document.createElement('div');
         overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:10000;display:flex;align-items:center;justify-content:center;';
         overlay.innerHTML = `
@@ -2045,6 +2054,21 @@ function _confirmAction(msgZh, msgEn) {
                 </div>
             </div>`;
         document.body.appendChild(overlay);
+        // Callers can reuse this dialog for non-destructive decisions such as
+        // confirming a replan after a geometry preview.
+        const titleNode = overlay.firstElementChild?.children?.[1];
+        if (titleNode && (options.titleZh || options.titleEn)) {
+            titleNode.textContent = t(titleZh, titleEn);
+        }
+        const yesButton = overlay.querySelector('#_confirmYes');
+        const noButton = overlay.querySelector('#_confirmNo');
+        if (yesButton && (options.yesZh || options.yesEn)) {
+            yesButton.textContent = t(yesZh, yesEn);
+            yesButton.style.background = 'var(--primary)';
+        }
+        if (noButton && (options.noZh || options.noEn)) {
+            noButton.textContent = t(noZh, noEn);
+        }
         overlay.querySelector('#_confirmYes').onclick = () => { overlay.remove(); resolve(true); };
         overlay.querySelector('#_confirmNo').onclick = () => { overlay.remove(); resolve(false); };
         overlay.onclick = (e) => { if (e.target === overlay) { overlay.remove(); resolve(false); } };

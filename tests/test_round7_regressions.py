@@ -49,6 +49,8 @@ def test_chat_renders_only_reviewed_response_event():
     assert "if (!finalResponseReceived)" in source
     assert "finalResponseReceived = true;" in source
     assert "const finalText = finalResponseReceived" in source
+    assert "readLoop: while (true)" in source
+    assert "break readLoop;" in source
 
 
 def test_review_feedback_stays_internal_and_needle_overlay_is_entry_clipped():
@@ -60,6 +62,20 @@ def test_review_feedback_stays_internal_and_needle_overlay_is_entry_clipped():
     assert "const segmentStart = p1" in overlay
     assert "const segmentEnd = hit" in overlay
     assert "ctx.arc(hit.x" not in overlay
+
+
+def test_search_fact_check_is_visible_as_a_pending_trace_phase():
+    """Search completion must not hide synchronous source verification work."""
+    runtime = (ROOT / "agent_runtime/llm_runtime.py").read_text(encoding="utf-8")
+    workflows = (ROOT / "agent_runtime/chat_workflows.py").read_text(encoding="utf-8")
+    ui = (ROOT / "web/app/static/js/brachybot-chat-todo.js").read_text(encoding="utf-8")
+
+    # Both streaming and direct-tool paths must expose the same internal
+    # phase; otherwise a search step can show N/N while its fact-check LLM is
+    # still running.
+    assert runtime.count('"tool": "fact_checker"') >= 1
+    assert workflows.count('tool="fact_checker"') >= 1
+    assert 'step.tool === \'fact_checker\'' in ui
 
 
 def test_reference_direction_mode_is_explicit_and_auto_wins_stale_vectors():
@@ -131,3 +147,35 @@ def test_viewer_and_data_tree_regressions_are_explicitly_covered():
     assert "const doseFraction" not in dvh
     assert "const cursorDose =" in dvh
     assert "_interpolateDvhAtDose(best.traceX, best.traceY, displayDose)" in dvh
+
+
+def test_needle_drag_requires_explicit_replan_confirmation():
+    manual = (ROOT / "web/app/static/js/brachybot-3d-manual.js").read_text(encoding="utf-8")
+    ui_api = (ROOT / "web/app/static/js/brachybot-ui-api.js").read_text(encoding="utf-8")
+    layout = (ROOT / "web/app/static/js/brachybot-viewer-layout.js").read_text(encoding="utf-8")
+
+    # A drag must not call the expensive dose endpoint until the user chooses
+    # Replan. Repeated edits share one prompt and the latest geometry wins.
+    assert "_confirmNeedleReplan" in manual
+    assert "manualPlanningState.needleReplanPrompt" in manual
+    assert "Needle ${needleId} position kept. Replanning skipped." in manual
+    assert "await recomputeManualDose('needle_drag'" in manual
+    assert "lastDoseNeedles = _cloneNeedleGeometry" in manual
+    assert "function _confirmAction(msgZh, msgEn, options = {})" in ui_api
+    assert "options.yesEn" in ui_api and "options.noEn" in ui_api
+    # Manual mesh updates must use the active plan's physical seed geometry.
+    assert "state?.seedsOverlay?.geometry" in layout
+
+
+def test_position_only_needle_edit_has_a_safe_persistence_endpoint():
+    routes = (ROOT / "web/routes/planning_routes.py").read_text(encoding="utf-8")
+    manual = (ROOT / "web/app/static/js/brachybot-3d-manual.js").read_text(encoding="utf-8")
+
+    assert '@app.route("/api/manual_planning/update_geometry", methods=["POST"])' in routes
+    assert "_validate_manual_needle_safety" in routes
+    assert 'memory.store("manual_needles", normalized_needles)' in routes
+    assert 'memory.store("manual_seeds", current_seeds)' in routes
+    assert '"dose_recomputed": False' in routes
+    assert "_persistNeedleGeometryOnly" in manual
+    assert "manual_planning/update_geometry" in manual
+    assert "await _persistNeedleGeometryOnly()" in manual
