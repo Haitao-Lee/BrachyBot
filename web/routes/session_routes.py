@@ -313,7 +313,13 @@ def register_session_routes(
             if request.method == "DELETE":
                 store.release_lease(user["id"], session_id, token)
                 return jsonify({"success": True, "editable": False})
-            lease = store.acquire_lease(user["id"], session_id, token, data.get("ttl_seconds", 75))
+            lease = store.acquire_lease(
+                user["id"],
+                session_id,
+                token,
+                data.get("ttl_seconds", 75),
+                force=bool(data.get("takeover")),
+            )
         except WorkspaceLeaseConflict as exc:
             return jsonify({"error": str(exc), "code": "workspace_locked", "editable": False}), 409
         except WorkspaceError as exc:
