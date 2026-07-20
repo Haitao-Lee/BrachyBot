@@ -102,14 +102,17 @@
         if (!state.user) return { editable: false };
         try {
             const result = await request('/api/workspace/lease', { editor_token: editorToken, ttl_seconds: 75 });
-            document.body.classList.remove('workspace-readonly');
-            renderWorkspaceLock(false);
-            return result;
+            return applyLeaseResult(result);
         } catch (error) {
-            document.body.classList.add('workspace-readonly');
-            renderWorkspaceLock(true);
-            return { editable: false, error: error.message };
+            return applyLeaseResult({ editable: false, error: error.message });
         }
+    }
+
+    function applyLeaseResult(result) {
+        const editable = !!result?.editable;
+        document.body.classList.toggle('workspace-readonly', !editable);
+        renderWorkspaceLock(!editable);
+        return result || { editable };
     }
 
     async function refreshLease() {
@@ -222,6 +225,7 @@
         renderWorkspaceLock,
         authenticated,
         acquireLease,
+        applyLeaseResult,
         refreshLease,
         releaseLease,
         async logout() {

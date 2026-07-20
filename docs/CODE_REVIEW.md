@@ -6127,3 +6127,48 @@ confirms the precedence bug.
 - Targeted regression suite: `16 passed, 3 warnings`.
 - Python byte-compilation passes for `planning_pipeline.py` and `AgenticSys.py`.
 - Node syntax check passes for `brachybot-ui-api.js`.
+
+## Round 61: isolate inactive-case deletion from the active workflow (2026-07-20)
+
+### Confirmed finding
+
+The supplied planning log showed a client disconnect immediately before the
+active `planning_pipeline` stream was marked stopped. The frontend deletion
+handler called `prepareSessionChange()` for every deleted case, including a
+case that was not selected. That helper intentionally cancels the current
+chat/plan stream, so deleting an unrelated sidebar case could cancel the
+active case. The server-side `drop_agent(session_id)` itself is case-scoped;
+the cross-case cancellation was in the browser control path.
+
+The same log also confirms that the current planning pipeline did resolve the
+live automatic reference direction (`source=live_ui`, geometric entry point)
+and rejected obstacle-intersecting trajectory candidates before planning.
+Those lines are useful operational evidence and do not indicate a new
+coordinate-chain defect.
+
+### Corrective changes
+
+- Non-selected case deletion now uses an independent control-plane path. It
+  updates the server session list and sidebar only, without cancelling the
+  active SSE/chat stream, clearing the viewer, or restoring another snapshot.
+- Deleting the selected case retains the existing guarded transition behavior:
+  stop the active turn, persist the case, move it to the recycle bin, and then
+  restore the replacement case.
+- New-case creation now transfers the current browser's edit lease in the
+  create response, avoiding serial release/acquire requests. The transfer is
+  owner-token scoped and never releases another browser's lease.
+- Empty new cases skip the redundant session-list reload and background agent
+  hydration. This keeps a UI-only action from constructing a full
+  `BrachyAgent` before the user has loaded a CT.
+- Added `applyLeaseResult()` so the client applies the server-provided lease
+  state without another round trip.
+
+### Verification
+
+- Static workspace regression checks: `27 passed` when run without pytest.
+- Node syntax checks pass for `brachybot-workspace.js` and
+  `brachybot-auth.js`.
+- Python byte-compilation passes for `session_routes.py` and `server.py`.
+- Full Flask integration tests were not runnable in the local Windows
+  environment because the available Python environments lack `flask_cors`;
+  the remote SSH host was unavailable during this verification attempt.

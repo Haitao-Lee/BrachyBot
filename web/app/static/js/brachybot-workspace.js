@@ -482,21 +482,23 @@
             if (!await prepareSessionChange()) return { success: false, cancelled: true };
             if (typeof flushActiveReportState === 'function') flushActiveReportState();
             await persistWorkspace('session.switching');
-            if (typeof window.brachybotAuth?.releaseLease === 'function') await window.brachybotAuth.releaseLease();
             const response = await workspaceFetch('/api/sessions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: 'New case' }) });
             const data = await response.json();
             if (!response.ok) throw new Error(data.error || 'Unable to create case');
-            await loadServerSessions();
             if (typeof clearClientWorkspace === 'function') clearClientWorkspace({ clearReport: true });
             activeSessionId = data.active_session_id || data.session?.id || activeSessionId;
             revision = data.workspace?.session?.revision ?? null;
             window._activeWorkspaceSnapshot = data.workspace || null;
             renderSessionList();
-            if (typeof window.brachybotAuth?.acquireLease === 'function') await window.brachybotAuth.acquireLease();
-            if (data.workspace && typeof applyWorkspaceSnapshot === 'function') {
-                await applyWorkspaceSnapshot(data.workspace);
+            if (data.lease && typeof window.brachybotAuth?.applyLeaseResult === 'function') {
+                window.brachybotAuth.applyLeaseResult(data.lease);
+            } else if (typeof window.brachybotAuth?.acquireLease === 'function') {
+                await window.brachybotAuth.acquireLease();
             }
-            scheduleBackgroundWorkspaceRestore(data.workspace || null, activeSessionId);
+            // A newly-created case has no CT, arrays, meshes, report, or chat
+            // to restore. Avoid the background status call here: it would
+            // hydrate a full BrachyAgent solely for an empty workspace and
+            // make a pure UI operation appear to hang.
             return { success: true, session_id: activeSessionId };
         });
     };
@@ -535,6 +537,25 @@
             );
             if (!confirmed) return { success: false, cancelled: true };
         }
+        // Deleting an inactive case is an independent control-plane action.
+        // It must not call prepareSessionChange(): that helper intentionally
+        // cancels the active chat/plan stream before switching cases, and the
+        // deleted case is not the case currently being edited. Keeping this
+        // path separate also avoids clearing and restoring the active viewer.
+        if (id !== activeSessionId) {
+            try {
+                const response = await workspaceFetch(`/api/sessions/${encodeURIComponent(id)}`, { method: 'DELETE' });
+                const data = await response.json().catch(() => ({}));
+                if (!response.ok) throw new Error(data.error || 'Unable to delete case');
+                await loadServerSessions();
+                renderSessionList();
+                return { success: true, active_session_id: activeSessionId };
+            } catch (error) {
+                console.error('[workspace] inactive case deletion failed:', error);
+                return { success: false, error: error?.message || 'Unable to delete case.' };
+            }
+        }
+
         return runWorkspaceTransition(async () => {
             if (!await prepareSessionChange()) return { success: false, cancelled: true };
             if (id === activeSessionId && typeof flushActiveReportState === 'function') flushActiveReportState();

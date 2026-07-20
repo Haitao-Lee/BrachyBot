@@ -37,6 +37,26 @@ def test_workspace_delete_uses_custom_confirmation_and_cancels_active_stream():
     assert "confirmWorkspaceAction" in workspace
     assert "window.confirm" not in workspace
     assert "window.cancelActiveChatTurn" in chat_todo
+    # Removing another case must not cancel a plan currently running in the
+    # selected case. Only the selected-case branch may enter the transition
+    # path that calls prepareSessionChange().
+    inactive_branch = workspace.split("if (id !== activeSessionId)", 1)[1].split(
+        "return runWorkspaceTransition", 1
+    )[0]
+    assert "prepareSessionChange" not in inactive_branch
+    assert "await loadServerSessions()" in inactive_branch
+
+
+def test_new_case_creation_avoids_empty_workspace_hydration_and_redundant_round_trips():
+    workspace = read("web/app/static/js/brachybot-workspace.js")
+    auth = read("web/app/static/js/brachybot-auth.js")
+    sessions = read("web/routes/session_routes.py")
+    new_case = workspace.split("window.newChat =", 1)[1].split("window.switchSession =", 1)[0]
+    assert "await loadServerSessions()" not in new_case
+    assert "scheduleBackgroundWorkspaceRestore" not in new_case
+    assert "applyLeaseResult" in new_case
+    assert "function applyLeaseResult" in auth
+    assert '"lease": lease' in sessions
 
 
 def test_session_switch_waits_for_server_chat_abort_acknowledgement():
