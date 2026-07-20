@@ -85,6 +85,25 @@
     function renderWorkspaceLock(locked) {
         const notice = document.getElementById('workspaceLockNotice');
         if (!notice) return;
+        const takeover = document.getElementById('workspaceLockTakeover');
+        if (takeover && !takeover.dataset.bound) {
+            takeover.dataset.bound = 'true';
+            takeover.addEventListener('click', async () => {
+                takeover.disabled = true;
+                const original = takeover.textContent;
+                takeover.textContent = typeof window._t === 'function'
+                    ? window._t('正在接管...', 'Taking over...')
+                    : 'Taking over...';
+                try {
+                    await takeoverLease();
+                } catch (error) {
+                    window.showBrachyBotNotice?.(error.message || 'Unable to take over editing.', 'error', 7000);
+                } finally {
+                    takeover.disabled = false;
+                    takeover.textContent = original;
+                }
+            });
+        }
         if (!locked) {
             workspaceLockDismissedKey = '';
             notice.hidden = true;
@@ -130,6 +149,16 @@
         } catch (error) {
             return applyLeaseResult({ editable: false, error: error.message });
         }
+    }
+
+    async function takeoverLease() {
+        if (!state.user) return { editable: false };
+        const result = await request('/api/workspace/lease', {
+            editor_token: editorToken,
+            ttl_seconds: 75,
+            takeover: true,
+        });
+        return applyLeaseResult(result);
     }
 
     function applyLeaseResult(result) {
@@ -250,6 +279,7 @@
         dismissWorkspaceLockNotice,
         authenticated,
         acquireLease,
+        takeoverLease,
         applyLeaseResult,
         refreshLease,
         releaseLease,

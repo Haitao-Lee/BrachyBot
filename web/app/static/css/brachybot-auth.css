@@ -22,6 +22,9 @@
 .workspace-lock-notice { z-index: 1200; top: 58px; max-width: min(680px, calc(100vw - 32px)); border: 1px solid rgba(245, 183, 79, .65); background: #292012; color: #ffe1a6; }
 .workspace-recovery-notice { z-index: 1199; top: 96px; max-width: min(760px, calc(100vw - 32px)); border: 1px solid rgba(104, 174, 255, .58); background: #112236; color: #d7ebff; }
 .workspace-notice-message { min-width: 0; overflow-wrap: anywhere; }
+.workspace-notice-action { flex: 0 0 auto; min-height: 24px; padding: 3px 8px; border: 1px solid currentColor; border-radius: 5px; background: rgba(255, 255, 255, .08); color: inherit; cursor: pointer; font-size: 11px; font-weight: 600; white-space: nowrap; }
+.workspace-notice-action:hover, .workspace-notice-action:focus-visible { background: rgba(255, 255, 255, .18); outline: none; }
+.workspace-notice-action:disabled { cursor: wait; opacity: .62; }
 .workspace-notice-close { flex: 0 0 auto; width: 22px; height: 22px; border: 0; border-radius: 5px; background: transparent; color: currentColor; cursor: pointer; font-size: 16px; line-height: 1; opacity: .78; }
 .workspace-notice-close:hover, .workspace-notice-close:focus-visible { background: rgba(255, 255, 255, .12); opacity: 1; outline: none; }
 .workspace-lock-notice[hidden], .workspace-recovery-notice[hidden] { display: none; }
