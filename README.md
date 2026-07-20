@@ -234,6 +234,17 @@ Supporting:
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
+### Session-scoped chat execution
+
+Chat workflows are owned by the authenticated account and case session. A
+browser may switch to another case while segmentation, planning, or a
+knowledge workflow continues in the background. The UI detaches and later
+replays the case-owned SSE event journal; an explicit Stop action remains the
+only normal way to cancel that task. Durable workspace checkpoints retain the
+execution trace and validated response, while server restart recovery still
+marks unfinished GPU/LLM work as interrupted instead of pretending it
+completed. See `docs/CODE_REVIEW.md`, Round 70.
+
 ---
 
 ## 🧬 Self-Evolving Mechanisms

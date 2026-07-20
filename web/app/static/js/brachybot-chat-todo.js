@@ -760,6 +760,12 @@ const CHAT_CONNECT_TIMEOUT_MS = 30000;
 const CHAT_IDLE_TIMEOUT_MS = 90000;
 const CHAT_ABORT_TIMEOUT_MS = 4000;
 
+// A browser may display a different case while this turn continues on the
+// server.  Keep task ownership explicit so a later session switch can resume
+// the correct event journal instead of treating the task as cancelled.
+window._sessionChatTaskIds = window._sessionChatTaskIds || {};
+window._detachedChatTasks = window._detachedChatTasks || {};
+
 function readChatChunk(reader, timeoutMs = CHAT_IDLE_TIMEOUT_MS, onTimeout = null) {
     let timer = null;
     return new Promise((resolve, reject) => {
@@ -836,14 +842,23 @@ function _enqueueHiddenChat(message, options) {
     const safeMessage = String(message || '').trim();
     if (!safeMessage) return;
     if (!Array.isArray(window._pendingHiddenChats)) window._pendingHiddenChats = [];
-    window._pendingHiddenChats.push({ message: safeMessage, options: options || {} });
+    window._pendingHiddenChats.push({
+        message: safeMessage,
+        options: options || {},
+        sessionId: activeSessionId,
+    });
     setTimeout(() => { try { _flushHiddenChatQueue(); } catch (_) {} }, 0);
 }
 
 async function _flushHiddenChatQueue() {
     if (window._chatStreaming || window._hiddenChatFlushRunning) return;
     if (!Array.isArray(window._pendingHiddenChats) || !window._pendingHiddenChats.length) return;
-    const next = window._pendingHiddenChats.shift();
+    const currentSession = activeSessionId;
+    const index = window._pendingHiddenChats.findIndex(item =>
+        !item?.sessionId || item.sessionId === currentSession
+    );
+    if (index < 0) return;
+    const next = window._pendingHiddenChats.splice(index, 1)[0];
     if (!next || !next.message) return;
     window._hiddenChatFlushRunning = true;
     try {
@@ -860,13 +875,32 @@ async function _flushHiddenChatQueue() {
     }
 }
 
-// Session switching and logout use the same cancellation path as the Stop
-// button. This prevents an old response stream from writing into the newly
-// selected case and keeps the UI progress surfaces in sync.
+// Explicit Stop still cancels the Agent. Session switching uses the detach
+// path below: it closes only the browser subscription and leaves the
+// case-owned task alive for replay after the user returns.
+window.detachActiveChatTurn = function detachActiveChatTurn(reason) {
+    if (!window._chatTurnActive && !window._chatStreaming) return null;
+    const sessionId = activeSessionId;
+    const taskId = window._activeChatTaskId || window._sessionChatTaskIds[sessionId] || null;
+    if (taskId) window._detachedChatTasks[sessionId] = taskId;
+    window._chatDetachRequestedFor = sessionId;
+    // Do not call cancelTurnUi: the old trace is a live case-owned task, not
+    // an error. The next workspace snapshot will clear this case's DOM and a
+    // replay stream will rebuild it when the case is selected again.
+    try { if (chatAbortController) chatAbortController.abort(); } catch (_) {}
+    window._chatTurnActive = false;
+    window._chatStreaming = false;
+    window._chatTurnCancelUi = null;
+    if (typeof setStreamingState === 'function') setStreamingState(false);
+    return { sessionId, taskId, reason: reason || 'Session changed' };
+};
+
 window.cancelActiveChatTurn = async function cancelActiveChatTurn() {
     // Do not let a screenshot-analysis follow-up queued by the previous case
     // run after the user switches to another case.
-    if (Array.isArray(window._pendingHiddenChats)) window._pendingHiddenChats.length = 0;
+    if (Array.isArray(window._pendingHiddenChats)) {
+        window._pendingHiddenChats = window._pendingHiddenChats.filter(item => item?.sessionId !== activeSessionId);
+    }
     if (!window._chatTurnActive && !window._chatStreaming
         && !(typeof isStreaming !== 'undefined' && isStreaming)) return true;
     if (typeof sendChat === 'function') {
@@ -879,6 +913,7 @@ window.cancelActiveChatTurn = async function cancelActiveChatTurn() {
 async function sendChat(prefill, options) {
     const opts = options || {};
     const input = document.getElementById('chatInput');
+    const isResumingTask = !!opts.resumeTaskId;
 
     // If user already has an active stream, treat this button click as STOP.
     // This must run before reading/validating the input box; during streaming
@@ -920,10 +955,12 @@ async function sendChat(prefill, options) {
         return;
     }
 
-    const text = (prefill != null ? prefill : (input ? input.value : '')).trim();
-    if (!text) return;
-    if (input && !opts.hiddenUserMessage) input.value = '';
-    if (!opts.hiddenUserMessage && typeof addChat === 'function') addChat('user', text);
+    let text = isResumingTask
+        ? String(opts.resumeMessage || '')
+        : (prefill != null ? prefill : (input ? input.value : '')).trim();
+    if (!text && !isResumingTask) return;
+    if (input && !opts.hiddenUserMessage && !isResumingTask) input.value = '';
+    if (!opts.hiddenUserMessage && !isResumingTask && typeof addChat === 'function') addChat('user', text);
     if (!opts.preserveLastUserMessage) {
         window._lastUserMessage = text;
     }
@@ -933,7 +970,12 @@ async function sendChat(prefill, options) {
     // no session is active and the chat area shows the welcome
     // message. This avoids leaking the previous session into a
     // fresh page load.
-    try { if (typeof ensurePendingSession === 'function') ensurePendingSession(); } catch (_) {}
+    try { if (!isResumingTask && typeof ensurePendingSession === 'function') ensurePendingSession(); } catch (_) {}
+    const turnSessionId = activeSessionId;
+    if (!isResumingTask) window._activeChatTaskId = null;
+    if (isResumingTask && window._chatDetachRequestedFor === turnSessionId) {
+        window._chatDetachRequestedFor = null;
+    }
 
     if (!opts.skipIntentShortcuts && _isMonitorStartRequest(text)) {
         await startTrainingMode(text);
@@ -1017,12 +1059,21 @@ async function sendChat(prefill, options) {
             : null;
         let resp;
         try {
-            resp = await fetch(API + '/chat', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ message: text, ui_state: uiState, stream: true, clear_context: false }),
-                signal: turnAbortController ? turnAbortController.signal : undefined,
-            });
+            if (isResumingTask) {
+                const afterSeq = Number(opts.afterSeq || 0);
+                resp = await fetch(
+                    API + '/chat/tasks/' + encodeURIComponent(opts.resumeTaskId)
+                    + '/stream?after_seq=' + encodeURIComponent(String(afterSeq)),
+                    { signal: turnAbortController ? turnAbortController.signal : undefined },
+                );
+            } else {
+                resp = await fetch(API + '/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message: text, ui_state: uiState, stream: true, clear_context: false }),
+                    signal: turnAbortController ? turnAbortController.signal : undefined,
+                });
+            }
         } finally {
             if (connectTimer) clearTimeout(connectTimer);
         }
@@ -1087,6 +1138,13 @@ async function sendChat(prefill, options) {
                     let data = null;
                     try { data = JSON.parse(dataStr); } catch (_) { continue; }
 
+                    if (currentEvent === 'task_meta' && data) {
+                        if (data.task_id && data.session_id) {
+                            window._sessionChatTaskIds[data.session_id] = data.task_id;
+                            if (data.session_id === turnSessionId) window._activeChatTaskId = data.task_id;
+                        }
+                        if (!text && data.message) text = String(data.message);
+                    }
                     if (currentEvent === 'start' && data) {
                         // The server detected the input language and
                         // sent it in the start event. The frontend
@@ -1541,6 +1599,8 @@ async function sendChat(prefill, options) {
         if (typeof addChat === 'function') {
             // Don't show error for user-initiated abort (clicking stop button)
             if (e.name === 'AbortError' || /abort/i.test(e.message)) {
+                const detached = window._chatDetachRequestedFor === turnSessionId;
+                if (detached) return;
                 cancelTurnUi('Stopped');
                 addChat('system', '⏹ Stopped.');
             } else {
@@ -1563,6 +1623,37 @@ async function sendChat(prefill, options) {
         }
     }
 }
+
+window.resumeSessionChatTask = async function resumeSessionChatTask() {
+    const sessionId = activeSessionId;
+    if (!sessionId || window._chatTurnActive || window._chatStreaming) return false;
+    let taskId = window._detachedChatTasks[sessionId] || window._sessionChatTaskIds[sessionId] || null;
+    const checkpointTaskId = window._activeWorkspaceSnapshot?.operation?.checkpoint?.task_id;
+    if (!taskId && checkpointTaskId) taskId = checkpointTaskId;
+    if (!taskId) return false;
+    try {
+        const response = await fetch(API + '/chat/task', { cache: 'no-store' });
+        if (!response.ok) return false;
+        const payload = await response.json();
+        const task = payload?.task;
+        if (!task || task.task_id !== taskId || task.status !== 'running') {
+            delete window._detachedChatTasks[sessionId];
+            return false;
+        }
+        window._sessionChatTaskIds[sessionId] = taskId;
+        delete window._detachedChatTasks[sessionId];
+        await sendChat(null, {
+            resumeTaskId: taskId,
+            resumeMessage: task.message || '',
+            skipIntentShortcuts: true,
+            preserveLastUserMessage: true,
+        });
+        return true;
+    } catch (error) {
+        console.warn('[chat] task resume deferred:', error);
+        return false;
+    }
+};
 
 /******** STATE ********/
 // Collect current UI state so the chat agent can know what's loaded and
