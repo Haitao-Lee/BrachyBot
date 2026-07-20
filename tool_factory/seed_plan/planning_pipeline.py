@@ -108,6 +108,42 @@ def _memory_value(memory, key, default=None):
     return default
 
 
+def _ui_reference_direction_input(agent):
+    """Return the explicit reference-direction mode from the live UI.
+
+    A provider can emit a stale numeric vector while the Auto checkbox is
+    selected. The live planning controls are the user-visible source of
+    truth, so the pipeline consults them before accepting that value.
+    ``None`` preserves legacy direct-tool behavior when no UI mode exists.
+    """
+    if agent is None:
+        return None
+    memory = getattr(agent, "memory", None)
+    getter = getattr(memory, "get_ui_state", None)
+    if not callable(getter):
+        return None
+    try:
+        ui_state = getter() or {}
+    except Exception:
+        return None
+    planning = ui_state.get("planning") if isinstance(ui_state, dict) else None
+    if not isinstance(planning, dict):
+        return None
+    mode = str(planning.get("reference_direc_mode") or "").strip().lower()
+    if mode in {"auto", "auto_detect"} or planning.get("ref_direc_auto") is True:
+        return "auto"
+    if mode == "manual" or planning.get("ref_direc_auto") is False:
+        value = planning.get("reference_direc")
+        if isinstance(value, (list, tuple)) and len(value) == 3:
+            try:
+                values = [float(item) for item in value]
+            except (TypeError, ValueError):
+                return None
+            if all(np.isfinite(values)) and float(np.linalg.norm(values)) > 1e-9:
+                return values
+    return None
+
+
 def _resolve_data_tree_obstacle_labels(agent):
     """Resolve the current Data tree non-traversable OAR whitelist.
 
@@ -1245,7 +1281,15 @@ class PlanningPipelineTool(BaseTool):
                     ),
                 },
                 "ref_direc": {
-                    "type": "array",
+                    "oneOf": [
+                        {
+                            "type": "array",
+                            "items": {"type": "number"},
+                            "minItems": 3,
+                            "maxItems": 3,
+                        },
+                        {"type": "string", "enum": ["auto", "auto_detect"]},
+                    ],
                     "description": (
                         "Reference direction [x, y, z] in RAS world space. "
                         "Special string values are also accepted: "
@@ -1305,6 +1349,9 @@ class PlanningPipelineTool(BaseTool):
         # 5 sub-steps. Internal to this file, NOT exposed in the
         # input_schema (popped before validation).
         step_callback = kwargs.pop("step_callback", None)
+        reference_direction_user_override = bool(
+            kwargs.pop("_reference_direction_user_override", False)
+        )
 
         # Load CT image (required for all steps)
         ct_image = self._load_ct(kwargs, agent)
@@ -1417,7 +1464,10 @@ class PlanningPipelineTool(BaseTool):
             agent_config.update(copy.deepcopy(legacy_overrides))
 
         # Get reference direction — accepts explicit array, "auto", or "auto_detect"
-        ref_direc_input = kwargs.get("ref_direc")
+        ui_ref_direc = _ui_reference_direction_input(agent)
+        ref_direc_input = None if reference_direction_user_override else ui_ref_direc
+        if ref_direc_input is None:
+            ref_direc_input = kwargs.get("ref_direc")
         if ref_direc_input is None:
             # Try agent config first, then config file (preserves legacy behavior)
             if agent_config.get("ref_direc_auto") is True or agent_config.get("reference_direc_mode") in {"auto", "auto_detect"}:
@@ -1426,6 +1476,21 @@ class PlanningPipelineTool(BaseTool):
                 ref_direc_input = agent_config.get("reference_direc")
             if ref_direc_input is None:
                 ref_direc_input = CONFIG.get("reference_direc", "auto")
+        if not reference_direction_user_override and ui_ref_direc is not None:
+            # Later auto-recovery stages receive this invocation-local config;
+            # do not let them read a stale session-wide agent.config vector.
+            agent_config["ref_direc_auto"] = ui_ref_direc == "auto"
+            agent_config["reference_direc_mode"] = (
+                "auto" if ui_ref_direc == "auto" else "manual"
+            )
+            agent_config["reference_direc"] = ui_ref_direc
+        logger.info(
+            "[planning] reference direction input=%r source=%s",
+            ref_direc_input,
+            "explicit_user_override" if reference_direction_user_override else (
+                "live_ui" if ui_ref_direc is not None else "tool_or_config"
+            ),
+        )
         # Resolve via the unified helper (handles organ defaults + auto_detect)
         ref_direc = _resolve_ref_direc(ref_direc_input, ct_image, ctv_mask, agent)
 
@@ -1759,7 +1824,7 @@ class PlanningPipelineTool(BaseTool):
 
         if not trajectories:
             logger.info("No trajectories found, running trajectory_init first...")
-            agent_config_current = getattr(agent, "config", {}) or {}
+            agent_config_current = agent_config or getattr(agent, "config", {}) or {}
             if agent_config_current.get("ref_direc_auto") is True or agent_config_current.get("reference_direc_mode") in {"auto", "auto_detect"}:
                 ref_input = "auto"
             else:
