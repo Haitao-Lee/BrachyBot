@@ -65,6 +65,53 @@ def _sanitize_upload_filename(name: str) -> str:
     return sanitized.strip() or "uploaded_file"
 
 
+def _dicom_rt_import_summary(record: Dict[str, Any]) -> Dict[str, Any]:
+    """Return the compact, browser-safe view of a stored DICOM-RT import.
+
+    RTSTRUCT records can contain hundreds of thousands of contour points.
+    Returning those points after every import or workspace restore would stall
+    the UI and duplicate data that already lives in the case checkpoint. The
+    browser only needs provenance and counts until registration is confirmed.
+    """
+    modality = str(record.get("modality") or "").upper()
+    summary: Dict[str, Any] = {
+        "modality": modality,
+        "filename": os.path.basename(str(record.get("path") or "")),
+        "patient_id": str(record.get("patient_id") or ""),
+        "frame_of_reference_uid": str(record.get("frame_of_reference_uid") or ""),
+    }
+    if modality == "RTSTRUCT":
+        structures = record.get("structures") if isinstance(record.get("structures"), list) else []
+        compact_structures = []
+        for structure in structures:
+            if not isinstance(structure, dict):
+                continue
+            contours = structure.get("contours") if isinstance(structure.get("contours"), list) else []
+            compact_structures.append({
+                "name": str(structure.get("name") or "Unnamed ROI"),
+                "roi_number": str(structure.get("roi_number") or ""),
+                "contour_count": len(contours),
+                "point_count": sum(
+                    max(0, int(contour.get("number_of_points") or 0))
+                    for contour in contours if isinstance(contour, dict)
+                ),
+            })
+        summary.update({
+            "structure_count": len(compact_structures),
+            "structures": compact_structures,
+            "rasterization_required": True,
+        })
+    elif modality == "RTDOSE":
+        summary.update({
+            "dose_units": str(record.get("dose_units") or ""),
+            "dose_shape_zyx": list(record.get("dose_shape_zyx") or []),
+            "dose_min": float(record.get("dose_min") or 0.0),
+            "dose_max": float(record.get("dose_max") or 0.0),
+            "requires_registration_check": True,
+        })
+    return summary
+
+
 def create_app(config: Optional[Dict] = None):
     """Create and configure the Flask application."""
     try:
@@ -454,7 +501,7 @@ def create_app(config: Optional[Dict] = None):
             logger.error(f"Upload error: {e}\n{traceback.format_exc()}")
             return jsonify({"error": str(e)}), 500
 
-    @app.route("/api/import/dicom_rt", methods=["POST"])
+    @app.route("/api/import/dicom_rt", methods=["GET", "POST"])
     @require_api_key
     @rate_limit
     def api_import_dicom_rt():
@@ -466,6 +513,17 @@ def create_app(config: Optional[Dict] = None):
         planning. This keeps the DICOM-RT chain useful without hiding a
         potentially unsafe geometry conversion.
         """
+        user, session_id = _request_session_context()
+        agent = get_agent(session_id)
+        if request.method == "GET":
+            existing = agent.memory.retrieve("imported_dicom_rt") if agent is not None else []
+            records = existing if isinstance(existing, list) else []
+            return jsonify({
+                "success": True,
+                "imports": [_dicom_rt_import_summary(item) for item in records if isinstance(item, dict)],
+                "clinical_status": "UNCONFIRMED_REGISTRATION" if records else None,
+            })
+
         uploaded = request.files.get("file")
         if uploaded is None or not uploaded.filename:
             return jsonify({"error": "Upload one RTSTRUCT or RTDOSE file"}), 400
@@ -473,7 +531,6 @@ def create_app(config: Optional[Dict] = None):
         if not filename.lower().endswith((".dcm", ".dicom")):
             return jsonify({"error": "DICOM-RT import accepts .dcm or .dicom files"}), 400
         try:
-            user, session_id = _request_session_context()
             relative = f"imports/dicom_rt/{filename}"
             path = workspace_store.write_upload(
                 user["id"], session_id, relative, uploaded.stream,
@@ -481,14 +538,15 @@ def create_app(config: Optional[Dict] = None):
             )
             from tool_factory.input.dicom_rt_importer import import_dicom_rt
             imported = import_dicom_rt(path)
-            agent = get_agent(session_id)
             if agent is not None:
                 existing = agent.memory.retrieve("imported_dicom_rt") or []
+                if not isinstance(existing, list):
+                    existing = []
                 agent.memory.store("imported_dicom_rt", [*existing[-9:], imported])
                 workspace_store.flush_agent_checkpoint(user["id"], session_id, agent, "dicom_rt.imported")
             return jsonify({
                 "success": True,
-                "import": imported,
+                "import": _dicom_rt_import_summary(imported),
                 "clinical_status": "UNCONFIRMED_REGISTRATION",
                 "message": "DICOM-RT metadata imported; confirm frame registration before applying it to planning data.",
             }), 201

@@ -144,6 +144,44 @@
 
 .form-group { display: flex; flex-direction: column; gap: 0.18rem; }
 
+.form-help {
+    color: var(--text-dim);
+    font-size: 0.6rem;
+    line-height: 1.45;
+}
+
+.dicom-rt-status {
+    min-height: 30px;
+    padding: 0.42rem 0.55rem;
+    border: 1px solid var(--border-soft);
+    border-radius: var(--control-r);
+    background: color-mix(in srgb, var(--bg-2) 88%, var(--primary) 12%);
+    color: var(--text-secondary);
+    font-size: 0.63rem;
+    line-height: 1.45;
+}
+.dicom-rt-status[hidden] { display: none; }
+.dicom-rt-status.is-loading {
+    border-color: color-mix(in srgb, var(--primary) 45%, var(--border-soft));
+    background: linear-gradient(
+        90deg,
+        color-mix(in srgb, var(--bg-2) 92%, var(--primary) 8%) 0%,
+        color-mix(in srgb, var(--bg-2) 72%, var(--primary) 28%) 48%,
+        color-mix(in srgb, var(--bg-2) 92%, var(--primary) 8%) 100%
+    );
+    background-size: 220% 100%;
+    animation: dicom-rt-status-breathe 1.6s ease-in-out infinite;
+}
+.dicom-rt-status.is-warning { border-color: var(--warning, #d6a235); }
+.dicom-rt-status.is-error { border-color: var(--danger, #ef4444); color: var(--danger-ink, #fecaca); }
+@keyframes dicom-rt-status-breathe {
+    0%, 100% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+}
+@media (prefers-reduced-motion: reduce) {
+    .dicom-rt-status.is-loading { animation: none; }
+}
+
 .form-label {
     font-size: 0.66rem;
     color: var(--text-secondary);

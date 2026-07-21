@@ -224,3 +224,66 @@ def test_needle_endpoint_interaction_uses_scene_render_scheduler_and_seed_clippe
     assert "const treeNeedle = dataTreeState.planning.needles.find" in manual
     assert "_needleDisplayPoints(treeNeedle)" in manual
     assert "_moveDeepestSeedWithInternalEndpoint" in manual
+
+
+def test_needle_render_scheduler_survives_mixed_static_asset_revisions():
+    """An open tab must not lose endpoint interaction during a deployment."""
+    index = (ROOT / "web/app/index.html").read_text(encoding="utf-8")
+    layout = (ROOT / "web/app/static/js/brachybot-viewer-layout.js").read_text(encoding="utf-8")
+    manual = (ROOT / "web/app/static/js/brachybot-3d-manual.js").read_text(encoding="utf-8")
+
+    assert "brachybot-viewer-layout.js?v=8" in index
+    assert "brachybot-3d-manual.js?v=15" in index
+    assert "scene3D.requestRender(1)" in layout
+    assert "scene3D.requestRender(2)" in layout
+    assert "window.requestRender = requestRender;" in manual
+
+
+def test_dicom_rt_summary_omits_contour_coordinates():
+    """Workspace restore returns provenance/counts, not a huge contour payload."""
+    from web.server import _dicom_rt_import_summary
+
+    summary = _dicom_rt_import_summary({
+        "modality": "RTSTRUCT",
+        "path": "/private/workspace/imports/case_rtstruct.dcm",
+        "patient_id": "case-123",
+        "frame_of_reference_uid": "1.2.3",
+        "structures": [{
+            "name": "CTV",
+            "roi_number": "7",
+            "contours": [
+                {"number_of_points": 120000, "points_lps_mm": [[1, 2, 3]]},
+                {"number_of_points": 8, "points_lps_mm": [[4, 5, 6]]},
+            ],
+        }],
+    })
+
+    assert summary["filename"] == "case_rtstruct.dcm"
+    assert summary["structure_count"] == 1
+    assert summary["structures"][0]["contour_count"] == 2
+    assert summary["structures"][0]["point_count"] == 120008
+    assert "points_lps_mm" not in str(summary)
+
+
+def test_case_import_audit_and_review_controls_share_manual_ui_paths():
+    index = (ROOT / "web/app/index.html").read_text(encoding="utf-8")
+    ui = (ROOT / "web/app/static/js/brachybot-ui-api.js").read_text(encoding="utf-8")
+    report = (ROOT / "web/app/static/js/brachybot-report-shell.js").read_text(encoding="utf-8")
+    registry = (ROOT / "tool_factory/ui_controller/__init__.py").read_text(encoding="utf-8")
+
+    assert 'id="fileDicomRT"' in index
+    assert "handleDicomRTImport(this)" in index
+    assert "Report.review.openModal()" in index
+    assert "fetch(API + '/import/dicom_rt'" in ui
+    assert "options.sessionId !== _activeApiSessionId()" in ui
+    assert "'input.dicom_rt.browse': 'fileDicomRT'" in ui
+    assert "target === 'report.review.open'" in ui
+    assert "'/api/workspace/audit?limit=200'" in report
+    assert "'/api/workspace/review/comments'" in report
+    assert "audit, review, snapshots" in report
+    for target in (
+        '"input.ct.browse"', '"input.ctv.browse"',
+        '"input.oar.browse"', '"input.dicom_rt.browse"',
+        '"report.review.open"',
+    ):
+        assert target in registry

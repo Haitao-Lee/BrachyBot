@@ -6702,3 +6702,57 @@ an RL planning loop, or a coordinate-chain error.
 - The focused remote regression suite is the release gate for the Python
   runtime and covers the endpoint render scheduler, clipped geometry, reviewed
   streaming response, workspace ownership, and review-comment persistence.
+
+## Round 75: Deploy-safe endpoint rendering and complete case review UI (2026-07-21)
+
+### Confirmed findings
+
+- A browser console captured repeated `requestRender is not defined` errors
+  from `brachybot-viewer-layout.js?v=7` and
+  `brachybot-3d-manual.js?v=13`. The current source already routes module-level
+  helpers through `scene3D.requestRender`, but an open tab can retain an older
+  static revision across a deployment. That exception aborts pointer cleanup
+  and makes a selected needle endpoint appear to spin or hang indefinitely.
+- DICOM-RT import, server audit events, and case review comments had durable
+  backend contracts, but the operator could not use those workflows from the
+  normal Input and Report panels. The agent UI catalog could not invoke them
+  either.
+- Returning the complete RTSTRUCT object after import would send every contour
+  coordinate to the browser even though the browser only needs provenance and
+  counts before registration. Large structure sets could therefore delay case
+  restoration. A malformed legacy checkpoint could also leave the stored
+  import collection as a non-list value.
+
+### Corrective changes
+
+- Keep all current endpoint helpers on the scene-owned render scheduler and
+  expose the initialized scheduler as a temporary `window.requestRender`
+  compatibility bridge. The 3D asset version was incremented so a refreshed
+  tab receives the corrected implementation, while a mixed-revision tab does
+  not fail on the older global lookup.
+- Added a bilingual, case-scoped DICOM-RT picker and status surface to Input.
+  RTSTRUCT/RTDOSE metadata is persisted in the selected workspace; UI restore
+  is session-fenced and does not block CT/mesh hydration. The status explicitly
+  states that registration is unconfirmed and no planning data was replaced.
+- Added Report dialogs for the server audit trail and multidisciplinary review
+  comments. Comments support add, resolve, and reopen operations, inherit the
+  existing accessible modal close/focus behavior, and show immediate loading
+  and error feedback.
+- Added explicit UI-controller targets for CT, CTV, OAR, and DICOM-RT file
+  pickers plus the case-review dialog. Browsers still require the operator to
+  choose a local file; the agent can only open the same visible picker.
+- DICOM-RT API responses now use compact summaries. Full contour coordinates
+  remain in the owned server checkpoint, while the browser receives structure,
+  contour, and point counts. Legacy non-list import state is normalized before
+  appending a new record.
+
+### Verification
+
+- Browser DOM smoke test confirms the Input DICOM-RT picker, Report review
+  control, and current versioned viewer assets are present. No application
+  console errors were emitted during page load.
+- `node --check` passes for the modified UI, Report, and 3D viewer scripts.
+- Focused remote regression suite: `16 passed, 3 warnings`.
+- Full configured-runtime suite: `235 passed, 2 skipped, 3 warnings`.
+- `git diff --check` passes; the remaining messages are only Git's configured
+  LF/CRLF working-tree normalization notices.

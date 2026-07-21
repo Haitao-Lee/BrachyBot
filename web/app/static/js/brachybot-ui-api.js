@@ -648,6 +648,115 @@ async function importUploadedMask(kind, labelPath) {
 }
 window.importUploadedMask = importUploadedMask;
 
+function _dicomRtText(zh, en) {
+    return typeof window._t === 'function' ? window._t(zh, en) : en;
+}
+
+function renderDicomRTImportStatus(imports, options = {}) {
+    const status = document.getElementById('dicomRtImportStatus');
+    const path = document.getElementById('dicomRtPath');
+    if (!status) return;
+    const records = Array.isArray(imports) ? imports.filter(item => item && typeof item === 'object') : [];
+    status.className = 'dicom-rt-status';
+    status.replaceChildren();
+    if (!records.length) {
+        status.hidden = true;
+        if (path) path.value = '';
+        return;
+    }
+    const latest = records[records.length - 1];
+    const modality = String(latest.modality || 'DICOM-RT');
+    const filename = String(latest.filename || modality);
+    const detail = modality === 'RTSTRUCT'
+        ? _dicomRtText(`${Number(latest.structure_count || 0)} 个结构`, `${Number(latest.structure_count || 0)} structures`)
+        : modality === 'RTDOSE'
+            ? _dicomRtText(`最大剂量 ${Number(latest.dose_max || 0).toFixed(2)} ${latest.dose_units || ''}`, `maximum dose ${Number(latest.dose_max || 0).toFixed(2)} ${latest.dose_units || ''}`)
+            : '';
+    const count = records.length > 1
+        ? _dicomRtText(`当前病例共 ${records.length} 个导入记录。`, `${records.length} imports are stored in this case.`)
+        : '';
+    const strong = document.createElement('strong');
+    strong.textContent = `${modality}: ${filename}`;
+    const message = document.createElement('span');
+    message.textContent = ` ${[detail, count].filter(Boolean).join(' · ')}`;
+    const warning = document.createElement('div');
+    warning.textContent = _dicomRtText(
+        '配准尚未确认；数据尚未应用到规划。',
+        'Registration is unconfirmed; the data has not been applied to planning.',
+    );
+    warning.style.marginTop = '0.2rem';
+    status.append(strong, message, warning);
+    status.hidden = false;
+    status.classList.add('is-warning');
+    if (path) path.value = filename;
+    if (!options.silent && typeof scheduleWorkspaceSave === 'function') scheduleWorkspaceSave('dicom_rt.imported');
+}
+
+async function refreshDicomRTImportStatus(options = {}) {
+    try {
+        const response = await fetch(API + '/import/dicom_rt');
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(payload.error || `HTTP ${response.status}`);
+        if (options.sessionId && options.sessionId !== _activeApiSessionId()) return [];
+        const records = Array.isArray(payload.imports) ? payload.imports : [];
+        state.dicomRtImports = records;
+        renderDicomRTImportStatus(records, { silent: true });
+        return records;
+    } catch (error) {
+        if (!options.silent) showBrachyBotNotice(error.message || String(error), 'error');
+        return [];
+    }
+}
+
+async function handleDicomRTImport(input) {
+    const file = input?.files?.[0];
+    if (!file) return;
+    const button = document.getElementById('dicomRtImportButton');
+    const status = document.getElementById('dicomRtImportStatus');
+    const path = document.getElementById('dicomRtPath');
+    const sessionAtStart = _activeApiSessionId();
+    if (button) button.disabled = true;
+    if (path) path.value = file.name;
+    if (status) {
+        status.hidden = false;
+        status.className = 'dicom-rt-status is-loading';
+        status.textContent = _dicomRtText(`正在读取 ${file.name}...`, `Reading ${file.name}...`);
+    }
+    try {
+        const formData = new FormData();
+        formData.append('file', file, file.name);
+        const response = await fetch(API + '/import/dicom_rt', { method: 'POST', body: formData });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || !payload.success) throw new Error(payload.error || `HTTP ${response.status}`);
+        if (sessionAtStart !== _activeApiSessionId()) return;
+        state.dicomRtImports = [...(Array.isArray(state.dicomRtImports) ? state.dicomRtImports : []), payload.import];
+        renderDicomRTImportStatus(state.dicomRtImports);
+        showBrachyBotNotice(
+            _dicomRtText('DICOM-RT 已导入；应用前请确认配准。', 'DICOM-RT imported; confirm registration before use.'),
+            'success',
+        );
+        reportUIEvent('dicom_rt.import', payload.import?.modality || 'DICOM-RT', {
+            filename: payload.import?.filename || file.name,
+            clinical_status: payload.clinical_status,
+        });
+    } catch (error) {
+        if (status) {
+            status.hidden = false;
+            status.className = 'dicom-rt-status is-error';
+            status.textContent = _dicomRtText(`导入失败：${error.message || error}`, `Import failed: ${error.message || error}`);
+        }
+        showBrachyBotNotice(error.message || String(error), 'error', 8000);
+    } finally {
+        if (button) button.disabled = false;
+        input.value = '';
+    }
+}
+window.handleDicomRTImport = handleDicomRTImport;
+window.refreshDicomRTImportStatus = refreshDicomRTImportStatus;
+window.addEventListener('i18nchange', () => {
+    renderDicomRTImportStatus(state.dicomRtImports || [], { silent: true });
+});
+
 // Keep the manual selector synchronized with a tumor site identified by the
 // agent. Unsupported sites intentionally do not get mapped to a model: the
 // user must provide a CTV mask before planning can proceed.
@@ -813,6 +922,7 @@ function clearClientWorkspace(options = {}) {
     state.metrics = {};
     state.seeds = [];
     state.trajectories = [];
+    state.dicomRtImports = [];
     // Manual workflow progress is case data. Drop the in-browser copy before
     // applying the next workspace snapshot so it cannot bleed into a session.
     window.__manualWorkspaceState = null;
@@ -823,6 +933,7 @@ function clearClientWorkspace(options = {}) {
     if (typeof updateOARTable === 'function') updateOARTable({});
     const ctPathInput = document.getElementById('ctPath');
     if (ctPathInput) ctPathInput.value = '';
+    renderDicomRTImportStatus([], { silent: true });
     const dvhEl = document.getElementById('dvhChart');
     if (dvhEl && typeof Plotly !== 'undefined' && Plotly.purge) {
         try { Plotly.purge(dvhEl); } catch (_) {}
@@ -1268,6 +1379,10 @@ async function restoreActiveSessionWorkspace(options = {}) {
     state.brainAvailable = !!status.brain_available;
     const sessionDisplay = document.getElementById('sessionDisplay');
     if (sessionDisplay) sessionDisplay.textContent = state.sessionId;
+    // DICOM-RT metadata is lightweight and case-scoped. Restore its summary
+    // independently so it does not delay CT/mesh hydration or leak between
+    // rapidly switched sessions.
+    refreshDicomRTImportStatus({ sessionId: sessionAtStart, silent: true });
 
     // Training state belongs to the selected planning session as well.
     try {
@@ -2550,6 +2665,19 @@ function _executeUIActionRaw(a) {
             // cache cleanup into a failed or misleading UI action.
             return clearLocalChatData({ skipConfirm: true });
         }
+        // ── Case input file pickers ──
+        if (target.startsWith('input.') && target.endsWith('.browse')) {
+            const pickerIds = {
+                'input.ct.browse': 'fileCT',
+                'input.ctv.browse': 'fileCTV',
+                'input.oar.browse': 'fileOAR',
+                'input.dicom_rt.browse': 'fileDicomRT',
+            };
+            const picker = document.getElementById(pickerIds[target]);
+            if (!picker) return { success: false, error: `File picker is unavailable: ${target}` };
+            picker.click();
+            return { success: true, target };
+        }
         // ── Planning ──
         if (target === 'plan.run') {
             return runPlanning();
@@ -2648,6 +2776,10 @@ function _executeUIActionRaw(a) {
         }
         if (target === 'report.audit.open') {
             if (typeof Report !== 'undefined' && Report.audit) Report.audit.openModal();
+            return;
+        }
+        if (target === 'report.review.open') {
+            if (typeof Report !== 'undefined' && Report.review) Report.review.openModal();
             return;
         }
         if (target === 'report.validation.open') {

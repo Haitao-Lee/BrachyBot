@@ -78,9 +78,17 @@
   event to OrbitControls; the intrabody endpoint and shaft are clipped to the
   deepest associated seed.
 - Case-scoped audit events and review comments are persisted through the
-  workspace store. DICOM-RTSTRUCT/RTDOSE imports are stored as explicit,
-  registration-unconfirmed metadata and are never silently rasterized into a
-  clinical mask or dose grid.
+  workspace store and are available from the Report toolbar. The Input panel
+  can import DICOM RTSTRUCT/RTDOSE into the selected case, but keeps it as
+  registration-unconfirmed metadata and never silently rasterizes or replaces
+  a clinical mask or dose grid. The same file pickers, audit dialog, and review
+  dialog are registered in the structured UI-control catalog so BrachyBot and
+  the operator use one implementation.
+- 3D endpoint rendering is owned by `scene3D.requestRender()`. A temporary
+  global compatibility bridge protects already-open tabs from mixed static
+  asset revisions during deployment; current tabs load the versioned viewer
+  scripts and no longer leave endpoint interaction stuck after a render-scope
+  exception.
 
 ---
 

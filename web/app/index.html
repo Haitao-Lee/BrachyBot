@@ -49,8 +49,8 @@
     <script src="static/js/html2canvas.min.js?v=2" onerror="console.error('Failed to load html2canvas.min.js')"></script>
     <link rel="stylesheet" href="static/css/brachybot-theme-layout.css?v=9">
     <link rel="stylesheet" href="static/css/brachybot-chat-status.css?v=10">
-    <link rel="stylesheet" href="static/css/brachybot-panels-viewers.css?v=7">
-    <link rel="stylesheet" href="static/css/brachybot-report-controls.css?v=7">
+    <link rel="stylesheet" href="static/css/brachybot-panels-viewers.css?v=8">
+    <link rel="stylesheet" href="static/css/brachybot-report-controls.css?v=8">
     <link rel="stylesheet" href="static/css/brachybot-responsive.css?v=4">
     <link rel="stylesheet" href="static/css/brachybot-auth.css?v=3">
 </head>
@@ -326,6 +326,29 @@
                         <button class="file-btn" onclick="document.getElementById('fileOAR').click()">&#128193; Browse</button>
                     </div>
                     <input type="file" id="fileOAR" accept=".nii,.nii.gz,.mha,.nrrd,.mhd,image/*" onchange="handleFileSelect(this, 'oarPath')">
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label" data-i18n-zh="DICOM-RT 导入" data-i18n-en="DICOM-RT Import">DICOM-RT Import</label>
+                    <div class="form-row">
+                        <input type="text" class="form-input" id="dicomRtPath" readonly
+                               data-i18n-placeholder-zh="导入 RTSTRUCT 或 RTDOSE（只读）"
+                               data-i18n-placeholder-en="Import RTSTRUCT or RTDOSE (read-only)"
+                               placeholder="Import RTSTRUCT or RTDOSE (read-only)">
+                        <button type="button" class="file-btn" id="dicomRtImportButton"
+                                onclick="document.getElementById('fileDicomRT').click()"
+                                data-i18n-title-zh="导入当前病例的 DICOM RTSTRUCT 或 RTDOSE"
+                                data-i18n-title-en="Import a DICOM RTSTRUCT or RTDOSE into this case">
+                            <span data-i18n-zh="导入" data-i18n-en="Import">Import</span>
+                        </button>
+                    </div>
+                    <input type="file" id="fileDicomRT" accept=".dcm,.dicom,application/dicom" onchange="handleDicomRTImport(this)">
+                    <div class="dicom-rt-status" id="dicomRtImportStatus" role="status" aria-live="polite" hidden></div>
+                    <div class="form-help"
+                         data-i18n-zh="导入内容会保存在当前病例中。应用到规划前必须确认 Frame of Reference 和配准；系统不会自动覆盖现有 CTV/OAR 或剂量。"
+                         data-i18n-en="Imports are saved in this case. Confirm the Frame of Reference and registration before planning; existing CTV/OAR masks and dose are never overwritten automatically.">
+                        Imports are saved in this case. Confirm the Frame of Reference and registration before planning; existing CTV/OAR masks and dose are never overwritten automatically.
+                    </div>
                 </div>
 
                 <div class="form-section-title" style="cursor:pointer" onclick="toggleHyperparams()">
@@ -735,6 +758,11 @@
                     <button class="btn btn-outline" onclick="Report.audit.openModal()"
                             data-i18n-title-zh="查看审计日志"
                             data-i18n-title-en="View audit log">🔍 Audit</button>
+                    <button class="btn btn-outline" onclick="Report.review.openModal()"
+                            data-i18n-title-zh="查看或添加病例审核批注"
+                            data-i18n-title-en="View or add case review comments">
+                        <span data-i18n-zh="审核批注" data-i18n-en="Review">Review</span>
+                    </button>
                     <button class="btn btn-outline" onclick="Report.validation.openModal()"
                             data-i18n-title-zh="校验必填字段和剂量范围"
                             data-i18n-title-en="Validate required fields and dose ranges">✅ Validate</button>
@@ -1155,14 +1183,14 @@
 -->
 <script src="static/js/brachybot-chat-core.js?v=9"></script>
 <script src="static/js/brachybot-chat-todo.js?v=10"></script>
-<script src="static/js/brachybot-ui-api.js?v=13"></script>
+<script src="static/js/brachybot-ui-api.js?v=14"></script>
 <script src="static/js/brachybot-auth.js?v=6"></script>
 <script src="static/js/brachybot-viewer-volume.js?v=8"></script>
 <script src="static/js/brachybot-viewer-layout.js?v=8"></script>
-<script src="static/js/brachybot-3d-manual.js?v=14"></script>
+<script src="static/js/brachybot-3d-manual.js?v=15"></script>
 <script src="static/js/brachybot-manual-annotation.js?v=7"></script>
     <script src="static/js/brachybot-dvh-planning.js?v=10"></script>
-<script src="static/js/brachybot-report-shell.js?v=11"></script>
+<script src="static/js/brachybot-report-shell.js?v=12"></script>
 <script src="static/js/brachybot-report-editor.js?v=8"></script>
 <script src="static/js/brachybot-workspace.js?v=5"></script>
 <script src="static/js/brachybot-report-export.js?v=10"></script>
