@@ -35,7 +35,8 @@ class Round9RegressionTests(unittest.TestCase):
         self.assertIn("step.requires_input ? 'User input required'", source)
         self.assertIn("cancel(reason)", source)
         self.assertIn("window._chatTurnCancelUi", source)
-        self.assertIn("if (window._chatTurnActive)", source)
+        self.assertIn("const isBusy = !!window._chatTurnActive", source)
+        self.assertIn("queueIfBusy", source)
         self.assertIn("window.cancelVisibleChatProgress", source)
         css = self.read("web/app/static/css/brachybot-chat-status.css")
         self.assertIn("animation-play-state: running !important", css)
@@ -143,7 +144,7 @@ class Round9RegressionTests(unittest.TestCase):
         self.assertIn("interactionCanvas.addEventListener('pointercancel', finishManualDrag)", manual)
         self.assertIn("window.addEventListener('blur', finishManualDrag)", manual)
         self.assertIn("const preview = _makeNeedleMesh(needle)", manual)
-        self.assertIn("onManualNeedleHandleEdited(selectedObject)", manual)
+        self.assertIn("onManualNeedleHandleEdited(finishedObject)", manual)
 
     def test_report_recaptures_restore_the_user_camera(self):
         report = self.read("web/app/static/js/brachybot-report-editor.js")

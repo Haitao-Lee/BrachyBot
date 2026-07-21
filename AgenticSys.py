@@ -1200,6 +1200,13 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
             # Same: always force-inject LPI-oriented CT
             if ct_image is not None:
                 params["image"] = ct_image
+            if "label_path" not in params:
+                # Manual OAR uploads use the same durable case workspace as
+                # CTV uploads. Inject the case-owned path so a later chat
+                # command cannot silently fall back to model segmentation.
+                oar_label_path = self.memory.retrieve("oar_path") or self.memory.retrieve("oar_mask_path")
+                if oar_label_path:
+                    params["label_path"] = oar_label_path
         elif tool_name == "trajectory_planning":
             if "dose_image" not in params and ct_image is not None:
                 params["dose_image"] = ct_image

@@ -305,7 +305,7 @@
                 <!-- The selected model is part of the manual segmentation
                      request, not a display-only hint. -->
                 <div class="form-group">
-                    <label class="form-label" data-i18n-zh="CTV 分割模型" data-i18n-en="CTV segmentation model">CTV segmentation model</label>
+                    <label class="form-label" data-i18n-zh="肿瘤类型" data-i18n-en="Tumor Type">Tumor Type</label>
                     <select class="form-input" id="ctvModelSelect" aria-describedby="ctvModelHelp">
                         <option value="nnunet_pancreatic" data-i18n-zh="胰腺肿瘤 · nnU-Net（生产路径）" data-i18n-en="Pancreatic tumor · nnU-Net (production path)">Pancreatic tumor · nnU-Net (production path)</option>
                         <option value="voco_pancreatic" data-i18n-zh="胰腺肿瘤 · VoCo（需本地权重）" data-i18n-en="Pancreatic tumor · VoCo (local weights required)">Pancreatic tumor · VoCo (local weights required)</option>
@@ -402,8 +402,8 @@
                     <!-- Dose Constraints -->
                     <div style="font-size:0.58rem;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.5px;font-weight:600;">Dose Constraints</div>
                     <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 8px;">
-                        <div class="form-group"><label class="form-label">In Lowest Dose</label><input type="number" class="form-input" id="inLowestEnergy" value="1" step="1"></div>
-                        <div class="form-group"><label class="form-label">Out Highest Dose</label><input type="number" class="form-input" id="outHighestEnergy" value="1" step="1"></div>
+                        <div class="form-group"><label class="form-label" data-i18n-zh="最低剂量 (Gy)" data-i18n-en="In Lowest Dose (Gy)">In Lowest Dose (Gy)</label><input type="number" class="form-input" id="inLowestEnergy" value="120" step="1" min="0"></div>
+                        <div class="form-group"><label class="form-label" data-i18n-zh="最高剂量 (Gy)" data-i18n-en="Out Highest Dose (Gy)">Out Highest Dose (Gy)</label><input type="number" class="form-input" id="outHighestEnergy" value="120" step="1" min="0"></div>
                         <div class="form-group"><label class="form-label">DVH Rate</label><input type="number" class="form-input" id="dvhRate" value="0.9" step="0.05" min="0" max="1"></div>
                         <div class="form-group"><label class="form-label">Max Iterations</label><input type="number" class="form-input" id="maxIter" value="4" step="1" min="1" max="20"></div>
                     </div>

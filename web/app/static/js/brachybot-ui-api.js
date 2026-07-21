@@ -143,8 +143,9 @@ function collectUIState() {
                 backlit_angle: Number(document.getElementById('backlitAngle')?.value || 0.5),
                 maximum_candidate_trajectories: Math.round(Number(document.getElementById('maxCandiTraj')?.value || 500)),
             },
-            in_lowest_energy: Number(document.getElementById('inLowestEnergy')?.value || 1),
-            out_highest_energy: Number(document.getElementById('outHighestEnergy')?.value || 1),
+            // Persist normalized model values even though the controls show Gy.
+            in_lowest_energy: doseGyToModel(document.getElementById('inLowestEnergy')?.value, 1),
+            out_highest_energy: doseGyToModel(document.getElementById('outHighestEnergy')?.value, 1),
             dvh_rate: Number(document.getElementById('dvhRate')?.value || 0.9),
             max_iter: Math.round(Number(document.getElementById('maxIter')?.value || 4)),
             iter_rate: Number(document.getElementById('iterRate')?.value || 2),
@@ -263,6 +264,24 @@ const state = {
 
 /******** API ********/
 const API = '/api';
+
+// The dose engine stores model-space multipliers internally while the UI
+// exposes physical Gy. Keep the conversion at this boundary so workspace
+// snapshots and planning requests never confuse the two representations.
+const DEFAULT_DOSE_MODEL_SCALE_GY = 120;
+window.__doseModelScaleGy = Number(window.__doseModelScaleGy || DEFAULT_DOSE_MODEL_SCALE_GY);
+function doseModelScaleGy() {
+    const value = Number(window.__doseModelScaleGy);
+    return Number.isFinite(value) && value > 0 ? value : DEFAULT_DOSE_MODEL_SCALE_GY;
+}
+function doseGyToModel(value, fallback = 1) {
+    const gy = Number(value);
+    return Number.isFinite(gy) && gy >= 0 ? gy / doseModelScaleGy() : fallback;
+}
+function doseModelToGy(value, fallback = doseModelScaleGy()) {
+    const modelValue = Number(value);
+    return Number.isFinite(modelValue) && modelValue >= 0 ? modelValue * doseModelScaleGy() : fallback;
+}
 
 var trainingMonitorState = {
     active: false,
@@ -559,6 +578,10 @@ async function handleFileSelect(input, targetId) {
         const data = await res.json();
         pathInput.value = data.path;
         pathInput.disabled = false;
+        if (targetId === 'ctvPath' || targetId === 'oarPath') {
+            state[targetId] = data.path;
+            if (typeof scheduleWorkspaceSave === 'function') scheduleWorkspaceSave();
+        }
 
         // Auto-load CT to viewers if it's a CT file
         if (targetId === 'ctPath') {
@@ -569,6 +592,8 @@ async function handleFileSelect(input, targetId) {
                     ? `Uploaded DICOM folder (${data.file_count} files) → ${data.path}`
                     : `Uploaded ${data.filename} (${(data.size / 1024 / 1024).toFixed(2)} MB)`);
             await loadCTToViewers(data.path);
+        } else if (targetId === 'ctvPath' || targetId === 'oarPath') {
+            await importUploadedMask(targetId === 'ctvPath' ? 'ctv' : 'oar', data.path);
         }
 
         overlay.classList.remove('active');
@@ -581,6 +606,76 @@ async function handleFileSelect(input, targetId) {
 
     input.value = '';
 }
+
+/** Import a user-provided label into the session-scoped agent memory. */
+async function importUploadedMask(kind, labelPath) {
+    const ctPath = (document.getElementById('ctPath')?.value || '').trim();
+    if (!ctPath) {
+        showBrachyBotNotice('Load the CT image before importing a CTV/OAR mask.', 'warning');
+        return { success: false, error: 'CT image is required before mask import.' };
+    }
+    try {
+        const body = {
+            kind,
+            image_path: ctPath,
+            label_path: String(labelPath || '').trim(),
+        };
+        if (kind === 'ctv') body.tumor_type = document.getElementById('ctvModelSelect')?.value || null;
+        const res = await fetch(API + '/segmentation', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+        });
+        const payload = await res.json().catch(() => ({}));
+        if (!res.ok || !payload.success) throw new Error(payload.error || `HTTP ${res.status}`);
+        if (typeof addChat === 'function') addChat('system', `${kind.toUpperCase()} mask imported for the current CT.`);
+        if (typeof _saveManualState === 'function') {
+            _saveManualState({ [kind === 'ctv' ? 'ctv_segmentation' : 'oar_segmentation']: true });
+        }
+        if (typeof loadLabelVolumes === 'function') await loadLabelVolumes();
+        if (typeof renderDataTree === 'function') renderDataTree();
+        if (typeof startSegmentationMeshPrewarm === 'function') startSegmentationMeshPrewarm(kind);
+        if (typeof _refreshManualStepUI === 'function') _refreshManualStepUI();
+        if (typeof scheduleWorkspaceSave === 'function') scheduleWorkspaceSave();
+        showBrachyBotNotice(`${kind.toUpperCase()} mask imported.`, 'success');
+        return payload;
+    } catch (error) {
+        const message = error.message || String(error);
+        showBrachyBotNotice(`${kind.toUpperCase()} mask import failed: ${message}`, 'error');
+        if (typeof addChat === 'function') addChat('error', `${kind.toUpperCase()} mask import failed: ${message}`);
+        return { success: false, error: message };
+    }
+}
+window.importUploadedMask = importUploadedMask;
+
+// Keep the manual selector synchronized with a tumor site identified by the
+// agent. Unsupported sites intentionally do not get mapped to a model: the
+// user must provide a CTV mask before planning can proceed.
+function updateTumorTypeSelector(value) {
+    const raw = String(value || '').trim();
+    if (!raw) return false;
+    const aliases = {
+        pancreas: 'nnunet_pancreatic', pancreatic: 'nnunet_pancreatic',
+        liver: 'voco_liver', kidney: 'voco_kidney', lung: 'voco_lung',
+        colon: 'voco_colon', prostate: 'prostate_tumor',
+        '胰腺': 'nnunet_pancreatic', '肝脏': 'voco_liver', '肾': 'voco_kidney',
+        '肺': 'voco_lung', '结肠': 'voco_colon', '前列腺': 'prostate_tumor',
+    };
+    const key = aliases[raw.toLowerCase()] || raw.toLowerCase();
+    const select = document.getElementById('ctvModelSelect');
+    if (!select || !Array.from(select.options).some(option => option.value === key)) {
+        const help = document.getElementById('ctvModelHelp');
+        if (help) help.textContent = `Unsupported tumor type "${raw}". Upload a matching CTV mask and set dose parameters manually before planning.`;
+        return false;
+    }
+    select.value = key;
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+    const help = document.getElementById('ctvModelHelp');
+    if (help) help.textContent = 'Tumor type selected from the active case.';
+    if (typeof scheduleWorkspaceSave === 'function') scheduleWorkspaceSave();
+    return true;
+}
+window.updateTumorTypeSelector = updateTumorTypeSelector;
 
 function clearViewerCanvases() {
     // Session switches invalidate every pending image callback. Without this
@@ -1101,6 +1196,16 @@ async function loadCTToViewers(ctPath, options = {}) {
                 ctPathInput.dispatchEvent(new Event('input', { bubbles: true }));
                 ctPathInput.dispatchEvent(new Event('change', { bubbles: true }));
             }
+            // A mask may have been selected before its CT. Import it only
+            // when the current session has not already restored that mask.
+            setTimeout(() => {
+                if (state.ctvPath && !dataTreeState.ctv.loaded) {
+                    importUploadedMask('ctv', state.ctvPath);
+                }
+                if (state.oarPath && !dataTreeState.oar.loaded) {
+                    importUploadedMask('oar', state.oarPath);
+                }
+            }, 0);
             if (announce) {
                 addChat('system', `CT loaded: ${data.shape.join(' × ')} voxels, ${data.hu_range[0].toFixed(0)} to ${data.hu_range[1].toFixed(0)} HU`);
             }
@@ -1506,6 +1611,7 @@ async function loadDefaultParams() {
         if (!res.ok) return;
         const data = await res.json();
         if (!data.success || !data.defaults) return;
+        window.__doseModelScaleGy = Number(data.dose_scale_gy || DEFAULT_DOSE_MODEL_SCALE_GY);
 
         const d = data.defaults;
         const setVal = (id, val) => {
@@ -1547,8 +1653,8 @@ async function loadDefaultParams() {
         // Planning params
         if (d.planning) {
             const p = d.planning;
-            setVal('inLowestEnergy', p.in_lowest_energy);
-            setVal('outHighestEnergy', p.out_highest_energy);
+            setVal('inLowestEnergy', doseModelToGy(p.in_lowest_energy));
+            setVal('outHighestEnergy', doseModelToGy(p.out_highest_energy));
             setVal('dvhRate', p.DVH_rate);
             setVal('maxIter', p.max_iter);
             setVal('iterRate', p.iter_rate);

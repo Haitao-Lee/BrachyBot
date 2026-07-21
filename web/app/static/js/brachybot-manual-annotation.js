@@ -168,8 +168,10 @@ async function applyHyperparams() {
         reference_direc: refAuto
             ? 'auto'
             : [_num('refDirecX', 0), _num('refDirecY', 1), _num('refDirecZ', 0)],
-        in_lowest_energy: _num('inLowestEnergy', 1),
-        out_highest_energy: _num('outHighestEnergy', 1),
+        // The UI fields are physical Gy; planning tools continue to receive
+        // normalized model-space multipliers at this API boundary.
+        in_lowest_energy: doseGyToModel(_num('inLowestEnergy', doseModelScaleGy()), 1),
+        out_highest_energy: doseGyToModel(_num('outHighestEnergy', doseModelScaleGy()), 1),
         DVH_rate: _num('dvhRate', 0.9),
         max_iter: Math.round(_num('maxIter', 4)),
         iter_rate: _num('iterRate', 2),
@@ -520,6 +522,12 @@ async function runSegmentationStep(kind) {
             body: JSON.stringify({
                 kind: apiKind,
                 image_path: ctPath.trim(),
+                ...(apiKind === 'ctv' && document.getElementById('ctvPath')?.value?.trim() ? {
+                    label_path: document.getElementById('ctvPath').value.trim(),
+                } : {}),
+                ...(apiKind === 'oar' && document.getElementById('oarPath')?.value?.trim() ? {
+                    label_path: document.getElementById('oarPath').value.trim(),
+                } : {}),
                 ...(apiKind === 'ctv' ? {
                     tumor_type: document.getElementById('ctvModelSelect')?.value || 'nnunet_pancreatic',
                 } : {}),
@@ -974,6 +982,27 @@ function _needleSliceSegment(needle, associatedSeeds, axisIdx, sliceIndex, orien
         const pointAIsOuter = dist2(orientedA) > dist2(orientedB);
         outer = (pointAIsOuter ? orientedA : orientedB).slice();
         target = (pointAIsOuter ? orientedB : orientedA).slice();
+    }
+
+    // The visible 2D projection must terminate at the deepest actual seed,
+    // not at a trajectory endpoint that may extend beyond the seed cluster.
+    // This keeps the 2D needle and seed overlays consistent with the 3D plan.
+    if (finiteSeeds.length) {
+        let deepest = finiteSeeds[0];
+        let deepestParam = -Infinity;
+        const initialLine = target.map((value, axis) => value - outer[axis]);
+        const initialNorm2 = initialLine.reduce((sum, value) => sum + value * value, 0);
+        if (initialNorm2 > 1e-8) {
+            finiteSeeds.forEach(seedPoint => {
+                const delta = seedPoint.map((value, axis) => value - outer[axis]);
+                const param = delta.reduce((sum, value, axis) => sum + value * initialLine[axis], 0) / initialNorm2;
+                if (Number.isFinite(param) && param > deepestParam) {
+                    deepestParam = param;
+                    deepest = seedPoint;
+                }
+            });
+            target = deepest.slice();
+        }
     }
 
     let line = target.map((value, axis) => value - outer[axis]);

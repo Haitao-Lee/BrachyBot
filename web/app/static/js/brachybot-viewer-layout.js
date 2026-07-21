@@ -1264,7 +1264,7 @@ function _makeSeedMesh(seed) {
 
 function _makeNeedleMesh(needle) {
     init3DScene();
-    const points = (needle.points || []).map(p => new THREE.Vector3(..._vec3Array(p))).filter(p => Number.isFinite(p.x + p.y + p.z));
+    const points = _needleDisplayPoints(needle);
     if (points.length < 2) return null;
     const dir = new THREE.Vector3().subVectors(points[1], points[0]);
     const length = dir.length();
@@ -1287,6 +1287,37 @@ function _makeNeedleMesh(needle) {
     return mesh;
 }
 
+// Keep the rendered intrabody endpoint physically attached to the deepest
+// seed on the same trajectory.  The stored algorithm line remains untouched;
+// this helper only defines the display geometry and therefore cannot alter the
+// planning coordinate chain or dose calculation inputs.
+function _needleDisplayPoints(needle) {
+    const raw = (needle?.points || [])
+        .map(p => new THREE.Vector3(..._vec3Array(p)))
+        .filter(p => Number.isFinite(p.x + p.y + p.z));
+    if (raw.length < 2) return raw;
+    const entry = raw[1].clone();
+    const target = raw[0].clone();
+    const direction = new THREE.Vector3().subVectors(target, entry);
+    const length2 = direction.lengthSq();
+    const trajectoryId = _normalizeTrajectoryId(needle.trajectory_id);
+    const seeds = (dataTreeState?.planning?.seeds || [])
+        .filter(seed => _normalizeTrajectoryId(seed.trajectory_id) === trajectoryId)
+        .map(seed => new THREE.Vector3(..._vec3Array(seed.position || seed.pos)))
+        .filter(point => Number.isFinite(point.x + point.y + point.z));
+    if (!seeds.length || length2 < 1e-8) return [target, entry];
+    let deepest = null;
+    let deepestParam = -Infinity;
+    seeds.forEach(seed => {
+        const param = new THREE.Vector3().subVectors(seed, entry).dot(direction) / length2;
+        if (Number.isFinite(param) && param > deepestParam) {
+            deepestParam = param;
+            deepest = seed;
+        }
+    });
+    return [deepest || target, entry];
+}
+
 function _needleHandleId(needleId, pointIndex) {
     return `needle_handle_${needleId}_${pointIndex}`;
 }
@@ -1304,7 +1335,8 @@ function _removeNeedleHandles(needleId) {
 }
 
 function _makeNeedleHandle(needle, pointIndex) {
-    const point = needle.points?.[pointIndex];
+    const points = _needleDisplayPoints(needle);
+    const point = points?.[pointIndex];
     if (!point) return null;
     const color = pointIndex === 0 ? 0xff77aa : 0x66d9ff;
     // Endpoint handles are deliberately larger than the needle radius and
@@ -1323,13 +1355,16 @@ function _makeNeedleHandle(needle, pointIndex) {
     mesh.renderOrder = 1000;
     mat.depthTest = false;
     mat.depthWrite = false;
-    mesh.position.set(..._vec3Array(point));
+    if (point.isVector3) mesh.position.copy(point);
+    else mesh.position.set(..._vec3Array(point));
     mesh.userData = {
         type: 'needle_handle',
         id: _needleHandleId(needle.id, pointIndex),
         needleId: needle.id,
         pointIndex,
         trajectoryId: _normalizeTrajectoryId(needle.trajectory_id),
+        internal: pointIndex === 0,
+        hoverVisible: pointIndex !== 0,
     };
     return mesh;
 }
@@ -1347,8 +1382,41 @@ function _syncNeedleHandles(needle) {
 function _setNeedleHandlesVisibility(needleId, visible, opacity = 0.8) {
     [0, 1].forEach(i => {
         const mesh = scene3D.meshes[_needleHandleId(needleId, i)];
-        if (mesh) applyMeshOpacity(mesh, Math.max(0, Math.min(1, opacity)), !!visible);
+        if (mesh) {
+            const safeOpacity = Math.max(0, Math.min(1, opacity));
+            applyMeshOpacity(mesh, i === 0 && !mesh.userData.hoverVisible ? 0.001 : safeOpacity, !!visible);
+            mesh.userData.baseVisible = !!visible;
+            mesh.userData.baseOpacity = safeOpacity;
+        }
     });
+}
+
+function _setNeedleInternalHandleHover(needleId, show) {
+    const mesh = scene3D.meshes[_needleHandleId(needleId, 0)];
+    if (!mesh) return;
+    mesh.userData.hoverVisible = !!show;
+    const opacity = mesh.userData.baseOpacity ?? 0.8;
+    applyMeshOpacity(mesh, show ? opacity : 0.001, mesh.userData.baseVisible !== false);
+    requestRender?.(1);
+}
+
+function setNeedleInteractionHighlight(needleId, active) {
+    const ids = [needleId, _needleHandleId(needleId, 0), _needleHandleId(needleId, 1)];
+    ids.forEach(id => {
+        const mesh = scene3D.meshes[id];
+        const material = mesh?.material;
+        if (!mesh || !material) return;
+        if (active) {
+            if (material.color && mesh.userData.originalColor === undefined) mesh.userData.originalColor = material.color.getHex();
+            if (material.emissive && mesh.userData.originalEmissive === undefined) mesh.userData.originalEmissive = material.emissive.getHex();
+            material.color?.setHex(0xffd166);
+            material.emissive?.setHex(0xff8a00);
+        } else {
+            if (material.color && mesh.userData.originalColor !== undefined) material.color.setHex(mesh.userData.originalColor);
+            if (material.emissive && mesh.userData.originalEmissive !== undefined) material.emissive.setHex(mesh.userData.originalEmissive);
+        }
+    });
+    requestRender?.(2);
 }
 
 function _upsertSceneMesh(id, mesh) {

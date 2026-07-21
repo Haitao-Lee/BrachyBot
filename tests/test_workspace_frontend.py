@@ -63,13 +63,17 @@ def test_new_case_creation_avoids_empty_workspace_hydration_and_redundant_round_
     assert new_case.index("sessions[createdSession.id]") < new_case.index("renderSessionList()")
 
 
-def test_session_switch_waits_for_server_chat_abort_acknowledgement():
-    """A cancelled turn must finish targeting its old case before switching."""
+def test_session_switch_detaches_browser_stream_without_server_abort():
+    """Switching cases detaches this tab while the server task keeps running."""
+    workspace = read("web/app/static/js/brachybot-workspace.js")
     chat_todo = read("web/app/static/js/brachybot-chat-todo.js")
-    stop_block = chat_todo.split("if (window._chatTurnActive)", 1)[1].split("const text =", 1)[0]
-
-    assert "await fetch(API + '/chat/abort'" in stop_block
-    assert "Chat abort was not acknowledged" in stop_block
+    assert "detachActiveChatTurn" in workspace
+    transition_block = workspace.split("async function prepareSessionChange", 1)[1].split(
+        "async function runWorkspaceTransition", 1
+    )[0]
+    assert "fetch(API + '/chat/abort'" not in transition_block
+    assert "cancelActiveChatTurn" in chat_todo
+    assert "window._chatTurnCancelUi" in chat_todo
 
 
 def test_chat_snapshot_is_redrawn_after_restore():
@@ -77,6 +81,15 @@ def test_chat_snapshot_is_redrawn_after_restore():
     assert "Array.isArray(chat.messages)" in workspace
     assert "loadSessionChat(activeSessionId)" in workspace
     assert "sessions[activeSessionId].pending = false" in workspace
+
+
+def test_chat_snapshot_paints_before_heavy_clinical_restore():
+    workspace = read("web/app/static/js/brachybot-workspace.js")
+    chat = read("web/app/static/js/brachybot-chat-core.js")
+    assert "function applyChatSnapshotFast" in workspace
+    assert "applyChatSnapshotFast(workspace)" in workspace
+    assert "input.dataset.historySession" in chat
+    assert "window._lastUserMessage" in chat
 
 
 def test_case_clear_removes_untracked_surfaces_and_clinical_evaluation():

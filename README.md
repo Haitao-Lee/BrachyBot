@@ -245,6 +245,22 @@ execution trace and validated response, while server restart recovery still
 marks unfinished GPU/LLM work as interrupted instead of pretending it
 completed. See `docs/CODE_REVIEW.md`, Round 70.
 
+### Reconnect-safe chat and command history
+
+The selected case transcript is painted from the lightweight workspace snapshot
+before CT, segmentation, dose, WebGL, and hydrated-agent restoration begins.
+This keeps a reconnect from looking like an empty conversation while the
+clinical data plane is loading in the background. The composer is cleared on
+case changes and its Up/Down history is rebuilt from the selected case's user
+messages only, with repeated navigation and draft restoration matching a
+terminal-style agent UI. A resumed live task reconnects to the case-owned
+event stream rather than creating a second request or cancelling the original.
+
+Manual dose/replanning requests also expose a persistent indeterminate progress
+row with a live elapsed timer and breathing indicator. The progress state is
+truthful: it reports activity without inventing a percentage when the backend
+does not provide one.
+
 ---
 
 ## 🧬 Self-Evolving Mechanisms

@@ -312,6 +312,50 @@
     border-radius: 0.45rem;
     box-shadow: var(--shadow-xs);
 }
+.manual-dose-progress {
+    position: relative;
+    align-items: center;
+    gap: 0.55rem;
+}
+.manual-dose-progress .chat-event-content {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+.manual-dose-progress-title {
+    flex: 0 0 auto;
+    color: var(--primary);
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    font-size: 0.6rem;
+}
+.manual-dose-progress-elapsed {
+    flex: 0 0 auto;
+    color: var(--text-dim);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.62rem;
+    min-width: 3.2rem;
+    text-align: right;
+}
+.manual-dose-progress-track {
+    position: absolute;
+    left: 1.78rem;
+    right: 0.1rem;
+    bottom: -0.06rem;
+    height: 0.12rem;
+    overflow: hidden;
+    border-radius: 999px;
+    background: rgba(96, 165, 250, 0.12);
+    pointer-events: none;
+}
+.manual-dose-progress-fill {
+    display: block;
+    width: 28%;
+    height: 100%;
+    border-radius: inherit;
+    background: linear-gradient(90deg, transparent, var(--primary), transparent);
+    transition: transform 0.2s linear;
+}
 .chat-event-text {
     min-width: 0;
     overflow-wrap: anywhere;
