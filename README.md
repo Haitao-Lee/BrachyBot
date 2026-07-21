@@ -71,6 +71,16 @@
   required review gate has completed. Phase timings for routing, context build,
   first token, generation, checker, and SSE completion are returned in
   `llm_meta.phase_timings_ms`.
+- Reviewed answers now stream only after the quality/completeness gate, so model
+  drafts and checker text cannot create duplicate user-facing answer bubbles.
+- Needle endpoint picking uses a capture-phase guard and the scene-owned render
+  scheduler. Both endpoints remain editable without handing the same pointer
+  event to OrbitControls; the intrabody endpoint and shaft are clipped to the
+  deepest associated seed.
+- Case-scoped audit events and review comments are persisted through the
+  workspace store. DICOM-RTSTRUCT/RTDOSE imports are stored as explicit,
+  registration-unconfirmed metadata and are never silently rasterized into a
+  clinical mask or dose grid.
 
 ---
 

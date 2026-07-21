@@ -1071,6 +1071,22 @@
     padding: 0.95rem 1.15rem;
     border-radius: var(--radius-md);
 }
+.chat-msg.bot-response.is-streaming::after {
+    content: '';
+    display: inline-block;
+    width: 0.42rem;
+    height: 1.05em;
+    margin-left: 0.18rem;
+    vertical-align: -0.16em;
+    border-radius: 1px;
+    background: var(--primary, #65b7ff);
+    opacity: 0.82;
+    animation: response-caret 0.9s ease-in-out infinite;
+}
+@keyframes response-caret {
+    0%, 100% { opacity: 0.26; }
+    50% { opacity: 0.92; }
+}
 .chat-msg.user { /* keep */ }
 .chat-msg.system { /* keep */ }
 .chat-msg.error { /* keep */ }

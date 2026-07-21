@@ -685,6 +685,30 @@ class ChatWorkflowMixin:
         def yield_event(event_type, data):
             return f"event: {event_type}\ndata: {json.dumps(data, default=str)}\n\n"
 
+        def final_response_events(payload):
+            """Emit the reviewed answer incrementally, then its authoritative copy.
+
+            Tool-call text is intentionally kept out of the user-facing answer
+            until the review gate has completed.  Providers can also return a
+            fully buffered final response, so the post-review protocol emits
+            bounded chunks here as a transport fallback.  The final ``response``
+            event remains the source of truth and lets clients replace any
+            incomplete last chunk without creating a second answer bubble.
+            """
+            answer = str((payload or {}).get("response") or "")
+            if answer:
+                # Keep chunks large enough for efficient SSE traffic while
+                # making progress visible for both CJK and Latin text.
+                chunk_size = 24
+                for offset in range(0, len(answer), chunk_size):
+                    yield yield_event(
+                        "final_text_chunk",
+                        {"text": answer[offset:offset + chunk_size], "complete_length": len(answer)},
+                    )
+                    if offset + chunk_size < len(answer):
+                        time.sleep(0.008)
+            yield yield_event("response", payload)
+
         def workflow_cancelled() -> bool:
             """Check cancellation while the workflow enforcer waits on a tool."""
             return self._is_turn_cancelled(workflow_turn_token)
@@ -706,7 +730,7 @@ class ChatWorkflowMixin:
                 if self.memory.user_lang == "zh"
                 else "This request was stopped. Any already-started inference may finish in the background, but no downstream planning steps will run."
             )
-            yield yield_event("response", {"response": message_text, "steps": steps, "llm_meta": llm_meta})
+            yield from final_response_events({"response": message_text, "steps": steps, "llm_meta": llm_meta})
             yield yield_event("done", {"cancelled": True, "context": {"ui_state": self.memory.get_ui_state()}})
 
         # Start
@@ -957,7 +981,7 @@ class ChatWorkflowMixin:
             self._finish_turn(response)
             llm_meta["phase_timings_ms"] = dict(getattr(self, "_turn_timings", {}) or {})
             llm_meta["route"] = "direct_tool"
-            yield yield_event("response", {"response": response, "llm_meta": llm_meta})
+            yield from final_response_events({"response": response, "llm_meta": llm_meta})
             yield yield_event("done", {"context": {"message_count": len(self.memory.conversation)}})
             return
 
@@ -1624,7 +1648,7 @@ class ChatWorkflowMixin:
             (time.perf_counter() - getattr(self, "_turn_started_at", time.perf_counter())) * 1000,
             1,
         )
-        yield yield_event("response", {"response": response, "steps": steps, "llm_meta": llm_meta})
+        yield from final_response_events({"response": response, "steps": steps, "llm_meta": llm_meta})
         yield yield_event("done", {
             "context": {
                 "summary": self.memory.context_summary or None,

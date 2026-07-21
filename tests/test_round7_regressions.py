@@ -53,6 +53,20 @@ def test_chat_renders_only_reviewed_response_event():
     assert "break readLoop;" in source
 
 
+def test_reviewed_response_is_streamed_without_creating_duplicate_bubbles():
+    """The post-review protocol must progressively fill one answer bubble."""
+    workflows = (ROOT / "agent_runtime/chat_workflows.py").read_text(encoding="utf-8")
+    ui = (ROOT / "web/app/static/js/brachybot-chat-todo.js").read_text(encoding="utf-8")
+    core = (ROOT / "web/app/static/js/brachybot-chat-core.js").read_text(encoding="utf-8")
+
+    assert '"final_text_chunk"' in workflows
+    assert 'yield from final_response_events' in workflows
+    assert "currentEvent === 'final_text_chunk'" in ui
+    assert "finalTextStreamStarted = true" in ui
+    assert "responseText = data.response" in ui
+    assert "el.classList.remove('is-streaming')" in core
+
+
 def test_review_feedback_stays_internal_and_needle_overlay_is_entry_clipped():
     workflows = (ROOT / "agent_runtime/chat_workflows.py").read_text(encoding="utf-8")
     overlay = (ROOT / "web/app/static/js/brachybot-manual-annotation.js").read_text(encoding="utf-8")
@@ -193,3 +207,20 @@ def test_position_only_needle_edit_has_a_safe_persistence_endpoint():
     assert "_persistNeedleGeometryOnly" in manual
     assert "manual_planning/update_geometry" in manual
     assert "await _persistNeedleGeometryOnly()" in manual
+
+
+def test_needle_endpoint_interaction_uses_scene_render_scheduler_and_seed_clipped_geometry():
+    layout = (ROOT / "web/app/static/js/brachybot-viewer-layout.js").read_text(encoding="utf-8")
+    manual = (ROOT / "web/app/static/js/brachybot-3d-manual.js").read_text(encoding="utf-8")
+
+    # These functions are outside init3DScene() and cannot see its local
+    # requestRender closure. Calling that name directly caused every hover,
+    # press, and release to throw ReferenceError in the browser.
+    assert "requestRender?.(" not in layout
+    assert "scene3D.requestRender(1)" in layout
+    assert "scene3D.requestRender(2)" in layout
+    # The 3D shaft must use the same deepest-seed-clipped points as its handles
+    # and the canonical 2D overlay, rather than the raw algorithm extension.
+    assert "const treeNeedle = dataTreeState.planning.needles.find" in manual
+    assert "_needleDisplayPoints(treeNeedle)" in manual
+    assert "_moveDeepestSeedWithInternalEndpoint" in manual

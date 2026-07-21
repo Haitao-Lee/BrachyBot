@@ -160,3 +160,28 @@ def test_generated_artifacts_apply_replacement_aware_account_quota(tmp_path):
     except WorkspaceQuotaExceeded:
         pass
     assert not (store.workspace_root(user["id"], case.id) / "artifacts" / "reports" / "large.txt").exists()
+
+
+def test_case_audit_and_review_comments_are_owned_and_persistent(tmp_path):
+    store = WorkspaceStore(tmp_path / "runtime")
+    owner = store.create_user("review_owner", "hash")
+    other = store.create_user("review_other", "hash")
+    case = store.create_session(owner["id"], "Review case")
+
+    comment = store.add_review_comment(
+        owner["id"], case.id, "review_owner", "Verify the independent dose calculation.",
+        {"panel": "dvh", "structure": "CTV"},
+    )
+    assert comment["status"] == "open"
+    assert comment["anchor"]["structure"] == "CTV"
+    updated = store.update_review_comment(owner["id"], case.id, comment["id"], status="resolved")
+    assert updated["status"] == "resolved"
+
+    events = store.list_audit_events(owner["id"], case.id)
+    assert any(event["action"] == "review.comment_added" for event in events)
+    assert any(event["action"] == "review.comment_updated" for event in events)
+    try:
+        store.list_review_comments(other["id"], case.id)
+        assert False, "another account must not read review comments"
+    except WorkspaceNotFound:
+        pass

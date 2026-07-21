@@ -1443,7 +1443,11 @@ function _setNeedleInternalHandleHover(needleId, show) {
     mesh.userData.hoverVisible = !!show;
     const opacity = mesh.userData.baseOpacity ?? 0.8;
     applyMeshOpacity(mesh, show ? opacity : 0.001, mesh.userData.baseVisible !== false);
-    requestRender?.(1);
+    // This helper lives outside init3DScene(), so the local requestRender()
+    // closure is not in scope here. Use the scene-owned scheduler instead;
+    // calling an undefined local function used to abort pointer-move and
+    // pointer-up handlers, leaving endpoint interaction looking stuck.
+    if (typeof scene3D !== 'undefined' && scene3D.requestRender) scene3D.requestRender(1);
 }
 
 function setNeedleInteractionHighlight(needleId, active) {
@@ -1462,7 +1466,7 @@ function setNeedleInteractionHighlight(needleId, active) {
             if (material.emissive && mesh.userData.originalEmissive !== undefined) material.emissive.setHex(mesh.userData.originalEmissive);
         }
     });
-    requestRender?.(2);
+    if (typeof scene3D !== 'undefined' && scene3D.requestRender) scene3D.requestRender(2);
 }
 
 function _upsertSceneMesh(id, mesh) {
