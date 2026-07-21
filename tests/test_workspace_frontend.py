@@ -259,6 +259,23 @@ def test_ui_controller_waits_for_async_viewer_and_manual_planning_actions():
     assert "Planning reset failed:" in manual
 
 
+def test_viewer_layout_restore_resynchronizes_all_viewer_geometry():
+    """Fullscreen/layout restoration must remeasure both 2D and 3D viewers."""
+    layout = read("web/app/static/js/brachybot-viewer-layout.js")
+    ui_api = read("web/app/static/js/brachybot-ui-api.js")
+    volume = read("web/app/static/js/brachybot-viewer-volume.js")
+    manual_3d = read("web/app/static/js/brachybot-3d-manual.js")
+
+    assert "function syncViewerGeometry" in layout
+    assert "requestAnimationFrame(() => requestAnimationFrame(render))" in layout
+    assert "_clearViewerResizeOverrides(panel)" in layout
+    assert "window.resizeViewer3D" in layout
+    assert "window.syncViewerGeometry({ resetPositions: true, settleMs: 100 })" in ui_api
+    assert "data-fullscreen-hidden=\"1\"" in ui_api
+    assert "containerW < 1 || containerH < 1" in volume
+    assert "scene3D.resize = resizeViewer3D" in manual_3d
+
+
 def test_legacy_session_clear_action_is_honest_about_its_scope():
     """The LLM catalog must never claim cache cleanup deletes clinical cases."""
     ui_api = read("web/app/static/js/brachybot-ui-api.js")

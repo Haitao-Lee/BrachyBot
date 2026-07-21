@@ -6562,3 +6562,44 @@ trace and final answer were also absent from the restored browser transcript.
   and manual-planning scripts.
 - `git diff --check` passes. LF/CRLF warnings are Git working-tree
   normalization notices only; no whitespace errors were reported.
+
+## Round 72: viewer geometry after zoom, layout, and fullscreen restore (2026-07-21)
+
+### Confirmed finding
+
+The viewer layout and fullscreen code used separate resize paths. A manual
+viewer-height override (`viewer-resized`, `--resize-h`, and inline flex/height)
+could survive a layout reset, while fullscreen restore only remeasured the 2D
+canvases. During a hidden-to-visible transition the volume renderer could also
+fall back to an invented `400 x 300` container size. This produced distorted
+2D aspect ratios, small image slivers, or a black/empty viewer after browser
+zoom, panel resize, or fullscreen restore. The 3D camera and renderer could
+retain the old aspect ratio at the same time.
+
+### Corrective changes
+
+- Added `syncViewerGeometry()`, a shared two-frame layout-settlement path that
+  remeasures all three 2D canvases and the 3D renderer without changing camera
+  pose or slice values.
+- Layout changes and explicit Fit/Reset now clear stale viewer resize CSS
+  overrides and schedule the shared geometry synchronization. A panel-level
+  `ResizeObserver` covers browser zoom, right-panel resizing, and flex-track
+  changes that do not pass through a toolbar layout button.
+- Fullscreen restore now unhides only nodes hidden by that fullscreen action,
+  preserving intentional visibility state. Both entering and leaving
+  fullscreen invoke the shared 2D/3D geometry synchronization.
+- Exposed `window.resizeViewer3D()` for camera-aspect and renderer-size
+  updates. It deliberately preserves the camera transform; only Fit/Reset may
+  reset the view pose.
+- Removed the hidden-container `400 x 300` 2D fallback. A hidden canvas waits
+  for its `ResizeObserver` notification and is rendered only after its real
+  container dimensions are available.
+
+### Verification
+
+- Added a frontend regression contract covering layout override cleanup,
+  double-frame synchronization, fullscreen restoration, hidden-container
+  deferral, and the 3D resize hook.
+- Full Python suite: `228 passed, 2 skipped, 3 warnings`.
+- `node --check` passes for the changed viewer scripts and `git diff --check`
+  passes.

@@ -1709,49 +1709,47 @@ function toggleViewerFullscreen(view) {
         // Restore
         card.classList.remove('fullscreen');
         card.querySelector('.viewer-card-expand-btn').innerHTML = '&#9974;';
-        // Show all direct children of panel and viewers-rows
-        Array.from(panel.children).forEach(c => { c.style.display = ''; });
-        panel.querySelectorAll('.viewers-row').forEach(row => {
-            row.style.display = '';
-            Array.from(row.children).forEach(c => { c.style.display = ''; });
+        // Restore only elements hidden by this fullscreen action. This keeps
+        // intentional layout visibility state intact after the restore.
+        panel.querySelectorAll('[data-fullscreen-hidden="1"]').forEach(el => {
+            el.style.display = '';
+            delete el.dataset.fullscreenHidden;
         });
         // Reset card inline styles
         card.style.position = ''; card.style.top = ''; card.style.left = '';
         card.style.right = ''; card.style.bottom = ''; card.style.zIndex = '';
         card.style.width = ''; card.style.height = ''; card.style.flex = '';
-        setTimeout(() => {
-            ['axial', 'sagittal', 'coronal'].forEach(axis => {
-                resizeCanvas(axis);
-                const slider = document.getElementById('slider' + capitalize(axis));
-                if (slider && state.ctLoaded) updateSlice(axis, slider.value);
-            });
-        }, 100);
+        if (typeof window.syncViewerGeometry === 'function') {
+            window.syncViewerGeometry({ resetPositions: true, settleMs: 100 });
+        }
     } else {
         // Enter fullscreen
         card.classList.add('fullscreen');
         card.querySelector('.viewer-card-expand-btn').innerHTML = '&#10006;';
         // Hide all siblings (handles both flat and .viewers-row layouts)
         Array.from(panel.children).forEach(c => {
-            if (c !== card && !c.contains(card)) c.style.display = 'none';
+            if (c !== card && !c.contains(card)) {
+                c.style.display = 'none';
+                c.dataset.fullscreenHidden = '1';
+            }
         });
         panel.querySelectorAll('.viewers-row').forEach(row => {
             if (row.contains(card)) {
                 // This row has the fullscreen card — hide sibling cards in this row
                 Array.from(row.children).forEach(c => {
-                    if (c !== card) c.style.display = 'none';
+                    if (c !== card) {
+                        c.style.display = 'none';
+                        c.dataset.fullscreenHidden = '1';
+                    }
                 });
             } else {
                 row.style.display = 'none';
+                row.dataset.fullscreenHidden = '1';
             }
         });
-        setTimeout(() => {
-            const axis = card.id.replace('viewer', '').toLowerCase();
-            resizeCanvas(axis);
-            if (axis !== '3d') {
-                const slider = document.getElementById('slider' + capitalize(axis));
-                if (slider && state.ctLoaded) updateSlice(axis, slider.value);
-            }
-        }, 100);
+        if (typeof window.syncViewerGeometry === 'function') {
+            window.syncViewerGeometry({ resetPositions: true, settleMs: 100 });
+        }
     }
 }
 

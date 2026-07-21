@@ -95,6 +95,58 @@ function wrapViewersInRow(panel, mode) {
 // Unified resize state
 const _resize = { active: false, type: null, card: null, cards: [], startPos: 0, startSizes: [], handle: null };
 
+// Keep viewer geometry synchronization in one place. Browser zoom, fullscreen
+// restore, and flex reparenting can otherwise make a canvas render against a
+// stale or zero-sized container.
+const _viewerGeometrySync = { generation: 0, timer: null };
+
+function _clearViewerResizeOverrides(panel) {
+    if (!panel) return;
+    panel.querySelectorAll('.viewers-row, .viewer-card').forEach(el => {
+        el.classList.remove('viewer-resized');
+        el.style.removeProperty('--resize-h');
+        el.style.removeProperty('height');
+        el.style.removeProperty('width');
+        el.style.removeProperty('flex');
+    });
+}
+
+function syncViewerGeometry({ resetPositions = false, settleMs = 0 } = {}) {
+    const generation = ++_viewerGeometrySync.generation;
+    if (_viewerGeometrySync.timer) {
+        clearTimeout(_viewerGeometrySync.timer);
+        _viewerGeometrySync.timer = null;
+    }
+    const render = () => {
+        if (generation !== _viewerGeometrySync.generation) return;
+        if (resetPositions) {
+            ['axial', 'sagittal', 'coronal'].forEach(axis => {
+                [
+                    getSliceCanvas(axis),
+                    document.getElementById('crosshairCanvas' + capitalize(axis)),
+                    document.getElementById('labelOverlay_' + capitalize(axis)),
+                ].forEach(canvas => { if (canvas) canvas._posSet = false; });
+            });
+        }
+        ['axial', 'sagittal', 'coronal'].forEach(axis => resizeCanvas(axis));
+        if (typeof window.resizeViewer3D === 'function') window.resizeViewer3D();
+    };
+    const schedule = () => requestAnimationFrame(() => requestAnimationFrame(render));
+    if (settleMs > 0) {
+        _viewerGeometrySync.timer = setTimeout(schedule, settleMs);
+    } else {
+        schedule();
+    }
+}
+window.syncViewerGeometry = syncViewerGeometry;
+
+function _installViewerGeometryObserver() {
+    const panel = document.getElementById('viewersPanel');
+    if (!panel || panel._geometryObserver || typeof ResizeObserver === 'undefined') return;
+    panel._geometryObserver = new ResizeObserver(() => syncViewerGeometry());
+    panel._geometryObserver.observe(panel);
+}
+
 // Width resize (horizontal layout only): sync all viewer widths proportionally
 function setupVerticalResize() {
     document.querySelectorAll('.viewer-resize-v').forEach(handle => {
@@ -205,7 +257,9 @@ document.addEventListener('mouseup', () => {
 function setViewerLayout(layout) {
     const panel = document.getElementById('viewersPanel');
     if (!panel) return;
+    _installViewerGeometryObserver();
     panel.classList.remove('layout-grid', 'layout-horizontal', 'layout-vertical', 'layout-3d-top', 'layout-3d-bottom');
+    _clearViewerResizeOverrides(panel);
 
     // Remove any existing viewers-row wrapper
     const existingRow = panel.querySelector('.viewers-row');
@@ -216,12 +270,6 @@ function setViewerLayout(layout) {
 
     // Remove all dynamic resize handles
     panel.querySelectorAll('.viewer-resize-v').forEach(h => h.remove());
-
-    // Reset all viewer card inline styles
-    ['viewerAxial', 'viewerSagittal', 'viewerCoronal', 'viewer3d'].forEach(id => {
-        const el = document.getElementById(id);
-        if (el) { el.style.height = ''; el.style.width = ''; el.style.flex = ''; }
-    });
 
     // Show/hide horizontal resize handles based on layout
     const hHandles = panel.querySelectorAll('.viewer-resize-h');
@@ -278,13 +326,9 @@ function setViewerLayout(layout) {
         btn.classList.toggle('active', btn.dataset.layout === layout);
     });
     state.viewerSettings.layout = layout;
-    // Re-render current slices to fit new layout
-    setTimeout(() => {
-        ['axial', 'sagittal', 'coronal'].forEach(axis => {
-            const slider = document.getElementById('slider' + capitalize(axis));
-            if (slider && state.ctLoaded) updateSlice(axis, slider.value);
-        });
-    }, 150);
+    // Wait for flex/grid geometry, then resize all viewers without changing
+    // the user's camera pose or slice values.
+    syncViewerGeometry({ resetPositions: true, settleMs: 150 });
 }
 
 function setViewerTool(tool) {
@@ -332,6 +376,7 @@ function fitView() {
     });
     applyViewerTransform();
     if (state.ctLoaded) loadAllSlices();
+    syncViewerGeometry({ resetPositions: true, settleMs: 80 });
 }
 
 function resetViewer() {
@@ -370,6 +415,7 @@ function resetViewer() {
         }
     });
     if (state.ctLoaded) loadAllSlices();
+    syncViewerGeometry({ resetPositions: true, settleMs: 80 });
 }
 
 function renderSliceToCanvas(axis, sliceData) {

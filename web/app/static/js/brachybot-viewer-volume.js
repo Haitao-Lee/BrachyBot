@@ -751,8 +751,12 @@ function renderSliceFromVolume(axis, sliceIndex) {
     ctx.putImageData(imageData, 0, 0);
 
     const containerRect = container.getBoundingClientRect();
-    const containerW = containerRect.width || 400;  // Fallback if container not visible
-    const containerH = containerRect.height || 300;
+    // Do not render against an invented fallback size while the viewer is
+    // hidden during tab/fullscreen transitions. The next ResizeObserver event
+    // will render with the real geometry once the container is visible.
+    const containerW = containerRect.width;
+    const containerH = containerRect.height;
+    if (containerW < 1 || containerH < 1) return;
     const displayScale = Math.min(containerW / width, containerH / height) || 1;
     const displayW = width * displayScale;
     const displayH = height * displayScale;
