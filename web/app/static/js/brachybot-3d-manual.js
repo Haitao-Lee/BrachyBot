@@ -906,6 +906,11 @@ function init3DScene() {
     scene3D.resize = resizeViewer3D;
     window.resizeViewer3D = resizeViewer3D;
     scene3D.requestRender = requestRender;
+    // Compatibility bridge for a tab that briefly mixes static asset
+    // revisions during a deployment. Older viewer-layout helpers resolved
+    // requestRender from the global scope; keep that call safe until every
+    // open tab has reloaded the current scene-owned scheduler.
+    window.requestRender = requestRender;
     scene3D.controls.addEventListener('change', () => requestRender(8));
     document.addEventListener('visibilitychange', () => {
         if (!document.hidden) requestRender(2);

@@ -64,6 +64,26 @@ window.Report = (function () {
             .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
             .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
     }
+    function _reportText(zh, en) {
+        return typeof window._t === 'function' ? window._t(zh, en) : (stateProxy.language === 'zh' ? zh : en);
+    }
+    async function _reportRequest(path, init = {}) {
+        const controller = typeof AbortController === 'function' ? new AbortController() : null;
+        const timer = controller ? setTimeout(() => controller.abort(), 15000) : null;
+        try {
+            const response = await fetch(path, { ...init, ...(controller ? { signal: controller.signal } : {}) });
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok) throw new Error(payload.error || `HTTP ${response.status}`);
+            return payload;
+        } catch (error) {
+            if (error?.name === 'AbortError') {
+                throw new Error(_reportText('请求超时，请检查服务器连接。', 'Request timed out. Check the server connection.'));
+            }
+            throw error;
+        } finally {
+            if (timer) clearTimeout(timer);
+        }
+    }
 
     // ---------- i18n (P4 + P6) ----------
     const i18n = {
@@ -771,15 +791,133 @@ window.Report = (function () {
             if (typeof window.scheduleWorkspaceSave === 'function') window.scheduleWorkspaceSave('report.audit');
         },
         list() { return Array.isArray(window.__reportWorkspaceAudit) ? window.__reportWorkspaceAudit : []; },
-        openModal() {
-            const list = this.list();
-            const html = list.slice().reverse().slice(0, 100).map(e => {
-                const ts = new Date(e.t).toLocaleString();
-                return `<div style="padding:4px 0;border-bottom:1px solid var(--card-border,#334155);font-size:0.7rem;">
-                    <span style="color:var(--text-dim,#94a3b8);">${ts}</span> · <b style="color:var(--text,#e2e8f0);">${_escHtml(e.action)}</b> · <span style="color:var(--text-dim,#94a3b8);">${_escHtml(e.key || '')}</span>
+        _localHtml() {
+            return this.list().slice().reverse().slice(0, 100).map(event => {
+                const ts = new Date(event.t).toLocaleString();
+                return `<div class="rp-audit-row">
+                    <div><span class="rp-audit-time">${_escHtml(ts)}</span> · <b>${_escHtml(event.action)}</b></div>
+                    ${event.key ? `<div class="rp-audit-detail">${_escHtml(event.key)}</div>` : ''}
                 </div>`;
             }).join('');
-            _showModal('审计日志 / Audit log (' + list.length + ')', html || '<i>Empty</i>');
+        },
+        _serverHtml(events) {
+            return events.slice().reverse().map(event => {
+                const seconds = Number(event.created_at || 0);
+                const ts = new Date(seconds > 1e11 ? seconds : seconds * 1000).toLocaleString();
+                const detail = event.detail && typeof event.detail === 'object'
+                    ? Object.entries(event.detail).map(([key, value]) => `${key}: ${typeof value === 'string' ? value : JSON.stringify(value)}`).join(' · ')
+                    : '';
+                return `<div class="rp-audit-row">
+                    <div><span class="rp-audit-time">${_escHtml(ts)}</span> · <b>${_escHtml(event.action || '')}</b></div>
+                    ${detail ? `<div class="rp-audit-detail">${_escHtml(detail)}</div>` : ''}
+                </div>`;
+            }).join('');
+        },
+        async openModal() {
+            const title = _reportText('病例审计日志', 'Case audit log');
+            _showModal(title, `<div class="rp-modal-loading">${_escHtml(_reportText('正在读取审计记录...', 'Loading audit trail...'))}</div>`);
+            const body = document.querySelector('[data-rp-modal] .rp-modal-body');
+            try {
+                const payload = await _reportRequest('/api/workspace/audit?limit=200');
+                if (!body?.isConnected) return;
+                const serverHtml = this._serverHtml(Array.isArray(payload.events) ? payload.events : []);
+                const localHtml = this._localHtml();
+                const empty = `<div class="rp-audit-row"><i>${_escHtml(_reportText('暂无记录', 'No events yet'))}</i></div>`;
+                body.innerHTML = `
+                    <section class="rp-audit-section">
+                        <h3 class="rp-audit-heading">${_escHtml(_reportText('病例事件', 'Case events'))}</h3>
+                        ${serverHtml || empty}
+                    </section>
+                    <section class="rp-audit-section">
+                        <h3 class="rp-audit-heading">${_escHtml(_reportText('报告编辑记录', 'Report edits'))}</h3>
+                        ${localHtml || empty}
+                    </section>`;
+            } catch (error) {
+                if (!body?.isConnected) return;
+                body.innerHTML = `${this._localHtml() || ''}<div class="rp-audit-row" style="color:var(--danger-ink,#fecaca);">${_escHtml(error.message || String(error))}</div>`;
+            }
+        },
+    };
+
+    // ---------- Case review comments ----------
+    const review = {
+        comments: [],
+        _render() {
+            const body = document.querySelector('[data-rp-modal] .rp-modal-body');
+            if (!body?.isConnected) return;
+            const commentsHtml = this.comments.map(comment => {
+                const seconds = Number(comment.created_at || 0);
+                const date = new Date(seconds > 1e11 ? seconds : seconds * 1000).toLocaleString();
+                const status = comment.status === 'resolved' ? 'resolved' : 'open';
+                const next = status === 'resolved' ? 'open' : 'resolved';
+                return `<article class="rp-review-row">
+                    <div class="rp-review-meta">${_escHtml(comment.author || '')} · ${_escHtml(date)}</div>
+                    <div style="margin:0.3rem 0;white-space:pre-wrap;overflow-wrap:anywhere;">${_escHtml(comment.body || '')}</div>
+                    <div class="rp-review-actions">
+                        <span class="rp-review-status is-${status}">${_escHtml(status === 'resolved' ? _reportText('已解决', 'Resolved') : _reportText('待处理', 'Open'))}</span>
+                        <button type="button" class="btn btn-outline rp-review-toggle" data-comment-id="${Number(comment.id)}" data-next-status="${next}">${_escHtml(status === 'resolved' ? _reportText('重新打开', 'Reopen') : _reportText('标记解决', 'Resolve'))}</button>
+                    </div>
+                </article>`;
+            }).join('');
+            body.innerHTML = `
+                <div class="rp-review-compose">
+                    <textarea id="rpReviewComment" maxlength="4000" placeholder="${_escHtml(_reportText('添加病例审核意见...', 'Add a case review comment...'))}"></textarea>
+                    <div class="rp-review-actions">
+                        <button type="button" class="btn btn-primary" id="rpReviewAdd">${_escHtml(_reportText('添加批注', 'Add comment'))}</button>
+                    </div>
+                </div>
+                <section aria-live="polite">${commentsHtml || `<div class="rp-review-row"><i>${_escHtml(_reportText('暂无审核批注', 'No review comments yet'))}</i></div>`}</section>`;
+            const add = body.querySelector('#rpReviewAdd');
+            const textarea = body.querySelector('#rpReviewComment');
+            add?.addEventListener('click', async () => {
+                const value = String(textarea?.value || '').trim();
+                if (!value) { textarea?.focus(); return; }
+                add.disabled = true;
+                add.textContent = _reportText('正在保存...', 'Saving...');
+                try {
+                    const payload = await _reportRequest('/api/workspace/review/comments', {
+                        method: 'POST', headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ body: value, anchor: { panel: 'report' } }),
+                    });
+                    this.comments.push(payload.comment);
+                    this._render();
+                } catch (error) {
+                    add.disabled = false;
+                    add.textContent = _reportText('添加批注', 'Add comment');
+                    window.showBrachyBotNotice?.(error.message || String(error), 'error', 8000);
+                }
+            });
+            body.querySelectorAll('.rp-review-toggle').forEach(button => {
+                button.addEventListener('click', async () => {
+                    const id = Number(button.dataset.commentId);
+                    button.disabled = true;
+                    try {
+                        const payload = await _reportRequest(`/api/workspace/review/comments/${id}`, {
+                            method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ status: button.dataset.nextStatus }),
+                        });
+                        this.comments = this.comments.map(item => item.id === id ? payload.comment : item);
+                        this._render();
+                    } catch (error) {
+                        button.disabled = false;
+                        window.showBrachyBotNotice?.(error.message || String(error), 'error', 8000);
+                    }
+                });
+            });
+        },
+        async openModal() {
+            _showModal(
+                _reportText('病例审核批注', 'Case review comments'),
+                `<div class="rp-modal-loading">${_escHtml(_reportText('正在读取审核批注...', 'Loading review comments...'))}</div>`,
+            );
+            try {
+                const payload = await _reportRequest('/api/workspace/review/comments');
+                this.comments = Array.isArray(payload.comments) ? payload.comments : [];
+                this._render();
+            } catch (error) {
+                const body = document.querySelector('[data-rp-modal] .rp-modal-body');
+                if (body?.isConnected) body.innerHTML = `<div class="rp-review-row" style="color:var(--danger-ink,#fecaca);">${_escHtml(error.message || String(error))}</div>`;
+            }
         },
     };
 
@@ -1282,7 +1420,7 @@ window.Report = (function () {
 
     return {
         state, i18n, sources, panels, autoFill, brachybot,
-        refs, figures, oar, audit, snapshots, sign, persist,
+        refs, figures, oar, audit, review, snapshots, sign, persist,
         export: exportFns, validation,
         boot, metricBadge, preview,
         _closeModal, _escHtml, _setByPath, _getByPath, _attachLangHint, _showModal,

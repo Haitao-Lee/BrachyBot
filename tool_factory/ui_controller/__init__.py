@@ -247,6 +247,26 @@ CONTROL_REGISTRY = {
         "destructive": True,
         "description": "Clear legacy browser display caches only; durable server cases are retained. REQUIRES user confirmation."
     },
+    # ── Case input file pickers ──
+    # Browsers deliberately forbid an agent from choosing a local file. These
+    # controls open the same picker as the visible Browse button so the user
+    # remains responsible for selecting the clinical input.
+    "input.ct.browse": {
+        "commands": ["run"],
+        "description": "Open the CT image or DICOM-series file picker"
+    },
+    "input.ctv.browse": {
+        "commands": ["run"],
+        "description": "Open the optional user-provided CTV mask file picker"
+    },
+    "input.oar.browse": {
+        "commands": ["run"],
+        "description": "Open the optional user-provided OAR mask file picker"
+    },
+    "input.dicom_rt.browse": {
+        "commands": ["run"],
+        "description": "Open the current case DICOM-RT (RTSTRUCT or RTDOSE) file picker"
+    },
     # ── Planning actions ──
     "plan.run": {
         "commands": ["run"],
@@ -343,6 +363,10 @@ CONTROL_REGISTRY = {
     "report.audit.open": {
         "commands": ["run"],
         "description": "Open the audit trail"
+    },
+    "report.review.open": {
+        "commands": ["run"],
+        "description": "Open case-scoped multidisciplinary review comments"
     },
     "report.validation.open": {
         "commands": ["run"],
@@ -722,6 +746,12 @@ class UIControllerTool(BaseTool):
         if target == "session.clear_all": return "Browser display caches cleared; durable cases were retained"
         if target == "browser_cache.clear": return "Browser display caches cleared; durable cases were retained"
 
+        # Case input file pickers
+        if target == "input.ct.browse": return "CT file picker opened"
+        if target == "input.ctv.browse": return "CTV mask file picker opened"
+        if target == "input.oar.browse": return "OAR mask file picker opened"
+        if target == "input.dicom_rt.browse": return "DICOM-RT file picker opened"
+
         # Planning
         if target == "plan.run": return "Planning pipeline started"
         if target == "plan.run_manual_step": return f"Manual workflow step started: {value}"
@@ -750,6 +780,7 @@ class UIControllerTool(BaseTool):
         if target == "report.snapshot.save": return "Report snapshot saved"
         if target == "report.snapshot.open": return "Snapshot manager opened"
         if target == "report.audit.open": return "Audit trail opened"
+        if target == "report.review.open": return "Case review comments opened"
         if target == "report.validation.open": return "Validation checklist opened"
         if target == "report.preview.zoom":
             if command == "reset": return "Report preview zoom reset"

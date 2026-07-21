@@ -1298,3 +1298,44 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
     outline: 2px solid var(--primary); outline-offset: 2px;
 }
 .rp-modal-body { padding: 1rem; color: var(--text); }
+
+.rp-audit-section + .rp-audit-section { margin-top: 1rem; }
+.rp-audit-heading {
+    margin: 0 0 0.45rem;
+    color: var(--text-secondary);
+    font-size: 0.68rem;
+    font-weight: 650;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+}
+.rp-audit-row, .rp-review-row {
+    padding: 0.55rem 0;
+    border-bottom: 1px solid var(--border-soft);
+    font-size: 0.7rem;
+    line-height: 1.45;
+}
+.rp-audit-row:last-child, .rp-review-row:last-child { border-bottom: 0; }
+.rp-audit-time, .rp-review-meta { color: var(--text-dim); font-size: 0.62rem; }
+.rp-audit-detail { margin-top: 0.2rem; color: var(--text-secondary); overflow-wrap: anywhere; }
+.rp-review-compose { display: grid; gap: 0.5rem; margin-bottom: 0.75rem; }
+.rp-review-compose textarea {
+    width: 100%; min-height: 88px; resize: vertical;
+    padding: 0.65rem; border: 1px solid var(--border-hairline);
+    border-radius: var(--control-r); background: var(--bg-1); color: var(--text);
+    font: inherit; line-height: 1.45;
+}
+.rp-review-compose textarea:focus { outline: 2px solid var(--primary); outline-offset: 1px; }
+.rp-review-actions { display: flex; align-items: center; justify-content: flex-end; gap: 0.45rem; }
+.rp-review-status {
+    display: inline-flex; align-items: center; min-height: 20px;
+    padding: 0 0.4rem; border-radius: 999px; font-size: 0.58rem;
+    color: var(--text-secondary); background: var(--bg-3);
+}
+.rp-review-status.is-open { color: var(--warning-ink, #fde68a); }
+.rp-review-status.is-resolved { color: var(--success-ink, #86efac); }
+.rp-modal-loading {
+    min-height: 72px; display: grid; place-items: center;
+    color: var(--text-secondary); animation: rp-modal-breathe 1.6s ease-in-out infinite;
+}
+@keyframes rp-modal-breathe { 0%, 100% { opacity: 0.55; } 50% { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .rp-modal-loading { animation: none; } }
