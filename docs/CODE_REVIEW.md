@@ -6603,3 +6603,51 @@ retain the old aspect ratio at the same time.
 - Full Python suite: `228 passed, 2 skipped, 3 warnings`.
 - `node --check` passes for the changed viewer scripts and `git diff --check`
   passes.
+
+## Round 73: ISO color propagation and 2D contour redraw (2026-07-21)
+
+### Confirmed finding
+
+The Data Tree color picker already updated the stored dose-level color and the
+corresponding 3D mesh, then requested a 2D redraw. However,
+`renderDoseContourOnCanvas()` declared `level` inside the preceding
+`filter()` callback and referenced it from the later `forEach()` callback.
+Every contour redraw therefore raised a client-side `ReferenceError` before
+applying the selected dose-level color or painting the contour. This was a
+real defect, not an intentional coordinate or rendering policy.
+
+### Corrective changes
+
+- Resolve `contour.level`/`contour.level_rel` inside the contour drawing
+  callback where it is consumed.
+- Use the same normalized level for Data Tree color matching and the contour
+  label, preserving the existing physical coordinate mapping and visibility
+  rules.
+- Add a regression contract so future color/contour changes cannot move the
+  level variable back into an incompatible callback scope.
+
+### Status of the previously reported interaction set
+
+- Needle endpoint capture, press-and-hold filtering, both endpoint handles,
+  internal endpoint hover visibility, explicit replan confirmation, restore to
+  algorithm geometry, and outside-click context-menu dismissal are implemented
+  and covered by frontend regression contracts.
+- Seed/needle 2D overlays share the world-to-index transform and clip the
+  visible needle at the deepest associated seed; the overlay draws the actual
+  seed-cylinder contour rather than a point marker.
+- Manual dose/replanning exposes a live indeterminate progress bar, elapsed
+  timer, breathing state, queued latest-geometry state, and terminal success/
+  error state. This is a client-side manual-dose task indicator; the durable
+  server-backed chat task replay applies to chat turns, while a browser-closed
+  manual dose request cannot be resumed without a new request.
+- Workspace lease takeover and dismissal are explicit, bounded requests; the
+  lease banner is presentation-only when dismissed and does not silently grant
+  write access.
+
+### Verification
+
+- `node --check` passes for the changed viewer, annotation, manual-planning,
+  authentication, and workspace scripts.
+- The focused regression suite includes the new contour scope/color contract;
+  the full suite remains the release gate on the configured Python/conda
+  runtime.

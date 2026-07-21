@@ -3024,6 +3024,11 @@ function renderDoseContourOnCanvas(canvas, axis, sliceIndex) {
 
     // Draw contour lines
     visibleContours.forEach(contour => {
+        // Keep the level lookup inside the same callback as the contour.
+        // The previous implementation declared `level` only in the filter
+        // callback, so every redraw threw a ReferenceError before applying
+        // the Data Tree color or drawing any 2D contour line.
+        const level = contour.level ?? contour.level_rel;
         const doseLevel = doseLevels.find(d =>
             Math.abs(Number(d.threshold) - Number(level)) < 1 ||
             Math.abs(Number(d.thresholdGy) - Number(level)) < 1
@@ -3068,7 +3073,8 @@ function renderDoseContourOnCanvas(canvas, axis, sliceIndex) {
             ctx.fillStyle = `rgba(${r},${g},${b},0.9)`;
             ctx.strokeStyle = 'rgba(0,0,0,0.6)';
             ctx.lineWidth = 2;
-            const label = Number.isFinite(contour.level) ? contour.level.toFixed(1) : '';
+            const numericLevel = Number(level);
+            const label = Number.isFinite(numericLevel) ? numericLevel.toFixed(1) : '';
             if (!label) return;
             ctx.strokeText(label, x + 3, y - 3);
             ctx.fillText(label, x + 3, y - 3);

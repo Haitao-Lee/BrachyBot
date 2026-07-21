@@ -66,6 +66,18 @@ def test_review_feedback_stays_internal_and_needle_overlay_is_entry_clipped():
     assert "ctx.arc(hit.x" not in overlay
 
 
+def test_dose_contour_redraw_keeps_level_in_scope_and_uses_data_tree_color():
+    """Changing an ISO color must not fail before the 2D contour is redrawn."""
+    source = (ROOT / "web/app/static/js/brachybot-3d-manual.js").read_text(encoding="utf-8")
+    draw_block = source.split("function renderDoseContourOnCanvas", 1)[1].split(
+        "// Trigger contour rendering", 1
+    )[0]
+    assert "visibleContours.forEach(contour =>" in draw_block
+    assert "const level = contour.level ?? contour.level_rel;" in draw_block
+    assert "Number(d.thresholdGy) - Number(level)" in draw_block
+    assert "const numericLevel = Number(level);" in draw_block
+
+
 def test_search_fact_check_is_visible_as_a_pending_trace_phase():
     """Search completion must not hide synchronous source verification work."""
     runtime = (ROOT / "agent_runtime/llm_runtime.py").read_text(encoding="utf-8")
