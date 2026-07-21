@@ -843,6 +843,24 @@ function init3DScene() {
         pendingFrames = Math.max(0, pendingFrames - 1);
         if (controlsChanged || pendingFrames > 0) requestRender(pendingFrames || 1);
     }
+
+    function resizeViewer3D() {
+        if (!scene3D.renderer || !scene3D.camera) return false;
+        const rect = canvas.getBoundingClientRect();
+        const newW = Math.floor(rect.width || canvas.clientWidth);
+        const newH = Math.floor(rect.height || canvas.clientHeight);
+        if (newW < 10 || newH < 10) return false;
+        scene3D.camera.aspect = newW / newH;
+        scene3D.camera.updateProjectionMatrix();
+        scene3D.renderer.setSize(newW, newH, false);
+        requestRender(2);
+        return true;
+    }
+
+    // Called by layout/fullscreen restoration after the DOM has settled. It
+    // updates renderer geometry only; the camera pose remains user-controlled.
+    scene3D.resize = resizeViewer3D;
+    window.resizeViewer3D = resizeViewer3D;
     scene3D.requestRender = requestRender;
     scene3D.controls.addEventListener('change', () => requestRender(8));
     document.addEventListener('visibilitychange', () => {
@@ -855,13 +873,7 @@ function init3DScene() {
     // is user state and must remain untouched unless Fit/Reset is explicit.
     const resizeObserver3D = new ResizeObserver(() => {
         if (!scene3D.renderer || !scene3D.camera) return;
-        const newW = canvas.clientWidth || 400;
-        const newH = canvas.clientHeight || 300;
-        if (newW < 10 || newH < 10) return;  // skip if still hidden
-        scene3D.camera.aspect = newW / newH;
-        scene3D.camera.updateProjectionMatrix();
-        scene3D.renderer.setSize(newW, newH);
-        requestRender(2);
+        resizeViewer3D();
     });
     resizeObserver3D.observe(canvas);
 
