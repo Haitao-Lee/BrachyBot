@@ -2009,6 +2009,11 @@ function openColorPicker(id, swatchEl) {
             const b = parseInt(pendingColor.slice(5,7), 16);
             labelColorLUT[labelId] = [r, g, b];
         }
+        if (id.startsWith('dose_iso_')) {
+            const threshold = parseFloat(id.replace('dose_iso_', ''));
+            const doseLevel = dataTreeState.planning?.doseLevels?.find(level => Math.abs(Number(level.threshold) - threshold) < 1e-6);
+            if (doseLevel) doseLevel.color = pendingColor;
+        }
         // Update 3D mesh color if mesh exists
         const mesh3d = scene3D.meshes[id];
         if (mesh3d) {
@@ -2017,7 +2022,8 @@ function openColorPicker(id, swatchEl) {
             const b = parseInt(pendingColor.slice(5,7), 16) / 255;
             const target = mesh3d.surfaceMesh || mesh3d;
             if (target && target.material) {
-                target.material.color.setRGB(r, g, b);
+                const materials = Array.isArray(target.material) ? target.material : [target.material];
+                materials.forEach(material => material?.color?.setRGB(r, g, b));
             }
         }
         // Redraw overlays (debounced)
@@ -2025,6 +2031,12 @@ function openColorPicker(id, swatchEl) {
         window._colorOverlayTimer = setTimeout(() => {
             if (state.ctLoaded) reloadOverlays();
             redrawSeedNeedleOverlays();
+            ['axial', 'sagittal', 'coronal'].forEach(axis => {
+                const canvas = document.getElementById('contourCanvas' + capitalize(axis));
+                if (canvas && typeof renderDoseContourOnCanvas === 'function') {
+                    renderDoseContourOnCanvas(canvas, axis, state.slices?.[axis]);
+                }
+            });
             renderDataTreeDebounced();
         }, 100);
         closeDialog();

@@ -397,6 +397,24 @@ function renderSessionList() {
 function loadSessionChat(id) {
     const session = sessions[id];
     if (!session) return;
+    // Rebuild terminal-style command history from this case before drawing
+    // the transcript.  This prevents stale input from another session from
+    // surviving a fast case switch or server reconnect.
+    if (typeof syncChatHistoryForSession === 'function') {
+        syncChatHistoryForSession(id, session.messages);
+    }
+    const input = document.getElementById('chatInput');
+    if (input) {
+        // The composer belongs to the selected case. Clearing it on every
+        // case render prevents a stale draft or command from another case
+        // being mistaken for this case's most recent prompt.
+        input.value = '';
+        input.dataset.historySession = String(id);
+    }
+    const lastUserMessage = [...(session.messages || [])]
+        .reverse()
+        .find(message => message && message.type === 'user' && typeof message.content === 'string');
+    window._lastUserMessage = lastUserMessage?.content || '';
     const container = document.getElementById('chatMessages');
     container.innerHTML = '';
     if (session.messages.length === 0) {
@@ -477,6 +495,9 @@ function saveSessionMessage(type, content, steps, timestamp) {
     // addChat() passes Date.now() when persisting live messages.
     const _ts = (typeof timestamp === 'number' && timestamp > 0) ? timestamp : Date.now();
     session.messages.push({ type, content, steps: steps || null, timestamp: _ts });
+    if (type === 'user' && typeof _rememberChatCommand === 'function') {
+        _rememberChatCommand(content);
+    }
     if (session.messages.length === 1 && type === 'user') {
         session.title = content.slice(0, 40) + (content.length > 40 ? '...' : '');
         document.getElementById('chatSessionTitle').textContent = session.title;

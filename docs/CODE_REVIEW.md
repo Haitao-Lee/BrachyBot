@@ -6521,3 +6521,44 @@ trace and final answer were also absent from the restored browser transcript.
   isolation, explicit cancellation, and same-case concurrency protection.
 - Remote full suite: `226 passed, 2 skipped, 3 warnings`.
 - Remote Python compilation and `git diff --check` pass.
+
+## Round 71: reconnect chat restoration and case-scoped command history (2026-07-21)
+
+### Confirmed findings
+
+- On browser reconnect, the client waited for `/api/status`, CT reload,
+  segmentation/label hydration, dose restoration, and WebGL reconstruction
+  before rendering the durable chat snapshot. A valid conversation therefore
+  appeared to be missing or stalled even though its workspace was intact.
+- `loadSessionChat()` did not clear the shared composer. A draft or command
+  from a previously selected case could remain in the input box, and Up/Down
+  navigation could appear to return a stale command such as `hi`.
+- Manual needle/dose recomputation had a running chat event, but its visual
+  state did not clearly identify it as a progress surface and the no-seed early
+  return could leave the user without a terminal progress transition.
+
+### Corrective changes
+
+- Added `applyChatSnapshotFast()`. It restores the selected case transcript,
+  queued turns, and task identity immediately after the lightweight session
+  snapshot. Clinical data and GPU/WebGL hydration remain asynchronous and are
+  fenced by the selected-case generation.
+- `loadSessionChat()` now clears the composer, binds the input to the selected
+  case, rebuilds command history from that case's durable user messages, and
+  updates the runtime's last-user-message context. Up/Down navigation remains
+  bounded to the active case and restores the partially typed draft after the
+  newest entry.
+- Manual AI dose/replanning progress now has an explicit `Progress` label, a
+  live elapsed timer, an indeterminate animated bar, and a terminal error state
+  for an empty-seed request. This is an activity indicator, not a fabricated
+  dose-computation percentage.
+- A runtime guard now tolerates a missing `activeSessionId` in isolated bridge
+  tests and early boot paths rather than throwing while applying a snapshot.
+
+### Verification
+
+- Focused workspace/chat suite: `71 passed, 3 warnings`.
+- `node --check` passes for all modified chat, workspace, viewer, annotation,
+  and manual-planning scripts.
+- `git diff --check` passes. LF/CRLF warnings are Git working-tree
+  normalization notices only; no whitespace errors were reported.

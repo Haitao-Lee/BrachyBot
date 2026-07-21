@@ -235,20 +235,55 @@ function _setManualDoseProgress(stateName, text) {
         icon.textContent = 'AI';
         const body = document.createElement('div');
         body.className = 'chat-event-content';
+        const title = document.createElement('span');
+        title.className = 'manual-dose-progress-title';
+        title.textContent = 'Progress';
         const message = document.createElement('span');
         message.className = 'chat-event-text';
         const timestamp = document.createElement('time');
         timestamp.className = 'chat-event-timestamp';
+        const elapsed = document.createElement('span');
+        elapsed.className = 'manual-dose-progress-elapsed';
+        body.appendChild(title);
         body.appendChild(message);
+        body.appendChild(elapsed);
         body.appendChild(timestamp);
+        const track = document.createElement('span');
+        track.className = 'manual-dose-progress-track';
+        track.innerHTML = '<span class="manual-dose-progress-fill"></span>';
         row.appendChild(icon);
         row.appendChild(body);
+        row.appendChild(track);
         container.appendChild(row);
+    }
+    const now = Date.now();
+    if (!row.dataset.startedAt || stateName === 'running' && row.classList.contains('is-done')) {
+        row.dataset.startedAt = String(now);
     }
     const message = row.querySelector('.chat-event-text');
     const timestamp = row.querySelector('.chat-event-timestamp');
+    const elapsed = row.querySelector('.manual-dose-progress-elapsed');
     if (message) message.textContent = text;
     if (timestamp) timestamp.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    const updateElapsed = () => {
+        const startedAt = Number(row.dataset.startedAt) || Date.now();
+        const seconds = Math.max(0, (Date.now() - startedAt) / 1000);
+        if (elapsed) elapsed.textContent = `${seconds.toFixed(1)}s`;
+        const fill = row.querySelector('.manual-dose-progress-fill');
+        // This is intentionally indeterminate: a dose request has no reliable
+        // server-side percentage. The moving fill communicates activity
+        // without inventing a false completion estimate.
+        if (fill && (stateName === 'running' || stateName === 'queued')) {
+            fill.style.transform = `translateX(${((seconds * 18) % 120) - 20}%)`;
+        }
+    };
+    if (row._progressTimer) clearInterval(row._progressTimer);
+    if (stateName === 'running' || stateName === 'queued') {
+        updateElapsed();
+        row._progressTimer = setInterval(updateElapsed, 250);
+    } else {
+        updateElapsed();
+    }
     row.classList.toggle('is-running', stateName === 'running' || stateName === 'queued');
     row.classList.toggle('is-queued', stateName === 'queued');
     row.classList.toggle('is-done', stateName === 'done');
@@ -256,6 +291,8 @@ function _setManualDoseProgress(stateName, text) {
     container.scrollTop = container.scrollHeight;
     if (stateName === 'done' || stateName === 'error') {
         setTimeout(() => {
+            if (row._progressTimer) clearInterval(row._progressTimer);
+            row._progressTimer = null;
             if (row && row.parentNode) row.parentNode.removeChild(row);
         }, 2200);
     }
@@ -269,6 +306,7 @@ async function _runManualDoseJob(job) {
         payload.reproject_seeds ? 'Replanning with the latest needle geometry...' : 'Recomputing the AI dose...'
     );
     if (!payload.seeds.length) {
+        _setManualDoseProgress('error', 'Dose recomputation stopped: no manual seeds are available.');
         addChat('error', 'No manual seeds available. Add at least one seed before recomputing dose.');
         return null;
     }
@@ -832,6 +870,11 @@ function init3DScene() {
     const mouse = new THREE.Vector2();
     let selectedObject = null;
     let isDragging = false;
+    let pendingNeedleHandle = null;
+    let pendingNeedleStart = null;
+    let pendingNeedleTimer = null;
+    let needleDragMoved = false;
+    let hoveredInternalNeedleId = null;
     let dragPlane = new THREE.Plane();
     let dragOffset = new THREE.Vector3();
     const interactionCanvas = scene3D.renderer?.domElement || canvas;
@@ -850,8 +893,41 @@ function init3DScene() {
     // Endpoint handles must win the hit test before OrbitControls receives
     // the same left-button event.  A normal scene-wide raycast can hit the
     // CTV/OAR surface first, making the editable sphere appear unselectable.
+    const clearPendingNeedleDrag = () => {
+        if (pendingNeedleTimer) clearTimeout(pendingNeedleTimer);
+        pendingNeedleTimer = null;
+        if (pendingNeedleHandle?.userData?.needleId && typeof setNeedleInteractionHighlight === 'function') {
+            setNeedleInteractionHighlight(pendingNeedleHandle.userData.needleId, false);
+        }
+        pendingNeedleHandle = null;
+        pendingNeedleStart = null;
+        if (!isDragging) {
+            scene3D.controls.enabled = true;
+            interactionCanvas.style.cursor = 'grab';
+        }
+    };
+
+    const armNeedleHandleDrag = () => {
+        if (!pendingNeedleHandle || isDragging) return;
+        isDragging = true;
+        needleDragMoved = false;
+        const cameraDir = new THREE.Vector3();
+        scene3D.camera.getWorldDirection(cameraDir);
+        dragPlane.setFromNormalAndCoplanarPoint(cameraDir, pendingNeedleHandle.position);
+        const intersection = new THREE.Vector3();
+        if (raycaster.ray.intersectPlane(dragPlane, intersection)) dragOffset.copy(pendingNeedleHandle.position).sub(intersection);
+        addChat('system', `Selected needle endpoint ${pendingNeedleHandle.userData.pointIndex + 1} | ${pendingNeedleHandle.userData.needleId}`);
+        requestRender(2);
+    };
+
     const beginNeedleHandleDrag = (event) => {
         if (event.button !== 0 || !scene3D.camera) return false;
+        if (pendingNeedleHandle) {
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            event.__brachyNeedleHandle = true;
+            return true;
+        }
         if (isDragging) {
             event.preventDefault();
             event.stopImmediatePropagation();
@@ -872,25 +948,17 @@ function init3DScene() {
         // hit. This capture-phase guard keeps endpoint editing deterministic.
         event.stopImmediatePropagation();
         event.__brachyNeedleHandle = true;
-        interactionCanvas.style.cursor = 'grabbing';
+        interactionCanvas.style.cursor = 'wait';
         if (typeof interactionCanvas.setPointerCapture === 'function' && event.pointerId !== undefined) {
             try { interactionCanvas.setPointerCapture(event.pointerId); } catch (_) {}
         }
-        if (selectedObject?.material?.emissive) {
-            selectedObject.material.emissive.setHex(selectedObject.userData.originalEmissive || 0x332200);
-        }
         selectedObject = obj;
-        selectedObject.userData.originalEmissive = selectedObject.userData.originalEmissive
-            || selectedObject.material?.emissive?.getHex() || 0x332200;
-        if (selectedObject.material?.emissive) selectedObject.material.emissive.setHex(0xff0000);
-        isDragging = true;
+        pendingNeedleHandle = obj;
+        pendingNeedleStart = { x: event.clientX, y: event.clientY };
+        needleDragMoved = false;
+        if (typeof setNeedleInteractionHighlight === 'function') setNeedleInteractionHighlight(obj.userData.needleId, true);
         scene3D.controls.enabled = false;
-        const cameraDir = new THREE.Vector3();
-        scene3D.camera.getWorldDirection(cameraDir);
-        dragPlane.setFromNormalAndCoplanarPoint(cameraDir, selectedObject.position);
-        const intersection = new THREE.Vector3();
-        if (raycaster.ray.intersectPlane(dragPlane, intersection)) dragOffset.copy(selectedObject.position).sub(intersection);
-        addChat('system', `Selected needle endpoint ${selectedObject.userData.pointIndex + 1} | ${selectedObject.userData.needleId}`);
+        pendingNeedleTimer = setTimeout(armNeedleHandleDrag, 220);
         requestRender(2);
         return true;
     };
@@ -901,6 +969,39 @@ function init3DScene() {
     // from winning the same click as endpoint editing.
     interactionCanvas.addEventListener('mousedown', beginNeedleHandleDrag, true);
     interactionCanvas.addEventListener('pointerdown', beginNeedleHandleDrag, true);
+    interactionCanvas.addEventListener('mousedown', (event) => {
+        if (event.button !== 2) return;
+        // A right button is exclusively for the object context menu. In
+        // particular it must never start OrbitControls or draw an annotation.
+        event.preventDefault();
+        event.stopImmediatePropagation();
+    }, true);
+    interactionCanvas.addEventListener('pointerdown', (event) => {
+        if (event.button !== 2) return;
+        event.preventDefault();
+        event.stopImmediatePropagation();
+    }, true);
+
+    const updateNeedleHandleHover = (event) => {
+        if (isDragging || pendingNeedleHandle || !scene3D.camera || !updatePointerNdc(event)) return;
+        raycaster.setFromCamera(mouse, scene3D.camera);
+        const handles = Object.values(scene3D.meshes || {})
+            .filter(obj => obj && obj.userData?.type === 'needle_handle');
+        const hit = raycaster.intersectObjects(handles, true)[0];
+        let handle = hit?.object || null;
+        while (handle?.parent && !handle.userData?.type) handle = handle.parent;
+        const nextId = handle?.userData?.internal ? handle.userData.needleId : null;
+        if (nextId === hoveredInternalNeedleId) return;
+        if (hoveredInternalNeedleId && typeof _setNeedleInternalHandleHover === 'function') {
+            _setNeedleInternalHandleHover(hoveredInternalNeedleId, false);
+        }
+        hoveredInternalNeedleId = nextId;
+        if (nextId && typeof _setNeedleInternalHandleHover === 'function') {
+            _setNeedleInternalHandleHover(nextId, true);
+        }
+    };
+    interactionCanvas.addEventListener('pointermove', updateNeedleHandleHover, true);
+    interactionCanvas.addEventListener('mousemove', updateNeedleHandleHover, true);
 
     // Mouse down - start drag or select
     canvas.addEventListener('mousedown', (event) => {
@@ -946,6 +1047,7 @@ function init3DScene() {
 
                 // Start drag for editable planning handles
                 if (obj.userData.type === 'seed' || obj.userData.type === 'needle_handle') {
+                    if (obj.userData.type === 'needle_handle') return;
                     isDragging = true;
                     scene3D.controls.enabled = false;
 
@@ -980,6 +1082,12 @@ function init3DScene() {
 
     // Mouse move - drag seed
     const updateManualDrag = (event) => {
+        if (pendingNeedleHandle && !isDragging) {
+            const dx = event.clientX - pendingNeedleStart.x;
+            const dy = event.clientY - pendingNeedleStart.y;
+            if (Math.hypot(dx, dy) > 6) clearPendingNeedleDrag();
+            return;
+        }
         if (!isDragging || !selectedObject) return;
 
         if (!updatePointerNdc(event)) return;
@@ -989,6 +1097,7 @@ function init3DScene() {
         if (!raycaster.ray.intersectPlane(dragPlane, intersection)) return;
 
         selectedObject.position.copy(intersection.add(dragOffset));
+        needleDragMoved = true;
         if (selectedObject.userData.type === 'needle_handle') {
             const needle = dataTreeState.planning.needles.find(n => n.id === selectedObject.userData.needleId);
             if (needle) {
@@ -1012,6 +1121,11 @@ function init3DScene() {
 
     // Mouse up - end drag
     const finishManualDrag = (event) => {
+        if (pendingNeedleHandle && !isDragging) {
+            clearPendingNeedleDrag();
+            selectedObject = null;
+            return;
+        }
         if (isDragging) {
             if (typeof interactionCanvas.releasePointerCapture === 'function' && event?.pointerId !== undefined) {
                 try { interactionCanvas.releasePointerCapture(event.pointerId); } catch (_) {}
@@ -1019,6 +1133,12 @@ function init3DScene() {
             isDragging = false;
             scene3D.controls.enabled = true;
             interactionCanvas.style.cursor = 'grab';
+            const finishedObject = selectedObject;
+            if (finishedObject?.userData?.needleId && typeof setNeedleInteractionHighlight === 'function') {
+                setNeedleInteractionHighlight(finishedObject.userData.needleId, false);
+            }
+            pendingNeedleHandle = null;
+            pendingNeedleStart = null;
             requestRender(4);
 
             if (selectedObject && selectedObject.userData.type === 'seed') {
@@ -1032,10 +1152,10 @@ function init3DScene() {
                 if (typeof onManualSeedEdited === 'function') {
                     onManualSeedEdited(seedId, selectedObject.position).catch(e => console.warn('manual seed edit failed:', e));
                 }
-            } else if (selectedObject && selectedObject.userData.type === 'needle_handle') {
-                addChat('system', `Needle endpoint updated for ${selectedObject.userData.needleId}.`);
+            } else if (finishedObject && finishedObject.userData.type === 'needle_handle' && needleDragMoved) {
+                addChat('system', `Needle endpoint updated for ${finishedObject.userData.needleId}.`);
                 if (typeof onManualNeedleHandleEdited === 'function') {
-                    onManualNeedleHandleEdited(selectedObject).catch(e => console.warn('manual needle edit failed:', e));
+                    onManualNeedleHandleEdited(finishedObject).catch(e => console.warn('manual needle edit failed:', e));
                 }
             }
         }
@@ -1050,8 +1170,9 @@ function init3DScene() {
     window.addEventListener('blur', finishManualDrag);
 
     // Right-click context menu for 3D objects
-    canvas.addEventListener('contextmenu', (event) => {
+    interactionCanvas.addEventListener('contextmenu', (event) => {
         event.preventDefault();
+        event.stopImmediatePropagation();
 
         // Use the renderer canvas, not the padded viewer wrapper, so the
         // context-ray coordinates match the endpoint drag hit test.
@@ -2891,7 +3012,13 @@ function renderDoseContourOnCanvas(canvas, axis, sliceIndex) {
 
     // Draw contour lines
     visibleContours.forEach(contour => {
-        const color = contour.color;
+        const doseLevel = doseLevels.find(d =>
+            Math.abs(Number(d.threshold) - Number(level)) < 1 ||
+            Math.abs(Number(d.thresholdGy) - Number(level)) < 1
+        );
+        const color = doseLevel?.color
+            ? _hexToRgbArray(doseLevel.color, [34, 197, 94]).map(v => v / 255)
+            : contour.color;
         const opacity = contour.opacity ?? 0.7;
         const r = Math.round(color[0] * 255);
         const g = Math.round(color[1] * 255);

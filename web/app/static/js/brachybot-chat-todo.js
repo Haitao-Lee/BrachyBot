@@ -689,9 +689,59 @@ function _todoFindPredicted(todo, step) {
 
 // Enter-to-send handler for #chatInput
 // Command history for up/down arrow cycling (like a terminal)
-const _chatHistory = [];
+let _chatHistory = [];
 const _CHAT_HISTORY_LIMIT = 100;
 let _chatHistoryIdx = -1;
+let _chatHistoryDraft = '';
+let _chatHistoryBrowsing = false;
+const _chatHistoryBySession = Object.create(null);
+
+// Chat history is case-scoped.  The transcript is the durable source of
+// truth, while this small cache only makes keyboard navigation responsive.
+// Keeping it outside localStorage prevents a command from another case (or a
+// stale browser tab) from appearing in the active case's input box.
+function syncChatHistoryForSession(sessionId, messages) {
+    const id = String(sessionId || '');
+    if (!id) return;
+    const entries = Array.isArray(messages)
+        ? messages
+            .filter(m => m && m.type === 'user' && typeof m.content === 'string')
+            .map(m => m.content.trim())
+            .filter(Boolean)
+        : [];
+    const unique = [];
+    entries.forEach(value => {
+        if (unique[unique.length - 1] !== value) unique.push(value);
+    });
+    _chatHistoryBySession[id] = unique.slice(-_CHAT_HISTORY_LIMIT);
+    _chatHistory = _chatHistoryBySession[id].slice();
+    _chatHistoryIdx = _chatHistory.length;
+    _chatHistoryDraft = '';
+    _chatHistoryBrowsing = false;
+}
+
+function _activeChatHistory() {
+    const id = String(window.activeSessionId || activeSessionId || '');
+    const session = (typeof sessions !== 'undefined' && id) ? sessions[id] : null;
+    if (id && !_chatHistoryBySession[id]) syncChatHistoryForSession(id, session?.messages);
+    return id ? (_chatHistoryBySession[id] || []) : _chatHistory;
+}
+
+function _rememberChatCommand(text) {
+    const value = String(text || '').trim();
+    if (!value) return;
+    const id = String(window.activeSessionId || activeSessionId || '');
+    const history = id ? (_chatHistoryBySession[id] || []) : _chatHistory;
+    // Avoid duplicate adjacent entries, but preserve intentional repeated
+    // questions separated by another command.
+    if (history[history.length - 1] !== value) history.push(value);
+    while (history.length > _CHAT_HISTORY_LIMIT) history.shift();
+    if (id) _chatHistoryBySession[id] = history;
+    _chatHistory = history.slice();
+    _chatHistoryIdx = _chatHistory.length;
+    _chatHistoryDraft = '';
+    _chatHistoryBrowsing = false;
+}
 
 function handleChatKeypress(ev) {
     if (!ev) return;
@@ -699,34 +749,45 @@ function handleChatKeypress(ev) {
     if (ev.key === 'Enter' && !ev.shiftKey) {
         ev.preventDefault();
         const text = (input ? input.value : '').trim();
-        if (text) {
-            _chatHistory.push(text);
-            if (_chatHistory.length > _CHAT_HISTORY_LIMIT) {
-                _chatHistory.splice(0, _chatHistory.length - _CHAT_HISTORY_LIMIT);
-            }
-            _chatHistoryIdx = _chatHistory.length;
+        if (text) _rememberChatCommand(text);
+        // Enter submits a new turn.  It must never share the Stop action:
+        // while a task is active, the turn is queued for this case and the
+        // explicit stop button remains the only user cancellation path.
+        if (typeof sendChat === 'function') sendChat(undefined, { queueIfBusy: true });
+    } else if (ev.key === 'ArrowUp' && input && !ev.altKey && !ev.ctrlKey && !ev.metaKey && !ev.shiftKey) {
+        // This is a single-line command box (Shift+Enter is the multiline
+        // escape hatch), so Up/Down are dedicated history navigation keys.
+        // Preserve a partially typed draft and restore it when moving past
+        // the newest command, matching terminal-style agent UIs.
+        ev.preventDefault();
+        const history = _activeChatHistory();
+        if (!_chatHistoryBrowsing) {
+            _chatHistoryDraft = input.value;
+            _chatHistoryIdx = history.length;
+            _chatHistoryBrowsing = true;
         }
-        if (typeof sendChat === 'function') sendChat();
-    } else if (ev.key === 'ArrowUp' && input && !input.value.trim()) {
-        // Up arrow: recall previous command (only when input is empty or at start)
         if (_chatHistoryIdx > 0) {
             _chatHistoryIdx--;
-            input.value = _chatHistory[_chatHistoryIdx] || '';
-            // Move cursor to end
-            input.setSelectionRange(input.value.length, input.value.length);
-        }
-        ev.preventDefault();
-    } else if (ev.key === 'ArrowDown' && input) {
-        // Down arrow: recall next command or clear
-        if (_chatHistoryIdx < _chatHistory.length - 1) {
-            _chatHistoryIdx++;
-            input.value = _chatHistory[_chatHistoryIdx] || '';
-        } else {
-            _chatHistoryIdx = _chatHistory.length;
-            input.value = '';
+            input.value = history[_chatHistoryIdx] || '';
         }
         input.setSelectionRange(input.value.length, input.value.length);
+    } else if (ev.key === 'ArrowDown' && input && !ev.altKey && !ev.ctrlKey && !ev.metaKey && !ev.shiftKey) {
         ev.preventDefault();
+        const history = _activeChatHistory();
+        if (!_chatHistoryBrowsing) {
+            _chatHistoryIdx = history.length;
+            _chatHistoryDraft = input.value;
+            _chatHistoryBrowsing = true;
+        }
+        if (_chatHistoryIdx < history.length - 1) {
+            _chatHistoryIdx++;
+            input.value = history[_chatHistoryIdx] || '';
+        } else {
+            _chatHistoryIdx = history.length;
+            input.value = _chatHistoryDraft;
+            _chatHistoryBrowsing = false;
+        }
+        input.setSelectionRange(input.value.length, input.value.length);
     }
 }
 
@@ -765,6 +826,46 @@ const CHAT_ABORT_TIMEOUT_MS = 4000;
 // the correct event journal instead of treating the task as cancelled.
 window._sessionChatTaskIds = window._sessionChatTaskIds || {};
 window._detachedChatTasks = window._detachedChatTasks || {};
+window._sessionChatQueues = window._sessionChatQueues || {};
+
+function _sessionChatQueue(sessionId) {
+    const key = String(sessionId || '');
+    if (!key) return [];
+    if (!Array.isArray(window._sessionChatQueues[key])) window._sessionChatQueues[key] = [];
+    return window._sessionChatQueues[key];
+}
+
+function _queueChatTurn(sessionId, message) {
+    const text = String(message || '').trim();
+    if (!sessionId || !text) return false;
+    _sessionChatQueue(sessionId).push({ text, queuedAt: Date.now() });
+    if (typeof window.scheduleWorkspaceSave === 'function') window.scheduleWorkspaceSave('chat.turn_queued');
+    return true;
+}
+
+let _queuedChatFlushRunning = false;
+async function _flushQueuedChatTurns() {
+    const sessionId = activeSessionId;
+    if (!sessionId || _queuedChatFlushRunning || window._chatTurnActive || window._chatStreaming) return;
+    const queue = _sessionChatQueue(sessionId);
+    if (!queue.length) return;
+    const next = queue.shift();
+    if (typeof window.scheduleWorkspaceSave === 'function') window.scheduleWorkspaceSave('chat.turn_dequeued');
+    _queuedChatFlushRunning = true;
+    try {
+        await sendChat(next.text, {
+            hiddenUserMessage: true,
+            preserveLastUserMessage: true,
+            queuedTurn: true,
+        });
+    } finally {
+        _queuedChatFlushRunning = false;
+        if (activeSessionId === sessionId && _sessionChatQueue(sessionId).length) {
+            setTimeout(() => { try { _flushQueuedChatTurns(); } catch (_) {} }, 0);
+        }
+    }
+}
+window.flushQueuedChatTurns = _flushQueuedChatTurns;
 
 function readChatChunk(reader, timeoutMs = CHAT_IDLE_TIMEOUT_MS, onTimeout = null) {
     let timer = null;
@@ -914,12 +1015,32 @@ async function sendChat(prefill, options) {
     const opts = options || {};
     const input = document.getElementById('chatInput');
     const isResumingTask = !!opts.resumeTaskId;
+    const isBusy = !!window._chatTurnActive || !!window._chatStreaming;
 
-    // If user already has an active stream, treat this button click as STOP.
+    // Enter is a submit action, not a cancellation action.  Preserve the
+    // current task and queue the new turn under the selected case.  The
+    // queued user bubble is rendered immediately; the request itself is sent
+    // only after the active task reaches a terminal SSE event.
+    if (isBusy && opts.queueIfBusy) {
+        const queuedText = (prefill != null ? prefill : (input ? input.value : '')).trim();
+        if (!queuedText || !activeSessionId) return false;
+        if (input) input.value = '';
+        if (typeof addChat === 'function') addChat('user', queuedText);
+        window._lastUserMessage = queuedText;
+        _queueChatTurn(activeSessionId, queuedText);
+        if (typeof addChat === 'function') {
+            addChat('system', 'Queued for this case; the current task will finish first.');
+        }
+        return true;
+    }
+
+    // If user already has an active stream, treat this explicit send-button
+    // invocation as STOP.  The keypress path above always sets queueIfBusy,
+    // so pressing Enter can never enter this cancellation branch.
     // This must run before reading/validating the input box; during streaming
     // the input is usually empty, and the old ordering returned early before
     // aborting anything.
-    if (window._chatTurnActive) {
+    if (isBusy) {
         try {
             if (typeof window._chatTurnCancelUi === 'function') window._chatTurnCancelUi('Stopped');
         } catch (_) {}
@@ -1018,6 +1139,7 @@ async function sendChat(prefill, options) {
     // Draft chunks belong to the execution trace. Render only the response
     // event emitted after the final completeness/review phase.
     let finalResponseReceived = false;
+    let turnCompleted = false;
     let progressEl = null;
     let lastToolName = '';
     const steps = [];
@@ -1169,6 +1291,12 @@ async function sendChat(prefill, options) {
                     }
                     if (currentEvent === 'step' && data) {
                         steps.push(data);
+                        if (data.tool === 'ctv_segmentation' && typeof updateTumorTypeSelector === 'function') {
+                            const candidate = data.params?.tumor_type
+                                || data.arguments?.tumor_type
+                                || data.metadata?.tumor_type_used;
+                            if (candidate) updateTumorTypeSelector(candidate);
+                        }
                         // First step: replace thinking indicator with the live chain
                         if (!chainEl && typeof createLiveThinkingChain === 'function') {
                             if (thinkingEl && typeof removeThinkingIndicator === 'function') removeThinkingIndicator(thinkingEl);
@@ -1448,6 +1576,7 @@ async function sendChat(prefill, options) {
                         if (typeof addChat === 'function') addChat('error', 'AI error: ' + data.message);
                     } else if (currentEvent === 'done') {
                         // Server says stream is complete
+                        turnCompleted = true;
                         // BUG FIX 2026-06-17: stamp a plan-completion
                         // timestamp so autoCaptureReportFigures can
                         // detect and discard stale auto-captured
@@ -1620,6 +1749,9 @@ async function sendChat(prefill, options) {
             window._chatStreaming = false;
             setStreamingState(false);
             setTimeout(() => { try { _flushHiddenChatQueue(); } catch (_) {} }, 0);
+            if (turnCompleted) {
+                setTimeout(() => { try { _flushQueuedChatTurns(); } catch (_) {} }, 0);
+            }
         }
     }
 }
@@ -1627,20 +1759,27 @@ async function sendChat(prefill, options) {
 window.resumeSessionChatTask = async function resumeSessionChatTask() {
     const sessionId = activeSessionId;
     if (!sessionId || window._chatTurnActive || window._chatStreaming) return false;
-    let taskId = window._detachedChatTasks[sessionId] || window._sessionChatTaskIds[sessionId] || null;
-    const checkpointTaskId = window._activeWorkspaceSnapshot?.operation?.checkpoint?.task_id;
-    if (!taskId && checkpointTaskId) taskId = checkpointTaskId;
-    if (!taskId) return false;
     try {
         const response = await fetch(API + '/chat/task', { cache: 'no-store' });
         if (!response.ok) return false;
         const payload = await response.json();
         const task = payload?.task;
-        if (!task || task.task_id !== taskId || task.status !== 'running') {
+        // The server owns task identity. Browser memory and a workspace
+        // checkpoint are only hints because either can be stale after a
+        // refresh, a case switch, or a fast task finalization race.
+        if (!task || task.status !== 'running') {
             delete window._detachedChatTasks[sessionId];
+            delete window._sessionChatTaskIds[sessionId];
+            if (window._sessionChatTaskStatuses) window._sessionChatTaskStatuses[sessionId] = task?.status || 'idle';
+            if (typeof window.flushQueuedChatTurns === 'function') {
+                setTimeout(() => window.flushQueuedChatTurns(), 0);
+            }
             return false;
         }
+        const taskId = task.task_id;
         window._sessionChatTaskIds[sessionId] = taskId;
+        window._sessionChatTaskStatuses = window._sessionChatTaskStatuses || {};
+        window._sessionChatTaskStatuses[sessionId] = 'running';
         delete window._detachedChatTasks[sessionId];
         await sendChat(null, {
             resumeTaskId: taskId,

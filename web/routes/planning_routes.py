@@ -61,6 +61,29 @@ _valid_screenshot_request = _server_support._valid_screenshot_request
 _validate_path = _server_support._validate_path
 
 
+def _validate_label_geometry(ct_path: str, label_path: str) -> Optional[str]:
+    """Reject masks whose physical grid differs from the active CT.
+
+    Resampling an uploaded mask implicitly would change the established
+    coordinate chain and can move a CTV/OAR relative to planned needles. The
+    user can resample explicitly and upload the corrected label instead.
+    """
+    try:
+        ct = sitk.ReadImage(ct_path)
+        label = sitk.ReadImage(label_path)
+    except Exception as exc:
+        return f"Unable to read CT or mask: {exc}"
+    if tuple(ct.GetSize()) != tuple(label.GetSize()):
+        return f"Mask size {tuple(label.GetSize())} does not match CT size {tuple(ct.GetSize())}"
+    if not np.allclose(ct.GetSpacing(), label.GetSpacing(), rtol=0.0, atol=1e-4):
+        return "Mask spacing does not match the CT spacing"
+    if not np.allclose(ct.GetOrigin(), label.GetOrigin(), rtol=0.0, atol=1e-4):
+        return "Mask origin does not match the CT origin"
+    if not np.allclose(ct.GetDirection(), label.GetDirection(), rtol=0.0, atol=1e-4):
+        return "Mask direction does not match the CT direction"
+    return None
+
+
 def _snapshot_from_seed_plan(serialized_plan, needle_geometry):
     """Convert an automatic serialized plan to the frontend world snapshot."""
     seeds = []
@@ -577,6 +600,15 @@ def register_planning_routes(app, get_agent):
             return jsonify({"error": "Invalid image_path"}), 400
         if label_path and (not _validate_path(label_path, purpose="read") or not owned_case_path(label_path)):
             return jsonify({"error": "Invalid label_path"}), 400
+        if label_path:
+            geometry_error = _validate_label_geometry(image_path, label_path)
+            if geometry_error:
+                return jsonify({
+                    "success": False,
+                    "kind": kind,
+                    "error": geometry_error,
+                    "hint": "Resample the mask onto the exact CT grid before uploading it.",
+                }), 422
 
         checkpoint_operation(
             agent,
@@ -596,11 +628,12 @@ def register_planning_routes(app, get_agent):
                     kwargs["label_path"] = label_path
                 result = tool.execute(**kwargs)
             elif kind == "oar":
-                from tool_factory.OAR_seg.totalsegmentator_oar import (
-                    TotalSegmentatorOARTool,
-                )
-                tool = TotalSegmentatorOARTool()
-                result = tool.execute(image_path=image_path)
+                from tool_factory.OAR_seg import OARSegmentationTool
+                tool = OARSegmentationTool()
+                kwargs = {"image_path": image_path}
+                if label_path:
+                    kwargs["label_path"] = label_path
+                result = tool.execute(**kwargs)
             else:
                 return jsonify({"error": f"Unknown segmentation kind: {kind}"}), 400
 
@@ -643,6 +676,12 @@ def register_planning_routes(app, get_agent):
                             agent.memory.store("tumor_type_used", meta["tumor_type_used"])
                         if meta.get("ctv_source"):
                             agent.memory.store("ctv_source", meta["ctv_source"])
+                        if label_path:
+                            # Keep both historical and canonical memory keys
+                            # so auto-tool parameter preparation and manual
+                            # UI uploads resolve the same case-owned mask.
+                            agent.memory.store("ctv_path", label_path)
+                            agent.memory.store("ctv_mask_path", label_path)
                         if meta.get("label_map"):
                             agent.memory.store("ctv_label_map", meta["label_map"])
                         if meta.get("label_stats"):
@@ -668,6 +707,9 @@ def register_planning_routes(app, get_agent):
                         agent.memory.store("oar_array", oar_array)
                         agent.memory.store("oar_label_data", oar_array)
                         agent.memory.store("oar_segmented", True)
+                        if label_path:
+                            agent.memory.store("oar_path", label_path)
+                            agent.memory.store("oar_mask_path", label_path)
                         if meta.get("organ_names"):
                             agent.memory.store("organ_names", meta["organ_names"])
                         if meta.get("organ_counts"):
@@ -1318,7 +1360,13 @@ def register_planning_routes(app, get_agent):
             config_path = os.path.join(PROJECT_ROOT, "config", "default_params.json")
             with open(config_path, 'r', encoding="utf-8") as f:
                 defaults = json.load(f)
-            return jsonify({"success": True, "defaults": defaults})
+            return jsonify({
+                "success": True,
+                "defaults": defaults,
+                # The JSON defaults stay normalized for backward-compatible
+                # planning code; the UI uses this scale to show physical Gy.
+                "dose_scale_gy": DOSE_MODEL_SCALE_GY,
+            })
         except Exception as e:
             logger.error(f"Get config failed: {e}")
             return jsonify({"error": str(e)}), 500
@@ -2508,6 +2556,20 @@ def register_planning_routes(app, get_agent):
                         "user_message": message[:500],
                     },
                 )
+                # Persist the task identity separately from the agent
+                # checkpoint.  This small merge makes the running task
+                # discoverable after a case switch or browser refresh even
+                # when the full agent snapshot is still being written.
+                try:
+                    store.save_snapshot_patch(
+                        user["id"],
+                        session_id,
+                        {"chat": {"task_id": task.task_id, "task_status": "running"}},
+                        expected_revision=None,
+                        reason="chat.task.started",
+                    )
+                except WorkspaceError:
+                    logger.warning("Unable to persist chat task identity %s", task.task_id, exc_info=True)
             finally:
                 # Release the worker only after the running checkpoint has
                 # been written, preventing a fast Q&A turn from overwriting

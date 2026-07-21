@@ -252,7 +252,12 @@ def register_session_routes(
         session_id = str(session.get("bb_session_id") or "")
         try:
             store.get_session(user["id"], session_id)
-            get_agent(session_id)
+            # Snapshot is a control-plane read and must stay fast after a
+            # reconnect. Hydrating a BrachyAgent here can load CT volumes,
+            # masks, dose arrays and GPU-backed state before the chat can be
+            # painted. Data-plane hydration remains lazy in planning/chat
+            # routes, while the durable snapshot already contains the full
+            # serializable transcript and UI state needed for first paint.
             snapshot = store.load_snapshot(user["id"], session_id)
         except WorkspaceError as exc:
             return jsonify({"error": str(exc)}), 404

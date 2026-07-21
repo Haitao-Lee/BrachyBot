@@ -261,6 +261,33 @@
         target.hidden = false;
     }
 
+    function applyChatSnapshotFast(snapshot) {
+        const chat = snapshot?.chat;
+        const sessionId = String(typeof activeSessionId !== 'undefined' ? activeSessionId : '');
+        if (!chat || !sessionId || typeof sessions === 'undefined' || !sessions[sessionId]) return;
+
+        // Chat is the first-paint part of a workspace.  It contains no CT,
+        // GPU, WebGL, or model state, so restoring it here keeps reconnects
+        // responsive while the clinical data plane hydrates in the background.
+        if (Array.isArray(chat.messages)) {
+            sessions[sessionId].messages = jsonClone(chat.messages);
+            sessions[sessionId].pending = false;
+            if (typeof loadSessionChat === 'function') loadSessionChat(sessionId);
+        }
+        window._sessionChatQueues = window._sessionChatQueues || {};
+        window._sessionChatQueues[sessionId] = Array.isArray(chat.queued) ? jsonClone(chat.queued) : [];
+        window._sessionChatTaskStatuses = window._sessionChatTaskStatuses || {};
+        if (chat.task_id) {
+            window._sessionChatTaskIds = window._sessionChatTaskIds || {};
+            window._sessionChatTaskIds[sessionId] = chat.task_id;
+            window._sessionChatTaskStatuses[sessionId] = chat.task_status || 'running';
+        } else {
+            delete window._sessionChatTaskIds?.[sessionId];
+            delete window._detachedChatTasks?.[sessionId];
+            window._sessionChatTaskStatuses[sessionId] = chat.task_status || 'idle';
+        }
+    }
+
     function readRecoveryDismissal(key) {
         try { return sessionStorage.getItem(key) === '1'; } catch (_) { return false; }
     }
@@ -290,7 +317,24 @@
 
     function chatState() {
         const current = (typeof sessions !== 'undefined' && typeof activeSessionId !== 'undefined') ? sessions[activeSessionId] : null;
-        return current ? { messages: jsonClone(current.messages || []), pending: !!current.pending } : {};
+        if (!current) return {};
+        const sessionId = String(activeSessionId || '');
+        const queue = (window._sessionChatQueues && Array.isArray(window._sessionChatQueues[sessionId]))
+            ? jsonClone(window._sessionChatQueues[sessionId]) : [];
+        const taskId = window._activeChatTaskId
+            || window._sessionChatTaskIds?.[sessionId]
+            || window._detachedChatTasks?.[sessionId]
+            || null;
+        const savedStatus = window._sessionChatTaskStatuses?.[sessionId]
+            || window._activeWorkspaceSnapshot?.chat?.task_status
+            || null;
+        return {
+            messages: jsonClone(current.messages || []),
+            pending: !!current.pending,
+            queued: queue,
+            task_id: taskId,
+            task_status: taskId ? (savedStatus || 'running') : (savedStatus || 'idle'),
+        };
     }
 
     function applyControls(values) {
@@ -381,6 +425,19 @@
                 try { _updateReportPreview(); } catch (_) {}
             }
             const chat = snapshot.chat || {};
+            const sessionId = String(typeof activeSessionId !== 'undefined' ? activeSessionId : '');
+            window._sessionChatQueues = window._sessionChatQueues || {};
+            window._sessionChatQueues[sessionId] = Array.isArray(chat.queued) ? jsonClone(chat.queued) : [];
+            window._sessionChatTaskStatuses = window._sessionChatTaskStatuses || {};
+            if (chat.task_id) {
+                window._sessionChatTaskIds = window._sessionChatTaskIds || {};
+                window._sessionChatTaskIds[sessionId] = chat.task_id;
+                window._sessionChatTaskStatuses[sessionId] = chat.task_status || 'running';
+            } else {
+                delete window._sessionChatTaskIds?.[sessionId];
+                delete window._detachedChatTasks?.[sessionId];
+                window._sessionChatTaskStatuses[sessionId] = chat.task_status || 'idle';
+            }
             if (Array.isArray(chat.messages) && typeof sessions !== 'undefined' && activeSessionId && sessions[activeSessionId]) {
                 // Pending is a transient browser presentation state.  Never
                 // resurrect an old spinner after a reload or case switch.
@@ -389,11 +446,10 @@
                 if (typeof loadSessionChat === 'function') loadSessionChat(activeSessionId);
             }
             renderRecoveryNotice(snapshot.operation);
-            if (snapshot.operation?.state === 'running' && typeof window.resumeSessionChatTask === 'function') {
-                // A page refresh may be the first client to subscribe after
-                // the task started. The task endpoint decides whether the
-                // in-process worker is still alive; interrupted server-start
-                // checkpoints remain recoverable but are not auto-rerun.
+            if (typeof window.resumeSessionChatTask === 'function') {
+                // The selected-case task endpoint is authoritative. Query it
+                // even when the snapshot raced with task finalization, so a
+                // case switch/refresh never loses a live trace or spinner.
                 setTimeout(() => window.resumeSessionChatTask(), 0);
             }
             if (typeof setViewerLayout === 'function' && state?.viewerSettings?.layout) setViewerLayout(state.viewerSettings.layout);
@@ -522,7 +578,11 @@
 
     window.loadSessions = async function loadSessions() {
         const data = await loadServerSessions();
-        await loadActiveWorkspace();
+        const workspace = await loadActiveWorkspace();
+        // Paint the durable transcript before /status and clinical hydration.
+        // The latter may load CT, labels, meshes, dose arrays, and an agent;
+        // none of that should make a restored conversation look missing.
+        applyChatSnapshotFast(workspace);
         return data;
     };
 
@@ -552,6 +612,11 @@
             revision = data.workspace?.session?.revision ?? null;
             window._activeWorkspaceSnapshot = data.workspace || null;
             renderSessionList();
+            // `clearClientWorkspace` resets rendering state, but the chat DOM
+            // is owned by the session message store. Explicitly load the new
+            // empty transcript so the previous case cannot remain visible
+            // under the newly highlighted session.
+            if (typeof loadSessionChat === 'function') loadSessionChat(activeSessionId);
             if (data.lease && typeof window.brachybotAuth?.applyLeaseResult === 'function') {
                 window.brachybotAuth.applyLeaseResult(data.lease);
             } else if (typeof window.brachybotAuth?.acquireLease === 'function') {
@@ -741,6 +806,7 @@
     window.scheduleWorkspaceSave = scheduleWorkspaceSave;
     window.persistWorkspace = persistWorkspace;
     window.applyWorkspaceSnapshot = applyWorkspaceSnapshot;
+    window.applyChatSnapshotFast = applyChatSnapshotFast;
     window.loadServerSessions = loadServerSessions;
     window.invalidateDeferredWorkspaceRestore = invalidateDeferredWorkspaceRestore;
 

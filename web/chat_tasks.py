@@ -56,6 +56,7 @@ class ChatTask:
 
     def __post_init__(self) -> None:
         self._events: List[str] = []
+        self._terminal_event_seen = False
         self._condition = threading.Condition()
 
     def publish(self, raw: Any) -> None:
@@ -72,6 +73,8 @@ class ChatTask:
             self.error = str(data.get("message") or data.get("error") or "")
         elif event_name == "done" and isinstance(data, dict) and data.get("cancelled"):
             self.status = "cancelled"
+        if event_name == "done":
+            self._terminal_event_seen = True
         with self._condition:
             self._events.append(text)
             self._condition.notify_all()
@@ -195,6 +198,12 @@ class ChatTaskManager:
                     for event in agent.chat_with_stream(task.message):
                         task.publish(event)
                     if task.status == "running":
+                        # The Agent normally emits `done`, but the task
+                        # boundary owns the replay protocol. Emit a terminal
+                        # event when an adapter returns without one so a
+                        # client never remains in a perpetual pending state.
+                        if not task._terminal_event_seen:
+                            task.publish("event: done\ndata: {}\n\n")
                         task.finish("completed")
                     if on_finish is not None:
                         on_finish(task)
