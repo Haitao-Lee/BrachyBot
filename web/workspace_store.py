@@ -366,6 +366,19 @@ class WorkspaceStore:
                     detail_json TEXT NOT NULL DEFAULT '{}',
                     created_at REAL NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS review_comments (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    session_id TEXT NOT NULL REFERENCES case_sessions(id) ON DELETE CASCADE,
+                    author TEXT NOT NULL,
+                    body TEXT NOT NULL,
+                    anchor_json TEXT NOT NULL DEFAULT '{}',
+                    status TEXT NOT NULL DEFAULT 'open',
+                    created_at REAL NOT NULL,
+                    updated_at REAL NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_review_comments_session
+                    ON review_comments(user_id, session_id, created_at ASC);
                 """
             )
         for path in (self.database_path, self.database_path.with_name(self.database_path.name + "-wal"), self.database_path.with_name(self.database_path.name + "-shm")):
@@ -1081,6 +1094,115 @@ class WorkspaceStore:
                 "INSERT INTO audit_events(user_id, session_id, action, detail_json, created_at) VALUES (?, ?, ?, ?, ?)",
                 (user_id, session_id, action, json.dumps(_safe_json(detail), ensure_ascii=False), _now()),
             )
+
+    def list_audit_events(self, user_id: str, session_id: str, limit: int = 200) -> List[Dict[str, Any]]:
+        """Return case-scoped audit events without exposing another case's log."""
+        self.get_session(user_id, session_id)
+        bounded = max(1, min(int(limit or 200), 1000))
+        with self._connection() as connection:
+            rows = connection.execute(
+                "SELECT id, action, detail_json, created_at FROM audit_events "
+                "WHERE user_id = ? AND session_id = ? ORDER BY id DESC LIMIT ?",
+                (user_id, session_id, bounded),
+            ).fetchall()
+        events = []
+        for row in reversed(rows):
+            try:
+                detail = json.loads(row["detail_json"] or "{}")
+            except (TypeError, ValueError):
+                detail = {}
+            events.append({
+                "id": int(row["id"]),
+                "action": str(row["action"]),
+                "detail": detail if isinstance(detail, dict) else {},
+                "created_at": float(row["created_at"]),
+            })
+        return events
+
+    def list_review_comments(self, user_id: str, session_id: str) -> List[Dict[str, Any]]:
+        """List review comments for the authenticated owner's case."""
+        self.get_session(user_id, session_id)
+        with self._connection() as connection:
+            rows = connection.execute(
+                "SELECT id, author, body, anchor_json, status, created_at, updated_at "
+                "FROM review_comments WHERE user_id = ? AND session_id = ? ORDER BY id ASC",
+                (user_id, session_id),
+            ).fetchall()
+        result = []
+        for row in rows:
+            try:
+                anchor = json.loads(row["anchor_json"] or "{}")
+            except (TypeError, ValueError):
+                anchor = {}
+            result.append({
+                "id": int(row["id"]),
+                "author": str(row["author"]),
+                "body": str(row["body"]),
+                "anchor": anchor if isinstance(anchor, dict) else {},
+                "status": str(row["status"]),
+                "created_at": float(row["created_at"]),
+                "updated_at": float(row["updated_at"]),
+            })
+        return result
+
+    def add_review_comment(
+        self,
+        user_id: str,
+        session_id: str,
+        author: str,
+        body: str,
+        anchor: Optional[Mapping[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Add an auditable, case-scoped comment for review hand-off."""
+        self.get_session(user_id, session_id)
+        clean_body = str(body or "").strip()
+        if not clean_body or len(clean_body) > 4000:
+            raise WorkspaceError("Comment must contain 1-4000 characters")
+        clean_author = str(author or "").strip()[:160] or "BrachyBot user"
+        safe_anchor = _safe_json(anchor or {})
+        if not isinstance(safe_anchor, dict):
+            safe_anchor = {}
+        now = _now()
+        with self._connection() as connection:
+            cursor = connection.execute(
+                "INSERT INTO review_comments(user_id, session_id, author, body, anchor_json, status, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, 'open', ?, ?)",
+                (user_id, session_id, clean_author, clean_body, json.dumps(safe_anchor, ensure_ascii=False), now, now),
+            )
+            comment_id = int(cursor.lastrowid)
+        self._audit(user_id, session_id, "review.comment_added", {"comment_id": comment_id})
+        return next(item for item in self.list_review_comments(user_id, session_id) if item["id"] == comment_id)
+
+    def update_review_comment(self, user_id: str, session_id: str, comment_id: int, *, body: Optional[str] = None, status: Optional[str] = None) -> Dict[str, Any]:
+        """Update only owner-visible comment fields and record the transition."""
+        self.get_session(user_id, session_id)
+        clean_status = str(status or "").strip().lower() if status is not None else None
+        if clean_status is not None and clean_status not in {"open", "resolved"}:
+            raise WorkspaceError("Comment status must be open or resolved")
+        clean_body = str(body or "").strip() if body is not None else None
+        if clean_body is not None and not (1 <= len(clean_body) <= 4000):
+            raise WorkspaceError("Comment must contain 1-4000 characters")
+        with self._connection() as connection:
+            row = connection.execute(
+                "SELECT id FROM review_comments WHERE id = ? AND user_id = ? AND session_id = ?",
+                (int(comment_id), user_id, session_id),
+            ).fetchone()
+            if not row:
+                raise WorkspaceNotFound("Review comment was not found")
+            fields, values = [], []
+            if clean_body is not None:
+                fields.append("body = ?"); values.append(clean_body)
+            if clean_status is not None:
+                fields.append("status = ?"); values.append(clean_status)
+            if fields:
+                fields.append("updated_at = ?"); values.append(_now())
+                values.extend([int(comment_id), user_id, session_id])
+                connection.execute(
+                    f"UPDATE review_comments SET {', '.join(fields)} WHERE id = ? AND user_id = ? AND session_id = ?",
+                    values,
+                )
+        self._audit(user_id, session_id, "review.comment_updated", {"comment_id": int(comment_id), "status": clean_status})
+        return next(item for item in self.list_review_comments(user_id, session_id) if item["id"] == int(comment_id))
 
 
 def _safe_filename(value: str) -> str:

@@ -454,6 +454,52 @@ def create_app(config: Optional[Dict] = None):
             logger.error(f"Upload error: {e}\n{traceback.format_exc()}")
             return jsonify({"error": str(e)}), 500
 
+    @app.route("/api/import/dicom_rt", methods=["POST"])
+    @require_api_key
+    @rate_limit
+    def api_import_dicom_rt():
+        """Import RTSTRUCT/RTDOSE metadata into the active case.
+
+        RTSTRUCT contours and RTDOSE grids are stored as an explicit import
+        record. They are not silently rasterized or merged into native masks;
+        the operator must confirm frame registration before using them for
+        planning. This keeps the DICOM-RT chain useful without hiding a
+        potentially unsafe geometry conversion.
+        """
+        uploaded = request.files.get("file")
+        if uploaded is None or not uploaded.filename:
+            return jsonify({"error": "Upload one RTSTRUCT or RTDOSE file"}), 400
+        filename = _sanitize_upload_filename(uploaded.filename)
+        if not filename.lower().endswith((".dcm", ".dicom")):
+            return jsonify({"error": "DICOM-RT import accepts .dcm or .dicom files"}), 400
+        try:
+            user, session_id = _request_session_context()
+            relative = f"imports/dicom_rt/{filename}"
+            path = workspace_store.write_upload(
+                user["id"], session_id, relative, uploaded.stream,
+                expected_bytes=uploaded.content_length,
+            )
+            from tool_factory.input.dicom_rt_importer import import_dicom_rt
+            imported = import_dicom_rt(path)
+            agent = get_agent(session_id)
+            if agent is not None:
+                existing = agent.memory.retrieve("imported_dicom_rt") or []
+                agent.memory.store("imported_dicom_rt", [*existing[-9:], imported])
+                workspace_store.flush_agent_checkpoint(user["id"], session_id, agent, "dicom_rt.imported")
+            return jsonify({
+                "success": True,
+                "import": imported,
+                "clinical_status": "UNCONFIRMED_REGISTRATION",
+                "message": "DICOM-RT metadata imported; confirm frame registration before applying it to planning data.",
+            }), 201
+        except WorkspaceQuotaExceeded as exc:
+            return jsonify({"error": str(exc)}), 413
+        except (WorkspaceError, FileNotFoundError, ValueError, RuntimeError) as exc:
+            return jsonify({"error": str(exc)}), 400
+        except Exception as exc:
+            logger.exception("DICOM-RT import failed")
+            return jsonify({"error": str(exc)}), 500
+
     @app.route("/api/viewer/image", methods=["GET"])
     @require_api_key
     @rate_limit

@@ -1136,9 +1136,11 @@ async function sendChat(prefill, options) {
     // folded when the final assistant response begins streaming.
     let todo = null;
     let responseText = '';
-    // Draft chunks belong to the execution trace. Render only the response
-    // event emitted after the final completeness/review phase.
+    // Provider draft chunks belong to the execution trace. The server emits
+    // `final_text_chunk` only after the completeness/quality gate; those
+    // chunks are safe to render progressively in the final answer bubble.
     let finalResponseReceived = false;
+    let finalTextStreamStarted = false;
     let turnCompleted = false;
     let progressEl = null;
     let lastToolName = '';
@@ -1540,12 +1542,30 @@ async function sendChat(prefill, options) {
                         scrollToBottom();
                     } else if (currentEvent === 'text_chunk' && data && data.text) {
                         responseText += data.text;
-                        // Keep model draft chunks out of the chat answer. The
-                        // server may still be executing tools or checking
-                        // completeness, so rendering them as an answer makes
-                        // users see a response that is later replaced. The
-                        // execution trace remains live; only the reviewed
-                        // `response` event creates the answer bubble.
+                        // Keep model draft chunks out of the answer. They can
+                        // precede tool calls or a review retry and are not yet
+                        // an approved user-facing response.
+                    } else if (currentEvent === 'final_text_chunk' && data && data.text) {
+                        // This event is emitted after all required review work.
+                        // Render it in one stable bubble so the user sees
+                        // genuine incremental progress without duplicate
+                        // assistant messages.
+                        if (!finalTextStreamStarted) {
+                            finalTextStreamStarted = true;
+                            responseText = '';
+                            if (!responseEl && typeof createStreamingResponse === 'function') {
+                                if (thinkingEl && typeof removeThinkingIndicator === 'function') removeThinkingIndicator(thinkingEl);
+                                responseEl = createStreamingResponse();
+                                if (todo && responseEl.parentElement) responseEl.parentElement.appendChild(todo.root);
+                            }
+                        }
+                        responseText += String(data.text);
+                        if (responseEl && typeof updateStreamingResponse === 'function') {
+                            responseEl.classList.add('is-streaming');
+                            responseEl.setAttribute('aria-busy', 'true');
+                            updateStreamingResponse(responseEl, responseText);
+                        }
+                        scrollToBottom();
                     } else if (currentEvent === 'response' && data && data.response) {
                         // The final response event is emitted only after the
                         // required review gate. Create the answer bubble here,
@@ -1563,6 +1583,10 @@ async function sendChat(prefill, options) {
                         }
                         if (responseEl && typeof updateStreamingResponse === 'function') {
                             updateStreamingResponse(responseEl, responseText);
+                        }
+                        if (responseEl) {
+                            responseEl.classList.remove('is-streaming');
+                            responseEl.removeAttribute('aria-busy');
                         }
                         window._lastResponseText = null;
                         // usage-bar footer (token counts, latency, tool

@@ -15,6 +15,8 @@ import json
 import logging
 import os
 import re
+import time
+import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -28,6 +30,15 @@ KB_DIR = TOOL_DIR / "data"
 SOURCE_ROOT = REPO_ROOT / "clinical_kb" / "sources"
 GUIDELINES_PATH = REPO_ROOT / "clinical_kb" / "guidelines_brachytherapy.md"
 GUIDELINES_DIR = REPO_ROOT / "clinical_kb" / "guidelines"
+# Review proposals are runtime data, not source-controlled KB content.  Keep
+# the queue outside the package so an installed/read-only checkout can still
+# accept proposals without mutating the clinical corpus.
+REVIEW_QUEUE_PATH = Path(
+    os.environ.get(
+        "BRACHYBOT_KB_REVIEW_QUEUE",
+        str(REPO_ROOT / ".runtime" / "clinical_kb_review_queue.json"),
+    )
+).expanduser()
 
 _GENERIC_QUERY_TERMS = {
     "brachytherapy", "bt", "guideline", "guidelines", "consensus", "review",
@@ -521,6 +532,70 @@ Actions:
         self._save_kb(kb)
         return self._result(success=True, data={"category": category, "key": key}, message=f"Added '{key}' to '{category}'", sources=_collect_urls(value))
 
+    def _review_queue(self) -> List[Dict[str, Any]]:
+        """Read the human-review queue; queued entries never affect retrieval."""
+        try:
+            payload = json.loads(REVIEW_QUEUE_PATH.read_text(encoding="utf-8"))
+            return payload if isinstance(payload, list) else []
+        except (OSError, json.JSONDecodeError):
+            return []
+
+    def _save_review_queue(self, entries: List[Dict[str, Any]]) -> None:
+        REVIEW_QUEUE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        temp = REVIEW_QUEUE_PATH.with_suffix(".tmp")
+        temp.write_text(json.dumps(entries[-500:], ensure_ascii=False, indent=2), encoding="utf-8")
+        os.replace(temp, REVIEW_QUEUE_PATH)
+
+    def _propose_entry(self, data: Dict[str, Any]) -> ToolResult:
+        """Queue a contribution instead of silently changing clinical evidence."""
+        category = str(data.get("category") or "").strip()
+        key = str(data.get("key") or "").strip()
+        value = data.get("value", {})
+        urls = _collect_urls(value)
+        if not category or not key or not isinstance(value, (dict, list, str, int, float, bool)):
+            return self._result(success=False, error="Need category, key, and JSON-compatible value")
+        if not urls:
+            return self._result(success=False, error="Every clinical contribution needs at least one source URL")
+        entry = {
+            "id": uuid.uuid4().hex,
+            "status": "pending_review",
+            "created_at": time.time(),
+            "category": category,
+            "key": key[:160],
+            "value": value,
+            "source_urls": urls[:20],
+        }
+        queue = self._review_queue()
+        queue.append(entry)
+        self._save_review_queue(queue)
+        return self._result(
+            success=True,
+            data={"proposal": entry},
+            message="Contribution queued for human review. It is not used for clinical retrieval until approved.",
+            sources=urls,
+        )
+
+    def _refresh_source_manifest(self, data: Dict[str, Any]) -> ToolResult:
+        """Create reviewable source candidates without auto-importing claims."""
+        urls = data.get("urls") if isinstance(data.get("urls"), list) else []
+        urls = [str(url).strip() for url in urls if str(url).strip()]
+        if not urls:
+            return self._result(success=False, error="Provide one or more source URLs to review")
+        candidates = []
+        for url in urls[:50]:
+            is_http = url.startswith("https://") or url.startswith("http://")
+            candidates.append({
+                "url": url,
+                "status": "candidate" if is_http else "rejected",
+                "reason": "Awaiting content and citation verification" if is_http else "Only HTTP(S) sources are accepted",
+            })
+        return self._result(
+            success=True,
+            data={"candidates": candidates, "policy": "No source is added automatically; approve after independent citation and content review."},
+            message=f"Prepared {sum(item['status'] == 'candidate' for item in candidates)} source candidate(s) for review.",
+            sources=[item["url"] for item in candidates if item["status"] == "candidate"],
+        )
+
     def _search_guidelines(self, keyword: str, organ: str = "") -> ToolResult:
         source_results = self._search_sources(keyword or organ, organ=organ, limit=8)
 
@@ -621,7 +696,7 @@ Actions:
     def _execute(self, **kwargs) -> ToolResult:
         action = kwargs.get("action", "")
         if not action:
-            return self._result(success=False, error="No action", message="Specify: standards, constraints, tolerance, protocol, benchmark, search, guidelines, source_search, add")
+            return self._result(success=False, error="No action", message="Specify: standards, constraints, tolerance, protocol, benchmark, search, guidelines, source_search, add, propose, review_queue, refresh_sources")
 
         if action == "standards":
             return self._get_standards(kwargs.get("organ", ""))
@@ -648,4 +723,10 @@ Actions:
             )
         if action == "add":
             return self._add_entry(kwargs.get("data", {}))
-        return self._result(success=False, error=f"Unknown action: {action}", message="Valid: standards, constraints, tolerance, protocol, benchmark, search, guidelines, source_search, add")
+        if action == "propose":
+            return self._propose_entry(kwargs.get("data", {}))
+        if action == "review_queue":
+            return self._result(success=True, data={"entries": self._review_queue()}, message="Returned pending clinical KB contributions for human review.")
+        if action == "refresh_sources":
+            return self._refresh_source_manifest(kwargs)
+        return self._result(success=False, error=f"Unknown action: {action}", message="Valid: standards, constraints, tolerance, protocol, benchmark, search, guidelines, source_search, add, propose, review_queue, refresh_sources")

@@ -38,6 +38,46 @@ function _syncSeedsOverlayFromDataTree() {
     redrawSeedNeedleOverlays();
 }
 
+function _deepestSeedForNeedle(needle) {
+    if (!needle || !Array.isArray(needle.points) || needle.points.length < 2) return null;
+    const entry = new THREE.Vector3(..._vec3Array(needle.points[1]));
+    const target = new THREE.Vector3(..._vec3Array(needle.points[0]));
+    const direction = new THREE.Vector3().subVectors(target, entry);
+    const length2 = direction.lengthSq();
+    if (length2 < 1e-8) return null;
+    let deepest = null;
+    let deepestParam = -Infinity;
+    (dataTreeState?.planning?.seeds || []).forEach(seed => {
+        if (_normalizeTrajectoryId(seed.trajectory_id) !== _normalizeTrajectoryId(needle.trajectory_id)) return;
+        const position = new THREE.Vector3(..._vec3Array(seed.position || seed.pos));
+        const param = position.clone().sub(entry).dot(direction) / length2;
+        if (Number.isFinite(param) && param > deepestParam) {
+            deepestParam = param;
+            deepest = seed;
+        }
+    });
+    return deepest;
+}
+
+function _moveDeepestSeedWithInternalEndpoint(needle, position) {
+    const seed = _deepestSeedForNeedle(needle);
+    if (!seed) return;
+    const coordinates = [position.x, position.y, position.z];
+    seed.position = coordinates;
+    seed.pos = coordinates;
+    const overlaySeed = state.seedsOverlay?.seeds?.find(item => item.id === seed.id);
+    if (overlaySeed) {
+        overlaySeed.position = coordinates;
+    }
+    const stateSeed = state.seeds?.find(item => item.id === seed.id);
+    if (stateSeed) {
+        stateSeed.position = coordinates;
+        stateSeed.pos = coordinates;
+    }
+    const mesh = _makeSeedMesh(seed);
+    if (mesh) _upsertSceneMesh(seed.id, mesh);
+}
+
 function _cloneNeedleGeometry(needles) {
     return (needles || []).map((needle) => ({
         id: needle?.id,
@@ -416,6 +456,10 @@ async function onManualNeedleHandleEdited(handle) {
     if (!needle || pointIndex === undefined) return;
     const previousNeedles = _manualDoseBaselineNeedles();
     needle.points[pointIndex] = [handle.position.x, handle.position.y, handle.position.z];
+    // Point 0 is the intrabody endpoint. Keep it physically attached to the
+    // deepest seed by moving that seed with the endpoint; otherwise a valid
+    // 3D seed/needle plan can become visibly inconsistent after an edit.
+    if (pointIndex === 0) _moveDeepestSeedWithInternalEndpoint(needle, handle.position);
     _upsertSceneMesh(needle.id, _makeNeedleMesh(needle));
     _syncNeedleHandles(needle);
     _syncSeedsOverlayFromDataTree();
@@ -1118,6 +1162,9 @@ function init3DScene() {
                     selectedObject.position.y,
                     selectedObject.position.z,
                 ];
+                if (selectedObject.userData.pointIndex === 0) {
+                    _moveDeepestSeedWithInternalEndpoint(needle, selectedObject.position);
+                }
                 // Rebuild only the shaft preview. Handles remain untouched so
                 // the selected endpoint stays draggable throughout the move.
                 const preview = _makeNeedleMesh(needle);
@@ -1746,7 +1793,15 @@ async function loadSeeds3D() {
         // Bright magenta-red for clear visibility against the CTV mesh & dose cloud.
         data.needles.forEach(needle => {
             if (needle.points.length < 2) return;
-            let points = needle.points.map(p => new THREE.Vector3(...p));
+            // Use the same seed-clipped display geometry as the endpoint
+            // handles and 2D overlays. Rendering the raw algorithm segment
+            // here made the shaft protrude beyond the deepest seed even
+            // though the endpoint handles appeared correctly placed.
+            const treeNeedle = dataTreeState.planning.needles.find(item => item.id === needle.id) || needle;
+            let points = (typeof _needleDisplayPoints === 'function'
+                ? _needleDisplayPoints(treeNeedle)
+                : needle.points.map(p => new THREE.Vector3(...p)));
+            if (!Array.isArray(points) || points.length < 2) return;
 
             try {
                 // Filter out NaN points from needle trajectory

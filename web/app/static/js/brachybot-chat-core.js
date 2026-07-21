@@ -1953,6 +1953,8 @@ function updateStreamingResponse(el, text) {
 function finalizeStreamingResponse(el, text) {
     if (!el) return;
     el.removeAttribute('id');
+    el.classList.remove('is-streaming');
+    el.removeAttribute('aria-busy');
     el.innerHTML = renderMarkdown(text);
     try { saveSessionMessage('bot-response', text, null, Date.now()); } catch (_) {}
 }

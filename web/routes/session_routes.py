@@ -331,6 +331,57 @@ def register_session_routes(
             return jsonify({"error": str(exc)}), 400
         return jsonify({"success": True, **lease})
 
+    @app.route("/api/workspace/audit", methods=["GET"])
+    def workspace_audit_events():
+        """Return the selected case's server audit trail for review UI."""
+        user, error = user_or_error()
+        if error:
+            return error
+        session_id = str(session.get("bb_session_id") or "")
+        try:
+            events = store.list_audit_events(user["id"], session_id, request.args.get("limit", 200))
+        except WorkspaceError as exc:
+            return jsonify({"error": str(exc)}), 404
+        return jsonify({"success": True, "events": events})
+
+    @app.route("/api/workspace/review/comments", methods=["GET", "POST"])
+    def workspace_review_comments():
+        """Persist case-scoped review comments without changing clinical results."""
+        user, error = user_or_error()
+        if error:
+            return error
+        session_id = str(session.get("bb_session_id") or "")
+        try:
+            if request.method == "GET":
+                return jsonify({"success": True, "comments": store.list_review_comments(user["id"], session_id)})
+            data = request.get_json(silent=True) or {}
+            comment = store.add_review_comment(
+                user["id"], session_id, user.get("username", ""),
+                data.get("body", ""), data.get("anchor") if isinstance(data.get("anchor"), dict) else {},
+            )
+        except WorkspaceError as exc:
+            return jsonify({"error": str(exc)}), 400
+        return jsonify({"success": True, "comment": comment}), 201
+
+    @app.route("/api/workspace/review/comments/<int:comment_id>", methods=["PATCH"])
+    def update_workspace_review_comment(comment_id: int):
+        user, error = user_or_error()
+        if error:
+            return error
+        session_id = str(session.get("bb_session_id") or "")
+        data = request.get_json(silent=True) or {}
+        try:
+            comment = store.update_review_comment(
+                user["id"], session_id, comment_id,
+                body=data.get("body") if "body" in data else None,
+                status=data.get("status") if "status" in data else None,
+            )
+        except WorkspaceNotFound as exc:
+            return jsonify({"error": str(exc)}), 404
+        except WorkspaceError as exc:
+            return jsonify({"error": str(exc)}), 400
+        return jsonify({"success": True, "comment": comment})
+
     @app.route("/api/workspace/import-client", methods=["POST"])
     def import_legacy_client_workspace():
         """One-time migration for old localStorage chat/report data.

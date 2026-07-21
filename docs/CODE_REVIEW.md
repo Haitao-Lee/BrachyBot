@@ -6651,3 +6651,54 @@ real defect, not an intentional coordinate or rendering policy.
 - The focused regression suite includes the new contour scope/color contract;
   the full suite remains the release gate on the configured Python/conda
   runtime.
+
+## Round 74: Needle endpoint interaction runtime error (2026-07-21)
+
+### Confirmed finding
+
+The reported browser error was a real deterministic defect:
+
+```text
+Uncaught ReferenceError: requestRender is not defined
+  at _setNeedleInternalHandleHover (...brachybot-viewer-layout.js)
+```
+
+`_setNeedleInternalHandleHover()` and `setNeedleInteractionHighlight()` are
+module-level helpers. They were calling `requestRender`, which is a closure
+created inside `init3DScene()` and therefore is not visible at those call
+sites. The exception occurred during endpoint hover/press/release cleanup and
+left the pointer interaction in a wait-like state. This was not a GPU timeout,
+an RL planning loop, or a coordinate-chain error.
+
+### Corrective changes
+
+- Route those helpers through the public `scene3D.requestRender()` scheduler,
+  with a defensive scene/initialization check.
+- Keep the capture-phase endpoint guard, press-and-hold activation delay,
+  explicit replan confirmation, and outside-click context-menu behavior
+  unchanged.
+- Render the 3D shaft from the same deepest-seed-clipped geometry used by the
+  endpoint handles and 2D overlays.
+- When the intrabody endpoint is edited, move the deepest associated seed with
+  it so the visible seed/needle relationship remains physically consistent.
+- Bump frontend asset versions so a running browser cannot reuse the stale
+  script containing the undefined call.
+
+### Additional durable workflow work in this round
+
+- Added post-review `final_text_chunk` SSE events. Draft provider chunks stay
+  in the execution trace; one answer bubble is progressively filled only after
+  the review gate, then finalized by the authoritative `response` event.
+- Added case-owned audit-event and review-comment storage/API endpoints.
+- Added read-only DICOM-RTSTRUCT/RTDOSE metadata import. Registration and
+  rasterization remain explicit operator decisions.
+- Added a human-review queue for clinical knowledge-base contributions and
+  source candidates; queued material cannot affect retrieval before approval.
+
+### Verification
+
+- `node --check` passes for all changed frontend JavaScript files.
+- `git diff --check` passes.
+- The focused remote regression suite is the release gate for the Python
+  runtime and covers the endpoint render scheduler, clipped geometry, reviewed
+  streaming response, workspace ownership, and review-comment persistence.
