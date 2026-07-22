@@ -330,7 +330,23 @@ def create_app(config: Optional[Dict] = None):
                 _server_support._drop_ui_bucket(sid[1])
                 logger.info(f"Removed expired session: {sid}")
 
-    def drop_agent(session_id: str) -> None:
+    def get_cached_agent(session_id: str = None):
+        """Return a cached agent without constructing or hydrating one."""
+        try:
+            user, resolved_session_id = _request_session_context(session_id)
+        except (ValueError, WorkspaceError):
+            return None
+        cache_key = (user["id"], resolved_session_id)
+        with _sessions_lock:
+            agent = _sessions.get(cache_key)
+            if agent is not None:
+                _session_timestamps[cache_key] = time.time()
+                if has_request_context():
+                    g.brachybot_agent = agent
+                    g.brachybot_workspace = (user["id"], resolved_session_id)
+            return agent
+
+    def drop_agent(session_id: str, *, flush: bool = True) -> None:
         """Drop only the current user's cached agent; durable data remains intact."""
         try:
             user = current_user(workspace_store)
@@ -344,12 +360,23 @@ def create_app(config: Optional[Dict] = None):
         with _sessions_lock:
             agent = _sessions.pop(key, None)
             _session_timestamps.pop(key, None)
-            if agent is not None:
+            if agent is not None and not flush:
+                workspace_store.discard_agent_checkpoint(user["id"], resolved_session_id)
+            if agent is not None and flush:
                 try:
                     workspace_store.flush_agent_checkpoint(user["id"], resolved_session_id, agent, "agent.cache_dropped")
                 except WorkspaceError:
                     logger.warning("Failed to persist dropped case workspace", exc_info=True)
             _server_support._drop_ui_bucket(resolved_session_id)
+
+    def drop_agent_fast(session_id: str) -> None:
+        """Drop a deleted case from memory without a blocking final checkpoint.
+
+        Delete already means the user no longer wants this workspace. Regular
+        checkpoints keep the durable copy current; the delete path must not
+        synchronously serialize a large CT/plan before moving it to trash.
+        """
+        drop_agent(session_id, flush=False)
 
     @app.after_request
     def _checkpoint_mutating_workspace(response):
@@ -1210,7 +1237,14 @@ def create_app(config: Optional[Dict] = None):
 
     register_viewer_routes(app, get_agent, _load_ct_image, _extract_dicom_tags)
     register_planning_routes(app, get_agent)
-    register_session_routes(app, workspace_store, get_agent, drop_agent)
+    register_session_routes(
+        app,
+        workspace_store,
+        get_agent,
+        drop_agent,
+        get_cached_agent=get_cached_agent,
+        drop_agent_fast=drop_agent_fast,
+    )
 
     @app.route("/api/reset", methods=["POST"])
     @require_api_key

@@ -814,6 +814,19 @@ class WorkspaceStore:
                 timer.cancel()
         return self.snapshot_agent(user_id, session_id, agent, reason=reason)
 
+    def discard_agent_checkpoint(self, user_id: str, session_id: str) -> None:
+        """Cancel a pending checkpoint when a case is explicitly deleted.
+
+        Deletion moves/removes the workspace immediately. A timer left behind
+        by a dropped in-memory agent could otherwise recreate the active
+        workspace after the delete response has already been committed.
+        """
+        key = (user_id, session_id)
+        with self._lock:
+            timer = self._checkpoint_timers.pop(key, None)
+            if timer:
+                timer.cancel()
+
     def mark_operation(self, user_id: str, session_id: str, agent: Any, operation: Mapping[str, Any]) -> Dict[str, Any]:
         return self.snapshot_agent(user_id, session_id, agent, reason="operation.checkpoint", operation=operation)
 

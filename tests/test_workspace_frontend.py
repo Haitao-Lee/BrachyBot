@@ -46,7 +46,7 @@ def test_workspace_delete_uses_custom_confirmation_and_cancels_active_stream():
         "return runWorkspaceTransition", 1
     )[0]
     assert "prepareSessionChange" not in inactive_branch
-    assert "await loadServerSessions()" in inactive_branch
+    assert "void loadServerSessions().then(() => renderSessionList())" in inactive_branch
 
 
 def test_new_case_creation_avoids_empty_workspace_hydration_and_redundant_round_trips():
@@ -55,6 +55,8 @@ def test_new_case_creation_avoids_empty_workspace_hydration_and_redundant_round_
     sessions = read("web/routes/session_routes.py")
     new_case = workspace.split("window.newChat =", 1)[1].split("window.switchSession =", 1)[0]
     assert "await loadServerSessions()" not in new_case
+    assert "void persistWorkspace('session.switching')" in new_case
+    assert "deferDisposal: true" in new_case
     assert "scheduleBackgroundWorkspaceRestore" not in new_case
     assert "applyLeaseResult" in new_case
     assert "function applyLeaseResult" in auth
@@ -74,6 +76,37 @@ def test_session_switch_detaches_browser_stream_without_server_abort():
     assert "fetch(API + '/chat/abort'" not in transition_block
     assert "cancelActiveChatTurn" in chat_todo
     assert "window._chatTurnCancelUi" in chat_todo
+
+
+def test_case_transitions_do_not_block_on_control_plane_cleanup():
+    """Saving/releasing/reacquiring a lease must not delay the visible case."""
+    workspace = read("web/app/static/js/brachybot-workspace.js")
+    switch_block = workspace.split("window.switchSession =", 1)[1].split(
+        "window.deleteSession =", 1
+    )[0]
+    delete_block = workspace.split("window.deleteSession =", 1)[1]
+    assert "void persistWorkspace('session.switching')" in switch_block
+    assert "void window.brachybotAuth.releaseLease()" in switch_block
+    assert "await window.brachybotAuth.releaseLease()" not in switch_block
+    assert "void window.brachybotAuth.acquireLease()" in switch_block
+    assert "void loadServerSessions().then(() => renderSessionList())" in delete_block
+    assert "deferDisposal: true" in delete_block
+
+
+def test_case_clear_detaches_webgl_before_deferred_disposal():
+    """Old meshes leave the scene synchronously while disposal yields a frame."""
+    ui_api = read("web/app/static/js/brachybot-ui-api.js")
+    assert "function deferSceneResourceDisposal(resources)" in ui_api
+    assert "resetAllState({ deferDisposal: options.deferDisposal === true })" in ui_api
+    assert "if (deferredResources) deferredResources.push(mesh)" in ui_api
+    assert "requestAnimationFrame(schedule)" in ui_api
+
+
+def test_deleted_case_cancels_pending_agent_checkpoint():
+    store = read("web/workspace_store.py")
+    server = read("web/server.py")
+    assert "def discard_agent_checkpoint" in store
+    assert "workspace_store.discard_agent_checkpoint" in server
 
 
 def test_chat_snapshot_is_redrawn_after_restore():

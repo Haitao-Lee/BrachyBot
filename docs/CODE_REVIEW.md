@@ -6801,3 +6801,45 @@ an RL planning loop, or a coordinate-chain error.
 - Full configured-runtime suite: `235 passed, 2 skipped, 3 warnings`.
 - `git diff --check` passes; the remaining messages are only Git's configured
   LF/CRLF working-tree normalization notices.
+
+## Round 76: Responsive session control-plane transitions (2026-07-22)
+
+### Confirmed findings
+
+- New-case, case-switch, and case-delete handlers waited serially for UI
+  snapshot persistence, lease release/acquisition, and server-side list
+  reconciliation. These operations are control-plane work and did not need
+  to block the first visible state of the selected case.
+- Switching cases synchronously disposed every previous Three.js geometry and
+  material. Large OAR/CTV reconstructions could therefore block the browser
+  main thread before the new empty or restored case could paint.
+- Deleting a case synchronously flushed a cached BrachyAgent checkpoint. That
+  can serialize CT, masks, dose arrays, and plan state even though the user
+  explicitly requested deletion. A pending debounce checkpoint could also
+  recreate a deleted workspace after the delete response.
+- UI snapshot persistence called the general `get_agent()` callback, which
+  could hydrate a cold Agent during a harmless viewer/session-state save.
+
+### Corrective changes
+
+- Session transitions now paint the new active case without awaiting old-case
+  persistence or lease round trips. Lease release/acquisition and session-list
+  reconciliation continue in the background and remain case-scoped.
+- Old WebGL objects are removed synchronously so they cannot bleed into the new
+  case; geometry/material disposal is deferred to the next frame. A generation
+  fence still prevents late mesh or viewer callbacks from repainting an older
+  case.
+- Added a cached-agent lookup for UI snapshot persistence. It updates an
+  already resident Agent when present, but never constructs or hydrates one for
+  a control-plane save.
+- Delete/purge uses a fast cache drop and cancels pending checkpoint timers
+  before moving/removing the workspace. The durable snapshot remains the
+  source of truth for the explicitly deleted case, while another active case
+  and its task are not cancelled.
+
+### Verification
+
+- Focused workspace/auth regression suite: `49 passed, 3 warnings`.
+- Full configured-runtime suite: `242 passed, 2 skipped, 3 warnings`.
+- `node --check` passes for the modified workspace and UI API scripts.
+- Python compilation and `git diff --check` pass.

@@ -596,11 +596,14 @@
         return runWorkspaceTransition(async () => {
             if (!await prepareSessionChange()) return { success: false, cancelled: true };
             if (typeof flushActiveReportState === 'function') flushActiveReportState();
-            await persistWorkspace('session.switching');
+            // Persistence is case-scoped and already captures the old active
+            // id synchronously. Do not make creating an empty case wait for a
+            // potentially slow disk/GPU snapshot of the previous case.
+            void persistWorkspace('session.switching');
             const response = await workspaceFetch('/api/sessions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: 'New case' }) });
             const data = await response.json();
             if (!response.ok) throw new Error(data.error || 'Unable to create case');
-            if (typeof clearClientWorkspace === 'function') clearClientWorkspace({ clearReport: true });
+            if (typeof clearClientWorkspace === 'function') clearClientWorkspace({ clearReport: true, deferDisposal: true });
             const createdSession = data.session;
             if (createdSession?.id) {
                 // The create endpoint returns the authoritative session entry.
@@ -620,7 +623,10 @@
             if (data.lease && typeof window.brachybotAuth?.applyLeaseResult === 'function') {
                 window.brachybotAuth.applyLeaseResult(data.lease);
             } else if (typeof window.brachybotAuth?.acquireLease === 'function') {
-                await window.brachybotAuth.acquireLease();
+                // Lease acquisition is a control-plane refresh. The empty
+                // case is usable immediately; update editability in the
+                // background instead of blocking the sidebar transition.
+                void window.brachybotAuth.acquireLease().catch(error => console.debug('[workspace] lease refresh deferred:', error));
             }
             // A newly-created case has no CT, arrays, meshes, report, or chat
             // to restore. Avoid the background status call here: it would
@@ -637,19 +643,25 @@
         return runWorkspaceTransition(async () => {
             if (!(await prepareSessionChange())) return { success: false, cancelled: true };
             if (typeof flushActiveReportState === 'function') flushActiveReportState();
-            await persistWorkspace('session.switching');
-            if (typeof window.brachybotAuth?.releaseLease === 'function') await window.brachybotAuth.releaseLease();
+            void persistWorkspace('session.switching');
+            // The old lease is released before changing the active id, but a
+            // slow lease endpoint must not hold the visible case switch.
+            if (typeof window.brachybotAuth?.releaseLease === 'function') {
+                void window.brachybotAuth.releaseLease().catch(error => console.debug('[workspace] lease release deferred:', error));
+            }
             const response = await workspaceFetch(`/api/sessions/${encodeURIComponent(id)}/select`, { method: 'POST' });
             const data = await response.json();
             if (!response.ok) throw new Error(data.error || 'Unable to open case');
             activeSessionId = data.active_session_id;
             revision = data.workspace?.session?.revision ?? null;
-            if (typeof clearClientWorkspace === 'function') clearClientWorkspace({ clearReport: true });
+            if (typeof clearClientWorkspace === 'function') clearClientWorkspace({ clearReport: true, deferDisposal: true });
             window._activeWorkspaceSnapshot = data.workspace;
             renderSessionList();
-            if (typeof window.brachybotAuth?.acquireLease === 'function') await window.brachybotAuth.acquireLease();
             if (typeof applyWorkspaceSnapshot === 'function') await applyWorkspaceSnapshot(data.workspace);
             scheduleBackgroundWorkspaceRestore(data.workspace, activeSessionId);
+            if (typeof window.brachybotAuth?.acquireLease === 'function') {
+                void window.brachybotAuth.acquireLease().catch(error => console.debug('[workspace] lease refresh deferred:', error));
+            }
             return { success: true, session_id: activeSessionId };
         });
     };
@@ -674,8 +686,11 @@
                 const response = await workspaceFetch(`/api/sessions/${encodeURIComponent(id)}`, { method: 'DELETE' });
                 const data = await response.json().catch(() => ({}));
                 if (!response.ok) throw new Error(data.error || 'Unable to delete case');
-                await loadServerSessions();
+                // The DELETE response already confirms the operation. Paint
+                // the local sidebar now and reconcile with the server later.
+                delete sessions[id];
                 renderSessionList();
+                void loadServerSessions().then(() => renderSessionList()).catch(error => console.debug('[workspace] session list refresh deferred:', error));
                 return { success: true, active_session_id: activeSessionId };
             } catch (error) {
                 console.error('[workspace] inactive case deletion failed:', error);
@@ -692,13 +707,14 @@
             }
             if (!await prepareSessionChange()) return { success: false, cancelled: true };
             if (id === activeSessionId && typeof flushActiveReportState === 'function') flushActiveReportState();
-            await persistWorkspace('session.delete');
-            if (id === activeSessionId && typeof window.brachybotAuth?.releaseLease === 'function') await window.brachybotAuth.releaseLease();
+            void persistWorkspace('session.delete');
+            if (id === activeSessionId && typeof window.brachybotAuth?.releaseLease === 'function') {
+                void window.brachybotAuth.releaseLease().catch(error => console.debug('[workspace] lease release deferred:', error));
+            }
             const response = await workspaceFetch(`/api/sessions/${encodeURIComponent(id)}`, { method: 'DELETE' });
             const data = await response.json();
             if (!response.ok) throw new Error(data.error || 'Unable to delete case');
-            await loadServerSessions();
-            if (typeof clearClientWorkspace === 'function') clearClientWorkspace({ clearReport: true });
+            if (typeof clearClientWorkspace === 'function') clearClientWorkspace({ clearReport: true, deferDisposal: true });
             activeSessionId = data.active_session_id || activeSessionId;
             revision = data.workspace?.session?.revision ?? null;
             window._activeWorkspaceSnapshot = data.workspace || null;
@@ -708,6 +724,12 @@
                 await applyWorkspaceSnapshot(data.workspace);
             }
             scheduleBackgroundWorkspaceRestore(data.workspace || null, activeSessionId);
+            // Reconcile titles/order and refresh editability after the new
+            // case is already visible.
+            void loadServerSessions().then(() => renderSessionList()).catch(error => console.debug('[workspace] session list refresh deferred:', error));
+            if (typeof window.brachybotAuth?.acquireLease === 'function') {
+                void window.brachybotAuth.acquireLease().catch(error => console.debug('[workspace] lease refresh deferred:', error));
+            }
             return { success: true, active_session_id: activeSessionId };
         });
     };

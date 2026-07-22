@@ -810,7 +810,34 @@ function clearViewerCanvases() {
  * Reset all segmentation, planning, and data tree state when loading a new CT.
  * Must be called before loading new CT to clear stale data.
  */
-function resetAllState() {
+function deferSceneResourceDisposal(resources) {
+    if (!resources.length) return;
+    // Removing old objects is required before the next case paints. GPU
+    // disposal is deliberately deferred one frame so session switching is
+    // responsive even when the previous case contains many meshes.
+    const dispose = () => resources.forEach(resource => {
+        try {
+            resource?.traverse?.(node => {
+                node.geometry?.dispose?.();
+                const material = node.material;
+                if (Array.isArray(material)) material.forEach(item => item?.dispose?.());
+                else material?.dispose?.();
+            });
+            resource?.geometry?.dispose?.();
+            const material = resource?.material;
+            if (Array.isArray(material)) material.forEach(item => item?.dispose?.());
+            else material?.dispose?.();
+        } catch (error) {
+            console.debug('[viewer] deferred resource disposal failed:', error);
+        }
+    });
+    const schedule = () => setTimeout(dispose, 0);
+    if (typeof requestAnimationFrame === 'function') requestAnimationFrame(schedule);
+    else schedule();
+}
+
+function resetAllState(options = {}) {
+    const deferredResources = options.deferDisposal ? [] : null;
     clearViewerCanvases();
     // Clear segmentation data arrays
     ctvLabelData = null;
@@ -841,8 +868,11 @@ function resetAllState() {
         Object.keys(scene3D.meshes).forEach(id => {
             const mesh = scene3D.meshes[id];
             if (mesh && mesh.parent) mesh.parent.remove(mesh);
-            if (mesh && mesh.geometry) mesh.geometry.dispose();
-            if (mesh && mesh.material) mesh.material.dispose();
+            if (deferredResources) deferredResources.push(mesh);
+            else {
+                if (mesh && mesh.geometry) mesh.geometry.dispose();
+                if (mesh && mesh.material) mesh.material.dispose();
+            }
         });
         scene3D.meshes = {};
     }
@@ -851,8 +881,11 @@ function resetAllState() {
     // inherit an untracked surface from the previous case.
     if (typeof scene3D !== 'undefined' && scene3D.skinMesh) {
         try { scene3D.scene?.remove(scene3D.skinMesh); } catch (_) {}
-        try { scene3D.skinMesh.geometry?.dispose(); } catch (_) {}
-        try { scene3D.skinMesh.material?.dispose(); } catch (_) {}
+        if (deferredResources) deferredResources.push(scene3D.skinMesh);
+        else {
+            try { scene3D.skinMesh.geometry?.dispose(); } catch (_) {}
+            try { scene3D.skinMesh.material?.dispose(); } catch (_) {}
+        }
         scene3D.skinMesh = null;
     }
     // Keep lights and the renderer, but remove any untracked renderable
@@ -861,10 +894,14 @@ function resetAllState() {
         [...scene3D.scene.children].forEach(child => {
             if (!child.isLight) {
                 scene3D.scene.remove(child);
-                try { child.traverse?.(node => { node.geometry?.dispose?.(); node.material?.dispose?.(); }); } catch (_) {}
+                if (deferredResources) deferredResources.push(child);
+                else {
+                    try { child.traverse?.(node => { node.geometry?.dispose?.(); node.material?.dispose?.(); }); } catch (_) {}
+                }
             }
         });
     }
+    if (deferredResources) deferSceneResourceDisposal(deferredResources);
 
     // Clear slice caches
     if (typeof sliceCache !== 'undefined') {
@@ -906,7 +943,7 @@ function clearClientWorkspace(options = {}) {
     if (typeof invalidateViewerDataLoads === 'function') {
         invalidateViewerDataLoads();
     }
-    resetAllState();
+    resetAllState({ deferDisposal: options.deferDisposal === true });
     state.ctLoaded = false;
     state.ctPath = null;
     state.ctShape = null;
