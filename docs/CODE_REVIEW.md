@@ -6996,5 +6996,6 @@ an RL planning loop, or a coordinate-chain error.
 - Added a regression with an asymmetric label volume and reversed Z direction.
   It proves that manual CTV and OAR arrays exactly equal the viewer-LPI form of
   the source label.
-- Python compilation and `git diff --check` pass locally. Remote targeted and
-  full suites are run before publication of this round.
+- Python compilation and `git diff --check` pass locally.
+- Remote targeted regression: `2 passed, 72 deselected, 3 warnings`.
+- Remote full configured-runtime suite: `250 passed, 2 skipped, 3 warnings`.
