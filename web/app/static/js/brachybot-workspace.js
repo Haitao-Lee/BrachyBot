@@ -44,11 +44,27 @@
             backgroundRestoreTimer = null;
         }
         document.body.classList.remove('workspace-hydrating');
+        window.setWorkspaceHydrationState?.(false);
     }
+
+    window.setWorkspaceHydrationState = function setWorkspaceHydrationState(active, message) {
+        const notice = document.getElementById('workspaceHydrationNotice');
+        if (!notice) return;
+        const target = document.getElementById('workspaceHydrationMessage');
+        if (target && message) target.textContent = message;
+        notice.hidden = !active;
+        document.body.classList.toggle('workspace-hydrating', !!active);
+    };
 
     function scheduleBackgroundWorkspaceRestore(workspace, sessionId) {
         const generation = ++backgroundRestoreGeneration;
         if (backgroundRestoreTimer) clearTimeout(backgroundRestoreTimer);
+        window.setWorkspaceHydrationState?.(
+            true,
+            typeof window._t === 'function'
+                ? window._t('正在恢复病例资源…', 'Restoring case resources...')
+                : 'Restoring case resources...',
+        );
         document.body.classList.add('workspace-hydrating');
         // Let the lightweight case transition paint before loading CT,
         // meshes, dose arrays, and the hydrated agent. The selected case is
@@ -70,6 +86,7 @@
             } finally {
                 if (generation === backgroundRestoreGeneration) {
                     document.body.classList.remove('workspace-hydrating');
+                    window.setWorkspaceHydrationState?.(false);
                 }
             }
         }, 0);
