@@ -2440,7 +2440,9 @@ const COLORBAR_MAX_GY = 600.0;
 // silently override the clinical default selected for new case workspaces.
 // Bump the preference namespace so the new PET-rainbow 2D default is not
 // silently replaced by a palette saved by an older release.
-const DOSE_COLORBAR_STORAGE_KEY = 'brachybot.doseColorbar.v4';
+// v5 deliberately resets old local preferences so the documented PET rainbow
+// is the first-use 2D default rather than an obsolete browser setting.
+const DOSE_COLORBAR_STORAGE_KEY = 'brachybot.doseColorbar.v5';
 const _doseColorbarDefaults = Object.freeze({
     twoD: Object.freeze({ minGy: COLORBAR_MIN_GY, maxGy: COLORBAR_MAX_GY, palette: 'petRainbow2' }),
     threeD: Object.freeze({ minGy: 0, maxGy: 200, palette: 'petRainbow2' }),
@@ -2790,6 +2792,7 @@ async function applyDoseColorbarSettings() {
     _saveDoseColorbarConfig();
     if (scope === 'twoD') {
         updateDoseColorbars(!!state.doseOverlay?.visible);
+        if (typeof invalidateDoseOverlayRenderCache === 'function') invalidateDoseOverlayRenderCache();
         try { await loadAllSlices(); } catch (_) {}
         if (typeof refreshAllViewerCanvases === 'function') refreshAllViewerCanvases('dose-colorbar-2d');
     } else {
@@ -2861,6 +2864,7 @@ async function _loadDoseOverlayImpl() {
                     : data.peak_voxel.z,
             } : null,
         };
+        if (typeof invalidateDoseOverlayRenderCache === 'function') invalidateDoseOverlayRenderCache();
 
         renderDataTree();
 
@@ -3055,9 +3059,7 @@ function setDoseOverlayOpacity(val) {
     if (treeSlider) treeSlider.value = val;
     // Force re-render by clearing the "last rendered" tracker
     // (otherwise the cache check skips re-render when slice hasn't changed)
-    _doseLastRendered.axial = -1;
-    _doseLastRendered.sagittal = -1;
-    _doseLastRendered.coronal = -1;
+    if (typeof invalidateDoseOverlayRenderCache === 'function') invalidateDoseOverlayRenderCache();
     // Re-render current slices
     updateSlice('axial', state.slices.axial);
     updateSlice('coronal', state.slices.coronal);

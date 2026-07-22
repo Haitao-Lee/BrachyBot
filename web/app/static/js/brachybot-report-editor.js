@@ -806,8 +806,13 @@ async function _autoCaptureReportFiguresImpl() {
             }
 
             function _computeFocusedPlanBox({ includeOars = false, includeNeedles = true } = {}) {
-                const box = new THREE.Box3();
-                const expandMesh = (mesh) => {
+                // Start at the clinical target and its sources.  Whole-body
+                // OAR meshes must not define the framing box: that made both
+                // Figure 1 panels too small to inspect.  Nearby OARs are
+                // added in a second pass only when they overlap the local
+                // planning context around the target.
+                const coreBox = new THREE.Box3();
+                const expand = (box, mesh) => {
                     if (!mesh || !mesh.visible) return;
                     try { box.expandByObject(mesh); } catch (_) {}
                 };
@@ -820,7 +825,26 @@ async function _autoCaptureReportFiguresImpl() {
                     const isDose = id.startsWith('dose_iso_') || mesh?.userData?.type === 'dose_isosurface';
                     const isSkin = id === 'skin' || mesh === scene3D.skinMesh || mesh?.userData?.type === 'skin';
                     const isOar = !isCtv && !isSeed && !isNeedle && !isDose && !isSkin;
-                    if (isCtv || isSeed || (includeNeedles && isNeedle) || (includeOars && isOar)) expandMesh(mesh);
+                    if (isCtv || isSeed || (includeNeedles && isNeedle)) expand(coreBox, mesh);
+                }
+                if (!(coreBox.min.x < coreBox.max.x)) return _computeSceneBox();
+                const box = coreBox.clone();
+                if (includeOars) {
+                    const size = coreBox.getSize(new THREE.Vector3());
+                    const localContext = coreBox.clone().expandByScalar(Math.max(20, size.length() * 0.4));
+                    for (const [id, mesh] of Object.entries(scene3D.meshes)) {
+                        if (!mesh) continue;
+                        const isCtv = id === 'ctv' || id.startsWith('ctv_') || mesh?.userData?.source === 'ctv' || mesh?.userData?.type === 'ctv';
+                        const isSeed = id.startsWith('seed_') || mesh?.userData?.type === 'seed';
+                        const isNeedle = mesh?.userData?.type !== 'needle_handle' && (id.startsWith('needle_') || mesh?.userData?.type === 'needle');
+                        const isDose = id.startsWith('dose_iso_') || mesh?.userData?.type === 'dose_isosurface';
+                        const isSkin = id === 'skin' || mesh === scene3D.skinMesh || mesh?.userData?.type === 'skin';
+                        const isOar = !isCtv && !isSeed && !isNeedle && !isDose && !isSkin;
+                        if (!isOar || !mesh.visible) continue;
+                        const candidate = new THREE.Box3();
+                        try { candidate.expandByObject(mesh); } catch (_) { continue; }
+                        if (candidate.intersectsBox(localContext)) box.union(candidate);
+                    }
                 }
                 if (!(box.min.x < box.max.x)) return _computeSceneBox();
                 return box;
@@ -832,7 +856,7 @@ async function _autoCaptureReportFiguresImpl() {
                 const size = box.getSize(new THREE.Vector3());
                 const maxDim = Math.max(size.x, size.y, size.z, 1);
                 const fov = (scene3D.camera.fov || 45) * Math.PI / 180;
-                const padding = mode === 'detail' ? 0.92 : 1.28;
+                const padding = mode === 'detail' ? 0.78 : 1.08;
                 const dist = (maxDim * padding) / (2 * Math.tan(fov / 2));
                 const dir = mode === 'detail'
                     ? new THREE.Vector3(0.55, -0.25, 0.8).normalize()
@@ -907,7 +931,9 @@ async function _autoCaptureReportFiguresImpl() {
             }
 
             // ── View A: Front-facing with all OARs ──
-            // Show everything
+            window.__reportCaptureActive = true;
+            // Show all models for the overall panel. The focused camera below
+            // still limits the frame to the target and its local OAR context.
             for (const [id, mesh] of Object.entries(scene3D.meshes)) {
                 if (mesh) mesh.visible = true;
             }
@@ -925,7 +951,7 @@ async function _autoCaptureReportFiguresImpl() {
                 || Object.values(scene3D.meshes).find(m => m?.userData?.source === 'ctv');
             if (ctvMesh?.material) { ctvMesh.material.opacity = 0.3; ctvMesh.material.transparent = true; }
 
-            _frameCameraToBox(_computeFocusedPlanBox({ includeOars: true }), 'overview');
+            _frameCameraToBox(_computeFocusedPlanBox({ includeOars: true, includeNeedles: false }), 'overview');
             await _waitFrames(2);
             let imgA = await _capture3D('View A (front+OARs)');
             if (!imgA) {
@@ -968,7 +994,7 @@ async function _autoCaptureReportFiguresImpl() {
 
             // ── Composite: side by side ──
             if (imgA || imgB) {
-                const W = 1400, halfW = 660, gap = 40, titleH = 44, labelH = 28, legendH = 66, pad = 20;
+                const W = 1600, halfW = 760, gap = 40, titleH = 44, labelH = 28, legendH = 66, pad = 20;
                 const compCanvas = document.createElement('canvas');
                 compCanvas.width = W;
                 compCanvas.height = titleH + pad + halfW + labelH + legendH;
@@ -1023,6 +1049,8 @@ async function _autoCaptureReportFiguresImpl() {
         try { _restoreFigure1State?.(); } catch (restoreError) {
             console.warn('[Report] Figure 1 state restore failed:', restoreError);
         }
+        window.__reportCaptureActive = false;
+        try { window.syncSceneAppearanceFromDataTree?.({ preserveDoseTexture: !!state.doseTexture?.enabled }); } catch (_) {}
         try { _setReportStatus?.('3D viewer restored after report capture', 'info'); } catch (_) {}
     }
 

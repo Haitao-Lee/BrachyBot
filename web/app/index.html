@@ -49,7 +49,7 @@
     <script src="static/js/html2canvas.min.js?v=2" onerror="console.error('Failed to load html2canvas.min.js')"></script>
     <link rel="stylesheet" href="static/css/brachybot-theme-layout.css?v=9">
     <link rel="stylesheet" href="static/css/brachybot-chat-status.css?v=10">
-    <link rel="stylesheet" href="static/css/brachybot-panels-viewers.css?v=8">
+    <link rel="stylesheet" href="static/css/brachybot-panels-viewers.css?v=9">
     <link rel="stylesheet" href="static/css/brachybot-report-controls.css?v=8">
     <link rel="stylesheet" href="static/css/brachybot-responsive.css?v=4">
     <link rel="stylesheet" href="static/css/brachybot-auth.css?v=4">
@@ -311,15 +311,16 @@
                 <div class="form-group">
                     <label class="form-label" data-i18n-zh="肿瘤类型" data-i18n-en="Tumor Type">Tumor Type</label>
                     <select class="form-input" id="ctvModelSelect" aria-describedby="ctvModelHelp">
-                        <option value="nnunet_pancreatic" data-i18n-zh="胰腺肿瘤 · nnU-Net（生产路径）" data-i18n-en="Pancreatic tumor · nnU-Net (production path)">Pancreatic tumor · nnU-Net (production path)</option>
-                        <option value="voco_pancreatic" data-i18n-zh="胰腺肿瘤 · VoCo（需本地权重）" data-i18n-en="Pancreatic tumor · VoCo (local weights required)">Pancreatic tumor · VoCo (local weights required)</option>
-                        <option value="voco_liver" data-i18n-zh="肝脏肿瘤 · VoCo（需本地权重）" data-i18n-en="Liver tumor · VoCo (local weights required)">Liver tumor · VoCo (local weights required)</option>
-                        <option value="voco_kidney" data-i18n-zh="肾脏肿瘤 · VoCo（需本地权重）" data-i18n-en="Kidney tumor · VoCo (local weights required)">Kidney tumor · VoCo (local weights required)</option>
-                        <option value="voco_lung" data-i18n-zh="肺部肿瘤 · VoCo（需本地权重）" data-i18n-en="Lung tumor · VoCo (local weights required)">Lung tumor · VoCo (local weights required)</option>
-                        <option value="voco_colon" data-i18n-zh="结肠肿瘤 · VoCo（需本地权重）" data-i18n-en="Colon tumor · VoCo (local weights required)">Colon tumor · VoCo (local weights required)</option>
-                        <option value="prostate_tumor" data-i18n-zh="前列腺肿瘤 · 专用模型" data-i18n-en="Prostate tumor · dedicated model">Prostate tumor · dedicated model</option>
+                        <!-- Values retain the implementation key for the API; users choose a tumor type, not a model brand. -->
+                        <option value="nnunet_pancreatic" data-availability="available" data-i18n-zh="胰腺肿瘤" data-i18n-en="Pancreatic tumor">Pancreatic tumor</option>
+                        <option value="voco_pancreatic" data-availability="unavailable" data-i18n-zh="胰腺肿瘤（备用）" data-i18n-en="Pancreatic tumor (alternative)">Pancreatic tumor (alternative)</option>
+                        <option value="voco_liver" data-availability="unavailable" data-i18n-zh="肝脏肿瘤" data-i18n-en="Liver tumor">Liver tumor</option>
+                        <option value="voco_kidney" data-availability="unavailable" data-i18n-zh="肾脏肿瘤" data-i18n-en="Kidney tumor">Kidney tumor</option>
+                        <option value="voco_lung" data-availability="unavailable" data-i18n-zh="肺部肿瘤" data-i18n-en="Lung tumor">Lung tumor</option>
+                        <option value="voco_colon" data-availability="unavailable" data-i18n-zh="结肠肿瘤" data-i18n-en="Colon tumor">Colon tumor</option>
+                        <option value="prostate_tumor" data-availability="unavailable" data-i18n-zh="前列腺肿瘤" data-i18n-en="Prostate tumor">Prostate tumor</option>
                     </select>
-                    <div id="ctvModelHelp" style="font-size:0.58rem;color:var(--text-dim);margin-top:3px;" data-i18n-zh="请在手动 CTV 分割前选择模型；若本地未安装对应权重，服务器会返回明确错误。" data-i18n-en="Choose a model before manual CTV segmentation. The server reports a clear error when its local weights are unavailable.">Choose a model before manual CTV segmentation. The server reports a clear error when its local weights are unavailable.</div>
+                    <div id="ctvModelHelp" style="font-size:0.58rem;color:var(--text-dim);margin-top:3px;" data-i18n-zh="绿色肿瘤类型可直接自动分割；红色肿瘤类型请上传匹配的 CTV mask 后再规划。" data-i18n-en="Green tumor types can be segmented automatically. Red tumor types require an uploaded matching CTV mask before planning.">Green tumor types can be segmented automatically. Red tumor types require an uploaded matching CTV mask before planning.</div>
                 </div>
 
                 <!-- OAR file picker -->
@@ -1187,15 +1188,15 @@
 -->
 <script src="static/js/brachybot-chat-core.js?v=10"></script>
 <script src="static/js/brachybot-chat-todo.js?v=10"></script>
-<script src="static/js/brachybot-ui-api.js?v=16"></script>
+<script src="static/js/brachybot-ui-api.js?v=17"></script>
 <script src="static/js/brachybot-auth.js?v=6"></script>
-<script src="static/js/brachybot-viewer-volume.js?v=8"></script>
-<script src="static/js/brachybot-viewer-layout.js?v=8"></script>
-<script src="static/js/brachybot-3d-manual.js?v=17"></script>
-<script src="static/js/brachybot-manual-annotation.js?v=7"></script>
+<script src="static/js/brachybot-viewer-volume.js?v=9"></script>
+<script src="static/js/brachybot-viewer-layout.js?v=9"></script>
+<script src="static/js/brachybot-3d-manual.js?v=18"></script>
+<script src="static/js/brachybot-manual-annotation.js?v=8"></script>
     <script src="static/js/brachybot-dvh-planning.js?v=11"></script>
 <script src="static/js/brachybot-report-shell.js?v=13"></script>
-<script src="static/js/brachybot-report-editor.js?v=9"></script>
+<script src="static/js/brachybot-report-editor.js?v=10"></script>
 <script src="static/js/brachybot-workspace.js?v=7"></script>
 <script src="static/js/brachybot-report-export.js?v=11"></script>
 </body>

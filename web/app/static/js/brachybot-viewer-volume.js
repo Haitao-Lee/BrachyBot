@@ -1299,6 +1299,59 @@ const dataTreeState = {
     },
 };
 
+// The Data Tree is the canonical display-state model.  Viewer modes may
+// change materials (for example a dose texture), but they must never invent
+// a second source of truth for visibility, opacity, or the normal-surface
+// color chosen by the user.
+function getDataTreeAppearanceForMesh(id, mesh) {
+    let item = null;
+    if (id === 'ctv') item = dataTreeState.ctv;
+    else if (id.startsWith('ctv_')) item = dataTreeState.ctvLabels?.[id] || dataTreeState.ctv;
+    else if (id.startsWith('organ_')) item = dataTreeState.organs.find(organ => organ.id === id);
+    else if (id.startsWith('seed_')) item = dataTreeState.planning.seeds.find(seed => seed.id === id);
+    else if (id.startsWith('needle_') && mesh?.userData?.type !== 'needle_handle') {
+        item = dataTreeState.planning.needles.find(needle => needle.id === id);
+    } else if (id.startsWith('dose_iso_')) {
+        const threshold = Number(id.replace('dose_iso_', ''));
+        item = dataTreeState.planning.doseLevels.find(level => Math.abs(Number(level.threshold) - threshold) < 1e-6);
+    } else {
+        item = dataTreeState.planning.meshes.find(entry => entry.id === id);
+    }
+    if (!item) return null;
+    return {
+        visible: item.visible !== false,
+        opacity: Number.isFinite(Number(item.opacity)) ? Number(item.opacity) : 1,
+        color: item.color,
+    };
+}
+
+function _setMeshMaterialColor(mesh, color) {
+    if (!mesh || !color || !/^#[0-9a-f]{6}$/i.test(color)) return;
+    const surface = mesh.surfaceMesh || mesh;
+    const r = parseInt(color.slice(1, 3), 16) / 255;
+    const g = parseInt(color.slice(3, 5), 16) / 255;
+    const b = parseInt(color.slice(5, 7), 16) / 255;
+    const materials = Array.isArray(surface.material) ? surface.material : [surface.material];
+    materials.forEach(material => material?.color?.setRGB(r, g, b));
+}
+
+function syncSceneAppearanceFromDataTree({ preserveDoseTexture = !!state.doseTexture?.enabled } = {}) {
+    Object.entries(scene3D.meshes || {}).forEach(([id, mesh]) => {
+        if (!mesh || mesh?.userData?.type === 'needle_handle') return;
+        const appearance = getDataTreeAppearanceForMesh(id, mesh);
+        if (!appearance) return;
+        applyMeshOpacity(mesh, appearance.opacity, appearance.visible);
+        // Vertex colors are the dose surface itself.  Retain them while that
+        // mode is active, but restore the user-selected normal-surface color
+        // the moment normal rendering is selected again.
+        if (!preserveDoseTexture) _setMeshMaterialColor(mesh, appearance.color);
+    });
+    if (scene3D.requestRender) scene3D.requestRender(2);
+}
+
+window.getDataTreeAppearanceForMesh = getDataTreeAppearanceForMesh;
+window.syncSceneAppearanceFromDataTree = syncSceneAppearanceFromDataTree;
+
 // Organ categories for constraint-based planning
 const ORGAN_CATEGORIES = {
     ctv:              { label: 'CTV', icon: '🎯', color: '#ef4444' },
@@ -2021,13 +2074,14 @@ function openColorPicker(id, swatchEl) {
         // Update 3D mesh color if mesh exists
         const mesh3d = scene3D.meshes[id];
         if (mesh3d) {
-            const r = parseInt(pendingColor.slice(1,3), 16) / 255;
-            const g = parseInt(pendingColor.slice(3,5), 16) / 255;
-            const b = parseInt(pendingColor.slice(5,7), 16) / 255;
-            const target = mesh3d.surfaceMesh || mesh3d;
-            if (target && target.material) {
-                const materials = Array.isArray(target.material) ? target.material : [target.material];
-                materials.forEach(material => material?.color?.setRGB(r, g, b));
+            _setMeshMaterialColor(mesh3d, pendingColor);
+            // Dose texture owns the active material, so update the saved
+            // normal material too.  Otherwise changing color during dose
+            // mode would be lost as soon as Normal Surface is restored.
+            const savedMaterial = state.doseTexture?.originalMaterials?.[id];
+            if (savedMaterial) {
+                const saved = { material: savedMaterial };
+                _setMeshMaterialColor(saved, pendingColor);
             }
         }
         // Redraw overlays (debounced)

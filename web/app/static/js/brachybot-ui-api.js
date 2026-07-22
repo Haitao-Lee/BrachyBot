@@ -770,6 +770,65 @@ window.addEventListener('i18nchange', () => {
 // Keep the manual selector synchronized with a tumor site identified by the
 // agent. Unsupported sites intentionally do not get mapped to a model: the
 // user must provide a CTV mask before planning can proceed.
+function _syncTumorTypeSelectorAppearance() {
+    const select = document.getElementById('ctvModelSelect');
+    if (!select) return;
+    const selected = select.options[select.selectedIndex];
+    const available = selected?.dataset?.availability === 'available';
+    select.classList.toggle('tumor-type-unavailable', !available);
+    select.classList.toggle('tumor-type-available', available);
+    // Native option styling is constrained by some operating systems, but
+    // these colors are honored by Chromium and retain a textual fallback in
+    // the help line for platforms that use a system-owned select menu.
+    Array.from(select.options).forEach(option => {
+        const optionAvailable = option.dataset.availability === 'available';
+        option.style.color = optionAvailable ? '#4ade80' : '#fb7185';
+        option.style.fontWeight = optionAvailable ? '600' : '500';
+    });
+
+    const help = document.getElementById('ctvModelHelp');
+    if (help) {
+        const zh = available
+            ? '绿色肿瘤类型可直接自动分割。'
+            : '红色肿瘤类型暂不可直接自动分割；请上传匹配的 CTV mask 后再规划。';
+        const en = available
+            ? 'Green tumor types can be segmented automatically.'
+            : 'Red tumor types require an uploaded matching CTV mask before planning.';
+        help.dataset.i18nZh = zh;
+        help.dataset.i18nEn = en;
+        help.textContent = typeof window._t === 'function' ? window._t(zh, en) : en;
+    }
+}
+
+async function refreshTumorTypeAvailability() {
+    const select = document.getElementById('ctvModelSelect');
+    if (!select) return;
+    try {
+        const response = await fetch(API + '/ctv/models?include_experimental=0');
+        const payload = await response.json();
+        if (!response.ok || !payload?.success) throw new Error(payload?.error || `HTTP ${response.status}`);
+        const availability = new Map();
+        (payload.models || []).forEach(model => {
+            const type = String(model.tumor_type || '');
+            if (!type) return;
+            // A model is selectable automatically only when its required
+            // local resource is present. Manual CTV import remains available
+            // for every tumor type, so unavailable options stay selectable.
+            availability.set(type, !!model.local_present);
+        });
+        Array.from(select.options).forEach(option => {
+            if (availability.has(option.value)) {
+                option.dataset.availability = availability.get(option.value) ? 'available' : 'unavailable';
+            }
+        });
+    } catch (error) {
+        // Keep the server-rendered fallback rather than disabling the manual
+        // workflow when an availability probe is temporarily unavailable.
+        console.warn('[CTV] tumor type availability probe failed:', error);
+    }
+    _syncTumorTypeSelectorAppearance();
+}
+
 function updateTumorTypeSelector(value) {
     const raw = String(value || '').trim();
     if (!raw) return false;
@@ -784,26 +843,35 @@ function updateTumorTypeSelector(value) {
     const select = document.getElementById('ctvModelSelect');
     if (!select || !Array.from(select.options).some(option => option.value === key)) {
         const help = document.getElementById('ctvModelHelp');
-        if (help) help.textContent = `Unsupported tumor type "${raw}". Upload a matching CTV mask and set dose parameters manually before planning.`;
+        if (help) {
+            const zh = `暂不支持“${raw}”的自动 CTV 分割；请上传匹配的 CTV mask 并手动确认剂量参数后再规划。`;
+            const en = `Automatic CTV segmentation is not available for "${raw}". Upload a matching CTV mask and confirm dose parameters manually before planning.`;
+            help.dataset.i18nZh = zh;
+            help.dataset.i18nEn = en;
+            help.textContent = typeof window._t === 'function' ? window._t(zh, en) : en;
+        }
         return false;
     }
     select.value = key;
     select.dispatchEvent(new Event('change', { bubbles: true }));
-    const help = document.getElementById('ctvModelHelp');
-    if (help) help.textContent = 'Tumor type selected from the active case.';
+    _syncTumorTypeSelectorAppearance();
     if (typeof scheduleWorkspaceSave === 'function') scheduleWorkspaceSave();
     return true;
 }
 window.updateTumorTypeSelector = updateTumorTypeSelector;
+window.refreshTumorTypeAvailability = refreshTumorTypeAvailability;
+window.addEventListener('i18nchange', _syncTumorTypeSelectorAppearance);
+setTimeout(refreshTumorTypeAvailability, 0);
 
 function clearViewerCanvases() {
     // Session switches invalidate every pending image callback. Without this
     // generation fence, an old case can repaint a canvas after the new case
     // has already been selected.
     window.__viewerRenderGeneration = (window.__viewerRenderGeneration || 0) + 1;
+    if (typeof invalidateDoseOverlayRenderCache === 'function') invalidateDoseOverlayRenderCache();
     document.querySelectorAll(
         '[id^="sliceCanvas"], [id^="labelOverlay_"], [id^="doseOverlay_"], '
-        + '[id^="seedsOverlayCanvas"], [id^="crosshairCanvas"], [id^="annotationCanvas"]'
+        + '[id^="doseOverlayCanvas"], [id^="seedsOverlayCanvas"], [id^="crosshairCanvas"], [id^="annotationCanvas"]'
     ).forEach(canvas => {
         const ctx = canvas.getContext?.('2d');
         if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);

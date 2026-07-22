@@ -763,6 +763,20 @@ function getSliceCanvas(axis) {
 // Track last-rendered slice per axis to avoid redundant re-renders
 // and to detect stale canvases that need re-painting.
 const _doseLastRendered = { axial: -1, sagittal: -1, coronal: -1 };
+let _doseOverlayRenderEpoch = 0;
+
+// Dose pixels are cached by slice, but the pixels' appearance also depends on
+// the color scale and the backing canvas.  Slice index alone is therefore not
+// a valid render cache key after a scale change, layout resize, or session
+// restoration.  Keep an explicit epoch so every affected viewer repaints.
+function invalidateDoseOverlayRenderCache() {
+    _doseOverlayRenderEpoch += 1;
+    Object.keys(_doseLastRendered).forEach(axis => { _doseLastRendered[axis] = -1; });
+    ['Axial', 'Sagittal', 'Coronal'].forEach(name => {
+        const canvas = document.getElementById('doseOverlayCanvas' + name);
+        if (canvas) canvas._doseRenderEpoch = -1;
+    });
+}
 
 function _viewerTransformString() {
     const { flipH, flipV, rotation, zoom, panX, panY } = state.viewerSettings;
@@ -777,6 +791,7 @@ function _syncLayerToSliceCanvas(axis, layerCanvas, zIndex) {
     if (layerCanvas.width !== sliceCanvas.width || layerCanvas.height !== sliceCanvas.height) {
         layerCanvas.width = sliceCanvas.width;
         layerCanvas.height = sliceCanvas.height;
+        layerCanvas._doseRenderEpoch = -1;
     }
     const sw = sliceCanvas._displayW || sliceCanvas.offsetWidth;
     const sh = sliceCanvas._displayH || sliceCanvas.offsetHeight;
@@ -816,9 +831,10 @@ function renderDoseForCurrentSlice(axis, sliceIndex) {
         // Cache hit — render, but skip if this exact slice was already
         // painted on this canvas (prevents redundant work on rapid
         // scroll events that call us multiple times for the same slice).
-        if (_doseLastRendered[axis] !== sliceIndex) {
+        if (_doseLastRendered[axis] !== sliceIndex || doseCanvas._doseRenderEpoch !== _doseOverlayRenderEpoch) {
             try { renderDoseOverlayOnLayer(doseCanvas, axis, sliceIndex, state.doseOverlay.slices[cacheKey]); } catch (e) { console.warn(`[dose] render error for ${cacheKey}:`, e); }
             _doseLastRendered[axis] = sliceIndex;
+            doseCanvas._doseRenderEpoch = _doseOverlayRenderEpoch;
         }
     } else {
         // Cache miss — show nearest cached slice as placeholder, then
@@ -834,11 +850,13 @@ function renderDoseForCurrentSlice(axis, sliceIndex) {
         if (nearestKey && nearestDist <= 5) {
             try { renderDoseOverlayOnLayer(doseCanvas, axis, sliceIndex, slices[nearestKey]); } catch (_) {}
         }
+        const renderEpoch = _doseOverlayRenderEpoch;
         fetchDoseOverlaySlice(axis, sliceIndex).then(sliceData => {
-            if (sliceData && state.slices[axis] === sliceIndex) {
+            if (sliceData && state.slices[axis] === sliceIndex && renderEpoch === _doseOverlayRenderEpoch) {
                 try {
                     renderDoseOverlayOnLayer(doseCanvas, axis, sliceIndex, sliceData);
                     _doseLastRendered[axis] = sliceIndex;
+                    doseCanvas._doseRenderEpoch = _doseOverlayRenderEpoch;
                 } catch (e) { console.warn(`[dose] render error after fetch:`, e); }
             } else {
                 uiDebugLog(`[dose] fetch callback skipped: sliceData=${!!sliceData}, axis=${axis}, requested=${sliceIndex}, current=${state.slices[axis]}`);

@@ -215,6 +215,10 @@
     box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.16), var(--inset-top);
 }
 .form-input::placeholder { color: var(--text-faint); font-size: 0.72rem; }
+#ctvModelSelect.tumor-type-available { color: #4ade80; }
+#ctvModelSelect.tumor-type-unavailable { color: #fb7185; }
+#ctvModelSelect option[data-availability="available"] { color: #4ade80; }
+#ctvModelSelect option[data-availability="unavailable"] { color: #fb7185; }
 .form-select {
     cursor: pointer;
     background-image:
