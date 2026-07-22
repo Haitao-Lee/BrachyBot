@@ -6969,3 +6969,32 @@ an RL planning loop, or a coordinate-chain error.
   invocation; `git diff --check` passes.
 - Remote focused suite: `60 passed, 2 skipped, 3 warnings`.
 - Remote full configured-runtime suite: `249 passed, 2 skipped, 3 warnings`.
+
+## Round 80: Manual Label Orientation Matches the CT Viewer (2026-07-22)
+
+### Confirmed finding
+
+- The manual CTV/OAR upload route correctly rejected labels with a different
+  source CT grid, but the route only compared their *raw* geometry. The viewer
+  subsequently reorients CT images to LPI while a manually supplied label was
+  kept in its source orientation. A CT whose source direction reverses the
+  axial axis could therefore pass geometry validation yet display the uploaded
+  mask in the wrong axial position in a new case.
+
+### Corrective changes
+
+- Manual CTV and OAR label imports now apply the same LPI reorientation as the
+  CT viewer before their arrays and mask objects enter planning memory.
+- This is not a resample: the existing raw-grid validation remains the guard
+  against mismatched CT/mask datasets, and `SimpleITK.DICOMOrient` only
+  reindexes the validated label into the common viewer orientation.
+- The imported-result metadata records `manual_label_orientation: LPI` for
+  transparent provenance.
+
+### Verification
+
+- Added a regression with an asymmetric label volume and reversed Z direction.
+  It proves that manual CTV and OAR arrays exactly equal the viewer-LPI form of
+  the source label.
+- Python compilation and `git diff --check` pass locally. Remote targeted and
+  full suites are run before publication of this round.

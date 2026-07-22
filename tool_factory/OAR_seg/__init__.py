@@ -107,7 +107,11 @@ class OARSegmentationTool(BaseTool):
         label_img = None
 
         if label_path and os.path.exists(label_path):
-            label_img = sitk.ReadImage(label_path)
+            # Match the LPI orientation used by the CT viewer.  Geometry is
+            # validated against the raw CT before this tool is invoked; using
+            # DICOMOrient on both image types preserves physical coordinates
+            # without the unsafe implicit resampling of an uploaded label.
+            label_img = sitk.DICOMOrient(sitk.ReadImage(label_path), "LPI")
             oar_array = sitk.GetArrayFromImage(label_img)
         else:
             if image is None and image_path is not None:
@@ -155,6 +159,7 @@ class OARSegmentationTool(BaseTool):
                 "oar_array": oar_array,
                 "organ_counts": organ_counts,
                 "organ_names": organ_names,
+                "manual_label_orientation": "LPI" if label_img is not None else None,
             },
         )
 

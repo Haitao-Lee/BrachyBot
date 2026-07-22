@@ -177,7 +177,12 @@ class CTVSegmentationTool(BaseTool):
         result = None
         from_label_path = False
         if label_path and os.path.exists(label_path):
-            label_img = sitk.ReadImage(label_path)
+            # The viewer normalizes every CT to LPI before extracting slices.
+            # Preserve physical alignment for manually supplied labels by
+            # applying the identical orientation transform here.  The route
+            # layer has already checked the original CT/mask geometry, so this
+            # is a reindexing operation, not an implicit resample.
+            label_img = sitk.DICOMOrient(sitk.ReadImage(label_path), "LPI")
             ctv_array = sitk.GetArrayFromImage(label_img)
             ctv_mask = label_img
             from_label_path = True
@@ -278,6 +283,7 @@ class CTVSegmentationTool(BaseTool):
             "ctv_voxel_count": voxel_count,
             "tumor_type_used": tumor_type or ("manual_label" if from_label_path else "auto"),
             "ctv_source": "manual_label" if from_label_path else "model",
+            "manual_label_orientation": "LPI" if from_label_path else None,
             "label_counts": res_meta.get("label_counts", {}),
             "label_map": label_map,
             "label_stats": res_meta.get("label_stats", {}),

@@ -1110,6 +1110,32 @@ def test_manual_ctv_label_preserves_source_when_site_is_also_declared(tmp_path):
     assert result.metadata["ctv_source"] == "manual_label"
 
 
+def test_manual_ctv_and_oar_labels_use_the_viewer_lpi_orientation(tmp_path):
+    """Manual labels must use the same orientation policy as loaded CT slices."""
+    import SimpleITK as sitk
+    from tool_factory.CTV_seg import CTVSegmentationTool
+    from tool_factory.OAR_seg import OARSegmentationTool
+
+    # The asymmetric values make an unnoticed z-axis reversal observable.
+    source = sitk.GetImageFromArray(np.arange(24, dtype=np.uint16).reshape(2, 3, 4))
+    source.SetDirection((1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, -1.0))
+    label_path = tmp_path / "manual_label_with_reversed_z.nii.gz"
+    sitk.WriteImage(source, str(label_path))
+    expected = sitk.GetArrayFromImage(sitk.DICOMOrient(source, "LPI"))
+
+    ctv = CTVSegmentationTool()._execute(
+        label_path=str(label_path), tumor_type="nnunet_pancreatic", allow_empty=True
+    )
+    oar = OARSegmentationTool()._execute(label_path=str(label_path))
+
+    assert ctv.success is True
+    assert oar.success is True
+    assert ctv.metadata["manual_label_orientation"] == "LPI"
+    assert oar.metadata["manual_label_orientation"] == "LPI"
+    assert np.array_equal(ctv.data, expected)
+    assert np.array_equal(oar.data, expected)
+
+
 def test_ctv_model_catalog_describes_every_optional_automatic_tumor_model():
     from tool_factory.CTV_seg import TOOL_REGISTRY
     from tool_factory.CTV_seg.model_catalog import CTV_MODEL_CATALOG
