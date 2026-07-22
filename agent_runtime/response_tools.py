@@ -17,6 +17,43 @@ logger = logging.getLogger(__name__)
 
 
 class ResponseToolMixin:
+    @staticmethod
+    def _force_reexecution_requested(message: str = "", params: Optional[Dict] = None) -> bool:
+        """Detect an explicit request to replace a reusable clinical result.
+
+        State-aware routing remains the default.  This flag is deliberately
+        limited to reuse decisions; it never bypasses model, geometry, or
+        safety validation.
+        """
+        params = params or {}
+        if any(bool(params.get(key)) for key in ("force_reexecution", "force", "overwrite", "rerun")):
+            return True
+        return bool(re.search(
+            r"(?:\u518d\u6b21|\u518d\u5206\u5272|\u91cd\u65b0\u5206\u5272|\u91cd\u65b0\u89c4\u5212|\u518d\u89c4\u5212|\u91cd\u505a|\u91cd\u8dd1|\u5ffd\u7565\u73b0\u6709|\u4e0d\u4f7f\u7528\u73b0\u6709|"
+            r"force|overwrite|rerun|re-run|run again|ignore (?:the )?existing)",
+            str(message or "").lower(),
+            re.IGNORECASE,
+        ))
+
+    def _segmentation_scope(self, message: str) -> str:
+        """Resolve the requested segmentation scope without broadening it.
+
+        A generic repeat command inherits the last explicit CTV/OAR scope,
+        matching the case-local, node-oriented behavior users expect from
+        tools such as 3D Slicer.
+        """
+        text = str(message or "").lower()
+        wants_oar = bool(re.search(r"\boar\b|\borgan(?:s)?\b|\u5371\u53ca\u5668\u5b98|\u5668\u5b98", text, re.IGNORECASE))
+        wants_ctv = bool(re.search(r"\bctv\b|\btumou?r\b|\blesion\b|\u9776\u533a|\u80bf\u7624", text, re.IGNORECASE))
+        if wants_oar and wants_ctv:
+            return "all"
+        if wants_oar:
+            return "oar"
+        if wants_ctv:
+            return "ctv"
+        previous = self.memory.retrieve("last_segmentation_target")
+        return previous if previous in {"ctv", "oar", "all"} else "all"
+
     def _normalize_ctv_tool_params(self, params: Dict) -> Dict:
         """Normalize legacy CTV site parameters before contract validation."""
         normalized = dict(params or {})
@@ -84,6 +121,9 @@ print(json.dumps(result))
                 params["tumor_type"] = tumor_type
             return params
 
+        force_reexecution = self._force_reexecution_requested(message=message)
+        segmentation_scope = self._segmentation_scope(message)
+
         # Find action keywords and their positions to preserve user's intended order
         # Bilingual patterns: Chinese terms match Chinese user input.
         # zh: 分割=segment, 靶区=target, 肿瘤=tumor, 器官=organ, 危及器官=OAR
@@ -134,7 +174,11 @@ print(json.dumps(result))
                 start, end = match.span()
                 overlaps = any(not (end <= s or start >= e) for s, e in matched_spans)
                 if not overlaps:
-                    ordered_actions.append('segment_all')
+                    ordered_actions.append(
+                        'segment_oar' if segmentation_scope == 'oar' else
+                        'segment_ctv' if segmentation_scope == 'ctv' else
+                        'segment_all'
+                    )
                     break
 
         # Handle "segment CTV and OAR" — detect both from a single "segment" action
@@ -197,12 +241,23 @@ print(json.dumps(result))
                 tools.append({"id": "tool_direct_analysis", "tool": "code_executor",
                               "params": {"code": code, "description": "Analyze CT image"}})
             elif action == 'segment_ctv' and ct_path:
-                tools.append({"id": "tool_direct_ctv", "tool": "ctv_segmentation", "params": ctv_params()})
+                params = ctv_params()
+                if force_reexecution:
+                    params["force_reexecution"] = True
+                tools.append({"id": "tool_direct_ctv", "tool": "ctv_segmentation", "params": params})
             elif action == 'segment_oar' and ct_path:
-                tools.append({"id": "tool_direct_oar", "tool": "oar_segmentation", "params": {"image_path": ct_path}})
+                params = {"image_path": ct_path}
+                if force_reexecution:
+                    params["force_reexecution"] = True
+                tools.append({"id": "tool_direct_oar", "tool": "oar_segmentation", "params": params})
             elif action == 'segment_all' and ct_path:
-                tools.append({"id": "tool_direct_ctv", "tool": "ctv_segmentation", "params": ctv_params()})
-                tools.append({"id": "tool_direct_oar", "tool": "oar_segmentation", "params": {"image_path": ct_path}})
+                ctv_call = ctv_params()
+                oar_call = {"image_path": ct_path}
+                if force_reexecution:
+                    ctv_call["force_reexecution"] = True
+                    oar_call["force_reexecution"] = True
+                tools.append({"id": "tool_direct_ctv", "tool": "ctv_segmentation", "params": ctv_call})
+                tools.append({"id": "tool_direct_oar", "tool": "oar_segmentation", "params": oar_call})
             elif action == 'dose' and ct_path:
                 tools.append({"id": "tool_direct_dose", "tool": "dose_engine", "params": {}})
 
@@ -230,12 +285,16 @@ print(json.dumps(result))
 
             try:
                 result = self._execute_tool_with_memory(tc['tool'], dict(tc['params']))
-                tool_step["status"] = "done"
+                tool_step["status"] = "done" if result.success else "error"
                 tool_step["result"] = self._format_tool_result(tc['tool'], result, lang=_lang)
                 tool_step["metadata"] = result.metadata if result.success else {}
                 tool_step["data"] = result.data if result.success else {}
-                if tc["tool"] == "ctv_segmentation" and result.success:
+                if tc["tool"] in ("ctv_segmentation", "oar_segmentation") and result.success:
                     self.memory.store("pending_clarification", None)
+                    self.memory.store(
+                        "last_segmentation_target",
+                        "ctv" if tc["tool"] == "ctv_segmentation" else "oar",
+                    )
                 # Store tool call + result in conversation for context persistence
                 self.memory.add_message("assistant", f"[Called {tc['tool']}]")
                 result_summary = result.message[:500] if result.success else f"Error: {result.error}"
@@ -607,7 +666,7 @@ print(json.dumps(result))
         """Synthesize tool results. Delegates to ToolResultPipeline."""
         formatted = []
         for s in steps:
-            if s.get("type") == "tool" and s.get("status") == "done":
+            if s.get("type") == "tool" and s.get("status") in ("done", "error"):
                 meta = s.get("metadata", {})
                 data = s.get("data", {})
                 # Extract source URLs from data or metadata
@@ -626,6 +685,18 @@ print(json.dumps(result))
                     "source_url": source_urls[0] if source_urls else "",
                     "all_source_urls": source_urls,
                 })
+        # Tell the synthesizer when the user intentionally overrode state
+        # reuse. This prevents a successful forced rerun from being followed
+        # by a contradictory canned recommendation that it was unnecessary.
+        if self._force_reexecution_requested(message=user_message):
+            scope = self._segmentation_scope(user_message)
+            user_message = (
+                f"{user_message}\n\n"
+                f"Execution contract: the user explicitly requested a forced segmentation rerun; "
+                f"the requested scope is {scope}. Do not say that rerunning was unnecessary, "
+                f"do not ask whether to rerun, and do not claim a tool succeeded if its tool step is error. "
+                f"Report the actual result and any empty-mask failure plainly."
+            )
         return ToolResultPipeline.synthesize(formatted, user_message, self.brain_router, lang, query_type)
 
     # ============================================================

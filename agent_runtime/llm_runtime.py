@@ -1790,13 +1790,19 @@ class LLMRuntimeMixin:
             )
             for tc in valid_tool_calls:
                 _tn = tc.get("tool", "")
-                if _tn == "ctv_segmentation" and self.memory.retrieve("ctv_array") is not None:
+                _explicit_reexecution = self._force_reexecution_requested(
+                    message=message,
+                    params=tc.get("params") or {},
+                )
+                if _tn == "ctv_segmentation" and self.memory.retrieve("ctv_array") is not None and not _explicit_reexecution:
                     logger.info(f"[HARD-BLOCK] Skipping redundant ctv_segmentation")
                     continue
                 if _tn == "oar_segmentation" and self.memory.retrieve("oar_array") is not None:
-                    if bool(self.memory.retrieve("oar_is_full")):
+                    if bool(self.memory.retrieve("oar_is_full")) and not _explicit_reexecution:
                         logger.info(f"[HARD-BLOCK] Skipping redundant oar_segmentation")
                         continue
+                if _explicit_reexecution and _tn in ("ctv_segmentation", "oar_segmentation"):
+                    tc.setdefault("params", {})["force_reexecution"] = True
                 if _tn == "planning_pipeline" and _planning_ran_this_turn:
                     logger.info(f"[HARD-BLOCK] Skipping redundant planning_pipeline (already ran this turn)")
                     continue

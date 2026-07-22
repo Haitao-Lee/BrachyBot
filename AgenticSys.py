@@ -1301,10 +1301,14 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
         # memory and the LLM calls ctv_segmentation again with the
         # same path, skip the redundant GPU run.
         _skip_tool = False
+        # Explicit repeat requests are allowed to replace a prior result. The
+        # default remains deduplicated because accidental duplicate inference
+        # is expensive and can otherwise overwrite a reviewed case silently.
+        force_reexecution = self._force_reexecution_requested(params=params)
         if tool_name == "ctv_segmentation":
             _existing_ctv = self.memory.retrieve("ctv_array")
             _existing_path = self.memory.retrieve("ct_path")
-            if _existing_ctv is not None:
+            if _existing_ctv is not None and not force_reexecution:
                 _req_path = params.get("image_path", _existing_path)
                 if _req_path in (None, _existing_path):
                     logger.info(
@@ -1335,7 +1339,7 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
             # Fullness is an explicit provenance flag. Organ count is not a
             # reliable proxy because model/task variants legitimately expose
             # different label sets.
-            if _existing_oar is not None and bool(self.memory.retrieve("oar_is_full")):
+            if _existing_oar is not None and bool(self.memory.retrieve("oar_is_full")) and not force_reexecution:
                 _req_path = params.get("image_path", _existing_path)
                 if _req_path in (None, _existing_path):
                     logger.info(
@@ -1384,6 +1388,31 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
         if result.success:
             metadata = result.metadata or {}
             logger.info("Tool %s succeeded. Metadata keys: %s", tool_name, list(metadata))
+            if force_reexecution and tool_name in {"ctv_segmentation", "oar_segmentation"}:
+                # A new segmentation is a new geometry version. Invalidate
+                # only dependent planning products; keep the other anatomy
+                # node intact so CTV-only and OAR-only reruns remain scoped.
+                for key in (
+                    "trajectories", "radiation_volume", "seed_plan",
+                    "seed_positions", "optimal_plan", "dose_distribution",
+                    "dose_distribution_gy", "dose_metrics", "metrics",
+                    "total_seeds", "plan_score",
+                ):
+                    self.memory.store(key, None)
+                self.memory.store(
+                    "last_segmentation_target",
+                    "ctv" if tool_name == "ctv_segmentation" else "oar",
+                )
+                self.memory.store("segmentation_replaced_existing", True)
+                logger.info(
+                    "[segmentation-override] replaced prior %s result and invalidated downstream plan products",
+                    tool_name,
+                )
+            if tool_name in {"ctv_segmentation", "oar_segmentation"}:
+                self.memory.store(
+                    "last_segmentation_target",
+                    "ctv" if tool_name == "ctv_segmentation" else "oar",
+                )
             if tool_name == "trajectory_planning" and metadata.get("trajectories") is not None:
                 # The trajectory tool itself generates paths, but the agent
                 # must still enforce the current Data Tree policy before any

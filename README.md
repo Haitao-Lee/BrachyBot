@@ -624,6 +624,20 @@ BrachyBot can now operate as both an agentic planner and a standalone manual pla
 - **Manual 3D fine planning**: users can add editable needles in the 3D viewer, drag needle endpoints, add or drag seeds, and recompute myDoseNet dose/DVH after edits.
 - **Training monitor**: users can ask BrachyBot to monitor a manual or automatic planning process, receive live feedback after key interactions, capture rate-limited review screenshots at key checkpoints, request detailed advice at any time, and stop monitoring to receive a final workflow report.
 
+### Explicit Re-execution and Case-Local Data Management
+
+- Completed segmentation is reused by default to avoid an accidental second
+  GPU inference, but an explicit request such as "run OAR segmentation again"
+  or "ignore the existing result" is authoritative for this functional task.
+- The requested scope is preserved: a generic repeat inherits the last explicit
+  CTV/OAR target instead of silently expanding into both models.
+- A successful forced rerun replaces only the active segmentation node and
+  invalidates dependent trajectories, seeds, dose, metrics, and report state;
+  a failed or empty CTV rerun is surfaced as an error and cannot be described
+  as a successful clinical prerequisite.
+- The same contract applies to LLM, direct-tool, and rule-based fallback paths,
+  keeping Data Tree updates and downstream planning state consistent.
+
 Important boundary: manual dose recomputation uses the trained myDoseNet AI model and no analytical/Gaussian fallback. Formal clinical review still requires the established planning workflow and independent verification.
 Plan refinement proposes seed candidates from the current dose map only; it does not simulate dose or claim improved metrics until `dose_engine` or `planning_pipeline` reruns myDoseNet.
 

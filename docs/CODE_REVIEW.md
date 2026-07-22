@@ -6923,3 +6923,49 @@ an RL planning loop, or a coordinate-chain error.
 - Remote configured-runtime suite: `245 passed, 2 skipped, 3 warnings`.
 - Remote focused Progress/chat/workspace suite: `22 passed, 3 warnings`.
 - This revision is published only after both suites passed.
+
+## Round 79: Explicit Re-execution Overrides State Reuse (2026-07-22)
+
+### Confirmed findings
+
+- The reuse guard was correct for accidental duplicate segmentation, but it
+  was effectively absolute in some LLM and fallback paths. A user who had
+  already seen a result and explicitly requested another model run could be
+  told that rerunning was unnecessary, which contradicted the completed tool
+  action.
+- Generic repeat segmentation was not scope-stable: after an OAR request, a
+  generic "run segmentation again" could broaden into CTV plus OAR.
+- Direct tool failures were marked `done` in one execution path. An empty CTV
+  could therefore be rendered as a successful prerequisite and mislead final
+  response synthesis.
+- The rule-based fallback used a separate registry execution path, so it did
+  not consistently carry the explicit override flag or the same downstream
+  invalidation behavior.
+
+### Corrective changes
+
+- Added a shared explicit-reexecution detector for Chinese and English
+  requests, including rerun, overwrite, ignore-existing, and re-plan wording.
+  This only bypasses state reuse; it does not bypass model validation,
+  coordinate checks, obstacle checks, or clinical safety gates.
+- Added case-local segmentation scope resolution. Explicit CTV/OAR requests
+  win; a generic repeat inherits `last_segmentation_target`; only an explicit
+  request for both expands the scope.
+- Propagated `force_reexecution` through CTV/OAR schemas, direct tool calls,
+  the LLM hard-block filter, and rule-based fallback handlers.
+- A successful forced segmentation replaces the active node and clears all
+  dependent plan products. A failed run leaves the last reviewed result intact
+  but is reported with an error status; empty CTV remains a hard planning
+  prerequisite failure.
+- Final synthesis receives an execution contract for forced runs: it must not
+  recommend against the requested rerun and must not claim an error step
+  succeeded.
+- Updated planning/system prompts and added regression coverage for explicit
+  overrides, inherited scope, and truthful failure status.
+
+### Verification status
+
+- Local Python compilation passes with the repository-independent interpreter
+  invocation; `git diff --check` passes.
+- Remote focused and full pytest results are recorded below after the patched
+  commit is executed in the configured runtime environment.

@@ -1670,6 +1670,10 @@ class ChatWorkflowMixin:
             target = "CTV"
             if "oar" in msg_lower or "organ" in msg_lower or "器官" in msg_lower:
                 target = "OAR"
+            elif self._segmentation_scope(message) == "oar":
+                # A generic repeat inherits the last explicit segmentation
+                # target instead of unexpectedly running both models.
+                target = "OAR"
 
             step_id[0] += 1
             tool_step = {
@@ -1681,12 +1685,19 @@ class ChatWorkflowMixin:
 
             result = self._handle_ctv_segmentation_request(message) if target == "CTV" else self._handle_oar_segmentation_request(message)
 
-            tool_step["status"] = "done"
+            tool_step["status"] = (
+                "done" if self.memory.retrieve("last_segmentation_success", True)
+                else "error"
+            )
             tool_step["result"] = result[:200]
             yield_step(tool_step)
 
             step_id[0] += 1
-            result_step = {"id": step_id[0], "type": "result", "title": f"{target} Result", "content": result, "status": "done"}
+            result_step = {
+                "id": step_id[0], "type": "result", "title": f"{target} Result",
+                "content": result,
+                "status": "done" if self.memory.retrieve("last_segmentation_success", True) else "error",
+            }
             yield_step(result_step)
 
             return result
@@ -1765,15 +1776,25 @@ class ChatWorkflowMixin:
             target = "CTV"
             if "oar" in msg_lower or "organ" in msg_lower or "器官" in msg_lower:
                 target = "OAR"
+            elif self._segmentation_scope(message) == "oar":
+                target = "OAR"
             step_id[0] += 1
             steps.append({
                 "id": step_id[0], "type": "tool", "title": f"Segmentation: {target}",
-                "content": f"Running {target} segmentation...", "status": "done",
+                "content": f"Running {target} segmentation...", "status": "pending",
                 "tool": f"{target.lower()}_segmentation", "params": {},
             })
             result = self._handle_ctv_segmentation_request(message) if target == "CTV" else self._handle_oar_segmentation_request(message)
+            steps[-1]["status"] = (
+                "done" if self.memory.retrieve("last_segmentation_success", True)
+                else "error"
+            )
             step_id[0] += 1
-            steps.append({"id": step_id[0], "type": "result", "title": f"{target} Result", "content": result, "status": "done"})
+            steps.append({
+                "id": step_id[0], "type": "result", "title": f"{target} Result",
+                "content": result,
+                "status": "done" if self.memory.retrieve("last_segmentation_success", True) else "error",
+            })
             return result
         elif self._planning_requested(message):
             mode = "rl" if "rl" in msg_lower or "强化" in msg_lower else "rule_based"
@@ -1847,6 +1868,10 @@ class ChatWorkflowMixin:
                 response = self._handle_ctv_segmentation_request(message)
             elif "oar" in msg_lower or "organ" in msg_lower or "器官" in msg_lower:
                 response = self._handle_oar_segmentation_request(message)
+            elif self._segmentation_scope(message) == "oar":
+                # Keep the fallback path scope-aware as well. A generic
+                # repeat inherits the last explicit segmentation target.
+                response = self._handle_oar_segmentation_request(message)
             else:
                 response = self._handle_ctv_segmentation_request(message)
         elif "计划" in msg_lower or "plan" in msg_lower or "规划" in msg_lower:
@@ -1881,10 +1906,12 @@ class ChatWorkflowMixin:
         ct_image = self.memory.retrieve("ct_image")
         ctv_path = self.memory.retrieve("ctv_path")
         if ct_image is None:
+            self.memory.store("last_segmentation_success", False)
             return "Please provide CT image path first. Use run_preoperative_plan(ct_path=...) to load CT."
         # Detect tumor type from message
         tumor_type = self._detect_tumor_type_from_message(message)
         if not tumor_type and not ctv_path:
+            self.memory.store("last_segmentation_success", False)
             return (
                 "请先明确需要分割的肿瘤部位，或提供已有 CTV 标签文件。"
                 "例如：胰腺癌、肝癌、肾癌、肺癌、结直肠癌、前列腺。"
@@ -1892,9 +1919,14 @@ class ChatWorkflowMixin:
         params = {"image": ct_image, "label_path": ctv_path}
         if tumor_type:
             params["tumor_type"] = tumor_type
-        result = self.registry.execute("ctv_segmentation", **params)
+        # Reuse is the safe default, but an explicit repeat/overwrite request
+        # must reach the same execution gateway as the LLM path.
+        if self._force_reexecution_requested(message=message):
+            params["force_reexecution"] = True
+        result = self._execute_tool_with_memory("ctv_segmentation", params)
         self.memory.log_tool_call("ctv_segmentation", params, result)
         if result.success:
+            self.memory.store("last_segmentation_success", True)
             self.memory.store("ctv_array", result.metadata["ctv_array"])
             self.memory.store("ctv_mask", result.metadata.get("ctv_mask"))
             if "label_stats" in result.metadata:
@@ -1919,22 +1951,29 @@ class ChatWorkflowMixin:
             if result.metadata.get("ctv_source"):
                 self.memory.store("ctv_source", result.metadata["ctv_source"])
             return result.message
+        self.memory.store("last_segmentation_success", False)
         return f"CTV segmentation failed: {result.error}"
 
     def _handle_oar_segmentation_request(self, message: str) -> str:
         ct_image = self.memory.retrieve("ct_image")
         oar_path = self.memory.retrieve("oar_path")
         if ct_image is None:
+            self.memory.store("last_segmentation_success", False)
             return "Please provide CT image path first."
-        result = self.registry.execute("oar_segmentation", image=ct_image, label_path=oar_path)
+        params = {"image": ct_image, "label_path": oar_path}
+        if self._force_reexecution_requested(message=message):
+            params["force_reexecution"] = True
+        result = self._execute_tool_with_memory("oar_segmentation", params)
         self.memory.log_tool_call("oar_segmentation", {}, result)
         if result.success:
+            self.memory.store("last_segmentation_success", True)
             self.memory.store("oar_array", result.metadata.get("oar_array"))
             if "organ_names" in result.metadata:
                 self.memory.store("organ_names", result.metadata["organ_names"])
             if "organ_counts" in result.metadata:
                 self.memory.store("organ_counts", result.metadata["organ_counts"])
             return result.message
+        self.memory.store("last_segmentation_success", False)
         return f"OAR segmentation failed: {result.error}"
 
     def _handle_planning_request(self, message: str) -> str:

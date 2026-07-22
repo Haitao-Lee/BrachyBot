@@ -127,6 +127,7 @@ class CTVSegmentationTool(BaseTool):
                 "target_value": {"type": "number", "default": 1, "description": "Label value for tumor voxels"},
                 "fast_mode": {"type": "boolean", "default": False, "description": "Disable TTA, reduce threads"},
                 "allow_empty": {"type": "boolean", "default": False, "description": "Only for tests; never allow empty clinical CTV by default"},
+                "force_reexecution": {"type": "boolean", "default": False, "description": "Explicitly replace an existing in-memory CTV result"},
             },
             "required": [],
         }
