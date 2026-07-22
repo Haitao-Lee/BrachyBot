@@ -233,7 +233,7 @@ def test_needle_render_scheduler_survives_mixed_static_asset_revisions():
     manual = (ROOT / "web/app/static/js/brachybot-3d-manual.js").read_text(encoding="utf-8")
 
     assert "brachybot-viewer-layout.js?v=8" in index
-    assert "brachybot-3d-manual.js?v=15" in index
+    assert "brachybot-3d-manual.js?v=17" in index
     assert "scene3D.requestRender(1)" in layout
     assert "scene3D.requestRender(2)" in layout
     assert "window.requestRender = requestRender;" in manual
