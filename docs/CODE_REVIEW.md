@@ -6920,5 +6920,6 @@ an RL planning loop, or a coordinate-chain error.
 - `node --check` passes for all frontend JavaScript assets.
 - Added a regression assertion that segmentation-only Progress seeding cannot
   include `planning_pipeline`.
-- Remote configured-runtime pytest and browser/static checks remain the final
-  gate before publishing this revision.
+- Remote configured-runtime suite: `245 passed, 2 skipped, 3 warnings`.
+- Remote focused Progress/chat/workspace suite: `22 passed, 3 warnings`.
+- This revision is published only after both suites passed.
