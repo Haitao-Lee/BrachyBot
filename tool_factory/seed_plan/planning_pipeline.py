@@ -2459,7 +2459,9 @@ class PlanningPipelineTool(BaseTool):
                 pass
 
             if isinstance(label_int, int):
-                return f"Organ {label_int}"
+                # Never invent an anatomical name for an unknown label. This
+                # keeps report/Data Tree semantics faithful to the source mask.
+                return f"Unmapped structure (label {label_int})"
             return str(label_val)
 
         # Validate every grid before boolean indexing.  This ordering matters:

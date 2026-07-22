@@ -725,6 +725,7 @@ async function _autoCaptureReportFiguresImpl() {
             // Save all visibility and opacity states
             const _saved = {};
             const _savedMaterials = {};
+            const _savedHandleObjects = [];
             const _savedSkin = scene3D.skinMesh ? {
                 visible: scene3D.skinMesh.visible,
                 material: scene3D.skinMesh.material,
@@ -741,6 +742,14 @@ async function _autoCaptureReportFiguresImpl() {
                     depthWrite: surface.material.depthWrite,
                 };
             }
+            // Endpoint handles are interaction affordances, not treatment
+            // geometry. Keep their state for restoration but exclude them
+            // from publication figures.
+            scene3D.scene?.traverse?.(object => {
+                if (object?.userData?.type === 'needle_handle') {
+                    _savedHandleObjects.push({ object, visible: object.visible });
+                }
+            });
             const _savedCamera = scene3D.camera ? {
                 position: scene3D.camera.position.clone(),
                 near: scene3D.camera.near,
@@ -765,6 +774,9 @@ async function _autoCaptureReportFiguresImpl() {
                     scene3D.skinMesh.visible = _savedSkin.visible;
                     scene3D.skinMesh.material = _savedSkin.material;
                 }
+                _savedHandleObjects.forEach(({ object, visible }) => {
+                    if (object) object.visible = visible;
+                });
                 if (_savedCamera && scene3D.camera && scene3D.controls) {
                     scene3D.camera.position.copy(_savedCamera.position);
                     scene3D.camera.near = _savedCamera.near;
@@ -793,7 +805,7 @@ async function _autoCaptureReportFiguresImpl() {
                 return box;
             }
 
-            function _computeFocusedPlanBox({ includeOars = false } = {}) {
+            function _computeFocusedPlanBox({ includeOars = false, includeNeedles = true } = {}) {
                 const box = new THREE.Box3();
                 const expandMesh = (mesh) => {
                     if (!mesh || !mesh.visible) return;
@@ -803,11 +815,12 @@ async function _autoCaptureReportFiguresImpl() {
                     if (!mesh) continue;
                     const isCtv = id === 'ctv' || id.startsWith('ctv_') || mesh?.userData?.source === 'ctv' || mesh?.userData?.type === 'ctv';
                     const isSeed = id.startsWith('seed_') || mesh?.userData?.type === 'seed';
-                    const isNeedle = id.startsWith('needle_') || mesh?.userData?.type === 'needle';
+                    const isNeedleHandle = mesh?.userData?.type === 'needle_handle';
+                    const isNeedle = !isNeedleHandle && (id.startsWith('needle_') || mesh?.userData?.type === 'needle');
                     const isDose = id.startsWith('dose_iso_') || mesh?.userData?.type === 'dose_isosurface';
                     const isSkin = id === 'skin' || mesh === scene3D.skinMesh || mesh?.userData?.type === 'skin';
                     const isOar = !isCtv && !isSeed && !isNeedle && !isDose && !isSkin;
-                    if (isCtv || isSeed || isNeedle || (includeOars && isOar)) expandMesh(mesh);
+                    if (isCtv || isSeed || (includeNeedles && isNeedle) || (includeOars && isOar)) expandMesh(mesh);
                 }
                 if (!(box.min.x < box.max.x)) return _computeSceneBox();
                 return box;
@@ -819,7 +832,7 @@ async function _autoCaptureReportFiguresImpl() {
                 const size = box.getSize(new THREE.Vector3());
                 const maxDim = Math.max(size.x, size.y, size.z, 1);
                 const fov = (scene3D.camera.fov || 45) * Math.PI / 180;
-                const padding = mode === 'detail' ? 1.25 : 1.55;
+                const padding = mode === 'detail' ? 0.92 : 1.28;
                 const dist = (maxDim * padding) / (2 * Math.tan(fov / 2));
                 const dir = mode === 'detail'
                     ? new THREE.Vector3(0.55, -0.25, 0.8).normalize()
@@ -898,6 +911,7 @@ async function _autoCaptureReportFiguresImpl() {
             for (const [id, mesh] of Object.entries(scene3D.meshes)) {
                 if (mesh) mesh.visible = true;
             }
+            _savedHandleObjects.forEach(({ object }) => { if (object) object.visible = false; });
             // OARs semi-transparent (not seeds, needles, dose, or CTV)
             for (const [id, mesh] of Object.entries(scene3D.meshes)) {
                 if (mesh?.material && !id.startsWith('seed_') && !id.startsWith('needle_')
@@ -926,9 +940,10 @@ async function _autoCaptureReportFiguresImpl() {
                 if (!mesh) continue;
                 const isCtv = id === 'ctv' || id.startsWith('ctv_');
                 const isSeed = id.startsWith('seed_');
-                const isNeedle = id.startsWith('needle_');
+                const isNeedle = id.startsWith('needle_') && mesh?.userData?.type !== 'needle_handle';
                 mesh.visible = isCtv || isSeed || isNeedle;
             }
+            _savedHandleObjects.forEach(({ object }) => { if (object) object.visible = false; });
             // CTV very translucent so seeds inside are visible
             if (ctvMesh?.material) { ctvMesh.material.opacity = 0.12; ctvMesh.material.transparent = true; }
             // Seeds bright and opaque
@@ -940,7 +955,9 @@ async function _autoCaptureReportFiguresImpl() {
                 if (id.startsWith('needle_') && mesh?.material) { mesh.material.opacity = 0.8; }
             }
 
-            _frameCameraToBox(_computeFocusedPlanBox({ includeOars: false }), 'detail');
+            // Excluding the full needle shaft keeps the right panel a true
+            // target close-up when a needle extends far outside the CTV.
+            _frameCameraToBox(_computeFocusedPlanBox({ includeOars: false, includeNeedles: false }), 'detail');
             await _waitFrames(2);
             let imgB = await _capture3D('View B (translucent tumor)');
             if (!imgB) {
@@ -951,7 +968,7 @@ async function _autoCaptureReportFiguresImpl() {
 
             // ── Composite: side by side ──
             if (imgA || imgB) {
-                const W = 1200, halfW = 560, gap = 40, titleH = 44, labelH = 28, legendH = 66, pad = 20;
+                const W = 1400, halfW = 660, gap = 40, titleH = 44, labelH = 28, legendH = 66, pad = 20;
                 const compCanvas = document.createElement('canvas');
                 compCanvas.width = W;
                 compCanvas.height = titleH + pad + halfW + labelH + legendH;

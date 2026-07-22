@@ -24,6 +24,15 @@ import SimpleITK as sitk
 import torch
 
 
+# Seed-centered preprocessing repeatedly builds the same physical coordinate
+# lattice for every particle. Cache the geometry-only lattice, while keeping
+# each seed's origin and direction in the caller-specific arithmetic below.
+# The cache is deliberately small: it is a CPU optimization and must not turn
+# a multi-case server into an unbounded clinical-data cache.
+_LOCAL_COORDINATE_GRID_CACHE: Dict[Tuple[Any, ...], Tuple[np.ndarray, np.ndarray, np.ndarray]] = {}
+_LOCAL_COORDINATE_GRID_CACHE_LIMIT = 4
+
+
 class DoseInferenceDeadlineExceeded(TimeoutError):
     """Raised between DoseUNet windows when an interactive planning budget expires."""
 
@@ -124,10 +133,24 @@ def resample_image_to_spacing(image: sitk.Image, target_spacing: Sequence[float]
 
 
 def physical_coordinate_arrays(image: sitk.Image) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    local = _local_physical_coordinate_arrays(image)
+    origin = np.asarray(image.GetOrigin(), dtype=np.float32)
+    return tuple(array + origin[index] for index, array in enumerate(local))  # type: ignore[return-value]
+
+
+def _local_physical_coordinate_arrays(image: sitk.Image) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Return a cached physical lattice relative to ``image.GetOrigin()``."""
     size = np.asarray(image.GetSize(), dtype=np.int64)
     spacing = np.asarray(image.GetSpacing(), dtype=np.float64)
-    origin = np.asarray(image.GetOrigin(), dtype=np.float64)
     direction = np.asarray(image.GetDirection(), dtype=np.float64).reshape(3, 3)
+    key = (
+        tuple(int(v) for v in size),
+        tuple(float(v) for v in spacing),
+        tuple(float(v) for v in direction.reshape(-1)),
+    )
+    cached = _LOCAL_COORDINATE_GRID_CACHE.get(key)
+    if cached is not None:
+        return cached
     x_idx, y_idx, z_idx = np.meshgrid(
         np.arange(size[0], dtype=np.float64),
         np.arange(size[1], dtype=np.float64),
@@ -135,8 +158,13 @@ def physical_coordinate_arrays(image: sitk.Image) -> Tuple[np.ndarray, np.ndarra
         indexing="ij",
     )
     scaled = np.stack((x_idx * spacing[0], y_idx * spacing[1], z_idx * spacing[2]), axis=0)
-    coords = origin.reshape(3, 1, 1, 1) + np.einsum("ij,jxyz->ixyz", direction, scaled)
-    return coords[0], coords[1], coords[2]
+    # Store the geometry-only lattice so crops with different origins share it.
+    local_scaled = np.einsum("ij,jxyz->ixyz", direction, scaled)
+    local_coords = tuple(np.asarray(value, dtype=np.float32) for value in local_scaled)
+    if len(_LOCAL_COORDINATE_GRID_CACHE) >= _LOCAL_COORDINATE_GRID_CACHE_LIMIT:
+        _LOCAL_COORDINATE_GRID_CACHE.pop(next(iter(_LOCAL_COORDINATE_GRID_CACHE)))
+    _LOCAL_COORDINATE_GRID_CACHE[key] = local_coords  # type: ignore[assignment]
+    return local_coords  # type: ignore[return-value]
 
 
 def image_from_xyz_array(array_xyz: np.ndarray, reference_image: sitk.Image) -> sitk.Image:
@@ -146,7 +174,8 @@ def image_from_xyz_array(array_xyz: np.ndarray, reference_image: sitk.Image) -> 
 
 
 def generate_soft_pos(image: sitk.Image, position: Sequence[float], sphere_radius: float = 4.0) -> sitk.Image:
-    x_phys, y_phys, z_phys = physical_coordinate_arrays(image)
+    x_phys, y_phys, z_phys = _local_physical_coordinate_arrays(image)
+    position = np.asarray(position, dtype=np.float32) - np.asarray(image.GetOrigin(), dtype=np.float32)
     distance = np.sqrt(
         (x_phys - float(position[0])) ** 2
         + (y_phys - float(position[1])) ** 2
@@ -162,7 +191,8 @@ def generate_soft_pos(image: sitk.Image, position: Sequence[float], sphere_radiu
 
 
 def generate_line_map(image: sitk.Image, position: Sequence[float], direction: Sequence[float], line_length: float = 4.5) -> sitk.Image:
-    x_phys, y_phys, z_phys = physical_coordinate_arrays(image)
+    x_phys, y_phys, z_phys = _local_physical_coordinate_arrays(image)
+    position = np.asarray(position, dtype=np.float32) - np.asarray(image.GetOrigin(), dtype=np.float32)
     direction = np.asarray(direction, dtype=np.float64)
     norm = float(np.linalg.norm(direction))
     if norm <= 1e-8:

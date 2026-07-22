@@ -1099,21 +1099,22 @@ def create_app(config: Optional[Dict] = None):
                 ctv_voxels = agent.memory.retrieve("ctv_voxels")
                 ctv_volume_mm3 = agent.memory.retrieve("ctv_volume_mm3")
 
-                if dose.get("v100") is not None:
-                    patch["metrics.v100"] = round(float(dose["v100"]) * 100, 2)
-                    provenance["planning"].append("metrics.v100")
+                dose_metric_units = dose.get("volume_metric_units") if isinstance(dose, dict) else None
+                for metric_name in ("v100", "v150", "v200"):
+                    if dose.get(metric_name) is None:
+                        continue
+                    metric_percent = _server_support._volume_metric_as_percent(
+                        dose.get(metric_name), units=dose_metric_units or "fraction"
+                    )
+                    if metric_percent is not None:
+                        patch[f"metrics.{metric_name}"] = round(metric_percent, 2)
+                        provenance["planning"].append(f"metrics.{metric_name}")
                 if dose.get("d90") is not None:
                     patch["metrics.d90"] = round(float(dose["d90"]), 2)
                     provenance["planning"].append("metrics.d90")
                 if dose.get("d95") is not None:
                     patch["metrics.d95"] = round(float(dose["d95"]), 2)
                     provenance["planning"].append("metrics.d95")
-                if dose.get("v150") is not None:
-                    patch["metrics.v150"] = round(float(dose["v150"]) * 100, 2)
-                    provenance["planning"].append("metrics.v150")
-                if dose.get("v200") is not None:
-                    patch["metrics.v200"] = round(float(dose["v200"]) * 100, 2)
-                    provenance["planning"].append("metrics.v200")
                 if dose.get("ci") is not None:
                     patch["metrics.ci"] = round(float(dose["ci"]), 3)
                     provenance["planning"].append("metrics.ci")
@@ -1195,11 +1196,15 @@ def create_app(config: Optional[Dict] = None):
                     for n, v in oar.items():
                         if not isinstance(v, dict):
                             continue
+                        display_name = _server_support._canonical_oar_display_name(
+                            n,
+                            v.get("label_id"),
+                        )
                         d2 = v.get("d2cc"); d1 = v.get("d1cc"); d0 = v.get("d0_1cc")
                         if not (d2 or d1 or d0):
                             continue
                         oar_list.append({
-                            "organ": n,
+                            "organ": display_name,
                             "d2cc": round(float(d2), 1) if d2 else None,
                             "d1cc": round(float(d1), 1) if d1 else None,
                             "d0_1cc": round(float(d0), 1) if d0 else None,

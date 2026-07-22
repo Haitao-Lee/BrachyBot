@@ -636,7 +636,13 @@ function _todoSeed(todo, userMessage) {
     const asksToExecute = /(?:请|帮我|立即|现在)?(?:执行|开始|运行|生成|制定|做一次|重新规划)|\b(?:run|execute|perform|generate|create|start|replan|plan)\b/i.test(text);
     const hasPlanningSubject = /放射性|粒子|植入|近距离|brachy|seed|tumou?r|planning|规划|胰|pancrea|前列|prostate|肝|liver|肺|lung|头颈|head|neck|妇科|gyne/i.test(text);
     const knowledgeOnly = /介绍|解释|好处|为什么|区别|比较|科普|原理|\b(?:what is|explain|benefit|why|compare|difference)\b/i.test(text);
-    const isFullPlan = asksToExecute && hasPlanningSubject && !knowledgeOnly;
+    // A case description may mention a tumor site while the requested
+    // action is only CTV/OAR segmentation. Do not let that site mention
+    // create a fake pending planning stage in the Progress dock.
+    const asksSegmentation = /\b(?:ctv|oar|segmentation|segment|mask)\b|[\u5206\u5272\u52fe\u753b\u63cf\u8ff0]/i.test(text);
+    const asksPlanningAction = /\b(?:planning|plan|replan|brachytherapy|seed(?:s)?\s+implant|dose\s+plan|trajectory|needle)\b|[\u89c4\u5212\u7c92\u5b50\u690d\u5165\u8ba1\u5212\u5e03\u6e90\u9488\u9053\u5242\u91cf]/i.test(text);
+    const segmentationOnly = asksSegmentation && !asksPlanningAction;
+    const isFullPlan = asksToExecute && hasPlanningSubject && !knowledgeOnly && !segmentationOnly;
     if (isFullPlan) {
         // Re-read the templates on every seed call so the language
         // switch (zh → en mid-session) takes effect for the next

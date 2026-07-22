@@ -262,8 +262,9 @@ def register_planning_routes(app, get_agent):
             append_message("user", display_message)
             if task.steps:
                 append_message("thinking", "", task.steps)
-            if task.response:
-                append_message("bot-response", task.response)
+            final_response = task.response or task.streamed_response
+            if final_response:
+                append_message("bot-response", final_response)
             elif task.error:
                 append_message("error", "AI error: " + task.error)
 

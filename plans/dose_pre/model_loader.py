@@ -93,7 +93,12 @@ def load_dose_model(explicit_path: Optional[str] = None,
 
         try:
             inference_batch_size = int(
-                os.environ.get("BRACHYBOT_DOSE_INFERENCE_BATCH_SIZE", "4")
+                # A batch of eight keeps interactive needle replanning from
+                # accidentally reverting to one-seed-at-a-time inference on
+                # the deployed GPU. The predictor still catches CUDA OOM and
+                # retries safely with smaller chunks, so this default does not
+                # change the model or its dose/coordinate contract.
+                os.environ.get("BRACHYBOT_DOSE_INFERENCE_BATCH_SIZE", "8")
             )
         except ValueError as exc:
             raise ValueError(

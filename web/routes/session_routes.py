@@ -279,13 +279,32 @@ def register_session_routes(
         if isinstance(data.get("ui_state"), dict):
             patch["ui"] = {**patch.get("ui", {}), "state": data["ui_state"]}
         try:
-            snapshot = store.save_snapshot_patch(
-                user["id"], session_id, patch,
-                # Agent checkpoints and viewer events are intentionally
-                # independent writers.  Merge this named UI patch instead of
-                # rejecting a harmless stale browser revision.
-                expected_revision=None, reason="workspace.ui_saved",
-            )
+            # Chat is a complete transcript, not a commutative UI preference.
+            # Use the browser's revision as a compare-and-swap token for this
+            # part so a delayed tab cannot overwrite a detached task's final
+            # assistant response after a reconnect. UI/report patches remain
+            # mergeable because they are independent presentation state.
+            expected_revision = None
+            if data.get("revision") is not None:
+                try:
+                    expected_revision = int(data["revision"])
+                except (TypeError, ValueError):
+                    expected_revision = None
+            snapshot = None
+            chat_patch = patch.pop("chat", None)
+            if isinstance(chat_patch, dict):
+                snapshot = store.save_snapshot_patch(
+                    user["id"], session_id, {"chat": chat_patch},
+                    expected_revision=expected_revision,
+                    reason="workspace.chat_saved",
+                )
+            if patch:
+                snapshot = store.save_snapshot_patch(
+                    user["id"], session_id, patch,
+                    expected_revision=None, reason="workspace.ui_saved",
+                )
+            if snapshot is None:
+                snapshot = store.load_snapshot(user["id"], session_id)
             # UI persistence must never hydrate a cold BrachyAgent. The
             # snapshot is already durable; update memory only when the case
             # is currently cached in this process.

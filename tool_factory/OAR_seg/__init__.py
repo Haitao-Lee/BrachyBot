@@ -138,10 +138,12 @@ class OARSegmentationTool(BaseTool):
             try:
                 from .totalsegmentator_oar import TOTALSEG_LABEL_MAPPING
                 for label_id in organ_counts:
-                    organ_names[label_id] = TOTALSEG_LABEL_MAPPING.get(label_id, f"organ_{label_id}")
+                    organ_names[label_id] = TOTALSEG_LABEL_MAPPING.get(
+                        label_id, f"Unmapped structure (label {label_id})"
+                    )
             except ImportError:
                 for label_id in organ_counts:
-                    organ_names[label_id] = f"organ_{label_id}"
+                    organ_names[label_id] = f"Unmapped structure (label {label_id})"
 
         return ToolResult(
             success=True,
