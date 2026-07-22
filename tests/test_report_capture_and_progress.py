@@ -52,3 +52,15 @@ def test_manual_needle_refresh_does_not_rebuild_the_whole_planning_scene():
     assert "loadAllSlices" in refresh_body
     assert "refreshPlanningUI" not in refresh_body
     assert "data?.needles" in refresh_body
+
+
+def test_manual_replan_has_stable_id_change_detection_and_deadline_guard():
+    source = _read("web/server_support.py")
+    assert "stable needle id first" in source
+    assert "BRACHYBOT_MANUAL_REPLAN_TIMEOUT_S" in source
+    assert "seed_plan[trajectory][2]" in source
+    assert "deadline=interactive_deadline" in source
+    # The trajectory-only fallback is valid only when no stable ids matched;
+    # an unconditional second occurrence would reintroduce full-plan reruns
+    # after a workspace restore.
+    assert source.count("changed.update(set(old_by_trajectory).symmetric_difference(new_by_trajectory))") == 1

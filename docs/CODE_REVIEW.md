@@ -7134,5 +7134,48 @@ an RL planning loop, or a coordinate-chain error.
 - Added regression contracts covering changed-trajectory filtering,
   incremental manual dose composition, compact viewer refresh, final-response
   trace phases, and non-black report capture.
+- Bumped the changed chat, manual-viewer, and report-editor asset revisions;
+  the stale Round 7 cache-busting assertion was updated to the deployed
+  revisions instead of preserving an obsolete version number.
 - Remote configured-runtime tests are the final gate before publication; the
   report will be amended with their exact result after the remote run.
+
+## Round 84: Bound Single-Needle Replanning After Workspace Restore (2026-07-22)
+
+### Confirmed finding
+
+- The stable-`needle id` matching introduced for incremental replanning was
+  followed by an unconditional symmetric-difference update of the raw
+  `trajectory_id` sets. A workspace restore can legitimately rename those
+  association labels while preserving the physical needle geometry. The final
+  update therefore reclassified every restored needle as changed, causing a
+  one-needle edit to re-infer the complete seed plan. This is a real latency
+  defect and can explain multi-thousand-second interactive replans; it is not
+  evidence that the dose model needs to run on CPU.
+
+### Corrective changes
+
+- Stable needle IDs are now authoritative whenever at least one old/new ID
+  pair matches. Raw trajectory-ID differences are used only as the legacy
+  fallback when no stable IDs are available.
+- The manual dose path logs the changed association keys and old/new needle
+  counts, making accidental full-plan invalidation diagnosable in the server
+  log.
+- Interactive needle replanning retains a positive deadline controlled by
+  `BRACHYBOT_MANUAL_REPLAN_TIMEOUT_S` (default 180 seconds). The trained
+  DoseUNet inference checks this deadline between sliding-window passes and
+  returns a clear retryable failure instead of leaving the request unbounded.
+- The previous automatic plan's per-seed AI dose maps are reused when their
+  grid matches. Only the edited trajectory's old contribution is removed and
+  its new contribution is inferred; the full model path remains the explicit
+  compatibility fallback when the baseline is unavailable.
+
+### Verification
+
+- Remote targeted viewer/workspace/replanning suite: **66 passed, 3 warnings**.
+- Remote complete suite: **262 passed, 3 warnings**.
+- Local Python and JavaScript syntax checks and `git diff --check` passed.
+- The remote working tree contains the exact tracked blobs from the validated
+  local commit. The currently running Python server process must be restarted
+  before it can import the updated backend module; an already running request
+  cannot be retroactively shortened.

@@ -232,8 +232,11 @@ def test_needle_render_scheduler_survives_mixed_static_asset_revisions():
     layout = (ROOT / "web/app/static/js/brachybot-viewer-layout.js").read_text(encoding="utf-8")
     manual = (ROOT / "web/app/static/js/brachybot-3d-manual.js").read_text(encoding="utf-8")
 
-    assert "brachybot-viewer-layout.js?v=8" in index
-    assert "brachybot-3d-manual.js?v=17" in index
+    # Keep this contract aligned with the actual cache-busting revisions in
+    # index.html. A stale assertion here falsely reports a deployment bug and
+    # hides whether the endpoint interaction bundle is really versioned.
+    assert "brachybot-viewer-layout.js?v=9" in index
+    assert "brachybot-3d-manual.js?v=19" in index
     assert "scene3D.requestRender(1)" in layout
     assert "scene3D.requestRender(2)" in layout
     assert "window.requestRender = requestRender;" in manual

@@ -840,6 +840,7 @@ def _compute_manual_ai_dose(
     paths. There is intentionally no analytical/Gaussian fallback here.
     """
     import numpy as np
+    import time
     import SimpleITK as sitk
 
     if agent is None or not hasattr(agent, "memory"):
@@ -1015,7 +1016,7 @@ def _compute_manual_ai_dose(
             round(float(seed["weight"]), 5),
         )
 
-    def _cached_seed_maps(seed_records, model_records):
+    def _cached_seed_maps(seed_records, model_records, *, deadline=None):
         """Return AI maps, evaluating only cache misses for this seed set."""
         cached_maps = []
         missing_seeds = []
@@ -1039,6 +1040,7 @@ def _compute_manual_ai_dose(
                 args.image_normalize[0],
                 args.image_normalize[1],
                 args.image_normalize[2],
+                deadline=deadline,
             )
             for (index, cache_key), seed_dose in zip(missing_records, computed_maps):
                 array = np.asarray(seed_dose, dtype=np.float32).copy()
@@ -1051,34 +1053,103 @@ def _compute_manual_ai_dose(
         return [np.asarray(item, dtype=np.float32) for item in cached_maps if item is not None], len(missing_seeds)
 
     def _changed_trajectory_ids(old_needles, new_needles):
-        def _by_trajectory(items):
-            result = {}
+        """Return only the seed-association keys affected by a needle edit.
+
+        The browser may serialize ``id`` and ``trajectory_id`` differently
+        after a workspace restore. Comparing only trajectory_id therefore used
+        to classify every needle as changed and silently turned a one-needle
+        edit into a full-plan DoseUNet run. Match the stable needle id first,
+        then include both old and new association keys when an id was renamed.
+        """
+        def _index(items):
+            by_id = {}
+            by_trajectory = {}
             for item in items or []:
                 if not isinstance(item, dict):
                     continue
                 points = item.get("points")
                 if not isinstance(points, list) or len(points) < 2:
                     continue
-                trajectory_id = str(item.get("trajectory_id") or item.get("id") or "")
+                endpoints = np.asarray([points[0], points[-1]], dtype=np.float64)
+                needle_id = str(item.get("id") or "").strip()
+                trajectory_id = str(item.get("trajectory_id") or needle_id).strip()
+                record = {"points": endpoints, "trajectory_id": trajectory_id}
+                if needle_id:
+                    by_id[needle_id] = record
                 if trajectory_id:
-                    result[trajectory_id] = np.asarray([points[0], points[-1]], dtype=np.float64)
-            return result
-        old = _by_trajectory(old_needles)
-        new = _by_trajectory(new_needles)
-        changed = set(old).symmetric_difference(new)
-        for trajectory_id in set(old).intersection(new):
-            if not np.allclose(old[trajectory_id], new[trajectory_id], rtol=0.0, atol=1e-6):
+                    by_trajectory[trajectory_id] = record
+            return by_id, by_trajectory
+
+        old_by_id, old_by_trajectory = _index(old_needles)
+        new_by_id, new_by_trajectory = _index(new_needles)
+        changed = set()
+        matched_ids = set(old_by_id).intersection(new_by_id)
+        for needle_id in matched_ids:
+            old_record = old_by_id[needle_id]
+            new_record = new_by_id[needle_id]
+            if not np.allclose(old_record["points"], new_record["points"], rtol=0.0, atol=1e-6):
+                changed.update((needle_id, old_record["trajectory_id"], new_record["trajectory_id"]))
+
+        # Preserve the legacy trajectory-only contract for callers that do not
+        # have stable ids. When stable ids are available, do not compare the
+        # raw trajectory-id sets: a workspace restore may rename all of those
+        # association labels without changing any physical geometry.
+        if not matched_ids:
+            changed.update(set(old_by_trajectory).symmetric_difference(new_by_trajectory))
+        else:
+            matched_old_trajectories = {
+                old_by_id[key]["trajectory_id"] for key in matched_ids
+            }
+            matched_new_trajectories = {
+                new_by_id[key]["trajectory_id"] for key in matched_ids
+            }
+            changed.update(
+                (set(old_by_trajectory) - matched_old_trajectories)
+                .symmetric_difference(set(new_by_trajectory) - matched_new_trajectories)
+            )
+        for trajectory_id in set(old_by_trajectory).intersection(new_by_trajectory):
+            if not np.allclose(
+                old_by_trajectory[trajectory_id]["points"],
+                new_by_trajectory[trajectory_id]["points"],
+                rtol=0.0,
+                atol=1e-6,
+            ):
                 changed.add(trajectory_id)
-        return changed
+        # Do not add the raw trajectory-id difference here. Stable ids are
+        # authoritative after workspace restore; re-adding this symmetric
+        # difference would classify every restored needle as changed and turn
+        # a one-needle edit into a full DoseUNet inference.
+        return {str(value) for value in changed if str(value)}
+
+    # A runaway interactive request is worse than a clear retryable error: it
+    # blocks the user's case and leaves the progress row looking frozen. The
+    # deadline is only applied to needle re-planning; ordinary manual dose
+    # recomputation keeps its existing behavior. Every deadline check occurs
+    # between model windows, never in the middle of a forward pass.
+    interactive_deadline = None
+    if reproject_seeds:
+        try:
+            timeout_s = float(os.environ.get("BRACHYBOT_MANUAL_REPLAN_TIMEOUT_S", "180"))
+        except ValueError as exc:
+            raise ValueError("BRACHYBOT_MANUAL_REPLAN_TIMEOUT_S must be numeric") from exc
+        if timeout_s <= 0:
+            raise ValueError("BRACHYBOT_MANUAL_REPLAN_TIMEOUT_S must be positive")
+        interactive_deadline = time.monotonic() + timeout_s
 
     dose_base = np.zeros_like(sitk.GetArrayFromImage(dose_image), dtype=np.float32)
     changed_trajectories = _changed_trajectory_ids(previous_needles, needles) if reproject_seeds else set()
+    if reproject_seeds:
+        logger.info(
+            "[manual_dose] geometry diff: changed_keys=%s previous_needles=%d current_needles=%d",
+            sorted(changed_trajectories), len(previous_needles), len(needles),
+        )
     previous_seed_records = agent.memory.retrieve("manual_seeds")
     if not isinstance(previous_seed_records, list) or not previous_seed_records:
         baseline_snapshot = agent.memory.retrieve("algorithm_plan_snapshot") or {}
         previous_seed_records = list(baseline_snapshot.get("seeds") or []) if isinstance(baseline_snapshot, dict) else []
     baseline_dose_key = "dose_distribution" if agent.memory.retrieve("manual_ai_dose") else "algorithm_plan_dose_distribution"
     previous_dose = agent.memory.retrieve(baseline_dose_key)
+    incremental_applied = False
     if changed_trajectories and previous_dose is not None:
         candidate_base = np.asarray(previous_dose, dtype=np.float32)
         if candidate_base.shape == dose_base.shape:
@@ -1092,9 +1163,33 @@ def _compute_manual_ai_dose(
             ]
             old_norm, old_model = _prepare_model_seeds(old_records)
             new_norm, new_model = _prepare_model_seeds(new_records)
-            if old_model and new_model:
-                old_maps, old_misses = _cached_seed_maps(old_norm, old_model)
-                new_maps, new_misses = _cached_seed_maps(new_norm, new_model)
+            # Automatic planning already has the exact trained-model dose
+            # maps for its seeds in seed_plan[trajectory][2]. Reuse those maps
+            # for the removed contribution instead of running DoseUNet again.
+            # This is the main latency fix for the first drag after planning.
+            old_maps = []
+            old_misses = 0
+            if not agent.memory.retrieve("manual_ai_dose"):
+                seed_plan = agent.memory.retrieve("seed_plan") or []
+                for trajectory_index, entry in enumerate(seed_plan):
+                    if not isinstance(entry, (list, tuple)) or len(entry) < 3:
+                        continue
+                    trajectory_key = f"traj_{trajectory_index + 1}"
+                    if trajectory_key not in changed_trajectories:
+                        continue
+                    for seed_dose in entry[2] or []:
+                        seed_array = np.asarray(seed_dose, dtype=np.float32)
+                        if seed_array.shape == dose_base.shape:
+                            old_maps.append(seed_array)
+                old_misses = 0 if old_maps else 1
+            if not old_maps and old_model:
+                old_maps, old_misses = _cached_seed_maps(
+                    old_norm, old_model, deadline=interactive_deadline
+                )
+            new_maps, new_misses = _cached_seed_maps(
+                new_norm, new_model, deadline=interactive_deadline
+            ) if new_model else ([], 1)
+            if old_maps and new_maps:
                 dose_base = candidate_base.copy()
                 for seed_dose in old_maps:
                     dose_base -= seed_dose
@@ -1106,11 +1201,14 @@ def _compute_manual_ai_dose(
                     len(changed_trajectories), len(old_norm), len(new_norm),
                     old_misses + new_misses, len(norm_seeds),
                 )
+                incremental_applied = True
             else:
                 dose_base = np.zeros_like(dose_base)
 
-    if not np.any(dose_base):
-        per_seed_doses, model_misses = _cached_seed_maps(norm_seeds, model_seeds)
+    if not incremental_applied:
+        per_seed_doses, model_misses = _cached_seed_maps(
+            norm_seeds, model_seeds, deadline=interactive_deadline
+        )
         dose = np.zeros_like(dose_base, dtype=np.float32)
         for seed_dose in per_seed_doses:
             dose += seed_dose
