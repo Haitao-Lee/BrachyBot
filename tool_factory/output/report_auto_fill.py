@@ -37,14 +37,24 @@ def _volume_metric_as_percent(value, units=None):
         return None
     kind = str(units or "").strip().lower()
     if kind in {"fraction", "ratio", "0-1"}:
+        if not 0.0 <= number <= 1.0:
+            return None
         percent = number * 100.0
     elif kind in {"percent", "percentage", "0-100"}:
+        if not 0.0 <= number <= 100.0:
+            return None
         percent = number
     else:
-        percent = number * 100.0 if abs(number) <= 1.0 else number
-    while abs(percent) > 100.0:
-        percent /= 100.0
-    return max(0.0, min(100.0, percent))
+        # An unlabelled value can use the legacy fraction heuristic, but an
+        # impossible value must remain missing instead of being divided until
+        # it looks clinically plausible.
+        if 0.0 <= number <= 1.0:
+            percent = number * 100.0
+        elif 0.0 <= number <= 100.0:
+            percent = number
+        else:
+            return None
+    return float(percent)
 
 
 def _server_url():
@@ -160,10 +170,10 @@ class ReportAutoFillTool(BaseTool):
         v100 = dose.get("v100")
         d90 = dose.get("d90")
         score = dose.get("plan_score")
-        try:
-            v100_pct = float(v100) * 100 if v100 is not None and float(v100) <= 1.5 else float(v100)
-        except Exception:
-            v100_pct = None
+        v100_pct = _volume_metric_as_percent(
+            v100,
+            dose.get("volume_metric_units") if isinstance(dose, dict) else None,
+        )
 
         if language == "zh":
             lines = ["本报告由当前分割、轨迹规划和剂量计算结果自动填充。"]
@@ -305,7 +315,16 @@ class ReportAutoFillTool(BaseTool):
                 for name, values in oar.items():
                     if not isinstance(values, dict):
                         continue
-                    row = {"organ": str(name)}
+                    # Do not expose legacy placeholders such as
+                    # ``Organ 10000`` as if they were anatomical structures.
+                    # The shared resolver maps known labels and explicitly
+                    # marks unknown labels as unmapped.
+                    try:
+                        from web.server_support import _canonical_oar_display_name
+                        display_name = _canonical_oar_display_name(name, values.get("label_id"))
+                    except (ImportError, AttributeError, TypeError):
+                        display_name = str(name)
+                    row = {"organ": display_name}
                     has_value = False
                     for metric_key in ("d2cc", "d1cc", "d0_1cc", "dmax"):
                         value = values.get(metric_key)

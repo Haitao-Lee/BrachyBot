@@ -6872,3 +6872,53 @@ an RL planning loop, or a coordinate-chain error.
 - Workspace frontend regression suite: `37 passed`.
 - Full configured-runtime suite after this change: `244 passed, 2 skipped, 3 warnings`.
 - JavaScript syntax and `git diff --check` pass.
+
+## Round 78: Request-scoped Progress and stale overlay isolation (2026-07-22)
+
+### Confirmed findings
+
+- The frontend Progress dock seeded a fixed CTV -> OAR -> planning template
+  whenever a message mentioned a tumor site and an execution verb. Therefore
+  a request such as "execute OAR segmentation" could correctly call only
+  `oar_segmentation` while still displaying a pending planning pipeline. This
+  was a real presentation-contract defect; the backend had not executed the
+  planning tool.
+- Workspace transitions cleared `state.doseOverlay`, but asynchronous dose
+  metadata/slice requests and preload timers remained alive. A late response
+  could repaint an old dose into the newly selected case.
+- Detached chat finalization relied on the aggregate `response` event. If a
+  provider or connection ended after reviewed `final_text_chunk` events but
+  before that aggregate event, the answer could be absent from the durable
+  transcript even though the user had received streamed text.
+- The shared upload progress element lived in the CT form row, so CTV/OAR
+  uploads displayed activity beside the wrong input.
+
+### Corrective changes
+
+- `_todoSeed()` now distinguishes segmentation-only requests from planning
+  requests. Tumor-site words are context, not permission to show planning;
+  planning is seeded only when a planning action is explicitly present. This
+  preserves the existing full planning preview and does not alter tool
+  routing.
+- Added `clearDoseOverlayRuntime()` and invoke it before client workspace
+  reset. It increments the request fence, aborts active slice requests,
+  clears in-flight/preload state, hides dose canvases/colorbars, and requests
+  one clean render.
+- `ChatTask` now accumulates reviewed streamed text as a fallback. Durable
+  finalization uses the aggregate response when present and the streamed text
+  otherwise, while the normal single-response path remains unchanged.
+- Upload progress is moved to the active form row and labels the target as CT
+  image, CTV mask, or OAR mask.
+- Unknown OAR labels remain explicitly unmapped, OAR Vx is normalized through
+  one bounded fraction contract, trained-dose recomputation reuses immutable
+  model/seed caches, and report figure capture continues to exclude endpoint
+  handles from publication images.
+
+### Verification
+
+- Python AST parsing passes for all modified backend and planning modules.
+- `node --check` passes for all frontend JavaScript assets.
+- Added a regression assertion that segmentation-only Progress seeding cannot
+  include `planning_pipeline`.
+- Remote configured-runtime pytest and browser/static checks remain the final
+  gate before publishing this revision.

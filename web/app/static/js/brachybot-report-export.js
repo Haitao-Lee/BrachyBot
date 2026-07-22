@@ -2,13 +2,13 @@ function _oarVolumePercent(value, units) {
     const n = Number(value);
     if (!Number.isFinite(n)) return null;
     const kind = String(units || '').toLowerCase();
-    let percent = ['fraction', 'ratio', '0-1'].includes(kind)
-        ? n * 100
-        : ['percent', 'percentage', '0-100'].includes(kind)
-            ? n
-            : (Math.abs(n) <= 1 ? n * 100 : n);
-    while (Math.abs(percent) > 100) percent /= 100;
-    return Math.max(0, Math.min(100, percent));
+    if (['fraction', 'ratio', '0-1'].includes(kind)) {
+        return n >= 0 && n <= 1 ? n * 100 : null;
+    }
+    if (['percent', 'percentage', '0-100'].includes(kind)) {
+        return n >= 0 && n <= 100 ? n : null;
+    }
+    return n >= 0 && n <= 1 ? n * 100 : (n >= 0 && n <= 100 ? n : null);
 }
 
 function _composite2DViewerCanvas(axis) {

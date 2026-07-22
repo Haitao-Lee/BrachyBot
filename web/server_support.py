@@ -17,6 +17,7 @@ import hmac
 import base64
 import binascii
 import math
+import re
 from collections import deque
 from datetime import datetime
 from typing import Dict, Any, Optional, Iterable
@@ -53,6 +54,35 @@ MAX_SCREENSHOT_BYTES = int(os.environ.get("BRACHYBOT_MAX_SCREENSHOT_BYTES", str(
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+
+def _canonical_oar_display_name(name: Any, label_id: Any = None) -> str:
+    """Return a clinically meaningful OAR label without inventing anatomy.
+
+    Older snapshots used strings such as ``Organ 10000`` when a mask label
+    was not present in the TotalSegmentator mapping.  Those strings are
+    implementation placeholders, not anatomical names, and must never be
+    emitted in a report or viewer.  Known numeric labels are resolved from
+    the authoritative mapping; unknown labels remain explicitly unmapped.
+    """
+    raw = str(name or "").strip()
+    generic = bool(re.fullmatch(r"(?i)(?:organ|organ_|label|structure)[ _-]?\d+", raw))
+    if raw and not generic:
+        return raw
+    try:
+        numeric_label = int(label_id if label_id is not None else re.search(r"\d+", raw).group(0))
+    except (AttributeError, TypeError, ValueError):
+        numeric_label = None
+    if numeric_label is not None:
+        try:
+            from tool_factory.OAR_seg.totalsegmentator_oar import TOTALSEG_LABEL_MAPPING
+            mapped = TOTALSEG_LABEL_MAPPING.get(numeric_label)
+            if mapped:
+                return str(mapped)
+        except (ImportError, AttributeError, TypeError):
+            pass
+        return f"Unmapped structure (label {numeric_label})"
+    return raw or "Unmapped structure"
+
 # API key for authentication. Local loopback development can run without a key;
 # non-loopback startup is refused unless BRACHYBOT_API_KEY is set or the
 # explicitly unsafe BRACHYBOT_ALLOW_INSECURE_REMOTE=1 override is provided.
@@ -78,6 +108,15 @@ _MESH_CACHE_LOCK = threading.Lock()
 _MESH_CACHE: Dict[tuple, Dict[str, Any]] = {}
 _MESH_CACHE_ORDER = deque()
 _MESH_CACHE_MAX_ITEMS = int(os.environ.get("BRACHYBOT_MESH_CACHE_MAX_ITEMS", "96"))
+
+_MANUAL_DOSE_MODEL_LOCK = threading.RLock()
+_MANUAL_DOSE_MODEL_CACHE: Dict[str, Any] = {}
+# Per-seed predictions are immutable CPU arrays. A needle edit usually moves
+# only the seeds on one trajectory; reusing unchanged seed maps makes that
+# interaction incremental while preserving the exact trained DoseUNet output.
+_MANUAL_DOSE_SEED_CACHE: Dict[tuple, Any] = {}
+_MANUAL_DOSE_SEED_CACHE_ORDER: list = []
+_MANUAL_DOSE_SEED_CACHE_LIMIT = 128
 DOSE_MODEL_UNITS = "normalized_model_output"
 
 
@@ -298,17 +337,24 @@ def _volume_metric_as_percent(value: Any, *, units: Optional[str] = None) -> Opt
         return None
     normalized_units = str(units or "").strip().lower()
     if normalized_units in {"fraction", "ratio", "0-1"}:
+        if not 0.0 <= number <= 1.0:
+            return None
         percent = number * 100.0
     elif normalized_units in {"percent", "percentage", "0-100"}:
+        if not 0.0 <= number <= 100.0:
+            return None
         percent = number
     else:
-        percent = number * 100.0 if abs(number) <= 1.0 else number
-    # Compatibility with legacy layers that multiplied an already-percent
-    # value. Any value outside the physical range is reduced to its intended
-    # scale before the final clamp.
-    while abs(percent) > 100.0:
-        percent /= 100.0
-    return max(0.0, min(100.0, float(percent)))
+        # Only the unlabelled legacy boundary may use the fraction heuristic.
+        # A value above 100 is not recoverable: repeatedly dividing it would
+        # silently turn corrupt clinical data into a plausible percentage.
+        if 0.0 <= number <= 1.0:
+            percent = number * 100.0
+        elif 0.0 <= number <= 100.0:
+            percent = number
+        else:
+            return None
+    return float(percent)
 
 
 def _latest_plan_snapshot(agent) -> Dict[str, Any]:
@@ -833,7 +879,21 @@ def _compute_manual_ai_dose(
         if resampled_oar is not None:
             agent.memory.store("resampled_oar", resampled_oar)
 
-    dose_model, model_error = _load_dose_model()
+    # Replanning is an interactive operation and can happen repeatedly for
+    # one case. Reuse the process-wide, read-only DoseUNet instance instead of
+    # reloading a large checkpoint on every needle drag. The model remains the
+    # canonical trained checkpoint; this cache only removes redundant weight
+    # deserialization and GPU upload.
+    from plans.device_manager import get_device
+    dose_device = get_device(caller="manual_planning_dose")
+    dose_cache_key = str(dose_device)
+    with _MANUAL_DOSE_MODEL_LOCK:
+        dose_model = _MANUAL_DOSE_MODEL_CACHE.get(dose_cache_key)
+        model_error = None
+        if dose_model is None:
+            dose_model, model_error = _load_dose_model(device=dose_device)
+            if dose_model is not None:
+                _MANUAL_DOSE_MODEL_CACHE[dose_cache_key] = dose_model
     if dose_model is None:
         raise ValueError(model_error or "dose_unet_spacing1mm dose model is unavailable")
 
@@ -875,12 +935,16 @@ def _compute_manual_ai_dose(
             voxel_direction = voxel_direction / vdn
 
         pos_zyx = np.array([idx_xyz[2], idx_xyz[1], idx_xyz[0]], dtype=np.float32)
-        model_seeds.append((pos_zyx, voxel_direction.astype(np.float32)))
+        seed_weight = float(seed.get("weight", 1.0)) if isinstance(seed, dict) else 1.0
+        if not np.isfinite(seed_weight) or seed_weight <= 0.0:
+            seed_weight = 1.0
+        model_seeds.append((pos_zyx, voxel_direction.astype(np.float32), seed_weight))
         norm_seeds.append({
             "id": seed_id,
             "position": pos,
             "direction": direction_np.astype(np.float32).tolist(),
             "trajectory_id": traj_id,
+            "weight": seed_weight,
         })
 
     if not model_seeds:
@@ -894,16 +958,59 @@ def _compute_manual_ai_dose(
         args.image_normalize[0],
         args.image_normalize[1],
     )
-    per_seed_doses = utilizations.batch_seed_dose_calculation_dl(
-        model_seeds,
-        dose_image,
-        dose_model,
-        args.radiation_array_params["infer_img_size"],
-        args.seed_info,
-        args.image_normalize[0],
-        args.image_normalize[1],
-        args.image_normalize[2],
+    dose_signature = (
+        dose_cache_key,
+        tuple(int(v) for v in dose_image.GetSize()),
+        tuple(round(float(v), 5) for v in dose_image.GetSpacing()),
+        tuple(round(float(v), 5) for v in dose_image.GetOrigin()),
+        tuple(round(float(v), 5) for v in dose_image.GetDirection()),
     )
+    cached_maps = []
+    missing_seeds = []
+    missing_indices = []
+    for index, (seed, model_seed) in enumerate(zip(norm_seeds, model_seeds)):
+        position_key = tuple(round(float(v), 4) for v in seed["position"])
+        direction_key = tuple(round(float(v), 5) for v in seed["direction"])
+        cache_key = (dose_signature, position_key, direction_key, round(float(seed["weight"]), 5))
+        cached = _MANUAL_DOSE_SEED_CACHE.get(cache_key)
+        if cached is None:
+            cached_maps.append(None)
+            missing_seeds.append(model_seed)
+            missing_indices.append(index)
+        else:
+            cached_maps.append(cached)
+    if missing_seeds:
+        computed_maps = utilizations.batch_seed_dose_calculation_dl(
+            missing_seeds,
+            dose_image,
+            dose_model,
+            args.radiation_array_params["infer_img_size"],
+            args.seed_info,
+            args.image_normalize[0],
+            args.image_normalize[1],
+            args.image_normalize[2],
+        )
+        for index, cache_key, seed_dose in zip(
+            missing_indices,
+            [
+                (
+                    dose_signature,
+                    tuple(round(float(v), 4) for v in norm_seeds[i]["position"]),
+                    tuple(round(float(v), 5) for v in norm_seeds[i]["direction"]),
+                    round(float(norm_seeds[i]["weight"]), 5),
+                )
+                for i in missing_indices
+            ],
+            computed_maps,
+        ):
+            array = np.asarray(seed_dose, dtype=np.float32).copy()
+            _MANUAL_DOSE_SEED_CACHE[cache_key] = array
+            _MANUAL_DOSE_SEED_CACHE_ORDER.append(cache_key)
+            cached_maps[index] = array
+        while len(_MANUAL_DOSE_SEED_CACHE_ORDER) > _MANUAL_DOSE_SEED_CACHE_LIMIT:
+            stale_key = _MANUAL_DOSE_SEED_CACHE_ORDER.pop(0)
+            _MANUAL_DOSE_SEED_CACHE.pop(stale_key, None)
+    per_seed_doses = [np.asarray(item, dtype=np.float32) for item in cached_maps if item is not None]
     dose = np.zeros_like(sitk.GetArrayFromImage(dose_image), dtype=np.float32)
     for seed_dose in per_seed_doses:
         dose += np.asarray(seed_dose, dtype=np.float32)
@@ -1000,7 +1107,10 @@ def _compute_manual_ai_dose(
             od = dose_gy[mask]
             if od.size == 0:
                 continue
-            name = organ_names.get(label) or organ_names.get(str(label)) or f"Organ {label}"
+            name = _canonical_oar_display_name(
+                organ_names.get(label) or organ_names.get(str(label)),
+                label,
+            )
             sorted_desc = np.sort(od)[::-1]
 
             def dose_at_xcc(x_cc):

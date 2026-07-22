@@ -1956,7 +1956,18 @@ function finalizeStreamingResponse(el, text) {
     el.classList.remove('is-streaming');
     el.removeAttribute('aria-busy');
     el.innerHTML = renderMarkdown(text);
-    try { saveSessionMessage('bot-response', text, null, Date.now()); } catch (_) {}
+    try {
+        saveSessionMessage('bot-response', text, null, Date.now());
+        // A final assistant response is a durable case event, not merely a
+        // browser rendering update. Flush this boundary explicitly so closing
+        // the tab immediately after a long planning turn cannot lose the
+        // completed reply while the normal 700 ms workspace debounce is still
+        // pending. The server-side ChatTask finalizer remains the authoritative
+        // fallback when the browser stream is disconnected.
+        if (window.__serverWorkspaceReady && typeof window.persistWorkspace === 'function') {
+            void window.persistWorkspace('chat.response.finalized');
+        }
+    } catch (_) {}
 }
 
 function showThinkingIndicator() {

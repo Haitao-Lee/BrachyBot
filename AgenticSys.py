@@ -1564,6 +1564,31 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
                     _flat[_n_k.lower()] = _v
                 # Build oar_metrics map: name → {Dmax, D2cc, ...}
                 _oar = {}
+
+                def _oar_volume_fraction(value):
+                    """Return one canonical OAR volume fraction (0..1).
+
+                    The dose evaluator contract stores Vx as a fraction. Older
+                    evaluators occasionally returned percentages, so normalize
+                    those at this boundary and never multiply an already
+                    normalized value into an impossible percentage later.
+                    Values above 100% are invalid physical data, not a new
+                    unit; preserve them as missing and retain a warning in
+                    the server log rather than inventing a clinical value.
+                    """
+                    try:
+                        number = float(value or 0.0)
+                    except (TypeError, ValueError):
+                        return 0.0
+                    if not math.isfinite(number) or number < 0.0:
+                        return 0.0
+                    if number <= 1.0:
+                        return number
+                    if number <= 100.0:
+                        return number / 100.0
+                    logger.warning("Invalid OAR Vx value %.4f; omitting from metrics", number)
+                    return None
+
                 for _n, _m in _nested.items():
                     if _n == _target_name:
                         continue
@@ -1575,9 +1600,14 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
                         "d1cc": _m.get("D1cc"),
                         "d0_1cc": _m.get("D0.1cc"),
                         "dmean": _m.get("Dmean"),
-                        "v100": (_m.get("V100") or 0) * 100,  # → percent
+                        "v100": _oar_volume_fraction(_m.get("V100")),
+                        "v150": _oar_volume_fraction(_m.get("V150")),
+                        "v200": _oar_volume_fraction(_m.get("V200")),
                     }
                 _flat["oar_metrics"] = _oar
+                # Keep the same explicit contract as planning_pipeline and
+                # manual AI dose recomputation: Vx values are fractions.
+                _flat["volume_metric_units"] = "fraction"
                 self.memory.store("metrics", _flat)
 
             # This execution path is the canonical owner of successful LLM

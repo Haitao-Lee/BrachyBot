@@ -547,10 +547,20 @@ async function handleFileSelect(input, targetId) {
     const progressText = document.getElementById('uploadProgressText');
     const progressFilename = document.getElementById('uploadProgressFilename');
 
+    // Anchor the shared progress indicator to the input row that owns this
+    // upload. CTV/OAR uploads must never look like CT uploads in the UI.
+    const activeRow = pathInput?.closest('.form-row');
+    if (activeRow && overlay && overlay.parentElement !== activeRow) {
+        activeRow.appendChild(overlay);
+    }
+    const uploadLabel = targetId === 'ctvPath'
+        ? 'CTV mask'
+        : (targetId === 'oarPath' ? 'OAR mask' : 'CT image');
+
     // Show upload progress overlay
     progressText.textContent = files.length === 1
-        ? 'Uploading file...'
-        : `Uploading ${files.length} files...`;
+        ? `Uploading ${uploadLabel}...`
+        : `Uploading ${uploadLabel} (${files.length} files)...`;
     progressFilename.textContent = files.length === 1
         ? files[0].name
         : `${files[0].name} … (+${files.length - 1} more)`;
@@ -942,6 +952,9 @@ function clearClientWorkspace(options = {}) {
     }
     if (typeof invalidateViewerDataLoads === 'function') {
         invalidateViewerDataLoads();
+    }
+    if (typeof clearDoseOverlayRuntime === 'function') {
+        clearDoseOverlayRuntime();
     }
     resetAllState({ deferDisposal: options.deferDisposal === true });
     state.ctLoaded = false;

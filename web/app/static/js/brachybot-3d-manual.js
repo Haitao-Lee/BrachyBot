@@ -2354,6 +2354,46 @@ let _doseOverlayData = null;
 let _doseOverlayVisible = false;
 let _doseOverlayOpacity = 0.5;
 
+/**
+ * Drop all case-owned dose overlay state before a workspace transition.
+ * Dose requests are asynchronous; clearing only the shared UI state is not
+ * enough because a late response from the previous case could still paint a
+ * slice into the newly selected case.
+ */
+function clearDoseOverlayRuntime() {
+    _doseOverlayRequestVersion += 1;
+    _doseOverlayAbortControllers.forEach(controller => {
+        try { controller.abort(); } catch (_) {}
+    });
+    _doseOverlayAbortControllers.clear();
+    _doseOverlayInflight.clear();
+    _doseOverlayLoadPromise = null;
+    if (_dosePreloadTimer) {
+        clearTimeout(_dosePreloadTimer);
+        _dosePreloadTimer = null;
+    }
+    _doseOverlayData = null;
+    _doseOverlayVisible = false;
+    _doseOverlayOpacity = 0.5;
+    if (state.doseTexture) {
+        state.doseTexture.rawAxialSlices = {};
+        state.doseTexture.rawAxialSlicePromises = {};
+        state.doseTexture.enabled = false;
+    }
+    ['axial', 'sagittal', 'coronal'].forEach(axis => {
+        ['doseCanvas', 'contourCanvas'].forEach(prefix => {
+            const canvas = document.getElementById(prefix + capitalize(axis));
+            if (!canvas) return;
+            canvas.getContext('2d')?.clearRect(0, 0, canvas.width, canvas.height);
+            canvas.style.display = 'none';
+        });
+    });
+    if (typeof updateDoseColorbars === 'function') updateDoseColorbars(false);
+    if (typeof scene3D !== 'undefined' && typeof scene3D.requestRender === 'function') {
+        scene3D.requestRender();
+    }
+}
+
 // The backend returns the checkpoint calibration with each dose payload. Keep a
 // documented fallback for older servers, but never scatter literal conversion
 // factors through the viewer code.
@@ -2772,6 +2812,16 @@ function resetDoseColorbarSettings() {
 }
 
 async function loadDoseOverlay() {
+    if (_doseOverlayLoadPromise) return _doseOverlayLoadPromise;
+    _doseOverlayLoadPromise = _loadDoseOverlayImpl();
+    try {
+        return await _doseOverlayLoadPromise;
+    } finally {
+        _doseOverlayLoadPromise = null;
+    }
+}
+
+async function _loadDoseOverlayImpl() {
     try {
         const res = await fetch(API + '/planning/dose_overlay');
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -2838,25 +2888,29 @@ async function loadDoseOverlay() {
 // version, and `renderDoseOverlay` only paints if the response's version
 // still matches the latest one requested.
 let _doseOverlayRequestVersion = 0;
-// AbortControllers keyed by cacheKey. Cancelling duplicate requests for the
-// same slice prevents browser socket-buffer exhaustion (ERR_NO_BUFFER_SPACE)
-// when the user scrolls rapidly, while still allowing concurrent preloads
-// for different slices.
+// Keep one in-flight request per axis and coalesce duplicate cache misses.
+// An earlier implementation allowed 20 different preload requests per axis;
+// rapid scrubbing then exhausted browser fetch/socket resources even though
+// every request was individually valid.
 const _doseOverlayAbortControllers = new Map();
+const _doseOverlayInflight = new Map();
+let _doseOverlayLoadPromise = null;
 
 async function fetchDoseOverlaySlice(axis, sliceIndex) {
     if (!state.doseOverlay) { uiDebugLog('[dose] fetch skipped: no doseOverlay state'); return null; }
     const cacheKey = `${axis}_${sliceIndex}`;
     if (state.doseOverlay.slices[cacheKey]) return state.doseOverlay.slices[cacheKey];
+    if (_doseOverlayInflight.has(cacheKey)) return _doseOverlayInflight.get(cacheKey);
 
     const myVersion = ++_doseOverlayRequestVersion;
-    const existingCtrl = _doseOverlayAbortControllers.get(cacheKey);
+    const existingCtrl = _doseOverlayAbortControllers.get(axis);
     if (existingCtrl) {
         try { existingCtrl.abort(); } catch (_) {}
     }
     const controller = new AbortController();
-    _doseOverlayAbortControllers.set(cacheKey, controller);
-    try {
+    _doseOverlayAbortControllers.set(axis, controller);
+    const request = (async () => {
+      try {
         const axialMax = state.doseOverlay.maxSlice?.axial;
         const requestSliceIndex = axis === 'axial' && Number.isFinite(axialMax)
             ? Math.max(0, Math.min(axialMax, axialMax - sliceIndex))
@@ -2882,11 +2936,15 @@ async function fetchDoseOverlaySlice(axis, sliceIndex) {
     } catch (e) {
         if (e && e.name === 'AbortError') return null;
         return null;
-    } finally {
-        if (_doseOverlayAbortControllers.get(cacheKey) === controller) {
-            _doseOverlayAbortControllers.delete(cacheKey);
+      } finally {
+        if (_doseOverlayAbortControllers.get(axis) === controller) {
+            _doseOverlayAbortControllers.delete(axis);
         }
-    }
+        _doseOverlayInflight.delete(cacheKey);
+      }
+    })();
+    _doseOverlayInflight.set(cacheKey, request);
+    return request;
 }
 
 // Preload adjacent dose slices so scrubbing doesn't flicker.
@@ -2896,7 +2954,10 @@ function preloadDoseSlices(axis, centerSlice) {
     if (!state.doseOverlay || !state.doseOverlay.visible) return;
     if (_dosePreloadTimer) clearTimeout(_dosePreloadTimer);
     _dosePreloadTimer = setTimeout(() => {
-        const PRELOAD_RANGE = 10;
+        // Do not issue speculative requests while the pointer is moving.
+        // The current slice is fetched on demand and cached; this bounded
+        // policy avoids resource exhaustion on high-resolution CT stacks.
+        const PRELOAD_RANGE = 0;
         const maxSlice = state.doseOverlay.maxSlice?.[axis] || 200;
         for (let d = 1; d <= PRELOAD_RANGE; d++) {
             const fwd = centerSlice + d;

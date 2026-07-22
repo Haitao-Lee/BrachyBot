@@ -482,7 +482,9 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
                     lid_int = int(lid)
                     if lid_int > 0:
                         organ_meta[lid_int] = {
-                            "name": organ_names.get(lid_int, f"Organ_{lid_int}"),
+                            "name": organ_names.get(
+                                lid_int, f"Unmapped structure (label {lid_int})"
+                            ),
                             "color": color_lut.get(lid_int, [200, 200, 200]),
                             "voxels": int(organ_counts.get(lid_int, np.sum(oar_array == lid))),
                         }
@@ -649,7 +651,7 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
                         label_int = int(label)
                         organ_counts_generated[label_int] = int(np.sum(oar_array == label))
                         organ_names_generated[label_int] = TOTALSEG_LABEL_MAPPING.get(
-                            label_int, f"organ_{label_int}"
+                            label_int, f"Unmapped structure (label {label_int})"
                         )
                 organ_names = organ_names_generated
                 organ_counts = organ_counts_generated

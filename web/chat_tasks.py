@@ -51,6 +51,7 @@ class ChatTask:
     status: str = "running"
     finished_at: Optional[float] = None
     response: str = ""
+    streamed_response: str = ""
     steps: List[Dict[str, Any]] = field(default_factory=list)
     error: str = ""
 
@@ -69,6 +70,11 @@ class ChatTask:
             self.steps.append(dict(data))
         elif event_name == "response" and isinstance(data, dict):
             self.response = str(data.get("response") or "")
+            self.streamed_response = ""
+        elif event_name == "final_text_chunk" and isinstance(data, dict):
+            # Keep a durable fallback if the provider disconnects after the
+            # text stream but before the aggregate response event arrives.
+            self.streamed_response += str(data.get("text") or "")
         elif event_name == "error" and isinstance(data, dict):
             self.error = str(data.get("message") or data.get("error") or "")
         elif event_name == "done" and isinstance(data, dict) and data.get("cancelled"):
@@ -116,7 +122,7 @@ class ChatTask:
                 "created_at": self.created_at,
                 "finished_at": self.finished_at,
                 "event_count": len(self._events),
-                "response_available": bool(self.response),
+                "response_available": bool(self.response or self.streamed_response),
                 "error": self.error or None,
             }
 

@@ -101,6 +101,17 @@
   asset revisions during deployment; current tabs load the versioned viewer
   scripts and no longer leave endpoint interaction stuck after a render-scope
   exception.
+- Segmentation-only chat requests no longer pre-populate a phantom planning
+  stage in the Progress dock. Tumor-site context is kept separate from the
+  requested workflow action, so OAR/CTV-only work reports only its real steps.
+- Case transitions cancel and invalidate in-flight dose overlay requests
+  before clearing canvases. A late response from the previous case cannot
+  repaint the newly selected case.
+- Background chat tasks retain streamed final text as a persistence fallback
+  when a provider disconnects before its aggregate response event. Completed
+  answers therefore remain restorable after a browser or server reconnect.
+- File-upload progress is anchored to the active CT, CTV, or OAR input row,
+  making long mask uploads visibly attributable to the correct control.
 
 ---
 
