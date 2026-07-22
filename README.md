@@ -863,6 +863,12 @@ Without a specified tumor site plus verified CTV weights, or a user-provided `la
 
 Imported/manual `label_path` CTV masks remain source-aware in the Data Tree, viewer overlays, and reports. They are displayed as CTV/manual labels unless a validated tumor model was explicitly selected.
 
+Before a manually uploaded CTV or OAR label enters the viewer and planning
+memory, BrachyBot validates that its original physical grid matches the active
+CT and then applies the same LPI orientation policy used for CT slice display.
+This preserves physical registration for datasets whose source direction
+contains a reversed axis without silently resampling a clinical label.
+
 CTV model discovery is exposed through:
 
 ```bash
