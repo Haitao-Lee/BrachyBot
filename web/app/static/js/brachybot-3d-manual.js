@@ -3394,6 +3394,7 @@ function setNeedleOpacityFrom3D(needleId, opacity) {
 }
 
 async function restoreNeedleToAlgorithm(needleId) {
+    _setManualDoseProgress('running', `Restoring ${needleId} to the algorithm plan...`);
     addChat('system', `Restoring ${needleId} and its seeds to the algorithm plan...`);
     try {
         const res = await fetch(API + '/manual_planning/restore_needle', {
@@ -3408,10 +3409,15 @@ async function restoreNeedleToAlgorithm(needleId) {
         await loadSeeds3D();
         if (typeof refreshPlanningUI === 'function') await refreshPlanningUI();
         if (typeof loadAllSlices === 'function' && state.ctLoaded) await loadAllSlices();
-        addChat('system', `${needleId} restored to the algorithm position; associated seeds and dose were recomputed.`);
+        const message = data.fast_restore
+            ? `${needleId} restored to the algorithm position; original seeds and dose were restored.`
+            : `${needleId} restored to the algorithm position; associated seeds and dose were recomputed.`;
+        _setManualDoseProgress('done', message);
+        addChat('system', message);
         reportUIEvent('manual.needle.restore', needleId, {});
         return data;
     } catch (error) {
+        _setManualDoseProgress('error', `Needle restore failed: ${error.message}`);
         addChat('error', `Needle restore failed: ${error.message}`);
         return null;
     }

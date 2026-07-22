@@ -312,9 +312,16 @@ def register_session_routes(
         if error:
             return error
         data = request.get_json(silent=True) or {}
-        session_id = str(session.get("bb_session_id") or "")
+        requested_session_id = str(data.get("session_id") or "").strip()
+        session_id = requested_session_id or str(session.get("bb_session_id") or "")
         token = str(data.get("editor_token") or request.headers.get("X-BrachyBot-Editor") or "")
         try:
+            if requested_session_id:
+                # Lease requests can race with a browser-side case switch. Bind
+                # the requested id only after ownership validation; never trust a
+                # client id to access another user's workspace.
+                store.get_session(user["id"], requested_session_id)
+                session["bb_session_id"] = requested_session_id
             if request.method == "DELETE":
                 store.release_lease(user["id"], session_id, token)
                 return jsonify({"success": True, "editable": False})

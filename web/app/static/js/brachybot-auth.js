@@ -4,10 +4,26 @@
     const editorKey = 'brachybot_editor_token';
     const AUTH_REQUEST_TIMEOUT_MS = 12000;
     const LEASE_RELEASE_TIMEOUT_MS = 4000;
-    let editorToken = sessionStorage.getItem(editorKey);
+    // Keep the editor identity stable across page reloads. A sessionStorage
+    // token made the same browser look like a different editor after reload.
+    let editorToken = null;
+    try { editorToken = localStorage.getItem(editorKey) || sessionStorage.getItem(editorKey); } catch (_) {}
     if (!editorToken) {
         editorToken = (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`).replace(/-/g, '');
+    }
+    try {
+        localStorage.setItem(editorKey, editorToken);
         sessionStorage.setItem(editorKey, editorToken);
+    } catch (_) {}
+
+    function currentLeaseSessionId() {
+        if (window.activeSessionId) return String(window.activeSessionId);
+        try {
+            if (typeof activeSessionId !== 'undefined' && activeSessionId) return String(activeSessionId);
+        } catch (_) {
+            // The chat module may still be evaluating during the first boot.
+        }
+        return String(document.getElementById('sessionDisplay')?.textContent || '').trim();
     }
 
     function setStatus(message, error) {
@@ -90,6 +106,7 @@
             takeover.dataset.bound = 'true';
             takeover.addEventListener('click', async () => {
                 takeover.disabled = true;
+                takeover.setAttribute('aria-busy', 'true');
                 const original = takeover.textContent;
                 takeover.textContent = typeof window._t === 'function'
                     ? window._t('正在接管...', 'Taking over...')
@@ -100,6 +117,7 @@
                     window.showBrachyBotNotice?.(error.message || 'Unable to take over editing.', 'error', 7000);
                 } finally {
                     takeover.disabled = false;
+                    takeover.removeAttribute('aria-busy');
                     takeover.textContent = original;
                 }
             });
@@ -137,17 +155,30 @@
             body: JSON.stringify(body || {}),
         });
         const data = await response.json().catch(() => ({}));
-        if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+        if (!response.ok) {
+            const error = new Error(data.error || `HTTP ${response.status}`);
+            error.code = data.code;
+            throw error;
+        }
         return data;
     }
 
     async function acquireLease() {
         if (!state.user) return { editable: false };
         try {
-            const result = await request('/api/workspace/lease', { editor_token: editorToken, ttl_seconds: 75 });
+            const result = await request('/api/workspace/lease', {
+                editor_token: editorToken,
+                session_id: currentLeaseSessionId(),
+                ttl_seconds: 75,
+            });
             return applyLeaseResult(result);
         } catch (error) {
-            return applyLeaseResult({ editable: false, error: error.message });
+            return applyLeaseResult({
+                editable: false,
+                code: error.code,
+                locked: error.code === 'workspace_locked',
+                error: error.message,
+            });
         }
     }
 
@@ -155,6 +186,7 @@
         if (!state.user) return { editable: false };
         const result = await request('/api/workspace/lease', {
             editor_token: editorToken,
+            session_id: currentLeaseSessionId(),
             ttl_seconds: 75,
             takeover: true,
         });
@@ -164,7 +196,10 @@
     function applyLeaseResult(result) {
         const editable = !!result?.editable;
         document.body.classList.toggle('workspace-readonly', !editable);
-        renderWorkspaceLock(!editable);
+        // A failed heartbeat is not proof that another browser owns the case.
+        // Only an authenticated workspace_locked response may show the lock
+        // takeover banner; network/server errors use the normal connection UI.
+        renderWorkspaceLock(result?.locked === true || result?.code === 'workspace_locked');
         return result || { editable };
     }
 
@@ -186,7 +221,7 @@
                     ...(state.csrfToken ? { 'X-CSRF-Token': state.csrfToken } : {}),
                     'X-BrachyBot-Editor': editorToken,
                 },
-                body: JSON.stringify({ editor_token: editorToken }),
+                body: JSON.stringify({ editor_token: editorToken, session_id: currentLeaseSessionId() }),
             }, LEASE_RELEASE_TIMEOUT_MS);
         } catch (_) {
             // A short lease expiry is the fallback when the browser is offline.
@@ -351,7 +386,7 @@
         document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshLease(); });
         window.addEventListener('pagehide', () => {
             if (!state.user) return;
-            fetch('/api/workspace/lease', { method: 'DELETE', keepalive: true, headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': state.csrfToken, 'X-BrachyBot-Editor': editorToken }, body: JSON.stringify({ editor_token: editorToken }) });
+            fetch('/api/workspace/lease', { method: 'DELETE', keepalive: true, headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': state.csrfToken, 'X-BrachyBot-Editor': editorToken }, body: JSON.stringify({ editor_token: editorToken, session_id: currentLeaseSessionId() }) });
         });
     });
 })();

@@ -2250,6 +2250,9 @@ class PlanningPipelineTool(BaseTool):
                 _build_algorithm_plan_snapshot(seed_plan, verified_needle_geometry),
             )
             agent.memory.store("dose_distribution", sum_image)
+            # Preserve the automatic dose field separately from later manual
+            # edits so a single-needle restore can be instantaneous.
+            agent.memory.store("algorithm_plan_dose_distribution", np.array(sum_image, copy=True))
             agent.memory.store("total_seeds", total_seeds)
             agent.memory.store("num_trajectories", num_trajectories)
             # Store actual config used — so reviewer agents can read real thresholds
@@ -2360,6 +2363,7 @@ class PlanningPipelineTool(BaseTool):
         # Store in normalized units
         if agent:
             agent.memory.store("dose_distribution_gy", dose_array)
+            agent.memory.store("algorithm_plan_dose_distribution_gy", np.array(dose_array, copy=True))
             agent.memory.store("dose_units", "normalized_model_output")
             agent.memory.store("dose_scale_gy", DOSE_SCALE)
 
@@ -2606,9 +2610,11 @@ class PlanningPipelineTool(BaseTool):
                             idx = max(0, min(idx, n - 1))
                             return float(sorted_doses_desc[idx])
 
-                        # Vx Gy: volume (%) receiving at least x Gy
+                        # Vx Gy: store the volume as a fraction, matching the
+                        # CTV contract and the manual AI dose path. Report/UI
+                        # boundaries convert to percent exactly once.
                         def volume_pct_at_dose(dose_gy):
-                            return float(np.sum(oar_doses >= dose_gy) / n * 100.0)
+                            return float(np.sum(oar_doses >= dose_gy) / n)
 
                         oar_metrics[oar_name] = {
                             "label_id": int(label_val),
@@ -2748,6 +2754,8 @@ class PlanningPipelineTool(BaseTool):
 
         if agent:
             agent.memory.store("dose_metrics", metrics)
+            agent.memory.store("algorithm_plan_dose_metrics", copy.deepcopy(metrics))
+            agent.memory.store("algorithm_plan_dvh_data", copy.deepcopy(metrics.get("dvh_data") or {}))
             if resolved_organ_names:
                 agent.memory.store("organ_names", resolved_organ_names)
 

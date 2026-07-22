@@ -1307,6 +1307,19 @@ function _getOrganColor(name) {
     return null;
 }
 
+function _dvhOarVolumePercent(value, units) {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return 0;
+    const kind = String(units || '').toLowerCase();
+    let percent = ['fraction', 'ratio', '0-1'].includes(kind)
+        ? n * 100
+        : ['percent', 'percentage', '0-100'].includes(kind)
+            ? n
+            : (Math.abs(n) <= 1 ? n * 100 : n);
+    while (Math.abs(percent) > 100) percent /= 100;
+    return Math.max(0, Math.min(100, percent));
+}
+
 function updateOARTable(oarMetrics) {
     const tbody = document.getElementById('oarTableBody');
     if (!oarMetrics || Object.keys(oarMetrics).length === 0) {
@@ -1321,7 +1334,7 @@ function updateOARTable(oarMetrics) {
         const d2 = m.d2cc || 0;
         const d90 = m.d90 || 0;
         const d95 = m.d95 || 0;
-        const v100 = m.v100 || 0;
+        const v100 = _dvhOarVolumePercent(m.v100);
         const vol = m.volume_cm3 ?? null;
         // Color code: highlight high dose values
         const d2ccClass = d2 > 100 ? 'style="color:var(--danger);font-weight:600;"' : '';

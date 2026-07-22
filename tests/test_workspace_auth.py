@@ -113,6 +113,27 @@ def test_authenticated_editor_can_explicitly_take_over_a_locked_case(tmp_path):
     assert takeover.get_json()["taken_over"] is True
 
 
+def test_lease_request_can_bind_an_owned_session_explicitly(tmp_path):
+    app = _app(tmp_path)
+    client = app.test_client()
+    created = _register(client, "lease_case_user")
+    csrf = created["csrf_token"]
+    created_case = client.post(
+        "/api/sessions",
+        json={"title": "Second case", "editor_token": "c" * 20},
+        headers={"X-CSRF-Token": csrf, "X-BrachyBot-Editor": "c" * 20},
+    )
+    assert created_case.status_code == 201
+    second_id = created_case.get_json()["active_session_id"]
+    lease = client.post(
+        "/api/workspace/lease",
+        json={"session_id": second_id, "editor_token": "c" * 20},
+        headers={"X-CSRF-Token": csrf, "X-BrachyBot-Editor": "c" * 20},
+    )
+    assert lease.status_code == 200
+    assert lease.get_json()["editable"] is True
+
+
 def test_session_rename_persists_for_the_authenticated_case(tmp_path):
     """A case rename must survive a fresh server-side session listing."""
     app = _app(tmp_path)

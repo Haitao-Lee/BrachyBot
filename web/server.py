@@ -1160,6 +1160,10 @@ def create_app(config: Optional[Dict] = None):
                 # OAR list
                 oar = agent.memory.retrieve("oar_metrics") or {}
                 if oar and scope in ("all", "oar"):
+                    dose_metric_units = None
+                    dose_metrics_for_units = agent.memory.retrieve("dose_metrics")
+                    if isinstance(dose_metrics_for_units, dict):
+                        dose_metric_units = dose_metrics_for_units.get("volume_metric_units")
                     oar_list = []
                     for n, v in oar.items():
                         if not isinstance(v, dict):
@@ -1172,7 +1176,10 @@ def create_app(config: Optional[Dict] = None):
                             "d2cc": round(float(d2), 1) if d2 else None,
                             "d1cc": round(float(d1), 1) if d1 else None,
                             "d0_1cc": round(float(d0), 1) if d0 else None,
-                            "v100": round(float(v.get("v100", 0)) * 100, 1) if v.get("v100") else None,
+                            "v100": _server_support._volume_metric_as_percent(
+                                v.get("v100"),
+                                units=dose_metric_units,
+                            ),
                         })
                     oar_list.sort(key=lambda x: (x.get("d2cc") or 0), reverse=True)
                     patch["oarDose"] = oar_list[:12]
