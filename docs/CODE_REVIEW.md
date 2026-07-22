@@ -6999,3 +6999,59 @@ an RL planning loop, or a coordinate-chain error.
 - Python compilation and `git diff --check` pass locally.
 - Remote targeted regression: `2 passed, 72 deselected, 3 warnings`.
 - Remote full configured-runtime suite: `250 passed, 2 skipped, 3 warnings`.
+
+## Round 81: Viewer Display-State and Report Capture Consistency (2026-07-22)
+
+### Confirmed findings
+
+- The 2D dose canvas cache was keyed effectively by slice index only. After a
+  dose-scale change, canvas resize, dose replacement, or session transition,
+  the same slice could be treated as already rendered and retain stale pixels.
+- Dose Surface applied fixed CTV/OAR opacity and visibility values. That
+  overwrote Data Tree choices and could make a user believe that the viewer
+  ignored the Data Tree.
+- Restoring Normal Surface revived material snapshots without re-reading the
+  current Data Tree state, so changes made while Dose Surface was active could
+  be lost.
+- Figure 1 framing included large remote OAR structures and full needle extent,
+  making the plan and seed close-up too small to inspect. Endpoint handles were
+  also vulnerable to being captured when the scene rebuilt during capture.
+- The tumor-type selector exposed implementation names such as nnU-Net and
+  VoCo, even though the user only needs a tumor type and its availability.
+
+### Corrective changes
+
+- Added a dose-overlay render epoch. Colorbar application, dose metadata
+  replacement, session canvas clearing, and canvas resizing invalidate the
+  epoch. Async slice callbacks must match both the current slice and epoch
+  before painting. All three 2D viewers are refreshed after a 2D colorbar
+  change.
+- Made `dataTreeState` the canonical source for mesh visibility, opacity, and
+  normal-surface color. Dose Surface now reads those values and no longer
+  forces fixed opacity or visibility. Normal Surface re-applies the current
+  Data Tree state after material restoration.
+- Color changes for isodose surfaces update the 3D material and trigger the
+  existing 2D label/contour refresh path. Dose mode preserves user-selected
+  normal colors for the subsequent restore.
+- Report Figure 1 now frames around the CTV, seeds, and nearby OAR context.
+  The detail view prioritizes tumor and seed distribution, uses a larger
+  composite canvas, and excludes full needle extent from its framing.
+  `__reportCaptureActive` hides interaction endpoint handles for the complete
+  capture transaction and the viewer state is synchronized after restoration.
+- The selector now shows tumor types only, marks available entries green and
+  unavailable entries red, and gives localized user-facing guidance for
+  uploading a matching CTV mask.
+- Static asset versions were bumped so deployed browsers cannot retain the
+  previous viewer code from cache.
+
+### Verification
+
+- `node --check` passed for all changed frontend JavaScript modules.
+- `git diff --check` passed.
+- Remote configured-runtime regression suite:
+  `tests/test_workspace_frontend.py` plus
+  `tests/test_viewer_safety_geometry.py`: **43 passed, 3 warnings**.
+- The clinical coordinate chain, dose-engine model, and planning algorithm were
+  not changed in this round.
+- Detailed implementation notes are recorded in
+  `docs/VIEWER_RENDERING_AND_REPORT_FIXES_2026-07-22.md`.
