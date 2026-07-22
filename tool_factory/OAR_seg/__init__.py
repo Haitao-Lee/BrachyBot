@@ -81,6 +81,7 @@ class OARSegmentationTool(BaseTool):
                     "enum": ["pancreatic", "aorta", "general"],
                 },
                 "task": {"type": "string", "description": "TotalSegmentator task (default: 'body')"},
+                "force_reexecution": {"type": "boolean", "default": False, "description": "Explicitly replace an existing in-memory OAR result"},
             },
             "required": [],
         }
