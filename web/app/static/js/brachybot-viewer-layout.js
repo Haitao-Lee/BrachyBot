@@ -961,10 +961,20 @@ function _restoreDoseTextureMaterials() {
         });
     }
     state.doseTexture.originalSkinStyle = null;
+    // The snapshot above is only a material transport mechanism.  The Data
+    // Tree may have changed while dose texture was enabled, so re-apply its
+    // current canonical state instead of reviving the stale pre-toggle look.
+    if (typeof window.syncSceneAppearanceFromDataTree === 'function') {
+        window.syncSceneAppearanceFromDataTree({ preserveDoseTexture: false });
+    }
 }
 
 function _isSeedOrNeedleMesh(id, mesh) {
     const t = mesh?.userData?.type || mesh?.userData?.source || '';
+    // Handles are interaction affordances, never treatment geometry.  In
+    // particular, the deep endpoint stays hidden until hover and must not be
+    // revived by a display-mode switch such as Dose Surface.
+    if (t === 'needle_handle') return false;
     return id.startsWith('seed_') || id.startsWith('needle_') || t === 'seed' || t === 'needle';
 }
 
@@ -979,13 +989,6 @@ function _meshBaseColor(mesh) {
     const c = mat?.color;
     if (c && typeof c.r === 'number') return [c.r, c.g, c.b];
     return [0.45, 0.18, 0.65];
-}
-
-function _doseTextureOpacityForMesh(id, mesh) {
-    const surface = getMeshSurface(mesh);
-    const t = surface?.userData?.type || surface?.userData?.source || mesh?.userData?.type || mesh?.userData?.source || '';
-    if (id === 'ctv' || id.startsWith('ctv_') || t === 'ctv') return 0.86;
-    return 0.52;
 }
 
 function _rememberDoseTextureSceneMesh(id, mesh) {
@@ -1015,21 +1018,19 @@ function _prepareDoseTextureSceneVisibility() {
 
     Object.entries(scene3D.meshes || {}).forEach(([id, mesh]) => {
         if (!mesh) return;
+        const appearance = typeof window.getDataTreeAppearanceForMesh === 'function'
+            ? window.getDataTreeAppearanceForMesh(id, mesh) : null;
+        const visible = appearance?.visible !== false;
+        const opacity = Number.isFinite(appearance?.opacity) ? appearance.opacity : 1;
         if (_isDoseTexturableMesh(id, mesh)) {
             _rememberDoseTextureSceneMesh(id, mesh);
-            applyMeshOpacity(mesh, _doseTextureOpacityForMesh(id, mesh), true);
+            applyMeshOpacity(mesh, opacity, visible);
         } else if (_isSeedOrNeedleMesh(id, mesh)) {
             _rememberDoseTextureSceneMesh(id, mesh);
-            mesh.visible = true;
-            _forEachMaterial(mesh, mat => {
-                mat.transparent = true;
-                mat.opacity = id.startsWith('needle_') ? 0.95 : 1.0;
-                mat.depthWrite = true;
-                mat.needsUpdate = true;
-            });
+            applyMeshOpacity(mesh, opacity, visible);
         } else if (_isDoseIsoMesh(id, mesh)) {
             _rememberDoseTextureSceneMesh(id, mesh);
-            applyMeshOpacity(mesh, 0.18, true);
+            applyMeshOpacity(mesh, opacity, visible);
         }
     });
 }
@@ -1119,15 +1120,20 @@ async function _applyDoseTextureToMesh(id, mesh) {
     }
 
     surface.geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    const appearance = typeof window.getDataTreeAppearanceForMesh === 'function'
+        ? window.getDataTreeAppearanceForMesh(id, mesh) : null;
+    const opacity = Number.isFinite(appearance?.opacity) ? appearance.opacity : 1;
+    const visible = appearance?.visible !== false;
     surface.material = new THREE.MeshPhongMaterial({
         vertexColors: true,
-        transparent: false,
+        transparent: opacity < 0.999,
+        opacity,
         side: THREE.DoubleSide,
         shininess: 35,
-        depthWrite: true,
+        depthWrite: opacity > 0.001,
     });
-    mesh.visible = true;
-    surface.visible = true;
+    mesh.visible = visible && opacity > 0.001;
+    surface.visible = mesh.visible;
 }
 
 function fitCameraToDoseSurfaceScene() {
@@ -1430,6 +1436,12 @@ function _setNeedleHandlesVisibility(needleId, visible, opacity = 0.8) {
         const mesh = scene3D.meshes[_needleHandleId(needleId, i)];
         if (mesh) {
             const safeOpacity = Math.max(0, Math.min(1, opacity));
+            // Report capture must never contain endpoint gizmos, even if a
+            // mesh is rebuilt while the renderer is preparing a figure.
+            if (window.__reportCaptureActive) {
+                applyMeshOpacity(mesh, 0.001, false);
+                return;
+            }
             applyMeshOpacity(mesh, i === 0 && !mesh.userData.hoverVisible ? 0.001 : safeOpacity, !!visible);
             mesh.userData.baseVisible = !!visible;
             mesh.userData.baseOpacity = safeOpacity;

@@ -263,6 +263,49 @@ def test_chat_network_failures_finish_the_turn_and_unlock_case_navigation():
     assert "signal: abortController ? abortController.signal : undefined" in chat
 
 
+def test_dose_colorbar_and_slice_cache_force_immediate_2d_repaint():
+    """A scale/session change must invalidate pixels, not only slice indices."""
+    manual_annotation = read("web/app/static/js/brachybot-manual-annotation.js")
+    manual_3d = read("web/app/static/js/brachybot-3d-manual.js")
+    ui_api = read("web/app/static/js/brachybot-ui-api.js")
+
+    assert "function invalidateDoseOverlayRenderCache()" in manual_annotation
+    assert "_doseOverlayRenderEpoch" in manual_annotation
+    assert "doseCanvas._doseRenderEpoch !== _doseOverlayRenderEpoch" in manual_annotation
+    assert "renderEpoch === _doseOverlayRenderEpoch" in manual_annotation
+    assert "invalidateDoseOverlayRenderCache();" in manual_3d
+    assert '[id^="doseOverlayCanvas"]' in ui_api
+
+
+def test_dose_surface_preserves_data_tree_display_state_and_capture_hides_handles():
+    """Display modes may swap materials but must not overwrite user choices."""
+    volume = read("web/app/static/js/brachybot-viewer-volume.js")
+    layout = read("web/app/static/js/brachybot-viewer-layout.js")
+    report = read("web/app/static/js/brachybot-report-editor.js")
+
+    assert "function getDataTreeAppearanceForMesh" in volume
+    assert "function syncSceneAppearanceFromDataTree" in volume
+    assert "window.syncSceneAppearanceFromDataTree" in volume
+    assert "getDataTreeAppearanceForMesh(id, mesh)" in layout
+    assert "_doseTextureOpacityForMesh" not in layout
+    assert "window.__reportCaptureActive" in layout
+    assert "window.__reportCaptureActive = true" in report
+    assert "window.__reportCaptureActive = false" in report
+
+
+def test_tumor_type_selector_hides_model_implementation_from_the_user():
+    index = read("web/app/index.html")
+    ui_api = read("web/app/static/js/brachybot-ui-api.js")
+
+    selector = index.split('id="ctvModelSelect"', 1)[1].split("</select>", 1)[0]
+    assert "nnU-Net" not in selector
+    assert "VoCo" not in selector
+    assert 'data-availability="available"' in selector
+    assert 'data-availability="unavailable"' in selector
+    assert "refreshTumorTypeAvailability" in ui_api
+    assert "Green tumor types can be segmented automatically." in ui_api
+
+
 def test_dynamic_clinical_evaluation_uses_global_language_switch():
     """Metric review text must be rerendered, not left in a stale language."""
     dvh = read("web/app/static/js/brachybot-dvh-planning.js")
