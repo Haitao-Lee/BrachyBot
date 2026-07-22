@@ -1027,6 +1027,11 @@ function clearClientWorkspace(options = {}) {
     resetAllState({ deferDisposal: options.deferDisposal === true });
     state.ctLoaded = false;
     state.ctPath = null;
+    // Input paths are case-owned form state.  Clearing only the CT field left
+    // CTV/OAR paths from the previous case visible in a newly created case,
+    // even though the clinical arrays and viewer meshes had been removed.
+    state.ctvPath = null;
+    state.oarPath = null;
     state.ctShape = null;
     state.ctSpacing = null;
     state.ctOrigin = null;
@@ -1051,6 +1056,17 @@ function clearClientWorkspace(options = {}) {
     if (typeof updateOARTable === 'function') updateOARTable({});
     const ctPathInput = document.getElementById('ctPath');
     if (ctPathInput) ctPathInput.value = '';
+    ['ctvPath', 'oarPath'].forEach(id => {
+        const pathInput = document.getElementById(id);
+        if (pathInput) {
+            pathInput.value = '';
+            pathInput.disabled = false;
+        }
+    });
+    ['fileCTV', 'fileOAR'].forEach(id => {
+        const fileInput = document.getElementById(id);
+        if (fileInput) fileInput.value = '';
+    });
     renderDicomRTImportStatus([], { silent: true });
     const dvhEl = document.getElementById('dvhChart');
     if (dvhEl && typeof Plotly !== 'undefined' && Plotly.purge) {
