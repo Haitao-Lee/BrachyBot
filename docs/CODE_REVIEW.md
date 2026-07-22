@@ -6963,9 +6963,9 @@ an RL planning loop, or a coordinate-chain error.
 - Updated planning/system prompts and added regression coverage for explicit
   overrides, inherited scope, and truthful failure status.
 
-### Verification status
+### Verification
 
 - Local Python compilation passes with the repository-independent interpreter
   invocation; `git diff --check` passes.
-- Remote focused and full pytest results are recorded below after the patched
-  commit is executed in the configured runtime environment.
+- Remote focused suite: `60 passed, 2 skipped, 3 warnings`.
+- Remote full configured-runtime suite: `249 passed, 2 skipped, 3 warnings`.
