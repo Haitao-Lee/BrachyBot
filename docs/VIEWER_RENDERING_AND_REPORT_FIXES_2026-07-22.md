@@ -62,6 +62,9 @@ clinical decision logic.
 - `tests/test_workspace_frontend.py` includes static regression checks for the
   render epoch, Data Tree precedence, report-capture endpoint suppression, and
   tumor-type presentation.
+- Verified on the deployment host with the `brachytherapy` environment:
+  `python -m pytest tests/test_workspace_frontend.py
+  tests/test_viewer_safety_geometry.py -q` completed with **43 passed**.
 - The clinical coordinate chain and planning model are not changed by this
   update.
 
