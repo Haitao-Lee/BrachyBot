@@ -43,7 +43,7 @@ _This file consolidates all code review reports. Sections are organized by date.
 - Python syntax/bytecode compilation and modified JavaScript syntax checks pass.
 - The new regression suite covers fraction, percentage, legacy double-scaled,
   out-of-range, and non-finite OAR volume inputs.
-- The final full-suite result is recorded below after the repository-wide run.
+- Full repository suite: **240 passed, 2 skipped, 3 warnings**.
 
 ---
 
