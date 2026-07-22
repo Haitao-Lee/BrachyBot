@@ -856,7 +856,10 @@ async function _autoCaptureReportFiguresImpl() {
                 const size = box.getSize(new THREE.Vector3());
                 const maxDim = Math.max(size.x, size.y, size.z, 1);
                 const fov = (scene3D.camera.fov || 45) * Math.PI / 180;
-                const padding = mode === 'detail' ? 0.78 : 1.08;
+                // Keep the close-up tight, but leave enough margin for the
+                // complete CTV and its peripheral seeds. The previous 0.78
+                // factor cropped the tumor in Figure 1 right-hand panels.
+                const padding = mode === 'detail' ? 1.05 : 1.08;
                 const dist = (maxDim * padding) / (2 * Math.tan(fov / 2));
                 const dir = mode === 'detail'
                     ? new THREE.Vector3(0.55, -0.25, 0.8).normalize()
@@ -1160,12 +1163,44 @@ async function _autoCaptureReportFiguresImpl() {
                     mesh.visible = isCtv || isSeed || isNeedle;
                     if (isCtv) applyMeshOpacity(mesh, 0.92, true);
                 }
+                // Keep the dose-surface panel focused on the treatment region.
+                // Whole-body OAR meshes can be very large, so including every
+                // visible mesh here would either make the target unreadable or
+                // leave the WebGL scene effectively empty after the camera is
+                // moved. Include the CTV, seeds, needles, and only OARs that
+                // overlap a padded CTV context.
                 const box = new THREE.Box3();
+                const ctvBox = new THREE.Box3();
                 Object.entries(scene3D.meshes || {}).forEach(([id, mesh]) => {
-                    if (!mesh || !mesh.visible) return;
-                    if (id.startsWith('dose_iso_')) return;
-                    try { box.expandByObject(mesh); } catch (_) {}
+                    if (!mesh || id.startsWith('dose_iso_')) return;
+                    const isCtv = id === 'ctv' || id.startsWith('ctv_') || mesh?.userData?.type === 'ctv';
+                    const isSeed = id.startsWith('seed_') || mesh?.userData?.type === 'seed';
+                    const isNeedle = (id.startsWith('needle_') || mesh?.userData?.type === 'needle')
+                        && mesh?.userData?.type !== 'needle_handle';
+                    if (isCtv || isSeed || isNeedle) {
+                        mesh.visible = true;
+                        try {
+                            if (isCtv) ctvBox.expandByObject(mesh);
+                            box.expandByObject(mesh);
+                        } catch (_) {}
+                    }
                 });
+                if (!ctvBox.isEmpty()) {
+                    const ctvSize = ctvBox.getSize(new THREE.Vector3());
+                    const context = ctvBox.clone().expandByScalar(Math.max(12, ctvSize.length() * 0.45));
+                    Object.entries(scene3D.meshes || {}).forEach(([id, mesh]) => {
+                        if (!mesh || typeof _isDoseTexturableMesh !== 'function'
+                            || !_isDoseTexturableMesh(id, mesh)) return;
+                        if (id === 'ctv' || id.startsWith('ctv_')) return;
+                        const candidate = new THREE.Box3();
+                        try { candidate.expandByObject(mesh); } catch (_) { return; }
+                        if (!candidate.intersectsBox(context)) return;
+                        const appearance = typeof window.getDataTreeAppearanceForMesh === 'function'
+                            ? window.getDataTreeAppearanceForMesh(id, mesh) : null;
+                        mesh.visible = appearance?.visible !== false;
+                        if (mesh.visible) box.union(candidate);
+                    });
+                }
                 if (box.min.x < box.max.x && scene3D.camera && scene3D.controls) {
                     const center = box.getCenter(new THREE.Vector3());
                     const size = box.getSize(new THREE.Vector3());
@@ -1179,9 +1214,65 @@ async function _autoCaptureReportFiguresImpl() {
                     scene3D.camera.far = Math.max(2000, dist * 20);
                     scene3D.camera.updateProjectionMatrix();
                     scene3D.controls.update();
-                    await _waitFrames(4);
-                    scene3D.renderer.render(scene3D.scene, scene3D.camera);
-                    doseSurfaceDataUrl = scene3D.renderer.domElement.toDataURL('image/png');
+                    // A WebGL canvas can contain a valid-looking, very large
+                    // PNG even when the last frame was cleared to black. Force
+                    // two committed frames and reject captures with no lit
+                    // pixels so Figure 2 never embeds an apparent black panel.
+                    async function captureDoseSurface3D(label) {
+                        const renderer = scene3D.renderer;
+                        const canvas = renderer?.domElement;
+                        if (!renderer || !canvas) return null;
+                        const width = canvas.clientWidth || canvas.width;
+                        const height = canvas.clientHeight || canvas.height;
+                        if (!width || !height) return null;
+                        renderer.setSize(width, height, false);
+                        renderer.setViewport(0, 0, canvas.width, canvas.height);
+                        renderer.setScissorTest(false);
+                        renderer.setRenderTarget(null);
+                        renderer.autoClear = true;
+                        scene3D.camera.aspect = width / height;
+                        scene3D.camera.updateProjectionMatrix();
+                        scene3D.scene.updateMatrixWorld(true);
+                        scene3D.camera.updateMatrixWorld(true);
+                        renderer.clear(true, true, true);
+                        renderer.render(scene3D.scene, scene3D.camera);
+                        await _waitFrames(2);
+                        renderer.render(scene3D.scene, scene3D.camera);
+                        try {
+                            const gl = renderer.getContext?.();
+                            if (gl && canvas.width > 0 && canvas.height > 0) {
+                                const pixel = new Uint8Array(4);
+                                let hasLitPixel = false;
+                                for (let gx = 1; gx <= 9 && !hasLitPixel; gx++) {
+                                    for (let gy = 1; gy <= 9 && !hasLitPixel; gy++) {
+                                        gl.readPixels(
+                                            Math.floor(canvas.width * gx / 10),
+                                            Math.floor(canvas.height * gy / 10),
+                                            1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel,
+                                        );
+                                        hasLitPixel = pixel[0] > 4 || pixel[1] > 4 || pixel[2] > 4;
+                                    }
+                                }
+                                if (!hasLitPixel) {
+                                    console.warn('[Report] 3D dose-surface capture is black:', label);
+                                    return null;
+                                }
+                            }
+                            const url = canvas.toDataURL('image/png');
+                            if (!url || url.length < 5000) return null;
+                            uiDebugLog('[Report] 3D dose-surface capture', label, ':', Math.round(url.length / 1024), 'KB');
+                            return url;
+                        } catch (captureError) {
+                            console.warn('[Report] 3D dose-surface toDataURL failed:', captureError);
+                            return null;
+                        }
+                    }
+                    doseSurfaceDataUrl = await captureDoseSurface3D('primary');
+                    if (!doseSurfaceDataUrl) {
+                        forceRender3DViewer();
+                        await _waitFrames(5);
+                        doseSurfaceDataUrl = await captureDoseSurface3D('retry');
+                    }
                 }
                 await restoreDoseSurfaceState();
                 await _waitFrames(2);

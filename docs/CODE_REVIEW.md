@@ -7080,3 +7080,59 @@ an RL planning loop, or a coordinate-chain error.
   native file inputs.
 - Existing remote workspace/viewer suite remains the required validation gate;
   no clinical coordinate or planning logic was changed.
+
+## Round 83: Incremental Needle Replanning and Report Delivery Progress (2026-07-22)
+
+### Confirmed findings
+
+- A dragged needle was sent through the manual DoseUNet endpoint with every
+  seed eligible for reprojection. The reprojection loop also rewrote seeds on
+  unchanged trajectories, which invalidated their position/direction cache
+  keys. Consequently, a one-needle edit could degrade into full-plan seed
+  inference and take longer than the original planning run.
+- The browser then called `refreshPlanningUI()`. That function is intentionally
+  broad: it reloads masks, all OAR/CTV meshes, dose metadata, report figures,
+  and the complete 3D scene. It was correct for a completed planning tool, but
+  was the wrong postcondition for a local needle edit.
+- The final response trace could mark the model call complete before the
+  authoritative response had finished streaming, leaving a visible period in
+  which all displayed steps were done while the answer was still being built.
+- Figure 1 detail framing could crop part of the CTV, and Figure 2 dose-surface
+  capture could accept a black WebGL frame when the renderer had not completed
+  its first visible render.
+
+### Corrective changes
+
+- Reprojection now compares old and new endpoint pairs and changes only the
+  affected trajectory IDs. Unchanged seed coordinates and directions remain
+  byte-stable for cache reuse.
+- Manual dose recomputation now uses the previous reliable AI dose field as a
+  baseline, subtracts only the old affected-trajectory seed maps, and adds the
+  new affected-trajectory maps. The same trained `dose_unet_spacing1mm`
+  model remains the only dose engine; this is an incremental composition of
+  model outputs, not an analytical fallback. If the baseline is unavailable or
+  its grid is incompatible, the code deliberately falls back to the complete
+  model computation.
+- The manual endpoint returns authoritative post-reprojection seeds and
+  needles. The browser updates those objects, DVH, metrics, dose overlay,
+  current slices, and active dose texture without rebuilding unrelated meshes
+  or report figures.
+- The execution trace now exposes `Response Synthesis` and `Final Response`
+  phases, so a response remains visibly pending until it has actually been
+  delivered to the chat stream.
+- Figure 1 detail padding was widened to keep the complete CTV and peripheral
+  seeds in frame. Figure 2 dose-surface capture now renders twice, samples the
+  WebGL framebuffer, rejects an unlit black frame, and retries after the scene
+  is visibly ready. Nearby dose-texturable anatomy is retained for context.
+
+### Verification
+
+- `py_compile` passed for the modified Python modules and regression tests.
+- `node --check` passed for the modified manual-viewer, chat, and report
+  modules.
+- `git diff --check` passed.
+- Added regression contracts covering changed-trajectory filtering,
+  incremental manual dose composition, compact viewer refresh, final-response
+  trace phases, and non-black report capture.
+- Remote configured-runtime tests are the final gate before publication; the
+  report will be amended with their exact result after the remote run.

@@ -695,6 +695,18 @@ class ChatWorkflowMixin:
             event remains the source of truth and lets clients replace any
             incomplete last chunk without creating a second answer bubble.
             """
+            # Keep the execution trace truthful through the last byte of the
+            # answer.  Review/tool events can all be terminal while the
+            # response is still being serialized and streamed to the browser;
+            # without this explicit phase the UI shows N/N ``done`` and looks
+            # frozen during that gap.
+            final_step = add_step(
+                "assistant",
+                "Final Response",
+                "Preparing the reviewed response...",
+                status="pending",
+            )
+            yield yield_event("step", final_step)
             answer = str((payload or {}).get("response") or "")
             if answer:
                 # Keep chunks large enough for efficient SSE traffic while
@@ -708,6 +720,14 @@ class ChatWorkflowMixin:
                     if offset + chunk_size < len(answer):
                         time.sleep(0.008)
             yield yield_event("response", payload)
+            # Mark delivery complete only after the authoritative response
+            # event has been emitted.  The following ``done`` event closes
+            # the turn, so the client keeps the breathing pending state while
+            # final text is in flight and receives a terminal state before it
+            # collapses the trace.
+            final_step["status"] = "done"
+            final_step["content"] = "Response delivered"
+            yield yield_event("step", final_step)
 
         def workflow_cancelled() -> bool:
             """Check cancellation while the workflow enforcer waits on a tool."""
@@ -888,6 +908,18 @@ class ChatWorkflowMixin:
                     self.memory.add_message("assistant", f"[Called {tc['tool']}]")
                     self.memory.add_message("user", f"[Tool result: Error: {str(e)[:200]}]")
 
+            # Direct tool requests used to have a silent interval here:
+            # tools were already marked done while report construction or a
+            # synthesis LLM call was still running.  Expose that work as a
+            # real pending trace phase instead of making the user infer that
+            # the request is stuck.
+            _synthesis_step = add_step(
+                "assistant",
+                "Response Synthesis",
+                "Preparing the response from the completed tool results...",
+                status="pending",
+            )
+            yield yield_event("step", _synthesis_step)
             raw_response = self._build_direct_response(steps, _lang)
             user_msg = message
             # BUG FIX 2026-06-16 (LLM response still brief): the user
@@ -907,6 +939,9 @@ class ChatWorkflowMixin:
             else:
                 query_type = self._classify_query_type(user_msg)
                 response = self._synthesize_with_llm(raw_response, steps, _lang, user_msg, query_type)
+            _synthesis_step["status"] = "done"
+            _synthesis_step["content"] = "Response prepared"
+            yield yield_event("step", _synthesis_step)
             self.memory.add_message("assistant", response)
 
             # Quality review DISABLED (2026-06-22): the review triggered

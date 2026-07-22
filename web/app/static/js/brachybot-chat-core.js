@@ -876,6 +876,8 @@ const _CHAIN_I18N = {
         llm_call: 'LLM Call',
         calling: 'Calling',
         user_input: 'User Input',
+        response_synthesis: 'Response Synthesis',
+        final_response: 'Final Response',
         pending: 'pending',
         done: 'done',
         error: 'error',
@@ -908,6 +910,8 @@ function _localizeStepTitle(title) {
     title = title.replace(/^Calling /, _chainI18n('calling') + ' ');
     // "User Input" → "用户输入"
     title = title.replace(/^User Input$/, _chainI18n('user_input'));
+    title = title.replace(/^Response Synthesis$/, _chainI18n('response_synthesis'));
+    title = title.replace(/^Final Response$/, _chainI18n('final_response'));
     return title;
 }
 // Localize step status: "pending" → "等待中", "done" → "完成"

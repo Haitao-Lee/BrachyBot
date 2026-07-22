@@ -764,6 +764,23 @@ def _reproject_seeds_onto_needles(
     if not old_by_traj or not new_by_traj:
         return list(seeds or []), 0
 
+    # Only seeds belonging to a needle whose endpoints actually changed are
+    # reprojected.  Reprojecting unchanged trajectories introduces tiny
+    # floating-point differences, invalidates their dose-cache keys, and
+    # turns a single-needle edit into a full-plan inference.
+    changed_trajectories = set()
+    for trajectory_id in set(old_by_traj).intersection(new_by_traj):
+        old_points = old_by_traj[trajectory_id]
+        new_points = new_by_traj[trajectory_id]
+        if not (
+            np.allclose(old_points[0], new_points[0], rtol=0.0, atol=1e-6)
+            and np.allclose(old_points[1], new_points[1], rtol=0.0, atol=1e-6)
+        ):
+            changed_trajectories.add(trajectory_id)
+
+    if not changed_trajectories:
+        return [dict(seed) if isinstance(seed, dict) else seed for seed in seeds or []], 0
+
     updated = []
     changed = 0
     for seed in seeds or []:
@@ -773,7 +790,11 @@ def _reproject_seeds_onto_needles(
         trajectory_id = str(seed.get("trajectory_id") or "")
         old_line = old_by_traj.get(trajectory_id)
         new_line = new_by_traj.get(trajectory_id)
-        if old_line is None or new_line is None:
+        if (
+            trajectory_id not in changed_trajectories
+            or old_line is None
+            or new_line is None
+        ):
             updated.append(dict(seed))
             continue
         try:
@@ -897,55 +918,76 @@ def _compute_manual_ai_dose(
     if dose_model is None:
         raise ValueError(model_error or "dose_unet_spacing1mm dose model is unavailable")
 
-    norm_seeds = []
-    model_seeds = []
-    size_xyz = np.asarray(resampled_ct.GetSize(), dtype=np.float64)
-    for i, seed in enumerate(seeds or []):
-        pos = _safe_float_list(seed.get("position") if isinstance(seed, dict) else None, 3)
-        direction = _safe_float_list((seed.get("direction") if isinstance(seed, dict) else None), 3, [0.0, 0.0, 1.0])
-        direction_np = np.asarray(direction, dtype=np.float64)
-        dn = float(np.linalg.norm(direction_np))
-        if dn <= 1e-8 or not np.all(np.isfinite(direction_np)):
-            direction_np = np.array([0.0, 0.0, 1.0], dtype=np.float64)
-        else:
-            direction_np = direction_np / dn
-        seed_id = str(seed.get("id") if isinstance(seed, dict) and seed.get("id") else f"manual_seed_{i + 1}")
-        traj_id = str(seed.get("trajectory_id") if isinstance(seed, dict) and seed.get("trajectory_id") else "manual_traj_1")
-
-        try:
-            idx_xyz = np.asarray(
-                resampled_ct.TransformPhysicalPointToContinuousIndex(tuple(float(v) for v in pos)),
-                dtype=np.float64,
+    def _prepare_model_seeds(seed_records):
+        """Normalize world-coordinate seeds for the deployed DoseUNet."""
+        normalized = []
+        model_ready = []
+        size_xyz_local = np.asarray(resampled_ct.GetSize(), dtype=np.float64)
+        for i, seed in enumerate(seed_records or []):
+            pos = _safe_float_list(seed.get("position") if isinstance(seed, dict) else None, 3)
+            direction = _safe_float_list(
+                (seed.get("direction") if isinstance(seed, dict) else None),
+                3,
+                [0.0, 0.0, 1.0],
             )
-        except Exception as exc:
-            logger.warning("Skipping seed with invalid physical coordinate transform: %s", exc)
-            continue
-        if not np.all(np.isfinite(idx_xyz)) or np.any(idx_xyz < 0.0) or np.any(idx_xyz >= size_xyz):
-            continue
+            direction_np = np.asarray(direction, dtype=np.float64)
+            dn = float(np.linalg.norm(direction_np))
+            if dn <= 1e-8 or not np.all(np.isfinite(direction_np)):
+                direction_np = np.array([0.0, 0.0, 1.0], dtype=np.float64)
+            else:
+                direction_np = direction_np / dn
+            seed_id = str(
+                seed.get("id")
+                if isinstance(seed, dict) and seed.get("id")
+                else f"manual_seed_{i + 1}"
+            )
+            traj_id = str(
+                seed.get("trajectory_id")
+                if isinstance(seed, dict) and seed.get("trajectory_id")
+                else "manual_traj_1"
+            )
 
-        try:
-            voxel_direction = utilizations.ras_direction_to_voxel(direction_np, resampled_ct).astype(np.float32)
-        except Exception as exc:
-            logger.warning("Falling back to default voxel seed direction: %s", exc)
-            voxel_direction = np.array([0.0, 0.0, 1.0], dtype=np.float32)
-        vdn = float(np.linalg.norm(voxel_direction))
-        if vdn <= 1e-8 or not np.all(np.isfinite(voxel_direction)):
-            voxel_direction = np.array([0.0, 0.0, 1.0], dtype=np.float32)
-        else:
-            voxel_direction = voxel_direction / vdn
+            try:
+                idx_xyz = np.asarray(
+                    resampled_ct.TransformPhysicalPointToContinuousIndex(
+                        tuple(float(v) for v in pos)
+                    ),
+                    dtype=np.float64,
+                )
+            except Exception as exc:
+                logger.warning("Skipping seed with invalid physical coordinate transform: %s", exc)
+                continue
+            if not np.all(np.isfinite(idx_xyz)) or np.any(idx_xyz < 0.0) or np.any(idx_xyz >= size_xyz_local):
+                continue
 
-        pos_zyx = np.array([idx_xyz[2], idx_xyz[1], idx_xyz[0]], dtype=np.float32)
-        seed_weight = float(seed.get("weight", 1.0)) if isinstance(seed, dict) else 1.0
-        if not np.isfinite(seed_weight) or seed_weight <= 0.0:
-            seed_weight = 1.0
-        model_seeds.append((pos_zyx, voxel_direction.astype(np.float32), seed_weight))
-        norm_seeds.append({
-            "id": seed_id,
-            "position": pos,
-            "direction": direction_np.astype(np.float32).tolist(),
-            "trajectory_id": traj_id,
-            "weight": seed_weight,
-        })
+            try:
+                voxel_direction = utilizations.ras_direction_to_voxel(
+                    direction_np, resampled_ct
+                ).astype(np.float32)
+            except Exception as exc:
+                logger.warning("Falling back to default voxel seed direction: %s", exc)
+                voxel_direction = np.array([0.0, 0.0, 1.0], dtype=np.float32)
+            vdn = float(np.linalg.norm(voxel_direction))
+            if vdn <= 1e-8 or not np.all(np.isfinite(voxel_direction)):
+                voxel_direction = np.array([0.0, 0.0, 1.0], dtype=np.float32)
+            else:
+                voxel_direction = voxel_direction / vdn
+
+            pos_zyx = np.array([idx_xyz[2], idx_xyz[1], idx_xyz[0]], dtype=np.float32)
+            seed_weight = float(seed.get("weight", 1.0)) if isinstance(seed, dict) else 1.0
+            if not np.isfinite(seed_weight) or seed_weight <= 0.0:
+                seed_weight = 1.0
+            model_ready.append((pos_zyx, voxel_direction.astype(np.float32), seed_weight))
+            normalized.append({
+                "id": seed_id,
+                "position": pos,
+                "direction": direction_np.astype(np.float32).tolist(),
+                "trajectory_id": traj_id,
+                "weight": seed_weight,
+            })
+        return normalized, model_ready
+
+    norm_seeds, model_seeds = _prepare_model_seeds(seeds)
 
     if not model_seeds:
         raise ValueError("No manual seeds fall inside the current CT volume.")
@@ -965,55 +1007,119 @@ def _compute_manual_ai_dose(
         tuple(round(float(v), 5) for v in dose_image.GetOrigin()),
         tuple(round(float(v), 5) for v in dose_image.GetDirection()),
     )
-    cached_maps = []
-    missing_seeds = []
-    missing_indices = []
-    for index, (seed, model_seed) in enumerate(zip(norm_seeds, model_seeds)):
-        position_key = tuple(round(float(v), 4) for v in seed["position"])
-        direction_key = tuple(round(float(v), 5) for v in seed["direction"])
-        cache_key = (dose_signature, position_key, direction_key, round(float(seed["weight"]), 5))
-        cached = _MANUAL_DOSE_SEED_CACHE.get(cache_key)
-        if cached is None:
-            cached_maps.append(None)
-            missing_seeds.append(model_seed)
-            missing_indices.append(index)
-        else:
-            cached_maps.append(cached)
-    if missing_seeds:
-        computed_maps = utilizations.batch_seed_dose_calculation_dl(
-            missing_seeds,
-            dose_image,
-            dose_model,
-            args.radiation_array_params["infer_img_size"],
-            args.seed_info,
-            args.image_normalize[0],
-            args.image_normalize[1],
-            args.image_normalize[2],
+    def _seed_cache_key(seed):
+        return (
+            dose_signature,
+            tuple(round(float(v), 4) for v in seed["position"]),
+            tuple(round(float(v), 5) for v in seed["direction"]),
+            round(float(seed["weight"]), 5),
         )
-        for index, cache_key, seed_dose in zip(
-            missing_indices,
-            [
-                (
-                    dose_signature,
-                    tuple(round(float(v), 4) for v in norm_seeds[i]["position"]),
-                    tuple(round(float(v), 5) for v in norm_seeds[i]["direction"]),
-                    round(float(norm_seeds[i]["weight"]), 5),
+
+    def _cached_seed_maps(seed_records, model_records):
+        """Return AI maps, evaluating only cache misses for this seed set."""
+        cached_maps = []
+        missing_seeds = []
+        missing_records = []
+        for seed, model_seed in zip(seed_records, model_records):
+            cache_key = _seed_cache_key(seed)
+            cached = _MANUAL_DOSE_SEED_CACHE.get(cache_key)
+            if cached is None:
+                cached_maps.append(None)
+                missing_seeds.append(model_seed)
+                missing_records.append((len(cached_maps) - 1, cache_key))
+            else:
+                cached_maps.append(cached)
+        if missing_seeds:
+            computed_maps = utilizations.batch_seed_dose_calculation_dl(
+                missing_seeds,
+                dose_image,
+                dose_model,
+                args.radiation_array_params["infer_img_size"],
+                args.seed_info,
+                args.image_normalize[0],
+                args.image_normalize[1],
+                args.image_normalize[2],
+            )
+            for (index, cache_key), seed_dose in zip(missing_records, computed_maps):
+                array = np.asarray(seed_dose, dtype=np.float32).copy()
+                _MANUAL_DOSE_SEED_CACHE[cache_key] = array
+                _MANUAL_DOSE_SEED_CACHE_ORDER.append(cache_key)
+                cached_maps[index] = array
+            while len(_MANUAL_DOSE_SEED_CACHE_ORDER) > _MANUAL_DOSE_SEED_CACHE_LIMIT:
+                stale_key = _MANUAL_DOSE_SEED_CACHE_ORDER.pop(0)
+                _MANUAL_DOSE_SEED_CACHE.pop(stale_key, None)
+        return [np.asarray(item, dtype=np.float32) for item in cached_maps if item is not None], len(missing_seeds)
+
+    def _changed_trajectory_ids(old_needles, new_needles):
+        def _by_trajectory(items):
+            result = {}
+            for item in items or []:
+                if not isinstance(item, dict):
+                    continue
+                points = item.get("points")
+                if not isinstance(points, list) or len(points) < 2:
+                    continue
+                trajectory_id = str(item.get("trajectory_id") or item.get("id") or "")
+                if trajectory_id:
+                    result[trajectory_id] = np.asarray([points[0], points[-1]], dtype=np.float64)
+            return result
+        old = _by_trajectory(old_needles)
+        new = _by_trajectory(new_needles)
+        changed = set(old).symmetric_difference(new)
+        for trajectory_id in set(old).intersection(new):
+            if not np.allclose(old[trajectory_id], new[trajectory_id], rtol=0.0, atol=1e-6):
+                changed.add(trajectory_id)
+        return changed
+
+    dose_base = np.zeros_like(sitk.GetArrayFromImage(dose_image), dtype=np.float32)
+    changed_trajectories = _changed_trajectory_ids(previous_needles, needles) if reproject_seeds else set()
+    previous_seed_records = agent.memory.retrieve("manual_seeds")
+    if not isinstance(previous_seed_records, list) or not previous_seed_records:
+        baseline_snapshot = agent.memory.retrieve("algorithm_plan_snapshot") or {}
+        previous_seed_records = list(baseline_snapshot.get("seeds") or []) if isinstance(baseline_snapshot, dict) else []
+    baseline_dose_key = "dose_distribution" if agent.memory.retrieve("manual_ai_dose") else "algorithm_plan_dose_distribution"
+    previous_dose = agent.memory.retrieve(baseline_dose_key)
+    if changed_trajectories and previous_dose is not None:
+        candidate_base = np.asarray(previous_dose, dtype=np.float32)
+        if candidate_base.shape == dose_base.shape:
+            old_records = [
+                seed for seed in previous_seed_records
+                if isinstance(seed, dict) and str(seed.get("trajectory_id") or "") in changed_trajectories
+            ]
+            new_records = [
+                seed for seed in norm_seeds
+                if isinstance(seed, dict) and str(seed.get("trajectory_id") or "") in changed_trajectories
+            ]
+            old_norm, old_model = _prepare_model_seeds(old_records)
+            new_norm, new_model = _prepare_model_seeds(new_records)
+            if old_model and new_model:
+                old_maps, old_misses = _cached_seed_maps(old_norm, old_model)
+                new_maps, new_misses = _cached_seed_maps(new_norm, new_model)
+                dose_base = candidate_base.copy()
+                for seed_dose in old_maps:
+                    dose_base -= seed_dose
+                for seed_dose in new_maps:
+                    dose_base += seed_dose
+                logger.info(
+                    "[manual_dose] incremental needle replan: trajectories=%d, old_seeds=%d, "
+                    "new_seeds=%d, model_misses=%d, full_seed_count=%d",
+                    len(changed_trajectories), len(old_norm), len(new_norm),
+                    old_misses + new_misses, len(norm_seeds),
                 )
-                for i in missing_indices
-            ],
-            computed_maps,
-        ):
-            array = np.asarray(seed_dose, dtype=np.float32).copy()
-            _MANUAL_DOSE_SEED_CACHE[cache_key] = array
-            _MANUAL_DOSE_SEED_CACHE_ORDER.append(cache_key)
-            cached_maps[index] = array
-        while len(_MANUAL_DOSE_SEED_CACHE_ORDER) > _MANUAL_DOSE_SEED_CACHE_LIMIT:
-            stale_key = _MANUAL_DOSE_SEED_CACHE_ORDER.pop(0)
-            _MANUAL_DOSE_SEED_CACHE.pop(stale_key, None)
-    per_seed_doses = [np.asarray(item, dtype=np.float32) for item in cached_maps if item is not None]
-    dose = np.zeros_like(sitk.GetArrayFromImage(dose_image), dtype=np.float32)
-    for seed_dose in per_seed_doses:
-        dose += np.asarray(seed_dose, dtype=np.float32)
+            else:
+                dose_base = np.zeros_like(dose_base)
+
+    if not np.any(dose_base):
+        per_seed_doses, model_misses = _cached_seed_maps(norm_seeds, model_seeds)
+        dose = np.zeros_like(dose_base, dtype=np.float32)
+        for seed_dose in per_seed_doses:
+            dose += seed_dose
+        logger.info(
+            "[manual_dose] full seed inference: seeds=%d, model_misses=%d",
+            len(norm_seeds), model_misses,
+        )
+    else:
+        dose = dose_base
     dose = np.nan_to_num(dose, nan=0.0, posinf=0.0, neginf=0.0)
     dose[dose < 0.0] = 0.0
 
@@ -1202,6 +1308,11 @@ def _compute_manual_ai_dose(
         "dose_engine": "dose_unet_spacing1mm",
         "total_seeds": len(norm_seeds),
         "num_trajectories": len(grouped),
+        # Return authoritative post-reprojection geometry so the browser does
+        # not need a full planning refresh just to synchronize one dragged
+        # needle and its attached seeds.
+        "seeds": norm_seeds,
+        "needles": norm_needles,
         "reprojected_seeds": int(reprojection_count),
         "metrics": metrics,
         "dose_range": [float(dose_original.min()), float(dose_original.max())],

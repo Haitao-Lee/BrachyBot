@@ -368,14 +368,13 @@ async function _runManualDoseJob(job) {
         const superseded = manualPlanningState.doseRecomputeQueued
             && manualPlanningState._doseRecomputeJob !== job;
         if (superseded || requestSequence !== manualPlanningState.doseRecomputeSequence) return data;
-        state.doseOverlay = null;
-        state.dvhData = null;
-        state.doseTexture.enabled = false;  // Reset so refreshPlanningUI loads meshes without dose
-        if (typeof refreshPlanningUI === 'function') await refreshPlanningUI();
-        // Restore dose texture mode if it was active before recompute
-        if (wasDoseTextureEnabled && typeof setDoseTextureMode === 'function') {
-            try { await setDoseTextureMode(true, { silent: true }); } catch (_) {}
-        }
+        // A single-needle edit must not invoke refreshPlanningUI(). That
+        // routine intentionally reloads CT labels, all OAR meshes, report
+        // figures, and every 3D object; doing that after a local dose update
+        // made a one-needle edit slower than a complete plan. The compact
+        // refresh keeps the authoritative DoseUNet result while updating only
+        // metrics, DVH, slices, and the already existing dose texture.
+        await _refreshManualDoseViews(data, wasDoseTextureEnabled);
         const m = data.metrics || {};
         const v100 = Number.isFinite(m.v100) ? `${(m.v100 * 100).toFixed(1)}%` : '--';
         const d90 = Number.isFinite(m.d90) ? `${m.d90.toFixed(1)} Gy` : '--';
@@ -494,6 +493,46 @@ async function onManualNeedleHandleEdited(handle) {
     });
     manualPlanningState.needleReplanPrompt = prompt;
     return prompt.promise;
+}
+
+async function _refreshManualDoseViews(data, wasDoseTextureEnabled) {
+    const metrics = data?.metrics || {};
+    if (typeof updateMetrics === 'function') updateMetrics(metrics);
+    if (typeof updateOARTable === 'function') updateOARTable(metrics.oar_metrics || {});
+    if (typeof updateSeeds === 'function' && Array.isArray(data?.seeds)) updateSeeds(data.seeds);
+
+    if (Array.isArray(data?.needles) && typeof dataTreeState !== 'undefined') {
+        const byId = new Map(data.needles.map(n => [String(n.id), n]));
+        for (const needle of dataTreeState?.planning?.needles || []) {
+            const saved = byId.get(String(needle.id));
+            if (!saved) continue;
+            needle.points = saved.points.map(point => _vec3Array(point));
+            const mesh = scene3D?.meshes?.[needle.id];
+            if (mesh) _upsertSceneMesh(needle.id, _makeNeedleMesh(needle));
+            _syncNeedleHandles(needle);
+        }
+    }
+
+    state.metrics = metrics;
+    state.dvhData = metrics.dvh_data || data?.dvh_data || null;
+    if (state.dvhData && typeof drawDVH === 'function') {
+        try { await drawDVH(); } catch (error) { console.warn('[manual dose] DVH refresh failed:', error); }
+    }
+    if (typeof renderDataTree === 'function') renderDataTree();
+
+    // Dose overlay loading fetches only metadata and redraws the current
+    // slices; it does not reconstruct OAR/CTV meshes.
+    state.doseOverlay = null;
+    if (typeof loadDoseOverlay === 'function') await loadDoseOverlay();
+    if (typeof loadAllSlices === 'function' && state.ctLoaded) await loadAllSlices();
+
+    if (wasDoseTextureEnabled && typeof setDoseTextureMode === 'function') {
+        try { await setDoseTextureMode(true, { silent: true }); } catch (error) {
+            console.warn('[manual dose] dose texture refresh failed:', error);
+        }
+    }
+    if (typeof forceRender3DViewer === 'function') forceRender3DViewer();
+    if (typeof scheduleWorkspaceSave === 'function') scheduleWorkspaceSave('manual.dose.incremental');
 }
 
 function _manualUiPosition(rawPosition) {
