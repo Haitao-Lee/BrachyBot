@@ -20,6 +20,8 @@ def register_session_routes(
     store: WorkspaceStore,
     get_agent: Callable[[Optional[str]], Any],
     drop_agent: Callable[[str], None],
+    get_cached_agent: Optional[Callable[[Optional[str]], Any]] = None,
+    drop_agent_fast: Optional[Callable[[str], None]] = None,
 ) -> None:
     """Register account-owned session APIs.
 
@@ -147,7 +149,7 @@ def register_session_routes(
             return error
         try:
             assert_target_editable(user, session_id)
-            drop_agent(session_id)
+            (drop_agent_fast or drop_agent)(session_id)
             store.move_to_trash(user["id"], session_id)
         except WorkspaceLeaseConflict as exc:
             return jsonify({"error": str(exc), "code": "workspace_locked"}), 409
@@ -191,7 +193,7 @@ def register_session_routes(
             return error
         try:
             assert_target_editable(user, session_id)
-            drop_agent(session_id)
+            (drop_agent_fast or drop_agent)(session_id)
             store.permanently_delete(user["id"], session_id)
         except WorkspaceLeaseConflict as exc:
             return jsonify({"error": str(exc), "code": "workspace_locked"}), 409
@@ -284,7 +286,10 @@ def register_session_routes(
                 # rejecting a harmless stale browser revision.
                 expected_revision=None, reason="workspace.ui_saved",
             )
-            agent = get_agent(session_id)
+            # UI persistence must never hydrate a cold BrachyAgent. The
+            # snapshot is already durable; update memory only when the case
+            # is currently cached in this process.
+            agent = (get_cached_agent or get_agent)(session_id)
             if agent is not None and isinstance(data.get("ui_state"), dict):
                 agent.memory.set_ui_state(data["ui_state"])
         except WorkspaceLeaseConflict as exc:
