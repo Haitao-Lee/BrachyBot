@@ -6836,10 +6836,13 @@ an RL planning loop, or a coordinate-chain error.
   before moving/removing the workspace. The durable snapshot remains the
   source of truth for the explicitly deleted case, while another active case
   and its task are not cancelled.
+- Bumped the `brachybot-ui-api.js` and `brachybot-workspace.js` asset query
+  versions so an already-open browser cannot silently retain the pre-fix
+  transition code.
 
 ### Verification
 
 - Focused workspace/auth regression suite: `49 passed, 3 warnings`.
-- Full configured-runtime suite: `242 passed, 2 skipped, 3 warnings`.
+- Full configured-runtime suite: `243 passed, 2 skipped, 3 warnings`.
 - `node --check` passes for the modified workspace and UI API scripts.
 - Python compilation and `git diff --check` pass.
