@@ -151,6 +151,15 @@ def test_case_clear_removes_untracked_surfaces_and_clinical_evaluation():
     assert "generation !== _segmentationMeshPrewarm.generation" in manual_3d
 
 
+def test_case_clear_removes_ctv_and_oar_input_paths_and_file_selections():
+    """A new case must not display or retain masks from the previous case."""
+    ui_api = read("web/app/static/js/brachybot-ui-api.js")
+    assert "state.ctvPath = null" in ui_api
+    assert "state.oarPath = null" in ui_api
+    assert "['ctvPath', 'oarPath'].forEach" in ui_api
+    assert "['fileCTV', 'fileOAR'].forEach" in ui_api
+
+
 def test_llm_case_rename_uses_the_durable_session_api():
     """A chat-driven rename must survive refresh just like a manual rename."""
     ui_api = read("web/app/static/js/brachybot-ui-api.js")

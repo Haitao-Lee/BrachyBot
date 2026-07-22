@@ -7055,3 +7055,28 @@ an RL planning loop, or a coordinate-chain error.
   not changed in this round.
 - Detailed implementation notes are recorded in
   `docs/VIEWER_RENDERING_AND_REPORT_FIXES_2026-07-22.md`.
+
+## Round 82: Clear Mask Inputs on Case Reset (2026-07-22)
+
+### Confirmed finding
+
+- Creating a new case cleared the CT input and clinical viewer state but left
+  the previous case's CTV/OAR path fields and native file selections in the
+  Input panel. This was a UI state-isolation defect, not a mask-processing or
+  coordinate defect.
+
+### Corrective changes
+
+- The shared `resetAllState()` path now clears case-owned `ctvPath` and
+  `oarPath` values, their visible text inputs, and the `fileCTV`/`fileOAR`
+  selections. This path is used by new-case creation, case switching, and CT
+  replacement, so all three entry points have the same isolation behavior.
+- Static asset versioning was incremented so the browser cannot retain the
+  previous form-reset code.
+
+### Verification
+
+- Added a frontend regression assertion for both mask path fields and both
+  native file inputs.
+- Existing remote workspace/viewer suite remains the required validation gate;
+  no clinical coordinate or planning logic was changed.
