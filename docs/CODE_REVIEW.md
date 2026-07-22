@@ -6846,3 +6846,29 @@ an RL planning loop, or a coordinate-chain error.
 - Full configured-runtime suite: `243 passed, 2 skipped, 3 warnings`.
 - `node --check` passes for the modified workspace and UI API scripts.
 - Python compilation and `git diff --check` pass.
+
+## Round 77: Visible background workspace hydration (2026-07-22)
+
+### Confirmed finding
+
+- The lightweight session switch was intentionally non-blocking, but the
+  subsequent CT/mesh/dose/viewer restore was visually silent. During a long
+  restore the user could see the new chat shell while receiving no indication
+  that clinical resources were still loading.
+
+### Corrective changes
+
+- Added a non-blocking, localized workspace hydration notice with a subtle
+  spinner. It appears during reconnect restoration and background case
+  hydration, while chat and other lightweight controls remain usable.
+- The notice is cleared on successful completion, cancellation, case
+  supersession, and restore failure. Its animation respects
+  `prefers-reduced-motion` and does not reuse the error/lock presentation.
+- Bumped the UI API, workspace script, and auth stylesheet asset versions so
+  browsers cannot retain the pre-notice static assets.
+
+### Verification
+
+- Workspace frontend regression suite: `37 passed`.
+- Full configured-runtime suite after this change: `244 passed, 2 skipped, 3 warnings`.
+- JavaScript syntax and `git diff --check` pass.

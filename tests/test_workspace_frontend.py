@@ -102,6 +102,18 @@ def test_case_clear_detaches_webgl_before_deferred_disposal():
     assert "requestAnimationFrame(schedule)" in ui_api
 
 
+def test_workspace_hydration_has_visible_nonblocking_progress_state():
+    index = read("web/app/index.html")
+    auth_css = read("web/app/static/css/brachybot-auth.css")
+    workspace = read("web/app/static/js/brachybot-workspace.js")
+    ui_api = read("web/app/static/js/brachybot-ui-api.js")
+    assert 'id="workspaceHydrationNotice"' in index
+    assert "workspace-hydration-spinner" in auth_css
+    assert "setWorkspaceHydrationState" in workspace
+    assert "_restoreActiveSessionWorkspace" in ui_api
+    assert "workspaceHydrationNotice" in index
+
+
 def test_deleted_case_cancels_pending_agent_checkpoint():
     store = read("web/workspace_store.py")
     server = read("web/server.py")

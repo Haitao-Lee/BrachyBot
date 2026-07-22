@@ -1387,7 +1387,7 @@ async function loadCTToViewers(ctPath, options = {}) {
     }
 }
 
-async function restoreActiveSessionWorkspace(options = {}) {
+async function _restoreActiveSessionWorkspace(options = {}) {
     const sessionAtStart = _activeApiSessionId();
     clearClientWorkspace({ clearReport: options.clearReport !== false });
     let workspace = options.workspace || window._activeWorkspaceSnapshot || null;
@@ -1510,6 +1510,19 @@ async function restoreActiveSessionWorkspace(options = {}) {
         try { if (state.slices && Number.isFinite(Number(state.slices[axis]))) renderSliceFromVolume(axis, Number(state.slices[axis])); } catch (_) {}
     });
     return status;
+}
+async function restoreActiveSessionWorkspace(options = {}) {
+    window.setWorkspaceHydrationState?.(
+        true,
+        typeof _t === 'function'
+            ? _t('正在加载病例资源…', 'Loading case resources...')
+            : 'Loading case resources...',
+    );
+    try {
+        return await _restoreActiveSessionWorkspace(options);
+    } finally {
+        window.setWorkspaceHydrationState?.(false);
+    }
 }
 window.restoreActiveSessionWorkspace = restoreActiveSessionWorkspace;
 

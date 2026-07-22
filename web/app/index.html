@@ -52,7 +52,7 @@
     <link rel="stylesheet" href="static/css/brachybot-panels-viewers.css?v=8">
     <link rel="stylesheet" href="static/css/brachybot-report-controls.css?v=8">
     <link rel="stylesheet" href="static/css/brachybot-responsive.css?v=4">
-    <link rel="stylesheet" href="static/css/brachybot-auth.css?v=3">
+    <link rel="stylesheet" href="static/css/brachybot-auth.css?v=4">
 </head>
 <!--
   The remaining inline styles belong to fixed report/form geometry whose
@@ -121,6 +121,10 @@
 <div id="workspaceRecoveryNotice" class="workspace-recovery-notice" hidden role="status">
     <span id="workspaceRecoveryMessage" class="workspace-notice-message"></span>
     <button id="workspaceRecoveryDismiss" type="button" class="workspace-notice-close" aria-label="Dismiss recovery notice" title="Dismiss">x</button>
+</div>
+<div id="workspaceHydrationNotice" class="workspace-hydration-notice" hidden role="status" aria-live="polite">
+    <span class="workspace-hydration-spinner" aria-hidden="true"></span>
+    <span id="workspaceHydrationMessage" class="workspace-notice-message">Restoring case resources...</span>
 </div>
 
 <!-- ============ APP BODY ============ -->
@@ -1183,7 +1187,7 @@
 -->
 <script src="static/js/brachybot-chat-core.js?v=9"></script>
 <script src="static/js/brachybot-chat-todo.js?v=10"></script>
-<script src="static/js/brachybot-ui-api.js?v=15"></script>
+<script src="static/js/brachybot-ui-api.js?v=16"></script>
 <script src="static/js/brachybot-auth.js?v=6"></script>
 <script src="static/js/brachybot-viewer-volume.js?v=8"></script>
 <script src="static/js/brachybot-viewer-layout.js?v=8"></script>
@@ -1192,7 +1196,7 @@
     <script src="static/js/brachybot-dvh-planning.js?v=10"></script>
 <script src="static/js/brachybot-report-shell.js?v=12"></script>
 <script src="static/js/brachybot-report-editor.js?v=8"></script>
-<script src="static/js/brachybot-workspace.js?v=6"></script>
+<script src="static/js/brachybot-workspace.js?v=7"></script>
 <script src="static/js/brachybot-report-export.js?v=10"></script>
 </body>
 </html>
