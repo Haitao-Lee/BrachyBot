@@ -2,6 +2,51 @@
 
 _This file consolidates all code review reports. Sections are organized by date._
 
+## 2026-07-22 - Workspace lease identity, instant needle restore, and bounded OAR volume metrics
+
+### Confirmed issues and resolutions
+
+1. **False read-only takeover banner after reload or a lease request failure.**
+   The browser previously treated every failed lease heartbeat as evidence that
+   another browser owned the case. In addition, lease requests relied on the
+   Flask session's selected case even while the browser was switching cases.
+   The editor token now survives reloads in origin-scoped `localStorage` (with
+   migration from the old `sessionStorage` token), every lease request carries
+   and validates the selected owned `session_id`, and the UI shows the takeover
+   banner only for the authenticated `workspace_locked` response. Network or
+   server failures keep the normal connection state and do not falsely accuse
+   another editor. Explicit takeover remains available and reports its progress
+   through the existing animated notice/toast path.
+
+2. **Restoring one accidentally dragged needle unnecessarily entered the slow
+   manual-dose path.** The automatic plan now stores immutable needle/seed,
+   dose-grid, dose-metric, and DVH baselines at the successful planning
+   checkpoint. When all other geometry is unchanged, restoring a needle copies
+   those validated baseline artifacts and completes without another model
+   inference. If other geometry was also edited or a baseline is unavailable,
+   the request deliberately falls back to the normal AI recomputation path.
+   Both paths expose a persistent indeterminate progress row with elapsed time,
+   and finish with an explicit success or error state.
+
+3. **OAR V100 values above 100% in reports.** This was a real unit-contract
+   problem at multiple boundaries: planning and manual dose metrics now store
+   V100/V150/V200 as fractions, while report/UI boundaries convert exactly once
+   to percentages. The report, auto-fill, DVH table, and server patch builders
+   also normalize legacy rows that were double-scaled (for example `350.3%`
+   is rendered as `3.5%`) and clamp the final display to the physically valid
+   `[0, 100]` interval. This prevents impossible output without changing the
+   underlying dose grid or coordinate chain.
+
+### Verification
+
+- Focused lease, frontend, metric-unit, and restore regressions: **49 passed**.
+- Python syntax/bytecode compilation and modified JavaScript syntax checks pass.
+- The new regression suite covers fraction, percentage, legacy double-scaled,
+  out-of-range, and non-finite OAR volume inputs.
+- The final full-suite result is recorded below after the repository-wide run.
+
+---
+
 ## 2026-07-19 - Round 52: Case-scoped deferred viewer restoration
 
 **Confirmed issue:** `restoreSceneView()` deliberately reapplied saved camera,

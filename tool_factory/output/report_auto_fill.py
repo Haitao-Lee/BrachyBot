@@ -16,12 +16,35 @@ Endpoints called:
 import sys
 import os
 import json
+import math
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from tool_factory import BaseTool, ToolResult
 from plans.dose_pre.model_loader import DOSE_MODEL_SCALE_GY
 from typing import Dict
+
+
+def _volume_metric_as_percent(value, units=None):
+    """Normalize legacy fraction/percent OAR values for report rows."""
+    if value is None:
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(number):
+        return None
+    kind = str(units or "").strip().lower()
+    if kind in {"fraction", "ratio", "0-1"}:
+        percent = number * 100.0
+    elif kind in {"percent", "percentage", "0-100"}:
+        percent = number
+    else:
+        percent = number * 100.0 if abs(number) <= 1.0 else number
+    while abs(percent) > 100.0:
+        percent /= 100.0
+    return max(0.0, min(100.0, percent))
 
 
 def _server_url():
@@ -295,8 +318,12 @@ class ReportAutoFillTool(BaseTool):
                     if values.get("v100") is not None:
                         try:
                             v100 = float(values.get("v100"))
-                            row["v100"] = round(v100 * 100 if v100 <= 1.5 else v100, 1)
-                            has_value = True
+                            normalized_v100 = _volume_metric_as_percent(
+                                v100, dose.get("volume_metric_units")
+                            )
+                            if normalized_v100 is not None:
+                                row["v100"] = round(normalized_v100, 1)
+                                has_value = True
                         except Exception:
                             pass
                     if has_value:

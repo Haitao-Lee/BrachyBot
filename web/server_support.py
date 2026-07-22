@@ -16,6 +16,7 @@ import hashlib
 import hmac
 import base64
 import binascii
+import math
 from collections import deque
 from datetime import datetime
 from typing import Dict, Any, Optional, Iterable
@@ -278,6 +279,36 @@ def _volume_metric_as_fraction(metrics: Dict[str, Any], name: str) -> Optional[f
         _extract_metric_value(metrics, name),
         units=metrics.get("volume_metric_units") if isinstance(metrics, dict) else None,
     )
+
+
+def _volume_metric_as_percent(value: Any, *, units: Optional[str] = None) -> Optional[float]:
+    """Normalize a volume metric to a physically valid 0-100 percentage.
+
+    OAR metrics historically came from both fraction and percent writers.
+    Report generation is a compatibility boundary, so it must normalize old
+    records and clamp impossible values instead of multiplying blindly.
+    """
+    if value is None:
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(number):
+        return None
+    normalized_units = str(units or "").strip().lower()
+    if normalized_units in {"fraction", "ratio", "0-1"}:
+        percent = number * 100.0
+    elif normalized_units in {"percent", "percentage", "0-100"}:
+        percent = number
+    else:
+        percent = number * 100.0 if abs(number) <= 1.0 else number
+    # Compatibility with legacy layers that multiplied an already-percent
+    # value. Any value outside the physical range is reduced to its intended
+    # scale before the final clamp.
+    while abs(percent) > 100.0:
+        percent /= 100.0
+    return max(0.0, min(100.0, float(percent)))
 
 
 def _latest_plan_snapshot(agent) -> Dict[str, Any]:
@@ -985,8 +1016,11 @@ def _compute_manual_ai_dose(
                 "d0_1cc": dose_at_xcc(0.1),
                 "d1cc": dose_at_xcc(1.0),
                 "d2cc": dose_at_xcc(2.0),
-                "v100": float(np.sum(od >= DOSE_MODEL_SCALE_GY) / len(od) * 100.0),
-                "v150": float(np.sum(od >= DOSE_MODEL_SCALE_GY * 1.5) / len(od) * 100.0),
+                # Volume metrics use the same fraction contract as CTV
+                # metrics. Report/UI boundaries convert to percent exactly
+                # once, preventing impossible values such as 350.3%.
+                "v100": float(np.sum(od >= DOSE_MODEL_SCALE_GY) / len(od)),
+                "v150": float(np.sum(od >= DOSE_MODEL_SCALE_GY * 1.5) / len(od)),
                 "volume_cm3": float(np.sum(mask) * voxel_vol_cm3),
                 "volume_voxels": int(np.sum(mask)),
             }

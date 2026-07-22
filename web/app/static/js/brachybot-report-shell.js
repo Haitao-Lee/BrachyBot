@@ -10,6 +10,19 @@
 //   4. Boots after the legacy module has initialized.
 // =============================================================================
 
+function _oarVolumePercent(value, units) {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return null;
+    const kind = String(units || '').toLowerCase();
+    let percent = ['fraction', 'ratio', '0-1'].includes(kind)
+        ? n * 100
+        : ['percent', 'percentage', '0-100'].includes(kind)
+            ? n
+            : (Math.abs(n) <= 1 ? n * 100 : n);
+    while (Math.abs(percent) > 100) percent /= 100;
+    return Math.max(0, Math.min(100, percent));
+}
+
 window.Report = (function () {
     'use strict';
 
@@ -612,7 +625,7 @@ window.Report = (function () {
                                 d1cc: x.d1cc || null,
                                 d0_1cc: x.d0_1cc || null,
                                 dmax: x.dmax || x.max_dose || null,
-                                v100: x.v100 ? x.v100 * 100 : null,
+                                v100: _oarVolumePercent(x.v100, state.metrics.volume_metric_units),
                             }))
                             .sort((a, b) => (b.d2cc || 0) - (a.d2cc || 0));
                         sources.set('oarDose', 'auto');

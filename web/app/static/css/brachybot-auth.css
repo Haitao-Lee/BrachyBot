@@ -28,6 +28,9 @@
 .workspace-notice-close { flex: 0 0 auto; width: 22px; height: 22px; border: 0; border-radius: 5px; background: transparent; color: currentColor; cursor: pointer; font-size: 16px; line-height: 1; opacity: .78; }
 .workspace-notice-close:hover, .workspace-notice-close:focus-visible { background: rgba(255, 255, 255, .12); opacity: 1; outline: none; }
 .workspace-lock-notice[hidden], .workspace-recovery-notice[hidden] { display: none; }
+@keyframes workspaceNoticeIn { from { opacity: 0; transform: translate(-50%, -8px) scale(.98); } to { opacity: 1; transform: translate(-50%, 0) scale(1); } }
+.workspace-lock-notice:not([hidden]), .workspace-recovery-notice:not([hidden]) { animation: workspaceNoticeIn 180ms ease-out both; }
+.workspace-lock-notice .workspace-notice-action[aria-busy="true"] { cursor: wait; }
 .recycle-bin-panel { margin: 6px 8px; border: 1px solid #2c4361; border-radius: 6px; background: #0b121d; overflow: hidden; }
 .recycle-bin-header { display: flex; align-items: center; justify-content: space-between; padding: 7px 9px; color: #cfe2f7; background: #121e2e; font-size: 12px; }
 .recycle-bin-header button, .recycle-bin-actions button { border: 1px solid #36516f; border-radius: 4px; background: #17283b; color: #dcecff; cursor: pointer; font-size: 11px; padding: 3px 6px; }

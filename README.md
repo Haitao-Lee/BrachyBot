@@ -15,6 +15,18 @@
 
 ## Recent safety and viewer hardening
 
+- Workspace editor identity is stable across reloads and explicitly bound to
+  the selected owned case. Only a verified lease conflict shows the takeover
+  banner; transient network/server failures do not create a false read-only
+  warning.
+- Restoring a single accidentally dragged needle reuses the immutable validated
+  algorithm baseline, including its seeds, dose grid, DVH, and metrics, so the
+  common restore action is immediate. Complex edits still use the AI dose
+  recomputation fallback and expose elapsed progress.
+- OAR V100/V150/V200 use one internal fraction contract and one report-boundary
+  percentage conversion. Legacy double-scaled values are normalized and
+  bounded to 0–100% before rendering.
+
 - Candidate needle trajectories are filtered against the current Data Tree
   non-traversable masks before optimization and are revalidated in physical
   coordinates before display.

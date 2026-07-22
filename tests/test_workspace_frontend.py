@@ -185,6 +185,26 @@ def test_lease_release_does_not_depend_on_fetch_wrapper_side_effects():
     assert "LEASE_RELEASE_TIMEOUT_MS = 4000" in auth
 
 
+def test_lease_identity_survives_reload_and_is_bound_to_selected_case():
+    auth = read("web/app/static/js/brachybot-auth.js")
+    assert "localStorage.getItem(editorKey) || sessionStorage.getItem(editorKey)" in auth
+    assert "localStorage.setItem(editorKey, editorToken)" in auth
+    assert "function currentLeaseSessionId()" in auth
+    assert "session_id: currentLeaseSessionId()" in auth
+    assert "aria-busy" in auth
+
+
+def test_oar_report_paths_normalize_volume_percentage_once():
+    shell = read("web/app/static/js/brachybot-report-shell.js")
+    export = read("web/app/static/js/brachybot-report-export.js")
+    dvh = read("web/app/static/js/brachybot-dvh-planning.js")
+    assert "function _oarVolumePercent(value, units)" in shell
+    assert "_oarVolumePercent(x.v100, state.metrics.volume_metric_units)" in shell
+    assert "function _oarVolumePercent(value, units)" in export
+    assert "_oarVolumePercent(x.v100, state.metrics.volume_metric_units)" in export
+    assert "function _dvhOarVolumePercent(value, units)" in dvh
+
+
 def test_chat_network_failures_finish_the_turn_and_unlock_case_navigation():
     """A half-open chat connection must not leave Thinking or transitions alive."""
     chat = read("web/app/static/js/brachybot-chat-todo.js")

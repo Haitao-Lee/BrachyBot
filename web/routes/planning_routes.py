@@ -1,6 +1,7 @@
 """Planning, chat, export, and UI bridge routes for the BrachyBot web API."""
 
 import json
+import copy
 import logging
 import os
 import threading
@@ -1908,6 +1909,43 @@ def register_planning_routes(app, get_agent):
         ]
         new_seeds = kept_seeds + restored_seeds
         new_needles = kept_needles + [dict(baseline_needle)]
+
+        def _component_signature(items):
+            return sorted(
+                json.dumps(item, sort_keys=True, separators=(",", ":"))
+                for item in (items or [])
+                if isinstance(item, dict)
+            )
+
+        # Reusing the baseline dose is safe only for the common accidental
+        # single-needle edit case. If another needle/seed was also changed,
+        # the baseline dose no longer describes the current geometry and the
+        # normal AI recomputation below remains the correct fallback.
+        baseline_other_needles = [
+            n for n in baseline_needles if str(n.get("id")) != needle_id
+        ]
+        current_other_needles = [
+            n for n in current_needles if str(n.get("id")) != needle_id
+        ]
+        baseline_other_seeds = [
+            s for s in baseline_seeds if str(s.get("trajectory_id") or "") != baseline_trajectory
+        ]
+        current_other_seeds = [
+            s for s in current_seeds if str(s.get("trajectory_id") or "") != target_trajectory
+        ]
+        unchanged_other_geometry = (
+            _component_signature(baseline_other_needles) == _component_signature(current_other_needles)
+            and _component_signature(baseline_other_seeds) == _component_signature(current_other_seeds)
+        )
+        baseline_dose = agent.memory.retrieve("algorithm_plan_dose_distribution")
+        baseline_dose_gy = agent.memory.retrieve("algorithm_plan_dose_distribution_gy")
+        baseline_metrics = agent.memory.retrieve("algorithm_plan_dose_metrics")
+        fast_restore = (
+            unchanged_other_geometry
+            and isinstance(baseline_metrics, dict)
+            and baseline_dose is not None
+            and baseline_dose_gy is not None
+        )
         try:
             checkpoint_operation(
                 agent,
@@ -1915,13 +1953,42 @@ def register_planning_routes(app, get_agent):
                 f"Restoring {needle_id} to the algorithm baseline",
                 checkpoint={"kind": "manual_planning", "reason": "restore_algorithm_needle", "needle_id": needle_id},
             )
-            result = _compute_manual_ai_dose(
-                agent,
-                new_seeds,
-                new_needles,
-                previous_needles=current_needles,
-                reproject_seeds=False,
-            )
+            if fast_restore:
+                # The algorithm plan already passed dose calculation and
+                # safety validation. Restore its immutable arrays/metrics;
+                # never run the expensive dose network for this operation.
+                dose_grid = np.array(baseline_dose, copy=True)
+                dose_grid_gy = np.array(baseline_dose_gy, copy=True)
+                restored_metrics = copy.deepcopy(baseline_metrics)
+                agent.memory.store("manual_seeds", new_seeds)
+                agent.memory.store("manual_needles", new_needles)
+                agent.memory.store("manual_geometry_only", False)
+                agent.memory.store("manual_planning_preview", False)
+                agent.memory.store("manual_ai_dose", False)
+                agent.memory.store("dose_distribution", dose_grid)
+                agent.memory.store("dose_distribution_gy", dose_grid_gy)
+                agent.memory.store("dose_metrics", restored_metrics)
+                agent.memory.store("metrics", restored_metrics)
+                agent.memory.store("dvh_data", copy.deepcopy(restored_metrics.get("dvh_data") or {}))
+                result = {
+                    "success": True,
+                    "fast_restore": True,
+                    "dose_recomputed": False,
+                    "dose_restored": True,
+                    "manual_preview": False,
+                    "total_seeds": len(new_seeds),
+                    "num_trajectories": len(new_needles),
+                    "metrics": restored_metrics,
+                    "dose_range": [float(dose_grid_gy.min()), float(dose_grid_gy.max())],
+                }
+            else:
+                result = _compute_manual_ai_dose(
+                    agent,
+                    new_seeds,
+                    new_needles,
+                    previous_needles=current_needles,
+                    reproject_seeds=False,
+                )
             checkpoint_operation(
                 agent,
                 "ready",

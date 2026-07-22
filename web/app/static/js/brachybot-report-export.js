@@ -1,3 +1,16 @@
+function _oarVolumePercent(value, units) {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return null;
+    const kind = String(units || '').toLowerCase();
+    let percent = ['fraction', 'ratio', '0-1'].includes(kind)
+        ? n * 100
+        : ['percent', 'percentage', '0-100'].includes(kind)
+            ? n
+            : (Math.abs(n) <= 1 ? n * 100 : n);
+    while (Math.abs(percent) > 100) percent /= 100;
+    return Math.max(0, Math.min(100, percent));
+}
+
 function _composite2DViewerCanvas(axis) {
     const sliceCanvas = document.getElementById('sliceCanvas' + axis.charAt(0).toUpperCase() + axis.slice(1));
     if (!sliceCanvas) return null;
@@ -145,7 +158,7 @@ async function reportAutoFill() {
                 d1cc: x.d1cc || null,
                 d0_1cc: x.d0_1cc || null,
                 dmax: x.dmax || x.max_dose || null,
-                v100: x.v100 ? x.v100 * 100 : null,
+                v100: _oarVolumePercent(x.v100, state.metrics.volume_metric_units),
             }))
             .sort((a, b) => (b.d2cc || 0) - (a.d2cc || 0)).slice(0, 12);
     }
@@ -653,12 +666,13 @@ function _updateReportPreview() {
                 <tbody>
                 ${f.oarDose.map(o => {
                     const organName = _resolveOARDisplayName(o.organ, o);
+                    const oarV100 = _oarVolumePercent(o.v100, 'percent');
                     return `<tr>
                         <td>${escHtml(organName)}</td>
                         <td>${o.d2cc !== null ? o.d2cc.toFixed(1) : ND}</td>
                         <td>${o.d1cc !== null ? o.d1cc.toFixed(1) : ND}</td>
                         <td>${o.d0_1cc !== null ? o.d0_1cc.toFixed(1) : ND}</td>
-                        <td>${o.v100 !== null ? o.v100.toFixed(1) : ND}</td>
+                        <td>${oarV100 !== null ? oarV100.toFixed(1) : ND}</td>
                     </tr>`;
                 }).join('')}
                 </tbody>
