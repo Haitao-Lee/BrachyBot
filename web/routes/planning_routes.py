@@ -282,11 +282,17 @@ def register_planning_routes(app, get_agent):
                 persisted_steps.append(task.commit_step("done"))
             if persisted_steps:
                 append_message("thinking", "", persisted_steps)
-            final_response = task.response or task.streamed_response
-            if final_response:
-                append_message("bot-response", final_response)
-            elif task.error:
-                append_message("error", "AI error: " + task.error)
+            # A user-cancelled turn must never resurrect buffered draft text
+            # when the case is reopened. Preserve the request and trace for
+            # audit, then record one explicit terminal status instead.
+            if final_status == "cancelled":
+                append_message("system", "Stopped.")
+            else:
+                final_response = task.response or task.streamed_response
+                if final_response:
+                    append_message("bot-response", final_response)
+                elif task.error:
+                    append_message("error", "AI error: " + task.error)
 
             store.save_snapshot_patch(
                 task.user_id,

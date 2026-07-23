@@ -1229,6 +1229,7 @@ async function sendChat(prefill, options) {
     let finalResponseReceived = false;
     let finalTextStreamStarted = false;
     let turnCompleted = false;
+    let turnCancelled = false;
     let turnFailed = false;
     let progressEl = null;
     let lastToolName = '';
@@ -1712,9 +1713,18 @@ async function sendChat(prefill, options) {
                     } else if (currentEvent === 'done') {
                         // Server says stream is complete
                         turnCompleted = true;
-                        const terminalStatus = data?.cancelled ? 'cancelled' : (turnFailed ? 'failed' : 'completed');
+                        turnCancelled = Boolean(data?.cancelled);
+                        const terminalStatus = turnCancelled ? 'cancelled' : (turnFailed ? 'failed' : 'completed');
                         _setCaseTaskState(turnSessionId, terminalStatus, null);
                         delete window._detachedChatTasks[turnSessionId];
+                        if (turnCancelled) {
+                            // A replaying browser can receive the terminal
+                            // cancellation event without having initiated the
+                            // Stop click itself. Do not manufacture a blank
+                            // assistant answer from that terminal state.
+                            cancelTurnUi('Stopped');
+                            break readLoop;
+                        }
                         // BUG FIX 2026-06-17: stamp a plan-completion
                         // timestamp so autoCaptureReportFigures can
                         // detect and discard stale auto-captured
@@ -1750,6 +1760,8 @@ async function sendChat(prefill, options) {
         // owning server task and its event journal remain available when the
         // user returns to that case.
         if (activeSessionId !== turnSessionId) return;
+
+        if (turnCancelled) return;
 
         // Keep screenshot capture/upload inside the same logical turn. This
         // guarantees that the hidden multimodal follow-up is queued before the
