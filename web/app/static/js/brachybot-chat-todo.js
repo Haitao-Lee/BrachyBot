@@ -56,7 +56,12 @@ if (!window._brachyUiTraceListenerReady) {
     document.addEventListener('brachy:ui-action-progress', (event) => {
         const trace = window._brachyLiveTrace;
         const step = event && event.detail;
-        if (!trace || !step) return;
+        // UI-controller actions are emitted asynchronously.  A case switch
+        // may happen between the server emitting the action and the browser
+        // receiving it, so never append an old case's progress to the newly
+        // selected case.
+        if (!trace || !step || trace.sessionId !== activeSessionId
+            || (step.session_id && String(step.session_id) !== String(activeSessionId || ''))) return;
         const index = trace.steps.length;
         trace.steps.push(step);
         if (typeof appendStepToChain === 'function') {
@@ -297,6 +302,19 @@ function _todoCreate() {
             // live progress row expanded after cancellation.
             this.fold();
         },
+        dispose() {
+            // Presentation-only teardown for a case switch.  This must not
+            // mark rows as failed or call the server: the case-owned task
+            // continues in the background and will be rebuilt on return.
+            for (const it of api.items) {
+                if (it._timer) { clearInterval(it._timer); it._timer = null; }
+                if (it._animationGuard) { clearInterval(it._animationGuard); it._animationGuard = null; }
+                it.node?.style && (it.node.style.animationPlayState = '');
+                _todoStopGpuBadge(it);
+            }
+            if (root._hideTimer) { clearTimeout(root._hideTimer); root._hideTimer = null; }
+            if (root.parentNode) root.parentNode.removeChild(root);
+        },
         fold() {
             // Final assistant response arrived — mark all remaining
             // pending/active items as done so the count is accurate.
@@ -479,6 +497,22 @@ function _todoCreate() {
 
     return api;
 }
+
+window.clearCaseScopedProgressPresentation = function clearCaseScopedProgressPresentation() {
+    // A browser has one visible chat column, but each case has an independent
+    // task.  Removing this display state prevents an old task's timer/Progress
+    // dock from leaking into a fresh case without changing any server task.
+    const todo = window._activeTodoApi;
+    try { todo?.dispose?.(); } catch (_) {}
+    window._activeTodoApi = null;
+    window._brachyLiveTrace = null;
+    window._toolProgressEls = [];
+    const dock = document.getElementById('chatTodoDock');
+    if (dock) {
+        dock.replaceChildren();
+        dock.style.display = 'none';
+    }
+};
 
 // Maps a raw SSE step event to a todo item (creates one if the step.id
 // is new) and updates its status (pending → active → done/error).
@@ -831,8 +865,38 @@ const CHAT_ABORT_TIMEOUT_MS = 4000;
 // server.  Keep task ownership explicit so a later session switch can resume
 // the correct event journal instead of treating the task as cancelled.
 window._sessionChatTaskIds = window._sessionChatTaskIds || {};
+window._sessionChatTaskStatuses = window._sessionChatTaskStatuses || {};
 window._detachedChatTasks = window._detachedChatTasks || {};
 window._sessionChatQueues = window._sessionChatQueues || {};
+window._activeChatTaskSessionId = window._activeChatTaskSessionId || null;
+window._explicitChatStopSessions = window._explicitChatStopSessions || {};
+window._sessionPlanningRefreshTimers = window._sessionPlanningRefreshTimers || {};
+
+function _setCaseTaskState(sessionId, status, taskId = undefined) {
+    const key = String(sessionId || '');
+    if (!key) return;
+    window._sessionChatTaskStatuses[key] = status || 'idle';
+    if (taskId !== undefined) {
+        if (taskId) window._sessionChatTaskIds[key] = taskId;
+        else delete window._sessionChatTaskIds[key];
+    }
+}
+
+function _scheduleCasePlanningRefresh(sessionId, delay = 250) {
+    const key = String(sessionId || '');
+    if (!key || typeof refreshPlanningUI !== 'function') return false;
+    if (window._sessionPlanningRefreshTimers[key]) return false;
+    window._sessionPlanningRefreshTimers[key] = setTimeout(async () => {
+        delete window._sessionPlanningRefreshTimers[key];
+        if (String(activeSessionId || '') !== key) return;
+        try {
+            await refreshPlanningUI({ sessionId: key });
+        } catch (error) {
+            console.error('[SSE] refreshPlanningUI failed:', error);
+        }
+    }, Math.max(0, Number(delay) || 0));
+    return true;
+}
 
 function _sessionChatQueue(sessionId) {
     const key = String(sessionId || '');
@@ -987,9 +1051,12 @@ async function _flushHiddenChatQueue() {
 // case-owned task alive for replay after the user returns.
 window.detachActiveChatTurn = function detachActiveChatTurn(reason) {
     if (!window._chatTurnActive && !window._chatStreaming) return null;
-    const sessionId = activeSessionId;
-    const taskId = window._activeChatTaskId || window._sessionChatTaskIds[sessionId] || null;
+    const sessionId = String(activeSessionId || '');
+    const taskId = window._activeChatTaskSessionId === sessionId
+        ? window._activeChatTaskId
+        : (window._sessionChatTaskIds[sessionId] || null);
     if (taskId) window._detachedChatTasks[sessionId] = taskId;
+    _setCaseTaskState(sessionId, 'running', taskId);
     window._chatDetachRequestedFor = sessionId;
     // Do not call cancelTurnUi: the old trace is a live case-owned task, not
     // an error. The next workspace snapshot will clear this case's DOM and a
@@ -998,6 +1065,10 @@ window.detachActiveChatTurn = function detachActiveChatTurn(reason) {
     window._chatTurnActive = false;
     window._chatStreaming = false;
     window._chatTurnCancelUi = null;
+    if (window._activeChatTaskSessionId === sessionId) {
+        window._activeChatTaskId = null;
+        window._activeChatTaskSessionId = null;
+    }
     if (typeof setStreamingState === 'function') setStreamingState(false);
     return { sessionId, taskId, reason: reason || 'Session changed' };
 };
@@ -1031,11 +1102,11 @@ async function sendChat(prefill, options) {
         const queuedText = (prefill != null ? prefill : (input ? input.value : '')).trim();
         if (!queuedText || !activeSessionId) return false;
         if (input) input.value = '';
-        if (typeof addChat === 'function') addChat('user', queuedText);
+        if (typeof addChat === 'function') addChat('user', queuedText, true, Date.now(), false, activeSessionId);
         window._lastUserMessage = queuedText;
         _queueChatTurn(activeSessionId, queuedText);
         if (typeof addChat === 'function') {
-            addChat('system', 'Queued for this case; the current task will finish first.');
+            addChat('system', 'Queued for this case; the current task will finish first.', true, Date.now(), false, activeSessionId);
         }
         return true;
     }
@@ -1047,6 +1118,8 @@ async function sendChat(prefill, options) {
     // the input is usually empty, and the old ordering returned early before
     // aborting anything.
     if (isBusy) {
+        const stopSessionId = String(window._activeChatTaskSessionId || activeSessionId || '');
+        if (stopSessionId) window._explicitChatStopSessions[stopSessionId] = true;
         try {
             if (typeof window._chatTurnCancelUi === 'function') window._chatTurnCancelUi('Stopped');
         } catch (_) {}
@@ -1069,15 +1142,24 @@ async function sendChat(prefill, options) {
             try {
                 response = await fetch(API + '/chat/abort', {
                     method: 'POST',
+                    headers: { 'X-BrachyBot-Session': stopSessionId },
                     signal: abortController ? abortController.signal : undefined,
                 });
             } finally {
                 if (abortTimer) clearTimeout(abortTimer);
             }
             if (!response.ok) console.warn('Chat abort was not acknowledged:', response.status);
+            _setCaseTaskState(stopSessionId, 'cancelled', null);
+            delete window._detachedChatTasks[stopSessionId];
         } catch (_) {
             // The local abort and progress cleanup have already completed.
             // A disconnected browser is still protected by the turn token.
+        } finally {
+            if (window._activeChatTaskSessionId === stopSessionId) {
+                window._activeChatTaskId = null;
+                window._activeChatTaskSessionId = null;
+            }
+            delete window._explicitChatStopSessions[stopSessionId];
         }
         return;
     }
@@ -1087,7 +1169,9 @@ async function sendChat(prefill, options) {
         : (prefill != null ? prefill : (input ? input.value : '')).trim();
     if (!text && !isResumingTask) return;
     if (input && !opts.hiddenUserMessage && !isResumingTask) input.value = '';
-    if (!opts.hiddenUserMessage && !isResumingTask && typeof addChat === 'function') addChat('user', text);
+    if (!opts.hiddenUserMessage && !isResumingTask && typeof addChat === 'function') {
+        addChat('user', text, true, Date.now(), false, activeSessionId);
+    }
     if (!opts.preserveLastUserMessage) {
         window._lastUserMessage = text;
     }
@@ -1098,7 +1182,8 @@ async function sendChat(prefill, options) {
     // message. This avoids leaking the previous session into a
     // fresh page load.
     try { if (!isResumingTask && typeof ensurePendingSession === 'function') ensurePendingSession(); } catch (_) {}
-    const turnSessionId = activeSessionId;
+    const turnSessionId = String(activeSessionId || '');
+    let turnTaskId = isResumingTask ? String(opts.resumeTaskId || '') : '';
     if (!isResumingTask) window._activeChatTaskId = null;
     if (isResumingTask && window._chatDetachRequestedFor === turnSessionId) {
         window._chatDetachRequestedFor = null;
@@ -1117,6 +1202,8 @@ async function sendChat(prefill, options) {
         return;
     }
 
+    window._activeChatTaskSessionId = turnSessionId;
+    _setCaseTaskState(turnSessionId, 'connecting', turnTaskId || undefined);
     window._chatStreaming = false;
 
     // BUG FIX 2026-06-16: previously the dock accumulated one
@@ -1126,13 +1213,7 @@ async function sendChat(prefill, options) {
     // stacked. Now we wipe the dock at the START of every turn so
     // only the active turn's todo is visible (the previous turn's
     // chain + steps remain in the chat history as text).
-    try {
-        const _dock = document.getElementById('chatTodoDock');
-        if (_dock) {
-            _dock.innerHTML = '';
-            _dock.style.display = 'none';
-        }
-    } catch (_) {}
+    try { window.clearCaseScopedProgressPresentation?.(); } catch (_) {}
 
     let thinkingEl = null;
     let chainEl = null, stepsDiv = null, headerEl = null;
@@ -1148,12 +1229,14 @@ async function sendChat(prefill, options) {
     let finalResponseReceived = false;
     let finalTextStreamStarted = false;
     let turnCompleted = false;
+    let turnFailed = false;
     let progressEl = null;
     let lastToolName = '';
     const steps = [];
     const screenshotTasks = [];
     const screenshotResults = [];
     const screenshotTaskKeys = new Set();
+    const uiActionTasks = [];
     // Group screenshots emitted during one assistant turn into one gallery.
     const screenshotGallery = {};
     const uiState = (typeof collectUIState === 'function') ? collectUIState() : {};
@@ -1177,6 +1260,7 @@ async function sendChat(prefill, options) {
     window._chatTurnCancelUi = cancelTurnUi;
     window._chatTurnActive = true;
     let turnAbortController = null;
+    let reconnectNeeded = false;
 
     try {
         chatAbortController = (typeof AbortController !== 'undefined') ? new AbortController() : null;
@@ -1194,12 +1278,18 @@ async function sendChat(prefill, options) {
                 resp = await fetch(
                     API + '/chat/tasks/' + encodeURIComponent(opts.resumeTaskId)
                     + '/stream?after_seq=' + encodeURIComponent(String(afterSeq)),
-                    { signal: turnAbortController ? turnAbortController.signal : undefined },
+                    {
+                        headers: { 'X-BrachyBot-Session': turnSessionId },
+                        signal: turnAbortController ? turnAbortController.signal : undefined,
+                    },
                 );
             } else {
                 resp = await fetch(API + '/chat', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-BrachyBot-Session': turnSessionId,
+                    },
                     body: JSON.stringify({ message: text, ui_state: uiState, stream: true, clear_context: false }),
                     signal: turnAbortController ? turnAbortController.signal : undefined,
                 });
@@ -1215,7 +1305,7 @@ async function sendChat(prefill, options) {
                 const errBody = await resp.json();
                 if (errBody && errBody.error) errText = 'Chat failed: ' + errBody.error;
             } catch (_) { /* non-JSON error body */ }
-            if (typeof addChat === 'function') addChat('error', errText);
+            if (typeof addChat === 'function') addChat('error', errText, true, Date.now(), false, turnSessionId);
             setStreamingState(false);
             return;
         }
@@ -1226,7 +1316,7 @@ async function sendChat(prefill, options) {
             if (thinkingEl && typeof removeThinkingIndicator === 'function') removeThinkingIndicator(thinkingEl);
             const data = await resp.json().catch(() => null);
             const reply = (data && (data.response || data.reply || data.message || data.content)) || '(no reply)';
-            if (typeof addChat === 'function') addChat('bot-response', reply);
+            if (typeof addChat === 'function') addChat('bot-response', reply, true, Date.now(), false, turnSessionId);
             setStreamingState(false);
             return;
         }
@@ -1235,7 +1325,7 @@ async function sendChat(prefill, options) {
         if (!resp.body || !resp.body.getReader) {
             if (thinkingEl && typeof removeThinkingIndicator === 'function') removeThinkingIndicator(thinkingEl);
             const txt = await resp.text();
-            if (typeof addChat === 'function') addChat('bot-response', txt);
+            if (typeof addChat === 'function') addChat('bot-response', txt, true, Date.now(), false, turnSessionId);
             setStreamingState(false);
             return;
         }
@@ -1260,6 +1350,14 @@ async function sendChat(prefill, options) {
             buffer = lines.pop() || '';
 
             for (const line of lines) {
+                // Detach is deliberately non-destructive.  Stop rendering an
+                // old case immediately if an already-buffered SSE chunk races
+                // with the selection change; the worker/event journal remains
+                // alive and the selected case can replay it later.
+                if (activeSessionId !== turnSessionId) {
+                    try { reader.cancel(); } catch (_) {}
+                    break readLoop;
+                }
                 if (line.startsWith('event: ')) {
                     currentEvent = line.slice(7).trim();
                 } else if (line.startsWith('data: ')) {
@@ -1270,8 +1368,13 @@ async function sendChat(prefill, options) {
 
                     if (currentEvent === 'task_meta' && data) {
                         if (data.task_id && data.session_id) {
+                            turnTaskId = String(data.task_id);
                             window._sessionChatTaskIds[data.session_id] = data.task_id;
-                            if (data.session_id === turnSessionId) window._activeChatTaskId = data.task_id;
+                            _setCaseTaskState(data.session_id, 'running', data.task_id);
+                            if (data.session_id === turnSessionId) {
+                                window._activeChatTaskId = data.task_id;
+                                window._activeChatTaskSessionId = turnSessionId;
+                            }
                         }
                         if (!text && data.message) text = String(data.message);
                     }
@@ -1311,7 +1414,7 @@ async function sendChat(prefill, options) {
                             const r = createLiveThinkingChain();
                             chainEl = r.chainEl; stepsDiv = r.stepsDiv; headerEl = r.headerEl;
                             window._brachyLiveTrace = {
-                                steps, chainEl, stepsDiv, headerEl,
+                                sessionId: turnSessionId, steps, chainEl, stepsDiv, headerEl,
                                 getTodo: () => todo,
                             };
                         }
@@ -1448,9 +1551,13 @@ async function sendChat(prefill, options) {
                                     if (Array.isArray(actions) && actions.length > 0) {
                                         uiDebugLog('[SSE-UI] Executing', actions.length, 'UI actions');
                                         if (typeof _executeUIActionsWithProgress === 'function') {
-                                            _executeUIActionsWithProgress(actions);
+                                            uiActionTasks.push(_executeUIActionsWithProgress(actions, {
+                                                sessionId: turnSessionId,
+                                            }));
                                         } else {
-                                            actions.forEach(a => _executeUIAction(a));
+                                            uiActionTasks.push(Promise.all(actions.map(a => _executeUIAction(a, {
+                                                sessionId: turnSessionId,
+                                            }))));
                                         }
                                     }
                                 } catch (e) { console.warn('[SSE-UI] Failed to parse ui_controller result:', e); }
@@ -1469,7 +1576,9 @@ async function sendChat(prefill, options) {
                                 uiDebugLog('[SSE-STEP] Intercepting ui_screenshot, target:', _ssTarget);
                                 try {
                                     screenshotTasks.push(Promise.resolve(
-                                        _interceptScreenshot(_ssTarget, _ssQuestion, screenshotGallery)
+                                        _interceptScreenshot(_ssTarget, _ssQuestion, screenshotGallery, {
+                                            sessionId: turnSessionId,
+                                        })
                                     ).then(result => {
                                         if (result && result.success && result.url) screenshotResults.push(result);
                                         return result;
@@ -1518,16 +1627,7 @@ async function sendChat(prefill, options) {
                             uiDebugLog('[SSE-STEP]', 'type:', data.type, 'tool:', data.tool, 'status:', data.status, 'in FINAL:', FINAL_PLANNING_TOOLS.includes(data.tool));
                             if (data.status === 'done' && data.tool && FINAL_PLANNING_TOOLS.includes(data.tool)) {
                                 uiDebugLog('[SSE-STEP] FINAL tool done:', data.tool, '- scheduling refreshPlanningUI');
-                                if (typeof refreshPlanningUI === 'function' && !window._planningRefreshScheduled) {
-                                    window._planningRefreshScheduled = true;
-                                    setTimeout(() => {
-                                        uiDebugLog('[SSE-STEP] Calling refreshPlanningUI now');
-                                        try { refreshPlanningUI(); } catch (e) { console.error('[SSE-STEP] refreshPlanningUI ERROR:', e); }
-                                        window._planningRefreshScheduled = false;
-                                    }, 250);
-                                } else {
-                                    uiDebugLog('[SSE-STEP] refreshPlanningUI NOT scheduled:', typeof refreshPlanningUI, '_scheduled:', window._planningRefreshScheduled);
-                                }
+                                _scheduleCasePlanningRefresh(turnSessionId, 250);
                             }
                             // SEGMENTATION TOOLS: after CTV/OAR seg completes,
                             // load label volumes so masks appear in viewer + data tree.
@@ -1537,6 +1637,7 @@ async function sendChat(prefill, options) {
                                 uiDebugLog('[SSE-STEP] Segmentation done:', data.tool, '- loading label volumes');
                                 if (typeof loadLabelVolumes === 'function') {
                                     loadLabelVolumes().then(() => {
+                                        if (String(activeSessionId || '') !== turnSessionId) return;
                                         if (typeof renderDataTree === 'function') renderDataTree();
                                         if (typeof startSegmentationMeshPrewarm === 'function') {
                                             startSegmentationMeshPrewarm(data.tool === 'ctv_segmentation' ? 'ctv' : 'oar');
@@ -1603,10 +1704,17 @@ async function sendChat(prefill, options) {
                             window._lastLLMMeta = data.llm_meta;
                         }
                     } else if (currentEvent === 'error' && data && data.message) {
-                        if (typeof addChat === 'function') addChat('error', 'AI error: ' + data.message);
+                        turnFailed = true;
+                        _setCaseTaskState(turnSessionId, 'failed', null);
+                        if (typeof addChat === 'function') {
+                            addChat('error', 'AI error: ' + data.message, true, Date.now(), false, turnSessionId);
+                        }
                     } else if (currentEvent === 'done') {
                         // Server says stream is complete
                         turnCompleted = true;
+                        const terminalStatus = data?.cancelled ? 'cancelled' : (turnFailed ? 'failed' : 'completed');
+                        _setCaseTaskState(turnSessionId, terminalStatus, null);
+                        delete window._detachedChatTasks[turnSessionId];
                         // BUG FIX 2026-06-17: stamp a plan-completion
                         // timestamp so autoCaptureReportFigures can
                         // detect and discard stale auto-captured
@@ -1624,13 +1732,9 @@ async function sendChat(prefill, options) {
                         const _planningToolsInSteps = steps.filter(s => s.type === 'tool' && s.status === 'done'
                             && ['planning_pipeline', 'dose_evaluation', 'seed_planning'].includes(s.tool));
                         uiDebugLog('[SSE-done] planning tools in steps:', _planningToolsInSteps.map(s => s.tool));
-                        if (_planningToolsInSteps.length > 0 && !window._planningRefreshScheduled) {
+                        if (_planningToolsInSteps.length > 0) {
                             uiDebugLog('[SSE-done] Triggering fallback refreshPlanningUI');
-                            window._planningRefreshScheduled = true;
-                            setTimeout(() => {
-                                try { refreshPlanningUI(); } catch (e) { console.error('[SSE-done] refreshPlanningUI ERROR:', e); }
-                                window._planningRefreshScheduled = false;
-                            }, 500);
+                            _scheduleCasePlanningRefresh(turnSessionId, 500);
                         }
                         // Do not wait for a post-terminal chunk.  Flask may
                         // keep the HTTP connection reusable, but the chat
@@ -1641,12 +1745,22 @@ async function sendChat(prefill, options) {
             }
         }
 
+        // A case selection detached this browser stream. Do not run terminal
+        // screenshot/final-response work against the newly visible case; the
+        // owning server task and its event journal remain available when the
+        // user returns to that case.
+        if (activeSessionId !== turnSessionId) return;
+
         // Keep screenshot capture/upload inside the same logical turn. This
         // guarantees that the hidden multimodal follow-up is queued before the
         // stream transitions to idle and starts flushing follow-up requests.
         if (screenshotTasks.length) {
             await Promise.allSettled(screenshotTasks);
         }
+        if (uiActionTasks.length) {
+            await Promise.allSettled(uiActionTasks);
+        }
+        if (String(activeSessionId || '') !== turnSessionId) return;
 
         // A screenshot requested for explanation is visual context, not the
         // final answer. Send exactly one hidden multimodal follow-up after all
@@ -1671,7 +1785,7 @@ async function sendChat(prefill, options) {
             if (typeof finalizeThinkingChain === 'function') {
                 finalizeThinkingChain(chainEl, headerEl, steps);
             }
-            try { saveSessionMessage('thinking', '', steps, Date.now()); } catch (_) {}
+            try { saveSessionMessage('thinking', '', steps, Date.now(), turnSessionId); } catch (_) {}
         }
 
         // SAFETY: fold the todo when the stream ends, even if the
@@ -1730,10 +1844,12 @@ async function sendChat(prefill, options) {
             responseEl = null;
         }
         if (!suppressScreenshotAck && responseEl && typeof finalizeStreamingResponse === 'function') {
-            finalizeStreamingResponse(responseEl, finalText);
+            finalizeStreamingResponse(responseEl, finalText, turnSessionId);
         } else if (!suppressScreenshotAck && !responseEl && !window._chatFallbackUsed) {
             window._chatFallbackUsed = true;
-            if (typeof addChat === 'function') addChat('bot-response', finalText);
+            if (typeof addChat === 'function') {
+                addChat('bot-response', finalText, true, Date.now(), false, turnSessionId);
+            }
         }
 
         // Append a usage-bar footer BELOW the response bubble so the
@@ -1755,18 +1871,40 @@ async function sendChat(prefill, options) {
             } catch (_) { /* footer is best-effort */ }
         }
     } catch (e) {
-        if (typeof addChat === 'function') {
-            // Don't show error for user-initiated abort (clicking stop button)
-            if (e.name === 'AbortError' || /abort/i.test(e.message)) {
-                const detached = window._chatDetachRequestedFor === turnSessionId;
-                if (detached) return;
-                cancelTurnUi('Stopped');
-                addChat('system', '⏹ Stopped.');
-            } else {
-                addChat('error', 'Send failed: ' + e.message);
+        const detached = window._chatDetachRequestedFor === turnSessionId
+            || String(activeSessionId || '') !== turnSessionId;
+        if (detached) return;
+
+        const taskStatus = window._sessionChatTaskStatuses?.[turnSessionId];
+        const explicitlyStopped = !!window._explicitChatStopSessions?.[turnSessionId]
+            || taskStatus === 'cancelled';
+        const interruptedStream = e?.name === 'AbortError'
+            || /abort|timed out|network|fetch/i.test(String(e?.message || ''));
+
+        if (explicitlyStopped) {
+            cancelTurnUi('Stopped');
+            _setCaseTaskState(turnSessionId, 'cancelled', null);
+            if (typeof addChat === 'function') {
+                addChat('system', 'Stopped.', true, Date.now(), false, turnSessionId);
+            }
+        } else if (interruptedStream && turnTaskId && !turnCompleted && !turnFailed) {
+            // A browser stream interruption is not a task cancellation. The
+            // server continues the case-scoped task and journals its events,
+            // so reconnect from that journal instead of showing a false stop.
+            reconnectNeeded = true;
+            window._detachedChatTasks[turnSessionId] = turnTaskId;
+            _setCaseTaskState(turnSessionId, 'running', turnTaskId);
+            if (typeof addChat === 'function') {
+                addChat('system', 'Connection interrupted; restoring live progress...', true, Date.now(), false, turnSessionId);
             }
         } else {
-            console.error('sendChat failed and addChat missing:', e);
+            turnFailed = true;
+            _setCaseTaskState(turnSessionId, 'failed', null);
+            if (typeof addChat === 'function') {
+                addChat('error', 'Send failed: ' + (e?.message || e), true, Date.now(), false, turnSessionId);
+            } else {
+                console.error('sendChat failed and addChat missing:', e);
+            }
         }
     } finally {
         const isCurrentTurn = window._chatTurnCancelUi === cancelTurnUi;
@@ -1775,6 +1913,11 @@ async function sendChat(prefill, options) {
             window._chatTurnCancelUi = null;
         }
         if (chatAbortController === turnAbortController) chatAbortController = null;
+        if (window._activeChatTaskSessionId === turnSessionId
+            && (turnCompleted || turnFailed || !reconnectNeeded)) {
+            window._activeChatTaskId = null;
+            window._activeChatTaskSessionId = null;
+        }
         if (isCurrentTurn) {
             window._chatStreaming = false;
             setStreamingState(false);
@@ -1783,16 +1926,32 @@ async function sendChat(prefill, options) {
                 setTimeout(() => { try { _flushQueuedChatTurns(); } catch (_) {} }, 0);
             }
         }
+        if (reconnectNeeded && activeSessionId === turnSessionId) {
+            setTimeout(() => {
+                try { window.resumeSessionChatTask?.(); } catch (_) {}
+            }, 350);
+        }
     }
 }
 
 window.resumeSessionChatTask = async function resumeSessionChatTask() {
     const sessionId = activeSessionId;
     if (!sessionId || window._chatTurnActive || window._chatStreaming) return false;
+    window._sessionChatResumePromises = window._sessionChatResumePromises || {};
+    if (window._sessionChatResumePromises[sessionId]) {
+        return window._sessionChatResumePromises[sessionId];
+    }
+    const resume = (async () => {
     try {
-        const response = await fetch(API + '/chat/task', { cache: 'no-store' });
+        const response = await fetch(API + '/chat/task', {
+            cache: 'no-store',
+            headers: { 'X-BrachyBot-Session': sessionId },
+        });
         if (!response.ok) return false;
         const payload = await response.json();
+        // A newer switch can happen while the task status request is in
+        // flight. Do not attach this replay to another case's chat shell.
+        if (activeSessionId !== sessionId) return false;
         const task = payload?.task;
         // The server owns task identity. Browser memory and a workspace
         // checkpoint are only hints because either can be stale after a
@@ -1801,6 +1960,21 @@ window.resumeSessionChatTask = async function resumeSessionChatTask() {
             delete window._detachedChatTasks[sessionId];
             delete window._sessionChatTaskIds[sessionId];
             if (window._sessionChatTaskStatuses) window._sessionChatTaskStatuses[sessionId] = task?.status || 'idle';
+            if (window._activeChatTaskSessionId === sessionId) {
+                window._activeChatTaskId = null;
+                window._activeChatTaskSessionId = null;
+                window._chatTurnActive = false;
+                window._chatStreaming = false;
+                setStreamingState(false);
+            }
+            if (task?.status === 'completed'
+                && typeof window.refreshSessionAfterTaskCompletion === 'function') {
+                try {
+                    await window.refreshSessionAfterTaskCompletion(sessionId);
+                } catch (error) {
+                    console.warn('[chat] completed case refresh deferred:', error);
+                }
+            }
             if (typeof window.flushQueuedChatTurns === 'function') {
                 setTimeout(() => window.flushQueuedChatTurns(), 0);
             }
@@ -1811,6 +1985,10 @@ window.resumeSessionChatTask = async function resumeSessionChatTask() {
         window._sessionChatTaskStatuses = window._sessionChatTaskStatuses || {};
         window._sessionChatTaskStatuses[sessionId] = 'running';
         delete window._detachedChatTasks[sessionId];
+        // Two snapshot applications can race on a cold restore. Re-check
+        // after the status request so the second one cannot enter sendChat()
+        // and accidentally stop the first replay stream.
+        if (window._chatTurnActive || window._chatStreaming || activeSessionId !== sessionId) return false;
         await sendChat(null, {
             resumeTaskId: taskId,
             resumeMessage: task.message || '',
@@ -1821,7 +1999,12 @@ window.resumeSessionChatTask = async function resumeSessionChatTask() {
     } catch (error) {
         console.warn('[chat] task resume deferred:', error);
         return false;
+    } finally {
+        delete window._sessionChatResumePromises[sessionId];
     }
+    })();
+    window._sessionChatResumePromises[sessionId] = resume;
+    return resume;
 };
 
 /******** STATE ********/

@@ -112,6 +112,13 @@
   answers therefore remain restorable after a browser or server reconnect.
 - File-upload progress is anchored to the active CT, CTV, or OAR input row,
   making long mask uploads visibly attributable to the correct control.
+- **Patient-specific puncture guide** generation is available from the Input
+  panel. The case-owned controls expose skin offset, plate thickness, guide
+  hole diameter, sleeve outer diameter/length, selected needle channels, and
+  local geometry resolution. Guides are versioned, marked stale after planning
+  geometry changes, validated as watertight before export, and can be checked
+  again from an imported STL without replacing patient data. See
+  [Patient-Specific Puncture Guide](docs/PATIENT_SPECIFIC_PUNCTURE_GUIDE.md).
 
 ---
 
@@ -133,6 +140,7 @@
 - [Configuration](#-configuration)
 - [Web Interface](#-web-interface)
 - [Account-Owned Case Workspaces](#-account-owned-case-workspaces)
+- [Patient-Specific Puncture Guide](docs/PATIENT_SPECIFIC_PUNCTURE_GUIDE.md)
 - [Agent Runtime Contracts](#agent-runtime-contracts)
 - [Code Quality](#-code-quality)
 - [Testing](#-testing)

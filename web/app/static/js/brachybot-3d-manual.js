@@ -330,7 +330,7 @@ function _setManualDoseProgress(stateName, text) {
     row.classList.toggle('is-error', stateName === 'error');
     container.scrollTop = container.scrollHeight;
     if (stateName === 'done' || stateName === 'error') {
-        setTimeout(() => {
+        row._dismissTimer = setTimeout(() => {
             if (row._progressTimer) clearInterval(row._progressTimer);
             row._progressTimer = null;
             if (row && row.parentNode) row.parentNode.removeChild(row);
@@ -338,8 +338,20 @@ function _setManualDoseProgress(stateName, text) {
     }
 }
 
+window.clearManualDoseProgressPresentation = function clearManualDoseProgressPresentation() {
+    // A manual replan may continue on the server after the browser switches
+    // cases. Remove only this case-scoped row and timer; never cancel the
+    // associated clinical request from a presentation transition.
+    const row = document.getElementById('manualDoseProgress');
+    if (!row) return;
+    if (row._progressTimer) clearInterval(row._progressTimer);
+    if (row._dismissTimer) clearTimeout(row._dismissTimer);
+    row.remove();
+};
+
 async function _runManualDoseJob(job) {
     const { payload, wasDoseTextureEnabled } = job;
+    const jobSessionId = String(payload.session_id || '');
     const requestSequence = ++manualPlanningState.doseRecomputeSequence;
     _setManualDoseProgress(
         'running',
@@ -362,6 +374,10 @@ async function _runManualDoseJob(job) {
             error.code = data && data.code;
             throw error;
         }
+        // This request belongs to the case selected when the drag happened.
+        // It may resolve after the user has selected another case; preserve
+        // its server result but never repaint the newly selected workspace.
+        if (jobSessionId !== String(_activeApiSessionId() || '')) return data;
         // If another drag arrived while this request was running, keep the
         // response for diagnostics but do not repaint the UI with stale seeds,
         // dose, or DVH. The queued latest request owns the next repaint.
@@ -388,6 +404,7 @@ async function _runManualDoseJob(job) {
         }
         return data;
     } catch (e) {
+        if (jobSessionId !== String(_activeApiSessionId() || '')) return null;
         if (e && e.code === 'manual_needle_intersects_obstacle' && payload.reproject_seeds) {
             // The server validates the same world-coordinate segment used for
             // DoseUNet. Restore the last accepted geometry instead of leaving
@@ -1695,10 +1712,19 @@ async function toggle3DSkin(on) {
         return;
     }
     // Fetch CT skin mesh from server
+    const requestScope = _capturePlanningSceneScope();
     try {
-        const res = await fetch(API + '/viewer/3d_skin', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+        const res = await fetch(API + '/viewer/3d_skin', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-BrachyBot-Session': requestScope.sessionId,
+            },
+            body: '{}',
+        });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
+        if (!_planningSceneScopeIsCurrent(requestScope)) return { stale: true };
         if (data.success) {
             init3DScene();
             const geometry = new THREE.BufferGeometry();
@@ -1717,7 +1743,7 @@ async function toggle3DSkin(on) {
             // Fit removed — camera only resets on explicit button click
         }
     } catch (e) {
-        console.error('CT skin failed:', e);
+        if (_planningSceneScopeIsCurrent(requestScope)) console.error('CT skin failed:', e);
     }
 }
 
@@ -1731,12 +1757,46 @@ function _normalizeTrajectoryId(tid) {
     return s;
 }
 
+let _planningSceneLoadGeneration = 0;
+
+function _activePlanningSceneSessionId() {
+    if (typeof activeSessionId !== 'undefined' && activeSessionId) return String(activeSessionId);
+    return String(state?.sessionId || '');
+}
+
+function _capturePlanningSceneScope() {
+    return {
+        generation: _planningSceneLoadGeneration,
+        sessionId: _activePlanningSceneSessionId(),
+    };
+}
+
+function _planningSceneScopeIsCurrent(scope) {
+    return !!scope
+        && scope.generation === _planningSceneLoadGeneration
+        && scope.sessionId === _activePlanningSceneSessionId();
+}
+
+function invalidatePlanningSceneLoads() {
+    // Fetch cannot always be cancelled after the server has started building
+    // geometry. A generation token makes every late response harmless.
+    _planningSceneLoadGeneration += 1;
+    return _planningSceneLoadGeneration;
+}
+window.invalidatePlanningSceneLoads = invalidatePlanningSceneLoads;
+
 async function loadSeeds3D() {
+    const requestScope = _capturePlanningSceneScope();
     try {
-        const res = await fetch(API + '/planning/seeds_3d');
+        const res = await fetch(API + '/planning/seeds_3d', {
+            headers: { 'X-BrachyBot-Session': requestScope.sessionId },
+        });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
         if (!data.success) throw new Error(data.error || 'Failed to load seeds');
+        if (!_planningSceneScopeIsCurrent(requestScope)) {
+            return { stale: true, seeds: 0, needles: 0 };
+        }
 
         // Store seed/needle data in state for 2D overlay rendering
         state.seedsOverlay = {
@@ -1947,22 +2007,27 @@ async function loadSeeds3D() {
 
         return { seeds: data.seeds.length, needles: data.needles.length };
     } catch (e) {
-        console.error('Load seeds 3D failed:', e);
+        if (_planningSceneScopeIsCurrent(requestScope)) console.error('Load seeds 3D failed:', e);
         return { error: e.message };
     }
 }
 
-async function loadDoseIsosurface(threshold = 1.0, color = 0x00ff88) {
+async function loadDoseIsosurface(threshold = 1.0, color = 0x00ff88, requestScope = null) {
+    const scope = requestScope || _capturePlanningSceneScope();
     try {
         const res = await fetch(API + '/planning/dose_isosurface', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+                'Content-Type': 'application/json',
+                'X-BrachyBot-Session': scope.sessionId,
+            },
             body: JSON.stringify({ threshold }),
         });
         if (!res.ok) { console.warn(`[loadDoseIsosurface] ${threshold} Gy: HTTP ${res.status}`); return; }
         const data = await res.json();
         if (!data.success) { console.warn(`[loadDoseIsosurface] ${threshold} Gy: ${data.error}`); return; }
         if (!data.vertex_count || data.vertex_count === 0) { uiDebugLog(`[loadDoseIsosurface] ${threshold} Gy: 0 vertices, skipping`); return; }
+        if (!_planningSceneScopeIsCurrent(scope)) return { stale: true };
 
         init3DScene();
 
@@ -2031,7 +2096,7 @@ async function loadDoseIsosurface(threshold = 1.0, color = 0x00ff88) {
 
         return { vertices: data.vertex_count, faces: data.face_count, threshold };
     } catch (e) {
-        console.error('Dose isosurface failed:', e);
+        if (_planningSceneScopeIsCurrent(scope)) console.error('Dose isosurface failed:', e);
         return { error: e.message };
     }
 }
@@ -2041,6 +2106,7 @@ async function loadDoseIsosurface(threshold = 1.0, color = 0x00ff88) {
 // absolute Gy thresholds (e.g. [50, 100, 145, 200, 300] Gy).
 // These are the actual dose levels the user sees in the 3D viewer.
 async function loadAllIsoSurfaces(options = {}) {
+    const requestScope = _capturePlanningSceneScope();
     // Dose iso metadata and 2D contours are useful without creating
     // expensive 3D meshes. Reconstruction is therefore opt-in.
     const reconstruct3d = options.reconstruct3d !== false;
@@ -2048,9 +2114,12 @@ async function loadAllIsoSurfaces(options = {}) {
     let display3d = window._display3dConfig;
     if (!display3d) {
         try {
-            const r = await fetch(API + '/planning/config');
+            const r = await fetch(API + '/planning/config', {
+                headers: { 'X-BrachyBot-Session': requestScope.sessionId },
+            });
             if (r.ok) {
                 const data = await r.json();
+                if (!_planningSceneScopeIsCurrent(requestScope)) return { stale: true };
                 display3d = data.display_3d || {};
                 window._display3dConfig = display3d;
             }
@@ -2059,6 +2128,7 @@ async function loadAllIsoSurfaces(options = {}) {
         }
     }
     display3d = display3d || {};
+    if (!_planningSceneScopeIsCurrent(requestScope)) return { stale: true };
 
     // iso_dose_values are RELATIVE multipliers (e.g. [1.0, 1.5, 2.0, 4.0]).
     // Multiply by prescription dose to get Gy thresholds.
@@ -2100,7 +2170,8 @@ async function loadAllIsoSurfaces(options = {}) {
         try {
             if (reconstruct3d) {
                 uiDebugLog(`[IsoSurf] Loading ${v} Gy (color=${hexStr}, opacity=${opacity})...`);
-                await loadDoseIsosurface(v, color);
+                await loadDoseIsosurface(v, color, requestScope);
+                if (!_planningSceneScopeIsCurrent(requestScope)) return { stale: true };
                 uiDebugLog(`[IsoSurf] ${v} Gy: mesh=${scene3D.meshes['dose_iso_'+v] ? 'loaded' : 'FAILED'}`);
                 // Override the just-added mesh's opacity with the per-level
                 // config value (loadDoseIsosurface uses a hard-coded 0.3).
@@ -2133,7 +2204,9 @@ async function loadAllIsoSurfaces(options = {}) {
             console.warn(`loadAllIsoSurfaces: level ${v}× failed:`, e);
         }
     }
+    if (!_planningSceneScopeIsCurrent(requestScope)) return { stale: true };
     try { renderDataTree(); } catch (_) {}
+    return { stale: false, levels: relValues.length };
 }
 
 async function reconstructDoseIsosurface3D(idOrThreshold) {
@@ -2266,7 +2339,10 @@ async function _fetchAndAddOrganMesh({ labelId, source, organId, label, color, o
         try {
             const res = await fetch(API + '/viewer/3d_mask', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-BrachyBot-Session': String(sessionId || _activePlanningSceneSessionId()),
+                },
                 body: JSON.stringify({ label_id: labelId, source, smoothing }),
             });
             if (!res.ok) return { status: 'http', code: res.status, id: organId };
@@ -2288,7 +2364,10 @@ async function _fetchAndAddOrganMesh({ labelId, source, organId, label, color, o
             addMeshToScene(data);
             return { status: data.cached ? 'cached' : 'loaded', id: organId };
         } catch (e) {
-            console.warn(`[3D mesh] ${organId} failed:`, e);
+            if (generation === _segmentationMeshPrewarm.generation
+                && (sessionId == null || sessionId === state.sessionId)) {
+                console.warn(`[3D mesh] ${organId} failed:`, e);
+            }
             return { status: 'error', id: organId, error: e };
         } finally {
             _segmentationMeshPrewarm.tasks.delete(key);
@@ -2392,6 +2471,15 @@ async function loadCTVAndObstacleMeshes() {
 let _doseOverlayData = null;
 let _doseOverlayVisible = false;
 let _doseOverlayOpacity = 0.5;
+// The initial overlay metadata request is separate from slice requests. Keep
+// its own generation so a late response from an old case cannot overwrite the
+// dose state of the newly selected workspace.
+let _doseOverlayLoadGeneration = 0;
+
+function _doseOverlaySessionId() {
+    if (typeof activeSessionId !== 'undefined' && activeSessionId) return String(activeSessionId);
+    return String(state?.sessionId || '');
+}
 
 /**
  * Drop all case-owned dose overlay state before a workspace transition.
@@ -2400,6 +2488,7 @@ let _doseOverlayOpacity = 0.5;
  * slice into the newly selected case.
  */
 function clearDoseOverlayRuntime() {
+    _doseOverlayLoadGeneration += 1;
     _doseOverlayRequestVersion += 1;
     _doseOverlayAbortControllers.forEach(controller => {
         try { controller.abort(); } catch (_) {}
@@ -2407,6 +2496,11 @@ function clearDoseOverlayRuntime() {
     _doseOverlayAbortControllers.clear();
     _doseOverlayInflight.clear();
     _doseOverlayLoadPromise = null;
+    Object.keys(_doseContourCache).forEach(key => delete _doseContourCache[key]);
+    if (_doseContourPreloadTimer.v) {
+        clearTimeout(_doseContourPreloadTimer.v);
+        _doseContourPreloadTimer.v = null;
+    }
     if (_dosePreloadTimer) {
         clearTimeout(_dosePreloadTimer);
         _dosePreloadTimer = null;
@@ -2864,11 +2958,22 @@ async function loadDoseOverlay() {
 }
 
 async function _loadDoseOverlayImpl() {
+    const requestGeneration = _doseOverlayLoadGeneration;
+    const requestSessionId = _doseOverlaySessionId();
     try {
-        const res = await fetch(API + '/planning/dose_overlay');
+        const res = await fetch(API + '/planning/dose_overlay', {
+            headers: { 'X-BrachyBot-Session': requestSessionId },
+        });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
         if (!data.success) throw new Error(data.error || 'Failed to load dose overlay');
+        // A workspace transition intentionally does not cancel its server
+        // task, but it must discard render payloads that belong to the old
+        // case before mutating shared viewer state.
+        if (requestGeneration !== _doseOverlayLoadGeneration
+            || requestSessionId !== _doseOverlaySessionId()) {
+            return { stale: true };
+        }
 
         // Store metadata; slices will be fetched on demand
         // doseMin / doseMax are in NORMALIZED units (CNN output). They are
@@ -2941,9 +3046,13 @@ let _doseOverlayLoadPromise = null;
 
 async function fetchDoseOverlaySlice(axis, sliceIndex) {
     if (!state.doseOverlay) { uiDebugLog('[dose] fetch skipped: no doseOverlay state'); return null; }
+    const ownerSessionId = _doseOverlaySessionId();
+    const ownerGeneration = _doseOverlayLoadGeneration;
+    const ownerOverlay = state.doseOverlay;
     const cacheKey = `${axis}_${sliceIndex}`;
-    if (state.doseOverlay.slices[cacheKey]) return state.doseOverlay.slices[cacheKey];
-    if (_doseOverlayInflight.has(cacheKey)) return _doseOverlayInflight.get(cacheKey);
+    const inflightKey = `${ownerSessionId}:${cacheKey}`;
+    if (ownerOverlay.slices[cacheKey]) return ownerOverlay.slices[cacheKey];
+    if (_doseOverlayInflight.has(inflightKey)) return _doseOverlayInflight.get(inflightKey);
 
     const myVersion = ++_doseOverlayRequestVersion;
     const existingCtrl = _doseOverlayAbortControllers.get(axis);
@@ -2960,7 +3069,10 @@ async function fetchDoseOverlaySlice(axis, sliceIndex) {
             : sliceIndex;
         const res = await fetch(API + '/planning/dose_overlay_slice', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+                'Content-Type': 'application/json',
+                'X-BrachyBot-Session': ownerSessionId,
+            },
             body: JSON.stringify({ axis, slice_index: requestSliceIndex }),
             signal: controller.signal,
         });
@@ -2968,13 +3080,18 @@ async function fetchDoseOverlaySlice(axis, sliceIndex) {
         if (!res.ok) { uiDebugLog(`[dose] fetch HTTP ${res.status} for ${cacheKey}`); return null; }
         const data = await res.json();
         if (!data.success) { uiDebugLog(`[dose] fetch failed: ${data.error} for ${cacheKey}`); return null; }
+        if (ownerGeneration !== _doseOverlayLoadGeneration
+            || ownerSessionId !== _doseOverlaySessionId()
+            || ownerOverlay !== state.doseOverlay) {
+            return null;
+        }
         // If a newer request was issued while this one was in flight,
         // cache the data but don't render (stale slice).
         if (myVersion !== _doseOverlayRequestVersion) {
-            state.doseOverlay.slices[cacheKey] = data.slice;
+            ownerOverlay.slices[cacheKey] = data.slice;
             return data.slice;
         }
-        state.doseOverlay.slices[cacheKey] = data.slice;
+        ownerOverlay.slices[cacheKey] = data.slice;
         return data.slice;
     } catch (e) {
         if (e && e.name === 'AbortError') return null;
@@ -2983,10 +3100,12 @@ async function fetchDoseOverlaySlice(axis, sliceIndex) {
         if (_doseOverlayAbortControllers.get(axis) === controller) {
             _doseOverlayAbortControllers.delete(axis);
         }
-        _doseOverlayInflight.delete(cacheKey);
+        if (_doseOverlayInflight.get(inflightKey) === request) {
+            _doseOverlayInflight.delete(inflightKey);
+        }
       }
     })();
-    _doseOverlayInflight.set(cacheKey, request);
+    _doseOverlayInflight.set(inflightKey, request);
     return request;
 }
 
@@ -3110,6 +3229,9 @@ function setDoseOverlayOpacity(val) {
 const _doseContourCache = {};
 
 async function fetchDoseContourSlice(axis, sliceIndex) {
+    const ownerSessionId = _doseOverlaySessionId();
+    const ownerGeneration = _doseOverlayLoadGeneration;
+    const ownerOverlay = state.doseOverlay;
     const cacheKey = `${axis}_${sliceIndex}`;
     if (_doseContourCache[cacheKey]) return _doseContourCache[cacheKey];
 
@@ -3120,12 +3242,20 @@ async function fetchDoseContourSlice(axis, sliceIndex) {
             : sliceIndex;
         const res = await fetch(API + '/planning/dose_contour_slice', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+                'Content-Type': 'application/json',
+                'X-BrachyBot-Session': ownerSessionId,
+            },
             body: JSON.stringify({ axis, slice_index: requestSliceIndex }),
         });
         if (!res.ok) return null;
         const data = await res.json();
         if (!data.success) return null;
+        if (ownerGeneration !== _doseOverlayLoadGeneration
+            || ownerSessionId !== _doseOverlaySessionId()
+            || ownerOverlay !== state.doseOverlay) {
+            return null;
+        }
         _doseContourCache[cacheKey] = data;
         return data;
     } catch (e) {
@@ -3247,6 +3377,9 @@ function renderDoseContourOnCanvas(canvas, axis, sliceIndex) {
 // Trigger contour rendering when dose overlay is visible
 function triggerDoseContourRender(axis, sliceIndex) {
     if (!state.doseOverlay || !state.doseOverlay.visible) return;
+    const ownerSessionId = _doseOverlaySessionId();
+    const ownerGeneration = _doseOverlayLoadGeneration;
+    const ownerOverlay = state.doseOverlay;
 
     // Create or get the contour canvas up-front (synchronously) so
     // it exists from the first render, even before the async fetch
@@ -3291,6 +3424,10 @@ function triggerDoseContourRender(axis, sliceIndex) {
     //    same slice when the response returns; otherwise stale contour
     //    lines from a previous slice would remain visible.
     fetchDoseContourSlice(axis, sliceIndex).then(data => {
+        if (!data
+            || ownerGeneration !== _doseOverlayLoadGeneration
+            || ownerSessionId !== _doseOverlaySessionId()
+            || ownerOverlay !== state.doseOverlay) return;
         // Make sure we're still on the same slice the user requested
         // (the slider may have moved while the fetch was in flight).
         if (state.slices[axis] !== sliceIndex) return;
@@ -3356,6 +3493,11 @@ function removeSeed3D(seedId) {
 }
 
 function clearPlanningVisualization() {
+    if (typeof window.invalidateSurgicalGuidePresentation === 'function') {
+        // Regenerated needle geometry invalidates the sleeve axes of an old
+        // guide. It must disappear rather than look clinically current.
+        window.invalidateSurgicalGuidePresentation();
+    }
     // Clear 3D meshes
     Object.keys(scene3D.meshes).forEach(id => {
         if (id.startsWith('seed_') || id.startsWith('needle_') || id.startsWith('dose_iso_')) {
@@ -3496,18 +3638,20 @@ function setNeedleOpacityFrom3D(needleId, opacity) {
 }
 
 async function restoreNeedleToAlgorithm(needleId) {
+    const restoreSessionId = String(_activeApiSessionId() || '');
     _setManualDoseProgress('running', `Restoring ${needleId} to the algorithm plan...`);
     addChat('system', `Restoring ${needleId} and its seeds to the algorithm plan...`);
     try {
         const res = await fetch(API + '/manual_planning/restore_needle', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ session_id: _activeApiSessionId(), needle_id: needleId }),
+            body: JSON.stringify({ session_id: restoreSessionId, needle_id: needleId }),
         });
         const data = await res.json().catch(() => null);
         if (!res.ok || !data || !data.success) {
             throw new Error((data && data.error) || `HTTP ${res.status}`);
         }
+        if (restoreSessionId !== String(_activeApiSessionId() || '')) return data;
         await loadSeeds3D();
         if (typeof refreshPlanningUI === 'function') await refreshPlanningUI();
         if (typeof loadAllSlices === 'function' && state.ctLoaded) await loadAllSlices();
@@ -3519,6 +3663,7 @@ async function restoreNeedleToAlgorithm(needleId) {
         reportUIEvent('manual.needle.restore', needleId, {});
         return data;
     } catch (error) {
+        if (restoreSessionId !== String(_activeApiSessionId() || '')) return null;
         _setManualDoseProgress('error', `Needle restore failed: ${error.message}`);
         addChat('error', `Needle restore failed: ${error.message}`);
         return null;

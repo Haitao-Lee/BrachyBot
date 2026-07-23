@@ -48,7 +48,7 @@ global.fetch = async (url, options = {{}}) => {{
       success: true,
       session: {{ id: 'new', title: 'New case', created_at: 2, updated_at: 2 }},
       active_session_id: 'new',
-      workspace: {{ session: {{ revision: 1 }} }},
+      workspace: {{ session_id: 'new', session: {{ id: 'new', revision: 1 }} }},
     }}) }};
   }}
   if (url === '/api/sessions') {{
@@ -61,7 +61,7 @@ global.fetch = async (url, options = {{}}) => {{
     }}) }};
   }}
   if (url === '/api/workspace/snapshot') {{
-    return {{ ok: true, json: async () => ({{ workspace: {{ session: {{ revision: 1 }} }} }}) }};
+    return {{ ok: true, json: async () => ({{ workspace: {{ session_id: 'new', session: {{ id: 'new', revision: 1 }} }} }}) }};
   }}
   throw new Error('Unexpected request: ' + url);
 }};
@@ -116,6 +116,11 @@ global.document = {{
   querySelectorAll() {{ return []; }},
 }};
 global.state = {{ slices: {{}}, viewerSettings: {{}}, doseTexture: {{ enabled: false }} }};
+global.sessions = {{
+  a: {{ id: 'a', title: 'Case A', messages: [] }},
+  b: {{ id: 'b', title: 'Case B', messages: [] }},
+}};
+global.activeSessionId = 'a';
 global.scene3D = {{
   camera: {{
     position: {{ values: [0, 0, 0], fromArray(value) {{ this.values = value.slice(); }} }},
@@ -131,10 +136,72 @@ global.renderDataTree = () => {{}};
 
 vm.runInThisContext(fs.readFileSync('{bridge}', 'utf8'), {{ filename: 'brachybot-workspace.js' }});
 (async () => {{
-  await window.applyWorkspaceSnapshot({{ ui: {{ state: {{ viewer: {{ scene: {{ camera_position: [1, 1, 1] }} }} }} }} }});
-  await window.applyWorkspaceSnapshot({{ ui: {{ state: {{ viewer: {{ scene: {{ camera_position: [9, 8, 7] }} }} }} }} }});
+  await window.applyWorkspaceSnapshot({{
+    session_id: 'a',
+    session: {{ id: 'a', revision: 1 }},
+    ui: {{ state: {{ viewer: {{ scene: {{ camera_position: [1, 1, 1] }} }} }} }},
+  }});
+  global.activeSessionId = 'b';
+  await window.applyWorkspaceSnapshot({{
+    session_id: 'b',
+    session: {{ id: 'b', revision: 1 }},
+    ui: {{ state: {{ viewer: {{ scene: {{ camera_position: [9, 8, 7] }} }} }} }},
+  }});
   await new Promise(resolve => nativeSetTimeout(resolve, 30));
   assert.deepStrictEqual(scene3D.camera.position.values, [9, 8, 7]);
+  process.exit(0);
+}})().catch(error => {{ console.error(error); process.exit(1); }});
+"""
+    completed = subprocess.run(
+        ["node", "-e", script],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert completed.returncode == 0, completed.stderr or completed.stdout
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="Node.js is required for browser bridge runtime coverage")
+def test_delayed_workspace_save_remains_bound_to_origin_case():
+    """A save started in case A must not become a save for case B."""
+
+    bridge = (ROOT / "web/app/static/js/brachybot-workspace.js").as_posix()
+    script = rf"""
+const assert = require('assert');
+const fs = require('fs');
+const vm = require('vm');
+
+let releaseSave;
+const saveGate = new Promise(resolve => {{ releaseSave = resolve; }});
+let captured = null;
+global.window = {{ brachybotAuth: {{ user: {{ id: 'u1' }} }} }};
+global.document = {{
+  body: {{ classList: {{ toggle() {{}}, add() {{}}, remove() {{}} }} }},
+  getElementById() {{ return null; }},
+  querySelectorAll() {{ return []; }},
+}};
+global.sessions = {{
+  a: {{ id: 'a', title: 'Case A', messages: [] }},
+  b: {{ id: 'b', title: 'Case B', messages: [] }},
+}};
+global.activeSessionId = 'a';
+global.fetch = async (url, options = {{}}) => {{
+  if (url !== '/api/workspace/state') throw new Error('Unexpected request: ' + url);
+  captured = {{ options, body: JSON.parse(options.body) }};
+  await saveGate;
+  return {{ ok: true, status: 200, json: async () => ({{ success: true, revision: 2 }}) }};
+}};
+
+vm.runInThisContext(fs.readFileSync('{bridge}', 'utf8'), {{ filename: 'brachybot-workspace.js' }});
+(async () => {{
+  const pending = window.persistWorkspace('runtime.test');
+  global.activeSessionId = 'b';
+  releaseSave();
+  await pending;
+  assert(captured, 'workspace save was not issued');
+  assert.strictEqual(captured.options.headers['X-BrachyBot-Session'], 'a');
+  assert.strictEqual(captured.body.session_id, 'a');
   process.exit(0);
 }})().catch(error => {{ console.error(error); process.exit(1); }});
 """

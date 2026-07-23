@@ -98,7 +98,15 @@ function applyReportTemplate(templateKey) {
 }
 
 // ----- 12. Auto-fill from NIfTI + planning data -----
-async function reportAutoFill() {
+function _activeReportSessionId() {
+    if (typeof activeSessionId !== 'undefined' && activeSessionId) return String(activeSessionId);
+    return String(window.state?.sessionId || '');
+}
+
+async function reportAutoFill(options = {}) {
+    const expectedSessionId = String(options.sessionId || _activeReportSessionId());
+    const isCurrentCase = () => !expectedSessionId || expectedSessionId === _activeReportSessionId();
+    if (!isCurrentCase()) return { stale: true };
     if (!window.reportForm) {
         console.warn('[reportAutoFill] window.reportForm not initialized, skipping');
         return;
@@ -172,11 +180,14 @@ async function reportAutoFill() {
     }
     if (!f.editedFields.has('interpretation')) _autoFillInterpretation();
     if ((!f.references || f.references.length === 0) && f.templateKey) {
+        if (!isCurrentCase()) return { stale: true };
         applyReportTemplate(f.templateKey);
-        return;
+        return { stale: false };
     }
+    if (!isCurrentCase()) return { stale: true };
     _setReportStatus('Auto-filled from NIfTI + planning', 'ok');
     renderReportEditor(); _updateReportPreview(); _scheduleReportAutoSave();
+    return { stale: false };
 }
 
 function _autoFillInterpretation() {
@@ -354,11 +365,20 @@ function _localizedEmptyReportForm(language) {
 // ----- 15. Save / Load JSON -----
 async function _persistGeneratedReportArtifact(blob, filename) {
     if (!window.brachybotAuth?.user) return null;
+    const ownerSessionId = String(
+        (typeof activeSessionId !== 'undefined' && activeSessionId)
+            || window.state?.sessionId
+            || '',
+    );
     try {
         const form = new FormData();
         form.append('category', 'reports');
         form.append('file', new File([blob], filename, { type: blob.type || 'application/octet-stream' }));
-        const response = await fetch('/api/workspace/artifacts', { method: 'POST', body: form });
+        const response = await fetch('/api/workspace/artifacts', {
+            method: 'POST',
+            headers: ownerSessionId ? { 'X-BrachyBot-Session': ownerSessionId } : {},
+            body: form,
+        });
         const data = await response.json().catch(() => null);
         if (!response.ok) throw new Error(data?.error || `HTTP ${response.status}`);
         return data;

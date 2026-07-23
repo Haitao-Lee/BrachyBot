@@ -151,13 +151,23 @@ def register_planning_routes(app, get_agent):
         chat_tasks = ChatTaskManager()
         app.extensions["brachybot_chat_tasks"] = chat_tasks
 
-    def workspace_output_dir(category: str) -> str:
-        """Return an owned artifact directory; client paths are never trusted."""
+    def request_case_context():
+        """Resolve and authorize the case explicitly bound to this request."""
         store = current_app.extensions.get("brachybot_workspace_store")
         user = current_user(store) if store is not None else None
-        session_id = str(flask_session.get("bb_session_id") or "")
-        if not user or not session_id:
+        session_id = str(
+            request.headers.get("X-BrachyBot-Session")
+            or flask_session.get("bb_session_id")
+            or ""
+        ).strip()
+        if not store or not user or not session_id:
             raise WorkspaceError("Authentication required")
+        entry = store.get_session(user["id"], session_id)
+        return store, user, entry.id
+
+    def workspace_output_dir(category: str) -> str:
+        """Return an owned artifact directory; client paths are never trusted."""
+        store, user, session_id = request_case_context()
         # Direct exporters write into tool-owned directories, unlike browser
         # artifacts which pass through ``write_artifact``. Refuse a new export
         # when the account is already at its quota.
@@ -182,16 +192,17 @@ def register_planning_routes(app, get_agent):
 
     def artifact_download_url(relative_path: str) -> str:
         """Return the authenticated download route for an active-case artifact."""
-        session_id = str(flask_session.get("bb_session_id") or "")
+        _, _, session_id = request_case_context()
         safe_path = "/".join(part for part in str(relative_path).replace("\\", "/").split("/") if part and part not in {".", ".."})
         return f"/api/sessions/{session_id}/artifacts/{safe_path}"
 
     def checkpoint_operation(agent: Any, state: str, message: str, *, checkpoint: Optional[Dict[str, Any]] = None) -> None:
         """Record a recoverable long-operation state without blocking planning."""
-        store = current_app.extensions.get("brachybot_workspace_store")
-        user = current_user(store) if store is not None else None
-        session_id = str(flask_session.get("bb_session_id") or "")
-        if not store or not user or not session_id or agent is None:
+        try:
+            store, user, session_id = request_case_context()
+        except WorkspaceError:
+            return
+        if agent is None:
             return
         operation = {
             "state": state,
@@ -206,7 +217,7 @@ def register_planning_routes(app, get_agent):
         except WorkspaceError:
             logger.warning("Unable to checkpoint workspace operation", exc_info=True)
 
-    def finalize_chat_task(task: ChatTask) -> None:
+    def finalize_chat_task(task: ChatTask) -> bool:
         """Persist the detached task's result without relying on a browser.
 
         The browser normally persists its visible transcript.  That writer is
@@ -217,8 +228,9 @@ def register_planning_routes(app, get_agent):
         """
         store = current_app.extensions.get("brachybot_workspace_store")
         if store is None:
-            return
-        state = "ready" if task.status == "completed" else "interrupted"
+            return False
+        final_status = str(task.completion_status or task.status or "failed")
+        state = "ready" if final_status == "completed" else "interrupted"
         operation = {
             "state": state,
             "message": (
@@ -229,7 +241,7 @@ def register_planning_routes(app, get_agent):
             "checkpoint": {
                 "kind": "chat",
                 "task_id": task.task_id,
-                "status": task.status,
+                "status": final_status,
                 "event_count": task.event_count(),
             },
         }
@@ -261,8 +273,15 @@ def register_planning_routes(app, get_agent):
             # original request without that server detail.
             display_message = task.message.split("\n\n[Uploaded image path:", 1)[0]
             append_message("user", display_message)
-            if task.steps:
-                append_message("thinking", "", task.steps)
+            persisted_steps = list(task.steps)
+            if final_status == "completed":
+                # The matching event is published to live/replay subscribers
+                # immediately after this transaction succeeds. Include it in
+                # the durable trace now so a server restart restores the same
+                # completed presentation.
+                persisted_steps.append(task.commit_step("done"))
+            if persisted_steps:
+                append_message("thinking", "", persisted_steps)
             final_response = task.response or task.streamed_response
             if final_response:
                 append_message("bot-response", final_response)
@@ -275,22 +294,29 @@ def register_planning_routes(app, get_agent):
                 {
                     "chat": {
                         "messages": messages,
-                        "task_id": task.task_id,
-                        "task_status": task.status,
+                        # Only running tasks occupy ``task_id``. Keep the last
+                        # id separately for audit without making a completed
+                        # turn look resumable after a browser restart.
+                        "task_id": None,
+                        "last_task_id": task.task_id,
+                        "task_status": final_status,
                     },
                     "operation": operation,
                 },
                 expected_revision=None,
                 reason="chat.task.finalized",
             )
+            return True
         except WorkspaceError:
             logger.warning("Unable to persist detached chat task %s", task.task_id, exc_info=True)
+            return False
 
     def owned_case_path(path: str) -> bool:
-        store = current_app.extensions.get("brachybot_workspace_store")
-        user = current_user(store) if store is not None else None
-        session_id = str(flask_session.get("bb_session_id") or "")
-        return bool(user and session_id and store.owns_path(user["id"], session_id, path))
+        try:
+            store, user, session_id = request_case_context()
+        except WorkspaceError:
+            return False
+        return bool(store.owns_path(user["id"], session_id, path))
 
     def request_ui_session_id(data: Optional[Dict[str, Any]] = None) -> str:
         """Resolve UI bridge state from the signed selected-case cookie.
@@ -302,15 +328,17 @@ def register_planning_routes(app, get_agent):
         ignored here.
         """
         _ = data
-        selected = str(flask_session.get("bb_session_id") or "")
-        return _ui_session_id(selected or "web")
+        try:
+            _, _, session_id = request_case_context()
+        except WorkspaceError:
+            return _ui_session_id("web")
+        return _ui_session_id(session_id)
 
     def task_workspace_owner() -> Optional[str]:
         """Return the server-derived owner key for transient progress tasks."""
-        store = current_app.extensions.get("brachybot_workspace_store")
-        user = current_user(store) if store is not None else None
-        session_id = str(flask_session.get("bb_session_id") or "")
-        if not user or not session_id:
+        try:
+            _, user, session_id = request_case_context()
+        except WorkspaceError:
             return None
         return f"{user['id']}:{session_id}"
 
@@ -322,10 +350,11 @@ def register_planning_routes(app, get_agent):
         therefore need a JSON checkpoint before the process can be restarted
         or the case can be reopened in a different browser.
         """
-        store = current_app.extensions.get("brachybot_workspace_store")
-        user = current_user(store) if store is not None else None
-        selected = str(flask_session.get("bb_session_id") or "")
-        if not store or not user or not selected or session_id != _ui_session_id(selected):
+        try:
+            store, user, selected = request_case_context()
+        except WorkspaceError:
+            return
+        if session_id != _ui_session_id(selected):
             return
         # ``_ui_bucket`` initializes its map while holding the same lock, so
         # obtain the bucket before taking a second snapshot lock.
@@ -1818,6 +1847,11 @@ def register_planning_routes(app, get_agent):
             memory.store("manual_needles", normalized_needles)
             memory.store("manual_geometry_only", True)
             reason = str(data.get("reason") or "needle_position_only")
+            try:
+                from web.surgical_guide import invalidate_surgical_guides
+                invalidate_surgical_guides(agent, f"manual needle geometry updated: {reason}")
+            except ImportError:
+                pass
             event = _append_ui_event(session_id, {
                 "type": "manual.needle.position_only",
                 "label": reason,
@@ -1998,6 +2032,11 @@ def register_planning_routes(app, get_agent):
                     previous_needles=current_needles,
                     reproject_seeds=False,
                 )
+            try:
+                from web.surgical_guide import invalidate_surgical_guides
+                invalidate_surgical_guides(agent, f"manual needle restored: {needle_id}")
+            except ImportError:
+                pass
             checkpoint_operation(
                 agent,
                 "ready",
@@ -2038,6 +2077,13 @@ def register_planning_routes(app, get_agent):
             return jsonify({"error": "Agent not available"}), 500
 
         status = agent.get_status()
+        # The browser must restore case-owned input paths from the hydrated
+        # agent, rather than from a stale UI snapshot. Keeping these explicit
+        # makes Input, Data Tree, viewers, and downstream planning agree after
+        # a browser refresh or session transition.
+        status["ct_path"] = agent.memory.retrieve("ct_path")
+        status["ctv_path"] = agent.memory.retrieve("ctv_path")
+        status["oar_path"] = agent.memory.retrieve("oar_path")
         status["brain_available"] = agent.brain_available
         if hasattr(agent, "run_ledger"):
             # Expose only compact, JSON-safe lifecycle evidence. The frontend
@@ -2057,11 +2103,13 @@ def register_planning_routes(app, get_agent):
             status["devices"] = DeviceManager.instance().status()
         except Exception as _e:
             status["devices"] = {"cuda_available": False, "error": str(_e)}
-        store = current_app.extensions.get("brachybot_workspace_store")
-        user = current_user(store) if store is not None else None
-        if user:
+        try:
+            store, user, session_id = request_case_context()
+        except WorkspaceError:
+            store = user = session_id = None
+        if user and store and session_id:
             try:
-                entry = store.get_session(user["id"], str(flask_session.get("bb_session_id") or ""))
+                entry = store.get_session(user["id"], session_id)
                 status["workspace"] = {
                     "revision": entry.revision,
                     "recovery_status": entry.recovery_status,
@@ -2253,9 +2301,10 @@ def register_planning_routes(app, get_agent):
         if agent is None:
             return jsonify({"error": "Agent not available"}), 500
         try:
-            store = current_app.extensions.get("brachybot_workspace_store")
-            user = current_user(store) if store is not None else None
-            session_id = str(flask_session.get("bb_session_id") or "")
+            try:
+                _, user, session_id = request_case_context()
+            except WorkspaceError:
+                user = session_id = None
             if user and session_id:
                 chat_tasks.cancel(chat_tasks.active(user["id"], session_id))
             agent._cancel_active_turn()
@@ -2523,11 +2572,7 @@ def register_planning_routes(app, get_agent):
                     direc = np.array(seed[1])
                     filename = f"seed_{i}_{j}.stl"
                     payload = _seed_cylinder_stl(pos, direc).encode("utf-8")
-                    store = current_app.extensions.get("brachybot_workspace_store")
-                    user = current_user(store) if store is not None else None
-                    session_id = str(flask_session.get("bb_session_id") or "")
-                    if not store or not user or not session_id:
-                        raise WorkspaceError("Authentication required")
+                    store, user, session_id = request_case_context()
                     # Use the streaming writer so every generated STL obeys
                     # the same replacement-aware quota policy as uploads.
                     import io
@@ -2592,10 +2637,9 @@ def register_planning_routes(app, get_agent):
             full_message = f"{message}\n\n[Uploaded image path: {image_path}]"
 
         if stream:
-            store = current_app.extensions.get("brachybot_workspace_store")
-            user = current_user(store) if store is not None else None
-            session_id = str(flask_session.get("bb_session_id") or "")
-            if not user or not session_id:
+            try:
+                _, user, session_id = request_case_context()
+            except WorkspaceError:
                 return jsonify({"error": "Authentication required"}), 401
             start_gate = threading.Event()
             try:
@@ -2631,10 +2675,36 @@ def register_planning_routes(app, get_agent):
                 # discoverable after a case switch or browser refresh even
                 # when the full agent snapshot is still being written.
                 try:
+                    # A detached task can outlive its browser stream. Persist
+                    # the user turn before releasing the worker gate so a
+                    # refresh restores the request, Thinking state, and task
+                    # identity together rather than showing an orphaned
+                    # progress animation with no initiating command.
+                    snapshot = store.load_snapshot(user["id"], session_id)
+                    chat = snapshot.get("chat") if isinstance(snapshot.get("chat"), dict) else {}
+                    messages = list(chat.get("messages") or [])
+                    display_message = full_message.split("\n\n[Uploaded image path:", 1)[0]
+                    previous = messages[-1] if messages else None
+                    if not (
+                        previous
+                        and previous.get("type") == "user"
+                        and str(previous.get("content") or "") == display_message
+                    ):
+                        messages.append({
+                            "type": "user",
+                            "content": display_message,
+                            "timestamp": int(time.time() * 1000),
+                        })
                     store.save_snapshot_patch(
                         user["id"],
                         session_id,
-                        {"chat": {"task_id": task.task_id, "task_status": "running"}},
+                        {
+                            "chat": {
+                                "messages": messages,
+                                "task_id": task.task_id,
+                                "task_status": "running",
+                            }
+                        },
                         expected_revision=None,
                         reason="chat.task.started",
                     )
@@ -2734,10 +2804,9 @@ def register_planning_routes(app, get_agent):
     @rate_limit
     def api_chat_task():
         """Return the latest in-process task for the selected case."""
-        store = current_app.extensions.get("brachybot_workspace_store")
-        user = current_user(store) if store is not None else None
-        session_id = str(flask_session.get("bb_session_id") or "")
-        if not user or not session_id:
+        try:
+            _, user, session_id = request_case_context()
+        except WorkspaceError:
             return jsonify({"error": "Authentication required"}), 401
         task = chat_tasks.active(user["id"], session_id) or chat_tasks.latest(user["id"], session_id)
         return jsonify({"task": task.public_state() if task is not None else None})
@@ -2747,10 +2816,9 @@ def register_planning_routes(app, get_agent):
     @rate_limit
     def api_chat_task_stream(task_id: str):
         """Replay/follow one selected-case task after a case switch."""
-        store = current_app.extensions.get("brachybot_workspace_store")
-        user = current_user(store) if store is not None else None
-        session_id = str(flask_session.get("bb_session_id") or "")
-        if not user or not session_id:
+        try:
+            _, user, session_id = request_case_context()
+        except WorkspaceError:
             return jsonify({"error": "Authentication required"}), 401
         task = chat_tasks.get(task_id, user["id"], session_id)
         if task is None:
@@ -2917,11 +2985,7 @@ def register_planning_routes(app, get_agent):
                     "</body></html>"
                 ).encode("utf-8")
 
-            store = current_app.extensions.get("brachybot_workspace_store")
-            user = current_user(store) if store is not None else None
-            session_id = str(flask_session.get("bb_session_id") or "")
-            if not store or not user or not session_id:
-                raise WorkspaceError("Authentication required")
+            store, user, session_id = request_case_context()
             import io
             safe_output_path = str(store.write_artifact(
                 user["id"], session_id, "reports", f"report.{output_format}",
@@ -3050,10 +3114,9 @@ def register_planning_routes(app, get_agent):
             img_bytes = _decode_png_data_url(image_data)
 
             filename = f"screenshot_{uuid.uuid4().hex[:12]}.png"
-            store = current_app.extensions.get("brachybot_workspace_store")
-            user = current_user(store) if store is not None else None
-            session_id = str(flask_session.get("bb_session_id") or "")
-            if not user or not session_id:
+            try:
+                store, user, session_id = request_case_context()
+            except WorkspaceError:
                 return jsonify({"error": "Authentication required"}), 401
             filepath = store.write_screenshot(user["id"], session_id, filename, img_bytes)
             url = f"/api/sessions/{session_id}/screenshots/{filename}"

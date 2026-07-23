@@ -4,6 +4,7 @@
     // direct global calls to the durable workspace implementation.
     window.__serverWorkspaceReady = true;
     let revision = null;
+    const sessionRevisions = Object.create(null);
     let saveTimer = null;
     let restoring = false;
     let workspaceTransition = null;
@@ -79,6 +80,10 @@
                         clearReport: false,
                         workspace,
                         background: true,
+                        // The optimistic shell has already cleared the old
+                        // case. Do not erase a just-resumed task trace while
+                        // the heavier CT/mesh resources hydrate.
+                        skipClientClear: true,
                     });
                 }
             } catch (error) {
@@ -181,6 +186,19 @@
         }));
     }
 
+    function workspaceSnapshotSessionId(snapshot) {
+        return String(snapshot?.session_id || snapshot?.session?.id || '');
+    }
+
+    function rememberWorkspaceRevision(snapshot) {
+        const sessionId = workspaceSnapshotSessionId(snapshot);
+        const value = snapshot?.session?.revision;
+        if (sessionId && Number.isFinite(Number(value))) {
+            sessionRevisions[sessionId] = Number(value);
+            if (sessionId === String(activeSessionId || '')) revision = Number(value);
+        }
+    }
+
     function controlState() {
         const values = {};
         document.querySelectorAll('input[id], select[id], textarea[id]').forEach(el => {
@@ -280,8 +298,10 @@
 
     function applyChatSnapshotFast(snapshot) {
         const chat = snapshot?.chat;
-        const sessionId = String(typeof activeSessionId !== 'undefined' ? activeSessionId : '');
-        if (!chat || !sessionId || typeof sessions === 'undefined' || !sessions[sessionId]) return;
+        const sessionId = workspaceSnapshotSessionId(snapshot);
+        if (!chat || !sessionId || sessionId !== String(activeSessionId || '')
+            || typeof sessions === 'undefined' || !sessions[sessionId]) return false;
+        rememberWorkspaceRevision(snapshot);
 
         // Chat is the first-paint part of a workspace.  It contains no CT,
         // GPU, WebGL, or model state, so restoring it here keeps reconnects
@@ -303,6 +323,7 @@
             delete window._detachedChatTasks?.[sessionId];
             window._sessionChatTaskStatuses[sessionId] = chat.task_status || 'idle';
         }
+        return true;
     }
 
     function readRecoveryDismissal(key) {
@@ -338,7 +359,7 @@
         const sessionId = String(activeSessionId || '');
         const queue = (window._sessionChatQueues && Array.isArray(window._sessionChatQueues[sessionId]))
             ? jsonClone(window._sessionChatQueues[sessionId]) : [];
-        const taskId = window._activeChatTaskId
+        const taskId = (window._activeChatTaskSessionId === sessionId ? window._activeChatTaskId : null)
             || window._sessionChatTaskIds?.[sessionId]
             || window._detachedChatTasks?.[sessionId]
             || null;
@@ -354,12 +375,65 @@
         };
     }
 
-    function applyControls(values) {
+    const CASE_DATA_CONTROL_IDS = new Set(['ctPath', 'ctvPath', 'oarPath', 'fileCT', 'fileCTV', 'fileOAR']);
+
+    function applyControls(values, options = {}) {
         Object.entries(values || {}).forEach(([id, saved]) => {
+            // Clinical input paths are restored from the selected server
+            // workspace, never from a potentially older browser snapshot.
+            // Re-applying a stale empty path after CT hydration was the root
+            // cause of viewers and the Input panel disagreeing after a switch.
+            if (options.preserveClinicalData && CASE_DATA_CONTROL_IDS.has(id)) return;
             const element = document.getElementById(id);
             if (!element || !saved || typeof saved !== 'object') return;
             if (Object.prototype.hasOwnProperty.call(saved, 'checked')) element.checked = !!saved.checked;
             if (Object.prototype.hasOwnProperty.call(saved, 'value')) element.value = saved.value;
+        });
+    }
+
+    function copyDisplayProperties(target, saved) {
+        if (!target || !saved || typeof saved !== 'object') return;
+        // These are presentation preferences. Never copy label IDs, names,
+        // voxel counts, categories, geometry, or planning arrays from a UI
+        // snapshot: those values are reconstructed from the current case.
+        ['visible', 'opacity', 'color', 'material', 'locked'].forEach(key => {
+            if (Object.prototype.hasOwnProperty.call(saved, key)) target[key] = saved[key];
+        });
+    }
+
+    function applyDataTreePresentation(savedTree) {
+        if (!savedTree || typeof savedTree !== 'object' || typeof dataTreeState === 'undefined') return;
+        ['ct', 'ctv', 'oar', 'dose', 'seeds', 'needles'].forEach(key => {
+            copyDisplayProperties(dataTreeState[key], savedTree[key]);
+        });
+        if (savedTree.planning && dataTreeState.planning) {
+            ['visible', 'opacity', 'color', 'material', 'locked'].forEach(key => {
+                if (Object.prototype.hasOwnProperty.call(savedTree.planning, key)) {
+                    dataTreeState.planning[key] = savedTree.planning[key];
+                }
+            });
+            // Planning-side meshes, including the patient-specific puncture
+            // guide, are reconstructed asynchronously. Restore only their
+            // presentation by stable ID so late mesh hydration cannot discard
+            // user-selected color, opacity, visibility, or material.
+            const savedMeshes = new Map((savedTree.planning.meshes || [])
+                .map(item => [String(item?.id || ''), item]));
+            (dataTreeState.planning.meshes || []).forEach(mesh => {
+                copyDisplayProperties(mesh, savedMeshes.get(String(mesh?.id || '')));
+            });
+        }
+        const savedLabels = savedTree.ctvLabels || {};
+        if (!dataTreeState.ctvLabels) dataTreeState.ctvLabels = {};
+        Object.entries(savedLabels).forEach(([id, saved]) => {
+            const current = dataTreeState.ctvLabels[id] || {};
+            dataTreeState.ctvLabels[id] = current;
+            copyDisplayProperties(current, saved);
+        });
+        const byId = new Map((savedTree.organs || []).map(item => [String(item?.id || ''), item]));
+        const byLabel = new Map((savedTree.organs || []).map(item => [String(item?.labelId ?? ''), item]));
+        (dataTreeState.organs || []).forEach(organ => {
+            const saved = byId.get(String(organ.id)) || byLabel.get(String(organ.labelId));
+            copyDisplayProperties(organ, saved);
         });
     }
 
@@ -404,14 +478,17 @@
         }
     }
 
-    async function applyWorkspaceSnapshot(snapshot) {
+    async function applyWorkspaceSnapshot(snapshot, options = {}) {
         if (!snapshot) return;
+        const sessionId = workspaceSnapshotSessionId(snapshot);
+        if (!sessionId || sessionId !== String(activeSessionId || '')) return false;
+        rememberWorkspaceRevision(snapshot);
         const ui = snapshot.ui || {};
         const uiState = ui.state || ui;
         const restoreGeneration = invalidateDeferredWorkspaceRestore();
         restoring = true;
         try {
-            applyControls(uiState.controls || {});
+            applyControls(uiState.controls || {}, options);
             if (uiState.viewer && typeof state !== 'undefined') {
                 state.slices = Object.assign(state.slices || {}, uiState.viewer.slices || {});
                 state.viewerSettings = Object.assign(state.viewerSettings || {}, uiState.viewer.settings || {});
@@ -419,9 +496,12 @@
                 if (uiState.viewer.doseTexture) state.doseTexture = Object.assign(state.doseTexture || {}, uiState.viewer.doseTexture);
             }
             if (uiState.data_tree && typeof dataTreeState !== 'undefined') {
-                Object.assign(dataTreeState, uiState.data_tree);
+                if (options.preserveClinicalData) applyDataTreePresentation(uiState.data_tree);
+                else Object.assign(dataTreeState, uiState.data_tree);
             }
-            if (uiState.manual && typeof _saveManualState === 'function') _saveManualState(uiState.manual);
+            if (!options.preserveClinicalData && uiState.manual && typeof _saveManualState === 'function') {
+                _saveManualState(uiState.manual);
+            }
             if (typeof trainingMonitorState !== 'undefined') {
                 // The browser snapshot keeps presentation details while the
                 // server bridge keeps feedback/events emitted by tools.
@@ -442,7 +522,7 @@
                 try { _updateReportPreview(); } catch (_) {}
             }
             const chat = snapshot.chat || {};
-            const sessionId = String(typeof activeSessionId !== 'undefined' ? activeSessionId : '');
+            if (sessionId !== String(activeSessionId || '')) return false;
             window._sessionChatQueues = window._sessionChatQueues || {};
             window._sessionChatQueues[sessionId] = Array.isArray(chat.queued) ? jsonClone(chat.queued) : [];
             window._sessionChatTaskStatuses = window._sessionChatTaskStatuses || {};
@@ -455,24 +535,47 @@
                 delete window._detachedChatTasks?.[sessionId];
                 window._sessionChatTaskStatuses[sessionId] = chat.task_status || 'idle';
             }
-            if (Array.isArray(chat.messages) && typeof sessions !== 'undefined' && activeSessionId && sessions[activeSessionId]) {
+            if (!options.skipChat && Array.isArray(chat.messages) && typeof sessions !== 'undefined' && sessions[sessionId]) {
                 // Pending is a transient browser presentation state.  Never
                 // resurrect an old spinner after a reload or case switch.
-                sessions[activeSessionId].messages = chat.messages;
-                sessions[activeSessionId].pending = false;
-                if (typeof loadSessionChat === 'function') loadSessionChat(activeSessionId);
+                sessions[sessionId].messages = chat.messages;
+                sessions[sessionId].pending = false;
+                if (typeof loadSessionChat === 'function' && sessionId === String(activeSessionId || '')) {
+                    loadSessionChat(sessionId);
+                }
             }
             renderRecoveryNotice(snapshot.operation);
-            if (typeof window.resumeSessionChatTask === 'function') {
+            if (!options.skipTaskResume && !options.skipChat
+                && typeof window.resumeSessionChatTask === 'function') {
                 // The selected-case task endpoint is authoritative. Query it
                 // even when the snapshot raced with task finalization, so a
                 // case switch/refresh never loses a live trace or spinner.
-                setTimeout(() => window.resumeSessionChatTask(), 0);
+                // Capture the case identity. A stale timer must never resume
+                // whichever case happens to become active after a rapid
+                // subsequent switch.
+                const resumeSessionId = sessionId;
+                setTimeout(() => {
+                    if (String(activeSessionId || '') !== resumeSessionId) return;
+                    void window.resumeSessionChatTask();
+                }, 0);
             }
             if (typeof setViewerLayout === 'function' && state?.viewerSettings?.layout) setViewerLayout(state.viewerSettings.layout);
             if (typeof renderDataTree === 'function') renderDataTree();
             if (typeof _refreshManualStepUI === 'function') _refreshManualStepUI();
             restoreSceneView(uiState.viewer?.scene, uiState.viewer?.dvh, restoreGeneration);
+            // The printable guide is a persisted clinical artifact, but its
+            // mesh is loaded separately from the lightweight workspace JSON.
+            // Bind the async restoration to this snapshot's session so a
+            // rapid case switch cannot leak a guide into another viewer.
+            if (typeof window.loadSurgicalGuideMesh === 'function') {
+                const guideSessionId = sessionId;
+                setTimeout(() => {
+                    if (String(activeSessionId || '') === guideSessionId) {
+                        void window.loadSurgicalGuideMesh({ sessionId: guideSessionId });
+                    }
+                }, 0);
+            }
+            return true;
         } finally {
             restoring = false;
         }
@@ -480,18 +583,39 @@
 
     async function persistWorkspace(reason) {
         if (restoring || !window.brachybotAuth?.user || !activeSessionId) return;
+        const ownerSessionId = String(activeSessionId);
+        const ownerRevision = sessionRevisions[ownerSessionId] ?? revision;
+        const payload = {
+            session_id: ownerSessionId,
+            revision: ownerRevision,
+            ui_state: workspaceUiState(),
+            report: reportState(),
+            chat: chatState(),
+            reason,
+        };
         try {
             const response = await workspaceFetch('/api/workspace/state', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ revision, ui_state: workspaceUiState(), report: reportState(), chat: chatState(), reason }),
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-BrachyBot-Session': ownerSessionId,
+                },
+                body: JSON.stringify(payload),
             });
+            const data = await response.json().catch(() => null);
             if (response.status === 409) {
-                document.body.classList.add('workspace-readonly');
+                if (data?.code === 'workspace_locked' && ownerSessionId === String(activeSessionId || '')) {
+                    document.body.classList.add('workspace-readonly');
+                }
+                if (data?.code === 'stale_workspace' && ownerSessionId === String(activeSessionId || '')) {
+                    console.debug('[workspace] stale save skipped; authoritative snapshot will refresh the revision');
+                }
                 return;
             }
-            const data = await response.json().catch(() => null);
-            if (data?.success) revision = data.revision;
+            if (data?.success) {
+                sessionRevisions[ownerSessionId] = data.revision;
+                if (ownerSessionId === String(activeSessionId || '')) revision = data.revision;
+            }
         } catch (error) {
             console.debug('[workspace] save deferred:', error);
         }
@@ -541,7 +665,13 @@
     function sessionMapFromPayload(data) {
         const next = {};
         (data.sessions || []).forEach(entry => {
-            next[entry.id] = sessionStateFromPayload(entry);
+            const existing = (typeof sessions !== 'undefined' && sessions?.[entry.id]) || null;
+            const fresh = sessionStateFromPayload(entry);
+            if (existing) {
+                fresh.messages = Array.isArray(existing.messages) ? existing.messages : [];
+                fresh.pending = !!existing.pending;
+            }
+            next[entry.id] = fresh;
         });
         return next;
     }
@@ -558,8 +688,13 @@
         // click look like the application has frozen.
         const next = sessions[sessionId];
         if (!next) return false;
+        // Cancel only browser-side hydration/render callbacks from the old
+        // case. This does not contact /chat/abort and therefore cannot stop a
+        // case-owned background planning or chat task.
+        cancelBackgroundWorkspaceRestore();
         activeSessionId = sessionId;
-        revision = null;
+        if (typeof state !== 'undefined') state.sessionId = sessionId;
+        revision = sessionRevisions[sessionId] ?? null;
         window._activeWorkspaceSnapshot = null;
         if (clearWorkspace && typeof clearClientWorkspace === 'function') {
             clearClientWorkspace({ clearReport: true, deferDisposal: true });
@@ -588,15 +723,48 @@
         return data;
     }
 
-    async function loadActiveWorkspace({ commit = true, timeoutMs = WORKSPACE_REQUEST_TIMEOUT_MS } = {}) {
-        const response = await workspaceFetch('/api/workspace/snapshot', {}, timeoutMs);
+    async function loadActiveWorkspace({
+        commit = true,
+        timeoutMs = WORKSPACE_REQUEST_TIMEOUT_MS,
+        sessionId = String(activeSessionId || ''),
+    } = {}) {
+        const response = await workspaceFetch('/api/workspace/snapshot', {
+            headers: sessionId ? { 'X-BrachyBot-Session': sessionId } : {},
+        }, timeoutMs);
         if (!response.ok) throw new Error(`Workspace snapshot failed: HTTP ${response.status}`);
         const data = await response.json();
+        if (sessionId && workspaceSnapshotSessionId(data.workspace) !== sessionId) {
+            throw new Error('Workspace snapshot belongs to a different case');
+        }
         if (commit) {
             revision = data.workspace?.session?.revision ?? null;
+            rememberWorkspaceRevision(data.workspace);
             window._activeWorkspaceSnapshot = data.workspace;
         }
         return data.workspace;
+    }
+
+    async function refreshSessionAfterTaskCompletion(sessionId) {
+        const ownerSessionId = String(sessionId || '');
+        if (!ownerSessionId || ownerSessionId !== String(activeSessionId || '')) return false;
+        const workspace = await loadActiveWorkspace({
+            commit: false,
+            sessionId: ownerSessionId,
+        });
+        if (ownerSessionId !== String(activeSessionId || '')) return false;
+        rememberWorkspaceRevision(workspace);
+        revision = workspace?.session?.revision ?? revision;
+        window._activeWorkspaceSnapshot = workspace;
+        applyChatSnapshotFast(workspace);
+        await applyWorkspaceSnapshot(workspace, {
+            preserveClinicalData: true,
+            skipTaskResume: true,
+        });
+        // The completed task may have produced CT labels, planning arrays,
+        // DVH data, report fields, or meshes while this case was not visible.
+        // Replace any stale in-flight hydration with one authoritative pass.
+        scheduleBackgroundWorkspaceRestore(workspace, ownerSessionId);
+        return true;
     }
 
     async function recoverWorkspaceAfterTransitionFailure(generation) {
@@ -606,6 +774,7 @@
             if (!isCurrentTransition(generation)) return;
             applySessionList(sessionData);
             revision = workspace?.session?.revision ?? null;
+            rememberWorkspaceRevision(workspace);
             window._activeWorkspaceSnapshot = workspace;
             if (typeof clearClientWorkspace === 'function') clearClientWorkspace({ clearReport: true });
             renderSessionList();
@@ -641,16 +810,40 @@
     window.newChat = async function newChat() {
         return runWorkspaceTransition(async () => {
             if (!await prepareSessionChange()) return { success: false, cancelled: true };
+            const previousSessionId = String(activeSessionId || '');
             if (typeof flushActiveReportState === 'function') flushActiveReportState();
             // Persistence is case-scoped and already captures the old active
             // id synchronously. Do not make creating an empty case wait for a
             // potentially slow disk/GPU snapshot of the previous case.
             void persistWorkspace('session.switching');
+            // Paint a genuinely empty case on the next animation frame instead
+            // of holding the previous transcript and viewer until the server
+            // has allocated an id. The temporary id cannot reach a clinical
+            // endpoint because workspace transitions keep controls disabled.
+            const optimisticId = `pending-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+            sessions[optimisticId] = {
+                id: optimisticId,
+                title: 'New case',
+                created: Date.now(),
+                updated: Date.now(),
+                messages: [],
+                pending: true,
+                recoveryStatus: 'clean',
+            };
+            paintSessionShell(optimisticId);
+            await new Promise(resolve => {
+                if (typeof requestAnimationFrame === 'function') requestAnimationFrame(resolve);
+                else setTimeout(resolve, 0);
+            });
             const response = await workspaceFetch('/api/sessions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: 'New case' }) });
             const data = await response.json();
-            if (!response.ok) throw new Error(data.error || 'Unable to create case');
-            if (typeof clearClientWorkspace === 'function') clearClientWorkspace({ clearReport: true, deferDisposal: true });
+            if (!response.ok) {
+                delete sessions[optimisticId];
+                if (previousSessionId && sessions[previousSessionId]) paintSessionShell(previousSessionId);
+                throw new Error(data.error || 'Unable to create case');
+            }
             const createdSession = data.session;
+            delete sessions[optimisticId];
             if (createdSession?.id) {
                 // The create endpoint returns the authoritative session entry.
                 // Upsert it before rendering so the sidebar reacts immediately
@@ -658,7 +851,9 @@
                 sessions[createdSession.id] = sessionStateFromPayload(createdSession);
             }
             activeSessionId = data.active_session_id || createdSession?.id || activeSessionId;
+            if (typeof state !== 'undefined') state.sessionId = activeSessionId;
             revision = data.workspace?.session?.revision ?? null;
+            rememberWorkspaceRevision(data.workspace);
             window._activeWorkspaceSnapshot = data.workspace || null;
             renderSessionList();
             // `clearClientWorkspace` resets rendering state, but the chat DOM
@@ -666,6 +861,7 @@
             // empty transcript so the previous case cannot remain visible
             // under the newly highlighted session.
             if (typeof loadSessionChat === 'function') loadSessionChat(activeSessionId);
+            window.setWorkspaceHydrationState?.(false);
             if (data.lease && typeof window.brachybotAuth?.applyLeaseResult === 'function') {
                 window.brachybotAuth.applyLeaseResult(data.lease);
             } else if (typeof window.brachybotAuth?.acquireLease === 'function') {
@@ -694,7 +890,7 @@
             // The old lease is released before changing the active id, but a
             // slow lease endpoint must not hold the visible case switch.
             if (typeof window.brachybotAuth?.releaseLease === 'function') {
-                void window.brachybotAuth.releaseLease().catch(error => console.debug('[workspace] lease release deferred:', error));
+                void window.brachybotAuth.releaseLease(previousSessionId).catch(error => console.debug('[workspace] lease release deferred:', error));
             }
             // Update the sidebar, title, chat shell, and empty viewer before
             // the network round-trip. The request returns only a small
@@ -718,12 +914,18 @@
             }
             activeSessionId = data.active_session_id;
             revision = data.workspace?.session?.revision ?? null;
+            rememberWorkspaceRevision(data.workspace);
             window._activeWorkspaceSnapshot = data.workspace;
             renderSessionList();
-            if (typeof applyWorkspaceSnapshot === 'function') await applyWorkspaceSnapshot(data.workspace);
+            if (typeof applyWorkspaceSnapshot === 'function') {
+                // The selected Agent has not been hydrated yet. Restore only
+                // durable presentation/chat state here; CT/labels/plan are
+                // loaded by the background transaction from the server.
+                await applyWorkspaceSnapshot(data.workspace, { preserveClinicalData: true });
+            }
             scheduleBackgroundWorkspaceRestore(data.workspace, activeSessionId);
             if (typeof window.brachybotAuth?.acquireLease === 'function') {
-                void window.brachybotAuth.acquireLease().catch(error => console.debug('[workspace] lease refresh deferred:', error));
+                void window.brachybotAuth.acquireLease(activeSessionId).catch(error => console.debug('[workspace] lease refresh deferred:', error));
             }
             return { success: true, session_id: activeSessionId };
         });
@@ -740,22 +942,29 @@
             if (!confirmed) return { success: false, cancelled: true };
         }
         // Deleting an inactive case is an independent control-plane action.
-        // It must not call prepareSessionChange(): that helper intentionally
-        // cancels the active chat/plan stream before switching cases, and the
-        // deleted case is not the case currently being edited. Keeping this
-        // path separate also avoids clearing and restoring the active viewer.
+        // It must not call prepareSessionChange(): the deleted case is not the
+        // case currently being edited. Keeping this path separate preserves
+        // the selected case's live task subscription, viewer, and controls.
         if (id !== activeSessionId) {
+            const removedSession = sessions[id];
+            // Sidebar deletion is optimistic. The server operation is still
+            // authoritative, but a slow disk cleanup must not make the delete
+            // button appear unresponsive.
+            delete sessions[id];
+            renderSessionList();
             try {
                 const response = await workspaceFetch(`/api/sessions/${encodeURIComponent(id)}`, { method: 'DELETE' });
                 const data = await response.json().catch(() => ({}));
                 if (!response.ok) throw new Error(data.error || 'Unable to delete case');
-                // The DELETE response already confirms the operation. Paint
-                // the local sidebar now and reconcile with the server later.
-                delete sessions[id];
-                renderSessionList();
                 void loadServerSessions().then(() => renderSessionList()).catch(error => console.debug('[workspace] session list refresh deferred:', error));
                 return { success: true, active_session_id: activeSessionId };
             } catch (error) {
+                // A timeout can happen after the server committed deletion.
+                // Restore the row provisionally; the next authoritative list
+                // refresh removes it again when appropriate.
+                if (removedSession) sessions[id] = removedSession;
+                renderSessionList();
+                void loadServerSessions().then(() => renderSessionList()).catch(() => {});
                 console.error('[workspace] inactive case deletion failed:', error);
                 return { success: false, error: error?.message || 'Unable to delete case.' };
             }
@@ -780,6 +989,7 @@
             if (typeof clearClientWorkspace === 'function') clearClientWorkspace({ clearReport: true, deferDisposal: true });
             activeSessionId = data.active_session_id || activeSessionId;
             revision = data.workspace?.session?.revision ?? null;
+            rememberWorkspaceRevision(data.workspace);
             window._activeWorkspaceSnapshot = data.workspace || null;
             renderSessionList();
             if (typeof window.brachybotAuth?.acquireLease === 'function') await window.brachybotAuth.acquireLease();
@@ -893,6 +1103,7 @@
     window.applyWorkspaceSnapshot = applyWorkspaceSnapshot;
     window.applyChatSnapshotFast = applyChatSnapshotFast;
     window.loadServerSessions = loadServerSessions;
+    window.refreshSessionAfterTaskCompletion = refreshSessionAfterTaskCompletion;
     window.invalidateDeferredWorkspaceRestore = invalidateDeferredWorkspaceRestore;
 
     function installScenePersistenceHook() {

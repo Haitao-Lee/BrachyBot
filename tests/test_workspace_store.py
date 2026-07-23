@@ -17,8 +17,31 @@ class _Memory:
         self.planning_results = {
             "ct_path": "inputs/study.nii",
             "ct_data": np.arange(12, dtype=np.int16).reshape(3, 2, 2),
+            "ctv_array": np.array(
+                [[[0, 1], [0, 0]], [[0, 1], [1, 0]], [[0, 0], [0, 0]]],
+                dtype=np.uint8,
+            ),
+            "oar_array": np.array(
+                [[[0, 0], [2, 0]], [[0, 0], [0, 3]], [[0, 0], [0, 0]]],
+                dtype=np.uint16,
+            ),
+            "oar_label_map": {
+                "2": {"name": "stomach", "category": "traversable"},
+                "3": {"name": "vertebrae_L1", "category": "non_traversable"},
+            },
             "dose_distribution_gy": np.ones((3, 2, 2), dtype=np.float32),
-            "seed_plan_serialized": {"seeds": [[1.0, 2.0, 3.0]]},
+            "dose_metrics": {"v100": 91.2, "d90": 123.4},
+            "dvh_data": {
+                "CTV": {"dose": [0.0, 120.0, 240.0], "volume": [100.0, 91.2, 40.0]},
+                "stomach": {"dose": [0.0, 120.0], "volume": [100.0, 3.5]},
+            },
+            "trajectories": [
+                {"id": "needle_0", "entry": [1.0, 2.0, 30.0], "target": [1.0, 2.0, 3.0]},
+            ],
+            "seed_plan_serialized": {
+                "seeds": [[1.0, 2.0, 3.0]],
+                "needles": [{"id": "needle_0", "seed_indices": [0]}],
+            },
         }
         self._planning_versions = {key: 1 for key in self.planning_results}
         self.patient_data = {"site": "pancreas"}
@@ -61,10 +84,104 @@ def test_workspace_snapshot_round_trip_preserves_arrays_and_ui(tmp_path):
     restored = _Agent()
     store.hydrate_agent(user["id"], case.id, restored)
     assert np.array_equal(restored.memory.retrieve("ct_data"), agent.memory.retrieve("ct_data"))
+    assert np.array_equal(restored.memory.retrieve("ctv_array"), agent.memory.retrieve("ctv_array"))
+    assert np.array_equal(restored.memory.retrieve("oar_array"), agent.memory.retrieve("oar_array"))
     assert restored.memory.retrieve("seed_plan_serialized")["seeds"] == [[1.0, 2.0, 3.0]]
+    restored_label_map = restored.memory.retrieve("oar_label_map")
+    vertebra_label = restored_label_map.get(3, restored_label_map.get("3"))
+    assert vertebra_label["name"] == "vertebrae_L1"
+    assert restored.memory.retrieve("dose_metrics")["v100"] == 91.2
+    assert restored.memory.retrieve("dvh_data")["CTV"]["volume"][1] == 91.2
+    assert restored.memory.retrieve("trajectories")[0]["id"] == "needle_0"
     snapshot = store.load_snapshot(user["id"], case.id)
     assert snapshot["ui"]["state"]["viewer"]["slices"]["axial"] == 12
+    assert snapshot["ui"]["state"]["data_tree"]["organs"][0]["name"] == "aorta"
+    assert snapshot["report"]["form"]["case"]["tumorType"] == "pancreas"
     assert snapshot["chat"]["messages"][0]["content"] == "ready"
+
+
+def test_two_case_workspaces_round_trip_without_cross_case_contamination(tmp_path):
+    store = WorkspaceStore(tmp_path / "runtime")
+    user = store.create_user("multi_case_planner", "hash")
+    first_case = store.create_session(user["id"], "Case A")
+    second_case = store.create_session(user["id"], "Case B")
+
+    first = _Agent()
+    first.memory.planning_results["ct_path"] = "inputs/case_a.nii"
+    first.memory.planning_results["ct_data"] = np.full((3, 2, 2), 11, dtype=np.int16)
+    first.memory.planning_results["ctv_array"] = np.full((3, 2, 2), 1, dtype=np.uint8)
+    first.memory.planning_results["oar_array"] = np.full((3, 2, 2), 2, dtype=np.uint16)
+    first.memory.planning_results["dose_distribution_gy"] = np.full((3, 2, 2), 120, dtype=np.float32)
+    first.memory.planning_results["dose_metrics"] = {"v100": 91.0, "d90": 123.0}
+    first.memory.planning_results["seed_plan_serialized"] = {"seeds": [[1, 2, 3]]}
+    first.memory.patient_data = {"site": "pancreas", "case": "A"}
+
+    second = _Agent()
+    second.memory.planning_results["ct_path"] = "inputs/case_b.nii"
+    second.memory.planning_results["ct_data"] = np.full((4, 2, 2), 22, dtype=np.int16)
+    second.memory.planning_results["ctv_array"] = np.full((4, 2, 2), 4, dtype=np.uint8)
+    second.memory.planning_results["oar_array"] = np.full((4, 2, 2), 5, dtype=np.uint16)
+    second.memory.planning_results["dose_distribution_gy"] = np.full((4, 2, 2), 240, dtype=np.float32)
+    second.memory.planning_results["dose_metrics"] = {"v100": 82.0, "d90": 105.0}
+    second.memory.planning_results["seed_plan_serialized"] = {"seeds": [[9, 8, 7], [6, 5, 4]]}
+    second.memory.patient_data = {"site": "liver", "case": "B"}
+
+    store.snapshot_agent(user["id"], first_case.id, first, reason="case_a.plan")
+    store.save_snapshot_patch(user["id"], first_case.id, {
+        "ui": {"state": {
+            "viewer": {"slices": {"axial": 7}, "settings": {"layout": "3d-top"}},
+            "data_tree": {"organs": [{"id": "a-stomach", "name": "stomach", "visible": True}]},
+            "controls": {"ctPath": {"value": "case-a-display"}},
+        }},
+        "report": {"form": {"version": 3, "case": {"caseId": "A"}}},
+        "chat": {
+            "messages": [{"type": "user", "content": "plan case A"}],
+            "task_id": "task-a",
+            "task_status": "running",
+        },
+        "operation": {"state": "running", "checkpoint": {"step": "dose_calc"}},
+    })
+    store.snapshot_agent(user["id"], second_case.id, second, reason="case_b.plan")
+    store.save_snapshot_patch(user["id"], second_case.id, {
+        "ui": {"state": {
+            "viewer": {"slices": {"axial": 13}, "settings": {"layout": "grid"}},
+            "data_tree": {"organs": [{"id": "b-liver", "name": "liver", "visible": False}]},
+            "controls": {"ctPath": {"value": "case-b-display"}},
+        }},
+        "report": {"form": {"version": 3, "case": {"caseId": "B"}}},
+        "chat": {
+            "messages": [{"type": "user", "content": "plan case B"}],
+            "task_id": "task-b",
+            "task_status": "done",
+        },
+        "operation": {"state": "ready", "checkpoint": {"step": "report"}},
+    })
+
+    restored_a = _Agent()
+    restored_b = _Agent()
+    store.hydrate_agent(user["id"], first_case.id, restored_a)
+    store.hydrate_agent(user["id"], second_case.id, restored_b)
+    snapshot_a = store.load_snapshot(user["id"], first_case.id)
+    snapshot_b = store.load_snapshot(user["id"], second_case.id)
+
+    assert restored_a.memory.patient_data["case"] == "A"
+    assert restored_b.memory.patient_data["case"] == "B"
+    assert restored_a.memory.retrieve("ct_data").shape == (3, 2, 2)
+    assert restored_b.memory.retrieve("ct_data").shape == (4, 2, 2)
+    assert float(restored_a.memory.retrieve("dose_distribution_gy").max()) == 120.0
+    assert float(restored_b.memory.retrieve("dose_distribution_gy").max()) == 240.0
+    assert len(restored_a.memory.retrieve("seed_plan_serialized")["seeds"]) == 1
+    assert len(restored_b.memory.retrieve("seed_plan_serialized")["seeds"]) == 2
+    assert snapshot_a["ui"]["state"]["viewer"]["slices"]["axial"] == 7
+    assert snapshot_b["ui"]["state"]["viewer"]["slices"]["axial"] == 13
+    assert snapshot_a["ui"]["state"]["data_tree"]["organs"][0]["name"] == "stomach"
+    assert snapshot_b["ui"]["state"]["data_tree"]["organs"][0]["name"] == "liver"
+    assert snapshot_a["report"]["form"]["case"]["caseId"] == "A"
+    assert snapshot_b["report"]["form"]["case"]["caseId"] == "B"
+    assert snapshot_a["chat"]["task_id"] == "task-a"
+    assert snapshot_b["chat"]["task_id"] == "task-b"
+    assert snapshot_a["operation"]["checkpoint"]["step"] == "dose_calc"
+    assert snapshot_b["operation"]["checkpoint"]["step"] == "report"
 
 
 def test_workspace_ownership_trash_and_lease_boundaries(tmp_path):
@@ -128,7 +245,7 @@ def test_checkpoint_reuses_unchanged_arrays_and_prunes_replaced_versions(tmp_pat
     store.snapshot_agent(user["id"], case.id, agent, reason="initial")
     arrays_dir = store.workspace_root(user["id"], case.id) / "arrays"
     initial = sorted(path.name for path in arrays_dir.glob("*.npy"))
-    assert len(initial) == 2
+    assert len(initial) == 4
 
     # UI/chat checkpoints must not duplicate unchanged clinical volumes.
     store.snapshot_agent(user["id"], case.id, agent, reason="unchanged")
@@ -139,7 +256,7 @@ def test_checkpoint_reuses_unchanged_arrays_and_prunes_replaced_versions(tmp_pat
     agent.memory.planning_results["dose_distribution_gy"] = np.full((3, 2, 2), 2.0, dtype=np.float32)
     agent.memory._planning_versions["dose_distribution_gy"] += 1
     store.snapshot_agent(user["id"], case.id, agent, reason="dose_updated")
-    assert len(list(arrays_dir.glob("*.npy"))) == 2
+    assert len(list(arrays_dir.glob("*.npy"))) == 4
     restored = _Agent()
     store.hydrate_agent(user["id"], case.id, restored)
     assert float(restored.memory.retrieve("dose_distribution_gy").max()) == 2.0

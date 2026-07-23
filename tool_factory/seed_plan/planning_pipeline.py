@@ -2249,6 +2249,15 @@ class PlanningPipelineTool(BaseTool):
                 "algorithm_plan_snapshot",
                 _build_algorithm_plan_snapshot(seed_plan, verified_needle_geometry),
             )
+            # A guide's sleeve axes are derived from the immutable algorithm
+            # baseline. A new plan therefore invalidates any previously
+            # generated printable guide instead of silently reusing it.
+            try:
+                from web.surgical_guide import invalidate_surgical_guides
+                invalidate_surgical_guides(agent, "algorithm plan regenerated")
+            except ImportError:
+                # Keep the planning pipeline importable in non-web tools.
+                pass
             agent.memory.store("dose_distribution", sum_image)
             # Preserve the automatic dose field separately from later manual
             # edits so a single-needle restore can be instantaneous.

@@ -56,13 +56,15 @@ def test_new_case_creation_avoids_empty_workspace_hydration_and_redundant_round_
     new_case = workspace.split("window.newChat =", 1)[1].split("window.switchSession =", 1)[0]
     assert "await loadServerSessions()" not in new_case
     assert "void persistWorkspace('session.switching')" in new_case
-    assert "deferDisposal: true" in new_case
+    assert "paintSessionShell(optimisticId)" in new_case
+    assert "clearClientWorkspace({ clearReport: true, deferDisposal: true })" in workspace
     assert "scheduleBackgroundWorkspaceRestore" not in new_case
     assert "applyLeaseResult" in new_case
     assert "function applyLeaseResult" in auth
     assert '"lease": lease' in sessions
     assert "sessions[createdSession.id] = sessionStateFromPayload(createdSession)" in new_case
     assert new_case.index("sessions[createdSession.id]") < new_case.index("renderSessionList()")
+    assert "window.setWorkspaceHydrationState?.(false)" in new_case
 
 
 def test_session_switch_detaches_browser_stream_without_server_abort():
@@ -78,6 +80,94 @@ def test_session_switch_detaches_browser_stream_without_server_abort():
     assert "window._chatTurnCancelUi" in chat_todo
 
 
+def test_case_switch_clears_only_case_scoped_progress_presentation():
+    """Old timers must not leak into a new case or cancel the server task."""
+    workspace = read("web/app/static/js/brachybot-workspace.js")
+    chat_todo = read("web/app/static/js/brachybot-chat-todo.js")
+    ui_api = read("web/app/static/js/brachybot-ui-api.js")
+    manual = read("web/app/static/js/brachybot-3d-manual.js")
+
+    assert "clearCaseScopedProgressPresentation" in chat_todo
+    assert "trace.sessionId !== activeSessionId" in chat_todo
+    assert "if (activeSessionId !== turnSessionId) return;" in chat_todo
+    assert "clearCaseScopedProgressPresentation" in ui_api
+    assert "clearManualDoseProgressPresentation" in ui_api
+    assert "skipClientClear: true" in workspace
+    assert "jobSessionId !== String(_activeApiSessionId() || '')" in manual
+
+
+def test_background_hydration_cannot_overwrite_authoritative_case_data_with_a_ui_snapshot():
+    """A saved display snapshot must never replace the selected case's labels."""
+    workspace = read("web/app/static/js/brachybot-workspace.js")
+    ui_api = read("web/app/static/js/brachybot-ui-api.js")
+    routes = read("web/routes/planning_routes.py")
+
+    assert "CASE_DATA_CONTROL_IDS" in workspace
+    assert "applyDataTreePresentation" in workspace
+    assert "options.preserveClinicalData && CASE_DATA_CONTROL_IDS.has(id)" in workspace
+    assert "if (options.preserveClinicalData) applyDataTreePresentation" in workspace
+    assert "preserveClinicalData: true, skipChat: true" in ui_api
+    assert 'status["ct_path"]' in routes
+    assert 'status["ctv_path"]' in routes
+    assert 'status["oar_path"]' in routes
+
+
+def test_case_clear_invalidates_late_planning_and_dose_render_responses():
+    """Old case refreshes may finish, but they must not paint the new case."""
+    ui_api = read("web/app/static/js/brachybot-ui-api.js")
+    planning = read("web/app/static/js/brachybot-dvh-planning.js")
+    manual = read("web/app/static/js/brachybot-3d-manual.js")
+    layout = read("web/app/static/js/brachybot-viewer-layout.js")
+
+    assert "invalidatePlanningRefresh" in ui_api
+    assert "window.invalidatePlanningRefresh" in planning
+    assert "const isCurrentCase = () =>" in planning
+    assert "if (!isCurrentCase() || !ov || ov.stale) return;" in planning
+    assert "_doseOverlayLoadGeneration" in manual
+    assert "requestSessionId !== _doseOverlaySessionId()" in manual
+    assert "invalidateViewer3DRequests" in ui_api
+    assert "function _viewer3DRequestScopeIsCurrent" in layout
+    assert "scene3D.meshes[id] !== mesh" in layout
+    assert "_viewer3DRequestHeaders(requestScope" in layout
+    assert "Object.keys(_doseContourCache).forEach" in manual
+
+
+def test_delayed_header_metadata_cannot_overwrite_a_new_case():
+    """DICOM metadata is case-owned just like volume and label arrays."""
+    ui_api = read("web/app/static/js/brachybot-ui-api.js")
+    planning = read("web/app/static/js/brachybot-dvh-planning.js")
+
+    assert "async function pullHeaderInfo(ctPath, options = {})" in ui_api
+    assert "'X-BrachyBot-Session': expectedSessionId" in ui_api
+    assert "const ownsResponse = () =>" in ui_api
+    assert "String(state.ctPath || '') === expectedPath" in ui_api
+    assert "await pullHeaderInfo(state.ctPath, { sessionId: expectedSessionId })" in planning
+    assert "const headerResp = await fetch(API + '/header/info'" not in planning
+
+
+def test_running_chat_persists_the_user_turn_before_a_browser_refresh():
+    """Refresh must restore the prompt that owns a replayed task trace."""
+    routes = read("web/routes/planning_routes.py")
+    started = routes.split('reason="chat.task.started"', 1)[0]
+    assert 'display_message = full_message.split("\\n\\n[Uploaded image path:"' in started
+    assert '"messages": messages' in started
+    assert '"task_status": "running"' in started
+
+
+def test_task_replay_is_deduplicated_and_bound_to_the_original_case():
+    """Two restore phases must not make one task stop its own replay."""
+    workspace = read("web/app/static/js/brachybot-workspace.js")
+    chat_todo = read("web/app/static/js/brachybot-chat-todo.js")
+    ui_api = read("web/app/static/js/brachybot-ui-api.js")
+
+    assert "const resumeSessionId = sessionId;" in workspace
+    assert "String(activeSessionId || '') !== resumeSessionId" in workspace
+    assert "_sessionChatResumePromises" in chat_todo
+    assert "if (activeSessionId !== sessionId) return false;" in chat_todo
+    assert "Two snapshot applications can race" in chat_todo
+    assert "skipChat: options.background === true" in ui_api
+
+
 def test_case_transitions_do_not_block_on_control_plane_cleanup():
     """Saving/releasing/reacquiring a lease must not delay the visible case."""
     workspace = read("web/app/static/js/brachybot-workspace.js")
@@ -86,9 +176,9 @@ def test_case_transitions_do_not_block_on_control_plane_cleanup():
     )[0]
     delete_block = workspace.split("window.deleteSession =", 1)[1]
     assert "void persistWorkspace('session.switching')" in switch_block
-    assert "void window.brachybotAuth.releaseLease()" in switch_block
-    assert "await window.brachybotAuth.releaseLease()" not in switch_block
-    assert "void window.brachybotAuth.acquireLease()" in switch_block
+    assert "void window.brachybotAuth.releaseLease(previousSessionId)" in switch_block
+    assert "await window.brachybotAuth.releaseLease(" not in switch_block
+    assert "void window.brachybotAuth.acquireLease(activeSessionId)" in switch_block
     assert "void loadServerSessions().then(() => renderSessionList())" in delete_block
     assert "deferDisposal: true" in delete_block
 
@@ -139,7 +229,7 @@ def test_chat_snapshot_is_redrawn_after_restore():
     workspace = read("web/app/static/js/brachybot-workspace.js")
     assert "Array.isArray(chat.messages)" in workspace
     assert "loadSessionChat(activeSessionId)" in workspace
-    assert "sessions[activeSessionId].pending = false" in workspace
+    assert "sessions[sessionId].pending = false" in workspace
 
 
 def test_chat_snapshot_paints_before_heavy_clinical_restore():
@@ -160,7 +250,7 @@ def test_case_clear_removes_untracked_surfaces_and_clinical_evaluation():
     assert "Detailed evaluation will appear here after planning completes." in ui_api
     assert "invalidateViewerDataLoads" in ui_api
     assert "viewerDataLoadGeneration" in viewer
-    assert "generation !== viewerDataLoadGeneration" in viewer
+    assert "scope.dataGeneration !== viewerDataLoadGeneration" in viewer
     assert "invalidateSegmentationMeshPrewarm" in ui_api
     assert "generation !== _segmentationMeshPrewarm.generation" in manual_3d
 
@@ -171,15 +261,16 @@ def test_case_clear_removes_ctv_and_oar_input_paths_and_file_selections():
     assert "state.ctvPath = null" in ui_api
     assert "state.oarPath = null" in ui_api
     assert "['ctvPath', 'oarPath'].forEach" in ui_api
-    assert "['fileCTV', 'fileOAR'].forEach" in ui_api
+    assert "['fileCT', 'fileCTV', 'fileOAR'].forEach" in ui_api
 
 
 def test_oar_tree_hydrates_when_binary_labels_arrive_without_metadata_header():
     """2D OAR pixels and Data Tree names must restore together per case."""
     viewer = read("web/app/static/js/brachybot-viewer-volume.js")
     assert "async function hydrateOarDataTreeFromServer" in viewer
-    assert "fetch(API + '/viewer/organs')" in viewer
-    assert "void hydrateOarDataTreeFromServer(generation, sessionId);" in viewer
+    assert "fetch(API + '/viewer/organs', {" in viewer
+    assert "headers: _viewerDataHeaders(expectedSessionId)" in viewer
+    assert "void hydrateOarDataTreeFromServer(scope.dataGeneration, scope.sessionId);" in viewer
     assert "Invalid OAR metadata header" in viewer
 
 
@@ -248,18 +339,22 @@ def test_workspace_notices_are_explicitly_dismissible_without_changing_state():
     assert "Dismiss outdated-page notice" in ui_api
     assert 'id="workspaceLockTakeover"' in read("web/app/index.html")
     assert "takeover: true" in auth
-    assert "function takeoverLease()" in auth
+    assert "function takeoverLease(sessionId = currentLeaseSessionId())" in auth
 
 
 def test_lease_release_does_not_depend_on_fetch_wrapper_side_effects():
     """Case changes must release only this browser's lease after cache refreshes."""
     auth = read("web/app/static/js/brachybot-auth.js")
-    block = auth.split("async function releaseLease()", 1)[1].split("async function authenticated()", 1)[0]
+    block = auth.split(
+        "async function releaseLease(sessionId = currentLeaseSessionId())", 1
+    )[1].split("async function authenticated()", 1)[0]
     assert "credentials: 'same-origin'" in block
     assert "'X-CSRF-Token': state.csrfToken" in block
     assert "'X-BrachyBot-Editor': editorToken" in block
     assert "await authFetch('/api/workspace/lease'" in block
     assert "LEASE_RELEASE_TIMEOUT_MS = 4000" in auth
+    assert "session_id: ownerSessionId" in block
+    assert "aria-busy" in auth
 
 
 def test_lease_identity_survives_reload_and_is_bound_to_selected_case():
@@ -267,8 +362,35 @@ def test_lease_identity_survives_reload_and_is_bound_to_selected_case():
     assert "localStorage.getItem(editorKey) || sessionStorage.getItem(editorKey)" in auth
     assert "localStorage.setItem(editorKey, editorToken)" in auth
     assert "function currentLeaseSessionId()" in auth
-    assert "session_id: currentLeaseSessionId()" in auth
-    assert "aria-busy" in auth
+
+
+def test_data_plane_requests_and_lease_transitions_are_case_bound():
+    """Fast switches must not let delayed API or lease work follow global selection."""
+    auth = read("web/app/static/js/brachybot-auth.js")
+    workspace = read("web/app/static/js/brachybot-workspace.js")
+    switch_block = workspace.split("window.switchSession =", 1)[1].split(
+        "window.deleteSession =", 1
+    )[0]
+
+    assert "headers.set('X-BrachyBot-Session', requestCaseId)" in auth
+    assert "const controlPlaneRequest" in auth
+    assert "async function releaseLease(sessionId = currentLeaseSessionId())" in auth
+    assert "async function acquireLease(sessionId = currentLeaseSessionId())" in auth
+    assert "releaseLease(previousSessionId)" in switch_block
+    assert "acquireLease(activeSessionId)" in switch_block
+
+
+def test_chat_callbacks_are_persisted_to_the_turn_owner_case():
+    """A response arriving after navigation must not be saved into the visible case."""
+    chat = read("web/app/static/js/brachybot-chat-core.js")
+    todo = read("web/app/static/js/brachybot-chat-todo.js")
+
+    assert "sessionId = activeSessionId" in chat
+    assert "const ownerSessionId = String(sessionId || activeSessionId || '')" in chat
+    assert "ownerSessionId === String(activeSessionId || '')" in chat
+    assert "saveSessionMessage(safeType, c, null, Date.now(), ownerSessionId)" in chat
+    assert "headers: { 'X-BrachyBot-Session': turnSessionId }" in todo
+    assert "addChat('bot-response', finalText, true, Date.now(), false, turnSessionId)" in todo
 
 
 def test_oar_report_paths_normalize_volume_percentage_once():
@@ -382,6 +504,23 @@ def test_delayed_scene_restore_is_scoped_to_its_case_generation():
     assert "if (generation !== workspaceRestoreGeneration) return;" in workspace
     assert "const restoreGeneration = invalidateDeferredWorkspaceRestore();" in workspace
     assert "restoreSceneView(uiState.viewer?.scene, uiState.viewer?.dvh, restoreGeneration);" in workspace
+
+
+def test_volume_labels_slices_and_planning_results_pin_the_origin_case():
+    """Every delayed clinical payload must remain bound to its originating case."""
+    volume = read("web/app/static/js/brachybot-viewer-volume.js")
+    planning = read("web/app/static/js/brachybot-dvh-planning.js")
+    report_export = read("web/app/static/js/brachybot-report-export.js")
+
+    assert "function _captureViewerDataScope" in volume
+    assert "function _viewerDataScopeIsCurrent" in volume
+    assert "headers: _viewerDataHeaders(scope.sessionId)" in volume
+    assert "headers: _viewerDataHeaders(scope.sessionId, { 'Content-Type': 'application/json' })" in volume
+    assert "if (!sliceIsCurrent()) return;" in volume
+    assert "Number(state?.slices?.[axis]) !== Number(sliceIndex)" in volume
+    assert "'X-BrachyBot-Session': expectedSessionId" in planning
+    assert "loadLabelVolumes({ sessionId: expectedSessionId })" in planning
+    assert "'X-BrachyBot-Session': ownerSessionId" in report_export
 
 
 def test_ui_controller_waits_for_async_viewer_and_manual_planning_actions():

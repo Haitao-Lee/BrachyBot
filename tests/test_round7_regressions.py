@@ -170,7 +170,7 @@ def test_viewer_and_data_tree_regressions_are_explicitly_covered():
     assert "const raw = document.getElementById('viewerThreshold')?.value?.trim() || ''" in viewer
     assert "category === 'planning'" in viewer
     assert "category === 'planning_trajectories'" in viewer
-    assert "async function loadLabelVolumes()" in viewer
+    assert "async function loadLabelVolumes(options = {})" in viewer
     assert "opts.allOAR" in manual_3d
     assert "const doseFraction" not in dvh
     assert "const cursorDose =" in dvh
@@ -235,8 +235,8 @@ def test_needle_render_scheduler_survives_mixed_static_asset_revisions():
     # Keep this contract aligned with the actual cache-busting revisions in
     # index.html. A stale assertion here falsely reports a deployment bug and
     # hides whether the endpoint interaction bundle is really versioned.
-    assert "brachybot-viewer-layout.js?v=9" in index
-    assert "brachybot-3d-manual.js?v=19" in index
+    assert "brachybot-viewer-layout.js?v=10" in index
+    assert "brachybot-3d-manual.js?v=22" in index
     assert "scene3D.requestRender(1)" in layout
     assert "scene3D.requestRender(2)" in layout
     assert "window.requestRender = requestRender;" in manual
@@ -278,7 +278,8 @@ def test_case_import_audit_and_review_controls_share_manual_ui_paths():
     assert "handleDicomRTImport(this)" in index
     assert "Report.review.openModal()" in index
     assert "fetch(API + '/import/dicom_rt'" in ui
-    assert "options.sessionId !== _activeApiSessionId()" in ui
+    assert "const ownerSessionId = String(options.sessionId || _activeApiSessionId())" in ui
+    assert "const isCurrentOwner = () => ownerSessionId === String(_activeApiSessionId())" in ui
     assert "'input.dicom_rt.browse': 'fileDicomRT'" in ui
     assert "target === 'report.review.open'" in ui
     assert "'/api/workspace/audit?limit=200'" in report

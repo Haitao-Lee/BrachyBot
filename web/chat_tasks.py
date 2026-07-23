@@ -54,11 +54,36 @@ class ChatTask:
     streamed_response: str = ""
     steps: List[Dict[str, Any]] = field(default_factory=list)
     error: str = ""
+    completion_status: str = ""
+    result_committed: bool = False
 
     def __post_init__(self) -> None:
         self._events: List[str] = []
         self._terminal_event_seen = False
         self._condition = threading.Condition()
+        self._commit_step_id = f"workspace-commit-{self.task_id}"
+
+    def commit_step(self, status: str, result: str = "") -> Dict[str, Any]:
+        """Return the stable progress step used while durable results commit."""
+        step = {
+            "id": self._commit_step_id,
+            "type": "tool",
+            "tool": "workspace_checkpoint",
+            "title": "Saving case results",
+            "status": str(status),
+            "content": (
+                "Persisting clinical results, conversation, and viewer state."
+                if status == "pending"
+                else "Case results saved."
+            ),
+        }
+        if result:
+            step["result"] = str(result)
+        return step
+
+    @staticmethod
+    def encode_event(event_name: str, data: Dict[str, Any]) -> str:
+        return f"event: {event_name}\ndata: {json.dumps(data)}\n\n"
 
     def publish(self, raw: Any) -> None:
         """Append an event and notify every current/future subscriber."""
@@ -118,11 +143,17 @@ class ChatTask:
                 "task_id": self.task_id,
                 "session_id": self.session_id,
                 "status": self.status,
+                "phase": (
+                    "finalizing"
+                    if self.status == "running" and self.completion_status
+                    else self.status
+                ),
                 "message": self.message,
                 "created_at": self.created_at,
                 "finished_at": self.finished_at,
                 "event_count": len(self._events),
                 "response_available": bool(self.response or self.streamed_response),
+                "result_committed": bool(self.result_committed),
                 "error": self.error or None,
             }
 
@@ -174,7 +205,7 @@ class ChatTaskManager:
         agent: Any,
         message: str,
         ui_state: Optional[Dict[str, Any]],
-        on_finish: Optional[Callable[[ChatTask], None]] = None,
+        on_finish: Optional[Callable[[ChatTask], Optional[bool]]] = None,
         start_gate: Optional[threading.Event] = None,
     ) -> ChatTask:
         """Start one worker, rejecting concurrent turns in the same case."""
@@ -193,6 +224,7 @@ class ChatTaskManager:
 
         def worker() -> None:
             finalized = False
+            terminal_event = ""
             try:
                 if start_gate is not None:
                     start_gate.wait()
@@ -202,24 +234,51 @@ class ChatTaskManager:
                 with app.app_context():
                     agent.memory.set_ui_state(ui_state or {})
                     for event in agent.chat_with_stream(task.message):
+                        # The Agent's ``done`` event is a protocol boundary,
+                        # not proof that case data is durable. Hold it until
+                        # arrays, chat, report state, and operation metadata
+                        # have committed to the owning workspace.
+                        event_name, _ = _event_parts(event)
+                        if event_name == "done":
+                            terminal_event = (
+                                event.decode("utf-8", errors="replace")
+                                if isinstance(event, bytes) else str(event or "")
+                            )
+                            continue
                         task.publish(event)
                     if task.status == "running":
-                        # The Agent normally emits `done`, but the task
-                        # boundary owns the replay protocol. Emit a terminal
-                        # event when an adapter returns without one so a
-                        # client never remains in a perpetual pending state.
-                        if not task._terminal_event_seen:
-                            task.publish("event: done\ndata: {}\n\n")
+                        task.completion_status = "completed"
+                        task.publish(task.encode_event("step", task.commit_step("pending")))
+                        committed = True
+                        if on_finish is not None:
+                            committed = on_finish(task) is not False
+                            finalized = True
+                        if not committed:
+                            failure = "Case results could not be saved."
+                            task.publish(task.encode_event(
+                                "step",
+                                task.commit_step("error", failure),
+                            ))
+                            task.publish(task.encode_event("error", {"message": failure}))
+                            task.finish("failed", failure)
+                            return
+                        task.result_committed = True
+                        task.publish(task.encode_event("step", task.commit_step("done")))
+                        # The Agent normally emits ``done``. The task boundary
+                        # supplies it when an adapter omits it, but only after
+                        # durable finalization has succeeded.
+                        task.publish(terminal_event or "event: done\ndata: {}\n\n")
                         task.finish("completed")
                     if on_finish is not None:
-                        on_finish(task)
-                        finalized = True
+                        if not finalized:
+                            on_finish(task)
+                            finalized = True
             except Exception as exc:  # pragma: no cover - exercised by integration tests
                 logger.exception("Chat task %s failed", task.task_id)
+                task.completion_status = "failed"
                 task.publish(
                     "event: error\ndata: " + json.dumps({"message": str(exc)}) + "\n\n"
                 )
-                task.finish("failed", str(exc))
                 if on_finish is not None:
                     try:
                         with app.app_context():
@@ -227,6 +286,7 @@ class ChatTaskManager:
                             finalized = True
                     except Exception:
                         logger.exception("Chat task %s finalization failed", task.task_id)
+                task.finish("failed", str(exc))
             finally:
                 if on_finish is not None and not finalized:
                     try:

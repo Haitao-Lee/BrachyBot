@@ -606,6 +606,39 @@ async function loadAllSlices() {
 //      dataTreeState.planning.meshes, so the data tree sees the new
 //      meshes automatically.
 let _3dConfigCache = null;
+let _viewer3DRequestGeneration = 0;
+
+function _activeViewer3DSessionId() {
+    if (typeof activeSessionId !== 'undefined' && activeSessionId) return String(activeSessionId);
+    return String(state?.sessionId || '');
+}
+
+function _captureViewer3DRequestScope() {
+    return {
+        generation: _viewer3DRequestGeneration,
+        sessionId: _activeViewer3DSessionId(),
+    };
+}
+
+function _viewer3DRequestScopeIsCurrent(scope) {
+    return !!scope
+        && scope.generation === _viewer3DRequestGeneration
+        && scope.sessionId === _activeViewer3DSessionId()
+        && (!state?.sessionId || scope.sessionId === String(state.sessionId));
+}
+
+function _viewer3DRequestHeaders(scope, headers = {}) {
+    return {
+        ...headers,
+        ...(scope?.sessionId ? { 'X-BrachyBot-Session': scope.sessionId } : {}),
+    };
+}
+
+function invalidateViewer3DRequests() {
+    _viewer3DRequestGeneration += 1;
+    return _viewer3DRequestGeneration;
+}
+window.invalidateViewer3DRequests = invalidateViewer3DRequests;
 async function _get3DConfig() {
     if (_3dConfigCache) return _3dConfigCache;
     try {
@@ -638,11 +671,15 @@ async function _get3DConfig() {
 }
 
 async function reconstruct3D() {
+    const requestScope = _captureViewer3DRequestScope();
     if (!state.ctPath || !state.ctLoaded) {
         try {
-            const resp = await fetch(API + '/status');
+            const resp = await fetch(API + '/status', {
+                headers: _viewer3DRequestHeaders(requestScope),
+            });
             if (resp.ok) {
                 const sd = await resp.json();
+                if (!_viewer3DRequestScopeIsCurrent(requestScope)) return { stale: true };
                 if (sd.ct_path) {
                     state.ctPath = sd.ct_path;
                     state.ctLoaded = true;
@@ -650,9 +687,11 @@ async function reconstruct3D() {
                 if (!volumeData && sd.ct_loaded) {
                     await loadVolumeData();
                 }
+                if (!_viewer3DRequestScopeIsCurrent(requestScope)) return { stale: true };
             }
         } catch (e) {}
     }
+    if (!_viewer3DRequestScopeIsCurrent(requestScope)) return { stale: true };
     if (!state.ctPath) {
         addChat('error', 'No CT image loaded');
         return;
@@ -673,6 +712,7 @@ async function reconstruct3D() {
         //    complained about — those meshes are real, segmentable
         //    surfaces, not just an iso-contour.
         await loadCTVAndObstacleMeshes();
+        if (!_viewer3DRequestScopeIsCurrent(requestScope)) return { stale: true };
 
         // 2) For planning runs, also reconstruct seeds, needles,
         //    and iso surfaces. The user can disable any of these
@@ -686,6 +726,7 @@ async function reconstruct3D() {
             if (cfg.show_seeds_by_default && typeof loadSeeds3D === 'function') {
                 try { await loadSeeds3D(); } catch (e) { console.warn('loadSeeds3D failed:', e); }
             }
+            if (!_viewer3DRequestScopeIsCurrent(requestScope)) return { stale: true };
             if (typeof loadAllIsoSurfaces === 'function') {
                 try {
                     await loadAllIsoSurfaces({
@@ -695,9 +736,11 @@ async function reconstruct3D() {
             }
         }
     } catch (e) {
-        addChat('error', '3D reconstruction failed: ' + e.message);
+        if (_viewer3DRequestScopeIsCurrent(requestScope)) {
+            addChat('error', '3D reconstruction failed: ' + e.message);
+        }
     } finally {
-        if (loading && !external3dStatus) {
+        if (_viewer3DRequestScopeIsCurrent(requestScope) && loading && !external3dStatus) {
             loading.classList.remove('active');
             loading.setAttribute('aria-hidden', 'true');
         }
@@ -722,11 +765,15 @@ function getCtvMeshLabelIds() {
 }
 
 async function reconstructOrgan3D(id, silent = false) {
+    const requestScope = _captureViewer3DRequestScope();
     if (!state.ctPath || !state.ctLoaded) {
         try {
-            const resp = await fetch(API + '/status');
+            const resp = await fetch(API + '/status', {
+                headers: _viewer3DRequestHeaders(requestScope),
+            });
             if (resp.ok) {
                 const sd = await resp.json();
+                if (!_viewer3DRequestScopeIsCurrent(requestScope)) return { stale: true };
                 if (sd.ct_path) {
                     state.ctPath = sd.ct_path;
                     state.ctLoaded = true;
@@ -734,9 +781,11 @@ async function reconstructOrgan3D(id, silent = false) {
                 if (!volumeData && sd.ct_loaded) {
                     await loadVolumeData();
                 }
+                if (!_viewer3DRequestScopeIsCurrent(requestScope)) return { stale: true };
             }
         } catch (e) {}
     }
+    if (!_viewer3DRequestScopeIsCurrent(requestScope)) return { stale: true };
     if (!state.ctPath) {
         if (!silent) addChat('error', 'No CT image loaded');
         return;
@@ -759,11 +808,12 @@ async function reconstructOrgan3D(id, silent = false) {
                 try {
                     const res = await fetch(API + '/viewer/3d_mask', {
                         method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
+                        headers: _viewer3DRequestHeaders(requestScope, { 'Content-Type': 'application/json' }),
                         body: JSON.stringify({ label_id: labelIds[i], source: 'ctv', smoothing: 1 }),
                     });
                     if (res.ok) {
                         const data = await res.json();
+                        if (!_viewer3DRequestScopeIsCurrent(requestScope)) return { stale: true };
                         if (data.success && data.vertex_count > 0) {
                             // Use same color as data tree (from labelColorLUT)
                             const c = labelColorLUT[labelIds[i]];
@@ -809,7 +859,7 @@ async function reconstructOrgan3D(id, silent = false) {
 
         const res = await fetch(API + '/viewer/3d_mask', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: _viewer3DRequestHeaders(requestScope, { 'Content-Type': 'application/json' }),
             body: JSON.stringify({ label_id, source, smoothing: 1 }),
         });
 
@@ -824,6 +874,7 @@ async function reconstructOrgan3D(id, silent = false) {
         }
 
         const data = await res.json();
+        if (!_viewer3DRequestScopeIsCurrent(requestScope)) return { stale: true };
         if (data.success) {
             data.color = color;
             data.organ_id = id;
@@ -832,9 +883,11 @@ async function reconstructOrgan3D(id, silent = false) {
             switchPanel('viewers', document.querySelectorAll('.panel-tab')[2]);
         }
     } catch (e) {
-        addChat('error', '3D reconstruction failed: ' + e.message);
+        if (_viewer3DRequestScopeIsCurrent(requestScope)) {
+            addChat('error', '3D reconstruction failed: ' + e.message);
+        }
     } finally {
-        if (loading && !external3dStatus) {
+        if (_viewer3DRequestScopeIsCurrent(requestScope) && loading && !external3dStatus) {
             loading.classList.remove('active');
             loading.setAttribute('aria-hidden', 'true');
         }
@@ -1035,7 +1088,7 @@ function _prepareDoseTextureSceneVisibility() {
     });
 }
 
-async function _fetchDoseRawAxialSlice(rawZ) {
+async function _fetchDoseRawAxialSlice(rawZ, requestScope = _captureViewer3DRequestScope()) {
     if (!state.doseOverlay || !state.doseOverlay.shape) return null;
     const maxZ = (state.doseOverlay.shape[0] || 1) - 1;
     const z = Math.max(0, Math.min(maxZ, Math.round(rawZ)));
@@ -1047,11 +1100,12 @@ async function _fetchDoseRawAxialSlice(rawZ) {
     pending[z] = (async () => {
         const res = await fetch(API + '/planning/dose_overlay_slice', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: _viewer3DRequestHeaders(requestScope, { 'Content-Type': 'application/json' }),
             body: JSON.stringify({ axis: 'axial', slice_index: z }),
         });
         if (!res.ok) return null;
         const data = await res.json();
+        if (!_viewer3DRequestScopeIsCurrent(requestScope)) return null;
         if (!data.success || !data.slice) return null;
         cache[z] = data.slice;
         return cache[z];
@@ -1070,7 +1124,8 @@ function _sampleDoseNormalizedAtIndex(idx) {
     return Number(slice[y][x]) || 0;
 }
 
-async function _applyDoseTextureToMesh(id, mesh) {
+async function _applyDoseTextureToMesh(id, mesh, requestScope = _captureViewer3DRequestScope()) {
+    if (!_viewer3DRequestScopeIsCurrent(requestScope)) return { stale: true };
     const surface = getMeshSurface(mesh);
     if (!_isDoseTexturableMesh(id, mesh) || !surface) return;
     const posAttr = surface.geometry.attributes.position;
@@ -1094,7 +1149,10 @@ async function _applyDoseTextureToMesh(id, mesh) {
             const idx = _worldToIndex(v.x, v.y, v.z);
             if (idx) zSet.add(Math.max(0, Math.min(doseZ - 1, Math.round(idx[0]))));
         }
-        await Promise.all([...zSet].map(z => _fetchDoseRawAxialSlice(z).catch(() => null)));
+        await Promise.all([...zSet].map(z => _fetchDoseRawAxialSlice(z, requestScope).catch(() => null)));
+    }
+    if (!_viewer3DRequestScopeIsCurrent(requestScope) || scene3D.meshes[id] !== mesh) {
+        return { stale: true };
     }
 
     let lastRgb = [0, 0, 0];
@@ -1168,6 +1226,7 @@ function fitCameraToDoseSurfaceScene() {
 }
 
 async function setDoseTextureMode(enabled, opts = {}) {
+    const requestScope = _captureViewer3DRequestScope();
     if (state.doseTexture.applying) return;
     state.doseTexture.applying = true;
     const btn = document.getElementById('doseTextureToggle');
@@ -1178,6 +1237,7 @@ async function setDoseTextureMode(enabled, opts = {}) {
     // Safety timer: if the operation hangs (network timeout, server stall),
     // reset the button after 60 seconds so the user can retry.
     const safetyTimer = setTimeout(() => {
+        if (!_viewer3DRequestScopeIsCurrent(requestScope)) return;
         state.doseTexture.applying = false;
         if (btn) {
             btn.disabled = false;
@@ -1193,6 +1253,7 @@ async function setDoseTextureMode(enabled, opts = {}) {
             // hidden stays hidden.
             const opacityBefore = state.doseOverlay?.opacity;
             if (!state.doseOverlay) await loadDoseOverlay();
+            if (!_viewer3DRequestScopeIsCurrent(requestScope)) return { stale: true };
             if (!state.doseOverlay?.shape) throw new Error('Dose overlay is not available');
             if (state.doseOverlay && state.doseOverlay.opacity !== opacityBefore) {
                 console.warn('[DoseTexture] 2D dose overlay opacity changed during setDoseTextureMode:', opacityBefore, '->', state.doseOverlay.opacity);
@@ -1200,7 +1261,8 @@ async function setDoseTextureMode(enabled, opts = {}) {
             _prepareDoseTextureSceneVisibility();
             const entries = Object.entries(scene3D.meshes || {}).filter(([id, mesh]) => _isDoseTexturableMesh(id, mesh));
             if (entries.length === 0) throw new Error('No CTV/OAR 3D meshes are available for dose surface mapping');
-            await Promise.all(entries.map(([id, mesh]) => _applyDoseTextureToMesh(id, mesh)));
+            await Promise.all(entries.map(([id, mesh]) => _applyDoseTextureToMesh(id, mesh, requestScope)));
+            if (!_viewer3DRequestScopeIsCurrent(requestScope)) return { stale: true };
             _prepareDoseTextureSceneVisibility();
             state.doseTexture.enabled = true;
             // Show 3D colorbar when dose surface mode is active
@@ -1215,6 +1277,7 @@ async function setDoseTextureMode(enabled, opts = {}) {
             scene3D.renderer.render(scene3D.scene, scene3D.camera);
         }
     } catch (e) {
+        if (!_viewer3DRequestScopeIsCurrent(requestScope)) return { stale: true };
         console.warn('[DoseTexture] failed:', e);
         if (!opts.silent) {
             const message = `Dose surface mapping failed: ${e.message || e}`;
@@ -1226,11 +1289,13 @@ async function setDoseTextureMode(enabled, opts = {}) {
         update3DColorbar(false);
     } finally {
         clearTimeout(safetyTimer);
-        state.doseTexture.applying = false;
-        if (btn) {
-            btn.disabled = false;
-            btn.textContent = state.doseTexture.enabled ? 'Normal Surface' : 'Dose Surface';
-            btn.classList.toggle('active', state.doseTexture.enabled);
+        if (_viewer3DRequestScopeIsCurrent(requestScope)) {
+            state.doseTexture.applying = false;
+            if (btn) {
+                btn.disabled = false;
+                btn.textContent = state.doseTexture.enabled ? 'Normal Surface' : 'Dose Surface';
+                btn.classList.toggle('active', state.doseTexture.enabled);
+            }
         }
     }
 }

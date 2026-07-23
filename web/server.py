@@ -33,6 +33,7 @@ try:
     from web.routes.viewer_routes import register_viewer_routes
     from web.routes.planning_routes import register_planning_routes
     from web.routes.session_routes import register_session_routes
+    from web.routes.surgical_guide_routes import register_surgical_guide_routes
     from web.workspace_store import WorkspaceError, WorkspaceLeaseConflict, WorkspaceQuotaExceeded, WorkspaceStore
 except ImportError:  # pragma: no cover - supports direct script execution.
     from server_support import (  # type: ignore
@@ -50,6 +51,7 @@ except ImportError:  # pragma: no cover - supports direct script execution.
     from routes.viewer_routes import register_viewer_routes
     from routes.planning_routes import register_planning_routes
     from web.routes.session_routes import register_session_routes
+    from web.routes.surgical_guide_routes import register_surgical_guide_routes
     from web.workspace_store import WorkspaceError, WorkspaceLeaseConflict, WorkspaceQuotaExceeded, WorkspaceStore
 
 _TRUST_NETWORK = _server_support._TRUST_NETWORK
@@ -205,26 +207,37 @@ def create_app(config: Optional[Dict] = None):
         return text
 
     def _request_session_context(explicit_session_id: Optional[str] = None):
-        """Return the authenticated owner's currently selected case.
+        """Return the authenticated owner and the case bound to this request.
 
-        The signed login cookie, not a browser-provided session identifier, is
-        authoritative.  Legacy payload/header IDs are accepted only when they
-        exactly match the selected case, which keeps old request shapes
-        compatible without allowing arbitrary owned-session hopping.
+        The selected-case cookie remains the navigation default, while an
+        explicit argument or ``X-BrachyBot-Session`` binds asynchronous work
+        to the case that originated it. Ownership is verified before the ID is
+        used. This prevents a late save, render callback, or background task
+        from mutating whichever case a browser selected more recently.
         """
         user = current_user(workspace_store)
         if not user:
             raise WorkspaceError("Authentication required")
+        requested_value = explicit_session_id
+        if requested_value is None and has_request_context():
+            requested_value = str(request.headers.get("X-BrachyBot-Session") or "").strip() or None
+        if requested_value:
+            try:
+                requested = _normalize_session_id(requested_value)
+            except ValueError as exc:
+                raise WorkspaceError("Invalid case session") from exc
+            workspace_store.get_session(user["id"], requested)
+            return user, requested
+
         selected = flask_session.get("bb_session_id")
         if not selected:
             entry = workspace_store.create_session(user["id"], "New case")
             flask_session["bb_session_id"] = entry.id
             return user, entry.id
-        session_id = _normalize_session_id(selected)
-        if explicit_session_id:
-            requested = _normalize_session_id(explicit_session_id)
-            if requested != session_id:
-                raise WorkspaceError("Select the requested case before modifying it")
+        try:
+            session_id = _normalize_session_id(selected)
+        except ValueError as exc:
+            raise WorkspaceError("Invalid selected case session") from exc
         workspace_store.get_session(user["id"], session_id)
         return user, session_id
 
@@ -408,7 +421,17 @@ def create_app(config: Optional[Dict] = None):
             )
         except WorkspaceLeaseConflict as exc:
             return jsonify({"error": str(exc), "code": "workspace_locked", "editable": False}), 409
-        except WorkspaceError:
+        except WorkspaceError as exc:
+            if request.headers.get("X-BrachyBot-Session"):
+                # A request-bound case is part of the operation's identity.
+                # Never fall back to the currently selected browser case when
+                # that identity is malformed, deleted, or owned by another
+                # account.
+                return jsonify({
+                    "error": "The requested case is unavailable",
+                    "code": "workspace_unavailable",
+                    "detail": str(exc),
+                }), 404
             # Authentication middleware returns the canonical user-facing
             # response before a route is invoked.
             return None
@@ -1242,6 +1265,7 @@ def create_app(config: Optional[Dict] = None):
 
     register_viewer_routes(app, get_agent, _load_ct_image, _extract_dicom_tags)
     register_planning_routes(app, get_agent)
+    register_surgical_guide_routes(app, get_agent)
     register_session_routes(
         app,
         workspace_store,

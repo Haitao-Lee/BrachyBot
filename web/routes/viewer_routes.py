@@ -57,11 +57,31 @@ def _requires_label_faithful_mesh(agent, source: str, label_id: int) -> bool:
 
 
 def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
-    def owned_case_path(path: str) -> bool:
+    def request_case_context():
+        """Resolve the case that originated this viewer request.
+
+        The browser's selected-case cookie is only a navigation fallback.
+        Delayed loads and render callbacks send ``X-BrachyBot-Session`` so
+        switching tabs or cases cannot redirect them into another workspace.
+        """
         store = current_app.extensions.get("brachybot_workspace_store")
         user = current_user(store) if store is not None else None
-        session_id = str(flask_session.get("bb_session_id") or "")
-        return bool(user and session_id and store.owns_path(user["id"], session_id, path))
+        session_id = str(
+            request.headers.get("X-BrachyBot-Session")
+            or flask_session.get("bb_session_id")
+            or ""
+        ).strip()
+        if store is None or user is None or not session_id:
+            raise ValueError("Authenticated case session is required")
+        entry = store.get_session(user["id"], session_id)
+        return store, user, entry.id
+
+    def owned_case_path(path: str) -> bool:
+        try:
+            store, user, session_id = request_case_context()
+        except Exception:
+            return False
+        return bool(store.owns_path(user["id"], session_id, path))
 
     @app.route("/api/viewer/load", methods=["POST"])
     @require_api_key
