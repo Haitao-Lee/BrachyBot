@@ -203,6 +203,19 @@
         const values = {};
         document.querySelectorAll('input[id], select[id], textarea[id]').forEach(el => {
             if (el.type === 'password' || /(?:api[_-]?key|token|secret)/i.test(el.id)) return;
+            if (el.tagName === 'SELECT' && el.multiple) {
+                // A guide can intentionally target a subset of planned
+                // needles. Preserve every selected channel, rather than the
+                // browser's scalar select.value (which exposes only the
+                // first one), so the exported manufacturing geometry survives
+                // a case switch or server restart unchanged.
+                values[el.id] = {
+                    values: Array.from(el.selectedOptions || [])
+                        .map(option => String(option.value))
+                        .filter(Boolean),
+                };
+                return;
+            }
             values[el.id] = el.type === 'checkbox' || el.type === 'radio'
                 ? { checked: !!el.checked }
                 : { value: el.value };
@@ -387,6 +400,13 @@
             const element = document.getElementById(id);
             if (!element || !saved || typeof saved !== 'object') return;
             if (Object.prototype.hasOwnProperty.call(saved, 'checked')) element.checked = !!saved.checked;
+            if (Array.isArray(saved.values) && element.tagName === 'SELECT' && element.multiple) {
+                const selected = new Set(saved.values.map(value => String(value)));
+                Array.from(element.options || []).forEach(option => {
+                    option.selected = selected.has(String(option.value));
+                });
+                return;
+            }
             if (Object.prototype.hasOwnProperty.call(saved, 'value')) element.value = saved.value;
         });
     }

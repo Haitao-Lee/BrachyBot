@@ -623,6 +623,7 @@
                             <label class="form-label" style="font-size:0.57rem;"><span data-i18n-zh="导向针道（不选=全部）" data-i18n-en="Guided needles (empty = all)">Guided needles (empty = all)</span><select id="guideNeedleSelection" multiple size="4" aria-label="Needles included in puncture guide"></select></label>
                             <label class="form-label" style="font-size:0.57rem;"><span data-i18n-zh="已保存导板版本" data-i18n-en="Saved guide version">Saved guide version</span><select id="guideVersionSelect" aria-label="Saved puncture guide version"></select><button class="btn btn-outline" type="button" onclick="loadSelectedSurgicalGuideVersion()" style="font-size:0.56rem;padding:3px 5px;margin-top:3px;"><span data-i18n-zh="显示所选版本" data-i18n-en="Show selected version">Show selected version</span></button></label>
                         </div>
+                        <button class="btn btn-outline" type="button" onclick="resetSurgicalGuideControls()" style="font-size:0.56rem;padding:3px 5px;margin-top:6px;" data-i18n-zh="恢复默认参数" data-i18n-en="Restore default parameters">Restore default parameters</button>
                         <div style="margin-top:5px;font-size:0.54rem;color:var(--text-dim);" data-i18n-zh="更改将在下次生成导板时应用，并随当前病例保存。" data-i18n-en="Changes apply to the next generated guide and are saved with this case.">Changes apply to the next generated guide and are saved with this case.</div>
                     </details>
                 </div>
