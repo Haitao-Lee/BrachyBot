@@ -67,6 +67,27 @@ def _sanitize_upload_filename(name: str) -> str:
     return sanitized.strip() or "uploaded_file"
 
 
+def _case_has_running_chat_task(task_manager: Any, user_id: str, session_id: str) -> bool:
+    """Return whether a case owns a detached chat/planning worker.
+
+    Agent instances are an LRU cache, while long-running chat workflows own an
+    explicit agent reference.  Evicting an agent that is still executing would
+    let a later viewer request hydrate a second, stale copy of the same case.
+    The task manager is deliberately optional so server startup and lightweight
+    test configurations retain their existing behavior.
+    """
+    active = getattr(task_manager, "active", None)
+    if not callable(active):
+        return False
+    try:
+        return active(str(user_id), str(session_id)) is not None
+    except Exception:
+        # Cache maintenance must never interrupt a clinical workflow merely
+        # because task-status introspection is temporarily unavailable.
+        logger.warning("Unable to inspect active case task during agent cache maintenance", exc_info=True)
+        return True
+
+
 def _dicom_rt_import_summary(record: Dict[str, Any]) -> Dict[str, Any]:
     """Return the compact, browser-safe view of a stored DICOM-RT import.
 
@@ -200,6 +221,12 @@ def create_app(config: Optional[Dict] = None):
     _max_sessions = 50  # Maximum number of concurrent sessions
     _session_timeout = 3600  # Session timeout in seconds (1 hour)
 
+    def _agent_has_running_task(cache_key: tuple) -> bool:
+        """Keep the sole in-memory agent for an active case task authoritative."""
+        return _case_has_running_chat_task(
+            app.extensions.get("brachybot_chat_tasks"), cache_key[0], cache_key[1],
+        )
+
     def _normalize_session_id(value: Any) -> str:
         text = str(value or "").strip()
         if not re.fullmatch(r"[a-f0-9]{32}", text):
@@ -266,17 +293,31 @@ def create_app(config: Optional[Dict] = None):
 
             # Check if we've hit the max sessions limit
             if len(_sessions) >= _max_sessions:
-                # Remove the oldest session
-                oldest_session = min(_session_timestamps, key=_session_timestamps.get)
-                evicted = _sessions.pop(oldest_session, None)
-                if evicted is not None:
-                    try:
-                        workspace_store.flush_agent_checkpoint(oldest_session[0], oldest_session[1], evicted, "agent.cache_evicted")
-                    except WorkspaceError:
-                        logger.warning("Failed to persist evicted case workspace", exc_info=True)
-                _session_timestamps.pop(oldest_session, None)
-                _server_support._drop_ui_bucket(oldest_session[1])
-                logger.info(f"Removed oldest session: {oldest_session}")
+                # Never evict the agent owned by a detached task. A browser
+                # may switch cases while planning continues; hydrating a new
+                # copy of that case before the task commits would split its
+                # clinical state. If all cached cases are active, temporarily
+                # exceed the soft LRU bound instead of sacrificing correctness.
+                evictable = [
+                    key for key in _session_timestamps
+                    if not _agent_has_running_task(key)
+                ]
+                if evictable:
+                    oldest_session = min(evictable, key=_session_timestamps.get)
+                    evicted = _sessions.pop(oldest_session, None)
+                    if evicted is not None:
+                        try:
+                            workspace_store.flush_agent_checkpoint(oldest_session[0], oldest_session[1], evicted, "agent.cache_evicted")
+                        except WorkspaceError:
+                            logger.warning("Failed to persist evicted case workspace", exc_info=True)
+                    _session_timestamps.pop(oldest_session, None)
+                    _server_support._drop_ui_bucket(oldest_session[1])
+                    logger.info("Removed oldest inactive session: %s", oldest_session)
+                else:
+                    logger.warning(
+                        "Agent cache soft limit reached with only active case tasks; retaining %d agents",
+                        len(_sessions),
+                    )
 
             # Create new agent for this session
             try:
@@ -333,6 +374,13 @@ def create_app(config: Optional[Dict] = None):
                 if current_time - timestamp > _session_timeout
             ]
             for sid in expired_sessions:
+                if _agent_has_running_task(sid):
+                    # A task can legitimately outlive browser activity. Keep
+                    # its single agent instance alive until it reaches the
+                    # durable completion boundary, then resume normal LRU
+                    # expiration on future cleanup passes.
+                    _session_timestamps[sid] = current_time
+                    continue
                 expired = _sessions.pop(sid, None)
                 if expired is not None:
                     try:
