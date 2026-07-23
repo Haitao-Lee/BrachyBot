@@ -4,6 +4,7 @@ import time
 import pytest
 
 from web.chat_tasks import ChatTaskManager
+from web.server import _case_has_running_chat_task
 
 
 class _App:
@@ -47,6 +48,19 @@ def _event(name, payload):
     import json
 
     return f"event: {name}\ndata: {json.dumps(payload)}\n\n"
+
+
+def test_agent_cache_protects_cases_with_detached_running_tasks():
+    """LRU maintenance must not hydrate a second agent during a case task."""
+
+    class _TaskManager:
+        def active(self, user_id, session_id):
+            return object() if (user_id, session_id) == ("user-a", "case-a") else None
+
+    manager = _TaskManager()
+    assert _case_has_running_chat_task(manager, "user-a", "case-a") is True
+    assert _case_has_running_chat_task(manager, "user-a", "case-b") is False
+    assert _case_has_running_chat_task(None, "user-a", "case-a") is False
 
 
 def test_chat_task_replays_events_and_is_case_scoped():

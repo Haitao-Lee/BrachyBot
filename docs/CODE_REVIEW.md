@@ -2,6 +2,37 @@
 
 _This file consolidates all code review reports. Sections are organized by date._
 
+## 2026-07-23 - Active-case agents are protected from cache eviction
+
+### Confirmed issue
+
+The in-memory Agent cache was correctly keyed by account and case, but its LRU
+and timeout cleanup did not consult detached chat tasks. A long-running
+planning/chat task could therefore lose its authoritative Agent instance after
+a cache-pressure eviction or idle timeout. A later viewer request could hydrate
+a second Agent from the last checkpoint while the original task continued in
+the background, creating a real stale-state recovery risk.
+
+### Resolution
+
+1. **Task-aware cache maintenance.** The cache now asks the case-scoped chat
+   task manager whether a case still owns a running worker before evicting or
+   expiring its Agent.
+2. **Correctness over soft cache limits.** If every cached Agent is actively
+   executing, the process temporarily exceeds the LRU limit instead of
+   duplicating or interrupting a clinical case. The bound applies again once
+   a task reaches its durable completion boundary.
+3. **Fail-closed maintenance.** If task-status introspection itself fails, the
+   cache conservatively retains the Agent; maintenance never decides to evict
+   a possibly active planning worker.
+
+### Verification
+
+- Added a focused unit regression for task-aware cache protection.
+- Focused chat/session-transition suite: **64 passed**.
+- Full local suite: **293 passed, 2 skipped**.
+- Full configured remote-runtime suite: **292 passed, 3 skipped**.
+
 ## 2026-07-23 - Puncture-guide parameters remain case-owned during editing
 
 ### Confirmed issue
