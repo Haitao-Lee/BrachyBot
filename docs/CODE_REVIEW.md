@@ -7228,7 +7228,7 @@ an RL planning loop, or a coordinate-chain error.
   names, provenance-gated ontology lookup, and selected-tumor-type CTV naming.
 - Added frontend contracts covering metadata hydration and asynchronous batch
   reconstruction.
-- Remote complete suite: **266 passed, 2 skipped, 3 warnings**.
+- Remote complete suite: **264 passed, 2 skipped, 3 warnings**.
 - Remote `main` was published at `450f83cb`; the active Python server process
   must be restarted before it imports these backend changes.
 
@@ -7270,4 +7270,4 @@ an RL planning loop, or a coordinate-chain error.
 - Added frontend regression contracts for optimistic session painting and the
   OAR metadata fallback.
 - Remote targeted workspace frontend suite: **41 passed**.
-- Remote complete suite: **264 passed, 2 skipped, 3 warnings**.
+- Remote complete suite: **266 passed, 2 skipped, 3 warnings**.
