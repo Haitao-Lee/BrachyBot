@@ -108,6 +108,48 @@ def test_only_explicit_cancel_stops_a_running_case_task():
     assert task.agent.cancelled is True
 
 
+def test_cancel_discards_late_provider_events_and_replays_terminal_status_once():
+    """Buffered model output must not revive a manually stopped case."""
+
+    manager = ChatTaskManager()
+    gate = threading.Event()
+    started = threading.Event()
+    finalized = []
+
+    class _BufferedAgent(_Agent):
+        def chat_with_stream(self, _message):
+            yield _event("start", {})
+            started.set()
+            gate.wait(timeout=2)
+            yield _event("response", {"response": "late provider output"})
+            yield _event("done", {})
+
+    task = manager.start(
+        _App(),
+        "user-a",
+        "case-a",
+        _BufferedAgent([]),
+        "hello",
+        {},
+        on_finish=finalized.append,
+    )
+    assert started.wait(timeout=2)
+    assert manager.cancel(task) is True
+    gate.set()
+
+    deadline = time.time() + 2
+    while not finalized and time.time() < deadline:
+        time.sleep(0.01)
+
+    events = list(task.iter_events(0))
+    assert task.status == "cancelled"
+    assert task.response == ""
+    assert finalized == [task]
+    assert not any("late provider output" in event for event in events)
+    assert sum(event.startswith("event: done") for event in events) == 1
+    assert '"cancelled": true' in events[-1]
+
+
 def test_same_case_rejects_concurrent_turn_but_other_case_is_allowed():
     manager = ChatTaskManager()
     gate = threading.Event()

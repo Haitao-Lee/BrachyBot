@@ -2,6 +2,43 @@
 
 _This file consolidates all code review reports. Sections are organized by date._
 
+## 2026-07-23 - Explicit chat cancellation is a durable terminal boundary
+
+### Confirmed issue
+
+The detached chat worker marked a task as cancelled after the user pressed the
+explicit Stop control, but a provider could still yield buffered tool, text, or
+terminal events afterwards. Those late events could be appended to the
+case-owned replay journal and appear again when the case was reopened in
+another browser. This was a real task-lifecycle race, distinct from intentional
+non-destructive session switching.
+
+### Resolution
+
+1. **Single cancellation terminal event.** A successful explicit cancellation
+   now atomically changes the task status and appends exactly one replayable
+   `done(cancelled)` event before invoking the provider cancellation hook.
+2. **Late-event fence.** The background worker checks task state before and
+   after decoding every provider event. Once stopped, buffered events are
+   discarded rather than being published, persisted, or replayed.
+3. **Replay-safe UI behavior.** A browser that reconnects to a cancelled task
+   renders the terminal stopped state instead of manufacturing an empty
+   assistant response or a false planning refresh.
+4. **Durable transcript policy.** Cancelled turns retain the user request and
+   trace for audit together with one `Stopped.` status. Partial provider prose
+   is deliberately not restored as a completed assistant answer.
+
+### Verification
+
+- Added a deterministic buffered-provider regression that cancels after the
+  first stream event, then verifies that late response text is absent and the
+  journal contains exactly one cancelled terminal event.
+- Remote configured-runtime suite: **289 passed, 3 skipped, 3 warnings**.
+- Local session-transition, workspace frontend, and chat-task contracts:
+  **62 passed**.
+- Python compilation, JavaScript syntax checking, and `git diff --check`
+  passed for the modified modules.
+
 ## 2026-07-23 - Patient-specific puncture-guide controls and physical geometry
 
 ### Confirmed implementation gap

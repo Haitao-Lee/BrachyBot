@@ -114,9 +114,34 @@ class ChatTask:
         with self._condition:
             if self.status == "running":
                 self.status = status
+                self.finished_at = time.time()
             self.error = error or self.error
-            self.finished_at = time.time()
             self._condition.notify_all()
+
+    def is_running(self) -> bool:
+        """Return whether the worker is still allowed to publish events."""
+        with self._condition:
+            return self.status == "running"
+
+    def cancel(self) -> bool:
+        """Mark the task terminal and publish one replayable cancellation event.
+
+        Agent providers can yield buffered tool or text events after their
+        cancellation hook returns.  The task journal is the source of truth
+        for every browser, so cancellation must become a terminal protocol
+        event before the worker sees those late events.
+        """
+        with self._condition:
+            if self.status != "running":
+                return False
+            self.status = "cancelled"
+            self.completion_status = "cancelled"
+            self.finished_at = time.time()
+            if not self._terminal_event_seen:
+                self._events.append(self.encode_event("done", {"cancelled": True}))
+                self._terminal_event_seen = True
+            self._condition.notify_all()
+        return True
 
     def event_count(self) -> int:
         with self._condition:
@@ -234,6 +259,12 @@ class ChatTaskManager:
                 with app.app_context():
                     agent.memory.set_ui_state(ui_state or {})
                     for event in agent.chat_with_stream(task.message):
+                        # Explicit Stop is the only normal cancellation path.
+                        # Providers may flush a buffered event after their
+                        # cancellation hook returns; never let it mutate the
+                        # owning case or leak into a later replay.
+                        if not task.is_running():
+                            break
                         # The Agent's ``done`` event is a protocol boundary,
                         # not proof that case data is durable. Hold it until
                         # arrays, chat, report state, and operation metadata
@@ -245,8 +276,10 @@ class ChatTaskManager:
                                 if isinstance(event, bytes) else str(event or "")
                             )
                             continue
+                        if not task.is_running():
+                            break
                         task.publish(event)
-                    if task.status == "running":
+                    if task.is_running():
                         task.completion_status = "completed"
                         task.publish(task.encode_event("step", task.commit_step("pending")))
                         committed = True
@@ -302,11 +335,13 @@ class ChatTaskManager:
     def cancel(self, task: Optional[ChatTask]) -> bool:
         if task is None:
             return False
+        cancelled = task.cancel()
+        if not cancelled:
+            return False
         try:
             task.agent._cancel_active_turn()
         except Exception:
             logger.exception("Unable to cancel chat task %s", task.task_id)
-        task.finish("cancelled")
         return True
 
     def _purge_locked(self) -> None:
