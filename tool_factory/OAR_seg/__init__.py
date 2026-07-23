@@ -105,8 +105,10 @@ class OARSegmentationTool(BaseTool):
         label_path = kwargs.get("label_path")
         organ_type = kwargs.get("organ_type", "general")
         label_img = None
+        from_label_path = bool(label_path and os.path.exists(label_path))
+        generated_metadata = {}
 
-        if label_path and os.path.exists(label_path):
+        if from_label_path:
             # Match the LPI orientation used by the CT viewer.  Geometry is
             # validated against the raw CT before this tool is invoked; using
             # DICOMOrient on both image types preserves physical coordinates
@@ -126,6 +128,7 @@ class OARSegmentationTool(BaseTool):
 
             result = tool._execute(image=image)
             if result.success:
+                generated_metadata = result.metadata or {}
                 oar_array = result.metadata.get("oar_array", result.data)
             else:
                 return result
@@ -139,16 +142,35 @@ class OARSegmentationTool(BaseTool):
                 if label > 0:
                     organ_counts[int(label)] = int(np.sum(oar_array == label))
 
-            # Try to get organ names from TotalSegmentator label mapping
-            try:
-                from .totalsegmentator_oar import TOTALSEG_LABEL_MAPPING
-                for label_id in organ_counts:
-                    organ_names[label_id] = TOTALSEG_LABEL_MAPPING.get(
-                        label_id, f"Unmapped structure (label {label_id})"
-                    )
-            except ImportError:
-                for label_id in organ_counts:
-                    organ_names[label_id] = f"Unmapped structure (label {label_id})"
+            if from_label_path:
+                # Uploaded labels have no reliable ontology. Keep them as
+                # numbered OARs and let the user rename/reclassify them.
+                organ_names = {
+                    label_id: f"OAR {ordinal}"
+                    for ordinal, label_id in enumerate(sorted(organ_counts), start=1)
+                }
+            else:
+                supplied_names = generated_metadata.get("organ_names") or {}
+                organ_names = {
+                    label_id: str(supplied_names.get(label_id, supplied_names.get(str(label_id), "")) or "")
+                    for label_id in organ_counts
+                }
+                if organ_type == "pancreatic":
+                    from .pancreatic_oar import PANCREATIC_NNUNET_LABELS
+                    for label_id in organ_counts:
+                        if not organ_names[label_id]:
+                            entry = PANCREATIC_NNUNET_LABELS.get(label_id)
+                            if entry and entry[1]:
+                                organ_names[label_id] = entry[0]
+                if not all(organ_names.values()):
+                    try:
+                        from .totalsegmentator_oar import TOTALSEG_LABEL_MAPPING
+                    except ImportError:
+                        TOTALSEG_LABEL_MAPPING = {}
+                    for ordinal, label_id in enumerate(sorted(organ_counts), start=1):
+                        organ_names[label_id] = organ_names[label_id] or str(
+                            TOTALSEG_LABEL_MAPPING.get(label_id, f"OAR {ordinal}")
+                        )
 
         return ToolResult(
             success=True,
@@ -160,6 +182,12 @@ class OARSegmentationTool(BaseTool):
                 "organ_counts": organ_counts,
                 "organ_names": organ_names,
                 "manual_label_orientation": "LPI" if label_img is not None else None,
+                "oar_source": "uploaded_unknown" if from_label_path else (
+                    generated_metadata.get("oar_source") or (
+                        "nnunet_pancreatic" if organ_type == "pancreatic" else "totalsegmentator"
+                    )
+                ),
+                "oar_mask_provenance": "uploaded_unknown" if from_label_path else "model",
             },
         )
 

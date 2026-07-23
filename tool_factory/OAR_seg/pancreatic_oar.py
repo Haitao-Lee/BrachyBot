@@ -155,6 +155,13 @@ class PancreaticOARTool(BaseTool):
         oar_mask.CopyInformation(image)
 
         num_organs = len(organ_volumes)
+        # Keep the numeric label ontology with the result so the unified
+        # wrapper can expose model names without guessing from label IDs.
+        organ_names = {
+            label_id: PANCREATIC_NNUNET_LABELS[label_id][0]
+            for label_id in organ_counts
+            if label_id in PANCREATIC_NNUNET_LABELS
+        }
         return ToolResult(
             success=True,
             data=oar_mask,
@@ -164,8 +171,11 @@ class PancreaticOARTool(BaseTool):
                 "oar_array": oar_array,
                 "organ_volumes": organ_volumes,
                 "organ_counts": organ_counts,
+                "organ_names": organ_names,
                 "dose_constraints": dose_constraints,
                 "method": method,
+                "oar_source": "nnunet_pancreatic",
+                "oar_is_full": False,
             },
         )
 

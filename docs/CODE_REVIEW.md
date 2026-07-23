@@ -7179,3 +7179,53 @@ an RL planning loop, or a coordinate-chain error.
   local commit. The currently running Python server process must be restarted
   before it can import the updated backend module; an already running request
   cannot be retroactively shortened.
+
+## Round 85: Uploaded Mask Provenance and Batch OAR Reconstruction (2026-07-23)
+
+### Confirmed findings
+
+- Uploaded OAR label volumes were previously allowed to inherit the
+  TotalSegmentator numeric ontology. A label value such as `1` or `7` is not
+  sufficient evidence that the uploaded file contains liver, vertebrae, or any
+  other named anatomy. This could create false anatomical names in the Data
+  Tree and could incorrectly affect traversability decisions.
+- Manual CTV/OAR replacement did not consistently clear model-only sidecars
+  (`ctv_full_labels`, embedded OAR labels, and previous OAR names/counts), so a
+  new mask could be displayed with stale structures from the previous result.
+- The natural-language command to reconstruct all OAR masks was not routed as
+  a deterministic UI action in the affected runtime path. In addition, the
+  group reconstruction handlers treated an empty client-side Data Tree as a
+  successful no-op when label metadata was still loading. This explains why
+  manual uploads could be visible in 2D but fail to produce 3D meshes.
+
+### Corrective changes
+
+- Uploaded OAR masks now carry `uploaded_unknown` provenance and receive stable
+  numbered names (`OAR 1`, `OAR 2`, ...). They default to the traversable OAR
+  group. No anatomical name is inferred from an integer label. Model-produced
+  masks retain their authoritative model label map; TotalSegmentator mapping is
+  used only when the provenance explicitly identifies that model.
+- Uploaded CTV masks use the selected tumor type for the foreground label and
+  remain opaque user CTV data. Model-only multi-label CTV sidecars are cleared
+  and are not merged into a later uploaded CTV. OAR names, counts, source, and
+  provenance are replaced atomically when an OAR mask is changed.
+- Viewer and report/DICOM naming use the same provenance-gated name helper, so
+  the Data Tree, exported structures, and report cannot silently disagree.
+- Explicit requests such as “reconstruct all OAR masks in 3D” now route to
+  `tree.group.reconstruct3d` with value `oar`. Both chat-driven and manual group
+  reconstruction hydrate `/api/viewer/organs` when necessary, then reconstruct
+  every current OAR label independently. A single malformed label no longer
+  prevents the remaining valid meshes from rendering, and an empty result is
+  reported to the user instead of being marked done.
+
+### Verification
+
+- Python syntax checks passed for all changed backend/tool modules.
+- Node syntax checks passed for the changed UI action, viewer layout, and
+  volume modules.
+- `git diff --check` passed.
+- Added `tests/test_uploaded_mask_provenance.py` covering numbered uploaded OAR
+  names, provenance-gated ontology lookup, and selected-tumor-type CTV naming.
+- Added frontend contracts covering metadata hydration and asynchronous batch
+  reconstruction. The configured remote test environment remains the final
+  validation gate before publishing this round.

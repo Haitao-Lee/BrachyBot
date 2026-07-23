@@ -365,9 +365,13 @@ def test_ui_controller_waits_for_async_viewer_and_manual_planning_actions():
     """UI action progress must represent completion, not merely task launch."""
     ui_api = read("web/app/static/js/brachybot-ui-api.js")
     manual = read("web/app/static/js/brachybot-manual-annotation.js")
+    volume = read("web/app/static/js/brachybot-viewer-volume.js")
 
     assert "return navigateToDosePeakSlices();" in ui_api
-    assert "return Promise.all(organs.map(o => reconstructOrgan3D(o.id, true)));" in ui_api
+    assert "await hydrateOrgans();" in ui_api
+    assert "Promise.allSettled(" in ui_api
+    assert "async function groupReconstruct3D(category)" in volume
+    assert "payload.organs, payload.oar_source || ''" in volume
     assert "return resetSession();" in ui_api
     assert "return startTrainingMode(value || 'Monitor planning workflow')" in ui_api
     assert "return clearCurrentChatHistory({ skipConfirm: true });" in ui_api

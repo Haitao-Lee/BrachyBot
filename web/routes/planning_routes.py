@@ -60,6 +60,7 @@ _ui_bucket = _server_support._ui_bucket
 _ui_session_id = _server_support._ui_session_id
 _valid_screenshot_request = _server_support._valid_screenshot_request
 _validate_path = _server_support._validate_path
+_oar_display_name_map = _server_support._oar_display_name_map
 
 
 def _validate_label_geometry(ct_path: str, label_path: str) -> Optional[str]:
@@ -676,8 +677,12 @@ def register_planning_routes(app, get_agent):
                         agent.memory.store("ctv_segmented", True)
                         if meta.get("tumor_type_used"):
                             agent.memory.store("tumor_type_used", meta["tumor_type_used"])
-                        if meta.get("ctv_source"):
-                            agent.memory.store("ctv_source", meta["ctv_source"])
+                        # Always overwrite provenance, including ``None``.
+                        # A new uploaded CTV must not inherit full labels or
+                        # tumor metadata from the previous case/mask.
+                        agent.memory.store("ctv_source", meta.get("ctv_source"))
+                        agent.memory.store("ctv_full_labels", meta.get("full_label_array"))
+                        agent.memory.store("ctv_embedded_oar_array", meta.get("oar_array"))
                         if label_path:
                             # Keep both historical and canonical memory keys
                             # so auto-tool parameter preparation and manual
@@ -688,12 +693,6 @@ def register_planning_routes(app, get_agent):
                             agent.memory.store("ctv_label_map", meta["label_map"])
                         if meta.get("label_stats"):
                             agent.memory.store("ctv_label_stats", meta["label_stats"])
-                        if meta.get("oar_array") is not None:
-                            # Preserve model-emitted hard structures such as
-                            # artery/vein independently from a later OAR run.
-                            agent.memory.store("ctv_embedded_oar_array", meta["oar_array"])
-                        if meta.get("full_label_array") is not None:
-                            agent.memory.store("ctv_full_labels", meta["full_label_array"])
                         if meta.get("ctv_volume_mm3") is not None:
                             agent.memory.store("ctv_volume_mm3", meta["ctv_volume_mm3"])
                         if meta.get("ctv_voxel_count") is not None:
@@ -712,10 +711,19 @@ def register_planning_routes(app, get_agent):
                         if label_path:
                             agent.memory.store("oar_path", label_path)
                             agent.memory.store("oar_mask_path", label_path)
-                        if meta.get("organ_names"):
-                            agent.memory.store("organ_names", meta["organ_names"])
-                        if meta.get("organ_counts"):
-                            agent.memory.store("organ_counts", meta["organ_counts"])
+                        # Replace names/counts even when the uploaded mask has
+                        # no anatomical ontology. The OAR tool deliberately
+                        # emits numbered names for that case.
+                        agent.memory.store("organ_names", meta.get("organ_names") or {})
+                        agent.memory.store("organ_counts", meta.get("organ_counts") or {})
+                        agent.memory.store(
+                            "oar_source",
+                            meta.get("oar_source") or ("uploaded_unknown" if label_path else "unknown_model"),
+                        )
+                        agent.memory.store(
+                            "oar_mask_provenance",
+                            meta.get("oar_mask_provenance") or ("uploaded_unknown" if label_path else "model"),
+                        )
                     except Exception as e:
                         logger.warning(f"store oar data failed: {e}")
 
@@ -2354,7 +2362,7 @@ def register_planning_routes(app, get_agent):
                 if tuple(ctv_array.shape) == reference_shape and np.any(ctv_array > 0):
                     structures["CTV"] = ctv_array > 0
 
-            organ_names = agent.memory.retrieve("organ_names") or {}
+            organ_names = _oar_display_name_map(agent, resampled_oar)
             used_names = set(structures)
             if resampled_oar is not None:
                 oar_array = np.asarray(resampled_oar)
@@ -2370,13 +2378,7 @@ def register_planning_routes(app, get_agent):
                     if label_id <= 0:
                         continue
                     name = organ_names.get(label_id) or organ_names.get(str(label_id))
-                    if not name:
-                        try:
-                            from tool_factory.OAR_seg.totalsegmentator_oar import TOTALSEG_LABEL_MAPPING
-                            name = TOTALSEG_LABEL_MAPPING.get(label_id)
-                        except Exception:
-                            name = None
-                    base_name = str(name or f"Organ_{label_id}")
+                    base_name = str(name or f"OAR {label_id}")
                     unique_name = base_name if base_name not in used_names else f"{base_name}_{label_id}"
                     used_names.add(unique_name)
                     structures[unique_name] = oar_array == label

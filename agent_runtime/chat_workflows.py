@@ -1985,6 +1985,10 @@ class ChatWorkflowMixin:
                 self.memory.store("tumor_type_used", result.metadata["tumor_type_used"])
             if result.metadata.get("ctv_source"):
                 self.memory.store("ctv_source", result.metadata["ctv_source"])
+            # Replace provenance-bearing sidecars atomically. A manual CTV
+            # upload must clear any previous model multi-label/OAR payload.
+            self.memory.store("ctv_full_labels", result.metadata.get("full_label_array"))
+            self.memory.store("ctv_embedded_oar_array", result.metadata.get("oar_array"))
             return result.message
         self.memory.store("last_segmentation_success", False)
         return f"CTV segmentation failed: {result.error}"
@@ -2007,6 +2011,18 @@ class ChatWorkflowMixin:
                 self.memory.store("organ_names", result.metadata["organ_names"])
             if "organ_counts" in result.metadata:
                 self.memory.store("organ_counts", result.metadata["organ_counts"])
+            self.memory.store(
+                "oar_source",
+                result.metadata.get("oar_source") or (
+                    "uploaded_unknown" if oar_path else "unknown_model"
+                ),
+            )
+            self.memory.store(
+                "oar_mask_provenance",
+                result.metadata.get("oar_mask_provenance") or (
+                    "uploaded_unknown" if oar_path else "model"
+                ),
+            )
             return result.message
         self.memory.store("last_segmentation_success", False)
         return f"OAR segmentation failed: {result.error}"

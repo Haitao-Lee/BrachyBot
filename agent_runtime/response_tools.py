@@ -124,6 +124,29 @@ print(json.dumps(result))
         force_reexecution = self._force_reexecution_requested(message=message)
         segmentation_scope = self._segmentation_scope(message)
 
+        # Explicit reconstruction commands are deterministic UI actions, not
+        # clinical segmentation requests. Route them directly so an existing
+        # uploaded OAR mask is reconstructed instead of being sent through
+        # the LLM's segmentation/completeness path.
+        wants_all_oar_3d = bool(re.search(
+            r"(?:all|every|全部|所有).*(?:oar|organ|危及器官|器官).*(?:3d|3-d|三维).*(?:reconstruct|重建)"
+            r"|(?:3d|3-d|三维).*(?:reconstruct|重建).*(?:all|every|全部|所有).*(?:oar|organ|危及器官|器官)",
+            msg,
+            re.IGNORECASE,
+        ))
+        if wants_all_oar_3d:
+            return [{
+                "id": "tool_ui_reconstruct_all_oar",
+                "tool": "ui_controller",
+                "params": {
+                    "actions": [{
+                        "target": "tree.group.reconstruct3d",
+                        "command": "run",
+                        "value": "oar",
+                    }]
+                },
+            }]
+
         # Find action keywords and their positions to preserve user's intended order
         # Bilingual patterns: Chinese terms match Chinese user input.
         # zh: 分割=segment, 靶区=target, 肿瘤=tumor, 器官=organ, 危及器官=OAR

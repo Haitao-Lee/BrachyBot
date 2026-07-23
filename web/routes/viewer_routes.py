@@ -350,7 +350,12 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
 
             # Use full multi-label array for CTV (includes tumor, artery, vein, pancreas, etc.)
             # Falls back to binary ctv_array if full labels not available
-            ctv_full = agent._get_label_array("ctv_full_labels")
+            ctv_source = str(agent.memory.retrieve("ctv_source", "") or "").strip().lower()
+            ctv_full_memory = agent._get_label_array("ctv_full_labels")
+            # Only model-produced multi-label CTV output may be split into
+            # embedded artery/vein/pancreas OAR labels. Uploaded CTV data is
+            # opaque user data and remains a foreground CTV mask.
+            ctv_full = ctv_full_memory if ctv_source == "model" else None
             if ctv_full is None:
                 ctv_full = agent._get_label_array("ctv_array")
             oar_array = agent._get_label_array("oar_array")
@@ -469,26 +474,29 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
                     response.headers['X-CTV-Label-Map'] = _json.dumps({"1": "CTV"})
 
             # Also return organ metadata for data tree
-            organ_names = agent.memory.retrieve("organ_names", {})
+            organ_names = _server_support._oar_display_name_map(agent, oar_array)
             organ_counts = agent.memory.retrieve("organ_counts", {})
             # Add nnUNet-derived OAR label names
-            nnunet_oar_names = {201: "artery", 202: "vein", 203: "pancreas"}
-            for lid, name in nnunet_oar_names.items():
-                if lid not in organ_names:
-                    organ_names[lid] = name
+            if ctv_source == "model" and ctv_full_memory is not None:
+                nnunet_oar_names = {201: "artery", 202: "vein", 203: "pancreas"}
+                for lid, name in nnunet_oar_names.items():
+                    if lid not in organ_names:
+                        organ_names[lid] = name
             organ_meta = {}
             if oar_array is not None:
                 for lid in np.unique(oar_array):
                     lid_int = int(lid)
                     if lid_int > 0:
                         organ_meta[lid_int] = {
-                            "name": organ_names.get(
-                                lid_int, f"Unmapped structure (label {lid_int})"
-                            ),
+                            "name": organ_names.get(lid_int, f"OAR {lid_int}"),
                             "color": color_lut.get(lid_int, [200, 200, 200]),
                             "voxels": int(organ_counts.get(lid_int, np.sum(oar_array == lid))),
                         }
             response.headers['X-Organ-Meta'] = _json.dumps(organ_meta)
+            response.headers['X-OAR-Source'] = str(
+                agent.memory.retrieve("oar_source", "") or ""
+            )
+            response.headers['X-CTV-Source'] = ctv_source
 
             return response
         except Exception as e:
@@ -631,18 +639,14 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
         if agent is None:
             return jsonify({"error": "Agent not available"}), 500
 
-        organ_names = agent.memory.retrieve("organ_names", {})
+        oar_array = agent._get_label_array("oar_array")
+        organ_names = _server_support._oar_display_name_map(agent, oar_array)
         organ_counts = agent.memory.retrieve("organ_counts", {})
 
         # If organ_names is empty but oar_array exists, generate from array
         if not organ_names:
-            oar_array = agent._get_label_array("oar_array")
             if oar_array is not None:
                 import numpy as np
-                try:
-                    from tool_factory.OAR_seg.totalsegmentator_oar import TOTALSEG_LABEL_MAPPING
-                except ImportError:
-                    TOTALSEG_LABEL_MAPPING = {}
                 organ_counts_generated = {}
                 organ_names_generated = {}
                 unique_labels = np.unique(oar_array)
@@ -650,8 +654,8 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
                     if label > 0:
                         label_int = int(label)
                         organ_counts_generated[label_int] = int(np.sum(oar_array == label))
-                        organ_names_generated[label_int] = TOTALSEG_LABEL_MAPPING.get(
-                            label_int, f"Unmapped structure (label {label_int})"
+                        organ_names_generated[label_int] = organ_names.get(
+                            label_int, f"OAR {len(organ_names_generated) + 1}"
                         )
                 organ_names = organ_names_generated
                 organ_counts = organ_counts_generated
@@ -667,7 +671,13 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
                 "voxel_count": organ_counts.get(label_int, organ_counts.get(str(label_int), 0))
             }
 
-        return jsonify({"success": True, "organs": organs})
+        return jsonify({
+            "success": True,
+            "organs": organs,
+            # The client uses provenance to decide whether an incoming mask
+            # may inherit previous Data Tree ontology/category state.
+            "oar_source": str(agent.memory.retrieve("oar_source", "") or ""),
+        })
 
     @app.route("/api/viewer/threshold", methods=["POST"])
     @require_api_key
