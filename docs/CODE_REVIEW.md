@@ -7262,6 +7262,9 @@ an RL planning loop, or a coordinate-chain error.
   durable snapshot. CT, label arrays, dose, meshes, and Agent hydration remain
   background work. A failed selection restores the prior shell instead of
   leaving a phantom selected session.
+- Incremented the two affected static asset revisions so an already-open
+  browser cannot retain the prior workspace or label-loader implementation
+  from its HTTP cache.
 
 ### Verification
 
