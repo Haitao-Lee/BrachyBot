@@ -2,6 +2,38 @@
 
 _This file consolidates all code review reports. Sections are organized by date._
 
+## 2026-07-23 - Puncture-guide parameters remain case-owned during editing
+
+### Confirmed issue
+
+The puncture-guide panel already sent its dimensions to the generator, but a
+multi-select HTML control serialised only its first selected needle through the
+generic workspace form snapshot. Numeric fields also waited for a `change`
+event, which meant an in-progress edit was not scheduled for persistence until
+the field lost focus. This could silently change the selected-channel subset or
+lose a just-edited manufacturing parameter after a rapid case switch.
+
+### Resolution
+
+1. **Complete channel-set persistence.** Workspace form snapshots now preserve
+   and restore every selected option of any multi-select control. Guide
+   versions therefore retain their chosen needle channels along with their
+   plate, bore, and sleeve geometry.
+2. **Responsive parameter checkpointing.** Each guide input schedules a
+   case-owned save while it is being edited and again on commit. Generation
+   remains explicit: edits never mutate an existing validated guide or STL.
+3. **Operator reset.** The parameter panel now offers an explicit restore
+   defaults control. Resetting schedules a durable case checkpoint rather than
+   leaving stale values in a browser-only form.
+
+### Verification
+
+- Added regression coverage for all exposed guide controls, diameter-to-radius
+  conversion, input/change checkpoint hooks, multiselect serialization, and
+  full parameter preservation in a watertight generated guide.
+- Local targeted suite: **62 passed**; JavaScript syntax checks passed for the
+  workspace and guide modules.
+
 ## 2026-07-23 - Explicit chat cancellation is a durable terminal boundary
 
 ### Confirmed issue

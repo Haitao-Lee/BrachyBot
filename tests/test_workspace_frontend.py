@@ -255,6 +255,34 @@ def test_case_clear_removes_untracked_surfaces_and_clinical_evaluation():
     assert "generation !== _segmentationMeshPrewarm.generation" in manual_3d
 
 
+def test_puncture_guide_controls_preserve_all_dimensions_and_selected_channels():
+    """Guide input uses clinical diameters and survives case restoration."""
+    index = read("web/app/index.html")
+    guide = read("web/app/static/js/brachybot-surgical-guide.js")
+    workspace = read("web/app/static/js/brachybot-workspace.js")
+
+    for control in (
+        "guideSkinThreshold",
+        "guideSkinClearance",
+        "guidePlateThickness",
+        "guidePatchMargin",
+        "guideChannelDiameter",
+        "guideSleeveOuterDiameter",
+        "guideSleeveOutward",
+        "guideSleeveInward",
+        "guideGeometryResolution",
+        "guideNeedleSelection",
+    ):
+        assert f'id="{control}"' in index
+    assert 'onclick="resetSurgicalGuideControls()"' in index
+    assert "channel_radius_mm: numericControl" in guide
+    assert "sleeve_outer_radius_mm: numericControl" in guide
+    assert "control.addEventListener('input', saveParameters)" in guide
+    assert "needleSelection.addEventListener('change', saveParameters)" in guide
+    assert "SELECT' && el.multiple" in workspace
+    assert "Array.isArray(saved.values)" in workspace
+
+
 def test_case_clear_removes_ctv_and_oar_input_paths_and_file_selections():
     """A new case must not display or retain masks from the previous case."""
     ui_api = read("web/app/static/js/brachybot-ui-api.js")

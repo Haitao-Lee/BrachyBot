@@ -117,7 +117,9 @@
   hole diameter, sleeve outer diameter/length, selected needle channels, and
   local geometry resolution. Guides are versioned, marked stale after planning
   geometry changes, validated as watertight before export, and can be checked
-  again from an imported STL without replacing patient data. See
+  again from an imported STL without replacing patient data. All dimensions
+  and the full selected-needle set are persisted with the case and restored
+  before the next explicit guide generation. See
   [Patient-Specific Puncture Guide](docs/PATIENT_SPECIFIC_PUNCTURE_GUIDE.md).
 
 ---

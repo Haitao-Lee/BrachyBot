@@ -12,6 +12,7 @@ from web.surgical_guide import (
     guide_version_summaries,
     invalidate_surgical_guides,
     mesh_to_ascii_stl,
+    normalize_guide_parameters,
     save_guide_version,
     validate_exported_stl,
 )
@@ -123,6 +124,24 @@ def test_guide_versions_preserve_parameters_and_stale_as_a_group():
     assert guide_state_for_version(agent, first["version"])["parameters"]["channel_radius_mm"] == 1.0
     assert invalidate_surgical_guides(agent, "needle geometry changed") is True
     assert all(item["status"] == "stale" for item in guide_version_summaries(agent))
+
+
+def test_guide_preserves_every_user_adjustable_manufacturing_dimension():
+    parameters = normalize_guide_parameters({
+        "skin_threshold_hu": -250.0,
+        "skin_clearance_mm": 1.4,
+        "plate_thickness_mm": 4.2,
+        "patch_margin_mm": 32.0,
+        "channel_radius_mm": 1.25,
+        "sleeve_outer_radius_mm": 3.6,
+        "sleeve_outward_mm": 11.0,
+        "sleeve_inward_mm": 6.5,
+        "geometry_resolution_mm": 0.8,
+    })
+    agent = _synthetic_agent()
+    state = save_guide_version(agent, generate_surgical_guide(agent, parameters))
+    assert state["parameters"] == parameters
+    assert state["validation"]["watertight"] is True
 
 
 def test_agent_tool_uses_the_same_versioned_guide_contract_as_the_web_route():

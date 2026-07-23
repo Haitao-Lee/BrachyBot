@@ -116,17 +116,24 @@
     }
 
     function bindGuideControls() {
+        const saveParameters = () => {
+            // Save edits while the field is being adjusted. Generation still
+            // remains explicit, so a validated guide version is never
+            // replaced until the clinician chooses Generate guide.
+            window.scheduleWorkspaceSave?.('surgical_guide.parameters');
+        };
         Object.values(GUIDE_CONTROLS).forEach(id => {
             const control = document.getElementById(id);
             if (!control || control.dataset.surgicalGuideBound === 'true') return;
             control.dataset.surgicalGuideBound = 'true';
-            control.addEventListener('change', () => {
-                // Parameter edits are intentionally cheap and session-owned.
-                // The existing STL remains an auditable version until the user
-                // explicitly regenerates it with these new dimensions.
-                window.scheduleWorkspaceSave?.('surgical_guide.parameters');
-            });
+            control.addEventListener('input', saveParameters);
+            control.addEventListener('change', saveParameters);
         });
+        const needleSelection = document.getElementById(GUIDE_NEEDLE_SELECTION_ID);
+        if (needleSelection && needleSelection.dataset.surgicalGuideBound !== 'true') {
+            needleSelection.dataset.surgicalGuideBound = 'true';
+            needleSelection.addEventListener('change', saveParameters);
+        }
     }
 
     function selectedNeedleIds() {
@@ -334,6 +341,7 @@
         const needleSelection = document.getElementById(GUIDE_NEEDLE_SELECTION_ID);
         if (needleSelection) needleSelection.replaceChildren();
         populateGuideVersions([], null);
+        window.scheduleWorkspaceSave?.('surgical_guide.parameters.reset');
     };
 
     window.loadSelectedSurgicalGuideVersion = function loadSelectedSurgicalGuideVersion() {
