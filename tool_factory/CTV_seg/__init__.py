@@ -7,6 +7,7 @@ Includes both nnU-Net based tools and VoCo pre-trained models.
 
 import sys
 import os
+import re
 import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -269,6 +270,9 @@ class CTVSegmentationTool(BaseTool):
             tumor_type.replace("_", " ").replace("nnunet ", "").replace("voco ", "")
             if tumor_type else ""
         )
+        # Avoid labels such as ``prostate tumor tumor`` while keeping the
+        # selected tumor site explicit for uploaded/manual CTV masks.
+        tumor_type_name = re.sub(r"\s+tumor$", "", tumor_type_name, flags=re.IGNORECASE).strip()
         if tumor_type_name and 1 in label_map:
             label_map[1] = f"{tumor_type_name} tumor"
         import logging

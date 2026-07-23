@@ -2441,7 +2441,7 @@ function _confirmAction(msgZh, msgEn, options = {}) {
     });
 }
 
-function _executeUIAction(a) {
+async function _executeUIAction(a) {
     const { target, command, value, requires_confirm } = a;
     if (requires_confirm) {
         const pairs = {
@@ -2538,7 +2538,7 @@ async function navigateToDosePeakSlices() {
     return { success: true, slices: requested };
 }
 
-function _executeUIActionRaw(a) {
+async function _executeUIActionRaw(a) {
     const { target, command, value } = a;
     try {
         if (target === 'ui.control') {
@@ -2742,17 +2742,43 @@ function _executeUIActionRaw(a) {
             if (value === 'ctv') {
                 return reconstructOrgan3D('ctv');
             } else {
-                // For OAR groups, reconstruct all organs in the group
-                if (dataTreeState && dataTreeState.organs) {
-                    const organs = dataTreeState.organs.filter(o => {
+                // Hydrate the tree when a manual mask was uploaded before
+                // label_volume finished loading. An empty client list used to
+                // make this action silently do nothing.
+                const hydrateOrgans = async () => {
+                    if (typeof dataTreeState === 'undefined') return;
+                    if (Array.isArray(dataTreeState.organs) && dataTreeState.organs.length) return;
+                    try {
+                        const response = await fetch(API + '/viewer/organs');
+                        if (!response.ok) return;
+                        const payload = await response.json();
+                        if (payload.organs && typeof updateOrganList === 'function') {
+                            updateOrganList(payload.organs, payload.oar_source || '');
+                        }
+                    } catch (error) {
+                        console.warn('[viewer] OAR metadata hydration failed', error);
+                    }
+                };
+                await hydrateOrgans();
+                const organs = (dataTreeState && Array.isArray(dataTreeState.organs))
+                    ? dataTreeState.organs.filter(o => {
                         if (value === 'non_traversable') return o.category === 'non_traversable';
                         if (value === 'traversable') return o.category === 'traversable';
                         return true;
-                    });
-                    return Promise.all(organs.map(o => reconstructOrgan3D(o.id, true)));
+                    })
+                    : [];
+                if (!organs.length) {
+                    addChat('error', 'No OAR labels are available for 3D reconstruction');
+                    return { success: false, error: 'No OAR labels are available for 3D reconstruction' };
                 }
+                // One malformed label must not prevent valid OAR meshes from
+                // rendering; report partial completion to the caller.
+                const results = await Promise.allSettled(
+                    organs.map(o => reconstructOrgan3D(o.id, true))
+                );
+                const completed = results.filter(r => r.status === 'fulfilled').length;
+                return { success: completed > 0, reconstructed: completed, total: organs.length };
             }
-            return;
         }
         if (target === 'tree.dose.visibility') {
             if (state.doseOverlay) {

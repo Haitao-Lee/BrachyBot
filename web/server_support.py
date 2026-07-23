@@ -83,6 +83,85 @@ def _canonical_oar_display_name(name: Any, label_id: Any = None) -> str:
         return f"Unmapped structure (label {numeric_label})"
     return raw or "Unmapped structure"
 
+
+_UPLOADED_OAR_SOURCES = {
+    "uploaded_unknown",
+    "manual_label",
+    "uploaded",
+    "manual_upload",
+}
+
+
+def _oar_display_name_map(agent: Any, oar_array: Any = None) -> Dict[int, str]:
+    """Build OAR names without inventing anatomy for uploaded labels.
+
+    Model-produced masks carry an authoritative label map.  An uploaded
+    multi-label mask normally carries no ontology, so its labels are exposed
+    as stable ``OAR 1``, ``OAR 2`` identifiers and remain traversable until a
+    user explicitly renames or reclassifies them in the Data Tree.  This
+    provenance gate prevents a numeric label from being mistaken for a
+    TotalSegmentator label merely because the integer happens to match.
+    """
+    memory = getattr(agent, "memory", None)
+    retrieve = getattr(memory, "retrieve", None)
+    if not callable(retrieve):
+        return {}
+    source = str(
+        retrieve("oar_source", retrieve("oar_mask_provenance", "")) or ""
+    ).strip().lower()
+    names = retrieve("organ_names", {}) or {}
+    if not isinstance(names, dict):
+        names = {}
+    if oar_array is None:
+        try:
+            oar_array = agent._get_label_array("oar_array")
+        except Exception:
+            oar_array = retrieve("oar_array")
+
+    label_ids = set()
+    try:
+        import numpy as _np
+        label_ids = {int(value) for value in _np.unique(oar_array) if int(value) > 0}
+    except Exception:
+        for value in names:
+            try:
+                if int(value) > 0:
+                    label_ids.add(int(value))
+            except (TypeError, ValueError):
+                continue
+
+    def _raw_name(label_id: int) -> str:
+        return str(names.get(label_id, names.get(str(label_id), "")) or "").strip()
+
+    def _is_generic(value: str) -> bool:
+        return bool(re.fullmatch(
+            r"(?i)(?:oar|organ|label|structure|unmapped(?: structure)?)"
+            r"[ _-]?(?:\d+|\(label\s*\d+\))?", value.strip()
+        ))
+
+    result: Dict[int, str] = {}
+    for ordinal, label_id in enumerate(sorted(label_ids), start=1):
+        raw = _raw_name(label_id)
+        # Explicit names are preserved so a user's rename survives refreshes.
+        if raw and not _is_generic(raw):
+            result[label_id] = raw
+            continue
+        if source in _UPLOADED_OAR_SOURCES or not source:
+            result[label_id] = f"OAR {ordinal}"
+            continue
+        # Numeric fallback is allowed only for the known TotalSegmentator
+        # ontology. Other model outputs must provide their own metadata.
+        if source in {"totalsegmentator", "model_totalsegmentator"}:
+            try:
+                from tool_factory.OAR_seg.totalsegmentator_oar import TOTALSEG_LABEL_MAPPING
+                mapped = TOTALSEG_LABEL_MAPPING.get(label_id)
+            except Exception:
+                mapped = None
+            result[label_id] = str(mapped or f"OAR {ordinal}")
+        else:
+            result[label_id] = f"OAR {ordinal}"
+    return result
+
 # API key for authentication. Local loopback development can run without a key;
 # non-loopback startup is refused unless BRACHYBOT_API_KEY is set or the
 # explicitly unsafe BRACHYBOT_ALLOW_INSECURE_REMOTE=1 override is provided.

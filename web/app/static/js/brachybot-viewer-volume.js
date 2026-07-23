@@ -297,6 +297,7 @@ async function loadLabelVolumes() {
         const hasOAR = res.headers.get('X-Has-OAR') === 'true';
         const ctvSize = parseInt(res.headers.get('X-CTV-Size') || '0');
         const oarSize = parseInt(res.headers.get('X-OAR-Size') || '0');
+        const oarSource = res.headers.get('X-OAR-Source') || '';
 
         labelColorLUT = JSON.parse(res.headers.get('X-Color-LUT') || '{}');
         // Override CTV label 1 (tumor) color: bright pink instead of
@@ -358,7 +359,7 @@ async function loadLabelVolumes() {
                     color: `rgb(${meta.color.join(',')})`,
                 };
             }
-            updateOrganList(organData);
+            updateOrganList(organData, oarSource);
         }
         // Always flip the data tree flags based on what we got, then
         // re-render. This is what makes "CTV/OAR don't show in the
@@ -1280,6 +1281,10 @@ const dataTreeState = {
     ct:       { visible: true, opacity: 1.0, color: '#888', loaded: false, label: 'CT Image' },
     ctv:      { visible: true, opacity: 0.7, color: '#ef4444', loaded: false, label: 'CTV Mask' },
     oar:      { visible: true, opacity: 0.5, color: '#22c55e', loaded: false, label: 'All OARs' },
+    // Provenance controls whether previous user-edited categories may be
+    // carried across a mask replacement. Uploaded unknown labels start as
+    // numbered traversable OARs; they must not inherit an old ontology.
+    oarSource: '',
     organs:   [],  // Individual organs: [{id, label, color, visible, opacity, voxelCount, category}]
     dose:     { visible: true, opacity: 0.4, color: '#f59e0b', loaded: false, label: 'Dose Distribution' },
     seeds:    { visible: true, opacity: 1.0, color: '#ffcc00', loaded: false, label: 'Seed Positions' },
@@ -1424,20 +1429,24 @@ const ORGAN_COLORS = [
     '#d946ef', '#0891b2', '#7c3aed', '#ca8a04', '#059669',
 ];
 
-function updateOrganList(organData) {
+function updateOrganList(organData, source = '') {
     // organData: {label_id: {name, voxel_count, color?}}
     if (!organData) return;
 
     // Preserve existing visibility/opacity state
     const existingState = {};
+    const sourceChanged = Boolean(source && dataTreeState.oarSource && source !== dataTreeState.oarSource);
     dataTreeState.organs.forEach(o => {
-        existingState[o.id] = { visible: o.visible, opacity: o.opacity, category: o.category, color: o.color };
+        if (!sourceChanged) {
+            existingState[o.id] = { visible: o.visible, opacity: o.opacity, category: o.category, color: o.color };
+        }
     });
+    if (source) dataTreeState.oarSource = source;
 
     dataTreeState.organs = [];
     let i = 0;
     for (const [labelId, info] of Object.entries(organData)) {
-        const name = info.name || `Organ ${labelId}`;
+        const name = info.name || `OAR ${i + 1}`;
         const id = `organ_${labelId}`;
         const existing = existingState[id];
         const cat = existing?.category || classifyOrgan(name);
@@ -2293,10 +2302,33 @@ function soloGroup(category) {
 }
 
 async function groupReconstruct3D(category) {
-    const organs = category === 'oar' ? dataTreeState.organs : dataTreeState.organs.filter(o => o.category === category);
-    for (const organ of organs) {
-        await reconstructOrgan3D(organ.id);
+    // A manually uploaded mask can arrive before the label-volume request
+    // populates the client tree. Hydrate the authoritative list first rather
+    // than treating an empty list as a successful no-op.
+    if (!Array.isArray(dataTreeState.organs) || dataTreeState.organs.length === 0) {
+        try {
+            const response = await fetch(API + '/viewer/organs');
+            if (response.ok) {
+                const payload = await response.json();
+                if (payload.organs) updateOrganList(payload.organs, payload.oar_source || '');
+            }
+        } catch (error) {
+            console.warn('[viewer] OAR metadata hydration failed', error);
+        }
     }
+    const organs = category === 'oar'
+        ? dataTreeState.organs
+        : dataTreeState.organs.filter(o => o.category === category);
+    if (!organs.length) {
+        addChat('error', 'No OAR labels are available for 3D reconstruction');
+        return { success: false, reconstructed: 0, total: 0 };
+    }
+    const results = await Promise.allSettled(organs.map(organ => reconstructOrgan3D(organ.id, true)));
+    return {
+        success: results.some(result => result.status === 'fulfilled'),
+        reconstructed: results.filter(result => result.status === 'fulfilled').length,
+        total: organs.length,
+    };
 }
 
 function getSelectedOrganIds() {
