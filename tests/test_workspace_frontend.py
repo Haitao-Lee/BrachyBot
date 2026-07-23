@@ -93,6 +93,20 @@ def test_case_transitions_do_not_block_on_control_plane_cleanup():
     assert "deferDisposal: true" in delete_block
 
 
+def test_session_switch_paints_the_selected_shell_before_snapshot_request():
+    """A slow snapshot must not delay sidebar/title/chat selection feedback."""
+    workspace = read("web/app/static/js/brachybot-workspace.js")
+    switch_block = workspace.split("window.switchSession =", 1)[1].split(
+        "window.deleteSession =", 1
+    )[0]
+    assert "function paintSessionShell" in workspace
+    assert "paintSessionShell(id);" in switch_block
+    assert switch_block.index("paintSessionShell(id);") < switch_block.index(
+        "await workspaceFetch(`/api/sessions/${encodeURIComponent(id)}/select`"
+    )
+    assert "paintSessionShell(previousSessionId)" in switch_block
+
+
 def test_case_clear_detaches_webgl_before_deferred_disposal():
     """Old meshes leave the scene synchronously while disposal yields a frame."""
     ui_api = read("web/app/static/js/brachybot-ui-api.js")
@@ -158,6 +172,15 @@ def test_case_clear_removes_ctv_and_oar_input_paths_and_file_selections():
     assert "state.oarPath = null" in ui_api
     assert "['ctvPath', 'oarPath'].forEach" in ui_api
     assert "['fileCTV', 'fileOAR'].forEach" in ui_api
+
+
+def test_oar_tree_hydrates_when_binary_labels_arrive_without_metadata_header():
+    """2D OAR pixels and Data Tree names must restore together per case."""
+    viewer = read("web/app/static/js/brachybot-viewer-volume.js")
+    assert "async function hydrateOarDataTreeFromServer" in viewer
+    assert "fetch(API + '/viewer/organs')" in viewer
+    assert "void hydrateOarDataTreeFromServer(generation, sessionId);" in viewer
+    assert "Invalid OAR metadata header" in viewer
 
 
 def test_llm_case_rename_uses_the_durable_session_api():

@@ -7228,6 +7228,46 @@ an RL planning loop, or a coordinate-chain error.
   names, provenance-gated ontology lookup, and selected-tumor-type CTV naming.
 - Added frontend contracts covering metadata hydration and asynchronous batch
   reconstruction.
-- Remote complete suite: **264 passed, 2 skipped, 3 warnings**.
+- Remote complete suite: **266 passed, 2 skipped, 3 warnings**.
 - Remote `main` was published at `450f83cb`; the active Python server process
   must be restarted before it imports these backend changes.
+
+## Round 86: Reliable OAR Tree Recovery and Immediate Case Switching (2026-07-23)
+
+### Confirmed findings
+
+- A restored `/api/viewer/label_volume` payload can contain valid OAR voxels
+  while its optional `X-Organ-Meta` response header is absent, malformed, or
+  stripped by an intermediary. The 2D viewers therefore rendered the masks,
+  but the browser had no names/counts with which to rebuild `dataTreeState`.
+  The OAR node then appeared empty even though the same session visibly had
+  OAR overlays.
+- The browser waited for the session selection request before replacing the
+  current viewer, chat, title, and sidebar state. Although server-side
+  selection intentionally avoids agent/GPU hydration, a slow snapshot request
+  still made a normal session click appear unresponsive and encouraged stale
+  previous-case content to remain visible.
+
+### Corrective changes
+
+- The 2D label loader now treats the binary label data as authoritative for
+  pixel rendering and uses `/api/viewer/organs` as a same-session metadata
+  fallback whenever OAR labels arrive without usable metadata. It verifies the
+  viewer generation and selected session before applying results, preserves
+  existing Data Tree material/category settings, and re-renders the tree only
+  for the currently selected case.
+- Session selection now performs an optimistic control-plane paint: it clears
+  the old case, immediately highlights the selected session, updates the title
+  and chat shell, and shows an opening-resource state before requesting the
+  durable snapshot. CT, label arrays, dose, meshes, and Agent hydration remain
+  background work. A failed selection restores the prior shell instead of
+  leaving a phantom selected session.
+
+### Verification
+
+- Node syntax checks passed for `brachybot-workspace.js` and
+  `brachybot-viewer-volume.js` on the local development machine.
+- Added frontend regression contracts for optimistic session painting and the
+  OAR metadata fallback.
+- Remote targeted workspace frontend suite: **41 passed**.
+- Remote complete suite: **264 passed, 2 skipped, 3 warnings**.

@@ -551,6 +551,35 @@
         activeSessionId = data.active_session_id;
     }
 
+    function paintSessionShell(sessionId, { clearWorkspace = true } = {}) {
+        // Case selection is a control-plane action. Paint the selected case
+        // immediately, then hydrate CT/labels/meshes asynchronously. Waiting
+        // for a snapshot or a lazy Agent restore here makes a simple sidebar
+        // click look like the application has frozen.
+        const next = sessions[sessionId];
+        if (!next) return false;
+        activeSessionId = sessionId;
+        revision = null;
+        window._activeWorkspaceSnapshot = null;
+        if (clearWorkspace && typeof clearClientWorkspace === 'function') {
+            clearClientWorkspace({ clearReport: true, deferDisposal: true });
+        }
+        renderSessionList();
+        const title = document.getElementById('chatSessionTitle');
+        if (title) title.textContent = next.title || 'New case';
+        // Do not leave the prior transcript beneath an optimistically
+        // highlighted case. A durable chat snapshot replaces this shell as
+        // soon as the control-plane response arrives.
+        if (typeof loadSessionChat === 'function') loadSessionChat(sessionId);
+        window.setWorkspaceHydrationState?.(
+            true,
+            typeof window._t === 'function'
+                ? window._t('\u6b63\u5728\u6253\u5f00\u75c5\u4f8b...', 'Opening case...')
+                : 'Opening case...',
+        );
+        return true;
+    }
+
     async function loadServerSessions({ commit = true, timeoutMs = WORKSPACE_REQUEST_TIMEOUT_MS } = {}) {
         const response = await workspaceFetch('/api/sessions', {}, timeoutMs);
         if (!response.ok) throw new Error(`Session list failed: HTTP ${response.status}`);
@@ -659,6 +688,7 @@
         if (!sessions[id]) return { success: false, error: 'The requested case does not exist.' };
         return runWorkspaceTransition(async () => {
             if (!(await prepareSessionChange())) return { success: false, cancelled: true };
+            const previousSessionId = activeSessionId;
             if (typeof flushActiveReportState === 'function') flushActiveReportState();
             void persistWorkspace('session.switching');
             // The old lease is released before changing the active id, but a
@@ -666,12 +696,28 @@
             if (typeof window.brachybotAuth?.releaseLease === 'function') {
                 void window.brachybotAuth.releaseLease().catch(error => console.debug('[workspace] lease release deferred:', error));
             }
-            const response = await workspaceFetch(`/api/sessions/${encodeURIComponent(id)}/select`, { method: 'POST' });
+            // Update the sidebar, title, chat shell, and empty viewer before
+            // the network round-trip. The request returns only a small
+            // workspace snapshot; large CT, label, dose, and mesh payloads
+            // continue in the background below.
+            paintSessionShell(id);
+            let response;
+            try {
+                response = await workspaceFetch(`/api/sessions/${encodeURIComponent(id)}/select`, { method: 'POST' });
+            } catch (error) {
+                // The server still owns the previous active case when a
+                // selection request cannot be delivered. Restore that shell
+                // rather than leaving the UI selected on a phantom case.
+                if (previousSessionId && sessions[previousSessionId]) paintSessionShell(previousSessionId);
+                throw error;
+            }
             const data = await response.json();
-            if (!response.ok) throw new Error(data.error || 'Unable to open case');
+            if (!response.ok) {
+                if (previousSessionId && sessions[previousSessionId]) paintSessionShell(previousSessionId);
+                throw new Error(data.error || 'Unable to open case');
+            }
             activeSessionId = data.active_session_id;
             revision = data.workspace?.session?.revision ?? null;
-            if (typeof clearClientWorkspace === 'function') clearClientWorkspace({ clearReport: true, deferDisposal: true });
             window._activeWorkspaceSnapshot = data.workspace;
             renderSessionList();
             if (typeof applyWorkspaceSnapshot === 'function') await applyWorkspaceSnapshot(data.workspace);

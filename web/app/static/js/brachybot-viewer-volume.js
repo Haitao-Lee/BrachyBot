@@ -282,6 +282,33 @@ async function loadVolumeData() {
     });
 }
 
+async function hydrateOarDataTreeFromServer(expectedGeneration, expectedSessionId) {
+    // The binary label-volume response is deliberately optimized for 2D
+    // rendering. Reverse proxies may omit a large optional metadata header,
+    // which used to leave the OAR pixels visible while the Data Tree appeared
+    // empty after a session restore. The lightweight organs endpoint is the
+    // authoritative metadata fallback for the same selected workspace.
+    try {
+        const response = await fetch(API + '/viewer/organs');
+        if (!response.ok) return false;
+        const payload = await response.json();
+        if (expectedGeneration !== viewerDataLoadGeneration
+            || (expectedSessionId != null && expectedSessionId !== state.sessionId)) return false;
+        const organs = payload?.organs || {};
+        if (!Object.keys(organs).length) return false;
+        updateOrganList(organs, payload.oar_source || '');
+        if (typeof dataTreeState !== 'undefined' && dataTreeState.oar) {
+            dataTreeState.oar.loaded = true;
+            dataTreeState.oar.visible = true;
+        }
+        try { if (typeof renderDataTree === 'function') renderDataTree(); } catch (_) {}
+        return true;
+    } catch (error) {
+        console.debug('[viewer] OAR Data Tree metadata fallback unavailable:', error);
+        return false;
+    }
+}
+
 async function loadLabelVolumes() {
     const generation = viewerDataLoadGeneration;
     const sessionId = state.sessionId || null;
@@ -318,7 +345,15 @@ async function loadLabelVolumes() {
         if (ctvLabelMapRaw) {
             try { window._ctvLabelMap = JSON.parse(ctvLabelMapRaw); } catch(e) { window._ctvLabelMap = {}; }
         }
-        organMetaFromServer = JSON.parse(res.headers.get('X-Organ-Meta') || '{}');
+        try {
+            organMetaFromServer = JSON.parse(res.headers.get('X-Organ-Meta') || '{}');
+        } catch (error) {
+            // Keep rendering the binary labels and fetch names through the
+            // metadata endpoint below. A malformed optional header must not
+            // discard an otherwise valid session restore.
+            console.warn('[viewer] Invalid OAR metadata header:', error);
+            organMetaFromServer = {};
+        }
 
         const buffer = await res.arrayBuffer();
         if (generation !== viewerDataLoadGeneration || (sessionId != null && sessionId !== state.sessionId)) return false;
@@ -360,6 +395,11 @@ async function loadLabelVolumes() {
                 };
             }
             updateOrganList(organData, oarSource);
+        } else if (hasOAR) {
+            // Do not block slice rendering on metadata. The Data Tree is
+            // repaired asynchronously once the browser has painted the
+            // restored 2D labels.
+            void hydrateOarDataTreeFromServer(generation, sessionId);
         }
         // Always flip the data tree flags based on what we got, then
         // re-render. This is what makes "CTV/OAR don't show in the
