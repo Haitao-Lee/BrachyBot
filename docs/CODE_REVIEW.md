@@ -7227,5 +7227,7 @@ an RL planning loop, or a coordinate-chain error.
 - Added `tests/test_uploaded_mask_provenance.py` covering numbered uploaded OAR
   names, provenance-gated ontology lookup, and selected-tumor-type CTV naming.
 - Added frontend contracts covering metadata hydration and asynchronous batch
-  reconstruction. The configured remote test environment remains the final
-  validation gate before publishing this round.
+  reconstruction.
+- Remote complete suite: **264 passed, 2 skipped, 3 warnings**.
+- Remote `main` was published at `450f83cb`; the active Python server process
+  must be restarted before it imports these backend changes.
