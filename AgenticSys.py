@@ -690,6 +690,12 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
             logger.warning(f"CaseMemoryTool not available: {e}")
 
         try:
+            from tool_factory.surgical_guide import SurgicalGuideTool
+            self.registry.register(SurgicalGuideTool(self))
+        except ImportError as e:
+            logger.warning(f"SurgicalGuideTool not available: {e}")
+
+        try:
             from tool_factory.clinical_kb import ClinicalKnowledgeBaseTool
             self.registry.register(ClinicalKnowledgeBaseTool())
         except ImportError as e:

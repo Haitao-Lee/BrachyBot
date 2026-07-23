@@ -332,12 +332,13 @@ async function syncUIBridgeState(reason = 'snapshot') {
 }
 
 async function reportUIEvent(type, label, detail = {}, options = {}) {
+    const ownerSessionId = _activeApiSessionId();
     try {
         const res = await fetch(API + '/ui/event', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                session_id: _activeApiSessionId(),
+                session_id: ownerSessionId,
                 type,
                 label,
                 detail,
@@ -345,6 +346,7 @@ async function reportUIEvent(type, label, detail = {}, options = {}) {
             }),
         });
         const data = await res.json().catch(() => null);
+        if (ownerSessionId !== _activeApiSessionId()) return null;
         if (data && data.feedback && _shouldLogTrainingFeedback(data.feedback)) {
             addChat('system', `Monitor: ${data.feedback}`);
         }
@@ -363,7 +365,15 @@ async function reportUIEvent(type, label, detail = {}, options = {}) {
                 trainingMonitorState.lastScreenshotAt = now;
                 // ``description`` is kept as a compatibility fallback for
                 // older servers; current training payloads use ``question``.
-                setTimeout(() => _interceptScreenshot(ss.target || 'dose-overview', ss.question || ss.description || 'Monitor screenshot'), 500);
+                setTimeout(() => {
+                    if (ownerSessionId !== _activeApiSessionId()) return;
+                    _interceptScreenshot(
+                        ss.target || 'dose-overview',
+                        ss.question || ss.description || 'Monitor screenshot',
+                        null,
+                        { sessionId: ownerSessionId },
+                    );
+                }, 500);
             }
         }
         // UI events include viewer, Data Tree, manual-planning and form
@@ -541,6 +551,10 @@ async function api(endpoint, body) {
 async function handleFileSelect(input, targetId) {
     const files = input.files ? Array.from(input.files) : [];
     if (files.length === 0) return;
+    const ownerSessionId = String(_activeApiSessionId());
+    const ownerCtPath = (document.getElementById('ctPath')?.value || '').trim();
+    const ownerTumorType = document.getElementById('ctvModelSelect')?.value || null;
+    const isCurrentOwner = () => ownerSessionId === String(_activeApiSessionId());
 
     const pathInput = document.getElementById(targetId);
     const overlay = document.getElementById('uploadProgressOverlay');
@@ -577,6 +591,7 @@ async function handleFileSelect(input, targetId) {
 
         const res = await fetch(API + '/upload', {
             method: 'POST',
+            headers: { 'X-BrachyBot-Session': ownerSessionId },
             body: formData,
         });
 
@@ -586,40 +601,59 @@ async function handleFileSelect(input, targetId) {
         }
 
         const data = await res.json();
-        pathInput.value = data.path;
-        pathInput.disabled = false;
-        if (targetId === 'ctvPath' || targetId === 'oarPath') {
+        if (isCurrentOwner()) {
+            pathInput.value = data.path;
+            pathInput.disabled = false;
+        }
+        if (isCurrentOwner() && (targetId === 'ctvPath' || targetId === 'oarPath')) {
             state[targetId] = data.path;
             if (typeof scheduleWorkspaceSave === 'function') scheduleWorkspaceSave();
         }
 
         // Auto-load CT to viewers if it's a CT file
         if (targetId === 'ctPath') {
-            state.ctPath = data.path;
-            state.ctSourceKind = data.kind || null;
-            addChat('system',
+            if (isCurrentOwner()) {
+                state.ctPath = data.path;
+                state.ctSourceKind = data.kind || null;
+            }
+            if (isCurrentOwner()) addChat('system',
                 data.kind === 'dicom_folder'
                     ? `Uploaded DICOM folder (${data.file_count} files) → ${data.path}`
                     : `Uploaded ${data.filename} (${(data.size / 1024 / 1024).toFixed(2)} MB)`);
-            await loadCTToViewers(data.path);
+            await loadCTToViewers(data.path, {
+                sessionId: ownerSessionId,
+                announce: isCurrentOwner(),
+            });
         } else if (targetId === 'ctvPath' || targetId === 'oarPath') {
-            await importUploadedMask(targetId === 'ctvPath' ? 'ctv' : 'oar', data.path);
+            await importUploadedMask(targetId === 'ctvPath' ? 'ctv' : 'oar', data.path, {
+                sessionId: ownerSessionId,
+                ctPath: ownerCtPath,
+                tumorType: ownerTumorType,
+            });
         }
 
-        overlay.classList.remove('active');
+        if (isCurrentOwner()) overlay.classList.remove('active');
     } catch (e) {
-        overlay.classList.remove('active');
-        pathInput.value = '';
-        pathInput.disabled = false;
-        showBrachyBotNotice(`File upload failed: ${e.message || e}`, 'error');
+        if (isCurrentOwner()) {
+            overlay.classList.remove('active');
+            pathInput.value = '';
+            pathInput.disabled = false;
+            showBrachyBotNotice(`File upload failed: ${e.message || e}`, 'error');
+        }
     }
 
-    input.value = '';
+    if (isCurrentOwner()) input.value = '';
 }
 
 /** Import a user-provided label into the session-scoped agent memory. */
-async function importUploadedMask(kind, labelPath) {
-    const ctPath = (document.getElementById('ctPath')?.value || '').trim();
+async function importUploadedMask(kind, labelPath, options = {}) {
+    const ownerSessionId = String(options.sessionId || _activeApiSessionId());
+    const isCurrentOwner = () => ownerSessionId === String(_activeApiSessionId());
+    const ctPath = String(
+        options.ctPath
+        || (isCurrentOwner() ? document.getElementById('ctPath')?.value : '')
+        || ''
+    ).trim();
     if (!ctPath) {
         showBrachyBotNotice('Load the CT image before importing a CTV/OAR mask.', 'warning');
         return { success: false, error: 'CT image is required before mask import.' };
@@ -630,14 +664,22 @@ async function importUploadedMask(kind, labelPath) {
             image_path: ctPath,
             label_path: String(labelPath || '').trim(),
         };
-        if (kind === 'ctv') body.tumor_type = document.getElementById('ctvModelSelect')?.value || null;
+        if (kind === 'ctv') {
+            body.tumor_type = options.tumorType
+                || (isCurrentOwner() ? document.getElementById('ctvModelSelect')?.value : null)
+                || null;
+        }
         const res = await fetch(API + '/segmentation', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+                'Content-Type': 'application/json',
+                'X-BrachyBot-Session': ownerSessionId,
+            },
             body: JSON.stringify(body),
         });
         const payload = await res.json().catch(() => ({}));
         if (!res.ok || !payload.success) throw new Error(payload.error || `HTTP ${res.status}`);
+        if (!isCurrentOwner()) return payload;
         if (typeof addChat === 'function') addChat('system', `${kind.toUpperCase()} mask imported for the current CT.`);
         if (typeof _saveManualState === 'function') {
             _saveManualState({ [kind === 'ctv' ? 'ctv_segmentation' : 'oar_segmentation']: true });
@@ -651,8 +693,10 @@ async function importUploadedMask(kind, labelPath) {
         return payload;
     } catch (error) {
         const message = error.message || String(error);
-        showBrachyBotNotice(`${kind.toUpperCase()} mask import failed: ${message}`, 'error');
-        if (typeof addChat === 'function') addChat('error', `${kind.toUpperCase()} mask import failed: ${message}`);
+        if (isCurrentOwner()) {
+            showBrachyBotNotice(`${kind.toUpperCase()} mask import failed: ${message}`, 'error');
+            if (typeof addChat === 'function') addChat('error', `${kind.toUpperCase()} mask import failed: ${message}`);
+        }
         return { success: false, error: message };
     }
 }
@@ -703,17 +747,23 @@ function renderDicomRTImportStatus(imports, options = {}) {
 }
 
 async function refreshDicomRTImportStatus(options = {}) {
+    const ownerSessionId = String(options.sessionId || _activeApiSessionId());
+    const isCurrentOwner = () => ownerSessionId === String(_activeApiSessionId());
     try {
-        const response = await fetch(API + '/import/dicom_rt');
+        const response = await fetch(API + '/import/dicom_rt', {
+            headers: { 'X-BrachyBot-Session': ownerSessionId },
+        });
         const payload = await response.json().catch(() => ({}));
         if (!response.ok) throw new Error(payload.error || `HTTP ${response.status}`);
-        if (options.sessionId && options.sessionId !== _activeApiSessionId()) return [];
+        if (!isCurrentOwner()) return [];
         const records = Array.isArray(payload.imports) ? payload.imports : [];
         state.dicomRtImports = records;
         renderDicomRTImportStatus(records, { silent: true });
         return records;
     } catch (error) {
-        if (!options.silent) showBrachyBotNotice(error.message || String(error), 'error');
+        if (isCurrentOwner() && !options.silent) {
+            showBrachyBotNotice(error.message || String(error), 'error');
+        }
         return [];
     }
 }
@@ -724,7 +774,8 @@ async function handleDicomRTImport(input) {
     const button = document.getElementById('dicomRtImportButton');
     const status = document.getElementById('dicomRtImportStatus');
     const path = document.getElementById('dicomRtPath');
-    const sessionAtStart = _activeApiSessionId();
+    const sessionAtStart = String(_activeApiSessionId());
+    const isCurrentOwner = () => sessionAtStart === String(_activeApiSessionId());
     if (button) button.disabled = true;
     if (path) path.value = file.name;
     if (status) {
@@ -735,10 +786,14 @@ async function handleDicomRTImport(input) {
     try {
         const formData = new FormData();
         formData.append('file', file, file.name);
-        const response = await fetch(API + '/import/dicom_rt', { method: 'POST', body: formData });
+        const response = await fetch(API + '/import/dicom_rt', {
+            method: 'POST',
+            headers: { 'X-BrachyBot-Session': sessionAtStart },
+            body: formData,
+        });
         const payload = await response.json().catch(() => ({}));
         if (!response.ok || !payload.success) throw new Error(payload.error || `HTTP ${response.status}`);
-        if (sessionAtStart !== _activeApiSessionId()) return;
+        if (!isCurrentOwner()) return payload;
         state.dicomRtImports = [...(Array.isArray(state.dicomRtImports) ? state.dicomRtImports : []), payload.import];
         renderDicomRTImportStatus(state.dicomRtImports);
         showBrachyBotNotice(
@@ -750,15 +805,17 @@ async function handleDicomRTImport(input) {
             clinical_status: payload.clinical_status,
         });
     } catch (error) {
-        if (status) {
+        if (isCurrentOwner() && status) {
             status.hidden = false;
             status.className = 'dicom-rt-status is-error';
             status.textContent = _dicomRtText(`导入失败：${error.message || error}`, `Import failed: ${error.message || error}`);
         }
-        showBrachyBotNotice(error.message || String(error), 'error', 8000);
+        if (isCurrentOwner()) showBrachyBotNotice(error.message || String(error), 'error', 8000);
     } finally {
-        if (button) button.disabled = false;
-        input.value = '';
+        if (isCurrentOwner()) {
+            if (button) button.disabled = false;
+            input.value = '';
+        }
     }
 }
 window.handleDicomRTImport = handleDicomRTImport;
@@ -1012,17 +1069,50 @@ function resetAllState(options = {}) {
  * the previously active case.
  */
 function clearClientWorkspace(options = {}) {
+    // The persistent Progress dock and manual dose row live outside a normal
+    // chat message.  Clear only their browser presentation while preserving
+    // every server-side task so an old case cannot animate inside a new one.
+    try { window.clearCaseScopedProgressPresentation?.(); } catch (_) {}
+    try { window.clearManualDoseProgressPresentation?.(); } catch (_) {}
     // Invalidate asynchronous 3D mesh fetches before removing current-case
     // objects. A late response from the previous session may still complete,
     // but it is no longer allowed to add geometry to the new case.
     if (typeof invalidateSegmentationMeshPrewarm === 'function') {
         invalidateSegmentationMeshPrewarm();
     }
+    if (typeof invalidatePlanningSceneLoads === 'function') {
+        invalidatePlanningSceneLoads();
+    }
+    if (typeof invalidateViewer3DRequests === 'function') {
+        invalidateViewer3DRequests();
+    }
     if (typeof invalidateViewerDataLoads === 'function') {
         invalidateViewerDataLoads();
     }
+    if (typeof invalidatePlanningRefresh === 'function') {
+        invalidatePlanningRefresh();
+    }
+    if (typeof invalidateReportCapture === 'function') {
+        invalidateReportCapture();
+    }
+    if (typeof window.invalidateSurgicalGuidePresentation === 'function') {
+        // The guide is case-owned geometry. Removing its old WebGL mesh before
+        // a workspace switch prevents it appearing briefly in a new case.
+        window.invalidateSurgicalGuidePresentation();
+    }
+    // Geometry settings are case-owned input, just like CT/CTV/OAR paths.
+    // Reset them before hydrating the next case so its default UI never shows
+    // dimensions from a guide created in the previously selected session.
+    if (typeof window.resetSurgicalGuideControls === 'function') {
+        window.resetSurgicalGuideControls();
+    }
     if (typeof clearDoseOverlayRuntime === 'function') {
         clearDoseOverlayRuntime();
+    }
+    const loading3D = document.getElementById('loading3D');
+    if (loading3D) {
+        loading3D.classList.remove('active');
+        loading3D.setAttribute('aria-hidden', 'true');
     }
     resetAllState({ deferDisposal: options.deferDisposal === true });
     state.ctLoaded = false;
@@ -1055,7 +1145,10 @@ function clearClientWorkspace(options = {}) {
     if (typeof updateMetrics === 'function') updateMetrics({});
     if (typeof updateOARTable === 'function') updateOARTable({});
     const ctPathInput = document.getElementById('ctPath');
-    if (ctPathInput) ctPathInput.value = '';
+    if (ctPathInput) {
+        ctPathInput.value = '';
+        ctPathInput.disabled = false;
+    }
     ['ctvPath', 'oarPath'].forEach(id => {
         const pathInput = document.getElementById(id);
         if (pathInput) {
@@ -1063,7 +1156,7 @@ function clearClientWorkspace(options = {}) {
             pathInput.disabled = false;
         }
     });
-    ['fileCTV', 'fileOAR'].forEach(id => {
+    ['fileCT', 'fileCTV', 'fileOAR'].forEach(id => {
         const fileInput = document.getElementById(id);
         if (fileInput) fileInput.value = '';
     });
@@ -1102,20 +1195,41 @@ window.clearClientWorkspace = clearClientWorkspace;
 // can both read from.
 var imageAnalysisData = { ct: null, ctv: null, oar: null };
 
-async function pullHeaderInfo(ctPath) {
+async function pullHeaderInfo(ctPath, options = {}) {
     // Fetch /api/header/info for a CT path, stash tags into state + agent
     // memory proxies, and re-render the Analysis panel.
     // Idempotent: safe to call multiple times for the same path.
     if (!ctPath) return;
+    const expectedSessionId = String(
+        options.sessionId
+        || state.sessionId
+        || (typeof activeSessionId !== 'undefined' ? activeSessionId : '')
+        || '',
+    );
+    const expectedPath = String(ctPath);
+    const ownsResponse = () => {
+        const selected = String(
+            (typeof activeSessionId !== 'undefined' ? activeSessionId : '')
+            || state.sessionId
+            || '',
+        );
+        const hydrated = String(state.sessionId || '');
+        return (!expectedSessionId || !selected || selected === expectedSessionId)
+            && (!expectedSessionId || !hydrated || hydrated === expectedSessionId)
+            && String(state.ctPath || '') === expectedPath;
+    };
     try {
         const res = await fetch(API + '/header/info', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+                'Content-Type': 'application/json',
+                ...(expectedSessionId ? { 'X-BrachyBot-Session': expectedSessionId } : {}),
+            },
             body: JSON.stringify({ ct_path: ctPath }),
         });
         if (!res.ok) return;
         const data = await res.json();
-        if (!data.success) return;
+        if (!data.success || !ownsResponse()) return;
         // Stash where everything else can read it
         state.ctDicomTags = data.tags || {};
         state.ctSourceKind = data.kind || state.ctSourceKind || null;
@@ -1325,18 +1439,25 @@ function updateImageAnalysis() {
 async function loadCTToViewers(ctPath, options = {}) {
     if (!ctPath) return;
 
+    const ownerSessionId = String(options.sessionId || _activeApiSessionId());
+    const isCurrentOwner = () => ownerSessionId === String(_activeApiSessionId());
     const announce = options.announce !== false;
-
     const overlay = document.getElementById('uploadProgressOverlay');
     const progressText = document.getElementById('uploadProgressText');
+    const windowCenter = Number.isFinite(Number(options.windowCenter))
+        ? Number(options.windowCenter)
+        : Number(state.viewerSettings.level);
+    const windowWidth = Number.isFinite(Number(options.windowWidth))
+        ? Number(options.windowWidth)
+        : Number(state.viewerSettings.window);
 
-    // Update overlay text to show CT loading
-    progressText.textContent = 'Loading CT to viewers...';
-
-    if (announce) addChat('system', 'Loading CT image to viewers...');
-
-    // Reset all segmentation and planning state for new CT
-    resetAllState();
+    if (isCurrentOwner()) {
+        // Only the owning case may change the visible loading state. An
+        // upload can finish after the user has already switched cases.
+        if (progressText) progressText.textContent = 'Loading CT to viewers...';
+        if (announce) addChat('system', 'Loading CT image to viewers...');
+        resetAllState();
+    }
     const renderGeneration = window.__viewerRenderGeneration || 0;
 
     // Per-patient memory isolation on the FRONTEND. The server
@@ -1349,43 +1470,49 @@ async function loadCTToViewers(ctPath, options = {}) {
     //   - reset the local DVH "last signature" so the next plan
     //     is allowed to redraw (otherwise drawDVH thinks the data
     //     is unchanged and skips the render).
-    state.metrics = {};
-    state.dvhData = null;
-    state.seeds = [];
-    if (typeof updateMetrics === 'function') updateMetrics({});
-    const dvhPlaceholder = document.getElementById('dvhPlaceholder');
-    if (dvhPlaceholder) dvhPlaceholder.style.display = '';
-    const dvhEl = document.getElementById('dvhChart');
-    if (dvhEl && typeof Plotly !== 'undefined' && Plotly.purge) {
-        try { Plotly.purge(dvhEl); } catch (_) {}
-    }
-    if (typeof drawDVH === 'function') drawDVH._lastSig = null;
-    const oarTbody = document.getElementById('oarTableBody');
-    if (oarTbody) oarTbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--text-dim);padding:0.75rem;">No OAR data</td></tr>';
-    try { if (typeof renderDataTree === 'function') renderDataTree(); } catch (_) {}
-    try {
-        if (typeof _newEmptyReportForm === 'function') {
-            window.reportForm = _newEmptyReportForm();
-            if (typeof renderReportEditor === 'function') renderReportEditor();
-            if (typeof _updateReportPreview === 'function') _updateReportPreview();
+    if (isCurrentOwner()) {
+        state.metrics = {};
+        state.dvhData = null;
+        state.seeds = [];
+        if (typeof updateMetrics === 'function') updateMetrics({});
+        const dvhPlaceholder = document.getElementById('dvhPlaceholder');
+        if (dvhPlaceholder) dvhPlaceholder.style.display = '';
+        const dvhEl = document.getElementById('dvhChart');
+        if (dvhEl && typeof Plotly !== 'undefined' && Plotly.purge) {
+            try { Plotly.purge(dvhEl); } catch (_) {}
         }
-    } catch (_) {}
+        if (typeof drawDVH === 'function') drawDVH._lastSig = null;
+        const oarTbody = document.getElementById('oarTableBody');
+        if (oarTbody) oarTbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--text-dim);padding:0.75rem;">No OAR data</td></tr>';
+        try { if (typeof renderDataTree === 'function') renderDataTree(); } catch (_) {}
+        try {
+            if (typeof _newEmptyReportForm === 'function') {
+                window.reportForm = _newEmptyReportForm();
+                if (typeof renderReportEditor === 'function') renderReportEditor();
+                if (typeof _updateReportPreview === 'function') _updateReportPreview();
+            }
+        } catch (_) {}
+    }
 
     try {
         const res = await fetch(API + '/viewer/load', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+                'Content-Type': 'application/json',
+                'X-BrachyBot-Session': ownerSessionId,
+            },
             body: JSON.stringify({
                 ct_path: ctPath,
-                window_center: state.viewerSettings.level,
-                window_width: state.viewerSettings.window,
+                window_center: windowCenter,
+                window_width: windowWidth,
             }),
         });
 
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
         const data = await res.json();
-        if (renderGeneration !== window.__viewerRenderGeneration) return;
+        if (!isCurrentOwner()) return { ...data, background: true };
+        if (renderGeneration !== window.__viewerRenderGeneration) return { ...data, stale: true };
         if (data.success) {
             state.ctPath = ctPath;
             state.ctShape = data.shape;
@@ -1409,8 +1536,10 @@ async function loadCTToViewers(ctPath, options = {}) {
             });
 
             // Load CT volume for client-side rendering
-            await loadVolumeData();
-            if (renderGeneration !== window.__viewerRenderGeneration) return;
+            await loadVolumeData({ sessionId: ownerSessionId });
+            if (!isCurrentOwner() || renderGeneration !== window.__viewerRenderGeneration) {
+                return { ...data, stale: true };
+            }
             state.ctLoaded = true;
 
             // Render initial slices from volume
@@ -1420,6 +1549,7 @@ async function loadCTToViewers(ctPath, options = {}) {
 
             // Rebind viewer interactions after canvases are rendered
             setTimeout(() => {
+                if (!isCurrentOwner() || renderGeneration !== window.__viewerRenderGeneration) return;
                 setupViewerInteractions();
             }, 500);
 
@@ -1427,6 +1557,7 @@ async function loadCTToViewers(ctPath, options = {}) {
             renderDataTree();
             // Load overlays for all axes (will show nothing if no segmentation data)
             setTimeout(() => {
+                if (!isCurrentOwner() || renderGeneration !== window.__viewerRenderGeneration) return;
                 ['axial', 'sagittal', 'coronal'].forEach(axis => {
                     loadOverlay(axis, state.slices[axis]);
                 });
@@ -1444,11 +1575,18 @@ async function loadCTToViewers(ctPath, options = {}) {
             // A mask may have been selected before its CT. Import it only
             // when the current session has not already restored that mask.
             setTimeout(() => {
+                if (!isCurrentOwner() || renderGeneration !== window.__viewerRenderGeneration) return;
                 if (state.ctvPath && !dataTreeState.ctv.loaded) {
-                    importUploadedMask('ctv', state.ctvPath);
+                    importUploadedMask('ctv', state.ctvPath, {
+                        sessionId: ownerSessionId,
+                        ctPath,
+                    });
                 }
                 if (state.oarPath && !dataTreeState.oar.loaded) {
-                    importUploadedMask('oar', state.oarPath);
+                    importUploadedMask('oar', state.oarPath, {
+                        sessionId: ownerSessionId,
+                        ctPath,
+                    });
                 }
             }, 0);
             if (announce) {
@@ -1474,30 +1612,47 @@ async function loadCTToViewers(ctPath, options = {}) {
             // DICOM series). This populates the Analysis panel and stashes
             // the same tags into state.ctDicomTags for the report
             // auto-fill to read.
-            pullHeaderInfo(ctPath);
+            pullHeaderInfo(ctPath, { sessionId: ownerSessionId });
         }
+        return data;
     } catch (e) {
-        overlay.classList.remove('active');
-        if (announce) addChat('error', 'Failed to load CT: ' + e.message);
-        else console.warn('[session restore] Failed to restore CT:', e);
+        if (isCurrentOwner()) {
+            if (overlay) overlay.classList.remove('active');
+            if (announce) addChat('error', 'Failed to load CT: ' + e.message);
+            else console.warn('[session restore] Failed to restore CT:', e);
+        }
         throw e;
     }
 }
 
 async function _restoreActiveSessionWorkspace(options = {}) {
     const sessionAtStart = _activeApiSessionId();
-    clearClientWorkspace({ clearReport: options.clearReport !== false });
+    // The optimistic case shell already cleared the visible workspace before
+    // scheduling background hydration. Clearing it again here can erase a
+    // just-resumed execution trace for this same case.
+    if (options.skipClientClear !== true) {
+        clearClientWorkspace({ clearReport: options.clearReport !== false });
+    }
     let workspace = options.workspace || window._activeWorkspaceSnapshot || null;
+    const workspaceSessionId = (value) => String(value?.session_id || value?.session?.id || '');
+    if (workspace && workspaceSessionId(workspace) !== sessionAtStart) workspace = null;
     if (!workspace) {
         try {
-            const workspaceResponse = await fetch(API + '/workspace/snapshot');
-            if (workspaceResponse.ok) workspace = (await workspaceResponse.json()).workspace || null;
+            const workspaceResponse = await fetch(API + '/workspace/snapshot', {
+                headers: { 'X-BrachyBot-Session': sessionAtStart },
+            });
+            if (workspaceResponse.ok) {
+                const candidate = (await workspaceResponse.json()).workspace || null;
+                if (workspaceSessionId(candidate) === sessionAtStart) workspace = candidate;
+            }
         } catch (error) { console.debug('[session restore] Workspace snapshot unavailable:', error); }
     }
 
     let status = options.status || null;
     if (!status || status.session_id !== sessionAtStart) {
-        const response = await fetch(API + '/status');
+        const response = await fetch(API + '/status', {
+            headers: { 'X-BrachyBot-Session': sessionAtStart },
+        });
         if (!response.ok) throw new Error(`Session status failed: HTTP ${response.status}`);
         status = await response.json();
     }
@@ -1520,7 +1675,9 @@ async function _restoreActiveSessionWorkspace(options = {}) {
 
     // Training state belongs to the selected planning session as well.
     try {
-        const uiResponse = await fetch(API + '/ui/state');
+        const uiResponse = await fetch(API + '/ui/state', {
+            headers: { 'X-BrachyBot-Session': sessionAtStart },
+        });
         if (uiResponse.ok && _activeApiSessionId() === sessionAtStart) {
             const uiData = await uiResponse.json();
             const training = uiData.training || {};
@@ -1533,9 +1690,39 @@ async function _restoreActiveSessionWorkspace(options = {}) {
     }
 
     const ctPath = String(status.ct_path || '').trim();
+    const savedControls = workspace?.ui?.state?.controls || workspace?.ui?.controls || {};
+    const savedAgentUi = workspace?.agent?.ui_state || {};
+    const savedInputPath = (kind) => {
+        const controlId = kind === 'ctv' ? 'ctvPath' : 'oarPath';
+        return savedAgentUi[`${kind}_path`]
+            || savedControls?.[controlId]?.value
+            || '';
+    };
+    // Input paths are part of the durable case, not a generic browser form.
+    // Restore them before CT hydration so a user-provided CTV/OAR mask can be
+    // loaded when needed, and so the Input panel always describes the same
+    // case as the viewer. The server owns these paths and validates them.
+    const restoreCaseInputPath = (kind, value) => {
+        const path = String(value || '').trim();
+        const stateKey = kind === 'ctv' ? 'ctvPath' : 'oarPath';
+        const inputId = kind === 'ctv' ? 'ctvPath' : 'oarPath';
+        state[stateKey] = path || null;
+        const input = document.getElementById(inputId);
+        if (input) input.value = path;
+    };
+    restoreCaseInputPath('ctv', status.ctv_path || savedInputPath('ctv'));
+    restoreCaseInputPath('oar', status.oar_path || savedInputPath('oar'));
     if (_activeApiSessionId() !== sessionAtStart) return null;
     if (!ctPath) {
-        if (workspace && typeof applyWorkspaceSnapshot === 'function') await applyWorkspaceSnapshot(workspace);
+        if (workspace && typeof applyWorkspaceSnapshot === 'function') {
+            await applyWorkspaceSnapshot(workspace, {
+                preserveClinicalData: true,
+                // Switching restores chat/task presentation from the small
+                // control-plane snapshot first. Do not create a competing
+                // replay subscription during background resource hydration.
+                skipChat: options.background === true,
+            });
+        }
         if (typeof _saveManualState === 'function') {
             _saveManualState({
                 ct_loaded: false,
@@ -1553,7 +1740,7 @@ async function _restoreActiveSessionWorkspace(options = {}) {
         return status;
     }
 
-    await loadCTToViewers(ctPath, { announce: false });
+    await loadCTToViewers(ctPath, { announce: false, sessionId: sessionAtStart });
     if (_activeApiSessionId() !== sessionAtStart) return null;
 
     const storedKeys = new Set(Array.isArray(status.stored_keys) ? status.stored_keys : []);
@@ -1592,15 +1779,21 @@ async function _restoreActiveSessionWorkspace(options = {}) {
         'seed_plan', 'seed_plan_serialized', 'manual_planning_preview',
     ].some(key => storedKeys.has(key));
     if (hasPlanning && typeof refreshPlanningUI === 'function') {
-        await refreshPlanningUI({ switchToViewers: false });
+        await refreshPlanningUI({ switchToViewers: false, sessionId: sessionAtStart });
     } else if (typeof loadLabelVolumes === 'function') {
-        await loadLabelVolumes();
+        await loadLabelVolumes({ sessionId: sessionAtStart });
         ['axial', 'sagittal', 'coronal'].forEach(axis => {
             try { renderSliceFromVolume(axis, state.slices[axis]); } catch (_) {}
         });
     }
     if (_activeApiSessionId() !== sessionAtStart) return null;
-    if (workspace && typeof applyWorkspaceSnapshot === 'function') await applyWorkspaceSnapshot(workspace);
+    if (workspace && typeof applyWorkspaceSnapshot === 'function') {
+        // The server has now reconstructed the authoritative CT, labels,
+        // plan, dose and Data Tree. Reapply only display preferences; a full
+        // snapshot merge here can overwrite freshly restored OAR metadata
+        // with an older empty tree and blank Input paths.
+        await applyWorkspaceSnapshot(workspace, { preserveClinicalData: true, skipChat: true });
+    }
     // Re-render after the saved slice indices, visibility, and material state
     // have been applied.  This avoids a transient old-case frame on switch.
     ['axial', 'sagittal', 'coronal'].forEach(axis => {
@@ -1764,11 +1957,9 @@ async function init() {
     renderDataTree();
     // Hide colorbars (all 3 viewers)
     document.querySelectorAll('.dose-colorbar').forEach(el => { el.style.display = 'none'; });
-    // BUG FIX 2026-06-17: removed auto-load of CT from server on
-    // page refresh. The server keeps CT in memory, and the old code
-    // re-fetched it on every refresh — so the viewer was never
-    // "clean" after a browser refresh. The user must explicitly load
-    // CT via the chat or file upload for each new session.
+    // Clinical state is restored from the authenticated workspace below.
+    // New cases remain empty; existing cases rehydrate their own CT, masks,
+    // planning arrays, Data Tree, viewer state, DVH, and report.
     // Load default hyperparameters from config
     await loadDefaultParams();
 
@@ -2441,7 +2632,15 @@ function _confirmAction(msgZh, msgEn, options = {}) {
     });
 }
 
-async function _executeUIAction(a) {
+function _uiActionSessionIsCurrent(sessionId) {
+    return !sessionId || String(sessionId) === String(_activeApiSessionId());
+}
+
+async function _executeUIAction(a, options = {}) {
+    const ownerSessionId = String(options.sessionId || '');
+    if (!_uiActionSessionIsCurrent(ownerSessionId)) {
+        return { success: false, stale: true, error: 'The UI action belongs to another case.' };
+    }
     const { target, command, value, requires_confirm } = a;
     if (requires_confirm) {
         const pairs = {
@@ -2455,10 +2654,16 @@ async function _executeUIAction(a) {
         const p = pairs[target] || [`确定要执行 ${target} 吗？`, `Execute ${target}?`];
         return _confirmAction(p[0], p[1]).then(ok => {
             if (!ok) return { success: false, cancelled: true };
-            return Promise.resolve(_executeUIActionRaw(a));
+            if (!_uiActionSessionIsCurrent(ownerSessionId)) {
+                return { success: false, stale: true, error: 'The selected case changed before confirmation.' };
+            }
+            return Promise.resolve(_executeUIActionRaw(a, options));
         });
     }
-    return Promise.resolve(_executeUIActionRaw(a));
+    if (!_uiActionSessionIsCurrent(ownerSessionId)) {
+        return { success: false, stale: true, error: 'The selected case changed before the UI action ran.' };
+    }
+    return Promise.resolve(_executeUIActionRaw(a, options));
 }
 
 function _emitUIActionProgress(step) {
@@ -2467,9 +2672,11 @@ function _emitUIActionProgress(step) {
     } catch (_) { /* Progress reporting must never block a UI action. */ }
 }
 
-async function _executeUIActionsWithProgress(actions) {
+async function _executeUIActionsWithProgress(actions, options = {}) {
+    const ownerSessionId = String(options.sessionId || '');
     const results = [];
     for (let i = 0; i < actions.length; i += 1) {
+        if (!_uiActionSessionIsCurrent(ownerSessionId)) break;
         const action = actions[i] || {};
         const id = `ui-action-${Date.now()}-${i}`;
         const target = String(action.target || 'ui.control');
@@ -2483,13 +2690,15 @@ async function _executeUIActionsWithProgress(actions) {
             tool: id,
             parent_tool: 'ui_controller',
             params: { target, command, value: action.value },
+            session_id: ownerSessionId || _activeApiSessionId(),
         };
         _emitUIActionProgress({ ...base, status: 'pending', content: 'Applying UI action' });
         // Yield once so the live Execution Trace can paint its breathing state
         // before a synchronous control handler starts doing work.
         await new Promise(resolve => setTimeout(resolve, 0));
         try {
-            const result = await _executeUIAction(action);
+            const result = await _executeUIAction(action, { sessionId: ownerSessionId });
+            if (!_uiActionSessionIsCurrent(ownerSessionId)) break;
             results.push(result);
             const failed = result === false || (result && result.success === false);
             if (failed) {
@@ -2538,7 +2747,8 @@ async function navigateToDosePeakSlices() {
     return { success: true, slices: requested };
 }
 
-async function _executeUIActionRaw(a) {
+async function _executeUIActionRaw(a, options = {}) {
+    const ownerSessionId = String(options.sessionId || _activeApiSessionId());
     const { target, command, value } = a;
     try {
         if (target === 'ui.control') {
@@ -2749,9 +2959,12 @@ async function _executeUIActionRaw(a) {
                     if (typeof dataTreeState === 'undefined') return;
                     if (Array.isArray(dataTreeState.organs) && dataTreeState.organs.length) return;
                     try {
-                        const response = await fetch(API + '/viewer/organs');
+                        const response = await fetch(API + '/viewer/organs', {
+                            headers: { 'X-BrachyBot-Session': ownerSessionId },
+                        });
                         if (!response.ok) return;
                         const payload = await response.json();
+                        if (!_uiActionSessionIsCurrent(ownerSessionId)) return;
                         if (payload.organs && typeof updateOrganList === 'function') {
                             updateOrganList(payload.organs, payload.oar_source || '');
                         }
@@ -2760,6 +2973,9 @@ async function _executeUIActionRaw(a) {
                     }
                 };
                 await hydrateOrgans();
+                if (!_uiActionSessionIsCurrent(ownerSessionId)) {
+                    return { success: false, stale: true, error: 'The selected case changed during reconstruction.' };
+                }
                 const organs = (dataTreeState && Array.isArray(dataTreeState.organs))
                     ? dataTreeState.organs.filter(o => {
                         if (value === 'non_traversable') return o.category === 'non_traversable';
@@ -3467,7 +3683,10 @@ function _appendScreenshotToGallery(url, target, question, galleryContext) {
 // Intercept ui_screenshot: capture the target element, upload to server,
 // and display the image in the chat. This bridges the gap between the
 // LLM's ui_screenshot tool call and the frontend's actual capture.
-async function _interceptScreenshot(target, question, galleryContext) {
+async function _interceptScreenshot(target, question, galleryContext, options = {}) {
+    const ownerSessionId = String(options.sessionId || _activeApiSessionId());
+    const isCurrentOwner = () => ownerSessionId === String(_activeApiSessionId());
+    if (!isCurrentOwner()) return { success: false, stale: true, error: 'case_changed' };
     // Unified screenshot target map — single source of truth for both
     // _interceptScreenshot (SSE-driven) and _captureScreenshot (direct).
     uiDebugLog('[screenshot] Capturing target:', target);
@@ -3475,6 +3694,7 @@ async function _interceptScreenshot(target, question, galleryContext) {
     const el = normalizedTarget === 'dose-overview'
         ? document.body
         : await _prepareScreenshotTarget(normalizedTarget);
+    if (!isCurrentOwner()) return { success: false, stale: true, error: 'case_changed' };
     if (!el) {
         console.warn('[screenshot] Target element not found:', target);
         if (typeof addChat === 'function') addChat('error', `截图失败：未找到目标元素 "${target}"`);
@@ -3489,6 +3709,7 @@ async function _interceptScreenshot(target, question, galleryContext) {
     try {
         uiDebugLog('[screenshot] Capturing element:', el.tagName, el.id || el.className);
         dataUrl = await _captureScreenshotDataUrl(normalizedTarget, el);
+        if (!isCurrentOwner()) return { success: false, stale: true, error: 'case_changed' };
         if (!dataUrl) throw new Error('No screenshot data was produced');
         uiDebugLog('[screenshot] Data URL size:', Math.round(dataUrl.length / 1024), 'KB');
 
@@ -3502,6 +3723,7 @@ async function _interceptScreenshot(target, question, galleryContext) {
             }),
         });
         const text = await res.text();
+        if (!isCurrentOwner()) return { success: false, stale: true, error: 'case_changed' };
         let data = {};
         try {
             data = text ? JSON.parse(text) : {};
@@ -3517,6 +3739,7 @@ async function _interceptScreenshot(target, question, galleryContext) {
         uiDebugLog('[screenshot] Captured and uploaded:', screenshotUrl);
         return { success: true, url: screenshotUrl, target: normalizedTarget };
     } catch (e) {
+        if (!isCurrentOwner()) return { success: false, stale: true, error: 'case_changed' };
         console.warn('[screenshot] Capture or upload failed:', e);
         if (dataUrl) {
             _appendScreenshotToGallery(dataUrl, normalizedTarget, question, galleryContext);

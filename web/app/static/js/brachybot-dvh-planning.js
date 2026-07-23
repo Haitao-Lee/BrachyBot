@@ -691,6 +691,21 @@ function drawDVH() {
 let _refreshDebounce = null;
 let _refreshInflight = null;
 let _refreshGeneration = 0;
+
+// Workspace changes must invalidate every deferred planning render. The
+// backend task can continue for its original case, but its results must never
+// paint into whichever case the user selected afterwards.
+window.invalidatePlanningRefresh = function invalidatePlanningRefresh() {
+    _refreshGeneration += 1;
+    if (_refreshDebounce) {
+        clearTimeout(_refreshDebounce);
+        _refreshDebounce = null;
+    }
+    if (_refreshInflight) {
+        try { _refreshInflight.abort(); } catch (_) {}
+        _refreshInflight = null;
+    }
+};
 // DEBUG: global diagnostic function — call from browser console
 window._debugBrachy = function() {
     const canvas = document.getElementById('canvas3D');
@@ -719,21 +734,39 @@ window._debugBrachy = function() {
 async function refreshPlanningUI(options = {}) {
     uiDebugLog('[refreshPlanningUI] CALLED, ctLoaded:', state.ctLoaded, 'stack:', new Error().stack?.split('\n').slice(1,3).join(' | '));
     const generation = ++_refreshGeneration;
+    const expectedSessionId = String(
+        options.sessionId
+        || ((typeof activeSessionId !== 'undefined' && activeSessionId) ? activeSessionId : state.sessionId)
+        || '',
+    );
+    const isCurrentCase = () => {
+        if (generation !== _refreshGeneration) return false;
+        const selected = (typeof activeSessionId !== 'undefined' && activeSessionId)
+            ? String(activeSessionId) : '';
+        const hydrated = state?.sessionId ? String(state.sessionId) : '';
+        return (!expectedSessionId || !selected || selected === expectedSessionId)
+            && (!expectedSessionId || !hydrated || hydrated === expectedSessionId);
+    };
     // Cancel any in-flight fetch — we'll issue a fresh one.
     if (_refreshInflight) { try { _refreshInflight.abort(); } catch (_) {} }
     if (_refreshDebounce) clearTimeout(_refreshDebounce);
     return new Promise((resolve) => {
         _refreshDebounce = setTimeout(async () => {
             _refreshDebounce = null;
-            if (generation !== _refreshGeneration) return resolve();
+            if (!isCurrentCase()) return resolve();
             try {
                 const ctrl = new AbortController();
                 _refreshInflight = ctrl;
-                const res = await fetch(API + '/planning/results', { signal: ctrl.signal });
+                const res = await fetch(API + '/planning/results', {
+                    signal: ctrl.signal,
+                    headers: expectedSessionId
+                        ? { 'X-BrachyBot-Session': expectedSessionId }
+                        : {},
+                });
                 if (!res.ok) { console.warn('[refreshPlanningUI] /planning/results failed:', res.status); _refreshInflight = null; return resolve(); }
                 const data = await res.json();
                 _refreshInflight = null;
-                if (generation !== _refreshGeneration) return resolve();
+                if (!isCurrentCase()) return resolve();
                 if (!data || !data.success) { console.warn('[refreshPlanningUI] data not success:', data); return resolve(); }
                 uiDebugLog('[refreshPlanningUI] data received, has_dose:', data.has_dose, 'seeds:', data.seeds?.length, 'has_dvh:', !!data.dvh, 'dvh_keys:', data.dvh ? Object.keys(data.dvh).length : 0, 'metrics_keys:', data.metrics ? Object.keys(data.metrics).length : 0);
 
@@ -757,37 +790,20 @@ async function refreshPlanningUI(options = {}) {
                         const _dvhPromise = drawDVH();
                         if (_dvhPromise && typeof _dvhPromise.then === 'function') {
                             await _dvhPromise;
+                            if (!isCurrentCase()) return resolve();
                         }
                     } catch (e) { console.warn('[refreshPlanningUI] drawDVH failed:', e); }
                 } else {
                     console.warn('[refreshPlanningUI] NO DVH data received');
                 }
 
-        // 1b. Re-fetch the IMAGE ANALYSIS panel from /api/header/info.
-        // The analysis panel was previously only populated at CT
-        // load time, so planning / OAR seg events never refreshed
-        // it. Re-pull the header on every planning refresh so the
-        // panel shows fresh HU stats, slice counts, and source
-        // metadata.
+        // 1b. Refresh image metadata once, bound to the selected case. The
+        // helper rejects a delayed response after a session switch, so an old
+        // DICOM header cannot overwrite the newly selected case.
         try {
-            const headerResp = await fetch(API + '/header/info', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ ct_path: state.ctPath || '' }),
-            });
-            if (headerResp.ok) {
-                const hdata = await headerResp.json();
-                if (hdata && hdata.success) {
-                    // Mirror into state + imageAnalysisData
-                    if (typeof state !== 'undefined') {
-                        state.ctDicomTags = hdata.tags || {};
-                        state.ctSourceKind = hdata.kind || state.ctSourceKind;
-                        state.ctSourceMeta = hdata.meta || {};
-                    }
-                    // Force the analysis panel to re-render. The
-                    // helper handles null-safe updates.
-                    try { pullHeaderInfo(state.ctPath || ''); } catch (e) { /* tolerate */ }
-                }
+            if (typeof pullHeaderInfo === 'function' && state.ctPath) {
+                await pullHeaderInfo(state.ctPath, { sessionId: expectedSessionId });
+                if (!isCurrentCase()) return resolve();
             }
         } catch (_) { /* analysis is best-effort */ }
 
@@ -800,7 +816,10 @@ async function refreshPlanningUI(options = {}) {
         // chat-triggered planning flow never appear on the
         // viewers and the data tree never marks them loaded.
         if (typeof loadLabelVolumes === 'function') {
-            try { await loadLabelVolumes(); } catch (e) { console.warn('loadLabelVolumes failed:', e); }
+            try {
+                await loadLabelVolumes({ sessionId: expectedSessionId });
+                if (!isCurrentCase()) return resolve();
+            } catch (e) { console.warn('loadLabelVolumes failed:', e); }
         }
         // Make sure the data tree reflects whatever labels we
         // now have. Don't clobber the analysis content with a
@@ -815,6 +834,7 @@ async function refreshPlanningUI(options = {}) {
         if (data.seeds) {
             updateSeeds(data.seeds);
         }
+        if (!isCurrentCase()) return resolve();
 
         // 4b. Trajectories (parent of seeds in the data tree) — only run
         //     if the server returned the new "trajectories" array. Older
@@ -823,6 +843,7 @@ async function refreshPlanningUI(options = {}) {
         if (data.trajectories) {
             try { updateTrajectories(data.trajectories); } catch (e) { console.warn('updateTrajectories failed:', e); }
         }
+        if (!isCurrentCase()) return resolve();
 
         // ═══════════════════════════════════════════════════════════
         // CRITICAL: Switch to viewers panel FIRST so canvas has
@@ -834,6 +855,7 @@ async function refreshPlanningUI(options = {}) {
             if (options.switchToViewers !== false && viewersTab && !viewersTab.classList.contains('active')) {
                 switchPanel('viewers', viewersTab);
                 await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+                if (!isCurrentCase()) return resolve();
             }
         } catch (e) { console.warn('[refreshPlanningUI] switchPanel FAILED:', e); }
 
@@ -844,6 +866,7 @@ async function refreshPlanningUI(options = {}) {
         // ═══════════════════════════════════════════════════════════
         if (data.has_dose) {
             loadDoseOverlay().then(ov => {
+                if (!isCurrentCase() || !ov || ov.stale) return;
                 if (ov && ov.shape) {
                     if (state.viewerSettings) {
                         state.viewerSettings.displayMode = 'overlay';
@@ -909,11 +932,17 @@ async function refreshPlanningUI(options = {}) {
             );
         }
 
-        // Wait for all 3D mesh loads to complete
-        try { if (typeof reportAutoFill === 'function') reportAutoFill(); } catch (_) {}
-
+        // Wait for all 3D mesh loads to complete. Report state is filled only
+        // after the selected case has passed the same generation check; an
+        // older case must never overwrite the newly selected report.
         await Promise.all(_meshPromises);
-        if (generation !== _refreshGeneration) return resolve();
+        if (!isCurrentCase()) return resolve();
+        try {
+            if (typeof reportAutoFill === 'function') {
+                await reportAutoFill({ sessionId: expectedSessionId });
+            }
+        } catch (_) {}
+        if (!isCurrentCase()) return resolve();
         uiDebugLog('[refreshPlanningUI] Mesh promises done. scene3D.meshes:', Object.keys(scene3D.meshes));
         // No floating indicator to remove; the trace/todo lifecycle remains
         // the single progress surface for this asynchronous work.
@@ -923,7 +952,7 @@ async function refreshPlanningUI(options = {}) {
         // so the 3D canvas was empty. Now that meshes are in the
         // scene, re-capture both CTV-zoomed and seeds-overview.
         try {
-            if (generation !== _refreshGeneration) return resolve();
+            if (!isCurrentCase()) return resolve();
             const _hasFigures = window.reportForm && window.reportForm.figures;
             const _replaceOrCreate = (axis, title, caption, dataUrl) => {
                 if (!_hasFigures || !dataUrl || dataUrl.length < 5000) return;
@@ -1168,7 +1197,7 @@ async function refreshPlanningUI(options = {}) {
             }
         } catch (_) {}
         try {
-            if (generation !== _refreshGeneration) return resolve();
+            if (!isCurrentCase()) return resolve();
             if (typeof autoCaptureReportFigures === 'function') {
                 await autoCaptureReportFigures();
             }

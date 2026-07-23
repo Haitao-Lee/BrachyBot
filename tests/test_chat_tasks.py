@@ -80,6 +80,8 @@ def test_chat_task_replays_events_and_is_case_scoped():
         _event("start", {"language": {"code": "en"}}),
         _event("step", {"id": 1, "type": "user", "status": "done"}),
         _event("response", {"response": "finished"}),
+        _event("step", task.commit_step("pending")),
+        _event("step", task.commit_step("done")),
         _event("done", {}),
     ]
     assert manager.get(task.task_id, "user-a", "case-a") is task
@@ -123,3 +125,109 @@ def test_same_case_rejects_concurrent_turn_but_other_case_is_allowed():
     manager.cancel(first)
     manager.cancel(second)
     gate.set()
+
+
+def test_cancelling_one_case_does_not_cancel_another_running_case():
+    manager = ChatTaskManager()
+    first_gate = threading.Event()
+    second_gate = threading.Event()
+
+    class _CaseAgent(_Agent):
+        def __init__(self, gate):
+            super().__init__([])
+            self.gate = gate
+
+        def chat_with_stream(self, _message):
+            yield _event("start", {})
+            self.gate.wait(timeout=2)
+            yield _event("response", {"response": "finished"})
+            yield _event("done", {})
+
+    first_agent = _CaseAgent(first_gate)
+    second_agent = _CaseAgent(second_gate)
+    first = manager.start(_App(), "user-a", "case-a", first_agent, "one", {})
+    second = manager.start(_App(), "user-a", "case-b", second_agent, "two", {})
+
+    manager.cancel(first)
+    first_gate.set()
+    second_gate.set()
+
+    deadline = time.time() + 2
+    while second.status == "running" and time.time() < deadline:
+        time.sleep(0.01)
+
+    assert first.status == "cancelled"
+    assert first_agent.cancelled is True
+    assert second.status == "completed"
+    assert second.response == "finished"
+    assert second_agent.cancelled is False
+
+
+def test_terminal_done_is_withheld_until_case_results_are_committed():
+    """The UI must not observe completion before the workspace is durable."""
+
+    manager = ChatTaskManager()
+    finalization_started = threading.Event()
+    allow_commit = threading.Event()
+    observed = []
+
+    def commit_result(_task):
+        finalization_started.set()
+        assert allow_commit.wait(timeout=2)
+        return True
+
+    task = manager.start(
+        _App(),
+        "user-a",
+        "case-a",
+        _Agent([
+            _event("response", {"response": "finished"}),
+            _event("done", {}),
+        ]),
+        "hello",
+        {},
+        on_finish=commit_result,
+    )
+
+    reader = threading.Thread(
+        target=lambda: observed.extend(list(task.iter_events(0))),
+        daemon=True,
+    )
+    reader.start()
+    assert finalization_started.wait(timeout=2)
+    assert task.status == "running"
+    assert task.public_state()["phase"] == "finalizing"
+    assert not any(item.startswith("event: done") for item in observed)
+
+    allow_commit.set()
+    reader.join(timeout=2)
+    assert not reader.is_alive()
+    assert task.status == "completed"
+    assert task.result_committed is True
+    assert observed[-1] == _event("done", {})
+
+
+def test_failed_case_commit_never_emits_a_false_done_event():
+    manager = ChatTaskManager()
+    task = manager.start(
+        _App(),
+        "user-a",
+        "case-a",
+        _Agent([
+            _event("response", {"response": "finished"}),
+            _event("done", {}),
+        ]),
+        "hello",
+        {},
+        on_finish=lambda _task: False,
+    )
+
+    deadline = time.time() + 2
+    while task.status == "running" and time.time() < deadline:
+        time.sleep(0.01)
+
+    events = list(task.iter_events(0))
+    assert task.status == "failed"
+    assert task.result_committed is False
+    assert not any(item.startswith("event: done") for item in events)
+    assert any("Case results could not be saved" in item for item in events)

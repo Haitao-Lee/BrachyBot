@@ -134,6 +134,82 @@ def test_lease_request_can_bind_an_owned_session_explicitly(tmp_path):
     assert lease.get_json()["editable"] is True
 
 
+def test_request_scoped_case_header_does_not_change_selected_case(tmp_path):
+    """Delayed work must target its owner without navigating the browser."""
+    app = _app(tmp_path)
+    client = app.test_client()
+    auth = _register(client, "request_scope_user")
+    first_id = auth["active_session_id"]
+    csrf = auth["csrf_token"]
+    created = client.post(
+        "/api/sessions",
+        json={"title": "Selected second case"},
+        headers={"X-CSRF-Token": csrf},
+    )
+    assert created.status_code == 201
+    second_id = created.get_json()["active_session_id"]
+
+    saved = client.post(
+        "/api/workspace/state",
+        json={
+            "session_id": first_id,
+            "ui": {"marker": "first-case-only"},
+        },
+        headers={"X-CSRF-Token": csrf, "X-BrachyBot-Session": first_id},
+    )
+    assert saved.status_code == 200
+    assert saved.get_json()["workspace"]["session_id"] == first_id
+
+    first_snapshot = client.get(
+        "/api/workspace/snapshot",
+        headers={"X-BrachyBot-Session": first_id},
+    ).get_json()["workspace"]
+    selected_snapshot = client.get("/api/workspace/snapshot").get_json()["workspace"]
+    assert first_snapshot["ui"]["marker"] == "first-case-only"
+    assert selected_snapshot["session_id"] == second_id
+    assert client.get("/api/sessions").get_json()["active_session_id"] == second_id
+
+
+def test_request_scoped_case_header_rejects_cross_user_access(tmp_path):
+    app = _app(tmp_path)
+    owner = app.test_client()
+    other = app.test_client()
+    owner_auth = _register(owner, "header_owner")
+    _register(other, "header_other")
+
+    response = other.get(
+        "/api/workspace/snapshot",
+        headers={"X-BrachyBot-Session": owner_auth["active_session_id"]},
+    )
+    assert response.status_code == 404
+
+
+def test_explicit_lease_does_not_change_selected_case(tmp_path):
+    app = _app(tmp_path)
+    client = app.test_client()
+    auth = _register(client, "lease_navigation_user")
+    first_id = auth["active_session_id"]
+    csrf = auth["csrf_token"]
+    created = client.post(
+        "/api/sessions",
+        json={"title": "Keep selected"},
+        headers={"X-CSRF-Token": csrf},
+    )
+    second_id = created.get_json()["active_session_id"]
+
+    lease = client.post(
+        "/api/workspace/lease",
+        json={"session_id": first_id, "editor_token": "lease-navigation-token"},
+        headers={
+            "X-CSRF-Token": csrf,
+            "X-BrachyBot-Editor": "lease-navigation-token",
+            "X-BrachyBot-Session": first_id,
+        },
+    )
+    assert lease.status_code == 200
+    assert client.get("/api/sessions").get_json()["active_session_id"] == second_id
+
+
 def test_session_rename_persists_for_the_authenticated_case(tmp_path):
     """A case rename must survive a fresh server-side session listing."""
     app = _app(tmp_path)
@@ -232,6 +308,38 @@ def test_workspace_upload_endpoint_returns_owned_path(tmp_path):
     payload = response.get_json()
     assert "/inputs/" in payload["path"].replace("\\", "/")
     assert payload["session_id"] == created["active_session_id"]
+
+
+def test_workspace_upload_honors_owned_request_session_header(tmp_path):
+    from web.server import create_app
+
+    app = create_app({
+        "runtime_dir": str(tmp_path / "server-runtime"),
+        "secret_key": "test-secret",
+        "workspace_maintenance": False,
+    })
+    client = app.test_client()
+    auth = _register(client, "scoped_upload_user")
+    first_id = auth["active_session_id"]
+    second = client.post(
+        "/api/sessions",
+        json={"title": "Selected second case"},
+        headers={"X-CSRF-Token": auth["csrf_token"]},
+    )
+    second_id = second.get_json()["active_session_id"]
+
+    response = client.post(
+        "/api/upload",
+        data={"file": (BytesIO(b"request-scoped-input"), "first-study.nii")},
+        content_type="multipart/form-data",
+        headers={
+            "X-CSRF-Token": auth["csrf_token"],
+            "X-BrachyBot-Session": first_id,
+        },
+    )
+    assert response.status_code == 200
+    assert response.get_json()["session_id"] == first_id
+    assert client.get("/api/sessions").get_json()["active_session_id"] == second_id
 
 
 def test_nonselected_case_mutations_respect_the_case_edit_lease(tmp_path):

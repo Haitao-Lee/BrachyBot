@@ -462,23 +462,56 @@ function removeReportFigure(idx) {
 //          peak dose voxel, arranged in a row
 //   Bottom: DVH curve (CTV + OARs)
 let _reportCapturePromise = null;
+let _reportCaptureGeneration = 0;
+
+function _currentReportCaptureSessionId() {
+    const value = (typeof _activeApiSessionId === 'function' && _activeApiSessionId())
+        || (typeof activeSessionId !== 'undefined' && activeSessionId)
+        || window.state?.sessionId
+        || '';
+    return String(value || '');
+}
+
+function invalidateReportCapture() {
+    _reportCaptureGeneration += 1;
+    return _reportCaptureGeneration;
+}
+window.invalidateReportCapture = invalidateReportCapture;
 
 // Serialize report captures. A planning refresh can be triggered by several
 // SSE events; overlapping captures otherwise race over mesh visibility and
 // leave the 3D renderer in the partially hidden state used by Figure 1.
-async function autoCaptureReportFigures() {
-    if (_reportCapturePromise) return _reportCapturePromise;
-    _reportCapturePromise = _autoCaptureReportFiguresImpl();
+async function autoCaptureReportFigures(options = {}) {
+    const requestedSessionId = String(options.sessionId || _currentReportCaptureSessionId());
+    if (_reportCapturePromise) {
+        await _reportCapturePromise;
+        if (requestedSessionId !== _currentReportCaptureSessionId()) return { stale: true };
+        return autoCaptureReportFigures(options);
+    }
+    const context = {
+        generation: _reportCaptureGeneration,
+        sessionId: requestedSessionId,
+        reportForm: window.reportForm,
+    };
+    const promise = _autoCaptureReportFiguresImpl(context);
+    _reportCapturePromise = promise;
     try {
-        return await _reportCapturePromise;
+        return await promise;
     } finally {
-        _reportCapturePromise = null;
+        if (_reportCapturePromise === promise) _reportCapturePromise = null;
     }
 }
 
-async function _autoCaptureReportFiguresImpl() {
+async function _autoCaptureReportFiguresImpl(captureContext = {}) {
     uiDebugLog('[Report] autoCaptureReportFigures called');
     if (!window.reportForm) { console.warn('[Report] No reportForm, skipping'); return; }
+    const captureSessionId = String(captureContext.sessionId || _currentReportCaptureSessionId());
+    const captureGeneration = Number(captureContext.generation ?? _reportCaptureGeneration);
+    const captureForm = captureContext.reportForm || window.reportForm;
+    const isCurrentCapture = () => captureGeneration === _reportCaptureGeneration
+        && captureSessionId === _currentReportCaptureSessionId()
+        && captureForm === window.reportForm;
+    if (!isCurrentCapture()) return { stale: true };
     if (!window.reportForm.figures) window.reportForm.figures = [];
 
     // Drop stale auto-captured figures (user-uploads are kept).
@@ -532,6 +565,7 @@ async function _autoCaptureReportFiguresImpl() {
 
     const _ts = () => new Date().toISOString();
     const _push = (title, caption, dataUrl, axis, extra) => {
+        if (!isCurrentCapture()) return;
         if (!dataUrl || dataUrl.length < 1000) {
             console.warn('[Report] Figure skipped: dataUrl too short or null');
             return;
@@ -727,12 +761,13 @@ async function _autoCaptureReportFiguresImpl() {
             const _savedMaterials = {};
             const _savedHandleObjects = [];
             const _savedSkin = scene3D.skinMesh ? {
+                mesh: scene3D.skinMesh,
                 visible: scene3D.skinMesh.visible,
                 material: scene3D.skinMesh.material,
             } : null;
             for (const [id, mesh] of Object.entries(scene3D.meshes)) {
                 if (!mesh) continue;
-                _saved[id] = mesh.visible;
+                _saved[id] = { mesh, visible: mesh.visible };
                 const surface = (typeof getMeshSurface === 'function') ? getMeshSurface(mesh) : mesh;
                 if (surface?.material) _savedMaterials[id] = {
                     surface,
@@ -751,6 +786,8 @@ async function _autoCaptureReportFiguresImpl() {
                 }
             });
             const _savedCamera = scene3D.camera ? {
+                camera: scene3D.camera,
+                controls: scene3D.controls,
                 position: scene3D.camera.position.clone(),
                 near: scene3D.camera.near,
                 far: scene3D.camera.far,
@@ -758,10 +795,12 @@ async function _autoCaptureReportFiguresImpl() {
                 target: scene3D.controls.target.clone(),
             } : null;
             _restoreFigure1State = () => {
-                for (const [id, mesh] of Object.entries(scene3D.meshes)) {
+                for (const saved of Object.values(_saved)) {
+                    const mesh = saved?.mesh;
                     if (!mesh) continue;
-                    if (_saved[id] !== undefined) mesh.visible = _saved[id];
-                    const material = _savedMaterials[id];
+                    mesh.visible = saved.visible;
+                }
+                for (const material of Object.values(_savedMaterials)) {
                     if (material?.surface?.material) {
                         material.surface.visible = material.visible;
                         material.surface.material.opacity = material.opacity;
@@ -770,28 +809,30 @@ async function _autoCaptureReportFiguresImpl() {
                         material.surface.material.needsUpdate = true;
                     }
                 }
-                if (_savedSkin && scene3D.skinMesh) {
-                    scene3D.skinMesh.visible = _savedSkin.visible;
-                    scene3D.skinMesh.material = _savedSkin.material;
+                if (_savedSkin?.mesh) {
+                    _savedSkin.mesh.visible = _savedSkin.visible;
+                    _savedSkin.mesh.material = _savedSkin.material;
                 }
                 _savedHandleObjects.forEach(({ object, visible }) => {
                     if (object) object.visible = visible;
                 });
-                if (_savedCamera && scene3D.camera && scene3D.controls) {
-                    scene3D.camera.position.copy(_savedCamera.position);
-                    scene3D.camera.near = _savedCamera.near;
-                    scene3D.camera.far = _savedCamera.far;
-                    scene3D.camera.aspect = _savedCamera.aspect;
-                    scene3D.controls.target.copy(_savedCamera.target);
-                    scene3D.camera.updateProjectionMatrix();
-                    scene3D.controls.update();
-                } else if (scene3D.controls) {
+                if (isCurrentCapture() && _savedCamera
+                    && scene3D.camera === _savedCamera.camera
+                    && scene3D.controls === _savedCamera.controls) {
+                    _savedCamera.camera.position.copy(_savedCamera.position);
+                    _savedCamera.camera.near = _savedCamera.near;
+                    _savedCamera.camera.far = _savedCamera.far;
+                    _savedCamera.camera.aspect = _savedCamera.aspect;
+                    _savedCamera.controls.target.copy(_savedCamera.target);
+                    _savedCamera.camera.updateProjectionMatrix();
+                    _savedCamera.controls.update();
+                } else if (isCurrentCapture() && scene3D.controls) {
                     // A report capture may not have a saved camera only when
                     // the viewer was not initialized. Never fit implicitly;
                     // Fit/Reset are explicit user actions.
                     scene3D.controls.update();
                 }
-                forceRender3DViewer();
+                if (isCurrentCapture()) forceRender3DViewer();
             };
 
             // Helper: compute bounding box of all visible meshes
@@ -874,7 +915,9 @@ async function _autoCaptureReportFiguresImpl() {
 
             // Helper: render and capture 3D canvas
             async function _capture3D(label) {
+                if (!isCurrentCapture()) return null;
                 await _waitFrames(3);
+                if (!isCurrentCapture()) return null;
                 const renderer = scene3D.renderer;
                 const c = renderer && renderer.domElement;
                 if (!renderer || !c) return null;
@@ -896,6 +939,7 @@ async function _autoCaptureReportFiguresImpl() {
                 renderer.clear(true, true, true);
                 renderer.render(scene3D.scene, scene3D.camera);
                 await _waitFrames(2);
+                if (!isCurrentCapture()) return null;
                 // Render once more after the browser has committed visibility,
                 // material, and camera changes. This avoids intermittent black
                 // captures when the report is generated during reconstruction.
@@ -934,6 +978,7 @@ async function _autoCaptureReportFiguresImpl() {
             }
 
             // ── View A: Front-facing with all OARs ──
+            if (!isCurrentCapture()) return { stale: true };
             window.__reportCaptureActive = true;
             // Show all models for the overall panel. The focused camera below
             // still limits the frame to the target and its local OAR context.
@@ -956,10 +1001,12 @@ async function _autoCaptureReportFiguresImpl() {
 
             _frameCameraToBox(_computeFocusedPlanBox({ includeOars: true, includeNeedles: false }), 'overview');
             await _waitFrames(2);
+            if (!isCurrentCapture()) return { stale: true };
             let imgA = await _capture3D('View A (front+OARs)');
             if (!imgA) {
                 forceRender3DViewer();
                 await _waitFrames(4);
+                if (!isCurrentCapture()) return { stale: true };
                 imgA = await _capture3D('View A (front+OARs retry)');
             }
 
@@ -988,10 +1035,12 @@ async function _autoCaptureReportFiguresImpl() {
             // target close-up when a needle extends far outside the CTV.
             _frameCameraToBox(_computeFocusedPlanBox({ includeOars: false, includeNeedles: false }), 'detail');
             await _waitFrames(2);
+            if (!isCurrentCapture()) return { stale: true };
             let imgB = await _capture3D('View B (translucent tumor)');
             if (!imgB) {
                 forceRender3DViewer();
                 await _waitFrames(4);
+                if (!isCurrentCapture()) return { stale: true };
                 imgB = await _capture3D('View B (translucent tumor retry)');
             }
 
@@ -1015,10 +1064,12 @@ async function _autoCaptureReportFiguresImpl() {
 
                 // Draw View A (left)
                 await _drawImg(ctx, imgA, pad, titleH, halfW, halfW);
+                if (!isCurrentCapture()) return { stale: true };
                 _drawLabel(ctx, labels.lblFront, pad + halfW / 2, titleH + halfW + 18, halfW);
 
                 // Draw View B (right)
                 await _drawImg(ctx, imgB, pad + halfW + gap, titleH, halfW, halfW);
+                if (!isCurrentCapture()) return { stale: true };
                 _drawLabel(ctx, labels.lblInside, pad + halfW + gap + halfW / 2, titleH + halfW + 18, halfW);
 
                 // Thin separator line between views
@@ -1053,8 +1104,10 @@ async function _autoCaptureReportFiguresImpl() {
             console.warn('[Report] Figure 1 state restore failed:', restoreError);
         }
         window.__reportCaptureActive = false;
-        try { window.syncSceneAppearanceFromDataTree?.({ preserveDoseTexture: !!state.doseTexture?.enabled }); } catch (_) {}
-        try { _setReportStatus?.('3D viewer restored after report capture', 'info'); } catch (_) {}
+        if (isCurrentCapture()) {
+            try { window.syncSceneAppearanceFromDataTree?.({ preserveDoseTexture: !!state.doseTexture?.enabled }); } catch (_) {}
+            try { _setReportStatus?.('3D viewer restored after report capture', 'info'); } catch (_) {}
+        }
     }
 
     // ═══════════════════════════════════════════════════════════
@@ -1064,6 +1117,7 @@ async function _autoCaptureReportFiguresImpl() {
     //   Bottom: DVH curve
     //   Combined into a single image
     // ═══════════════════════════════════════════════════════════
+    if (!isCurrentCapture()) return { stale: true };
     try {
         // Check for dose data existence, NOT just visibility — the user may
         // not have toggled dose on yet, but we still need to capture it.
@@ -1101,6 +1155,7 @@ async function _autoCaptureReportFiguresImpl() {
             }
             // Wait for all 3 views + dose overlay to render
             await _waitFrames(8);
+            if (!isCurrentCapture()) return { stale: true };
 
             // Capture all 3 views
             const doseImages = [];
@@ -1117,6 +1172,8 @@ async function _autoCaptureReportFiguresImpl() {
             try {
                 const savedTextureMode = !!state.doseTexture.enabled;
                 const savedCamera = scene3D.camera && scene3D.controls ? {
+                    camera: scene3D.camera,
+                    controls: scene3D.controls,
                     position: scene3D.camera.position.clone(),
                     quaternion: scene3D.camera.quaternion.clone(),
                     near: scene3D.camera.near,
@@ -1128,33 +1185,40 @@ async function _autoCaptureReportFiguresImpl() {
                 const savedOp = {};
                 for (const [id, mesh] of Object.entries(scene3D.meshes || {})) {
                     if (!mesh) continue;
-                    savedVis[id] = mesh.visible;
+                    savedVis[id] = { mesh, visible: mesh.visible };
                     const surface = getMeshSurface(mesh);
-                    if (surface?.material && !Array.isArray(surface.material)) savedOp[id] = surface.material.opacity;
+                    if (surface?.material && !Array.isArray(surface.material)) {
+                        savedOp[id] = { mesh, opacity: surface.material.opacity };
+                    }
                 }
                 restoreDoseSurfaceState = async () => {
-                    for (const [id, vis] of Object.entries(savedVis)) {
-                        const mesh = scene3D.meshes[id];
+                    for (const [id, saved] of Object.entries(savedVis)) {
+                        const mesh = saved?.mesh;
                         if (!mesh) continue;
-                        mesh.visible = vis;
-                        if (savedOp[id] !== undefined) applyMeshOpacity(mesh, savedOp[id], vis);
+                        mesh.visible = saved.visible;
+                        if (savedOp[id] !== undefined) {
+                            applyMeshOpacity(mesh, savedOp[id].opacity, saved.visible);
+                        }
                     }
-                    if (!savedTextureMode && state.doseTexture.enabled) {
+                    if (isCurrentCapture() && !savedTextureMode && state.doseTexture.enabled) {
                         await setDoseTextureMode(false, { silent: true });
                     }
-                    if (savedCamera && scene3D.camera && scene3D.controls) {
-                        scene3D.camera.position.copy(savedCamera.position);
-                        scene3D.camera.quaternion.copy(savedCamera.quaternion);
-                        scene3D.camera.near = savedCamera.near;
-                        scene3D.camera.far = savedCamera.far;
-                        scene3D.camera.aspect = savedCamera.aspect;
-                        scene3D.controls.target.copy(savedCamera.target);
-                        scene3D.camera.updateProjectionMatrix();
-                        scene3D.controls.update();
+                    if (isCurrentCapture() && savedCamera
+                        && scene3D.camera === savedCamera.camera
+                        && scene3D.controls === savedCamera.controls) {
+                        savedCamera.camera.position.copy(savedCamera.position);
+                        savedCamera.camera.quaternion.copy(savedCamera.quaternion);
+                        savedCamera.camera.near = savedCamera.near;
+                        savedCamera.camera.far = savedCamera.far;
+                        savedCamera.camera.aspect = savedCamera.aspect;
+                        savedCamera.controls.target.copy(savedCamera.target);
+                        savedCamera.camera.updateProjectionMatrix();
+                        savedCamera.controls.update();
                     }
-                    forceRender3DViewer();
+                    if (isCurrentCapture()) forceRender3DViewer();
                 };
                 await setDoseTextureMode(true, { silent: true });
+                if (!isCurrentCapture()) return { stale: true };
                 for (const [id, mesh] of Object.entries(scene3D.meshes || {})) {
                     if (!mesh) continue;
                     const isCtv = id === 'ctv' || id.startsWith('ctv_') || mesh?.userData?.type === 'ctv';
@@ -1219,6 +1283,7 @@ async function _autoCaptureReportFiguresImpl() {
                     // two committed frames and reject captures with no lit
                     // pixels so Figure 2 never embeds an apparent black panel.
                     async function captureDoseSurface3D(label) {
+                        if (!isCurrentCapture()) return null;
                         const renderer = scene3D.renderer;
                         const canvas = renderer?.domElement;
                         if (!renderer || !canvas) return null;
@@ -1237,6 +1302,7 @@ async function _autoCaptureReportFiguresImpl() {
                         renderer.clear(true, true, true);
                         renderer.render(scene3D.scene, scene3D.camera);
                         await _waitFrames(2);
+                        if (!isCurrentCapture()) return null;
                         renderer.render(scene3D.scene, scene3D.camera);
                         try {
                             const gl = renderer.getContext?.();
@@ -1268,13 +1334,15 @@ async function _autoCaptureReportFiguresImpl() {
                         }
                     }
                     doseSurfaceDataUrl = await captureDoseSurface3D('primary');
+                    if (!isCurrentCapture()) return { stale: true };
                     if (!doseSurfaceDataUrl) {
                         forceRender3DViewer();
                         await _waitFrames(5);
+                        if (!isCurrentCapture()) return { stale: true };
                         doseSurfaceDataUrl = await captureDoseSurface3D('retry');
                     }
                 }
-                await restoreDoseSurfaceState();
+                if (isCurrentCapture()) await restoreDoseSurfaceState();
                 await _waitFrames(2);
             } catch (e) {
                 console.warn('[Report] dose surface close-up capture failed:', e);
@@ -1285,6 +1353,7 @@ async function _autoCaptureReportFiguresImpl() {
             }
 
             // Restore original slices and opacity
+            if (!isCurrentCapture()) return { stale: true };
             state.doseOverlay.opacity = origOpacity;
             state.doseOverlay.visible = origVisible;
             for (const [ax, sl] of Object.entries(origSlices)) {
@@ -1293,6 +1362,7 @@ async function _autoCaptureReportFiguresImpl() {
                 updateSlice(ax, sl);
             }
             await _waitFrames(2);
+            if (!isCurrentCapture()) return { stale: true };
 
             // Capture DVH chart — try Plotly.toImage first, fallback to html2canvas
             let dvhDataUrl = null;
@@ -1302,6 +1372,7 @@ async function _autoCaptureReportFiguresImpl() {
                 if (typeof Plotly !== 'undefined' && typeof Plotly.toImage === 'function') {
                     try {
                         await new Promise(r => setTimeout(r, 500)); // let Plotly finish rendering
+                        if (!isCurrentCapture()) return { stale: true };
                         dvhDataUrl = await Plotly.toImage(dvhEl, { format: 'png', width: 1200, height: 400 });
                         uiDebugLog('[Report] DVH captured via Plotly:', Math.round(dvhDataUrl.length / 1024), 'KB');
                     } catch (e) {
@@ -1361,6 +1432,7 @@ async function _autoCaptureReportFiguresImpl() {
                     const entry = topPanels[i];
                     const xPos = pad + i * (viewW + gap);
                     await _drawFigurePanel(ctx, entry.dataUrl, xPos, titleH, viewW, viewH, String.fromCharCode(97 + i), panelLabels[i] || entry.label);
+                    if (!isCurrentCapture()) return { stale: true };
                 }
                 _drawDoseColorbar(ctx, W - pad - colorbarW, titleH, colorbarW, viewH, 'Dose (Gy)');
 
@@ -1383,6 +1455,7 @@ async function _autoCaptureReportFiguresImpl() {
                 const dvhY = sepY + dvhYPad;
                 if (dvhDataUrl) {
                     await _drawFigurePanel(ctx, dvhDataUrl, pad, dvhY, W - pad * 2, dvhH, 'e', 'Dose-volume histogram');
+                    if (!isCurrentCapture()) return { stale: true };
                 } else {
                     // No DVH available — draw placeholder
                     ctx.fillStyle = 'rgba(148,163,184,0.1)';
@@ -1406,6 +1479,7 @@ async function _autoCaptureReportFiguresImpl() {
     } catch (e) { console.warn('[Report] Figure 2 (dose+DVH) capture failed:', e); }
 
     // Re-render editor + preview
+    if (!isCurrentCapture()) return { stale: true };
     if (window.reportForm.figures.length > 0) {
         uiDebugLog('[Report] Total figures captured:', window.reportForm.figures.length);
         renderReportEditor(); _updateReportPreview(); _scheduleReportAutoSave();

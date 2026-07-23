@@ -150,7 +150,12 @@ class Round9RegressionTests(unittest.TestCase):
         report = self.read("web/app/static/js/brachybot-report-editor.js")
         planning = self.read("web/app/static/js/brachybot-dvh-planning.js")
         self.assertIn("const savedCamera = scene3D.camera && scene3D.controls", report)
-        self.assertIn("scene3D.camera.quaternion.copy(savedCamera.quaternion)", report)
+        # A report capture can finish after a case transition. Restore the
+        # originally captured camera object only when it is still the active
+        # scene camera; restoring through scene3D.camera would repaint a new
+        # session with an old report capture.
+        self.assertIn("scene3D.camera === savedCamera.camera", report)
+        self.assertIn("savedCamera.camera.quaternion.copy(savedCamera.quaternion)", report)
         self.assertIn("const _restoreCamera = () =>", planning)
         self.assertIn("_restoreCamera();\n            forceRender3DViewer();", planning)
 

@@ -209,6 +209,37 @@ function invalidateViewerDataLoads() {
     viewerDataLoadGeneration += 1;
     return viewerDataLoadGeneration;
 }
+
+function _viewerDataSessionId(explicitSessionId = null) {
+    const value = explicitSessionId
+        || (typeof _activeApiSessionId === 'function' ? _activeApiSessionId() : null)
+        || state?.sessionId
+        || '';
+    return String(value || '');
+}
+
+function _viewerDataHeaders(sessionId, headers = {}) {
+    const result = { ...headers };
+    if (sessionId) result['X-BrachyBot-Session'] = sessionId;
+    return result;
+}
+
+function _captureViewerDataScope(explicitSessionId = null) {
+    return {
+        sessionId: _viewerDataSessionId(explicitSessionId),
+        dataGeneration: viewerDataLoadGeneration,
+        renderGeneration: window.__viewerRenderGeneration || 0,
+    };
+}
+
+function _viewerDataScopeIsCurrent(scope, requireRenderGeneration = false) {
+    if (!scope) return false;
+    if (scope.dataGeneration !== viewerDataLoadGeneration) return false;
+    if (scope.sessionId && scope.sessionId !== _viewerDataSessionId()) return false;
+    if (requireRenderGeneration
+        && scope.renderGeneration !== (window.__viewerRenderGeneration || 0)) return false;
+    return true;
+}
 function _getMprGeometry(axis, shape, spacing) {
     const [Z, Y, X] = shape;
     const sp = spacing || [0.68, 0.68, 5.0];
@@ -232,18 +263,21 @@ function _volumeZToDisplayY(z, resampleRatio) {
     return z * (resampleRatio || 1);
 }
 
-async function loadVolumeData() {
-    const generation = viewerDataLoadGeneration;
-    const sessionId = state.sessionId || null;
+async function loadVolumeData(options = {}) {
+    const scope = _captureViewerDataScope(options.sessionId);
     // Threshold is an optional display filter, not a segmentation result.
     // Reset it when a new volume is loaded so a stale session setting cannot
     // create an unexplained red whole-body overlay.
-    state.viewerSettings.threshold = null;
-    const thresholdInput = document.getElementById('viewerThreshold');
-    if (thresholdInput) thresholdInput.value = '';
-    const res = await fetch(API + '/viewer/volume');
+    if (_viewerDataScopeIsCurrent(scope)) {
+        state.viewerSettings.threshold = null;
+        const thresholdInput = document.getElementById('viewerThreshold');
+        if (thresholdInput) thresholdInput.value = '';
+    }
+    const res = await fetch(API + '/viewer/volume', {
+        headers: _viewerDataHeaders(scope.sessionId),
+    });
     if (!res.ok) throw new Error('Failed to load volume');
-    if (generation !== viewerDataLoadGeneration || (sessionId != null && sessionId !== state.sessionId)) return false;
+    if (!_viewerDataScopeIsCurrent(scope)) return false;
 
     const shapeZ = parseInt(res.headers.get('X-Shape-Z'));
     const shapeY = parseInt(res.headers.get('X-Shape-Y'));
@@ -256,7 +290,7 @@ async function loadVolumeData() {
     ];
 
     const buffer = await res.arrayBuffer();
-    if (generation !== viewerDataLoadGeneration || (sessionId != null && sessionId !== state.sessionId)) return false;
+    if (!_viewerDataScopeIsCurrent(scope)) return false;
     volumeData = new Int16Array(buffer);
     uiDebugLog(`Volume loaded: ${shapeZ}x${shapeY}x${shapeX}, ${volumeData.length} voxels`);
 
@@ -289,11 +323,13 @@ async function hydrateOarDataTreeFromServer(expectedGeneration, expectedSessionI
     // empty after a session restore. The lightweight organs endpoint is the
     // authoritative metadata fallback for the same selected workspace.
     try {
-        const response = await fetch(API + '/viewer/organs');
+        const response = await fetch(API + '/viewer/organs', {
+            headers: _viewerDataHeaders(expectedSessionId),
+        });
         if (!response.ok) return false;
         const payload = await response.json();
         if (expectedGeneration !== viewerDataLoadGeneration
-            || (expectedSessionId != null && expectedSessionId !== state.sessionId)) return false;
+            || (expectedSessionId && expectedSessionId !== _viewerDataSessionId())) return false;
         const organs = payload?.organs || {};
         if (!Object.keys(organs).length) return false;
         updateOrganList(organs, payload.oar_source || '');
@@ -309,13 +345,14 @@ async function hydrateOarDataTreeFromServer(expectedGeneration, expectedSessionI
     }
 }
 
-async function loadLabelVolumes() {
-    const generation = viewerDataLoadGeneration;
-    const sessionId = state.sessionId || null;
+async function loadLabelVolumes(options = {}) {
+    const scope = _captureViewerDataScope(options.sessionId);
     try {
-        const res = await fetch(API + '/viewer/label_volume');
+        const res = await fetch(API + '/viewer/label_volume', {
+            headers: _viewerDataHeaders(scope.sessionId),
+        });
         if (!res.ok) { uiDebugLog('No label volumes available'); return; }
-        if (generation !== viewerDataLoadGeneration || (sessionId != null && sessionId !== state.sessionId)) return false;
+        if (!_viewerDataScopeIsCurrent(scope)) return false;
 
         const shapeZ = parseInt(res.headers.get('X-Shape-Z'));
         const shapeY = parseInt(res.headers.get('X-Shape-Y'));
@@ -356,7 +393,7 @@ async function loadLabelVolumes() {
         }
 
         const buffer = await res.arrayBuffer();
-        if (generation !== viewerDataLoadGeneration || (sessionId != null && sessionId !== state.sessionId)) return false;
+        if (!_viewerDataScopeIsCurrent(scope)) return false;
         const allBytes = new Uint8Array(buffer);
         const sliceSize = shapeY * shapeX;
 
@@ -399,7 +436,7 @@ async function loadLabelVolumes() {
             // Do not block slice rendering on metadata. The Data Tree is
             // repaired asynchronously once the browser has painted the
             // restored 2D labels.
-            void hydrateOarDataTreeFromServer(generation, sessionId);
+            void hydrateOarDataTreeFromServer(scope.dataGeneration, scope.sessionId);
         }
         // Always flip the data tree flags based on what we got, then
         // re-render. This is what makes "CTV/OAR don't show in the
@@ -869,6 +906,9 @@ function renderSliceFromVolume(axis, sliceIndex) {
 async function loadOverlay(axis, sliceIndex) {
     // Skip server-based overlay when label volumes are loaded (inline compositing handles it)
     if (ctvLabelData || oarLabelData) return;
+    const scope = _captureViewerDataScope();
+    const sliceIsCurrent = () => _viewerDataScopeIsCurrent(scope, true)
+        && Number(state?.slices?.[axis]) === Number(sliceIndex);
 
     const overlayCanvas = document.getElementById('labelOverlay_' + capitalize(axis));
     if (!overlayCanvas) return;
@@ -922,14 +962,17 @@ async function loadOverlay(axis, sliceIndex) {
         if (ctvVisible) {
             const resCtv = await fetch(API + '/viewer/overlay', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: _viewerDataHeaders(scope.sessionId, { 'Content-Type': 'application/json' }),
                 body: JSON.stringify({ axis, slice_index: sliceIndex, overlay_type: 'ctv', ctv_opacity: dataTreeState.ctv.opacity }),
             });
+            if (!sliceIsCurrent()) return;
             if (resCtv.ok) {
                 const d = await resCtv.json();
+                if (!sliceIsCurrent()) return;
                 if (d.has_mask && d.data) {
                     const img = new Image();
                     await new Promise(r => { img.onload = r; img.src = d.data; });
+                    if (!sliceIsCurrent()) return;
                     ctx.drawImage(img, 0, 0, overlayCanvas.width, overlayCanvas.height);
                     hasAnyMask = true;
                 }
@@ -942,20 +985,24 @@ async function loadOverlay(axis, sliceIndex) {
             dataTreeState.organs.forEach(o => { organOpacities[o.labelId] = o.opacity; });
             const resOar = await fetch(API + '/viewer/overlay', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: _viewerDataHeaders(scope.sessionId, { 'Content-Type': 'application/json' }),
                 body: JSON.stringify({ axis, slice_index: sliceIndex, overlay_type: 'oar', visible_organs: visibleOrgans, organ_opacities: organOpacities, oar_opacity: dataTreeState.oar.opacity }),
             });
+            if (!sliceIsCurrent()) return;
             if (resOar.ok) {
                 const d = await resOar.json();
+                if (!sliceIsCurrent()) return;
                 if (d.has_mask && d.data) {
                     const img = new Image();
                     await new Promise(r => { img.onload = r; img.src = d.data; });
+                    if (!sliceIsCurrent()) return;
                     ctx.drawImage(img, 0, 0, overlayCanvas.width, overlayCanvas.height);
                     hasAnyMask = true;
                 }
             }
         }
 
+        if (!sliceIsCurrent()) return;
         if (hasAnyMask) {
             if (ctCanvas) {
                 overlayCanvas.style.width = ctCanvas.style.width;
@@ -1019,8 +1066,7 @@ function renderCachedSlice(axis, sliceIndex) {
 
 async function loadSlice(axis, sliceIndex) {
     if (!state.ctPath) return;
-    const generation = window.__viewerRenderGeneration || 0;
-    const sessionId = state.sessionId || null;
+    const scope = _captureViewerDataScope();
 
     const cached = sliceCache[axis][sliceIndex];
     if (cached) {
@@ -1031,7 +1077,7 @@ async function loadSlice(axis, sliceIndex) {
     try {
         const res = await fetch(API + '/viewer/slice', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: _viewerDataHeaders(scope.sessionId, { 'Content-Type': 'application/json' }),
             body: JSON.stringify({
                 axis: axis,
                 slice_index: sliceIndex,
@@ -1044,8 +1090,8 @@ async function loadSlice(axis, sliceIndex) {
         if (!res.ok) return;
 
         const data = await res.json();
-        if (generation !== (window.__viewerRenderGeneration || 0)
-            || (sessionId != null && sessionId !== state.sessionId)) return;
+        if (!_viewerDataScopeIsCurrent(scope, true)
+            || Number(state?.slices?.[axis]) !== Number(sliceIndex)) return;
         if (data.success) {
             sliceCache[axis][sliceIndex] = data.data;
             renderSliceToCanvas(axis, data.data);
@@ -1058,8 +1104,7 @@ async function loadSlice(axis, sliceIndex) {
 async function preloadAxis(axis) {
     const slider = document.getElementById('slider' + capitalize(axis));
     if (!slider) return;
-    const generation = window.__viewerRenderGeneration || 0;
-    const sessionId = state.sessionId || null;
+    const scope = _captureViewerDataScope();
     const max = parseInt(slider.max) || 48;
     sliceCache[axis] = {};
 
@@ -1071,7 +1116,7 @@ async function preloadAxis(axis) {
             promises.push(
                 fetch(API + '/viewer/slice', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: _viewerDataHeaders(scope.sessionId, { 'Content-Type': 'application/json' }),
                     body: JSON.stringify({
                         axis: axis,
                         slice_index: i,
@@ -1082,8 +1127,7 @@ async function preloadAxis(axis) {
                 })
                 .then(res => res.ok ? res.json() : null)
                 .then(data => {
-                    if (generation !== (window.__viewerRenderGeneration || 0)
-                        || (sessionId != null && sessionId !== state.sessionId)) return;
+                    if (!_viewerDataScopeIsCurrent(scope, true)) return;
                     if (data && data.success) {
                         sliceCache[axis][i] = data.data;
                     }
@@ -1228,14 +1272,16 @@ function applyWindowPresetByName(preset) {
 
 async function syncViewerState() {
     if (!state.ctLoaded) return;
+    const scope = _captureViewerDataScope();
     try {
         const res = await fetch(API + '/viewer/control', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: _viewerDataHeaders(scope.sessionId, { 'Content-Type': 'application/json' }),
             body: JSON.stringify({ action: 'get_state' }),
         });
         if (!res.ok) return;
         const data = await res.json();
+        if (!_viewerDataScopeIsCurrent(scope, true)) return;
         if (!data.success) return;
 
         const s = data;
@@ -2342,14 +2388,18 @@ function soloGroup(category) {
 }
 
 async function groupReconstruct3D(category) {
+    const scope = _captureViewerDataScope();
     // A manually uploaded mask can arrive before the label-volume request
     // populates the client tree. Hydrate the authoritative list first rather
     // than treating an empty list as a successful no-op.
     if (!Array.isArray(dataTreeState.organs) || dataTreeState.organs.length === 0) {
         try {
-            const response = await fetch(API + '/viewer/organs');
+            const response = await fetch(API + '/viewer/organs', {
+                headers: _viewerDataHeaders(scope.sessionId),
+            });
             if (response.ok) {
                 const payload = await response.json();
+                if (!_viewerDataScopeIsCurrent(scope, true)) return { success: false, stale: true };
                 if (payload.organs) updateOrganList(payload.organs, payload.oar_source || '');
             }
         } catch (error) {
@@ -2363,7 +2413,9 @@ async function groupReconstruct3D(category) {
         addChat('error', 'No OAR labels are available for 3D reconstruction');
         return { success: false, reconstructed: 0, total: 0 };
     }
+    if (!_viewerDataScopeIsCurrent(scope, true)) return { success: false, stale: true };
     const results = await Promise.allSettled(organs.map(organ => reconstructOrgan3D(organ.id, true)));
+    if (!_viewerDataScopeIsCurrent(scope, true)) return { success: false, stale: true };
     return {
         success: results.some(result => result.status === 'fulfilled'),
         reconstructed: results.filter(result => result.status === 'fulfilled').length,

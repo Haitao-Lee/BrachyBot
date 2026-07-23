@@ -473,8 +473,9 @@ function loadSessionChat(id) {
     container.scrollTop = container.scrollHeight;
 }
 
-function saveSessionMessage(type, content, steps, timestamp) {
-    const session = sessions[activeSessionId];
+function saveSessionMessage(type, content, steps, timestamp, sessionId = activeSessionId) {
+    const ownerSessionId = String(sessionId || '');
+    const session = sessions[ownerSessionId];
     if (!session) return;
     // DEDUP ON SAVE (2026-06-15): if the most recent message has
     // the same type+content, skip the new one. This prevents the
@@ -500,13 +501,17 @@ function saveSessionMessage(type, content, steps, timestamp) {
     }
     if (session.messages.length === 1 && type === 'user') {
         session.title = content.slice(0, 40) + (content.length > 40 ? '...' : '');
-        document.getElementById('chatSessionTitle').textContent = session.title;
-        renderSessionList();
+        if (ownerSessionId === String(activeSessionId || '')) {
+            document.getElementById('chatSessionTitle').textContent = session.title;
+            renderSessionList();
+        }
     }
     saveSessions();
     // Persist the transcript through the durable case workspace even when a
     // legacy caller reaches the old saveSessions binding directly.
-    if (window.__serverWorkspaceReady && typeof window.scheduleWorkspaceSave === 'function') {
+    if (ownerSessionId === String(activeSessionId || '')
+        && window.__serverWorkspaceReady
+        && typeof window.scheduleWorkspaceSave === 'function') {
         window.scheduleWorkspaceSave('chat.message');
     }
 }
@@ -697,8 +702,20 @@ function _buildResponseFooter(llmMeta) {
     return footer;
 }
 
-function addChat(type, content, scroll, timestamp, fromSession) {
+function addChat(type, content, scroll, timestamp, fromSession, sessionId = activeSessionId) {
     try {
+        const ownerSessionId = String(sessionId || activeSessionId || '');
+        // Delayed task callbacks belong to the case that started the task. If
+        // that case is no longer visible, persist the event there without
+        // painting it into the newly selected case.
+        if (fromSession !== true
+            && ownerSessionId
+            && ownerSessionId !== String(activeSessionId || '')) {
+            if (typeof saveSessionMessage === 'function') {
+                saveSessionMessage(type, String(content == null ? '' : content), null, timestamp || Date.now(), ownerSessionId);
+            }
+            return;
+        }
         const container = document.getElementById('chatMessages');
         if (!container) return;
         const t = (type || 'system').toString();
@@ -830,7 +847,7 @@ function addChat(type, content, scroll, timestamp, fromSession) {
         // 2026-06-16 — each refresh would re-persist the same
         // message and the array would grow by 2 with every reload).
         if (fromSession !== true && typeof saveSessionMessage === 'function') {
-            try { saveSessionMessage(safeType, c, null, Date.now()); } catch (_) { /* sessions may not be ready yet */ }
+            try { saveSessionMessage(safeType, c, null, Date.now(), ownerSessionId); } catch (_) { /* sessions may not be ready yet */ }
         }
     } catch (e) {
         // Never let chat rendering break the caller (CT load, plan, etc.)
@@ -1954,21 +1971,24 @@ function updateStreamingResponse(el, text) {
     }
 }
 
-function finalizeStreamingResponse(el, text) {
+function finalizeStreamingResponse(el, text, sessionId = activeSessionId) {
     if (!el) return;
     el.removeAttribute('id');
     el.classList.remove('is-streaming');
     el.removeAttribute('aria-busy');
     el.innerHTML = renderMarkdown(text);
     try {
-        saveSessionMessage('bot-response', text, null, Date.now());
+        const ownerSessionId = String(sessionId || '');
+        saveSessionMessage('bot-response', text, null, Date.now(), ownerSessionId);
         // A final assistant response is a durable case event, not merely a
         // browser rendering update. Flush this boundary explicitly so closing
         // the tab immediately after a long planning turn cannot lose the
         // completed reply while the normal 700 ms workspace debounce is still
         // pending. The server-side ChatTask finalizer remains the authoritative
         // fallback when the browser stream is disconnected.
-        if (window.__serverWorkspaceReady && typeof window.persistWorkspace === 'function') {
+        if (ownerSessionId === String(activeSessionId || '')
+            && window.__serverWorkspaceReady
+            && typeof window.persistWorkspace === 'function') {
             void window.persistWorkspace('chat.response.finalized');
         }
     } catch (_) {}

@@ -2,6 +2,121 @@
 
 _This file consolidates all code review reports. Sections are organized by date._
 
+## 2026-07-23 - Patient-specific puncture-guide controls and physical geometry
+
+### Confirmed implementation gap
+
+The workspace did not expose the manufacturing dimensions of the native
+patient-specific puncture guide. This made skin offset, plate thickness, guide
+hole/sleeve diameters, sleeve lengths, selected needle channels, and local
+geometry resolution effectively fixed implementation details. There was also
+no operator-facing way to validate an STL after it had been exported and
+modified by an external manufacturing workflow.
+
+### Resolution
+
+1. **Case-owned guide parameter panel.** The Input panel now exposes all
+   clinically meaningful guide dimensions in millimetres. The user specifies
+   channel and sleeve diameters; the browser converts them exactly once to the
+   geometry service's radius convention. Values are persisted with the case
+   and do not mutate an existing guide until the user explicitly generates a
+   new version.
+
+2. **Physical-coordinate construction.** The guide uses the existing
+   SimpleITK patient-world coordinate chain. A bounded CT crop is resampled to
+   an exact isotropic physical lattice using nearest-neighbour coordinate
+   sampling, not shape-based zoom. This keeps plate and hole dimensions
+   independent of anisotropic acquisition spacing and supports non-identity
+   direction matrices without adding RAS/LPS flips.
+
+3. **Robust native solid construction.** The CT-derived skin shell, local
+   patch, outer sleeves, and finite internal bores are combined as one implicit
+   volume before marching-cubes extraction. This deliberately avoids fragile
+   coplanar polygonal booleans while retaining the audited functional stages
+   of the legacy C++/VTK/CGAL guide workflow.
+
+4. **Versions, stale detection, and STL QA.** Each generation captures the
+   chosen parameters and needle subset in a retained case-owned version. A
+   plan geometry edit marks all versions stale. Export and user-selected STL
+   re-import validation both enforce finite vertices, valid indices, and
+   strict two-face edge closure; the re-import validator is read-only and
+   limited to 64 MiB, so it cannot replace patient geometry or consume an
+   unbounded amount of server memory.
+
+### Verification
+
+- `tests/test_surgical_guide.py` covers watertight STL round-trip, missing
+  geometry rejection, anisotropic/flipped-direction physical coordinates,
+  version/stale semantics, and the shared UI/agent guide-version contract.
+- JavaScript is syntax checked before deployment. The deployment host runs the
+  guide regression suite with the same SimpleITK/scipy/skimage dependencies
+  used in production.
+- Detailed workflow and clinical/manufacturing boundaries are documented in
+  `docs/PATIENT_SPECIFIC_PUNCTURE_GUIDE.md`.
+- Deployment-host full regression suite after the guide-tool contract update:
+  **288 passed, 3 skipped** (three external SWIG deprecation
+  warnings only).
+
+## 2026-07-23 - Transactional cross-session clinical restoration
+
+### Confirmed issue
+
+Returning to a completed case could produce a split workspace: 2D canvases
+showed the restored CT and label voxels, while the Input panel was blank, the
+Data Tree had an empty OAR group, and planning-dependent 3D, DVH, and report
+content appeared absent. This was not a segmentation or coordinate problem.
+The restore transaction first hydrated authoritative CT/label/plan data from
+the selected server workspace, then applied a whole browser UI snapshot. A
+stale snapshot could therefore replace the freshly rebuilt Data Tree topology,
+clinical input paths, and planning state with an earlier empty client copy.
+
+### Resolution
+
+1. **Separate authoritative clinical restoration from presentation restoration.**
+   CT, CTV/OAR paths, label topology, organ names, planning geometry, dose,
+   DVH, and report inputs are rebuilt from the selected server workspace only.
+   The browser snapshot now restores only safe preferences: viewer slices and
+   layout, camera pose, Data Tree visibility/opacity/color/material settings,
+   report edits, chat presentation, and training display state.
+
+2. **Expose case-owned input paths in the status contract.**
+   `/api/status` now returns the selected workspace's `ct_path`, `ctv_path`,
+   and `oar_path`. The Input panel is populated from those owned server values
+   before CT hydration; it no longer depends on stale form controls from a
+   previous case.
+
+3. **Guard every deferred planning and dose render by session identity.**
+   Case changes invalidate debounced planning refreshes and dose-overlay
+   metadata requests. A background task remains alive on its owning case, but
+   a late result is discarded unless its session and render generation still
+   match the selected workspace. This preserves the rule that only explicit
+   Stop cancels a server task, while preventing its visual artifacts from
+   leaking into another case.
+
+4. **Keep progress presentation case-scoped.**
+   Workspace clearing removes only browser-side progress/timers for the case
+   shell being replaced. It does not abort the detached server task. Returning
+   to that case replays the persisted prompt and task trace from its own event
+   journal rather than inheriting progress from a different session.
+
+5. **Deduplicate task replay during two-phase restoration.** A lightweight
+   snapshot and the later clinical hydration can both observe the same running
+   task. Replay subscriptions are now single-flight per case and retain the
+   session identity captured by their scheduling timer. This prevents one
+   replay from cancelling or clearing another, which previously left an old
+   Progress timer visible while the send button had returned to idle.
+
+### Verification
+
+- Added regression coverage for presentation-only snapshot merging, explicit
+  CT/CTV/OAR status paths, and stale planning/dose response invalidation.
+- Modified JavaScript is syntax-checked with Node, and the changed Python
+  route is bytecode-compiled before release.
+- Focused workspace frontend and authenticated workspace integration tests are
+  run again after synchronization on the deployment host.
+
+---
+
 ## 2026-07-22 - Workspace lease identity, instant needle restore, and bounded OAR volume metrics
 
 ### Confirmed issues and resolutions

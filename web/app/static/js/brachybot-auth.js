@@ -163,12 +163,19 @@
         return data;
     }
 
-    async function acquireLease() {
+    function normalizedCaseId(value) {
+        const text = String(value || '').trim();
+        return /^[a-f0-9]{32}$/.test(text) ? text : '';
+    }
+
+    async function acquireLease(sessionId = currentLeaseSessionId()) {
         if (!state.user) return { editable: false };
+        const ownerSessionId = normalizedCaseId(sessionId);
+        if (!ownerSessionId) return { editable: false, code: 'workspace_unavailable' };
         try {
             const result = await request('/api/workspace/lease', {
                 editor_token: editorToken,
-                session_id: currentLeaseSessionId(),
+                session_id: ownerSessionId,
                 ttl_seconds: 75,
             });
             return applyLeaseResult(result);
@@ -182,11 +189,13 @@
         }
     }
 
-    async function takeoverLease() {
+    async function takeoverLease(sessionId = currentLeaseSessionId()) {
         if (!state.user) return { editable: false };
+        const ownerSessionId = normalizedCaseId(sessionId);
+        if (!ownerSessionId) return { editable: false, code: 'workspace_unavailable' };
         const result = await request('/api/workspace/lease', {
             editor_token: editorToken,
-            session_id: currentLeaseSessionId(),
+            session_id: ownerSessionId,
             ttl_seconds: 75,
             takeover: true,
         });
@@ -207,8 +216,10 @@
         if (state.user && !document.hidden) await acquireLease();
     }
 
-    async function releaseLease() {
+    async function releaseLease(sessionId = currentLeaseSessionId()) {
         if (!state.user) return;
+        const ownerSessionId = normalizedCaseId(sessionId);
+        if (!ownerSessionId) return;
         try {
             await authFetch('/api/workspace/lease', {
                 method: 'DELETE',
@@ -221,7 +232,7 @@
                     ...(state.csrfToken ? { 'X-CSRF-Token': state.csrfToken } : {}),
                     'X-BrachyBot-Editor': editorToken,
                 },
-                body: JSON.stringify({ editor_token: editorToken, session_id: currentLeaseSessionId() }),
+                body: JSON.stringify({ editor_token: editorToken, session_id: ownerSessionId }),
             }, LEASE_RELEASE_TIMEOUT_MS);
         } catch (_) {
             // A short lease expiry is the fallback when the browser is offline.
@@ -302,6 +313,21 @@
             headers.set('X-CSRF-Token', state.csrfToken);
         }
         if (editorToken && !headers.has('X-BrachyBot-Editor')) headers.set('X-BrachyBot-Editor', editorToken);
+        const pathname = (() => {
+            try { return new URL(url, location.href).pathname; }
+            catch (_) { return ''; }
+        })();
+        const requestCaseId = normalizedCaseId(currentLeaseSessionId());
+        const controlPlaneRequest = pathname.startsWith('/api/auth/')
+            || pathname === '/api/workspace/lease'
+            || pathname === '/api/sessions'
+            || pathname.startsWith('/api/sessions/');
+        // Freeze the selected case when a data-plane request is created.
+        // Delayed responses are then still routed to their originating case,
+        // even if the user selects another case before the server handles it.
+        if (requestCaseId && !controlPlaneRequest && !headers.has('X-BrachyBot-Session')) {
+            headers.set('X-BrachyBot-Session', requestCaseId);
+        }
         next.headers = headers;
         return nativeFetch(input, next);
     };

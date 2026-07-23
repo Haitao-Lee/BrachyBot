@@ -40,6 +40,24 @@ def register_session_routes(
     def session_payload(entry):
         return entry.public_dict()
 
+    def request_case_id(user: Dict[str, Any], explicit_session_id: Optional[str] = None) -> str:
+        """Resolve an owned case without changing the browser's selected case.
+
+        Delayed browser work uses ``X-BrachyBot-Session`` so it remains bound
+        to its originating case after the user navigates elsewhere. Only the
+        create/select endpoints update ``bb_session_id``.
+        """
+        candidate = str(
+            explicit_session_id
+            or request.headers.get("X-BrachyBot-Session")
+            or session.get("bb_session_id")
+            or ""
+        ).strip()
+        if not candidate:
+            raise WorkspaceError("No case session is selected")
+        entry = store.get_session(user["id"], candidate)
+        return entry.id
+
     def assert_target_editable(user: Dict[str, Any], session_id: str) -> None:
         """Apply the edit lease to an explicitly addressed case session.
 
@@ -231,8 +249,8 @@ def register_session_routes(
         # imaging always uses the validated input-upload endpoint instead.
         if category not in {"reports", "exports"}:
             return jsonify({"error": "Unsupported artifact category"}), 400
-        session_id = str(session.get("bb_session_id") or "")
         try:
+            session_id = request_case_id(user)
             path = store.write_artifact(
                 user["id"], session_id, category, file.filename, file.stream,
                 expected_bytes=file.content_length or 0,
@@ -251,9 +269,8 @@ def register_session_routes(
         user, error = user_or_error()
         if error:
             return error
-        session_id = str(session.get("bb_session_id") or "")
         try:
-            store.get_session(user["id"], session_id)
+            session_id = request_case_id(user)
             # Snapshot is a control-plane read and must stay fast after a
             # reconnect. Hydrating a BrachyAgent here can load CT volumes,
             # masks, dose arrays and GPU-backed state before the chat can be
@@ -271,7 +288,6 @@ def register_session_routes(
         if error:
             return error
         data = request.get_json(silent=True) or {}
-        session_id = str(session.get("bb_session_id") or "")
         patch: Dict[str, Any] = {}
         for key in ("ui", "report", "chat", "operation"):
             if isinstance(data.get(key), dict):
@@ -279,6 +295,7 @@ def register_session_routes(
         if isinstance(data.get("ui_state"), dict):
             patch["ui"] = {**patch.get("ui", {}), "state": data["ui_state"]}
         try:
+            session_id = request_case_id(user, data.get("session_id"))
             # Chat is a complete transcript, not a commutative UI preference.
             # Use the browser's revision as a compare-and-swap token for this
             # part so a delayed tab cannot overwrite a detached task's final
@@ -322,8 +339,8 @@ def register_session_routes(
         user, error = user_or_error()
         if error:
             return error
-        session_id = str(session.get("bb_session_id") or "")
         try:
+            session_id = request_case_id(user)
             agent = get_agent(session_id)
             snapshot = store.flush_agent_checkpoint(user["id"], session_id, agent, "workspace.explicit_checkpoint")
         except WorkspaceError as exc:
@@ -337,15 +354,9 @@ def register_session_routes(
             return error
         data = request.get_json(silent=True) or {}
         requested_session_id = str(data.get("session_id") or "").strip()
-        session_id = requested_session_id or str(session.get("bb_session_id") or "")
         token = str(data.get("editor_token") or request.headers.get("X-BrachyBot-Editor") or "")
         try:
-            if requested_session_id:
-                # Lease requests can race with a browser-side case switch. Bind
-                # the requested id only after ownership validation; never trust a
-                # client id to access another user's workspace.
-                store.get_session(user["id"], requested_session_id)
-                session["bb_session_id"] = requested_session_id
+            session_id = request_case_id(user, requested_session_id or None)
             if request.method == "DELETE":
                 store.release_lease(user["id"], session_id, token)
                 return jsonify({"success": True, "editable": False})
@@ -368,8 +379,8 @@ def register_session_routes(
         user, error = user_or_error()
         if error:
             return error
-        session_id = str(session.get("bb_session_id") or "")
         try:
+            session_id = request_case_id(user)
             events = store.list_audit_events(user["id"], session_id, request.args.get("limit", 200))
         except WorkspaceError as exc:
             return jsonify({"error": str(exc)}), 404
@@ -381,8 +392,8 @@ def register_session_routes(
         user, error = user_or_error()
         if error:
             return error
-        session_id = str(session.get("bb_session_id") or "")
         try:
+            session_id = request_case_id(user)
             if request.method == "GET":
                 return jsonify({"success": True, "comments": store.list_review_comments(user["id"], session_id)})
             data = request.get_json(silent=True) or {}
@@ -399,9 +410,9 @@ def register_session_routes(
         user, error = user_or_error()
         if error:
             return error
-        session_id = str(session.get("bb_session_id") or "")
         data = request.get_json(silent=True) or {}
         try:
+            session_id = request_case_id(user)
             comment = store.update_review_comment(
                 user["id"], session_id, comment_id,
                 body=data.get("body") if "body" in data else None,

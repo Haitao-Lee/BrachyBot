@@ -596,9 +596,35 @@
                         <button class="btn btn-outline" onclick="addManualSeed()" style="font-size:0.6rem;padding:5px 6px;">Add Seed</button>
                         <button class="btn btn-outline" onclick="recomputeManualDose('manual_button')" style="font-size:0.6rem;padding:5px 6px;">Recompute AI Dose</button>
                         <button class="btn btn-outline" onclick="replanManualPlan()" style="font-size:0.6rem;padding:5px 6px;">Replan Geometry</button>
+                        <button class="btn btn-outline" id="generateSurgicalGuideButton" onclick="generateSurgicalGuide()" style="font-size:0.6rem;padding:5px 6px;" data-i18n-zh="生成导板" data-i18n-en="Generate guide">Generate guide</button>
+                        <button class="btn btn-outline" onclick="exportSurgicalGuideSTL()" style="font-size:0.6rem;padding:5px 6px;" data-i18n-zh="导出导板 STL" data-i18n-en="Export guide STL">Export guide STL</button>
                         <button class="btn btn-outline" onclick="requestPlanningAdvice()" style="font-size:0.6rem;padding:5px 6px;">Detailed Advice</button>
                         <button class="btn btn-outline" onclick="checkSystemReadiness()" style="font-size:0.6rem;padding:5px 6px;">Readiness</button>
                     </div>
+                    <details id="surgicalGuideParameters" style="margin-top:6px;border:1px solid var(--border);border-radius:5px;padding:5px 7px;">
+                        <summary style="cursor:pointer;font-size:0.63rem;color:var(--text-secondary);" data-i18n-zh="穿刺导板参数" data-i18n-en="Puncture guide parameters">Puncture guide parameters</summary>
+                        <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px;margin-top:6px;">
+                            <label class="form-label" style="font-size:0.57rem;"><span data-i18n-zh="皮肤阈值 (HU)" data-i18n-en="Skin threshold (HU)">Skin threshold (HU)</span><input id="guideSkinThreshold" type="number" min="-800" max="100" step="10" value="-300"></label>
+                            <label class="form-label" style="font-size:0.57rem;"><span data-i18n-zh="皮肤间隙 (mm)" data-i18n-en="Skin clearance (mm)">Skin clearance (mm)</span><input id="guideSkinClearance" type="number" min="0" max="5" step="0.1" value="1"></label>
+                            <label class="form-label" style="font-size:0.57rem;"><span data-i18n-zh="导板厚度 (mm)" data-i18n-en="Plate thickness (mm)">Plate thickness (mm)</span><input id="guidePlateThickness" type="number" min="1" max="10" step="0.1" value="3"></label>
+                            <label class="form-label" style="font-size:0.57rem;"><span data-i18n-zh="覆盖边缘 (mm)" data-i18n-en="Patch margin (mm)">Patch margin (mm)</span><input id="guidePatchMargin" type="number" min="10" max="80" step="1" value="24"></label>
+                            <label class="form-label" style="font-size:0.57rem;"><span data-i18n-zh="导向孔径 (mm)" data-i18n-en="Channel diameter (mm)">Channel diameter (mm)</span><input id="guideChannelDiameter" type="number" min="0.6" max="12" step="0.1" value="2.2"></label>
+                            <label class="form-label" style="font-size:0.57rem;"><span data-i18n-zh="套筒外径 (mm)" data-i18n-en="Sleeve outer diameter (mm)">Sleeve outer diameter (mm)</span><input id="guideSleeveOuterDiameter" type="number" min="2" max="24" step="0.1" value="6"></label>
+                            <label class="form-label" style="font-size:0.57rem;"><span data-i18n-zh="套筒外侧长度 (mm)" data-i18n-en="Sleeve outward length (mm)">Sleeve outward length (mm)</span><input id="guideSleeveOutward" type="number" min="1" max="30" step="0.5" value="8"></label>
+                            <label class="form-label" style="font-size:0.57rem;"><span data-i18n-zh="套筒内侧长度 (mm)" data-i18n-en="Sleeve inward length (mm)">Sleeve inward length (mm)</span><input id="guideSleeveInward" type="number" min="1" max="30" step="0.5" value="8"></label>
+                            <label class="form-label" style="font-size:0.57rem;"><span data-i18n-zh="几何分辨率 (mm)" data-i18n-en="Geometry resolution (mm)">Geometry resolution (mm)</span><input id="guideGeometryResolution" type="number" min="0.5" max="2" step="0.1" value="1"></label>
+                        </div>
+                        <div style="display:flex;align-items:center;gap:6px;margin-top:6px;">
+                            <input id="guideStlValidationFile" type="file" accept=".stl,model/stl" hidden>
+                            <button class="btn btn-outline" type="button" onclick="document.getElementById('guideStlValidationFile').click()" style="font-size:0.56rem;padding:3px 5px;"><span data-i18n-zh="校验导入的 STL" data-i18n-en="Validate imported STL">Validate imported STL</span></button>
+                            <span id="guideStlValidationStatus" role="status" style="font-size:0.54rem;color:var(--text-dim);" data-i18n-zh="仅进行制造前网格校验，不覆盖当前导板。" data-i18n-en="Manufacturing mesh validation only; the current guide is never overwritten.">Manufacturing mesh validation only; the current guide is never overwritten.</span>
+                        </div>
+                        <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px;margin-top:6px;">
+                            <label class="form-label" style="font-size:0.57rem;"><span data-i18n-zh="导向针道（不选=全部）" data-i18n-en="Guided needles (empty = all)">Guided needles (empty = all)</span><select id="guideNeedleSelection" multiple size="4" aria-label="Needles included in puncture guide"></select></label>
+                            <label class="form-label" style="font-size:0.57rem;"><span data-i18n-zh="已保存导板版本" data-i18n-en="Saved guide version">Saved guide version</span><select id="guideVersionSelect" aria-label="Saved puncture guide version"></select><button class="btn btn-outline" type="button" onclick="loadSelectedSurgicalGuideVersion()" style="font-size:0.56rem;padding:3px 5px;margin-top:3px;"><span data-i18n-zh="显示所选版本" data-i18n-en="Show selected version">Show selected version</span></button></label>
+                        </div>
+                        <div style="margin-top:5px;font-size:0.54rem;color:var(--text-dim);" data-i18n-zh="更改将在下次生成导板时应用，并随当前病例保存。" data-i18n-en="Changes apply to the next generated guide and are saved with this case.">Changes apply to the next generated guide and are saved with this case.</div>
+                    </details>
                 </div>
             </div>
         </div>
@@ -1186,18 +1212,19 @@
   strict mode to isolated files; migrate the bundle to ES modules as one
   versioned change so implicit legacy bindings cannot break selectively.
 -->
-<script src="static/js/brachybot-chat-core.js?v=11"></script>
-<script src="static/js/brachybot-chat-todo.js?v=10"></script>
-<script src="static/js/brachybot-ui-api.js?v=18"></script>
-<script src="static/js/brachybot-auth.js?v=6"></script>
-<script src="static/js/brachybot-viewer-volume.js?v=10"></script>
-<script src="static/js/brachybot-viewer-layout.js?v=9"></script>
-<script src="static/js/brachybot-3d-manual.js?v=19"></script>
+<script src="static/js/brachybot-chat-core.js?v=12"></script>
+<script src="static/js/brachybot-chat-todo.js?v=11"></script>
+<script src="static/js/brachybot-ui-api.js?v=22"></script>
+<script src="static/js/brachybot-auth.js?v=7"></script>
+<script src="static/js/brachybot-viewer-volume.js?v=11"></script>
+<script src="static/js/brachybot-viewer-layout.js?v=10"></script>
+<script src="static/js/brachybot-3d-manual.js?v=22"></script>
 <script src="static/js/brachybot-manual-annotation.js?v=8"></script>
-    <script src="static/js/brachybot-dvh-planning.js?v=11"></script>
+<script src="static/js/brachybot-surgical-guide.js?v=3"></script>
+    <script src="static/js/brachybot-dvh-planning.js?v=12"></script>
 <script src="static/js/brachybot-report-shell.js?v=13"></script>
-<script src="static/js/brachybot-report-editor.js?v=11"></script>
-<script src="static/js/brachybot-workspace.js?v=8"></script>
-<script src="static/js/brachybot-report-export.js?v=11"></script>
+<script src="static/js/brachybot-report-editor.js?v=12"></script>
+<script src="static/js/brachybot-workspace.js?v=12"></script>
+<script src="static/js/brachybot-report-export.js?v=12"></script>
 </body>
 </html>
