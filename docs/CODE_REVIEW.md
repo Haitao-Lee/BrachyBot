@@ -195,6 +195,81 @@ ID rather than the owning session's ID.
 
 ---
 
+## 2026-07-24 — SSE idle timeout disconnected the browser during long planning runs
+
+### Confirmed issue
+
+The frontend SSE reader used a fixed 90 s idle timeout (`CHAT_IDLE_TIMEOUT_MS`).
+Medical planning tools (ctv_segmentation ~86 s, oar_segmentation ~63 s,
+planning_pipeline ~567 s) emit **no SSE events while executing** — sub-step
+and progress events are buffered and flushed only after the tool returns.
+The idle timeout therefore fired mid-planning, `turnAbortController.abort()`
+closed the SSE stream, and the browser received no events after the
+disconnection — including the final LLM response and review result.
+
+### Resolution
+
+`sendChat` in `brachybot-chat-todo.js` now dynamically switches the idle
+timeout based on the Progress dock state:
+- Normal chat (no active tools): 90 s default
+- Active planning (`todo.items` contain `active` or `pending` status):
+  `CHAT_PLANNING_IDLE_TIMEOUT_MS = 900 s` (15 min)
+
+### Verification
+
+- `node --check` passed for the modified JS file.
+
+---
+
+## 2026-07-24 — Orchestrator completeness checker crashed on non-picklable context
+
+### Confirmed issue
+
+`MultiAgentOrchestrator.update_global_context()` and `_context_snapshot()` used
+`copy.deepcopy` to freeze the shared review context.  When the agent memory
+passed `conversation_state` containing objects with `_thread.RLock` internals,
+`deepcopy` raised `pickle.PicklingError: cannot pickle '_thread.RLock'`.
+This crashed the completeness checker, leaving the agent in a broken state:
+subsequent chat turns hung on "Thinking" and session switching was blocked.
+
+### Resolution
+
+`agents/orchestrator.py` — replaced `copy.deepcopy` with a custom
+`_safe_deepish(value)` helper that gracefully degrades: dicts and lists are
+recursively copied element by element; any non-picklable scalar is returned
+as-is.  Catches `TypeError`, `AttributeError`, and `pickle.PicklingError`.
+
+### Verification
+
+- `py_compile` passed for the modified module.
+
+---
+
+## 2026-07-24 — Thinking chain timer reset on resume after session switch
+
+### Confirmed issue
+
+The thinking chain header timer was saved inside the SSE `step` event handler,
+which only executes after the first step event arrives.  During a task resume
+the saved timestamp was not reliably available, causing
+`createLiveThinkingChain` to fall back to `Date.now()` and the elapsed-time
+display to restart from 0.0 s.
+
+### Resolution
+
+`brachybot-chat-todo.js` — `_caseChainStartedAt[turnSessionId]` is now saved
+at the `sendChat` entry point (after `showThinkingIndicator()`, before the SSE
+connection opens), guaranteeing the timestamp exists before any events are
+processed.  `createLiveThinkingChain` accepts `resumeStartTime`: when set, the
+header clock shows `(Date.now() - resumeStartTime)` — the true background
+elapsed time — instead of resetting.
+
+### Verification
+
+- `node --check` passed for the modified JS file.
+
+---
+
 ## 2026-07-23 - Active-case agents are protected from cache eviction
 
 ### Confirmed issue
