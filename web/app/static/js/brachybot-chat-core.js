@@ -1933,8 +1933,11 @@ function finalizeThinkingChain(chainEl, headerEl, steps) {
         }
         if (timeEl) timeEl.style.display = 'none';
     };
-    // Synchronous first (immediate visual feedback)
-    try { _collapse(); } catch (_) {}
+    // Push the collapse to the next frame so the response text is
+    // definitely visible before the trace folds.  A synchronous
+    // collapse hides the steps before the browser has painted the
+    // answer bubble.
+    setTimeout(_collapse, 0);
     // Then again after a delay (covers cases where late SSE events re-added
     // the .expanded class after the sync call).
     setTimeout(_collapse, 300);
