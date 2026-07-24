@@ -1456,7 +1456,7 @@ async function loadCTToViewers(ctPath, options = {}) {
         // upload can finish after the user has already switched cases.
         if (progressText) progressText.textContent = 'Loading CT to viewers...';
         if (announce) addChat('system', 'Loading CT image to viewers...');
-        resetAllState();
+        if (!options.skipReset) resetAllState();
     }
     const renderGeneration = window.__viewerRenderGeneration || 0;
 
@@ -1470,7 +1470,9 @@ async function loadCTToViewers(ctPath, options = {}) {
     //   - reset the local DVH "last signature" so the next plan
     //     is allowed to redraw (otherwise drawDVH thinks the data
     //     is unchanged and skips the render).
-    if (isCurrentOwner()) {
+    // Skip all of this during session restore — the snapshot already
+    // populated metrics and report via applyWorkspaceSnapshot.
+    if (isCurrentOwner() && !options.skipReset) {
         state.metrics = {};
         state.dvhData = null;
         state.seeds = [];
@@ -1745,34 +1747,57 @@ async function _restoreActiveSessionWorkspace(options = {}) {
             if (typeof _refreshManualStepUI === 'function') _refreshManualStepUI();
         }
         // Yield a frame so the chat, sidebar, and Input panel populate
-        // visibly before the function returns (no-CT path) or before the
-        // heavyweight CT download starts.
+        // visibly before heavy data begins.
         await _yield();
         return status;
     }
 
-    // Hide the global hydration notice before the heavyweight CT transfer.
-    // loadCTToViewers manages its own per-viewer progress overlay so the user
-    // sees specific loading feedback instead of a frozen spinner.
-    window.setWorkspaceHydrationState?.(false);
-    document.body.classList.remove('workspace-hydrating');
-    // Yield a frame so the restored Input fields, report, and viewer
-    // settings are painted before the CT download begins.
+    // --- CT data exists: load in parallel with label / planning ---
+    // Clear state once before starting parallel work.  Each data source
+    // renders its own results as soon as it arrives.
+    resetAllState({ deferDisposal: true });
+    // Let the reset paint before initiating network I/O.
     await _yield();
-    try {
-        await loadCTToViewers(ctPath, { announce: false, sessionId: sessionAtStart });
-    } catch (ctError) {
-        console.warn('[session restore] CT load failed, continuing with snapshot data:', ctError);
-        if (typeof loadSessionChat === 'function' && activeSessionId) loadSessionChat(activeSessionId);
-        return status;
-    }
-    if (_activeApiSessionId() !== sessionAtStart) return null;
 
-    // Yield a frame so the CT slices are painted before label volumes
-    // and planning meshes start loading.
-    await _yield();
+    // Start all three heavy fetches concurrently so they overlap on the
+    // wire rather than waiting for each other sequentially.
+    let ctVolumeResult = null;
+    let ctMetaResult = null;
+    const ctTask = (async () => {
+        try {
+            ctVolumeResult = await loadCTToViewers(ctPath, {
+                announce: false, sessionId: sessionAtStart, skipReset: true,
+            });
+        } catch (e) {
+            console.warn('[session restore] CT load failed:', e);
+        }
+    })();
 
     const storedKeys = new Set(Array.isArray(status.stored_keys) ? status.stored_keys : []);
+    const hasPlanning = [
+        'dose_metrics', 'dose_distribution', 'dose_distribution_gy',
+        'seed_plan', 'seed_plan_serialized', 'manual_planning_preview',
+    ].some(key => storedKeys.has(key));
+
+    const labelTask = (!hasPlanning && typeof loadLabelVolumes === 'function')
+        ? loadLabelVolumes({ sessionId: sessionAtStart })
+        : Promise.resolve();
+
+    const planningTask = (hasPlanning && typeof refreshPlanningUI === 'function')
+        ? refreshPlanningUI({ switchToViewers: false, sessionId: sessionAtStart })
+        : Promise.resolve();
+
+    // Wait for CT first — slices are the base layer.  Label / planning
+    // layers render independently as soon as their tasks complete.
+    await ctTask;
+    if (_activeApiSessionId() !== sessionAtStart) return null;
+    await _yield();
+
+    await Promise.allSettled([labelTask, planningTask]);
+    if (_activeApiSessionId() !== sessionAtStart) return null;
+    await _yield();
+
+    // --- manual state from stored keys ---
     if (typeof _saveManualState === 'function') {
         const ctvDone = ['ctv_array', 'ctv_mask'].some(key => storedKeys.has(key));
         const oarDone = storedKeys.has('oar_array');
@@ -1802,18 +1827,6 @@ async function _restoreActiveSessionWorkspace(options = {}) {
             last_step: completed ? completed[0] : null,
         });
         if (typeof _refreshManualStepUI === 'function') _refreshManualStepUI();
-    }
-    const hasPlanning = [
-        'dose_metrics', 'dose_distribution', 'dose_distribution_gy',
-        'seed_plan', 'seed_plan_serialized', 'manual_planning_preview',
-    ].some(key => storedKeys.has(key));
-    if (hasPlanning && typeof refreshPlanningUI === 'function') {
-        await refreshPlanningUI({ switchToViewers: false, sessionId: sessionAtStart });
-    } else if (typeof loadLabelVolumes === 'function') {
-        await loadLabelVolumes({ sessionId: sessionAtStart });
-        ['axial', 'sagittal', 'coronal'].forEach(axis => {
-            try { renderSliceFromVolume(axis, state.slices[axis]); } catch (_) {}
-        });
     }
     if (_activeApiSessionId() !== sessionAtStart) return null;
 
