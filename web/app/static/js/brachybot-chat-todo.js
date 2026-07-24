@@ -963,6 +963,29 @@ async function _flushQueuedChatTurns() {
 }
 window.flushQueuedChatTurns = _flushQueuedChatTurns;
 
+function _buildTurnMeta() {
+    const llmMeta = window._lastLLMMeta || null;
+    const toolCount = (window._todoTurnToolCount !== undefined)
+        ? window._todoTurnToolCount
+        : ((llmMeta && llmMeta.llm_calls) || 0);
+    const startTime = window._chatTurnStartTime || null;
+    // Calculate elapsed time client-side — this is the real wall-clock
+    // time from the "Send" click to the response delivery.  For session
+    // restore the persisted value lets the footer show the original time.
+    const elapsedMs = startTime ? (Date.now() - startTime) : 0;
+    const elapsedSec = elapsedMs > 0 ? (elapsedMs / 1000).toFixed(1) : null;
+    return {
+        llmMeta: llmMeta ? {
+            usage: llmMeta.usage || {},
+            latency_ms: llmMeta.latency_ms || 0,
+            llm_calls: llmMeta.llm_calls || 0,
+        } : null,
+        toolCount,
+        elapsedSec,
+        savedAt: Date.now(),
+    };
+}
+
 function readChatChunk(reader, timeoutMs = CHAT_IDLE_TIMEOUT_MS, onTimeout = null) {
     let timer = null;
     return new Promise((resolve, reject) => {
@@ -1841,7 +1864,7 @@ async function sendChat(prefill, options) {
             const detachedResponse = responseText
                 || (finalResponseReceived ? '(no reply)' : null);
             if (detachedResponse && typeof saveSessionMessage === 'function') {
-                saveSessionMessage('bot-response', detachedResponse, null, Date.now(), turnSessionId);
+                saveSessionMessage('bot-response', detachedResponse, null, Date.now(), turnSessionId, _buildTurnMeta());
             }
             try { saveSessionMessage('thinking', '', steps, Date.now(), turnSessionId); } catch (_) {}
             return;
@@ -1942,8 +1965,14 @@ async function sendChat(prefill, options) {
             responseEl = null;
         }
         if (!suppressScreenshotAck && responseEl && typeof finalizeStreamingResponse === 'function') {
-            finalizeStreamingResponse(responseEl, finalText, turnSessionId);
+            const meta = _buildTurnMeta();
+            finalizeStreamingResponse(responseEl, finalText, turnSessionId, meta);
         } else if (!suppressScreenshotAck && !responseEl && !window._chatFallbackUsed) {
+            window._chatFallbackUsed = true;
+            if (typeof addChat === 'function') {
+                addChat('bot-response', finalText, true, Date.now(), false, turnSessionId);
+            }
+        }
             window._chatFallbackUsed = true;
             if (typeof addChat === 'function') {
                 addChat('bot-response', finalText, true, Date.now(), false, turnSessionId);
@@ -1978,7 +2007,7 @@ async function sendChat(prefill, options) {
             const detachedResponse = responseText
                 || (finalResponseReceived ? '(no reply)' : null);
             if (detachedResponse && typeof saveSessionMessage === 'function') {
-                saveSessionMessage('bot-response', detachedResponse, null, Date.now(), turnSessionId);
+                saveSessionMessage('bot-response', detachedResponse, null, Date.now(), turnSessionId, _buildTurnMeta());
             }
             try { saveSessionMessage('thinking', '', steps, Date.now(), turnSessionId); } catch (_) {}
             return;
