@@ -121,6 +121,48 @@ emitted again — the frontend's existing block-update path in
 
 ---
 
+## 2026-07-24 - Workspace-checkpoint step visible to user and Gy display after restore
+
+### Confirmed issue
+
+1. The "Saving case results" (`workspace_checkpoint`) step appeared in the
+   thinking chain after every chat turn and could remain pending for minutes
+   while the backend persisted clinical arrays through the `_case_guard` lock.
+   This was confusing to operators — the LLM had already produced the final
+   response, but the progress dock showed an unfinished step.
+
+2. When a workspace snapshot was restored, the `in_lowest_energy` and
+   `out_highest_energy` dose fields displayed the raw model-space value (1)
+   instead of the physical Gy equivalent (120).  `applyControls()` set
+   `element.value` directly without calling `doseModelToGy()`.
+
+### Resolution
+
+1. `web/chat_tasks.py:282–304` – removed the `commit_step("pending")` /
+   `commit_step("done")` emissions for `workspace_checkpoint`.  The
+   terminal SSE `done` event now publishes immediately after the LLM
+   stream ends; `on_finish` (which calls `finalize_chat_task` and
+   persists chat results) runs synchronously afterwards but no longer
+   blocks the SSE stream.  The earlier `schedule_agent_checkpoint`
+   change (deferring heavy array serialisation to a 0.75 s timer)
+   ensures the persistence steps are fast.
+
+2. `web/app/static/js/brachybot-workspace.js` – `applyControls()` now
+   detects dose-model fields (`inLowestEnergy`, `outHighestEnergy`) and
+   converts stored model-space values (≤ 100) to physical Gy via
+   `doseModelToGy()` before writing them to the DOM.  Already-physical
+   values (> 100) pass through unchanged.
+
+### Verification
+
+- `py_compile` passed for `chat_tasks.py` and `planning_routes.py`.
+- Workspace restore after a planning session now shows 120 Gy in the
+  dose constraint fields instead of 1.
+- The thinking chain no longer shows a "Saving case results" step;
+  the final response appears as the last visible element.
+
+---
+
 ## 2026-07-23 - Active-case agents are protected from cache eviction
 
 ### Confirmed issue
