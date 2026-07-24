@@ -412,7 +412,6 @@
                 return;
             }
             if (Object.prototype.hasOwnProperty.call(saved, 'value')) {
-                const id = String(saved.id || '');
                 const v = Number(saved.value);
                 // Saved values ≤ 100 for dose fields are assumed to be in
                 // model space (1 = 120 Gy) and converted to physical Gy
