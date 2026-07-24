@@ -572,9 +572,15 @@
                 window._sessionChatTaskStatuses[sessionId] = chat.task_status || 'idle';
             }
             if (!options.skipChat && Array.isArray(chat.messages) && typeof sessions !== 'undefined' && sessions[sessionId]) {
-                // Pending is a transient browser presentation state.  Never
-                // resurrect an old spinner after a reload or case switch.
-                sessions[sessionId].messages = chat.messages;
+                // Preserve live browser-side messages that arrived after the
+                // last server save (e.g. detached bot responses during a
+                // session switch).  If the local copy has more messages than
+                // the snapshot the browser is more up-to-date; otherwise the
+                // snapshot is authoritative (page refresh, stale cache).
+                const localMsgs = sessions[sessionId].messages || [];
+                if (chat.messages.length >= localMsgs.length) {
+                    sessions[sessionId].messages = chat.messages;
+                }
                 sessions[sessionId].pending = false;
                 if (typeof loadSessionChat === 'function' && sessionId === String(activeSessionId || '')) {
                     loadSessionChat(sessionId);
@@ -922,7 +928,10 @@
             if (!(await prepareSessionChange())) return { success: false, cancelled: true };
             const previousSessionId = activeSessionId;
             if (typeof flushActiveReportState === 'function') flushActiveReportState();
-            void persistWorkspace('session.switching');
+            // Persist the current session's chat messages, report form, and UI
+            // state before the switch so the server snapshot is up-to-date when
+            // applyWorkspaceSnapshot overwrites sessions[id].messages later.
+            await persistWorkspace('session.switching').catch(error => console.debug('[workspace] persist before switch deferred:', error));
             // The old lease is released before changing the active id, but a
             // slow lease endpoint must not hold the visible case switch.
             if (typeof window.brachybotAuth?.releaseLease === 'function') {
