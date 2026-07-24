@@ -13,6 +13,10 @@
     const workspaceRestoreTimers = new Set();
     let backgroundRestoreGeneration = 0;
     let backgroundRestoreTimer = null;
+    // Control ids whose .value is persisted in model space but displayed
+    // in physical Gy to the operator.  applyControls() must convert them
+    // back via doseModelToGy() during workspace restoration.
+    const GY_VALUE_IDS = new Set(['inLowestEnergy', 'outHighestEnergy']);
     const WORKSPACE_REQUEST_TIMEOUT_MS = 15000;
     const WORKSPACE_RECOVERY_TIMEOUT_MS = 5000;
     let recoveryNoticeDismissKey = '';
@@ -407,7 +411,20 @@
                 });
                 return;
             }
-            if (Object.prototype.hasOwnProperty.call(saved, 'value')) element.value = saved.value;
+            if (Object.prototype.hasOwnProperty.call(saved, 'value')) {
+                const id = String(saved.id || '');
+                const v = Number(saved.value);
+                // Saved values ≤ 100 for dose fields are assumed to be in
+                // model space (1 = 120 Gy) and converted to physical Gy
+                // before display.  Already-converted values > 100 pass
+                // through unchanged.
+                if (id && Number.isFinite(v) && v <= 100 && GY_VALUE_IDS.has(id)
+                    && typeof doseModelToGy === 'function') {
+                    element.value = doseModelToGy(v);
+                } else {
+                    element.value = saved.value;
+                }
+            }
         });
     }
 
