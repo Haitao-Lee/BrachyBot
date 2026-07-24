@@ -144,8 +144,8 @@ function collectUIState() {
                 maximum_candidate_trajectories: Math.round(Number(document.getElementById('maxCandiTraj')?.value || 500)),
             },
             // Persist normalized model values even though the controls show Gy.
-            in_lowest_energy: doseGyToModel(document.getElementById('inLowestEnergy')?.value, 1),
-            out_highest_energy: doseGyToModel(document.getElementById('outHighestEnergy')?.value, 1),
+            in_lowest_energy: doseGyToModel(document.getElementById('inLowestEnergy')?.value, doseModelScaleGy()),
+            out_highest_energy: doseGyToModel(document.getElementById('outHighestEnergy')?.value, doseModelScaleGy()),
             dvh_rate: Number(document.getElementById('dvhRate')?.value || 0.9),
             max_iter: Math.round(Number(document.getElementById('maxIter')?.value || 4)),
             iter_rate: Number(document.getElementById('iterRate')?.value || 2),
