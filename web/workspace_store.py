@@ -211,7 +211,7 @@ def _decode_artifacts(value: Any, root: Path) -> Any:
         return value
     if "$array" in value:
         path = _safe_workspace_child(root, value["$array"])
-        return np.load(path, allow_pickle=False)
+        return np.load(path, allow_pickle=False, mmap_mode='r')
     if "$tuple" in value:
         return tuple(_decode_artifacts(item, root) for item in value["$tuple"])
     if "$image" in value or "$unsupported" in value:
