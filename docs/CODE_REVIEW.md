@@ -163,6 +163,38 @@ emitted again — the frontend's existing block-update path in
 
 ---
 
+## 2026-07-24 — Progress dock state lost on session switch (wrong save key)
+
+### Confirmed issue
+
+When switching from session A (with a running task and active Progress dock)
+to session B and back, the dock's completed steps disappeared and the timer
+reset.  The per-session save logic used `activeSessionId` as the storage
+key, but `paintSessionShell` had already advanced `activeSessionId` to the
+new (target) case before `clearClientWorkspace` → `clearCaseScopedProgressPresentation`
+ran.  The old session's items were therefore saved under the *new* session's
+ID rather than the owning session's ID.
+
+### Resolution
+
+1. `_todoCreate()` now stamps `api._sessionId` with the owning session
+   ID at creation time.
+2. `clearCaseScopedProgressPresentation()` reads `todo._sessionId` instead
+   of the current `activeSessionId`, ensuring the items are persisted under
+   the correct per-session key.
+3. `sendChat()` when `isResumingTask` restores items from
+   `window._caseTodos[turnSessionId]` (already in place from the previous
+   round's fix).
+
+### Verification
+
+- Restart server, start a planning task in session A, switch to B, switch
+  back to A — completed steps remain visible and the elapsed-time display
+  continues from the original `startedAt` timestamps, reflecting the real
+  wall-clock duration including the time the user spent viewing other cases.
+
+---
+
 ## 2026-07-23 - Active-case agents are protected from cache eviction
 
 ### Confirmed issue
