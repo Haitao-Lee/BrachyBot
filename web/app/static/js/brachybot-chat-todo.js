@@ -1973,11 +1973,6 @@ async function sendChat(prefill, options) {
                 addChat('bot-response', finalText, true, Date.now(), false, turnSessionId);
             }
         }
-            window._chatFallbackUsed = true;
-            if (typeof addChat === 'function') {
-                addChat('bot-response', finalText, true, Date.now(), false, turnSessionId);
-            }
-        }
 
         // Append a usage-bar footer BELOW the response bubble so the
         // user can see response time + token counts + tool call count
