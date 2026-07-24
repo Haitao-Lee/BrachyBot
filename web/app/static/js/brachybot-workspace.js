@@ -96,17 +96,10 @@
     function scheduleBackgroundWorkspaceRestore(workspace, sessionId) {
         const generation = ++backgroundRestoreGeneration;
         if (backgroundRestoreTimer) clearTimeout(backgroundRestoreTimer);
-        window.setWorkspaceHydrationState?.(
-            true,
-            typeof window._t === 'function'
-                ? window._t('正在恢复病例资源…', 'Restoring case resources...')
-                : 'Restoring case resources...',
-        );
-        document.body.classList.add('workspace-hydrating');
-        // Let the lightweight case transition paint before loading CT,
-        // meshes, dose arrays, and the hydrated agent. The selected case is
-        // checked again before and after this task so a rapid second switch
-        // cannot let an old restore repaint the current case.
+        // The transition already painted the chat, sidebar, and report panel.
+        // Do not block the viewer with a full-screen spinner while /status
+        // hydrates the agent and loadCTToViewers downloads the volume — the
+        // viewer canvases show their own loading overlay while CT arrives.
         backgroundRestoreTimer = setTimeout(async () => {
             backgroundRestoreTimer = null;
             if (generation !== backgroundRestoreGeneration || sessionId !== activeSessionId) return;
@@ -124,11 +117,6 @@
                 }
             } catch (error) {
                 console.warn('[workspace] background case restore failed:', error);
-            } finally {
-                if (generation === backgroundRestoreGeneration) {
-                    document.body.classList.remove('workspace-hydrating');
-                    window.setWorkspaceHydrationState?.(false);
-                }
             }
         }, 0);
     }
