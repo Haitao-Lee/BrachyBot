@@ -9,6 +9,7 @@
     let restoring = false;
     let workspaceTransition = null;
     let pendingSwitchSessionId = null;
+    let _switchAbortController = null;
     let workspaceTransitionGeneration = 0;
     let workspaceRestoreGeneration = 0;
     const workspaceRestoreTimers = new Set();
@@ -27,7 +28,20 @@
         const timer = controller ? setTimeout(() => controller.abort(), timeoutMs) : null;
         try {
             const options = Object.assign({}, init);
-            if (controller) options.signal = controller.signal;
+            // Honour an externally-supplied signal (e.g. transition abort) by
+            // chaining the internal timeout ­— if the external signal fires
+            // first it cancels the fetch, otherwise our timer does.
+            if (controller && options.signal) {
+                const external = options.signal;
+                const chained = new AbortController();
+                if (external.aborted) chained.abort();
+                else external.addEventListener('abort', () => chained.abort(), { once: true });
+                if (controller.signal.aborted) chained.abort();
+                else controller.signal.addEventListener('abort', () => chained.abort(), { once: true });
+                options.signal = chained.signal;
+            } else if (controller) {
+                options.signal = controller.signal;
+            }
             return await fetch(input, options);
         } catch (error) {
             if (error?.name === 'AbortError') {
@@ -158,9 +172,6 @@
     }
 
     async function runWorkspaceTransition(operation) {
-        // A case change coordinates several server and browser mutations.
-        // Serializing them prevents a late restore response from repainting a
-        // previously selected case over the user's most recent selection.
         if (workspaceTransition) {
             return { success: false, busy: true, error: 'A case transition is already in progress.' };
         }
@@ -171,14 +182,19 @@
         const transitionGeneration = ++workspaceTransitionGeneration;
         const transition = (async () => {
             try {
-                return await operation();
+                const result = await operation();
+                // A replaced transition was killed by a newer switch click.
+                // Its result must not overwrite the active session.
+                if (result && result.replaced) return result;
+                return result;
             } catch (error) {
+                // An AbortError from a replaced transition is expected — the
+                // newer switch already painted its spinner and the recovery
+                // step would only add noise.
+                if (error?.name === 'AbortError' && _switchAbortController?.signal.aborted) {
+                    return { success: false, replaced: true };
+                }
                 console.error('[workspace] case transition failed:', error);
-                // A request can fail after the server has already selected a
-                // different case. Rehydrate from the authoritative server
-                // selection instead of leaving chat and viewer state split.
-                // Recovery is bounded: an offline server must never leave the
-                // sidebar permanently marked as busy.
                 try {
                     await Promise.race([
                         recoverWorkspaceAfterTransitionFailure(transitionGeneration),
@@ -955,18 +971,22 @@
         document.getElementById('sessionSidebar')?.classList.remove('mobile-open');
         if (id === activeSessionId) return { success: true, session_id: id, unchanged: true };
         if (!sessions[id]) return { success: false, error: 'The requested case does not exist.' };
-        // If a transition is already in progress, queue this request instead
-        // of rejecting it.  The queued switch runs automatically when the
-        // current transition finishes, so rapid session-hopping feels immediate
-        // rather than silently ignoring every other click.
+        // A transition is already in flight.  Abort its server request so
+        // it bails out quickly instead of waiting for the 15 s timeout, then
+        // queue this new target.  The finalised transition will auto-run the
+        // queued switch, so the user's latest click always wins.
         if (workspaceTransition) {
+            if (_switchAbortController) {
+                _switchAbortController.abort();
+                _switchAbortController = null;
+            }
             pendingSwitchSessionId = id;
             return { success: true, queued: true, session_id: id };
         }
         return runWorkspaceTransition(async () => {
+            _switchAbortController = new AbortController();
+            const aborter = _switchAbortController;
             // Show the switching indicator IMMEDIATELY for visual feedback.
-            // All async work below (persist, lease, server select) happens
-            // behind the spinner so the user never sees a frozen sidebar.
             window.setWorkspaceHydrationState?.(
                 true,
                 typeof window._t === 'function'
@@ -980,18 +1000,15 @@
             }
             const previousSessionId = activeSessionId;
             if (typeof flushActiveReportState === 'function') flushActiveReportState();
-            // Persist the previous session's state in the background.  A
-            // hung network must not block the visible case switch — the
-            // local message protection in applyWorkspaceSnapshot preserves
-            // live messages that haven't reached the server yet.
             void persistWorkspace('session.switching').catch(error => console.debug('[workspace] persist before switch deferred:', error));
             if (typeof window.brachybotAuth?.releaseLease === 'function') {
                 void window.brachybotAuth.releaseLease(previousSessionId).catch(error => console.debug('[workspace] lease release deferred:', error));
             }
             let response;
             try {
-                response = await workspaceFetch(`/api/sessions/${encodeURIComponent(id)}/select`, { method: 'POST' });
+                response = await workspaceFetch(`/api/sessions/${encodeURIComponent(id)}/select`, { method: 'POST', signal: aborter.signal });
             } catch (error) {
+                if (aborter.signal.aborted) return { success: false, replaced: true };
                 cancelTransitionUi();
                 throw error;
             }
