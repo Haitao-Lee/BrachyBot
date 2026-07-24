@@ -1740,7 +1740,18 @@ async function _restoreActiveSessionWorkspace(options = {}) {
         return status;
     }
 
-    await loadCTToViewers(ctPath, { announce: false, sessionId: sessionAtStart });
+    // Hide the global hydration notice before the heavyweight CT transfer.
+    // loadCTToViewers manages its own per-viewer progress overlay so the user
+    // sees specific loading feedback instead of a frozen spinner.
+    window.setWorkspaceHydrationState?.(false);
+    document.body.classList.remove('workspace-hydrating');
+    try {
+        await loadCTToViewers(ctPath, { announce: false, sessionId: sessionAtStart });
+    } catch (ctError) {
+        console.warn('[session restore] CT load failed, continuing with snapshot data:', ctError);
+        if (typeof loadSessionChat === 'function' && activeSessionId) loadSessionChat(activeSessionId);
+        return status;
+    }
     if (_activeApiSessionId() !== sessionAtStart) return null;
 
     const storedKeys = new Set(Array.isArray(status.stored_keys) ? status.stored_keys : []);

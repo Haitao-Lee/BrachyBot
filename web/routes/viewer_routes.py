@@ -1,5 +1,6 @@
 """Viewer and 3D visualization routes for the BrachyBot web API."""
 
+import gzip
 import json
 import logging
 import os
@@ -338,7 +339,17 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
             ct_int16 = np.clip(ct_data, np.iinfo(np.int16).min, np.iinfo(np.int16).max).astype(np.int16)
             raw_bytes = ct_int16.tobytes()
 
-            response = Response(raw_bytes, mimetype='application/octet-stream')
+            accept_encoding = request.headers.get("Accept-Encoding", "")
+            content = raw_bytes
+            if "gzip" in accept_encoding:
+                content = gzip.compress(raw_bytes, compresslevel=4)
+                content_encoding = "gzip"
+            else:
+                content_encoding = None
+
+            response = Response(content, mimetype='application/octet-stream')
+            if content_encoding:
+                response.headers['Content-Encoding'] = content_encoding
             response.headers['X-Shape-Z'] = str(ct_data.shape[0])
             response.headers['X-Shape-Y'] = str(ct_data.shape[1])
             response.headers['X-Shape-X'] = str(ct_data.shape[2])
@@ -471,6 +482,10 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
                 payload.extend(oar_u8.tobytes())
 
             response = Response(bytes(payload), mimetype='application/octet-stream')
+            accept_encoding = request.headers.get("Accept-Encoding", "")
+            if "gzip" in accept_encoding:
+                response.set_data(gzip.compress(bytes(payload), compresslevel=4))
+                response.headers['Content-Encoding'] = 'gzip'
             response.headers['X-Shape-Z'] = str(shape[0])
             response.headers['X-Shape-Y'] = str(shape[1])
             response.headers['X-Shape-X'] = str(shape[2])
