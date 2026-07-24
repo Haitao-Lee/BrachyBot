@@ -1701,7 +1701,7 @@ async function sendChat(prefill, options) {
                             // dose data exists. We wait for the LAST
                             // tool in the chain: planning_pipeline done
                             // (which fires AFTER all sub-steps drain).
-                            const FINAL_PLANNING_TOOLS = ['planning_pipeline', 'dose_evaluation', 'dose_eval'];
+                            const FINAL_PLANNING_TOOLS = ['planning_pipeline', 'dose_evaluation'];
                             const SEG_TOOLS = ['ctv_segmentation', 'oar_segmentation'];
                             uiDebugLog('[SSE-STEP]', 'type:', data.type, 'tool:', data.tool, 'status:', data.status, 'in FINAL:', FINAL_PLANNING_TOOLS.includes(data.tool));
                             if (data.status === 'done' && data.tool && FINAL_PLANNING_TOOLS.includes(data.tool)) {
@@ -1818,7 +1818,7 @@ async function sendChat(prefill, options) {
                         // because the step event format changed),
                         // trigger a refresh now on stream completion.
                         const _planningToolsInSteps = steps.filter(s => s.type === 'tool' && s.status === 'done'
-                            && ['planning_pipeline', 'dose_evaluation', 'dose_eval', 'seed_planning'].includes(s.tool));
+                            && ['planning_pipeline', 'dose_evaluation', 'seed_planning'].includes(s.tool));
                         uiDebugLog('[SSE-done] planning tools in steps:', _planningToolsInSteps.map(s => s.tool));
                         if (_planningToolsInSteps.length > 0) {
                             uiDebugLog('[SSE-done] Triggering fallback refreshPlanningUI');
