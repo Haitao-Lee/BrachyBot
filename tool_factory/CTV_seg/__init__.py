@@ -154,7 +154,7 @@ class CTVSegmentationTool(BaseTool):
         image = kwargs.get("image")
         image_path = kwargs.get("image_path")
         label_path = kwargs.get("label_path")
-        tumor_type = (kwargs.get("tumor_type") or kwargs.get("tumor_site") or "").strip()
+        tumor_type = (kwargs.get("tumor_type") or kwargs.get("tumor_site") or kwargs.get("site") or "").strip()
         site_aliases = {
             "pancreas": "nnunet_pancreatic",
             "pancreatic": "nnunet_pancreatic",
