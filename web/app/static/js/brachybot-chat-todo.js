@@ -1463,8 +1463,16 @@ async function sendChat(prefill, options) {
                         // First step: replace thinking indicator with the live chain
                         if (!chainEl && typeof createLiveThinkingChain === 'function') {
                             if (thinkingEl && typeof removeThinkingIndicator === 'function') removeThinkingIndicator(thinkingEl);
-                            const r = createLiveThinkingChain();
+                            const resumeStart = isResumingTask
+                                ? (window._caseChainStartedAt || {})[turnSessionId] : null;
+                            const r = createLiveThinkingChain(resumeStart);
                             chainEl = r.chainEl; stepsDiv = r.stepsDiv; headerEl = r.headerEl;
+                            // Save the chain start time so a session-resume
+                            // rebuild uses the original clock, not Date.now().
+                            if (!isResumingTask && turnSessionId) {
+                                window._caseChainStartedAt = window._caseChainStartedAt || {};
+                                window._caseChainStartedAt[turnSessionId] = Date.now();
+                            }
                             window._brachyLiveTrace = {
                                 sessionId: turnSessionId, steps, chainEl, stepsDiv, headerEl,
                                 getTodo: () => todo,

@@ -1663,7 +1663,7 @@ function renderThinkingChain(steps) {
     scrollToBottom();
 }
 
-function createLiveThinkingChain() {
+function createLiveThinkingChain(resumeStartTime) {
     const container = document.getElementById('chatMessages');
     if (!container) return { chainEl: null, stepsDiv: null, headerEl: null };
 
@@ -1678,7 +1678,7 @@ function createLiveThinkingChain() {
     wrapper.className = 'thinking-chain';
     wrapper.id = 'liveThinkingChain';
 
-    const startTime = Date.now();
+    const startTime = Number(resumeStartTime) || Date.now();
 
     const header = document.createElement('div');
     header.className = 'thinking-header';
