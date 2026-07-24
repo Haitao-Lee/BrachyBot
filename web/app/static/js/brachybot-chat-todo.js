@@ -1969,13 +1969,6 @@ async function sendChat(prefill, options) {
             }
         }
 
-        // Collapse the thinking chain AFTER the response is rendered so the
-        // user sees the answer bubble appear first, then the trace folds.
-        if (chainEl && typeof finalizeThinkingChain === 'function') {
-            finalizeThinkingChain(chainEl, headerEl, steps);
-        }
-        try { saveSessionMessage('thinking', '', steps, Date.now(), turnSessionId); } catch (_) {}
-
         // Append a usage-bar footer BELOW the response bubble so the
         // user can see response time + token counts + tool call count
         // for this turn. The footer lives inside the same chat-msg-wrapper
@@ -2067,6 +2060,13 @@ async function sendChat(prefill, options) {
             window._activeChatTaskSessionId = null;
         }
         if (isCurrentTurn) {
+            // Collapse the thinking chain when the send button transitions
+            // back to ready state, so the user sees the full response and
+            // footer before the trace folds.
+            if (chainEl && typeof finalizeThinkingChain === 'function') {
+                finalizeThinkingChain(chainEl, headerEl, steps);
+            }
+            try { saveSessionMessage('thinking', '', steps, Date.now(), turnSessionId); } catch (_) {}
             window._chatStreaming = false;
             setStreamingState(false);
             setTimeout(() => { try { _flushHiddenChatQueue(); } catch (_) {} }, 0);
