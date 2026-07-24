@@ -2644,7 +2644,7 @@ def register_planning_routes(app, get_agent):
 
         if stream:
             try:
-                _, user, session_id = request_case_context()
+                store, user, session_id = request_case_context()
             except WorkspaceError:
                 return jsonify({"error": "Authentication required"}), 401
             start_gate = threading.Event()

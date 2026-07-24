@@ -2,6 +2,268 @@
 
 _This file consolidates all code review reports. Sections are organized by date._
 
+## 2026-07-24 - SSE streaming: NameError on `store` variable causes 500 on every chat request
+
+### Confirmed issue
+
+`POST /api/chat` (the SSE streaming path) always returned HTTP 500 with
+`{"error": "Internal server error"}`. The backend agent worker thread processed
+the request successfully (LLM responded, experience recorded), and the result
+was later recoverable by refreshing the browser — confirming the chat handler
+crashed AFTER spawning the worker but BEFORE delivering the SSE stream.
+
+### Root cause
+
+`planning_routes.py:2647` destructures `request_case_context()` as
+```python
+_, user, session_id = request_case_context()
+```
+discarding the first element (`store`) into `_`. At line 2689,
+`store.load_snapshot(...)` references the undefined name `store`:
+
+```python
+snapshot = store.load_snapshot(user["id"], session_id)   # NameError!
+```
+
+The `except WorkspaceError` block at line 2717 does not catch `NameError`.
+Because `start_gate.set()` runs in a `finally` block (line 2723), the worker
+thread is released immediately after the error, which is why the LLM responds
+visibly on the terminal while the HTTP handler returns 500.
+
+### Resolution
+
+Changed `planning_routes.py:2647` from:
+```python
+_, user, session_id = request_case_context()
+```
+to:
+```python
+store, user, session_id = request_case_context()
+```
+
+### Verification
+
+- Server restarted, chat tested: SSE stream delivers the response in real time
+  without requiring a browser refresh.
+- `py_compile` passed for the modified route module.
+
+---
+
+## 2026-07-23 - Active-case agents are protected from cache eviction
+
+### Confirmed issue
+
+The in-memory Agent cache was correctly keyed by account and case, but its LRU
+and timeout cleanup did not consult detached chat tasks. A long-running
+planning/chat task could therefore lose its authoritative Agent instance after
+a cache-pressure eviction or idle timeout. A later viewer request could hydrate
+a second Agent from the last checkpoint while the original task continued in
+the background, creating a real stale-state recovery risk.
+
+### Resolution
+
+1. **Task-aware cache maintenance.** The cache now asks the case-scoped chat
+   task manager whether a case still owns a running worker before evicting or
+   expiring its Agent.
+2. **Correctness over soft cache limits.** If every cached Agent is actively
+   executing, the process temporarily exceeds the LRU limit instead of
+   duplicating or interrupting a clinical case. The bound applies again once
+   a task reaches its durable completion boundary.
+3. **Fail-closed maintenance.** If task-status introspection itself fails, the
+   cache conservatively retains the Agent; maintenance never decides to evict
+   a possibly active planning worker.
+
+### Verification
+
+- Added a focused unit regression for task-aware cache protection.
+- Focused chat/session-transition suite: **64 passed**.
+- Full local suite: **293 passed, 2 skipped**.
+- Full configured remote-runtime suite: **292 passed, 3 skipped**.
+
+## 2026-07-23 - Puncture-guide parameters remain case-owned during editing
+
+### Confirmed issue
+
+The puncture-guide panel already sent its dimensions to the generator, but a
+multi-select HTML control serialised only its first selected needle through the
+generic workspace form snapshot. Numeric fields also waited for a `change`
+event, which meant an in-progress edit was not scheduled for persistence until
+the field lost focus. This could silently change the selected-channel subset or
+lose a just-edited manufacturing parameter after a rapid case switch.
+
+### Resolution
+
+1. **Complete channel-set persistence.** Workspace form snapshots now preserve
+   and restore every selected option of any multi-select control. Guide
+   versions therefore retain their chosen needle channels along with their
+   plate, bore, and sleeve geometry.
+2. **Responsive parameter checkpointing.** Each guide input schedules a
+   case-owned save while it is being edited and again on commit. Generation
+   remains explicit: edits never mutate an existing validated guide or STL.
+3. **Operator reset.** The parameter panel now offers an explicit restore
+   defaults control. Resetting schedules a durable case checkpoint rather than
+   leaving stale values in a browser-only form.
+
+### Verification
+
+- Added regression coverage for all exposed guide controls, diameter-to-radius
+  conversion, input/change checkpoint hooks, multiselect serialization, and
+  full parameter preservation in a watertight generated guide.
+- Local targeted suite: **62 passed**; JavaScript syntax checks passed for the
+  workspace and guide modules.
+
+## 2026-07-23 - Explicit chat cancellation is a durable terminal boundary
+
+### Confirmed issue
+
+The detached chat worker marked a task as cancelled after the user pressed the
+explicit Stop control, but a provider could still yield buffered tool, text, or
+terminal events afterwards. Those late events could be appended to the
+case-owned replay journal and appear again when the case was reopened in
+another browser. This was a real task-lifecycle race, distinct from intentional
+non-destructive session switching.
+
+### Resolution
+
+1. **Single cancellation terminal event.** A successful explicit cancellation
+   now atomically changes the task status and appends exactly one replayable
+   `done(cancelled)` event before invoking the provider cancellation hook.
+2. **Late-event fence.** The background worker checks task state before and
+   after decoding every provider event. Once stopped, buffered events are
+   discarded rather than being published, persisted, or replayed.
+3. **Replay-safe UI behavior.** A browser that reconnects to a cancelled task
+   renders the terminal stopped state instead of manufacturing an empty
+   assistant response or a false planning refresh.
+4. **Durable transcript policy.** Cancelled turns retain the user request and
+   trace for audit together with one `Stopped.` status. Partial provider prose
+   is deliberately not restored as a completed assistant answer.
+
+### Verification
+
+- Added a deterministic buffered-provider regression that cancels after the
+  first stream event, then verifies that late response text is absent and the
+  journal contains exactly one cancelled terminal event.
+- Remote configured-runtime suite: **289 passed, 3 skipped, 3 warnings**.
+- Local session-transition, workspace frontend, and chat-task contracts:
+  **62 passed**.
+- Python compilation, JavaScript syntax checking, and `git diff --check`
+  passed for the modified modules.
+
+## 2026-07-23 - Patient-specific puncture-guide controls and physical geometry
+
+### Confirmed implementation gap
+
+The workspace did not expose the manufacturing dimensions of the native
+patient-specific puncture guide. This made skin offset, plate thickness, guide
+hole/sleeve diameters, sleeve lengths, selected needle channels, and local
+geometry resolution effectively fixed implementation details. There was also
+no operator-facing way to validate an STL after it had been exported and
+modified by an external manufacturing workflow.
+
+### Resolution
+
+1. **Case-owned guide parameter panel.** The Input panel now exposes all
+   clinically meaningful guide dimensions in millimetres. The user specifies
+   channel and sleeve diameters; the browser converts them exactly once to the
+   geometry service's radius convention. Values are persisted with the case
+   and do not mutate an existing guide until the user explicitly generates a
+   new version.
+
+2. **Physical-coordinate construction.** The guide uses the existing
+   SimpleITK patient-world coordinate chain. A bounded CT crop is resampled to
+   an exact isotropic physical lattice using nearest-neighbour coordinate
+   sampling, not shape-based zoom. This keeps plate and hole dimensions
+   independent of anisotropic acquisition spacing and supports non-identity
+   direction matrices without adding RAS/LPS flips.
+
+3. **Robust native solid construction.** The CT-derived skin shell, local
+   patch, outer sleeves, and finite internal bores are combined as one implicit
+   volume before marching-cubes extraction. This deliberately avoids fragile
+   coplanar polygonal booleans while retaining the audited functional stages
+   of the legacy C++/VTK/CGAL guide workflow.
+
+4. **Versions, stale detection, and STL QA.** Each generation captures the
+   chosen parameters and needle subset in a retained case-owned version. A
+   plan geometry edit marks all versions stale. Export and user-selected STL
+   re-import validation both enforce finite vertices, valid indices, and
+   strict two-face edge closure; the re-import validator is read-only and
+   limited to 64 MiB, so it cannot replace patient geometry or consume an
+   unbounded amount of server memory.
+
+### Verification
+
+- `tests/test_surgical_guide.py` covers watertight STL round-trip, missing
+  geometry rejection, anisotropic/flipped-direction physical coordinates,
+  version/stale semantics, and the shared UI/agent guide-version contract.
+- JavaScript is syntax checked before deployment. The deployment host runs the
+  guide regression suite with the same SimpleITK/scipy/skimage dependencies
+  used in production.
+- Detailed workflow and clinical/manufacturing boundaries are documented in
+  `docs/PATIENT_SPECIFIC_PUNCTURE_GUIDE.md`.
+- Deployment-host full regression suite after the guide-tool contract update:
+  **288 passed, 3 skipped** (three external SWIG deprecation
+  warnings only).
+
+## 2026-07-23 - Transactional cross-session clinical restoration
+
+### Confirmed issue
+
+Returning to a completed case could produce a split workspace: 2D canvases
+showed the restored CT and label voxels, while the Input panel was blank, the
+Data Tree had an empty OAR group, and planning-dependent 3D, DVH, and report
+content appeared absent. This was not a segmentation or coordinate problem.
+The restore transaction first hydrated authoritative CT/label/plan data from
+the selected server workspace, then applied a whole browser UI snapshot. A
+stale snapshot could therefore replace the freshly rebuilt Data Tree topology,
+clinical input paths, and planning state with an earlier empty client copy.
+
+### Resolution
+
+1. **Separate authoritative clinical restoration from presentation restoration.**
+   CT, CTV/OAR paths, label topology, organ names, planning geometry, dose,
+   DVH, and report inputs are rebuilt from the selected server workspace only.
+   The browser snapshot now restores only safe preferences: viewer slices and
+   layout, camera pose, Data Tree visibility/opacity/color/material settings,
+   report edits, chat presentation, and training display state.
+
+2. **Expose case-owned input paths in the status contract.**
+   `/api/status` now returns the selected workspace's `ct_path`, `ctv_path`,
+   and `oar_path`. The Input panel is populated from those owned server values
+   before CT hydration; it no longer depends on stale form controls from a
+   previous case.
+
+3. **Guard every deferred planning and dose render by session identity.**
+   Case changes invalidate debounced planning refreshes and dose-overlay
+   metadata requests. A background task remains alive on its owning case, but
+   a late result is discarded unless its session and render generation still
+   match the selected workspace. This preserves the rule that only explicit
+   Stop cancels a server task, while preventing its visual artifacts from
+   leaking into another case.
+
+4. **Keep progress presentation case-scoped.**
+   Workspace clearing removes only browser-side progress/timers for the case
+   shell being replaced. It does not abort the detached server task. Returning
+   to that case replays the persisted prompt and task trace from its own event
+   journal rather than inheriting progress from a different session.
+
+5. **Deduplicate task replay during two-phase restoration.** A lightweight
+   snapshot and the later clinical hydration can both observe the same running
+   task. Replay subscriptions are now single-flight per case and retain the
+   session identity captured by their scheduling timer. This prevents one
+   replay from cancelling or clearing another, which previously left an old
+   Progress timer visible while the send button had returned to idle.
+
+### Verification
+
+- Added regression coverage for presentation-only snapshot merging, explicit
+  CT/CTV/OAR status paths, and stale planning/dose response invalidation.
+- Modified JavaScript is syntax-checked with Node, and the changed Python
+  route is bytecode-compiled before release.
+- Focused workspace frontend and authenticated workspace integration tests are
+  run again after synchronization on the deployment host.
+
+---
+
 ## 2026-07-23 - Active-case agents are protected from cache eviction
 
 ### Confirmed issue
