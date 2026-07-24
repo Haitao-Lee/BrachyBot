@@ -494,6 +494,10 @@ function _todoCreate() {
     // EN/中 toggle can re-render its labels in the new language
     // (see _setActiveTodoLang above).
     window._activeTodoApi = api;
+    // Stamp the owning session so clearCaseScopedProgressPresentation
+    // can persist the items under the correct key even after
+    // paintSessionShell has already updated activeSessionId.
+    api._sessionId = typeof activeSessionId !== 'undefined' ? String(activeSessionId) : '';
 
     return api;
 }
@@ -503,12 +507,13 @@ window.clearCaseScopedProgressPresentation = function clearCaseScopedProgressPre
     // task.  Removing this display state prevents an old task's timer/Progress
     // dock from leaking into a fresh case without changing any server task.
     const todo = window._activeTodoApi;
-    // Persist the todo-state snapshot keyed by session so that a resume
-    // (switch-back or refresh) can rebuild the Progress dock with the
-    // original startedAt timestamps.  The timer then shows the true
+    // Persist the todo-state snapshot keyed by the session that OWNS the
+    // todo (not the current activeSessionId, which paintSessionShell may
+    // have already advanced to the new case).  The timer then shows the true
     // elapsed wall-clock time — including the interval spent on another
     // case — rather than restarting from zero.
-    const sid = typeof activeSessionId !== 'undefined' ? String(activeSessionId) : '';
+    const sid = todo?._sessionId
+        || (typeof activeSessionId !== 'undefined' ? String(activeSessionId) : '');
     if (todo && sid && todo.items && todo.items.length) {
         window._caseTodos = window._caseTodos || {};
         window._caseTodos[sid] = todo.items.map(item => ({
