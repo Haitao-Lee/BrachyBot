@@ -25,10 +25,15 @@
 .workspace-lock-notice, .workspace-recovery-notice { display: flex; align-items: center; gap: 10px; position: fixed; left: 50%; transform: translateX(-50%); padding: 8px 8px 8px 12px; border-radius: 6px; box-shadow: 0 8px 24px rgba(0, 0, 0, .30); font-size: 12px; }
 .workspace-lock-notice { z-index: 1200; top: 58px; max-width: min(680px, calc(100vw - 32px)); border: 1px solid rgba(251, 191, 36, .60); background: #241b0c; color: #fde68a; }
 .workspace-recovery-notice { z-index: 1199; top: 96px; max-width: min(760px, calc(100vw - 32px)); border: 1px solid rgba(79, 124, 255, .55); background: #101c33; color: #c7d5ff; }
-.workspace-hydration-notice { z-index: 1198; top: 58px; right: 18px; display: flex; align-items: center; gap: 9px; position: fixed; max-width: min(420px, calc(100vw - 36px)); padding: 8px 12px; border: 1px solid rgba(79, 124, 255, .42); border-radius: 7px; background: rgba(16, 26, 48, .94); color: #c7d5ff; box-shadow: 0 8px 24px rgba(0, 0, 0, .26); font-size: 12px; }
-.workspace-hydration-spinner { width: 10px; height: 10px; flex: 0 0 auto; border: 2px solid rgba(199, 213, 255, .28); border-top-color: currentColor; border-radius: 50%; animation: workspaceHydrationSpin .9s linear infinite; }
+.workspace-hydration-notice { z-index: 1198; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); display: flex; align-items: center; gap: 12px; min-width: 220px; padding: 14px 24px; border: 1px solid rgba(79, 124, 255, .42); border-radius: 10px; background: rgba(16, 26, 48, .97); color: #c7d5ff; box-shadow: 0 16px 48px rgba(0, 0, 0, .45); font-size: 14px; }
+.workspace-hydration-spinner { width: 16px; height: 16px; flex: 0 0 auto; border: 2.5px solid rgba(199, 213, 255, .28); border-top-color: currentColor; border-radius: 50%; animation: workspaceHydrationSpin .9s linear infinite; }
+/* Solid backdrop behind the centred hydration notice so it is impossible to miss. */
+body.workspace-hydrating::after { content: ''; position: fixed; inset: 0; z-index: 1197; background: rgba(0, 0, 0, .28); pointer-events: none; }
+@keyframes workspaceHydrationIn { from { opacity: 0; transform: translate(-50%, -50%) scale(.85); } to { opacity: 1; transform: translate(-50%, -50%) scale(1); } }
+@keyframes workspaceHydrationOut { from { opacity: 1; transform: translate(-50%, -50%) scale(1); } to { opacity: 0; transform: translate(-50%, -50%) scale(.88); } }
 .workspace-hydration-notice[hidden] { display: none; }
-.workspace-hydration-notice:not([hidden]) { animation: workspaceHydrationIn 180ms ease-out both; }
+.workspace-hydration-notice:not([hidden]):not(.workspace-hydration-out) { animation: workspaceHydrationIn 260ms cubic-bezier(0.34, 1.56, 0.64, 1) both; }
+.workspace-hydration-notice.workspace-hydration-out { animation: workspaceHydrationOut 180ms ease-in both; }
 .workspace-notice-message { min-width: 0; overflow-wrap: anywhere; }
 .workspace-notice-action { flex: 0 0 auto; min-height: 24px; padding: 3px 8px; border: 1px solid currentColor; border-radius: 5px; background: rgba(255, 255, 255, .08); color: inherit; cursor: pointer; font-size: 11px; font-weight: 600; white-space: nowrap; }
 .workspace-notice-action:hover, .workspace-notice-action:focus-visible { background: rgba(255, 255, 255, .18); outline: none; }
@@ -38,7 +43,6 @@
 .workspace-lock-notice[hidden], .workspace-recovery-notice[hidden] { display: none; }
 @keyframes workspaceNoticeIn { from { opacity: 0; transform: translate(-50%, -8px) scale(.98); } to { opacity: 1; transform: translate(-50%, 0) scale(1); } }
 @keyframes workspaceHydrationSpin { to { transform: rotate(360deg); } }
-@keyframes workspaceHydrationIn { from { opacity: 0; transform: translateY(-8px) scale(.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
 .workspace-lock-notice:not([hidden]), .workspace-recovery-notice:not([hidden]) { animation: workspaceNoticeIn 180ms ease-out both; }
 .workspace-lock-notice .workspace-notice-action[aria-busy="true"] { cursor: wait; }
 @media (prefers-reduced-motion: reduce) { .workspace-hydration-spinner { animation: none; } }

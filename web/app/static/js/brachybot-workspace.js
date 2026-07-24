@@ -57,7 +57,24 @@
         if (!notice) return;
         const target = document.getElementById('workspaceHydrationMessage');
         if (target && message) target.textContent = message;
-        notice.hidden = !active;
+        // Cancel any in-progress exit animation so a rapid show-hide or
+        // show-again transition does not leave the notice stuck mid-animation.
+        notice.getAnimations().forEach(a => a.cancel());
+        notice.classList.remove('workspace-hydration-out');
+        if (active) {
+            notice.hidden = false;
+        } else {
+            notice.classList.add('workspace-hydration-out');
+            notice.addEventListener('animationend', function handler() {
+                notice.removeEventListener('animationend', handler);
+                // Only hide if the exit animation wasn't cancelled by a
+                // subsequent show call (which removes the out class).
+                if (notice.classList.contains('workspace-hydration-out')) {
+                    notice.hidden = true;
+                    notice.classList.remove('workspace-hydration-out');
+                }
+            }, { once: true });
+        }
         document.body.classList.toggle('workspace-hydrating', !!active);
     };
 
