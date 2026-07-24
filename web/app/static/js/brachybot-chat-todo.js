@@ -884,6 +884,7 @@ function handleChatInput(el) {
 // and render the final response.
 const CHAT_CONNECT_TIMEOUT_MS = 30000;
 const CHAT_IDLE_TIMEOUT_MS = 90000;
+const CHAT_PLANNING_IDLE_TIMEOUT_MS = 900000; // 15 min — medical planning tools can run 5-10 min
 const CHAT_ABORT_TIMEOUT_MS = 4000;
 
 // A browser may display a different case while this turn continues on the
@@ -1393,7 +1394,11 @@ async function sendChat(prefill, options) {
         // its side effects but continued waiting for another chunk, so a
         // successful planning turn later looked like a timeout/error.
         readLoop: while (true) {
-            const { done, value } = await readChatChunk(reader, CHAT_IDLE_TIMEOUT_MS, () => {
+            const { done, value } = await readChatChunk(
+                reader,
+                (todo && todo.items && todo.items.some(i => i.status === 'active' || i.status === 'pending'))
+                    ? CHAT_PLANNING_IDLE_TIMEOUT_MS : CHAT_IDLE_TIMEOUT_MS,
+                () => {
                 try { turnAbortController.abort(); } catch (_) {}
             });
             if (done) break;
