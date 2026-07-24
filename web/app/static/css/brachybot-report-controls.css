@@ -159,15 +159,29 @@
     font-family: 'JetBrains Mono', monospace;
 }
 .tree-item .opacity-slider {
-    width: 38px; height: 3px;
+    width: 38px; height: 12px;
     flex-shrink: 0;
     -webkit-appearance: none;
-    background: var(--bg-3);
+    background: transparent;
     border-radius: 999px;
     outline: none;
+    cursor: pointer;
     transition: background var(--t-fast) var(--ease);
+    /* The visible track is rendered by the pseudo-element below */
+    position: relative;
 }
-.tree-item .opacity-slider:hover { background: var(--border-soft); }
+.tree-item .opacity-slider::before {
+    content: '';
+    position: absolute;
+    top: 50%; left: 0; right: 0;
+    height: 3px;
+    transform: translateY(-50%);
+    background: var(--bg-3);
+    border-radius: 999px;
+    transition: background var(--t-fast) var(--ease);
+    pointer-events: none;
+}
+.tree-item .opacity-slider:hover::before { background: var(--border-soft); }
 .tree-item .recon3d-btn {
     width: 18px; height: 18px;
     border: none; background: none;
