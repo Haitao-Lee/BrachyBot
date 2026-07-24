@@ -466,6 +466,11 @@ function loadSessionChat(id) {
                 // in the session, we are just re-rendering it.
                 addChat(msg.type, msg.content, false, msg.timestamp || null, true);
             }
+            // Restore the usage-bar footer (Time / Tokens / Tools) for
+            // bot-response messages that carry persisted turn metadata.
+            if (msg.type === 'bot-response' && msg.meta) {
+                try { _appendRestoredFooter(msg.meta); } catch (_) {}
+            }
         });
     }
     const title = session.messages.length > 0 ? session.title : 'New conversation';
@@ -473,29 +478,19 @@ function loadSessionChat(id) {
     container.scrollTop = container.scrollHeight;
 }
 
-function saveSessionMessage(type, content, steps, timestamp, sessionId = activeSessionId) {
+function saveSessionMessage(type, content, steps, timestamp, sessionId = activeSessionId, meta = null) {
     const ownerSessionId = String(sessionId || '');
     const session = sessions[ownerSessionId];
     if (!session) return;
-    // DEDUP ON SAVE (2026-06-15): if the most recent message has
-    // the same type+content, skip the new one. This prevents the
-    // page-refresh bug where a network error or double-Enter sent
-    // the user's message multiple times in a row, all of which
-    // got persisted to localStorage and re-rendered on every
-    // refresh. The user saw 2-4 copies of the same message stacked
-    // in the chat. With this dedup, only the FIRST save wins and
-    // subsequent duplicates are silently dropped. (The visual UI
-    // is still updated by the caller's separate addChat call —
-    // this only affects persistence.)
     const _last = session.messages[session.messages.length - 1];
     if (_last && _last.type === type && _last.content === content) {
+        if (meta && _last.type === 'bot-response') _last.meta = meta;
         return;
     }
-    // Store the timestamp so session restore shows the time the
-    // message was originally sent, not the time of page refresh.
-    // addChat() passes Date.now() when persisting live messages.
     const _ts = (typeof timestamp === 'number' && timestamp > 0) ? timestamp : Date.now();
-    session.messages.push({ type, content, steps: steps || null, timestamp: _ts });
+    const msg = { type, content, steps: steps || null, timestamp: _ts };
+    if (meta) msg.meta = meta;
+    session.messages.push(msg);
     if (type === 'user' && typeof _rememberChatCommand === 'function') {
         _rememberChatCommand(content);
     }
@@ -700,6 +695,36 @@ function _buildResponseFooter(llmMeta) {
     window._chatTurnStartTime = null;
     window._todoTurnToolCount = 0;
     return footer;
+}
+
+function _appendRestoredFooter(meta) {
+    if (!meta) return;
+    const container = document.getElementById('chatMessages');
+    if (!container) return;
+    // The last chat-row.bot rendered by addChat contains the answer bubble.
+    const rows = container.querySelectorAll('.chat-row.bot');
+    if (!rows.length) return;
+    const lastRow = rows[rows.length - 1];
+    const wrapper = lastRow.querySelector('.chat-msg-wrapper');
+    if (!wrapper) return;
+    // Temporarily restore the per-turn globals that _buildResponseFooter
+    // reads so the restored footer matches the original.
+    const savedLlmMeta = window._lastLLMMeta;
+    const savedToolCount = window._todoTurnToolCount;
+    const savedStartTime = window._chatTurnStartTime;
+    window._lastLLMMeta = meta.llmMeta || null;
+    window._todoTurnToolCount = meta.toolCount || 0;
+    window._chatTurnStartTime = meta.elapsedSec
+        ? (Date.now() - (Number(meta.elapsedSec) * 1000))
+        : null;
+    try {
+        const footer = _buildResponseFooter(meta.llmMeta);
+        if (footer) wrapper.appendChild(footer);
+    } finally {
+        window._lastLLMMeta = savedLlmMeta;
+        window._todoTurnToolCount = savedToolCount;
+        window._chatTurnStartTime = savedStartTime;
+    }
 }
 
 function addChat(type, content, scroll, timestamp, fromSession, sessionId = activeSessionId) {
@@ -1987,7 +2012,7 @@ function updateStreamingResponse(el, text) {
     }
 }
 
-function finalizeStreamingResponse(el, text, sessionId = activeSessionId) {
+function finalizeStreamingResponse(el, text, sessionId = activeSessionId, meta = null) {
     if (!el) return;
     el.removeAttribute('id');
     el.classList.remove('is-streaming');
@@ -1995,7 +2020,7 @@ function finalizeStreamingResponse(el, text, sessionId = activeSessionId) {
     el.innerHTML = renderMarkdown(text);
     try {
         const ownerSessionId = String(sessionId || '');
-        saveSessionMessage('bot-response', text, null, Date.now(), ownerSessionId);
+        saveSessionMessage('bot-response', text, null, Date.now(), ownerSessionId, meta);
         // A final assistant response is a durable case event, not merely a
         // browser rendering update. Flush this boundary explicitly so closing
         // the tab immediately after a long planning turn cannot lose the
