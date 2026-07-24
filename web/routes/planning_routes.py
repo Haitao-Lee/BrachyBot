@@ -246,9 +246,11 @@ def register_planning_routes(app, get_agent):
             },
         }
         try:
-            # Store the Agent checkpoint first so clinical arrays/results and
-            # the transcript are never advertised as complete independently.
-            store.mark_operation(task.user_id, task.session_id, task.agent, operation)
+            # Schedule a deferred agent checkpoint instead of blocking the
+            # SSE stream.  The operation metadata and chat transcript are
+            # committed atomically through the snapshot-patch below; the
+            # agent arrays are durable through the short debounced timer.
+            store.schedule_agent_checkpoint(task.user_id, task.session_id, task.agent, "chat.task.finalized")
             snapshot = store.load_snapshot(task.user_id, task.session_id)
             chat = snapshot.get("chat") if isinstance(snapshot.get("chat"), dict) else {}
             messages = list(chat.get("messages") or [])
