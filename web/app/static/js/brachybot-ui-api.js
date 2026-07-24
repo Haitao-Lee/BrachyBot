@@ -1849,24 +1849,20 @@ async function _restoreActiveSessionWorkspace(options = {}) {
     return status;
 }
 async function restoreActiveSessionWorkspace(options = {}) {
-    // Show the global spinner on initial page load only.  Background restores
-    // after a session switch already have the chat, sidebar, and report
-    // painted; the viewer canvases show their own loading overlay while CT
-    // and clinical data arrive.
-    if (!options.background) {
-        window.setWorkspaceHydrationState?.(
-            true,
-            typeof _t === 'function'
-                ? _t('正在加载病例资源…', 'Loading case resources...')
-                : 'Loading case resources...',
-        );
-    }
+    // Show the global spinner until all clinical data (CT, labels,
+    // planning) has arrived.  Without this the viewer and Data Tree
+    // appear blank while loading, and the operator thinks data was
+    // lost or a restore step was skipped.
+    window.setWorkspaceHydrationState?.(
+        true,
+        typeof _t === 'function'
+            ? _t('正在加载病例资源…', 'Loading case resources...')
+            : 'Loading case resources...',
+    );
     try {
         return await _restoreActiveSessionWorkspace(options);
     } finally {
-        if (!options.background) {
-            window.setWorkspaceHydrationState?.(false);
-        }
+        window.setWorkspaceHydrationState?.(false);
     }
 }
 window.restoreActiveSessionWorkspace = restoreActiveSessionWorkspace;

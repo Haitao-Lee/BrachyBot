@@ -96,10 +96,16 @@
     function scheduleBackgroundWorkspaceRestore(workspace, sessionId) {
         const generation = ++backgroundRestoreGeneration;
         if (backgroundRestoreTimer) clearTimeout(backgroundRestoreTimer);
-        // The transition already painted the chat, sidebar, and report panel.
-        // Do not block the viewer with a full-screen spinner while /status
-        // hydrates the agent and loadCTToViewers downloads the volume — the
-        // viewer canvases show their own loading overlay while CT arrives.
+        // Keep the spinner visible until the viewer is fully populated.
+        // The spinner hides only when _restoreActiveSessionWorkspace
+        // finishes loading CT, labels, and planning data.
+        window.setWorkspaceHydrationState?.(
+            true,
+            typeof window._t === 'function'
+                ? window._t('正在恢复病例资源…', 'Restoring case resources...')
+                : 'Restoring case resources...',
+        );
+        document.body.classList.add('workspace-hydrating');
         backgroundRestoreTimer = setTimeout(async () => {
             backgroundRestoreTimer = null;
             if (generation !== backgroundRestoreGeneration || sessionId !== activeSessionId) return;
