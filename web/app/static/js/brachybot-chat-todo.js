@@ -1833,11 +1833,19 @@ async function sendChat(prefill, options) {
             }
         }
 
-        // A case selection detached this browser stream. Do not run terminal
-        // screenshot/final-response work against the newly visible case; the
-        // owning server task and its event journal remain available when the
-        // user returns to that case.
-        if (activeSessionId !== turnSessionId) return;
+        // A case selection detached this browser stream.  Save the completed
+        // response and thinking chain into the owning session's messages array
+        // so the user sees the full transcript when they return.  Do not run
+        // terminal screenshot/final-response against the newly visible case.
+        if (activeSessionId !== turnSessionId) {
+            const detachedResponse = responseText
+                || (finalResponseReceived ? '(no reply)' : null);
+            if (detachedResponse && typeof saveSessionMessage === 'function') {
+                saveSessionMessage('bot-response', detachedResponse, null, Date.now(), turnSessionId);
+            }
+            try { saveSessionMessage('thinking', '', steps, Date.now(), turnSessionId); } catch (_) {}
+            return;
+        }
 
         if (turnCancelled) return;
 
@@ -1963,7 +1971,18 @@ async function sendChat(prefill, options) {
     } catch (e) {
         const detached = window._chatDetachRequestedFor === turnSessionId
             || String(activeSessionId || '') !== turnSessionId;
-        if (detached) return;
+        if (detached) {
+            // The browser abandoned this stream (session switch).  Persist
+            // whatever response text and thinking trace arrived so that the
+            // transcript is complete when the user opens this case again.
+            const detachedResponse = responseText
+                || (finalResponseReceived ? '(no reply)' : null);
+            if (detachedResponse && typeof saveSessionMessage === 'function') {
+                saveSessionMessage('bot-response', detachedResponse, null, Date.now(), turnSessionId);
+            }
+            try { saveSessionMessage('thinking', '', steps, Date.now(), turnSessionId); } catch (_) {}
+            return;
+        }
 
         const taskStatus = window._sessionChatTaskStatuses?.[turnSessionId];
         const explicitlyStopped = !!window._explicitChatStopSessions?.[turnSessionId]
