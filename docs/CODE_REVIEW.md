@@ -7972,3 +7972,303 @@ an RL planning loop, or a coordinate-chain error.
   OAR metadata fallback.
 - Remote targeted workspace frontend suite: **41 passed**.
 - Remote complete suite: **266 passed, 2 skipped, 3 warnings**.
+
+---
+
+## 2026-07-25 — Session-switch bounce-back: optimistic shell paint reverted on server error
+
+### Confirmed issue
+
+Clicking a session in the sidebar briefly highlighted the new session,
+then snapped back to the original.  The optimistic `paintSessionShell(id)`
+update changed `activeSessionId` and cleared the viewer BEFORE the server
+confirmed the switch.  When the server returned an error (timeout, auth
+expiry, stale CSRF token), the catch block called
+`paintSessionShell(previousSessionId)`, producing the visible bounce.
+
+### Root cause
+
+`brachybot-workspace.js:935` called `paintSessionShell(id)` before
+`workspaceFetch('/api/sessions/<id>/select')`.  Lines 943 and 948
+recovered by painting the previous session's shell.
+
+### Resolution
+
+- Moved the full UI update (activeSessionId, renderSessionList,
+  loadSessionChat, clearClientWorkspace) AFTER server confirmation.
+- Show a lightweight "Switching case…" spinner before the round-trip.
+- Error paths only hide the spinner; no bounce-back recovery.
+- `persistWorkspace('session.switching')` is now awaited (with catch)
+  so the server snapshot is up-to-date when `applyWorkspaceSnapshot`
+  overwrites `sessions[id].messages`.
+
+### Verification
+
+- `node --check` passed for `brachybot-workspace.js`.
+
+---
+
+## 2026-07-25 — Detached bot responses and thinking chains lost on session switch
+
+### Confirmed issue
+
+Switching sessions while the bot was still responding left only the
+user's command visible — the bot's answer, thinking chain (Execution
+Trace), and usage-bar footer (Time / Tokens / Tools) were all missing
+when returning to that session.
+
+### Root cause
+
+`sendChat` returns early at line 1840 when `activeSessionId` has
+changed, skipping the save of `'bot-response'` and `'thinking'`
+messages into `sessions[id].messages`.  The catch block at line 1974
+had the same gap for AbortError.  Additionally, `applyWorkspaceSnapshot`
+unconditionally overwrote `sessions[id].messages` with the server
+snapshot, which could be stale.
+
+### Resolution
+
+1. Both the normal loop-exit and the AbortError catch-block paths now
+   save the completed response (`saveSessionMessage('bot-response', …)`)
+   and thinking chain (`saveSessionMessage('thinking', '', steps, …)`)
+   before returning when detached.
+2. `applyWorkspaceSnapshot` compares the snapshot message count with the
+   local copy; if the browser has MORE messages, the local copy is kept.
+3. `saveSessionMessage` accepts an optional `meta` argument (llm_meta,
+   toolCount, elapsedSec).  `finalizeStreamingResponse` and both detach
+   save paths pass it.
+4. `loadSessionChat` calls `_appendRestoredFooter` for bot-response
+   messages with saved meta, reconstructing the usage-bar footer.
+
+### Verification
+
+- Node syntax check passed for `brachybot-chat-todo.js` and
+  `brachybot-chat-core.js`.
+
+---
+
+## 2026-07-25 — SSE idle timeout expired during long LLM thinking phases
+
+### Confirmed issue
+
+Asking "请生成报告" triggered an LLM thinking phase lasting 184 s.
+The SSE idle timeout (90 s for non-planning turns) fired, the
+AbortController aborted the fetch, and the error produced
+`"Send failed: signal is aborted without reason"`.
+
+### Root cause
+
+`readChatChunk` in `sendChat` used `CHAT_PLANNING_IDLE_TIMEOUT_MS`
+(900 s) only when active/pending todo items existed.  An LLM thinking
+phase with no tool calls created no todo items, so the default 90 s
+timeout applied.
+
+### Resolution
+
+Dynamic timeout now also considers live `steps`: any step with
+`status: 'active'` or `status: 'pending'` extends the timeout to
+`CHAT_PLANNING_IDLE_TIMEOUT_MS`.  The error handler falls back to
+`window._sessionChatTaskIds[turnSessionId]` when the turn-level
+`task_id` from `task_meta` is missing.
+
+### Verification
+
+- Node syntax check passed for `brachybot-chat-todo.js`.
+
+---
+
+## 2026-07-25 — Agent checkpoint silently lost planning results after restart
+
+### Confirmed issue
+
+After a page refresh or server restart, previously completed planning
+results (dose_metrics, seed_plan, CTV/OAR arrays) were missing from
+the agent's memory.  The bot reported "planning not done" and the
+frontend showed no masks, seeds, or needles.
+
+### Root cause
+
+`finalize_chat_task` used `schedule_agent_checkpoint` (0.75 s debounced
+timer) to persist the agent's planning results.  If the checkpoint
+write failed (disk full, I/O error), `_checkpoint_timer` silently
+swallowed the exception (`except Exception: pass`).  After a restart,
+`hydrate_agent` restored only the chat transcript from the snapshot;
+the planning arrays were absent because the checkpoint timer never
+committed them.
+
+### Resolution
+
+1. `_checkpoint_timer` now logs the full traceback (`logger.warning(…, exc_info=True)`) on failure.
+2. `_commit_agent_snapshot` catches `WorkspaceNotFound` (deleted session)
+   and gracefully discards sidecar arrays instead of raising.
+3. Changed `finalize_chat_task` to use `flush_agent_checkpoint` (synchronous)
+   then back to `schedule_agent_checkpoint` (debounced) after adding error
+   logging, so the chat response is not blocked by large array I/O.
+
+### Verification
+
+- `py_compile` passed for `workspace_store.py` and `planning_routes.py`.
+
+---
+
+## 2026-07-25 — CT volume and label volume transfer: gzip compression
+
+### Confirmed issue
+
+`/api/viewer/volume` returned raw `int16` binary without compression.
+A typical CT volume (48 × 512 × 512, ~25 MB) was transferred
+uncompressed, slowing session restore and CT loading.
+
+### Resolution
+
+Both `/api/viewer/volume` and `/api/viewer/label_volume` now check
+`Accept-Encoding: gzip` and compress the response body with
+`gzip.compress(compresslevel=4)`.  The browser's native `fetch` API
+automatically decompresses gzip responses.
+
+### Verification
+
+- `py_compile` passed for `viewer_routes.py`.
+
+---
+
+## 2026-07-25 — Duplicate Execution Trace on task resume after session switch
+
+### Confirmed issue
+
+Switching sessions mid-planning and returning produced two copies of
+the "Execution Trace" progress dock — one live and one stale.
+
+### Root cause
+
+`createLiveThinkingChain` created a new DOM element with id
+`liveThinkingChain` without removing the previous one.  The detach
+path left the old chain in the DOM because it was never finalized.
+
+### Resolution
+
+`createLiveThinkingChain` now checks for and removes any existing
+`#liveThinkingChain` element (including its setInterval timer)
+before creating the new chain.
+
+### Verification
+
+- Node syntax check passed for `brachybot-chat-core.js`.
+
+---
+
+## 2026-07-25 — Hydration notice ("Switching case…" / "Opening case…") redesigned
+
+### Confirmed issue
+
+The workspace hydration notice appeared at `top: 58px; right: 18px` —
+a small, easily-missed spinner in the top-right corner with no
+backdrop or exit animation.
+
+### Resolution
+
+- CSS: Notice centred at `top: 50%; left: 50%; transform: translate(-50%, -50%)`.
+- Enlarged: padding `14px 24px`, font `14px`, spinner `16px`, min-width `220px`.
+- Backdrop: `body.workspace-hydrating::after` with semi-transparent overlay.
+- Entrance: springy pop-in (`cubic-bezier(0.34, 1.56, 0.64, 1)`) 260 ms.
+- Exit: smooth pop-out animation 180 ms, JS `animationend` handler sets `hidden`.
+- `setWorkspaceHydrationState` cancels in-progress animations on re-show.
+
+### Verification
+
+- Node syntax check passed for `brachybot-workspace.js`.
+- CSS changes verified with diff on `brachybot-auth.css`.
+
+---
+
+## 2026-07-25 — Session switch stutter: sidebar frozen, no feedback, clicks dropped
+
+### Confirmed issue
+
+Rapid session-hopping produced visible stutter: the sidebar dimmed
+(`pointer-events: none`) during every transition, so the user could
+not click another session until the current transition completed.
+If the server was slow (network lag, large snapshot JSON), the sidebar
+remained frozen for 15+ seconds with no way to recover.
+
+### Root cause
+
+1. `body.workspace-transitioning #sessionList { pointer-events: none }`
+   silently dropped every click during a transition.
+2. `persistWorkspace` was awaited, blocking the transition for up to
+   15 s while uploading a potentially large payload (report with
+   base64 screenshots).
+3. No mechanism to abort a stuck transition — the old version simply
+   rejected busy transitions with `{ busy: true }`.
+
+### Resolution
+
+1. Removed `pointer-events: none` from `#sessionList` during
+   transitions; the sidebar remains clickable (dimmed via
+   `opacity: 0.58`).
+2. `persistWorkspace` is now fire-and-forget (`void`) — local message
+   protection in `applyWorkspaceSnapshot` guards against stale
+   snapshots.
+3. Spinner is shown immediately (before any async work) for instant
+   visual feedback.
+4. AbortController chains: when a new click arrives while a transition
+   is in progress, `_switchAbortController.abort()` kills the
+   in-flight fetch, and the new target is queued.  The old transition
+   bails out immediately instead of waiting for the 15 s timeout.
+5. `workspaceFetch` chains an external signal with the internal
+   timeout so both triggers can cancel the fetch.
+
+### Verification
+
+- Node syntax check passed for `brachybot-workspace.js`.
+- CSS diff verified in `brachybot-theme-layout.css`.
+
+---
+
+## 2026-07-25 — Data Tree opacity slider too small to grab and drag
+
+### Confirmed issue
+
+The opacity `<input type="range">` controls in the Data Tree had a
+track height of only 3 px, making them extremely difficult to click
+and drag.  Dragging frequently lost grab because the thin track offered
+almost no hit area.
+
+### Resolution
+
+Track hit-area enlarged from 3 px to 12 px.  The visible 3 px track is
+rendered via a `::before` pseudo-element so the visual appearance is
+unchanged while the clickable region is 4× larger.  Added
+`cursor: pointer`.
+
+### Verification
+
+- CSS diff verified in `brachybot-report-controls.css`.
+
+---
+
+## 2026-07-25 — Debounced agent checkpoint fired after session deletion
+
+### Confirmed issue
+
+Server log showed repeated warnings:
+`Agent checkpoint failed for session … WorkspaceNotFound`.
+
+### Root cause
+
+When a session was deleted, the debounced checkpoint timer (0.75 s)
+could fire after the session row was removed from the database.
+`_commit_agent_snapshot` → `load_snapshot` → `get_session` raised
+`WorkspaceNotFound`, and the previously silent `except Exception: pass`
+was now logging it as a warning.
+
+### Resolution
+
+`_commit_agent_snapshot` catches `WorkspaceNotFound` specifically,
+discards the prepared sidecar arrays, and returns an empty dict.
+`_checkpoint_timer` silently ignores `WorkspaceNotFound` (expected
+after deletion) and only logs true I/O exceptions as warnings.
+
+### Verification
+
+- `py_compile` passed for `workspace_store.py`. 
