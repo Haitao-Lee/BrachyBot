@@ -1902,11 +1902,6 @@ async function sendChat(prefill, options) {
         // No steps arrived — clean up the thinking indicator
         if (!chainEl) {
             if (thinkingEl && typeof removeThinkingIndicator === 'function') removeThinkingIndicator(thinkingEl);
-        } else {
-            if (typeof finalizeThinkingChain === 'function') {
-                finalizeThinkingChain(chainEl, headerEl, steps);
-            }
-            try { saveSessionMessage('thinking', '', steps, Date.now(), turnSessionId); } catch (_) {}
         }
 
         // SAFETY: fold the todo when the stream ends, even if the
@@ -1973,6 +1968,13 @@ async function sendChat(prefill, options) {
                 addChat('bot-response', finalText, true, Date.now(), false, turnSessionId);
             }
         }
+
+        // Collapse the thinking chain AFTER the response is rendered so the
+        // user sees the answer bubble appear first, then the trace folds.
+        if (chainEl && typeof finalizeThinkingChain === 'function') {
+            finalizeThinkingChain(chainEl, headerEl, steps);
+        }
+        try { saveSessionMessage('thinking', '', steps, Date.now(), turnSessionId); } catch (_) {}
 
         // Append a usage-bar footer BELOW the response bubble so the
         // user can see response time + token counts + tool call count
