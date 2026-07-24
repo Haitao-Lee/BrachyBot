@@ -700,6 +700,20 @@ class WorkspaceStore:
         root = payload["root"]
         try:
             snapshot = self.load_snapshot(user_id, session_id)
+        except WorkspaceNotFound:
+            # The case session has been deleted or moved to trash since
+            # the checkpoint was scheduled.  Discard the sidecar arrays
+            # and return an empty snapshot — there is nothing to save.
+            for relative in created_array_paths:
+                try:
+                    _safe_workspace_child(root, relative).unlink(missing_ok=True)
+                except (OSError, WorkspaceError):
+                    continue
+            for cache_key, value in list(self._array_refs.items()):
+                if cache_key[:2] == (user_id, session_id) and value[1] in created_array_paths:
+                    self._array_refs.pop(cache_key, None)
+            return {}
+        try:
             snapshot["agent"] = {**agent_state, "planning_results": encoded_results}
             if operation is not None:
                 snapshot["operation"] = _safe_json(operation)
@@ -827,6 +841,8 @@ class WorkspaceStore:
         key = (user_id, session_id)
         try:
             self.snapshot_agent(user_id, session_id, agent, reason=reason)
+        except WorkspaceNotFound:
+            pass
         except Exception:
             logger.warning(
                 "Agent checkpoint failed for session %s (reason: %s)",
