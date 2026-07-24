@@ -126,102 +126,111 @@
 
 /* ===========================================================
    DARK THEME (data-theme="dark")  —  active by default 2026-06-13
-   To toggle back to light, change <html data-theme="dark"> to
-   data-theme="light" (or remove the attribute).
+   "NightShift Indigo" reskin 2026-07-24: near-black slate canvas,
+   blue-tinted elevation tiers, electric indigo accent, luminous
+   hairlines. DOM/class names unchanged — visual layer only.
    =========================================================== */
 [data-theme="dark"] {
     color-scheme: dark;
 
-    /* Brand — clean blue for dark backgrounds */
-    --primary:        #58a6ff;
-    --primary-soft:   rgba(88, 166, 255, 0.12);
-    --primary-hover:  #79c0ff;
-    --primary-ink:    #b6d4fe;
+    /* Brand — electric indigo for dark backgrounds */
+    --primary:        #4f7cff;
+    --primary-soft:   rgba(79, 124, 255, 0.14);
+    --primary-hover:  #6b8fff;
+    --primary-ink:    #c7d5ff;
+    --accent:         #4f7cff;
+    --accent-hover:   #6b8fff;
+    --accent-soft:    rgba(79, 124, 255, 0.14);
+    --accent-ink:     #c7d5ff;
+    --accent-ring:    rgba(79, 124, 255, 0.32);
 
     /* Semantic — keep hue, lift lightness for AA contrast on dark */
-    --success:        #3fb950;
-    --success-soft:   rgba(63, 185, 80, 0.12);
-    --success-border: rgba(63, 185, 80, 0.30);
-    --warning:        #d29922;
-    --warning-soft:   rgba(210, 153, 34, 0.12);
-    --warning-border: rgba(210, 153, 34, 0.30);
-    --danger:         #f85149;
-    --danger-soft:    rgba(248, 81, 73, 0.12);
-    --danger-border:  rgba(248, 81, 73, 0.30);
-    --info:           #58a6ff;
-    --info-soft:      rgba(88, 166, 255, 0.12);
+    --success:        #34d399;
+    --success-soft:   rgba(52, 211, 153, 0.12);
+    --success-border: rgba(52, 211, 153, 0.30);
+    --warning:        #fbbf24;
+    --warning-soft:   rgba(251, 191, 36, 0.12);
+    --warning-border: rgba(251, 191, 36, 0.30);
+    --danger:         #fb7185;
+    --danger-soft:    rgba(251, 113, 133, 0.12);
+    --danger-border:  rgba(251, 113, 133, 0.32);
+    --info:           #38bdf8;
+    --info-soft:      rgba(56, 189, 248, 0.12);
 
-    /* Clean slate surfaces — medical and professional, no green/cyan tint */
-    --bg-canvas:        #0d1117;
-    --bg-1:             #141a23;
-    --bg-2:             #1a2230;
-    --bg-3:             #232b3d;
-    --bg-sunken:        #090c12;
-    --bg-sunken-strong: #06090e;
-    --bg-elevated:      #1e2738;
-    --bg-card:          rgba(20, 26, 35, 0.82);
+    /* Blue-tinted slate surfaces — three-tier elevation */
+    --bg-canvas:        #0a0f1c;
+    --bg-1:             #0f1526;
+    --bg-2:             #141b30;
+    --bg-3:             #1a2340;
+    --bg-sunken:        #070b15;
+    --bg-sunken-strong: #05080f;
+    --bg-elevated:      #182136;
+    --bg-card:          rgba(15, 21, 38, 0.82);
 
-    /* Hairline borders — subtle on dark slate */
-    --glass-border:        rgba(139, 148, 158, 0.10);
-    --glass-border-strong: rgba(139, 148, 158, 0.16);
-    --border-soft:         #212b3e;
-    --border:              #2d374b;
-    --border-hairline:     rgba(139, 148, 158, 0.08);
-    --border-default:      rgba(139, 148, 158, 0.12);
-    --border-emphasis:     rgba(139, 148, 158, 0.20);
+    /* Hairline borders — indigo-tinted on dark slate */
+    --glass-border:        rgba(120, 140, 200, 0.10);
+    --glass-border-strong: rgba(120, 140, 200, 0.16);
+    --border-soft:         #1d2640;
+    --border:              #2a3454;
+    --border-hairline:     rgba(120, 140, 200, 0.08);
+    --border-default:      rgba(120, 140, 200, 0.13);
+    --border-emphasis:     rgba(120, 140, 200, 0.22);
 
-    /* Shadows — deeper, with more lift against dark backgrounds */
+    /* Shadows — deeper ambient, indigo ring on floating layers */
     --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.40);
     --shadow-sm:
         0 1px 0 rgba(0, 0, 0, 0.30),
         0 1px 2px rgba(0, 0, 0, 0.40);
     --shadow-elevated:
         0 1px 0 rgba(0, 0, 0, 0.35),
-        0 0 0 1px rgba(139, 148, 158, 0.06),
+        0 0 0 1px rgba(120, 140, 200, 0.07),
         0 2px 4px rgba(0, 0, 0, 0.45);
     --shadow-floating:
-        0 0 0 1px rgba(139, 148, 158, 0.10),
+        0 0 0 1px rgba(120, 140, 200, 0.12),
         0 6px 12px rgba(0, 0, 0, 0.50),
         0 14px 28px rgba(0, 0, 0, 0.55);
     --shadow-lg:
-        0 0 0 1px rgba(139, 148, 158, 0.10),
+        0 0 0 1px rgba(120, 140, 200, 0.12),
         0 6px 12px rgba(0, 0, 0, 0.50),
         0 14px 28px rgba(0, 0, 0, 0.55);
     --shadow-xl:
-        0 0 0 1px rgba(139, 148, 158, 0.12),
+        0 0 0 1px rgba(120, 140, 200, 0.14),
         0 10px 20px rgba(0, 0, 0, 0.55),
         0 28px 56px rgba(0, 0, 0, 0.65);
 
     /* Inner highlight */
-    --inset-top:    inset 0 1px 0 rgba(139, 148, 158, 0.06);
+    --inset-top:    inset 0 1px 0 rgba(120, 140, 200, 0.07);
     --inset-bottom: inset 0 -1px 0 rgba(0, 0, 0, 0.30);
-    --glass-highlight: inset 0 1px 0 rgba(139, 148, 158, 0.10);
+    --glass-highlight: inset 0 1px 0 rgba(120, 140, 200, 0.11);
 
-    /* Tinted glass — dark variants */
-    --glass-tint-cool: rgba(13, 17, 23, 0.76);
-    --glass-tint-blue: rgba(14, 22, 36, 0.70);
-    --glass-tint-warm: rgba(26, 20, 16, 0.72);
+    /* Tinted glass — dark indigo variants */
+    --glass-tint-cool: rgba(10, 15, 28, 0.78);
+    --glass-tint-blue: rgba(13, 19, 36, 0.72);
+    --glass-tint-warm: rgba(26, 22, 16, 0.72);
     --glass-blur: 16px;
     --blur-md: blur(14px) saturate(160%);
     --blur-lg: blur(20px) saturate(180%);
 
-    /* Text — light foreground on dark slate */
-    --text:          #e6edf3;
-    --text-secondary:#9eb1cc;
-    --text-dim:      #6e84a3;
-    --text-faint:    #485a78;
+    /* Text — cool light foreground on dark slate */
+    --text:          #e8edf7;
+    --text-secondary:#9aa7c4;
+    --text-dim:      #5d6a8a;
+    --text-faint:    #3d4763;
 
-    /* Chat semantics (dark) */
-    --msg-user-bg:           rgba(88, 166, 255, 0.12);
-    --msg-user-border:       rgba(88, 166, 255, 0.30);
-    --msg-assistant-bg:      #1a2230;
-    --msg-assistant-border:  rgba(139, 148, 158, 0.12);
-    --msg-hover:             rgba(139, 148, 158, 0.05);
+    /* Chat semantics (dark) — user = indigo glass, assistant = slate */
+    --msg-user-bg:           rgba(79, 124, 255, 0.14);
+    --msg-user-border:       rgba(79, 124, 255, 0.34);
+    --msg-assistant-bg:      #141b30;
+    --msg-assistant-border:  rgba(120, 140, 200, 0.13);
+    --msg-hover:             rgba(120, 140, 200, 0.05);
 
-    /* Viewer chrome */
+    /* Viewer chrome — black imaging canvas, indigo-tinted chrome */
     --viewer-bg:        #000;
-    --viewer-chrome-bg: #141a23;
-    --viewer-chrome-fg: #cbd5e1;
+    --viewer-chrome-bg: #0f1526;
+    --viewer-chrome-fg: #c3cdea;
+
+    /* Form control focus ring — indigo glow (overrides light-theme blue) */
+    --control-focus-ring: 0 0 0 3px rgba(79, 124, 255, 0.30);
 }
 
 /* ---------- Base ---------- */
@@ -281,12 +290,35 @@ body::before {
 }
 
 [data-theme="dark"] body {
-    background: var(--bg-canvas);
+    background:
+        radial-gradient(1200px 500px at 15% -10%, rgba(79, 124, 255, 0.07), transparent 60%),
+        radial-gradient(900px 420px at 85% -5%, rgba(56, 189, 248, 0.05), transparent 55%),
+        var(--bg-canvas);
 }
 [data-theme="dark"] body::before {
-    background-image: radial-gradient(circle at 1px 1px, rgba(148, 163, 184, 0.04) 1px, transparent 0);
+    background-image: radial-gradient(circle at 1px 1px, rgba(120, 140, 200, 0.045) 1px, transparent 0);
     opacity: 0.6;
 }
+
+/* NightShift Indigo — global chrome: selection + slim scrollbars */
+::selection {
+    background: rgba(79, 124, 255, 0.32);
+    color: #eef2ff;
+}
+::-webkit-scrollbar { width: 9px; height: 9px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+    background: rgba(120, 140, 200, 0.22);
+    border-radius: 999px;
+    border: 2px solid transparent;
+    background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover {
+    background: rgba(120, 140, 200, 0.38);
+    background-clip: padding-box;
+    border: 2px solid transparent;
+}
+* { scrollbar-width: thin; scrollbar-color: rgba(120, 140, 200, 0.30) transparent; }
 
 /* ===========================================================
    HEADER
@@ -458,7 +490,7 @@ body::before {
     transition: opacity var(--t-base) var(--ease), width var(--t-base) var(--ease);
     pointer-events: none;
 }
-.sidebar-resize-handle:hover { background: rgba(59, 130, 246, 0.10); }
+.sidebar-resize-handle:hover { background: var(--primary-soft); }
 .sidebar-resize-handle:hover::after,
 .sidebar-resize-handle.dragging::after { opacity: 1; width: 3px; }
 
@@ -620,7 +652,7 @@ body.workspace-transitioning #sessionList {
     padding: 1px 4px;
     width: 100%;
     outline: none;
-    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.15);
+    box-shadow: 0 0 0 2px var(--accent-ring);
 }
 
 .session-sidebar-footer {
