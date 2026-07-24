@@ -14,6 +14,7 @@ import SimpleITK as sitk
 from flask import Response, current_app, jsonify, request, send_from_directory, session as flask_session
 
 from web.auth import current_user
+from agent_runtime.core import PlanningPhase
 
 try:
     from web.server_support import rate_limit, require_api_key
@@ -153,6 +154,26 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
             # into a newly loaded study.
             agent.memory.store("viewer_threshold", None)
             agent.memory.store("ct_path", ct_path)  # Store path for 3D reconstruction
+
+            # A new CT invalidates every prior segmentation, plan, and dose
+            # result.  Without this clearing, the deduplication guards in
+            # _execute_tool_with_memory can skip a fresh CTV/OAR run because
+            # the old patient's arrays are still in memory after a session
+            # switch or page refresh.
+            for _key in (
+                "ctv_array", "ctv_mask", "ctv_full_labels", "ctv_label_map",
+                "ctv_path", "ctv_source", "ctv_volume_mm3", "ctv_voxel_count",
+                "oar_array", "oar_mask", "oar_is_full", "oar_source",
+                "organ_names", "organ_counts", "dose_metrics", "dose_distribution",
+                "dose_distribution_gy", "seed_plan", "seed_plan_serialized",
+                "seed_positions", "trajectories", "refined_trajectories",
+                "verified_needle_geometry", "dvh_data",
+            ):
+                agent.memory.store(_key, None)
+            agent.memory.conversation_state["planning_completed"] = False
+            agent.memory.conversation_state["ctv_segmentation_done"] = False
+            agent.memory.conversation_state["oar_segmentation_done"] = False
+            agent.memory.current_phase = PlanningPhase.IDLE
             agent.memory.store("ct_source_kind", kind)
 
             # Update UI state so LLM knows CT is loaded
