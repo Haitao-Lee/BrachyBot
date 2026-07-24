@@ -1044,75 +1044,45 @@
         if (options.skipConfirm !== true) {
             const title = sessions[id].title || id;
             const confirmed = await confirmWorkspaceAction(
-                `确定要将病例“${title}”移入回收站吗？`,
+                `确定要将病例"${title}"移入回收站吗？`,
                 `Move case "${title}" to the recycle bin?`,
             );
             if (!confirmed) return { success: false, cancelled: true };
         }
-        // Deleting an inactive case is an independent control-plane action.
-        // It must not call prepareSessionChange(): the deleted case is not the
-        // case currently being edited. Keeping this path separate preserves
-        // the selected case's live task subscription, viewer, and controls.
-        if (id !== activeSessionId) {
-            const removedSession = sessions[id];
-            // Sidebar deletion is optimistic. The server operation is still
-            // authoritative, but a slow disk cleanup must not make the delete
-            // button appear unresponsive.
-            delete sessions[id];
-            renderSessionList();
-            try {
-                const response = await workspaceFetch(`/api/sessions/${encodeURIComponent(id)}`, { method: 'DELETE' });
-                const data = await response.json().catch(() => ({}));
-                if (!response.ok) throw new Error(data.error || 'Unable to delete case');
-                void loadServerSessions().then(() => renderSessionList()).catch(error => console.debug('[workspace] session list refresh deferred:', error));
-                return { success: true, active_session_id: activeSessionId };
-            } catch (error) {
-                // A timeout can happen after the server committed deletion.
-                // Restore the row provisionally; the next authoritative list
-                // refresh removes it again when appropriate.
-                if (removedSession) sessions[id] = removedSession;
-                renderSessionList();
-                void loadServerSessions().then(() => renderSessionList()).catch(() => {});
-                console.error('[workspace] inactive case deletion failed:', error);
-                return { success: false, error: error?.message || 'Unable to delete case.' };
+        // Always delete optimistically — remove from the list immediately,
+        // send the server request in the background, and restore on failure.
+        // The old active-session path used runWorkspaceTransition which could
+        // silently reject (busy) and leave the user with no visible feedback.
+        const removedSession = sessions[id];
+        const wasActive = id === activeSessionId;
+        delete sessions[id];
+        if (wasActive) {
+            // Switch to the nearest remaining session before the server
+            // round-trip so the workspace isn't stuck on a deleted case.
+            const remaining = Object.keys(sessions).filter(k => k !== id);
+            if (remaining.length) {
+                const nextId = remaining[0];
+                if (typeof window.cancelActiveChatTurn === 'function') {
+                    await window.cancelActiveChatTurn('Session deleted');
+                }
+                await window.switchSession(nextId);
             }
         }
-
-        return runWorkspaceTransition(async () => {
-            // Deletion is the one case-management action that must cancel
-            // the case-owned task: there will be no workspace to resume it
-            // from after the recycle-bin move.
-            if (id === activeSessionId && typeof window.cancelActiveChatTurn === 'function') {
-                await window.cancelActiveChatTurn('Session deleted');
-            }
-            if (!await prepareSessionChange()) return { success: false, cancelled: true };
-            if (id === activeSessionId && typeof flushActiveReportState === 'function') flushActiveReportState();
-            void persistWorkspace('session.delete');
-            if (id === activeSessionId && typeof window.brachybotAuth?.releaseLease === 'function') {
-                void window.brachybotAuth.releaseLease().catch(error => console.debug('[workspace] lease release deferred:', error));
-            }
+        // Re-render BEFORE the server round-trip
+        renderSessionList();
+        try {
             const response = await workspaceFetch(`/api/sessions/${encodeURIComponent(id)}`, { method: 'DELETE' });
-            const data = await response.json();
+            const data = await response.json().catch(() => ({}));
             if (!response.ok) throw new Error(data.error || 'Unable to delete case');
-            if (typeof clearClientWorkspace === 'function') clearClientWorkspace({ clearReport: true, deferDisposal: true });
-            activeSessionId = data.active_session_id || activeSessionId;
-            revision = data.workspace?.session?.revision ?? null;
-            rememberWorkspaceRevision(data.workspace);
-            window._activeWorkspaceSnapshot = data.workspace || null;
-            renderSessionList();
-            if (typeof window.brachybotAuth?.acquireLease === 'function') await window.brachybotAuth.acquireLease();
-            if (data.workspace && typeof applyWorkspaceSnapshot === 'function') {
-                await applyWorkspaceSnapshot(data.workspace);
-            }
-            scheduleBackgroundWorkspaceRestore(data.workspace || null, activeSessionId);
-            // Reconcile titles/order and refresh editability after the new
-            // case is already visible.
             void loadServerSessions().then(() => renderSessionList()).catch(error => console.debug('[workspace] session list refresh deferred:', error));
-            if (typeof window.brachybotAuth?.acquireLease === 'function') {
-                void window.brachybotAuth.acquireLease().catch(error => console.debug('[workspace] lease refresh deferred:', error));
-            }
             return { success: true, active_session_id: activeSessionId };
-        });
+        } catch (error) {
+            if (removedSession) sessions[id] = removedSession;
+            renderSessionList();
+            void loadServerSessions().then(() => renderSessionList()).catch(() => {});
+            console.error('[workspace] case deletion failed:', error);
+            return { success: false, error: error?.message || 'Unable to delete case.' };
+        }
     };
 
     window.renameServerSession = async function renameServerSession(id, title) {
