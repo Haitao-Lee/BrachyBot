@@ -9,6 +9,7 @@ import asyncio
 import copy
 import json
 import logging
+import pickle
 import threading
 import time
 from typing import Dict, List, Any, Optional, Callable
@@ -76,6 +77,17 @@ class MultiAgentOrchestrator:
 
         logger.info("MultiAgentOrchestrator initialized")
 
+    def _safe_deepish(self, value):
+        """Deep-copy without choking on thread-locks and other internals."""
+        try:
+            return copy.deepcopy(value)
+        except (TypeError, AttributeError, pickle.PicklingError) as exc:
+            if isinstance(value, dict):
+                return {k: self._safe_deepish(v) for k, v in value.items()}
+            if isinstance(value, list):
+                return [self._safe_deepish(v) for v in value]
+            return value
+
     def update_global_context(self, context: Dict[str, Any]):
         """Update the shared context that all sub-agents can access.
 
@@ -92,18 +104,15 @@ class MultiAgentOrchestrator:
                 - user_message: str (current user request)
                 - ui_state: {ct_loaded, plan_mode, ...}
         """
-        # Freeze caller-owned data. The same session can issue overlapping UI
-        # and chat requests, so retaining a mutable reference can leak one
-        # request's state into another request's review.
         with self._context_lock:
-            self._global_context = copy.deepcopy(context or {})
+            self._global_context = self._safe_deepish(context or {})
 
     def _context_snapshot(self, base_context: Dict = None) -> Dict:
         """Return one immutable request snapshot of shared review context."""
         if base_context is not None:
-            return copy.deepcopy(base_context)
+            return self._safe_deepish(base_context)
         with self._context_lock:
-            return copy.deepcopy(self._global_context)
+            return self._safe_deepish(self._global_context)
 
     def _build_agent_context(self, role_specific: Dict,
                              base_context: Dict = None) -> Dict:
