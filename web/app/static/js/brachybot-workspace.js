@@ -8,6 +8,7 @@
     let saveTimer = null;
     let restoring = false;
     let workspaceTransition = null;
+    let pendingSwitchSessionId = null;
     let workspaceTransitionGeneration = 0;
     let workspaceRestoreGeneration = 0;
     const workspaceRestoreTimers = new Set();
@@ -151,6 +152,11 @@
         sidebar.setAttribute('aria-busy', active ? 'true' : 'false');
     }
 
+    function cancelTransitionUi() {
+        document.body.classList.remove('workspace-hydrating');
+        window.setWorkspaceHydrationState?.(false);
+    }
+
     async function runWorkspaceTransition(operation) {
         // A case change coordinates several server and browser mutations.
         // Serializing them prevents a late restore response from repainting a
@@ -192,6 +198,14 @@
                 }
                 setWorkspaceTransitionState(false);
                 workspaceTransition = null;
+                // Auto-run any session switch that was queued while this
+                // transition was in progress.  Rapid session-hopping must
+                // not silently drop every other click.
+                if (pendingSwitchSessionId !== null) {
+                    const queued = pendingSwitchSessionId;
+                    pendingSwitchSessionId = null;
+                    setTimeout(() => window.switchSession(queued), 0);
+                }
             }
         })();
         workspaceTransition = transition;
@@ -941,24 +955,18 @@
         document.getElementById('sessionSidebar')?.classList.remove('mobile-open');
         if (id === activeSessionId) return { success: true, session_id: id, unchanged: true };
         if (!sessions[id]) return { success: false, error: 'The requested case does not exist.' };
+        // If a transition is already in progress, queue this request instead
+        // of rejecting it.  The queued switch runs automatically when the
+        // current transition finishes, so rapid session-hopping feels immediate
+        // rather than silently ignoring every other click.
+        if (workspaceTransition) {
+            pendingSwitchSessionId = id;
+            return { success: true, queued: true, session_id: id };
+        }
         return runWorkspaceTransition(async () => {
-            if (!(await prepareSessionChange())) return { success: false, cancelled: true };
-            const previousSessionId = activeSessionId;
-            if (typeof flushActiveReportState === 'function') flushActiveReportState();
-            // Persist the current session's chat messages, report form, and UI
-            // state before the switch so the server snapshot is up-to-date when
-            // applyWorkspaceSnapshot overwrites sessions[id].messages later.
-            await persistWorkspace('session.switching').catch(error => console.debug('[workspace] persist before switch deferred:', error));
-            // The old lease is released before changing the active id, but a
-            // slow lease endpoint must not hold the visible case switch.
-            if (typeof window.brachybotAuth?.releaseLease === 'function') {
-                void window.brachybotAuth.releaseLease(previousSessionId).catch(error => console.debug('[workspace] lease release deferred:', error));
-            }
-            // Show a switching indicator without changing activeSessionId or
-            // clearing the workspace. The server request is a fast control-
-            // plane round-trip; deferring the full shell paint until after
-            // confirmation avoids the disorienting bounce when a select call
-            // fails (timeout, auth expiry, stale csrf).
+            // Show the switching indicator IMMEDIATELY for visual feedback.
+            // All async work below (persist, lease, server select) happens
+            // behind the spinner so the user never sees a frozen sidebar.
             window.setWorkspaceHydrationState?.(
                 true,
                 typeof window._t === 'function'
@@ -966,18 +974,30 @@
                     : 'Switching case…',
             );
             document.body.classList.add('workspace-hydrating');
+            if (!(await prepareSessionChange())) {
+                cancelTransitionUi();
+                return { success: false, cancelled: true };
+            }
+            const previousSessionId = activeSessionId;
+            if (typeof flushActiveReportState === 'function') flushActiveReportState();
+            // Persist the previous session's state in the background.  A
+            // hung network must not block the visible case switch — the
+            // local message protection in applyWorkspaceSnapshot preserves
+            // live messages that haven't reached the server yet.
+            void persistWorkspace('session.switching').catch(error => console.debug('[workspace] persist before switch deferred:', error));
+            if (typeof window.brachybotAuth?.releaseLease === 'function') {
+                void window.brachybotAuth.releaseLease(previousSessionId).catch(error => console.debug('[workspace] lease release deferred:', error));
+            }
             let response;
             try {
                 response = await workspaceFetch(`/api/sessions/${encodeURIComponent(id)}/select`, { method: 'POST' });
             } catch (error) {
-                document.body.classList.remove('workspace-hydrating');
-                window.setWorkspaceHydrationState?.(false);
+                cancelTransitionUi();
                 throw error;
             }
             const data = await response.json();
             if (!response.ok) {
-                document.body.classList.remove('workspace-hydrating');
-                window.setWorkspaceHydrationState?.(false);
+                cancelTransitionUi();
                 throw new Error(data.error || 'Unable to open case');
             }
             // Server confirmed the switch. Paint the session shell now.
