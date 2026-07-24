@@ -1320,6 +1320,14 @@ async function sendChat(prefill, options) {
         turnAbortController = chatAbortController;
         setStreamingState(true);
         thinkingEl = (typeof showThinkingIndicator === 'function') ? showThinkingIndicator() : null;
+        // Snapshot the turn start time here, before the SSE connection
+        // opens.  On task resume the saved timestamp is fed to
+        // createLiveThinkingChain so the header clock shows the real
+        // background elapsed time rather than restarting from 0.0 s.
+        window._caseChainStartedAt = window._caseChainStartedAt || {};
+        if (!isResumingTask && turnSessionId) {
+            window._caseChainStartedAt[turnSessionId] = Date.now();
+        }
 
         const connectTimer = turnAbortController
             ? setTimeout(() => turnAbortController.abort(), CHAT_CONNECT_TIMEOUT_MS)
