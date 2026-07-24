@@ -14,6 +14,7 @@ untrusted code.
 from __future__ import annotations
 
 import json
+import logging
 import math
 import os
 import secrets
@@ -37,6 +38,8 @@ DEFAULT_USER_QUOTA_BYTES = int(
 TRASH_RETENTION_SECONDS = int(
     os.environ.get("BRACHYBOT_TRASH_RETENTION_DAYS", "7")
 ) * 24 * 60 * 60
+
+logger = logging.getLogger(__name__)
 
 
 class WorkspaceError(RuntimeError):
@@ -825,9 +828,10 @@ class WorkspaceStore:
         try:
             self.snapshot_agent(user_id, session_id, agent, reason=reason)
         except Exception:
-            # Persistence errors are reported by the request boundary.  A
-            # timer must never kill a clinical planning worker.
-            pass
+            logger.warning(
+                "Agent checkpoint failed for session %s (reason: %s)",
+                session_id, reason, exc_info=True,
+            )
         finally:
             with self._lock:
                 self._checkpoint_timers.pop(key, None)

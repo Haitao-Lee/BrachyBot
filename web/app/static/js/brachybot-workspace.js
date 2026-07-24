@@ -928,31 +928,46 @@
             if (typeof window.brachybotAuth?.releaseLease === 'function') {
                 void window.brachybotAuth.releaseLease(previousSessionId).catch(error => console.debug('[workspace] lease release deferred:', error));
             }
-            // Update the sidebar, title, chat shell, and empty viewer before
-            // the network round-trip. The request returns only a small
-            // workspace snapshot; large CT, label, dose, and mesh payloads
-            // continue in the background below.
-            paintSessionShell(id);
+            // Show a switching indicator without changing activeSessionId or
+            // clearing the workspace. The server request is a fast control-
+            // plane round-trip; deferring the full shell paint until after
+            // confirmation avoids the disorienting bounce when a select call
+            // fails (timeout, auth expiry, stale csrf).
+            window.setWorkspaceHydrationState?.(
+                true,
+                typeof window._t === 'function'
+                    ? window._t('正在切换病例…', 'Switching case…')
+                    : 'Switching case…',
+            );
+            document.body.classList.add('workspace-hydrating');
             let response;
             try {
                 response = await workspaceFetch(`/api/sessions/${encodeURIComponent(id)}/select`, { method: 'POST' });
             } catch (error) {
-                // The server still owns the previous active case when a
-                // selection request cannot be delivered. Restore that shell
-                // rather than leaving the UI selected on a phantom case.
-                if (previousSessionId && sessions[previousSessionId]) paintSessionShell(previousSessionId);
+                document.body.classList.remove('workspace-hydrating');
+                window.setWorkspaceHydrationState?.(false);
                 throw error;
             }
             const data = await response.json();
             if (!response.ok) {
-                if (previousSessionId && sessions[previousSessionId]) paintSessionShell(previousSessionId);
+                document.body.classList.remove('workspace-hydrating');
+                window.setWorkspaceHydrationState?.(false);
                 throw new Error(data.error || 'Unable to open case');
             }
+            // Server confirmed the switch. Paint the session shell now.
             activeSessionId = data.active_session_id;
+            if (typeof state !== 'undefined') state.sessionId = data.active_session_id;
             revision = data.workspace?.session?.revision ?? null;
             rememberWorkspaceRevision(data.workspace);
             window._activeWorkspaceSnapshot = data.workspace;
+            cancelBackgroundWorkspaceRestore();
+            if (typeof clearClientWorkspace === 'function') {
+                clearClientWorkspace({ clearReport: true, deferDisposal: true });
+            }
             renderSessionList();
+            const titleEl = document.getElementById('chatSessionTitle');
+            if (titleEl) titleEl.textContent = sessions[id]?.title || 'New case';
+            if (typeof loadSessionChat === 'function') loadSessionChat(data.active_session_id);
             if (typeof applyWorkspaceSnapshot === 'function') {
                 // The selected Agent has not been hydrated yet. Restore only
                 // durable presentation/chat state here; CT/labels/plan are

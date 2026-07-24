@@ -1402,10 +1402,16 @@ async function sendChat(prefill, options) {
         // its side effects but continued waiting for another chunk, so a
         // successful planning turn later looked like a timeout/error.
         readLoop: while (true) {
+            // LLM thinking phases (without tool calls) can exceed the default
+            // 90 s idle window.  Extend the read timeout to the planning-level
+            // 15 min whenever any step or todo item is still in-flight.
+            const hasActiveWork = (todo && todo.items && todo.items.some(
+                i => i.status === 'active' || i.status === 'pending',
+            )) || steps.some(s => s.status === 'active' || s.status === 'pending');
+            const timeoutMs = hasActiveWork
+                ? CHAT_PLANNING_IDLE_TIMEOUT_MS : CHAT_IDLE_TIMEOUT_MS;
             const { done, value } = await readChatChunk(
-                reader,
-                (todo && todo.items && todo.items.some(i => i.status === 'active' || i.status === 'pending'))
-                    ? CHAT_PLANNING_IDLE_TIMEOUT_MS : CHAT_IDLE_TIMEOUT_MS,
+                reader, timeoutMs,
                 () => {
                 try { turnAbortController.abort(); } catch (_) {}
             });
@@ -1695,7 +1701,7 @@ async function sendChat(prefill, options) {
                             // dose data exists. We wait for the LAST
                             // tool in the chain: planning_pipeline done
                             // (which fires AFTER all sub-steps drain).
-                            const FINAL_PLANNING_TOOLS = ['planning_pipeline', 'dose_evaluation'];
+                            const FINAL_PLANNING_TOOLS = ['planning_pipeline', 'dose_evaluation', 'dose_eval'];
                             const SEG_TOOLS = ['ctv_segmentation', 'oar_segmentation'];
                             uiDebugLog('[SSE-STEP]', 'type:', data.type, 'tool:', data.tool, 'status:', data.status, 'in FINAL:', FINAL_PLANNING_TOOLS.includes(data.tool));
                             if (data.status === 'done' && data.tool && FINAL_PLANNING_TOOLS.includes(data.tool)) {
@@ -1812,7 +1818,7 @@ async function sendChat(prefill, options) {
                         // because the step event format changed),
                         // trigger a refresh now on stream completion.
                         const _planningToolsInSteps = steps.filter(s => s.type === 'tool' && s.status === 'done'
-                            && ['planning_pipeline', 'dose_evaluation', 'seed_planning'].includes(s.tool));
+                            && ['planning_pipeline', 'dose_evaluation', 'dose_eval', 'seed_planning'].includes(s.tool));
                         uiDebugLog('[SSE-done] planning tools in steps:', _planningToolsInSteps.map(s => s.tool));
                         if (_planningToolsInSteps.length > 0) {
                             uiDebugLog('[SSE-done] Triggering fallback refreshPlanningUI');
@@ -1971,15 +1977,28 @@ async function sendChat(prefill, options) {
             if (typeof addChat === 'function') {
                 addChat('system', 'Stopped.', true, Date.now(), false, turnSessionId);
             }
-        } else if (interruptedStream && turnTaskId && !turnCompleted && !turnFailed) {
+        } else if (interruptedStream && !turnCompleted && !turnFailed) {
             // A browser stream interruption is not a task cancellation. The
             // server continues the case-scoped task and journals its events,
             // so reconnect from that journal instead of showing a false stop.
-            reconnectNeeded = true;
-            window._detachedChatTasks[turnSessionId] = turnTaskId;
-            _setCaseTaskState(turnSessionId, 'running', turnTaskId);
-            if (typeof addChat === 'function') {
-                addChat('system', 'Connection interrupted; restoring live progress...', true, Date.now(), false, turnSessionId);
+            // Prefer the turn-level task_id from the `task_meta` SSE event;
+            // fall back to the session-level id stored on the last known task.
+            const effectiveTaskId = turnTaskId
+                || window._sessionChatTaskIds?.[turnSessionId]
+                || null;
+            if (effectiveTaskId) {
+                reconnectNeeded = true;
+                window._detachedChatTasks[turnSessionId] = effectiveTaskId;
+                _setCaseTaskState(turnSessionId, 'running', effectiveTaskId);
+                if (typeof addChat === 'function') {
+                    addChat('system', 'Connection interrupted; restoring live progress...', true, Date.now(), false, turnSessionId);
+                }
+            } else {
+                turnFailed = true;
+                _setCaseTaskState(turnSessionId, 'failed', null);
+                if (typeof addChat === 'function') {
+                    addChat('error', 'Send failed: ' + (e?.message || e), true, Date.now(), false, turnSessionId);
+                }
             }
         } else {
             turnFailed = true;

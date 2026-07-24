@@ -246,10 +246,11 @@ def register_planning_routes(app, get_agent):
             },
         }
         try:
-            # Schedule a deferred agent checkpoint instead of blocking the
-            # SSE stream.  The operation metadata and chat transcript are
-            # committed atomically through the snapshot-patch below; the
-            # agent arrays are durable through the short debounced timer.
+            # Schedule a deferred agent checkpoint so the chat response is
+            # returned without blocking on large array I/O (dose_metrics,
+            # seed_plan, CTV/OAR masks can be hundreds of MB).  The debounced
+            # timer ensures the write completes within 0.75 s of the response;
+            # any save failure is now logged by _checkpoint_timer.
             store.schedule_agent_checkpoint(task.user_id, task.session_id, task.agent, "chat.task.finalized")
             snapshot = store.load_snapshot(task.user_id, task.session_id)
             chat = snapshot.get("chat") if isinstance(snapshot.get("chat"), dict) else {}
