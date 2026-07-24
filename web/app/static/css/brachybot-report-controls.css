@@ -305,21 +305,21 @@
     gap: 6px;
     padding: 6px;
     overflow: hidden;
-    background: linear-gradient(180deg, #1a1f2e 0%, #11151f 100%);
-    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+    background: linear-gradient(180deg, #141b30 0%, #0f1526 100%);
+    box-shadow: inset 0 0 0 1px rgba(120, 140, 200, 0.07);
 }
 .viewers-panel.layout-grid > .viewer-card {
     min-height: 0;
     min-width: 0;
     overflow: hidden;
-    background: #0a0d16;
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4), inset 0 0 0 1px rgba(255, 255, 255, 0.03);
+    background: #05080f;
+    border: 1px solid rgba(120, 140, 200, 0.14);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4), inset 0 0 0 1px rgba(120, 140, 200, 0.05);
 }
 .viewers-panel.layout-grid .viewer-card-header,
 .viewers-panel.layout-grid .viewer-card-ctrl {
-    background: linear-gradient(180deg, rgba(45, 55, 75, 0.95) 0%, rgba(30, 38, 55, 0.95) 100%);
-    border-color: rgba(255, 255, 255, 0.08);
+    background: linear-gradient(180deg, rgba(38, 48, 76, 0.95) 0%, rgba(24, 33, 54, 0.95) 100%);
+    border-color: rgba(120, 140, 200, 0.14);
     color: #e6ebff;
 }
 .viewers-panel.layout-grid .viewer-card-label,
@@ -418,7 +418,7 @@
 }
 .viewer-card:hover {
     border-color: var(--border-emphasis);
-    box-shadow: var(--inset-top), 0 0 0 1px rgba(59, 130, 246, 0.25), 0 8px 24px rgba(59, 130, 246, 0.12);
+    box-shadow: var(--inset-top), 0 0 0 1px rgba(79, 124, 255, 0.25), 0 8px 24px rgba(79, 124, 255, 0.12);
     transform: translateY(-1px);
 }
 
@@ -567,9 +567,9 @@
     box-shadow: var(--inset-top), 0 1px 2px rgba(0, 0, 0, 0.20);
 }
 .viewers-panel.layout-grid .viewers-toolbar {
-    background: linear-gradient(180deg, #1f2535 0%, #161b27 100%);
-    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.06) inset;
+    background: linear-gradient(180deg, #182136 0%, #101728 100%);
+    border-bottom: 1px solid rgba(120, 140, 200, 0.12);
+    box-shadow: 0 1px 0 rgba(120, 140, 200, 0.06) inset;
 }
 .viewers-panel.layout-grid label {
     color: #c9d1e0 !important;
@@ -688,17 +688,17 @@
     width: 28px; height: 28px;
     border: 2.5px solid var(--border-soft);
     border-top-color: var(--primary);
-    border-right-color: rgba(59, 130, 246, 0.55);
+    border-right-color: rgba(79, 124, 255, 0.55);
     border-radius: 50%;
     animation: spin 0.8s linear infinite, spin-pulse 1.4s ease-out infinite;
-    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.10), 0 2px 6px rgba(59, 130, 246, 0.18);
+    box-shadow: 0 0 0 3px rgba(79, 124, 255, 0.10), 0 2px 6px rgba(79, 124, 255, 0.18);
     flex-shrink: 0;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 @keyframes spin-pulse {
-    0%   { box-shadow: 0 0 0 0   rgba(59, 130, 246, 0.45), 0 2px 6px rgba(59, 130, 246, 0.18); }
-    70%  { box-shadow: 0 0 0 10px rgba(59, 130, 246, 0),    0 2px 6px rgba(59, 130, 246, 0.18); }
-    100% { box-shadow: 0 0 0 0   rgba(59, 130, 246, 0),    0 2px 6px rgba(59, 130, 246, 0.18); }
+    0%   { box-shadow: 0 0 0 0   rgba(79, 124, 255, 0.45), 0 2px 6px rgba(79, 124, 255, 0.18); }
+    70%  { box-shadow: 0 0 0 10px rgba(79, 124, 255, 0),    0 2px 6px rgba(79, 124, 255, 0.18); }
+    100% { box-shadow: 0 0 0 0   rgba(79, 124, 255, 0),    0 2px 6px rgba(79, 124, 255, 0.18); }
 }
 .loading-text {
     font-size: 0.7rem;
@@ -720,11 +720,11 @@
     width: 16px; height: 16px;
     border: 2px solid var(--border-soft);
     border-top-color: var(--primary);
-    border-right-color: rgba(59, 130, 246, 0.55);
+    border-right-color: rgba(79, 124, 255, 0.55);
     border-radius: 50%;
     animation: spin 0.8s linear infinite;
     flex-shrink: 0;
-    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.06);
+    box-shadow: 0 0 0 2px rgba(79, 124, 255, 0.06);
 }
 
 /* Small spinner used in chat system messages & upload progress */
@@ -732,10 +732,10 @@
     width: 18px; height: 18px;
     border: 2.5px solid var(--border-soft);
     border-top-color: var(--primary);
-    border-right-color: rgba(59, 130, 246, 0.55);
+    border-right-color: rgba(79, 124, 255, 0.55);
     border-radius: 50%;
     animation: spin 0.8s linear infinite, spin-pulse 1.4s ease-out infinite;
-    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.10), 0 1px 4px rgba(59, 130, 246, 0.18);
+    box-shadow: 0 0 0 2px rgba(79, 124, 255, 0.10), 0 1px 4px rgba(79, 124, 255, 0.18);
     flex-shrink: 0;
 }
 .upload-progress-text { font-size: 0.75rem; color: var(--text); }
@@ -767,7 +767,7 @@ body.v-dragging { user-select: none; -webkit-user-select: none; }
 .sidebar-resize-handle,
 .chat-area-resize-handle { pointer-events: auto !important; }
 .v-splitter.dragging {
-    background: rgba(59, 130, 246, 0.10);
+    background: rgba(79, 124, 255, 0.10);
 }
 
 ::-webkit-scrollbar { width: 8px; height: 8px; }
@@ -880,7 +880,7 @@ input[type="number"] {
 input[type="number"]:focus {
     outline: none;
     border-color: var(--primary);
-    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.16), var(--inset-top);
+    box-shadow: 0 0 0 3px rgba(79, 124, 255, 0.16), var(--inset-top);
 }
 
 input[type="checkbox"] {
@@ -954,7 +954,7 @@ input[type="checkbox"] {
 #windowPreset:focus, #viewerWindow:focus, #viewerLevel:focus, #viewerThreshold:focus {
     outline: none;
     border-color: var(--primary) !important;
-    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.16), var(--inset-top) !important;
+    box-shadow: 0 0 0 2px rgba(79, 124, 255, 0.16), var(--inset-top) !important;
 }
 
 #huDisplay {
@@ -998,7 +998,7 @@ input[type="checkbox"] {
 #colorApply:hover { background: var(--primary-hover) !important; box-shadow: var(--inset-top), var(--shadow-elevated) !important; }
 
 ::selection {
-    background: rgba(59, 130, 246, 0.2);
+    background: rgba(79, 124, 255, 0.2);
     color: var(--text);
 }
 
@@ -1166,7 +1166,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 }
 .rp-oar-table input:focus {
     outline: none; border-color: var(--primary);
-    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.16);
+    box-shadow: 0 0 0 2px rgba(79, 124, 255, 0.16);
 }
 
 .rp-helper-text {

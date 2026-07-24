@@ -22,7 +22,7 @@
        for a "looking into a deep display panel" feel. */
     background:
         linear-gradient(180deg, var(--bg-1) 0%, var(--bg-sunken) 100%),
-        radial-gradient(ellipse at 50% 0%, rgba(96, 165, 250, 0.04) 0%, transparent 60%);
+        radial-gradient(ellipse at 50% 0%, rgba(79, 124, 255, 0.04) 0%, transparent 60%);
     position: relative;
     border-left: 0;
     border-right: 0;
@@ -34,7 +34,7 @@
     position: absolute;
     top: 0; left: 0; right: 0;
     height: 60px;
-    background: linear-gradient(180deg, rgba(96, 165, 250, 0.06) 0%, transparent 100%);
+    background: linear-gradient(180deg, rgba(79, 124, 255, 0.06) 0%, transparent 100%);
     pointer-events: none;
     z-index: 0;
 }
@@ -78,13 +78,13 @@
 }
 .chat-area-resize-handle:hover,
 .chat-area-resize-handle.dragging {
-    background: rgba(59, 130, 246, 0.10);
+    background: rgba(79, 124, 255, 0.10);
 }
 .chat-area-resize-handle:hover::before,
 .chat-area-resize-handle.dragging::before { opacity: 1; width: 3px; }
 .chat-area-resize-handle:hover,
 .chat-area-resize-handle.dragging {
-    background: rgba(59, 130, 246, 0.10);
+    background: rgba(79, 124, 255, 0.10);
 }
 .chat-area-resize-handle::after {
     content: '';
@@ -200,17 +200,16 @@
 .chat-msg p:last-child { margin-bottom: 0; }
 
 .chat-msg.user {
-    /* Deep theme: user card is a subtle blue-tinted dark surface.
-       Lifts off the sunken chat panel. */
-    background: linear-gradient(135deg, rgba(96, 165, 250, 0.14) 0%, rgba(59, 130, 246, 0.10) 100%);
-    color: #e0eaff;
-    border-color: rgba(96, 165, 250, 0.28);
-    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 1px 8px rgba(0, 0, 0, 0.25);
+    /* NightShift Indigo: user card is an indigo-tinted dark surface. */
+    background: linear-gradient(135deg, rgba(79, 124, 255, 0.18) 0%, rgba(79, 124, 255, 0.11) 100%);
+    color: #dbe4ff;
+    border-color: rgba(79, 124, 255, 0.34);
+    box-shadow: 0 1px 0 rgba(120, 140, 200, 0.06) inset, 0 1px 8px rgba(0, 0, 0, 0.25);
     font-weight: 500;
 }
 .chat-msg.user:hover {
-    background: linear-gradient(135deg, rgba(96, 165, 250, 0.20) 0%, rgba(59, 130, 246, 0.16) 100%);
-    border-color: rgba(96, 165, 250, 0.45);
+    background: linear-gradient(135deg, rgba(79, 124, 255, 0.24) 0%, rgba(79, 124, 255, 0.17) 100%);
+    border-color: rgba(79, 124, 255, 0.50);
 }
 
 .chat-msg.bot {
@@ -240,9 +239,9 @@
 /* Links inside chat responses — clickable, styled, open in new tab */
 .chat-msg a[href], .md-table a[href],
 .chat-msg li a, .chat-msg p a, .md-list a, .md-ordered-list a {
-    color: #60a5fa;
+    color: #7c9aff;
     text-decoration: none;
-    border-bottom: 1px solid rgba(96, 165, 250, 0.3);
+    border-bottom: 1px solid rgba(124, 154, 255, 0.32);
     transition: color 0.15s, border-color 0.15s;
     word-break: break-all;
     pointer-events: auto !important;
@@ -250,8 +249,8 @@
 }
 .chat-msg a[href]:hover, .md-table a[href]:hover,
 .chat-msg li a:hover, .chat-msg p a:hover {
-    color: #93c5fd;
-    border-bottom-color: #93c5fd;
+    color: #a5bcff;
+    border-bottom-color: #a5bcff;
 }
 
 .chat-msg.system {
@@ -345,7 +344,7 @@
     height: 0.12rem;
     overflow: hidden;
     border-radius: 999px;
-    background: rgba(96, 165, 250, 0.12);
+    background: rgba(79, 124, 255, 0.12);
     pointer-events: none;
 }
 .manual-dose-progress-fill {
@@ -519,7 +518,7 @@
     background: rgba(255, 255, 255, 0.018);
 }
 .md-table tbody tr:hover td {
-    background: rgba(14, 165, 233, 0.10);
+    background: rgba(79, 124, 255, 0.10);
 }
 .md-table code {
     background: rgba(255, 255, 255, 0.06);
@@ -822,7 +821,7 @@
        are now 0 because it's not a message anymore. */
     margin: 0;
     padding: 0.5rem 0.75rem;
-    background: linear-gradient(180deg, rgba(96, 165, 250, 0.06) 0%, transparent 100%);
+    background: linear-gradient(180deg, rgba(79, 124, 255, 0.06) 0%, transparent 100%);
     border: none;
     border-bottom: 1px solid var(--border-hairline);
     border-radius: 0;
@@ -925,13 +924,13 @@
 .chat-todo-item.active {
     color: var(--primary-ink);
     font-weight: 600;
-    background: linear-gradient(90deg, rgba(14,165,233,0.20) 0%, rgba(14,165,233,0.04) 100%);
+    background: linear-gradient(90deg, rgba(79,124,255,0.20) 0%, rgba(79,124,255,0.05) 100%);
     animation: todo-active-breathe 1.8s ease-in-out infinite;
     animation-play-state: running !important;
 }
 .chat-todo-item.active::before {
     background: var(--primary);
-    box-shadow: 0 0 6px 1px rgba(14,165,233,0.6);
+    box-shadow: 0 0 6px 1px rgba(79,124,255,0.65);
     animation: todo-bar-breathe 1.8s ease-in-out infinite;
     animation-play-state: running !important;
 }
@@ -977,13 +976,13 @@
     margin-left: 0.45rem;
     padding: 1px 6px;
     border-radius: 999px;
-    background: rgba(14, 165, 233, 0.10);
+    background: rgba(79, 124, 255, 0.12);
     color: var(--primary);
     font-size: 0.58rem;
     font-weight: 500;
     font-variant-numeric: tabular-nums;
     letter-spacing: 0.02em;
-    border: 1px solid rgba(14, 165, 233, 0.25);
+    border: 1px solid rgba(79, 124, 255, 0.28);
     white-space: nowrap;
     min-width: 0;
     /* Hidden by default — only visible while the step is active.
@@ -1014,21 +1013,21 @@
 
 /* Breathing keyframes are intentionally limited to opacity and shadow. */
 @keyframes todo-bar-breathe {
-    0%, 100% { box-shadow: 0 0 2px 0 rgba(14, 165, 233, 0.15); opacity: 0.7; }
-    50%      { box-shadow: 0 0 9px 2px rgba(14, 165, 233, 0.65); opacity: 1.0; }
+    0%, 100% { box-shadow: 0 0 2px 0 rgba(79, 124, 255, 0.15); opacity: 0.7; }
+    50%      { box-shadow: 0 0 9px 2px rgba(79, 124, 255, 0.65); opacity: 1.0; }
 }
 @keyframes todo-dot-breathe {
-    0%, 100% { box-shadow: 0 0 1px 0 rgba(14, 165, 233, 0.1); transform: scale(1.0); }
-    50%      { box-shadow: 0 0 8px 2px rgba(14, 165, 233, 0.65); transform: scale(1.16); }
+    0%, 100% { box-shadow: 0 0 1px 0 rgba(79, 124, 255, 0.1); transform: scale(1.0); }
+    50%      { box-shadow: 0 0 8px 2px rgba(79, 124, 255, 0.65); transform: scale(1.16); }
 }
 @keyframes todo-active-breathe {
     0%, 100% {
-        box-shadow: inset 0 0 0 1px rgba(14,165,233,0.32),
-                    0 0 5px 0 rgba(14,165,233,0.08);
+        box-shadow: inset 0 0 0 1px rgba(79,124,255,0.32),
+                    0 0 5px 0 rgba(79,124,255,0.08);
     }
     50% {
-        box-shadow: inset 0 0 0 1px rgba(14,165,233,0.62),
-                    0 0 12px 2px rgba(14,165,233,0.22);
+        box-shadow: inset 0 0 0 1px rgba(79,124,255,0.62),
+                    0 0 12px 2px rgba(79,124,255,0.22);
     }
 }
 
@@ -1036,16 +1035,16 @@
    browser requests reduced motion. These keyframes use only a small opacity
    and shadow change, so the status never freezes after one cycle. */
 @keyframes todo-active-breathe-soft {
-    0%, 100% { box-shadow: inset 0 0 0 1px rgba(14,165,233,0.28), 0 0 3px rgba(14,165,233,0.05); opacity: 0.92; }
-    50% { box-shadow: inset 0 0 0 1px rgba(14,165,233,0.52), 0 0 8px rgba(14,165,233,0.14); opacity: 1; }
+    0%, 100% { box-shadow: inset 0 0 0 1px rgba(79,124,255,0.28), 0 0 3px rgba(79,124,255,0.05); opacity: 0.92; }
+    50% { box-shadow: inset 0 0 0 1px rgba(79,124,255,0.52), 0 0 8px rgba(79,124,255,0.14); opacity: 1; }
 }
 @keyframes todo-bar-breathe-soft {
-    0%, 100% { box-shadow: 0 0 2px 0 rgba(14,165,233,0.14); opacity: 0.78; }
-    50% { box-shadow: 0 0 6px 1px rgba(14,165,233,0.42); opacity: 1; }
+    0%, 100% { box-shadow: 0 0 2px 0 rgba(79,124,255,0.14); opacity: 0.78; }
+    50% { box-shadow: 0 0 6px 1px rgba(79,124,255,0.42); opacity: 1; }
 }
 @keyframes todo-dot-breathe-soft {
-    0%, 100% { box-shadow: 0 0 1px 0 rgba(14,165,233,0.1); opacity: 0.88; }
-    50% { box-shadow: 0 0 5px 1px rgba(14,165,233,0.42); opacity: 1; }
+    0%, 100% { box-shadow: 0 0 1px 0 rgba(79,124,255,0.1); opacity: 0.88; }
+    50% { box-shadow: 0 0 5px 1px rgba(79,124,255,0.42); opacity: 1; }
 }
 
 .chat-msg-action-btn {
@@ -1166,20 +1165,20 @@
 }
 .pipeline-step.error .pipeline-step-dot { background: var(--danger); }
 @keyframes pipeline-active-glow {
-    0%, 100% { background: var(--msg-user-bg); box-shadow: inset 2px 0 0 var(--primary), 0 0 0 0 rgba(59, 130, 246, 0); }
-    50%      { background: rgba(59, 130, 246, 0.14); box-shadow: inset 2px 0 0 var(--primary), 0 0 0 4px rgba(59, 130, 246, 0.10); }
+    0%, 100% { background: var(--msg-user-bg); box-shadow: inset 2px 0 0 var(--primary), 0 0 0 0 rgba(79, 124, 255, 0); }
+    50%      { background: rgba(79, 124, 255, 0.14); box-shadow: inset 2px 0 0 var(--primary), 0 0 0 4px rgba(79, 124, 255, 0.10); }
 }
 @keyframes pipeline-dot-breathe {
-    0%, 100% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.4); transform: scale(1); }
-    50%      { box-shadow: 0 0 0 5px rgba(59, 130, 246, 0);  transform: scale(1.25); }
+    0%, 100% { box-shadow: 0 0 0 0 rgba(79, 124, 255, 0.4); transform: scale(1); }
+    50%      { box-shadow: 0 0 0 5px rgba(79, 124, 255, 0);  transform: scale(1.25); }
 }
 @keyframes pipeline-active-glow-soft {
     0%, 100% { background: var(--msg-user-bg); box-shadow: inset 2px 0 0 var(--primary); opacity: 0.9; }
-    50% { background: rgba(59, 130, 246, 0.12); box-shadow: inset 2px 0 0 var(--primary), 0 0 0 2px rgba(59, 130, 246, 0.08); opacity: 1; }
+    50% { background: rgba(79, 124, 255, 0.12); box-shadow: inset 2px 0 0 var(--primary), 0 0 0 2px rgba(79, 124, 255, 0.08); opacity: 1; }
 }
 @keyframes pipeline-dot-breathe-soft {
-    0%, 100% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.22); opacity: 0.86; }
-    50% { box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.22); opacity: 1; }
+    0%, 100% { box-shadow: 0 0 0 0 rgba(79, 124, 255, 0.22); opacity: 0.86; }
+    50% { box-shadow: 0 0 0 3px rgba(79, 124, 255, 0.22); opacity: 1; }
 }
 .pipeline-step-text {
     flex: 1; min-width: 0; overflow: hidden;
@@ -1451,7 +1450,7 @@
 .chat-input-row textarea:focus {
     outline: none;
     border-color: var(--primary);
-    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.16), var(--inset-top);
+    box-shadow: 0 0 0 3px var(--accent-ring), var(--inset-top);
     background: var(--bg-2);
 }
 .chat-input-row textarea::placeholder { color: var(--text-faint); }
