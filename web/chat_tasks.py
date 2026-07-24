@@ -281,27 +281,16 @@ class ChatTaskManager:
                         task.publish(event)
                     if task.is_running():
                         task.completion_status = "completed"
-                        task.publish(task.encode_event("step", task.commit_step("pending")))
-                        committed = True
-                        if on_finish is not None:
-                            committed = on_finish(task) is not False
-                            finalized = True
-                        if not committed:
-                            failure = "Case results could not be saved."
-                            task.publish(task.encode_event(
-                                "step",
-                                task.commit_step("error", failure),
-                            ))
-                            task.publish(task.encode_event("error", {"message": failure}))
-                            task.finish("failed", failure)
-                            return
+                        # Stream the terminal event before durable finalisation
+                        # so the operator sees the response immediately.
+                        # Persistence follows synchronously so a server restart
+                        # still recovers the completed turn.
                         task.result_committed = True
-                        task.publish(task.encode_event("step", task.commit_step("done")))
-                        # The Agent normally emits ``done``. The task boundary
-                        # supplies it when an adapter omits it, but only after
-                        # durable finalization has succeeded.
                         task.publish(terminal_event or "event: done\ndata: {}\n\n")
                         task.finish("completed")
+                        if on_finish is not None:
+                            on_finish(task)
+                            finalized = True
                     if on_finish is not None:
                         if not finalized:
                             on_finish(task)
