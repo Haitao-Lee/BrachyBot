@@ -57,11 +57,14 @@ class ResponseToolMixin:
     def _normalize_ctv_tool_params(self, params: Dict) -> Dict:
         """Normalize legacy CTV site parameters before contract validation."""
         normalized = dict(params or {})
-        if not normalized.get("tumor_type") and normalized.get("tumor_site"):
-            mapped = self._map_tumor_type(str(normalized.get("tumor_site")))
-            if mapped in self._SUPPORTED_AUTOMATIC_CTV_TYPES:
-                normalized["tumor_type"] = mapped
+        if normalized.get("tumor_site") or normalized.get("site"):
+            raw = normalized.get("tumor_site") or normalized.get("site")
+            if not normalized.get("tumor_type"):
+                mapped = self._map_tumor_type(str(raw))
+                if mapped in self._SUPPORTED_AUTOMATIC_CTV_TYPES:
+                    normalized["tumor_type"] = mapped
             normalized.pop("tumor_site", None)
+            normalized.pop("site", None)
         return normalized
 
     @staticmethod
