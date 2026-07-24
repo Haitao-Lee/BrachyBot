@@ -1627,6 +1627,13 @@ async function loadCTToViewers(ctPath, options = {}) {
 
 async function _restoreActiveSessionWorkspace(options = {}) {
     const sessionAtStart = _activeApiSessionId();
+    // Helper: yield to the browser's rendering pipeline so DOM mutations
+    // painted before this yield become visible to the user.  Without this
+    // the entire restore runs in one microtask and the user sees a frozen
+    // loading spinner for seconds followed by everything appearing at once.
+    const _yield = () => new Promise(r => {
+        requestAnimationFrame(() => setTimeout(r, 0));
+    });
     // The optimistic case shell already cleared the visible workspace before
     // scheduling background hydration. Clearing it again here can erase a
     // just-resumed execution trace for this same case.
@@ -1737,6 +1744,10 @@ async function _restoreActiveSessionWorkspace(options = {}) {
             });
             if (typeof _refreshManualStepUI === 'function') _refreshManualStepUI();
         }
+        // Yield a frame so the chat, sidebar, and Input panel populate
+        // visibly before the function returns (no-CT path) or before the
+        // heavyweight CT download starts.
+        await _yield();
         return status;
     }
 
@@ -1745,6 +1756,9 @@ async function _restoreActiveSessionWorkspace(options = {}) {
     // sees specific loading feedback instead of a frozen spinner.
     window.setWorkspaceHydrationState?.(false);
     document.body.classList.remove('workspace-hydrating');
+    // Yield a frame so the restored Input fields, report, and viewer
+    // settings are painted before the CT download begins.
+    await _yield();
     try {
         await loadCTToViewers(ctPath, { announce: false, sessionId: sessionAtStart });
     } catch (ctError) {
@@ -1753,6 +1767,10 @@ async function _restoreActiveSessionWorkspace(options = {}) {
         return status;
     }
     if (_activeApiSessionId() !== sessionAtStart) return null;
+
+    // Yield a frame so the CT slices are painted before label volumes
+    // and planning meshes start loading.
+    await _yield();
 
     const storedKeys = new Set(Array.isArray(status.stored_keys) ? status.stored_keys : []);
     if (typeof _saveManualState === 'function') {
@@ -1798,6 +1816,11 @@ async function _restoreActiveSessionWorkspace(options = {}) {
         });
     }
     if (_activeApiSessionId() !== sessionAtStart) return null;
+
+    // Yield a frame so label volumes / dose meshes are painted before
+    // the final snapshot merge and slice re-render.
+    await _yield();
+
     if (workspace && typeof applyWorkspaceSnapshot === 'function') {
         // The server has now reconstructed the authoritative CT, labels,
         // plan, dose and Data Tree. Reapply only display preferences; a full
