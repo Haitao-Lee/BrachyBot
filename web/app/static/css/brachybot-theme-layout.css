@@ -546,7 +546,6 @@ body::before {
    repeat sidebar actions during that atomic transition so a stale response
    cannot repaint a different case over the most recently selected one. */
 body.workspace-transitioning .new-chat-btn,
-body.workspace-transitioning #sessionList,
 body.workspace-transitioning .session-sidebar-actions {
     pointer-events: none;
 }
