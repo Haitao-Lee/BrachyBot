@@ -790,6 +790,9 @@ class ChatWorkflowMixin:
             and self.multi_agent_wrapper.enabled
             and local_policy.use_router
         ):
+            router_step = add_step("thinking", "Multi-Agent Router",
+                                 "Analyzing request...", status="pending")
+            yield yield_event("step", router_step)
             try:
                 import asyncio
                 loop = asyncio.new_event_loop()
@@ -803,12 +806,20 @@ class ChatWorkflowMixin:
                 if _ma_routing:
                     # Store routing intent for context building
                     self.memory._last_routing_intent = _ma_routing.intent
-                    step = add_step("thinking", "Multi-Agent Router",
-                                  f"Intent: {_ma_routing.intent}, Complexity: {_ma_routing.complexity}, "
-                                  f"Review: {'Required' if _ma_routing.requires_review else 'Optional'}")
-                    yield yield_event("step", step)
+                    router_step["status"] = "done"
+                    router_step["content"] = (
+                        f"Intent: {_ma_routing.intent}, Complexity: {_ma_routing.complexity}, "
+                        f"Review: {'Required' if _ma_routing.requires_review else 'Optional'}"
+                    )
+                else:
+                    router_step["status"] = "done"
+                    router_step["content"] = "Routing not available"
+                yield yield_event("step", router_step)
             except Exception as e:
                 logger.debug(f"Multi-agent routing failed: {e}")
+                router_step["status"] = "error"
+                router_step["content"] = f"Routing failed: {e}"
+                yield yield_event("step", router_step)
         elif not local_policy.use_router:
             # Keep the trace explicit while avoiding a second remote model
             # call for low-risk turns.
