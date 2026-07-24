@@ -49,6 +49,78 @@ store, user, session_id = request_case_context()
 
 ---
 
+## 2026-07-24 - Multi-Agent Router step missing pending state during routing
+
+### Confirmed issue
+
+After the "User Input" step completed, the Thinking chain showed no progress
+for 10–15 seconds while the multi-agent router processed the request. The
+"Multi-Agent Router" step only appeared when it finished (status: done),
+leaving users with no indication of ongoing work.
+
+### Root cause
+
+`agent_runtime/chat_workflows.py:806-809` created and emitted the
+"Multi-Agent Router" step AFTER `loop.run_until_complete()` returned.
+The blocking call took >10 s while no SSE event was published to the
+frontend.
+
+### Resolution
+
+Moved `add_step("thinking", "Multi-Agent Router", ..., status="pending")`
+and the corresponding `yield yield_event("step", ...)` BEFORE the
+blocking asyncio call at line 797.  After the result arrives, the same
+step dict is updated in-place to `status="done"` (or `"error"`) and
+emitted again — the frontend's existing block-update path in
+`appendStepToChain` handles the transition smoothly.
+
+### Verification
+
+- `py_compile` passed for `agent_runtime/chat_workflows.py`.
+- Server restart verified: pending step appears immediately in the
+  Thinking chain, breathing animation runs during routing, transitions
+  to done on completion.
+
+---
+
+## 2026-07-24 - Dose defaults and blocking agent checkpoint
+
+### Confirmed issue
+
+1. The manual-planning dose fields (`in_lowest_energy` /
+   `out_highest_energy`) defaulted to a model-space value of 1
+   (= 120 Gy at scale 120) through a hard-coded fallback of `1` in
+   `doseGyToModel()`.
+
+2. After every chat turn, the "Saving case results"
+   (`workspace_checkpoint`) step remained pending for 10+ minutes.
+   `finalize_chat_task` called `store.mark_operation()` which
+   synchronously serialised every clinical numpy array (CT, OAR,
+   dose, seed plan, etc.) to disk through `_ArtifactEncoder`.
+
+### Resolution
+
+1. Changed `doseGyToModel(..., 1)` → `doseGyToModel(...,
+   doseModelScaleGy())` in both `brachybot-ui-api.js` (lines 147–148)
+   and `brachybot-manual-annotation.js` (lines 173–174).
+
+2. `planning_routes.py:251` replaced
+   `store.mark_operation(task.user_id, task.session_id, task.agent,
+   operation)` with `store.schedule_agent_checkpoint(...,
+   "chat.task.finalized")`.  The agent arrays are now persisted
+   asynchronously via the 0.75 s debounced timer; the chat transcript
+   and operation metadata remain committed atomically through the
+   snapshot-patch in the same function.
+
+### Verification
+
+- `py_compile` passed for the modified `planning_routes.py`.
+- Dose fields show 120 Gy when no stored planning config is present.
+- `workspace_checkpoint` transitions to done within seconds of chat
+  completion, no longer blocking the SSE stream.
+
+---
+
 ## 2026-07-23 - Active-case agents are protected from cache eviction
 
 ### Confirmed issue
