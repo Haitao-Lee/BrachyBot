@@ -707,6 +707,11 @@ function _todoSeed(todo, userMessage) {
         // switch (zh → en mid-session) takes effect for the next
         // user message's todo list, not just the first one.
         for (const t of _planningTemplates()) {
+            // Do not seed predicted items that already exist in the
+            // todo list (e.g. restored from a previous session via
+            // _caseTodos during task resume).  Duplicate predictions
+            // produce the double "PROGRESS" dock the user reported.
+            if (todo.items.some(i => i.toolName === t.tool || i.predictedTool === t.tool)) continue;
             // Add a placeholder item, marked as predicted (the LLM
             // may add the same tool later, in which case _todoUpdateFromStep
             // will find it by tool-name and update it).
