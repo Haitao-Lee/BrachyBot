@@ -503,6 +503,26 @@ window.clearCaseScopedProgressPresentation = function clearCaseScopedProgressPre
     // task.  Removing this display state prevents an old task's timer/Progress
     // dock from leaking into a fresh case without changing any server task.
     const todo = window._activeTodoApi;
+    // Persist the todo-state snapshot keyed by session so that a resume
+    // (switch-back or refresh) can rebuild the Progress dock with the
+    // original startedAt timestamps.  The timer then shows the true
+    // elapsed wall-clock time — including the interval spent on another
+    // case — rather than restarting from zero.
+    const sid = typeof activeSessionId !== 'undefined' ? String(activeSessionId) : '';
+    if (todo && sid && todo.items && todo.items.length) {
+        window._caseTodos = window._caseTodos || {};
+        window._caseTodos[sid] = todo.items.map(item => ({
+            id: item.id,
+            label: item.label,
+            toolName: item.toolName || null,
+            status: item.status,
+            startedAt: item.startedAt,
+            endedAt: item.endedAt,
+            predicted: !!item.predicted,
+            predictedTool: item.predictedTool || null,
+            _realElapsedMs: item._realElapsedMs,
+        }));
+    }
     try { todo?.dispose?.(); } catch (_) {}
     window._activeTodoApi = null;
     window._brachyLiveTrace = null;
@@ -1206,22 +1226,48 @@ async function sendChat(prefill, options) {
     _setCaseTaskState(turnSessionId, 'connecting', turnTaskId || undefined);
     window._chatStreaming = false;
 
-    // BUG FIX 2026-06-16: previously the dock accumulated one
-    // <div class="chat-todo"> per turn (because _todoCreate appended
-    // to chatTodoDock without clearing it). After 3-4 turns the user
-    // would see "Progress 11/17" + "Progress 7/9" + "Progress 2/3"
-    // stacked. Now we wipe the dock at the START of every turn so
-    // only the active turn's todo is visible (the previous turn's
-    // chain + steps remain in the chat history as text).
-    try { window.clearCaseScopedProgressPresentation?.(); } catch (_) {}
+    // Wipe the dock for a fresh turn.  For a task resume we do NOT clear
+    // — the saved per-session state (window._caseTodos) is restored below
+    // with the original startedAt timestamps so the timer shows the real
+    // background elapsed time.
+    if (!isResumingTask) {
+        try { window.clearCaseScopedProgressPresentation?.(); } catch (_) {}
+    }
 
     let thinkingEl = null;
     let chainEl = null, stepsDiv = null, headerEl = null;
     let responseEl = null;
-    // Persistent todo list at the bottom of the bot's chat row. Created on
-    // the first step event, then mutated as more step events arrive, and
-    // folded when the final assistant response begins streaming.
+    // Persistent todo list at the bottom of the bot's chat row.  When
+    // resuming a detached task, rebuild from the saved state so the
+    // operator sees completed steps and the real elapsed clock.
     let todo = null;
+    const savedItems = isResumingTask ? (window._caseTodos || {})[turnSessionId] : null;
+    if (savedItems && savedItems.length && typeof _todoCreate === 'function') {
+        todo = _todoCreate();
+        const dock = document.getElementById('chatTodoDock');
+        if (dock) { dock.appendChild(todo.root); dock.style.display = ''; }
+        for (const si of savedItems) {
+            const stubStep = {
+                type: 'tool',
+                tool: si.toolName || '',
+                title: si.label || '',
+                id: si.id || '',
+                status: si.status,
+            };
+            const item = todo.addPending(stubStep);
+            item.startedAt = si.startedAt;
+            item.endedAt = si.endedAt;
+            if (si._realElapsedMs) item._realElapsedMs = si._realElapsedMs;
+            if (si.status === 'done' || si.status === 'error') {
+                todo.markDone(item, si.status === 'error' ? 'failed' : undefined);
+            } else if (si.status === 'active') {
+                todo.markActive(item);
+            }
+            // pending / predicted items stay in their saved status;
+            // the SSE stream will promote them to active / done as new
+            // events arrive.
+        }
+    }
     let responseText = '';
     // Provider draft chunks belong to the execution trace. The server emits
     // `final_text_chunk` only after the completeness/quality gate; those

@@ -598,30 +598,27 @@ class WorkspaceStore:
         operation: Optional[Mapping[str, Any]] = None,
     ) -> Dict[str, Any]:
         """Persist one coherent agent checkpoint for an account-owned case."""
+        payload = self._prepare_agent_snapshot(user_id, session_id, agent)
         with self._case_guard(user_id, session_id):
-            return self._snapshot_agent_unlocked(
-                user_id, session_id, agent, reason=reason, operation=operation,
+            return self._commit_agent_snapshot(
+                user_id, session_id, payload, reason=reason, operation=operation,
             )
 
-    def _snapshot_agent_unlocked(
+    def _prepare_agent_snapshot(
         self,
         user_id: str,
         session_id: str,
         agent: Any,
-        *,
-        reason: str = "agent.checkpoint",
-        operation: Optional[Mapping[str, Any]] = None,
     ) -> Dict[str, Any]:
-        """Persist a safe agent checkpoint and retain the latest UI/chat state."""
+        """Read agent memory and encode large arrays to disk WITHOUT
+        acquiring the per-case _case_guard.  The heavy npy I/O must not
+        block concurrent save_snapshot_patch calls from a chat turn."""
         self.get_session(user_id, session_id)
         memory = agent.memory
         with memory._lock:
             planning_results = dict(memory.planning_results)
             planning_versions = dict(getattr(memory, "_planning_versions", {}) or {})
             agent_config = dict(getattr(agent, "config", {}) or {})
-            # This is a server-derived runtime location, not user-editable
-            # planning state. The server injects the correct case path when it
-            # creates an agent, so never expose or restore an absolute path.
             agent_config.pop("_workspace_state_dir", None)
             agent_state = {
                 "config": _safe_json(agent_config),
@@ -634,9 +631,6 @@ class WorkspaceStore:
                 "conversation_state": _safe_json(memory.conversation_state),
                 "user_lang": str(memory.user_lang or "en"),
                 "ui_state": _safe_json(memory.get_ui_state()),
-                # Runtime traces are deliberately compact and JSON-only.  They
-                # contain no raw image arrays or provider-private payloads,
-                # but make an interrupted/recovered agent turn auditable.
                 "runtime_state": _safe_json(
                     agent.run_ledger.export_state()
                     if hasattr(agent, "run_ledger") else {}
@@ -672,15 +666,36 @@ class WorkspaceStore:
             array_version=lambda source_key: int(planning_versions.get(source_key, 0)),
         )
         encoded_results: Dict[str, Any] = {}
+        for key, value in planning_results.items():
+            if key in {"ct_image", "ct_sitk", "ct_image_raw"}:
+                continue
+            encoded = encoder.encode(value, _safe_filename(key), str(key))
+            if isinstance(encoded, dict) and "$image" in encoded:
+                continue
+            encoded_results[str(key)] = encoded
+        return {
+            "agent_state": agent_state,
+            "encoded_results": encoded_results,
+            "created_array_paths": created_array_paths,
+            "root": root,
+        }
+
+    def _commit_agent_snapshot(
+        self,
+        user_id: str,
+        session_id: str,
+        payload: Dict[str, Any],
+        *,
+        reason: str = "agent.checkpoint",
+        operation: Optional[Mapping[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Merge the prepared agent state into the durable JSON snapshot
+        and update SQLite — must be called inside _case_guard."""
+        agent_state = payload["agent_state"]
+        encoded_results = payload["encoded_results"]
+        created_array_paths = payload["created_array_paths"]
+        root = payload["root"]
         try:
-            for key, value in planning_results.items():
-                # The CT image object is rebuilt from the persisted input path.
-                if key in {"ct_image", "ct_sitk", "ct_image_raw"}:
-                    continue
-                encoded = encoder.encode(value, _safe_filename(key), str(key))
-                if isinstance(encoded, dict) and "$image" in encoded:
-                    continue
-                encoded_results[str(key)] = encoded
             snapshot = self.load_snapshot(user_id, session_id)
             snapshot["agent"] = {**agent_state, "planning_results": encoded_results}
             if operation is not None:
@@ -688,8 +703,6 @@ class WorkspaceStore:
             snapshot["saved_at"] = _now()
             self._write_snapshot(user_id, root / "snapshot.json", snapshot)
         except Exception:
-            # A failed snapshot must not leave unreferenced clinical arrays that
-            # silently consume a case quota. Existing sidecars remain intact.
             for relative in created_array_paths:
                 try:
                     _safe_workspace_child(root, relative).unlink(missing_ok=True)
@@ -700,8 +713,6 @@ class WorkspaceStore:
                     self._array_refs.pop(cache_key, None)
             raise
 
-        # Once the JSON snapshot has been atomically replaced, arrays not
-        # referenced by it cannot participate in recovery and can be removed.
         referenced_arrays = _array_references(encoded_results)
         arrays_dir = root / "arrays"
         for path in arrays_dir.glob("*.npy"):
@@ -723,6 +734,21 @@ class WorkspaceStore:
             )
         self._audit(user_id, session_id, reason, {"result_keys": sorted(encoded_results.keys())})
         return self.load_snapshot(user_id, session_id)
+
+    def _snapshot_agent_unlocked(
+        self,
+        user_id: str,
+        session_id: str,
+        agent: Any,
+        *,
+        reason: str = "agent.checkpoint",
+        operation: Optional[Mapping[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Persist a safe agent checkpoint and retain the latest UI/chat state."""
+        payload = self._prepare_agent_snapshot(user_id, session_id, agent)
+        return self._commit_agent_snapshot(
+            user_id, session_id, payload, reason=reason, operation=operation,
+        )
 
     def hydrate_agent(self, user_id: str, session_id: str, agent: Any) -> Dict[str, Any]:
         """Load a checkpoint into a fresh agent without evaluating any code."""
