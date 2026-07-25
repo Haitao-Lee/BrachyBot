@@ -343,8 +343,11 @@ class LLMRuntimeMixin:
         # cannot fall through to local filesystem tools.
         _external_project_query = self._detect_external_project_query(message)
 
-        # Direct tool execution for explicit tool requests
-        _direct_tool_calls = None if _external_project_query else self._detect_tool_request(message)
+        # The chat_with_stream path gates direct tool detection on
+        # classify_local_turn.  In the LLM runtime the message always goes
+        # through the LLM — the model can see the current case state and
+        # decide whether to call tools or just answer.
+        _direct_tool_calls = None
         if _direct_tool_calls:
             logger.info(f"Direct tool execution: {len(_direct_tool_calls)} tools")
             return self._execute_direct_tools(_direct_tool_calls, steps, step_id_ref)

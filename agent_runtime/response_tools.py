@@ -102,15 +102,13 @@ print(json.dumps(result))
 
     def _detect_tool_request(self, message: str) -> Optional[List[Dict]]:
         """Detect explicit tool requests. Returns tool calls in user-specified order, or None.
-        Bypasses LLM to prevent unnecessary questions or wrong skill chains."""
+
+        Only called when classify_local_turn has already determined the message
+        is an actionable clinical intent (segmentation / planning).  The router
+        LLM handles everything else — this function is a deterministic shortcut
+        for unambiguous action commands.
+        """
         msg = message.strip().lower()
-        # Questions and passive inquiries do not trigger tool auto-execution.
-        # The _is_interrogative helper in turn_policy applies the same
-        # semantics used by classify_local_turn: questions route through the
-        # LLM; only explicit action commands trigger Direct: execution.
-        from agent_runtime.turn_policy import _is_interrogative
-        if _is_interrogative(message):
-            return None
         ct_path = self.memory.retrieve("ct_path") or ""
         if not ct_path:
             ct_path = (self.memory.get_ui_state() or {}).get("ct_path", "")

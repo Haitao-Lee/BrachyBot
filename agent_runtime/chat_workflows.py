@@ -837,8 +837,13 @@ class ChatWorkflowMixin:
             yield yield_event("step", local_route_step)
         self._turn_timings["router_ms"] = round((time.perf_counter() - _route_started) * 1000, 1)
 
-        # Direct tool execution for explicit tool requests
-        _direct_tool_calls = self._detect_tool_request(message)
+        # Direct tool execution — only for locally-confirmed actionable intents.
+        # Knowledge queries, status checks, and small talk always route through
+        # the LLM so it can read the current case state and produce a meaningful
+        # answer instead of auto-executing a tool the user didn't ask for.
+        _direct_tool_calls = None
+        if local_policy.intent in ("segmentation", "planning", "treatment_plan"):
+            _direct_tool_calls = self._detect_tool_request(message)
         if _direct_tool_calls:
             _lang = self.memory.user_lang
             logger.info(f"Direct tool execution (stream): {len(_direct_tool_calls)} tools")
