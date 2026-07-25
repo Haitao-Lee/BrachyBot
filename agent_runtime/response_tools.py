@@ -104,21 +104,12 @@ print(json.dumps(result))
         """Detect explicit tool requests. Returns tool calls in user-specified order, or None.
         Bypasses LLM to prevent unnecessary questions or wrong skill chains."""
         msg = message.strip().lower()
-        # Do not auto-execute when the user is asking a STATUS question or
-        # explicitly telling the system not to act.  A message must read
-        # like an action command (执行 / 运行 / 做 / 帮我) — pure inquiries
-        # and negations go through the LLM.
-        if re.search(
-            r'(?:不要|别|不准|不许|不要做|别做)'
-            r'|(?:完成了没有|有没有完成|是否完成|完成了吗|做了没有|做了吗|'
-            r'做了没|有没有做|好了没有|好了吗|做完了没有|做完了吗|'
-            r'分割完成|规划完成|勾画完成|图像分割.*完成)'
-            r'|^(?:查看了?一下|查一下|检查一下|确认一下)\b'
-            r'|^(?:帮我看|帮我查|帮我看看|帮我查查|查看)\b'
-            r'|请(?:告诉|告知|看看|检查|确认|说明)'
-            r'|[吗呢]$|[?？]',
-            msg,
-        ):
+        # Questions and passive inquiries do not trigger tool auto-execution.
+        # The _is_interrogative helper in turn_policy applies the same
+        # semantics used by classify_local_turn: questions route through the
+        # LLM; only explicit action commands trigger Direct: execution.
+        from agent_runtime.turn_policy import _is_interrogative
+        if _is_interrogative(message):
             return None
         ct_path = self.memory.retrieve("ct_path") or ""
         if not ct_path:
