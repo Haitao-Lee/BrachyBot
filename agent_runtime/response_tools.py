@@ -104,14 +104,19 @@ print(json.dumps(result))
         """Detect explicit tool requests. Returns tool calls in user-specified order, or None.
         Bypasses LLM to prevent unnecessary questions or wrong skill chains."""
         msg = message.strip().lower()
-        # Never auto-execute tools when the user asks for status, inquires
-        # whether something is done, or explicitly tells the system not to
-        # act.  The phrase "不要动手" + "分割完成了没有" must route to the
-        # LLM for a plain status answer, not trigger a Direct: segmentation.
+        # Do not auto-execute when the user is asking a STATUS question or
+        # explicitly telling the system not to act.  A message must read
+        # like an action command (执行 / 运行 / 做 / 帮我) — pure inquiries
+        # and negations go through the LLM.
         if re.search(
-            r'(?:不要动手|不要执行|不做|别动|别做|只是查看|只是查|查看一下|查一下|'
-            r'完成了没有|有没有完成|是否完成|完成了吗|做了没有|做了吗|帮我看看|'
-            r'有没有做|做了没|检查一下|确认一下|确认.*完成)\b',
+            r'(?:不要|别|不准|不许|不要做|别做)'
+            r'|(?:完成了没有|有没有完成|是否完成|完成了吗|做了没有|做了吗|'
+            r'做了没|有没有做|好了没有|好了吗|做完了没有|做完了吗|'
+            r'分割完成|规划完成|勾画完成|图像分割.*完成)'
+            r'|^(?:查看了?一下|查一下|检查一下|确认一下)\b'
+            r'|^(?:帮我看|帮我查|帮我看看|帮我查查|查看)\b'
+            r'|请(?:告诉|告知|看看|检查|确认|说明)'
+            r'|[吗呢]$|[?？]',
             msg,
         ):
             return None
