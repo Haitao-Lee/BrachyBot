@@ -346,23 +346,24 @@ function startRenameSession(id, event) {
     input.select();
 
     // Handle save on Enter or blur
-    const saveRename = async () => {
-        const newTitle = input.value.trim() || 'Untitled';
-        try {
-            if (typeof renameServerSession === 'function') await renameServerSession(id, newTitle);
-            else {
-                // Legacy localStorage mode has no server metadata to confirm.
-                session.title = newTitle;
-                saveSessions();
+        const saveRename = async () => {
+            const newTitle = input.value.trim() || 'Untitled';
+            try {
+                if (typeof renameServerSession === 'function') await renameServerSession(id, newTitle);
+                else {
+                    // Legacy localStorage mode has no server metadata to confirm.
+                    session.title = newTitle;
+                    saveSessions();
+                }
+            } catch (error) {
+                // Do not retain an optimistic title when the durable repository
+                // rejects the write because another browser owns the edit lease.
+                session.title = currentTitle;
+                renderSessionList();
+                console.warn('Case rename failed:', error);
+                return;
             }
-        } catch (error) {
-            // Do not retain an optimistic title when the durable repository
-            // rejects the write because another browser owns the edit lease.
-            session.title = currentTitle;
-            renderSessionList();
-            console.warn('Case rename failed:', error);
-            return;
-        }
+        session._titleManuallySet = true;
         renderSessionList();
         if (id === activeSessionId) {
             document.getElementById('chatSessionTitle').textContent = session.title || newTitle;
@@ -496,7 +497,7 @@ function saveSessionMessage(type, content, steps, timestamp, sessionId = activeS
     if (type === 'user' && typeof _rememberChatCommand === 'function') {
         _rememberChatCommand(content);
     }
-    if (session.messages.length === 1 && type === 'user') {
+    if (session.messages.length === 1 && type === 'user' && !session._titleManuallySet) {
         session.title = content.slice(0, 40) + (content.length > 40 ? '...' : '');
         if (ownerSessionId === String(activeSessionId || '')) {
             document.getElementById('chatSessionTitle').textContent = session.title;
