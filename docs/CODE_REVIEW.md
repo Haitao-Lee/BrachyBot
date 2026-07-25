@@ -8271,4 +8271,105 @@ after deletion) and only logs true I/O exceptions as warnings.
 
 ### Verification
 
-- `py_compile` passed for `workspace_store.py`. 
+- `py_compile` passed for `workspace_store.py`.
+
+---
+
+## 2026-07-25 — Browser-side IndexedDB cache for session restore
+
+### Confirmed issue
+
+Switching back to a previously loaded session re-downloaded the entire
+CT volume (50–100 MB Int16Array), 3D mesh geometry (5–15 MB JSON), and
+label volumes (5–20 MB) from the server on every switch.  No client-side
+cache existed — every restore was a full network round-trip.
+
+### Resolution
+
+1. **New module `brachybot-session-cache.js`** — lightweight IndexedDB
+   wrapper with an 800 MB global LRU cap.  Keys are scoped by
+   `[sessionId, namespace, key]`.  Entries are purged oldest-first when
+   the total exceeds the cap.
+
+2. **CT volume caching** (`loadVolumeData`) — the raw Int16Array binary
+   is stored under `{sid}/ct/volume` with a binary header (shape +
+   spacing).  On a cache hit the volume is reconstructed from the stored
+   ArrayBuffer without a fetch.
+
+3. **3D mesh caching** (`_fetchAndAddOrganMesh`) — the `POST /viewer/3d_mask`
+   JSON response (vertices + faces) is stored under
+   `{sid}/mesh/{labelId}:{source}:{smoothing}`.  A cache hit skips the
+   fetch and passes the parsed JSON directly to `addMeshToScene`.
+
+4. **Cache invalidation** — a new CT upload (`loadCTToViewers` without
+   `skipReset`) invalidates all entries for that session.  Logout /
+   clear-data calls `SessionCache.invalidateAll()`.
+
+### Verification
+
+- Node syntax check passed for `brachybot-session-cache.js`,
+  `brachybot-viewer-volume.js`, and `brachybot-3d-manual.js`.
+- Verified the IndexedDB schema creates the object store on first open.
+- Cache hit/miss paths are verified via code review — cache hit
+  reconstructs volume/mesh without network I/O.
+
+---
+
+## 2026-07-25 — Session delete responsiveness and new-chat spinner hang
+
+### Confirmed issue
+
+1. Clicking the delete button on the currently-active session produced
+   no reaction when another transition was in progress — the
+   `runWorkspaceTransition` guard silently rejected the delete.
+
+2. Creating a new session (New Chat) could leave the "Opening case…"
+   spinner visible for minutes.  When the server request failed, the
+   bounce-back `paintSessionShell(previousSessionId)` triggered a full
+   background restore of the previous session's clinical data.
+
+3. The `persistWorkspace` call before switching sessions was awaited,
+   blocking the visible switch while uploading potentially large report
+   figures (base64 data URLs).
+
+### Resolution
+
+1. Both active and inactive session delete paths now use the same
+   optimistic flow: remove from the session list immediately, render
+   the sidebar, switch to a remaining session if the deleted one was
+   active, and send the DELETE request in the background.
+
+2. New-chat failure bounce-back no longer calls `paintSessionShell`.
+   Instead it only restores `activeSessionId`, re-renders the sidebar,
+   loads the previous chat, and hides the spinner.
+
+3. `POST /api/sessions` (create) timeout reduced from 15 s to 5 s.
+   The server endpoint is a simple DB insert + empty snapshot read.
+
+### Verification
+
+- `py_compile` passed for `session_routes.py`.
+- Node syntax check passed for `brachybot-workspace.js`.
+
+---
+
+## 2026-07-25 — Workspace state save no longer hydrates the agent
+
+### Confirmed issue
+
+`save_workspace_state` (`/api/workspace/state`) called
+`(get_cached_agent or get_agent)(session_id)`, which fell back to full
+agent hydration when the agent was not cached.  For a just-completed
+planning session this loaded 100+ MB of numpy arrays and a CT image
+from disk, blocking the request thread and starving concurrent
+requests (e.g. a session-create call).
+
+### Resolution
+
+Changed to `if callable(get_cached_agent): agent = get_cached_agent(session_id)`.
+The snapshot is already durable; the in-memory UI-state update is a
+best-effort bonus that must never trigger a cold agent creation.
+
+### Verification
+
+- `py_compile` passed for `session_routes.py`. 
