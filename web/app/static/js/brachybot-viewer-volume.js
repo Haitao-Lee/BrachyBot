@@ -296,9 +296,15 @@ async function loadVolumeData(options = {}) {
     }
 
     if (!buffer) {
-        const res = await fetch(API + '/viewer/volume', {
-            headers: _viewerDataHeaders(scope.sessionId),
-        });
+        const ctrl = new AbortController();
+        const timer = setTimeout(function(){ ctrl.abort(); }, 30000);
+        let res;
+        try {
+            res = await fetch(API + '/viewer/volume', {
+                headers: _viewerDataHeaders(scope.sessionId),
+                signal: ctrl.signal,
+            });
+        } finally { clearTimeout(timer); }
         if (!res.ok) throw new Error('Failed to load volume');
         if (!_viewerDataScopeIsCurrent(scope)) return false;
 
@@ -416,9 +422,15 @@ async function loadLabelVolumes(options = {}) {
 
     if (!allBytes) {
         try {
-            const res = await fetch(API + '/viewer/label_volume', {
-                headers: _viewerDataHeaders(scope.sessionId),
-            });
+            const ctrl = new AbortController();
+            const timer = setTimeout(function(){ ctrl.abort(); }, 30000);
+            let res;
+            try {
+                res = await fetch(API + '/viewer/label_volume', {
+                    headers: _viewerDataHeaders(scope.sessionId),
+                    signal: ctrl.signal,
+                });
+            } finally { clearTimeout(timer); }
             if (!res.ok) { uiDebugLog('No label volumes available'); return; }
             if (!_viewerDataScopeIsCurrent(scope)) return false;
 
