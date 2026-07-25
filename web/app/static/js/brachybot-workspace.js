@@ -922,7 +922,16 @@
             const data = await response.json();
             if (!response.ok) {
                 delete sessions[optimisticId];
-                if (previousSessionId && sessions[previousSessionId]) paintSessionShell(previousSessionId);
+                // Do not paint the previous shell — its chat, viewer, and
+                // report are still in the DOM.  Just revert the active id
+                // and sidebar highlight.
+                if (previousSessionId && sessions[previousSessionId]) {
+                    activeSessionId = previousSessionId;
+                    if (typeof state !== 'undefined') state.sessionId = previousSessionId;
+                    renderSessionList();
+                    if (typeof loadSessionChat === 'function') loadSessionChat(previousSessionId);
+                }
+                cancelTransitionUi();
                 throw new Error(data.error || 'Unable to create case');
             }
             const createdSession = data.session;
