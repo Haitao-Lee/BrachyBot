@@ -2361,7 +2361,7 @@ async function _fetchAndAddOrganMesh({ labelId, source, organId, label, color, o
                 body: JSON.stringify({ label_id: labelId, source, smoothing }),
             });
             if (!res.ok) return { status: 'http', code: res.status, id: organId };
-            const data = await res.json();
+            data = await res.json();
             if (!data || !data.success || !data.vertex_count) return { status: 'empty', id: organId };
             if (data.face_count > 500000) {
                 console.warn(`[3D mesh] ${organId}: skipping (${data.face_count} faces > 100K limit)`);
