@@ -8372,4 +8372,193 @@ best-effort bonus that must never trigger a cold agent creation.
 
 ### Verification
 
-- `py_compile` passed for `session_routes.py`. 
+- `py_compile` passed for `session_routes.py`.
+
+---
+
+## 2026-07-25 — Session-switch loading: 5-minute hangs and IndexedDB cache performance
+
+### Confirmed issue
+
+1. Switching to a previously visited session and waiting for data
+   to load could hang for 5+ minutes.  The root cause was that
+   `loadVolumeData`, `loadLabelVolumes`, `refreshPlanningUI`,
+   `_restoreActiveSessionWorkspace` (status, snapshot, ui/state
+   fetches) all used raw `fetch()` without any timeout.  A hung
+   or slow server left the promise pending forever.
+
+2. The IndexedDB cache rewrote the entire `_runningSize` estimate
+   plus a debounced 5 s eviction timer instead of the original
+   O(n) `getTotalSize()` scan on every `put()`.
+
+### Resolution
+
+1. Added `AbortController` + `setTimeout` guards to every network
+   fetch in the restore pipeline:
+   - CT volume, label volume: 30 s
+   - `/planning/results`: 30 s
+   - `/status`: 30 s
+   - `/workspace/snapshot`: 15 s
+   - `/ui/state`: 10 s
+
+2. Rewrote `brachybot-session-cache.js`:
+   - `_runningSize` counter updated on `put()` and `invalidateSession()`.
+   - Eviction is now a 5 s debounced timer, not inline on every write.
+   - `get()` races against a 2 s timeout — slow IndexedDB returns `null`
+     and restore falls through to the network fetch.
+
+3. Also fixed `oarSource` variable scope — it was declared with `const`
+   inside the fetch-only block and was `undefined` on cache hit,
+   causing `ReferenceError` during organ name restoration.
+
+### Verification
+
+- JS brace counts verified for all 8 modified script files.
+- `py_compile` passed for all 7 modified Python files.
+
+---
+
+## 2026-07-25 — Tool auto-execution: regex whitelist replaced with router LLM gating
+
+### Confirmed issue
+
+Messages like "不要动手，只是查看分割完成了没有" triggered
+`Direct: oar_segmentation` because `_detect_tool_request` matched
+the keyword `"分割"` with zero awareness of negation, questions,
+or status-inquiry semantics.  A growing regex whitelist of
+negation phrases was proposed but this still couldn't understand
+whether the user was asking a question or giving a command.
+
+### Resolution
+
+Instead of adding more regex rules, the fix gates
+`_detect_tool_request` on the existing `classify_local_turn`
+result: auto-execution only runs when `local_policy.intent` is
+`"segmentation"`, `"planning"`, or `"treatment_plan"`.  For
+`"knowledge_query"`, `"small_talk"`, and everything else the
+message routes through the Multi-Agent Router LLM.
+
+- `chat_workflows.py:841`: guard added
+- `llm_runtime.py:347`: removed `_detect_tool_request` entirely
+- `turn_policy.py`: added `_is_interrogative()` which classifies
+  questions (吗/呢/?, 是不是/有没有/怎么样, English wh-words,
+  negation + inspection) as `"knowledge_query"` before keyword
+  matching runs.
+
+### Verification
+
+- `py_compile` passed for `response_tools.py`, `turn_policy.py`,
+  `chat_workflows.py`, `llm_runtime.py`.
+
+---
+
+## 2026-07-25 — Execution Trace duplicates and chain collapse on task resume
+
+### Confirmed issue
+
+Switching away during a running task and returning produced two
+Execution Traces — the older one (from `loadSessionChat`'s
+`renderThinkingChain`) and the newer live replay.  The old
+cleanup only removed chains with id `"liveThinkingChain"`;
+chains created by `renderThinkingChain` have no id and were
+missed.
+
+### Resolution
+
+`createLiveThinkingChain` now also removes any `.thinking-chain`
+elements that have no `id` attribute — these are the chains
+rendered by `renderThinkingChain` during session restore.
+
+### Verification
+
+- JS braces balanced in `brachybot-chat-core.js`.
+
+---
+
+## 2026-07-25 — Session delete and new-chat creation reliability
+
+### Confirmed issue
+
+1. Clicking delete on the active session silently did nothing when
+   a workspace transition was already in progress — the
+   `runWorkspaceTransition` guard rejected the delete.
+
+2. Creating a new session left the "Opening case…" spinner visible
+   when the server request failed — the bounce-back
+   `paintSessionShell(previousSessionId)` triggered a full
+   background restore of the previous session's clinical data.
+
+### Resolution
+
+1. Both active and inactive session delete paths now use optimistic
+   deletion: remove from list immediately, switch to a remaining
+   session if needed, send the DELETE request in the background.
+
+2. New-chat failure bounce-back only reverts `activeSessionId`,
+   re-renders the sidebar, loads the previous chat, and hides
+   the spinner.
+
+### Verification
+
+- JS braces balanced in `brachybot-workspace.js`.
+
+---
+
+## 2026-07-25 — Label volume and report figure IndexedDB caching (Phase 4+5)
+
+### Confirmed issue
+
+1. `/viewer/label_volume` was re-downloaded on every session switch
+   even though the segmentation masks are immutable for a given CT.
+
+2. `reportState()` serialised the entire `reportForm.figures` array
+   (200 KB – 1 MB of base64 data URLs) into every `persistWorkspace`
+   payload, bloating the workspace JSON and wasting upload bandwidth.
+
+### Resolution
+
+1. `loadLabelVolumes` now checks IndexedDB under
+   `{sid}/labels/volume` before fetching.  The binary header stores
+   shape, color LUT, organ metadata, and CTV label map alongside
+   the raw Uint8Array body.  Cache hit restores all headers +
+   binary without a network fetch.
+
+2. `reportState()` extracts each figure's `dataUrl` into IndexedDB
+   under `{sid}/report/{cacheKey}`, replacing it with an empty string
+   and a `_cacheKey` placeholder in the persisted JSON.
+   `applyWorkspaceSnapshot` fetches the blobs from cache and
+   rebuilds the `dataUrl` on restore.
+
+### Verification
+
+- JS braces balanced in `brachybot-viewer-volume.js` and
+  `brachybot-workspace.js`.
+
+---
+
+## 2026-07-25 — CT volume and 3D mesh IndexedDB caching (Phase 1-3)
+
+### Confirmed issue
+
+The entire CT volume (50–100 MB Int16Array) and 3D mesh geometry
+(5–15 MB JSON total) were re-downloaded from the server on every
+session switch.  No client-side cache existed.
+
+### Resolution
+
+1. Created `brachybot-session-cache.js`: lightweight IndexedDB
+   wrapper with an 800 MB LRU cap and per-session key scoping.
+
+2. `loadVolumeData` stores CT binary under `{sid}/ct/volume` with
+   a 4-byte length prefix + JSON header (shape, spacing).
+
+3. `_fetchAndAddOrganMesh` stores mesh JSON under
+   `{sid}/mesh/{labelId}:{source}:{smoothing}`.
+
+4. Cache invalidation on explicit CT upload (`loadCTToViewers`
+   without `skipReset`) and on logout / clear-data.
+
+### Verification
+
+- JS braces balanced in all modified files.
+- IndexedDB schema creates the object store on first open. 
