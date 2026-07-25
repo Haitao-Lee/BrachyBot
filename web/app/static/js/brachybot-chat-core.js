@@ -1694,20 +1694,26 @@ function createLiveThinkingChain(resumeStartTime) {
     const container = document.getElementById('chatMessages');
     if (!container) return { chainEl: null, stepsDiv: null, headerEl: null };
 
-    // Remove any previous live thinking chain before building a new one.
-    // A detached task (session switch mid-planning) leaves a live chain
-    // in the DOM.  Resume creates a second one, causing the duplicate
-    // "Execution Trace" / Progress dock the user reported.
-    const oldChain = document.getElementById('liveThinkingChain');
-    if (oldChain) {
+    // Remove any previous live or restored thinking chain before building a
+    // new one.  A detached task (session switch mid-planning) leaves a live
+    // chain (id='liveThinkingChain'), and loadSessionChat renders a restored
+    // chain (no id, class='thinking-chain').  Both must be removed.
+    const oldLive = document.getElementById('liveThinkingChain');
+    if (oldLive) {
         try {
-            const oldHeader = oldChain.querySelector('.thinking-header');
+            const oldHeader = oldLive.querySelector('.thinking-header');
             if (oldHeader && oldHeader._timer) {
                 clearInterval(oldHeader._timer);
                 oldHeader._timer = null;
             }
         } catch (_) {}
-        oldChain.remove();
+        oldLive.remove();
+    }
+    // Also clean up any thinking-chain rendered by loadSessionChat during
+    // task resume — these have no id so the getElementById above misses them.
+    const restoredChains = container.querySelectorAll('.thinking-chain:not([id])');
+    for (const c of restoredChains) {
+        try { c.remove(); } catch (_) {}
     }
 
     const row = document.createElement('div');
