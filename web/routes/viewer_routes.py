@@ -532,6 +532,20 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
             # Also return organ metadata for data tree
             organ_names = _server_support._oar_display_name_map(agent, oar_array)
             organ_counts = agent.memory.retrieve("organ_counts", {}) or {}
+            # Precompute voxel counts in a single array pass (O(n)) rather
+            # than np.sum(oar_array == lid) per label (O(n·k)).  With 57
+            # TotalSegmentator labels and 8M voxels, the old per-label
+            # scan piled up ~450 MB of temporary boolean allocations.
+            _computed_counts = {}
+            if oar_array is not None and not organ_counts:
+                try:
+                    flat = np.ravel(oar_array)
+                    counts = np.bincount(flat)
+                    for lid, cnt in enumerate(counts):
+                        if cnt > 0:
+                            _computed_counts[lid] = int(cnt)
+                except Exception:
+                    pass
             # Add nnUNet-derived OAR label names
             if ctv_source == "model" and ctv_full_memory is not None:
                 nnunet_oar_names = {201: "artery", 202: "vein", 203: "pancreas"}
@@ -546,7 +560,10 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
                         organ_meta[lid_int] = {
                             "name": organ_names.get(lid_int, f"OAR {lid_int}"),
                             "color": color_lut.get(lid_int, [200, 200, 200]),
-                            "voxels": int(organ_counts.get(lid_int, np.sum(oar_array == lid))),
+                            "voxels": int(
+                                organ_counts.get(lid_int)
+                                or _computed_counts.get(lid_int, 0)
+                            ),
                         }
             response.headers['X-Organ-Meta'] = _json.dumps(organ_meta)
             response.headers['X-OAR-Source'] = str(
