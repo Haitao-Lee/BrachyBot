@@ -15,7 +15,7 @@ from flask import Response, current_app, jsonify, request, send_file, session as
 
 from web.auth import current_user
 from web.chat_tasks import ChatTask, ChatTaskManager
-from web.workspace_store import WorkspaceError, WorkspaceQuotaExceeded
+from web.workspace_store import WorkspaceError, WorkspaceQuotaExceeded, WorkspaceNotFound
 from agent_runtime.core import resolve_reference_direction_input
 
 try:
@@ -2717,12 +2717,22 @@ def register_planning_routes(app, get_agent):
                         expected_revision=None,
                         reason="chat.task.started",
                     )
+                except WorkspaceNotFound:
+                    # Frontend may retry a persistence for a recently deleted case.
+                    # Silently drop the write — the session no longer exists.
+                    pass
                 except WorkspaceError:
                     logger.warning("Unable to persist chat task identity %s", task.task_id, exc_info=True)
-            finally:
-                # Release the worker only after the running checkpoint has
-                # been written, preventing a fast Q&A turn from overwriting
-                # its final ready checkpoint with a late running state.
+                finally:
+                    # Release the worker only after the running checkpoint has
+                    # been written, preventing a fast Q&A turn from overwriting
+                    # its final ready checkpoint with a late running state.
+                    start_gate.set()
+
+            except Exception:
+                # checkpoint_operation may fail if the workspace was deleted
+                # between task creation and persistence. Release the gate
+                # anyway so the SSE stream can still start.
                 start_gate.set()
 
             def generate_task(task_to_stream: ChatTask, after_seq: int = 0):
