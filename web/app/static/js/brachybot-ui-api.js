@@ -998,6 +998,9 @@ function resetAllState(options = {}) {
     dataTreeState.planning.doseLevels = [];
     dataTreeState.planning.meshes = [];
 
+    // Prevent cross-session seed/needle contamination in 2D viewer
+    state.seedsOverlay = null;
+
     // Clear 3D meshes
     if (typeof scene3D !== 'undefined' && scene3D.meshes) {
         Object.keys(scene3D.meshes).forEach(id => {
@@ -1135,6 +1138,7 @@ function clearClientWorkspace(options = {}) {
     state.metrics = {};
     state.seeds = [];
     state.trajectories = [];
+    state.seedsOverlay = null;
     state.dicomRtImports = [];
     // Manual workflow progress is case data. Drop the in-browser copy before
     // applying the next workspace snapshot so it cannot bleed into a session.
