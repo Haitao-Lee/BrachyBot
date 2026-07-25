@@ -531,7 +531,7 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
 
             # Also return organ metadata for data tree
             organ_names = _server_support._oar_display_name_map(agent, oar_array)
-            organ_counts = agent.memory.retrieve("organ_counts", {})
+            organ_counts = agent.memory.retrieve("organ_counts", {}) or {}
             # Add nnUNet-derived OAR label names
             if ctv_source == "model" and ctv_full_memory is not None:
                 nnunet_oar_names = {201: "artery", 202: "vein", 203: "pancreas"}

@@ -506,8 +506,9 @@ async function loadLabelVolumes(options = {}) {
     ctvLabelData = null;
     oarLabelData = null;
 
+    const baseOff = allBytes.byteOffset || 0;
     if (hasCTV && ctvSize > 0) {
-        ctvLabelData = new Uint8Array(allBytes.buffer, 0, ctvSize / 1);
+        ctvLabelData = new Uint8Array(allBytes.buffer, baseOff, ctvSize / 1);
         const expected = shapeZ * sliceSize;
         if (ctvLabelData.length !== expected) {
             console.warn(`CTV label size mismatch: ${ctvLabelData.length} vs expected ${expected}`);
@@ -515,8 +516,7 @@ async function loadLabelVolumes(options = {}) {
     }
 
     if (hasOAR && oarSize > 0) {
-        const oarStart = ctvSize;
-        oarLabelData = new Uint8Array(allBytes.buffer, oarStart, oarSize / 1);
+        oarLabelData = new Uint8Array(allBytes.buffer, baseOff + ctvSize, oarSize / 1);
         const expected = shapeZ * sliceSize;
         if (oarLabelData.length !== expected) {
             console.warn(`OAR label size mismatch: ${oarLabelData.length} vs expected ${expected}`);
