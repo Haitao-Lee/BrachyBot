@@ -2337,7 +2337,22 @@ async function _fetchAndAddOrganMesh({ labelId, source, organId, label, color, o
 
     const task = (async () => {
         try {
-            const res = await fetch(API + '/viewer/3d_mask', {
+            const sid = String(sessionId || _activePlanningSceneSessionId());
+            let data = null;
+            // --- IndexedDB cache: mesh geometry is immutable once generated ---
+            if (sid && window.SessionCache) {
+                const cacheKey = `mesh:${labelId}:${source}:${smoothing}`;
+                const cached = await window.SessionCache.get(sid, 'mesh', cacheKey);
+                if (cached && cached.byteLength > 0) {
+                    try {
+                        const dec = new TextDecoder();
+                        data = JSON.parse(dec.decode(cached));
+                        if (!data.vertex_count) data = null;
+                    } catch (_) { data = null; }
+                }
+            }
+            if (!data) {
+                const res = await fetch(API + '/viewer/3d_mask', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -2352,6 +2367,13 @@ async function _fetchAndAddOrganMesh({ labelId, source, organId, label, color, o
                 console.warn(`[3D mesh] ${organId}: skipping (${data.face_count} faces > 100K limit)`);
                 return { status: 'too_large', id: organId };
             }
+            // Cache the raw JSON so the next restore skips the fetch.
+            if (sid && window.SessionCache) {
+                const cacheKey = `mesh:${labelId}:${source}:${smoothing}`;
+                const enc = new TextEncoder();
+                window.SessionCache.put(sid, 'mesh', cacheKey, enc.encode(JSON.stringify(data)).buffer).catch(function(){});
+            }
+            } // end of the else (server fetch) block
             if (generation !== _segmentationMeshPrewarm.generation
                 || (sessionId != null && sessionId !== state.sessionId)) {
                 return { status: 'stale', id: organId };
