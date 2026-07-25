@@ -1653,9 +1653,15 @@ async function _restoreActiveSessionWorkspace(options = {}) {
     if (workspace && workspaceSessionId(workspace) !== sessionAtStart) workspace = null;
     if (!workspace) {
         try {
-            const workspaceResponse = await fetch(API + '/workspace/snapshot', {
-                headers: { 'X-BrachyBot-Session': sessionAtStart },
-            });
+            const wsCtrl = new AbortController();
+            const wsTimer = setTimeout(function(){ wsCtrl.abort(); }, 15000);
+            let workspaceResponse;
+            try {
+                workspaceResponse = await fetch(API + '/workspace/snapshot', {
+                    headers: { 'X-BrachyBot-Session': sessionAtStart },
+                    signal: wsCtrl.signal,
+                });
+            } finally { clearTimeout(wsTimer); }
             if (workspaceResponse.ok) {
                 const candidate = (await workspaceResponse.json()).workspace || null;
                 if (workspaceSessionId(candidate) === sessionAtStart) workspace = candidate;
@@ -1665,9 +1671,15 @@ async function _restoreActiveSessionWorkspace(options = {}) {
 
     let status = options.status || null;
     if (!status || status.session_id !== sessionAtStart) {
-        const response = await fetch(API + '/status', {
-            headers: { 'X-BrachyBot-Session': sessionAtStart },
-        });
+        const stCtrl = new AbortController();
+        const stTimer = setTimeout(function(){ stCtrl.abort(); }, 30000);
+        let response;
+        try {
+            response = await fetch(API + '/status', {
+                headers: { 'X-BrachyBot-Session': sessionAtStart },
+                signal: stCtrl.signal,
+            });
+        } finally { clearTimeout(stTimer); }
         if (!response.ok) throw new Error(`Session status failed: HTTP ${response.status}`);
         status = await response.json();
     }
@@ -1690,9 +1702,15 @@ async function _restoreActiveSessionWorkspace(options = {}) {
 
     // Training state belongs to the selected planning session as well.
     try {
-        const uiResponse = await fetch(API + '/ui/state', {
-            headers: { 'X-BrachyBot-Session': sessionAtStart },
-        });
+        const uiCtrl = new AbortController();
+        const uiTimer = setTimeout(function(){ uiCtrl.abort(); }, 10000);
+        let uiResponse;
+        try {
+            uiResponse = await fetch(API + '/ui/state', {
+                headers: { 'X-BrachyBot-Session': sessionAtStart },
+                signal: uiCtrl.signal,
+            });
+        } finally { clearTimeout(uiTimer); }
         if (uiResponse.ok && _activeApiSessionId() === sessionAtStart) {
             const uiData = await uiResponse.json();
             const training = uiData.training || {};
