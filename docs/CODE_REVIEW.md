@@ -8561,4 +8561,141 @@ session switch.  No client-side cache existed.
 ### Verification
 
 - JS braces balanced in all modified files.
-- IndexedDB schema creates the object store on first open. 
+- IndexedDB schema creates the object store on first open.
+
+---
+
+## 2026-07-25 — Session auto-rename overwriting manual rename
+
+### Confirmed issue
+
+1. New session created → user manually renames via pencil icon → sends
+   first chat message → `saveSessionMessage()` unconditionally overwrites
+   the title with the first 40 characters of the message text.
+
+### Resolution
+
+1. `startRenameSession()` (`brachybot-chat-core.js:366`) now sets
+   `session._titleManuallySet = true` after a successful manual rename.
+
+2. `saveSessionMessage()` (`brachybot-chat-core.js:500`) now checks
+   `!session._titleManuallySet` before auto-renaming from the first
+   user message.
+
+### Verification
+
+- JS braces balanced in `brachybot-chat-core.js`.
+
+---
+
+## 2026-07-25 — Cross-session seed/needle contamination on session switch
+
+### Confirmed issue
+
+After completing a planning pipeline in session A, switching to
+session B showed session A's needles and seeds being rendered one
+by one onto session B's 2D viewer slices.
+
+### Resolution
+
+`resetAllState()` and `clearClientWorkspace()` (`brachybot-ui-api.js`)
+now both set `state.seedsOverlay = null` alongside the existing
+`state.seeds = []` and `state.trajectories = []` resets. Previously
+`state.seedsOverlay` was never cleared, so the 2D viewer's
+`renderSeedsOverlay()` check (`if (state.seedsOverlay)`) passed
+with stale data after a session switch.
+
+### Verification
+
+- JS braces verified in `brachybot-ui-api.js`.
+
+---
+
+## 2026-07-25 — label_volume O(n·k) performance with per-label np.sum
+
+### Confirmed issue
+
+After the `organ_counts = None` guard was added, `organ_counts`
+fell back to `{}`. The fallback at `viewer_routes.py:549` used
+`np.sum(oar_array == lid)` for each of TotalSegmentator's 58
+unique labels. Each call created a full-size boolean array
+(8M voxels), piling up ~450 MB of temporary allocations across
+all labels.
+
+### Resolution
+
+Replaced the per-label `np.sum(oar_array == lid)` pattern with
+a single `np.bincount(np.ravel(oar_array))` call that computes
+all label voxel counts in one array pass (O(n) regardless of
+label count). Results are cached in `_computed_counts` dict and
+consulted by the organ_meta loop when `organ_counts` is empty.
+
+### Verification
+
+- `py_compile` passed for `viewer_routes.py`.
+
+---
+
+## 2026-07-25 — SSE handler missing planning_pipeline sub-step detection
+
+### Confirmed issue
+
+The SSE step handler at `chat-todo.js:1735` only checked
+`data.tool` against `FINAL_PLANNING_TOOLS` (`['planning_pipeline',
+'dose_evaluation']`). However, the planning_pipeline's sub-steps
+emit events with `data.tool = "dose_eval"` and
+`data.parent_tool = "planning_pipeline"`. The top-level
+`data.tool = "planning_pipeline"` event was never emitted,
+so `_scheduleCasePlanningRefresh` never fired during the
+pipeline. The only fallback was the stream-close handler
+at line 1848 which had a 500 ms delay.
+
+### Resolution
+
+Extended the planning-done check to also match on:
+- `data.parent_tool` in `FINAL_PLANNING_TOOLS`
+- `data.tool` in added `LAST_PLANNING_SUBSTEPS`
+  (`['dose_eval', 'dose_calc']`)
+
+The debounce guard in `_scheduleCasePlanningRefresh` already
+prevents duplicate scheduling; the first matching sub-step
+fires a 300 ms timer (reduced from 250 ms) so `refreshPlanningUI`
+runs with data ready shortly after the final sub-step completes.
+
+### Verification
+
+- JS braces balanced in `brachybot-chat-todo.js`.
+
+---
+
+## 2026-07-25 — Viewer DOM controls desync on workspace restore
+
+### Confirmed issue
+
+After session switch / page reload, the viewer controls
+(`displayMode` select, `overlayCTV` / `overlayOAR` checkboxes,
+`doseOverlayOpacity` slider, `viewerThreshold` input) could
+desync from `state.viewerSettings`. The cause was twofold:
+
+1. `applyControls()` sets DOM values from the saved snapshot,
+   but `onchange` handlers (e.g. `toggleOverlay()`) firing during
+   DOM mutation would write stale values back into
+   `state.viewerSettings`.
+2. No explicit sync step locked DOM elements back to the final
+   restored `state.viewerSettings` after `renderDataTree()`.
+
+### Resolution
+
+Added `_syncViewerControlsFromState()` (`brachybot-workspace.js`)
+called immediately after `renderDataTree()` inside
+`applyWorkspaceSnapshot()`. This function reads the authoritative
+`state.viewerSettings` and sets:
+- `displayMode` select value
+- `overlayCTV` / `overlayOAR` checkbox checked state
+- `viewerThreshold` input value
+- `doseOverlayOpacity` slider + label
+- `overlaySeeds` checkbox checked state
+
+### Verification
+
+- JS braces balanced in `brachybot-workspace.js` (1235/1235).
