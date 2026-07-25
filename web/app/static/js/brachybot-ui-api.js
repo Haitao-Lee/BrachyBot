@@ -1440,6 +1440,12 @@ async function loadCTToViewers(ctPath, options = {}) {
     if (!ctPath) return;
 
     const ownerSessionId = String(options.sessionId || _activeApiSessionId());
+
+    // A new explicit CT upload invalidates cached CT + label volumes.
+    if (!options.skipReset && ownerSessionId && window.SessionCache) {
+        window.SessionCache.invalidateSession(ownerSessionId).catch(function(){});
+    }
+
     const isCurrentOwner = () => ownerSessionId === String(_activeApiSessionId());
     const announce = options.announce !== false;
     const overlay = document.getElementById('uploadProgressOverlay');
