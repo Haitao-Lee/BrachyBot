@@ -386,7 +386,7 @@ async function loadLabelVolumes(options = {}) {
     const sid = scope.sessionId || (typeof activeSessionId !== 'undefined' ? String(activeSessionId) : '');
 
     let allBytes = null, fromCache = false;
-    let shapeZ, shapeY, shapeX, hasCTV, hasOAR, ctvSize, oarSize;
+    let shapeZ, shapeY, shapeX, hasCTV, hasOAR, ctvSize, oarSize, oarSource = '';
     let cachedColorLUT = null, cachedCtvLabelMap = null, cachedOrganMeta = null;
 
     // --- IndexedDB cache ---
@@ -453,6 +453,7 @@ async function loadLabelVolumes(options = {}) {
                     z: shapeZ, y: shapeY, x: shapeX,
                     hasCTV: hasCTV, hasOAR: hasOAR,
                     ctvSize: ctvSize, oarSize: oarSize,
+                    oarSource: oarSource || '',
                     colorLUT: labelColorLUT,
                     ctvLabelMap: window._ctvLabelMap || {},
                     organMeta: organMetaFromServer,
