@@ -383,26 +383,103 @@ async function hydrateOarDataTreeFromServer(expectedGeneration, expectedSessionI
 
 async function loadLabelVolumes(options = {}) {
     const scope = _captureViewerDataScope(options.sessionId);
-    try {
-        const res = await fetch(API + '/viewer/label_volume', {
-            headers: _viewerDataHeaders(scope.sessionId),
-        });
-        if (!res.ok) { uiDebugLog('No label volumes available'); return; }
-        if (!_viewerDataScopeIsCurrent(scope)) return false;
+    const sid = scope.sessionId || (typeof activeSessionId !== 'undefined' ? String(activeSessionId) : '');
 
-        const shapeZ = parseInt(res.headers.get('X-Shape-Z'));
-        const shapeY = parseInt(res.headers.get('X-Shape-Y'));
-        const shapeX = parseInt(res.headers.get('X-Shape-X'));
-        const hasCTV = res.headers.get('X-Has-CTV') === 'true';
-        const hasOAR = res.headers.get('X-Has-OAR') === 'true';
-        const ctvSize = parseInt(res.headers.get('X-CTV-Size') || '0');
-        const oarSize = parseInt(res.headers.get('X-OAR-Size') || '0');
-        const oarSource = res.headers.get('X-OAR-Source') || '';
+    let allBytes = null, fromCache = false;
+    let shapeZ, shapeY, shapeX, hasCTV, hasOAR, ctvSize, oarSize;
+    let cachedColorLUT = null, cachedCtvLabelMap = null, cachedOrganMeta = null;
 
-        labelColorLUT = JSON.parse(res.headers.get('X-Color-LUT') || '{}');
-        // Override CTV label 1 (tumor) color: bright pink instead of
-        // the server's blue which is too close to the dose overlay color.
-        if (labelColorLUT[1]) labelColorLUT[1] = [255, 105, 180]; // hot pink
+    // --- IndexedDB cache ---
+    if (sid && window.SessionCache) {
+        const cached = await window.SessionCache.get(sid, 'labels', 'volume');
+        if (cached && cached.byteLength > 512) {
+            try {
+                const view = new DataView(cached);
+                const hdrLen = view.getInt32(0, true);
+                if (hdrLen > 0 && hdrLen < 65536 && cached.byteLength > 4 + hdrLen) {
+                    const hdrBytes = new Uint8Array(cached, 4, hdrLen);
+                    const hdr = JSON.parse(new TextDecoder().decode(hdrBytes));
+                    shapeZ = hdr.z; shapeY = hdr.y; shapeX = hdr.x;
+                    hasCTV = hdr.hasCTV; hasOAR = hdr.hasOAR;
+                    ctvSize = hdr.ctvSize; oarSize = hdr.oarSize;
+                    cachedColorLUT = hdr.colorLUT || null;
+                    cachedCtvLabelMap = hdr.ctvLabelMap || null;
+                    cachedOrganMeta = hdr.organMeta || null;
+                    if (shapeZ > 0 && shapeY > 0 && shapeX > 0) {
+                        allBytes = new Uint8Array(cached, 4 + hdrLen);
+                        fromCache = true;
+                    }
+                }
+            } catch (_) { /* corrupt, fall through */ }
+        }
+    }
+
+    if (!allBytes) {
+        try {
+            const res = await fetch(API + '/viewer/label_volume', {
+                headers: _viewerDataHeaders(scope.sessionId),
+            });
+            if (!res.ok) { uiDebugLog('No label volumes available'); return; }
+            if (!_viewerDataScopeIsCurrent(scope)) return false;
+
+            shapeZ = parseInt(res.headers.get('X-Shape-Z'));
+            shapeY = parseInt(res.headers.get('X-Shape-Y'));
+            shapeX = parseInt(res.headers.get('X-Shape-X'));
+            hasCTV = res.headers.get('X-Has-CTV') === 'true';
+            hasOAR = res.headers.get('X-Has-OAR') === 'true';
+            ctvSize = parseInt(res.headers.get('X-CTV-Size') || '0');
+            oarSize = parseInt(res.headers.get('X-OAR-Size') || '0');
+            const oarSource = res.headers.get('X-OAR-Source') || '';
+
+            labelColorLUT = JSON.parse(res.headers.get('X-Color-LUT') || '{}');
+            const ctvLabelMapRaw = res.headers.get('X-CTV-Label-Map');
+            if (ctvLabelMapRaw) {
+                try { window._ctvLabelMap = JSON.parse(ctvLabelMapRaw); } catch(e) { window._ctvLabelMap = {}; }
+            }
+            try {
+                organMetaFromServer = JSON.parse(res.headers.get('X-Organ-Meta') || '{}');
+            } catch (error) {
+                console.warn('[viewer] Invalid OAR metadata header:', error);
+                organMetaFromServer = {};
+            }
+
+            const buffer = await res.arrayBuffer();
+            if (!_viewerDataScopeIsCurrent(scope)) return false;
+            allBytes = new Uint8Array(buffer);
+
+            // Async cache write
+            if (sid && window.SessionCache) {
+                const hdr = JSON.stringify({
+                    z: shapeZ, y: shapeY, x: shapeX,
+                    hasCTV: hasCTV, hasOAR: hasOAR,
+                    ctvSize: ctvSize, oarSize: oarSize,
+                    colorLUT: labelColorLUT,
+                    ctvLabelMap: window._ctvLabelMap || {},
+                    organMeta: organMetaFromServer,
+                });
+                const hdrBytes = new TextEncoder().encode(hdr);
+                const hdrLenBuf = new ArrayBuffer(4);
+                new DataView(hdrLenBuf).setInt32(0, hdrBytes.length, true);
+                const cached = new Uint8Array(4 + hdrBytes.length + allBytes.byteLength);
+                cached.set(new Uint8Array(hdrLenBuf), 0);
+                cached.set(hdrBytes, 4);
+                cached.set(allBytes, 4 + hdrBytes.length);
+                window.SessionCache.put(sid, 'labels', 'volume', cached.buffer).catch(function(){});
+            }
+        } catch (e) {
+            console.error('Failed to load label volumes:', e);
+            return;
+        }
+    } else {
+        // Restore headers from cache
+        labelColorLUT = cachedColorLUT || {};
+        if (cachedCtvLabelMap) window._ctvLabelMap = cachedCtvLabelMap;
+        if (cachedOrganMeta) organMetaFromServer = cachedOrganMeta;
+    }
+
+    // --- post-processing (shared by cache and fetch paths) ---
+    // Override CTV label 1 (tumor) color
+    if (labelColorLUT[1]) labelColorLUT[1] = [255, 105, 180];
         // Override OAR labels whose golden-ratio HSV hue lands near red
         // (labels 5, 8, 13, 21, 34, 55, 89 have h≈0 from _label_color).
         // These large organs rendered in orange-red created the 'red mask' effect.
@@ -514,10 +591,8 @@ async function loadLabelVolumes(options = {}) {
                 });
             }
         }
-    } catch (e) {
-        console.error('Failed to load label volumes:', e);
-    }
 }
+
 
 // Pre-allocate pixel buffer for reuse
 let _pixelBuffer = null;
