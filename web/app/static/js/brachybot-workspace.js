@@ -317,8 +317,26 @@
 
     function reportState() {
         if (!window.reportForm) return {};
+        const form = jsonClone(window.reportForm);
+        // Offload large base64 figure data URLs into IndexedDB so they
+        // don't bloat every persistWorkspace payload (200 KB – 1 MB).
+        if (form && Array.isArray(form.figures) && window.SessionCache && activeSessionId) {
+            const sid = String(activeSessionId);
+            for (let i = 0; i < form.figures.length; i++) {
+                const f = form.figures[i];
+                if (f && f.dataUrl && f.dataUrl.length > 10000) {
+                    const cacheKey = `report_fig_${i}_${f.title || ''}`.replace(/[^a-zA-Z0-9_-]/g, '_');
+                    try {
+                        const enc = new TextEncoder();
+                        void window.SessionCache.put(sid, 'report', cacheKey, enc.encode(f.dataUrl).buffer).catch(function(){});
+                    } catch (_) {}
+                    f._cacheKey = cacheKey;
+                    f.dataUrl = ''; // Don't serialise the MB-size data URL
+                }
+            }
+        }
         return {
-            form: jsonClone(window.reportForm),
+            form: form,
             sources: window.Report?.sources?._map ? Array.from(window.Report.sources._map.entries()) : [],
             audit: jsonClone(window.__reportWorkspaceAudit || []),
             snapshots: jsonClone(window.__reportWorkspaceSnapshots || []),
@@ -588,6 +606,21 @@
             if (report && typeof report === 'object') {
                 report.editedFields = new Set(report.editedFields || []);
                 window.reportForm = report;
+                // Rebuild figure data URLs from IndexedDB cache.
+                if (Array.isArray(report.figures) && activeSessionId && window.SessionCache) {
+                    const sid = String(activeSessionId);
+                    for (const f of report.figures) {
+                        if (f && f._cacheKey && !f.dataUrl) {
+                            try {
+                                const cached = await window.SessionCache.get(sid, 'report', f._cacheKey);
+                                if (cached && cached.byteLength > 0) {
+                                    f.dataUrl = new TextDecoder().decode(cached);
+                                    delete f._cacheKey;
+                                }
+                            } catch (_) {/* keep metadata-only figure if cache miss */}
+                        }
+                    }
+                }
                 const storedSources = snapshot.report?.sources;
                 if (window.Report?.sources?._map && Array.isArray(storedSources)) {
                     window.Report.sources._map = new Map(storedSources);
