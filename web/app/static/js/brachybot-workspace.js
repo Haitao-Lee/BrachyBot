@@ -918,7 +918,7 @@
                 if (typeof requestAnimationFrame === 'function') requestAnimationFrame(resolve);
                 else setTimeout(resolve, 0);
             });
-            const response = await workspaceFetch('/api/sessions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: 'New case' }) });
+            const response = await workspaceFetch('/api/sessions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: 'New case' }) }, 5000);
             const data = await response.json();
             if (!response.ok) {
                 delete sessions[optimisticId];
