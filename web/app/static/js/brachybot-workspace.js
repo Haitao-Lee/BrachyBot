@@ -486,6 +486,24 @@
         });
     }
 
+    function _syncViewerControlsFromState() {
+        var vs = (typeof state !== 'undefined') ? (state.viewerSettings || {}) : {};
+        var dm = document.getElementById('displayMode');
+        if (dm && vs.displayMode) dm.value = vs.displayMode;
+        var ctv = document.getElementById('overlayCTV');
+        if (ctv) ctv.checked = !!(vs.showCTV ?? true);
+        var oar = document.getElementById('overlayOAR');
+        if (oar) oar.checked = !!(vs.showOAR ?? false);
+        var thr = document.getElementById('viewerThreshold');
+        if (thr && vs.threshold != null) thr.value = vs.threshold;
+        var doseSlider = document.getElementById('doseOverlayOpacity');
+        if (doseSlider && typeof state.doseOpacity === 'number') doseSlider.value = Math.round(state.doseOpacity * 100);
+        var doseLabel = document.getElementById('doseOpacityVal');
+        if (doseLabel && typeof state.doseOpacity === 'number') doseLabel.textContent = Math.round(state.doseOpacity * 100) + '%';
+        var seedCb = document.getElementById('overlaySeeds');
+        if (seedCb) seedCb.checked = !!(vs.showSeeds ?? true);
+    }
+
     function copyDisplayProperties(target, saved) {
         if (!target || !saved || typeof saved !== 'object') return;
         // These are presentation preferences. Never copy label IDs, names,
@@ -677,6 +695,11 @@
             }
             if (typeof setViewerLayout === 'function' && state?.viewerSettings?.layout) setViewerLayout(state.viewerSettings.layout);
             if (typeof renderDataTree === 'function') renderDataTree();
+            // Sync viewer DOM controls from restored state so checkboxes,
+            // select, and sliders match what was saved. applyControls()
+            // restores raw DOM values, but onchange handlers can desync
+            // state.viewerSettings from the DOM — this locks them back.
+            _syncViewerControlsFromState();
             if (typeof _refreshManualStepUI === 'function') _refreshManualStepUI();
             restoreSceneView(uiState.viewer?.scene, uiState.viewer?.dvh, restoreGeneration);
             // The printable guide is a persisted clinical artifact, but its

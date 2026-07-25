@@ -1730,11 +1730,23 @@ async function sendChat(prefill, options) {
                             // tool in the chain: planning_pipeline done
                             // (which fires AFTER all sub-steps drain).
                             const FINAL_PLANNING_TOOLS = ['planning_pipeline', 'dose_evaluation'];
+                            // Sub-steps of planning_pipeline carry parent_tool
+                            // (e.g. dose_eval done carries tool:"dose_eval",
+                            // parent_tool:"planning_pipeline"). These are the
+                            // actual terminal events; matching on parent_tool
+                            // ensures refreshPlanningUI fires even when the
+                            // top-level planning_pipeline done event is missing.
+                            const LAST_PLANNING_SUBSTEPS = ['dose_eval', 'dose_calc'];
                             const SEG_TOOLS = ['ctv_segmentation', 'oar_segmentation'];
-                            uiDebugLog('[SSE-STEP]', 'type:', data.type, 'tool:', data.tool, 'status:', data.status, 'in FINAL:', FINAL_PLANNING_TOOLS.includes(data.tool));
-                            if (data.status === 'done' && data.tool && FINAL_PLANNING_TOOLS.includes(data.tool)) {
-                                uiDebugLog('[SSE-STEP] FINAL tool done:', data.tool, '- scheduling refreshPlanningUI');
-                                _scheduleCasePlanningRefresh(turnSessionId, 250);
+                            const isPlanDone = data.status === 'done' && (
+                                FINAL_PLANNING_TOOLS.includes(data.tool) ||
+                                FINAL_PLANNING_TOOLS.includes(data.parent_tool || '') ||
+                                LAST_PLANNING_SUBSTEPS.includes(data.tool || '')
+                            );
+                            uiDebugLog('[SSE-STEP]', 'type:', data.type, 'tool:', data.tool, 'parent_tool:', data.parent_tool, 'status:', data.status, 'planDone:', isPlanDone);
+                            if (isPlanDone) {
+                                uiDebugLog('[SSE-STEP] Planning tool/substep done:', data.tool, 'parent_tool:', data.parent_tool, '- scheduling refreshPlanningUI');
+                                _scheduleCasePlanningRefresh(turnSessionId, 300);
                             }
                             // SEGMENTATION TOOLS: after CTV/OAR seg completes,
                             // load label volumes so masks appear in viewer + data tree.
