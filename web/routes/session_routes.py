@@ -324,10 +324,12 @@ def register_session_routes(
                 snapshot = store.load_snapshot(user["id"], session_id)
             # UI persistence must never hydrate a cold BrachyAgent. The
             # snapshot is already durable; update memory only when the case
-            # is currently cached in this process.
-            agent = (get_cached_agent or get_agent)(session_id)
-            if agent is not None and isinstance(data.get("ui_state"), dict):
-                agent.memory.set_ui_state(data["ui_state"])
+            # is already cached in this process — never create a full GPU
+            # agent just to write a UI field.
+            if callable(get_cached_agent):
+                agent = get_cached_agent(session_id)
+                if agent is not None and isinstance(data.get("ui_state"), dict):
+                    agent.memory.set_ui_state(data["ui_state"])
         except WorkspaceLeaseConflict as exc:
             return jsonify({"error": str(exc), "code": "stale_workspace"}), 409
         except WorkspaceError as exc:
