@@ -478,63 +478,42 @@ async function loadLabelVolumes(options = {}) {
     }
 
     // --- post-processing (shared by cache and fetch paths) ---
-    // Override CTV label 1 (tumor) color
+    // Override CTV label 1 (tumor) color: bright pink
     if (labelColorLUT[1]) labelColorLUT[1] = [255, 105, 180];
-        // Override OAR labels whose golden-ratio HSV hue lands near red
-        // (labels 5, 8, 13, 21, 34, 55, 89 have h≈0 from _label_color).
-        // These large organs rendered in orange-red created the 'red mask' effect.
-        if (labelColorLUT[5])  labelColorLUT[5]  = [46, 180, 140];  // liver → teal
-        if (labelColorLUT[8])  labelColorLUT[8]  = [200, 130, 180];  // adrenal → mauve
-        if (labelColorLUT[13]) labelColorLUT[13] = [60, 160, 210];  // lung → sky blue
-        if (labelColorLUT[21]) labelColorLUT[21] = [140, 90, 200];  // bladder → purple
-        if (labelColorLUT[34]) labelColorLUT[34] = [100, 150, 200]; // vertebra → steel blue
-        if (labelColorLUT[55]) labelColorLUT[55] = [200, 120, 80];  // vessel → brown
-        if (labelColorLUT[89]) labelColorLUT[89] = [120, 180, 110]; // iliopsoas → sage
-        // Load CTV label names from backend (not hardcoded)
-        const ctvLabelMapRaw = res.headers.get('X-CTV-Label-Map');
-        if (ctvLabelMapRaw) {
-            try { window._ctvLabelMap = JSON.parse(ctvLabelMapRaw); } catch(e) { window._ctvLabelMap = {}; }
+    // Override OAR labels whose golden-ratio HSV hue lands near red
+    if (labelColorLUT[5])  labelColorLUT[5]  = [46, 180, 140];
+    if (labelColorLUT[8])  labelColorLUT[8]  = [200, 130, 180];
+    if (labelColorLUT[13]) labelColorLUT[13] = [60, 160, 210];
+    if (labelColorLUT[21]) labelColorLUT[21] = [140, 90, 200];
+    if (labelColorLUT[34]) labelColorLUT[34] = [100, 150, 200];
+    if (labelColorLUT[55]) labelColorLUT[55] = [200, 120, 80];
+    if (labelColorLUT[89]) labelColorLUT[89] = [120, 180, 110];
+
+    const sliceSize = shapeY * shapeX;
+    ctvLabelData = null;
+    oarLabelData = null;
+
+    if (hasCTV && ctvSize > 0) {
+        ctvLabelData = new Uint8Array(allBytes.buffer, 0, ctvSize / 1);
+        const expected = shapeZ * sliceSize;
+        if (ctvLabelData.length !== expected) {
+            console.warn(`CTV label size mismatch: ${ctvLabelData.length} vs expected ${expected}`);
         }
-        try {
-            organMetaFromServer = JSON.parse(res.headers.get('X-Organ-Meta') || '{}');
-        } catch (error) {
-            // Keep rendering the binary labels and fetch names through the
-            // metadata endpoint below. A malformed optional header must not
-            // discard an otherwise valid session restore.
-            console.warn('[viewer] Invalid OAR metadata header:', error);
-            organMetaFromServer = {};
+    }
+
+    if (hasOAR && oarSize > 0) {
+        const oarStart = ctvSize;
+        oarLabelData = new Uint8Array(allBytes.buffer, oarStart, oarSize / 1);
+        const expected = shapeZ * sliceSize;
+        if (oarLabelData.length !== expected) {
+            console.warn(`OAR label size mismatch: ${oarLabelData.length} vs expected ${expected}`);
         }
+    }
 
-        const buffer = await res.arrayBuffer();
-        if (!_viewerDataScopeIsCurrent(scope)) return false;
-        const allBytes = new Uint8Array(buffer);
-        const sliceSize = shapeY * shapeX;
+    uiDebugLog(`Label volumes loaded: CTV=${hasCTV}, OAR=${hasOAR}, ${Object.keys(labelColorLUT).length} labels`);
 
-        ctvLabelData = null;
-        oarLabelData = null;
-
-        if (hasCTV && ctvSize > 0) {
-            ctvLabelData = new Uint8Array(allBytes.buffer, 0, ctvSize / 1);
-            // Verify size matches expected
-            const expected = shapeZ * sliceSize;
-            if (ctvLabelData.length !== expected) {
-                console.warn(`CTV label size mismatch: ${ctvLabelData.length} vs expected ${expected}`);
-            }
-        }
-
-        if (hasOAR && oarSize > 0) {
-            const oarStart = ctvSize;
-            oarLabelData = new Uint8Array(allBytes.buffer, oarStart, oarSize / 1);
-            const expected = shapeZ * sliceSize;
-            if (oarLabelData.length !== expected) {
-                console.warn(`OAR label size mismatch: ${oarLabelData.length} vs expected ${expected}`);
-            }
-        }
-
-        uiDebugLog(`Label volumes loaded: CTV=${hasCTV}, OAR=${hasOAR}, ${Object.keys(labelColorLUT).length} labels`);
-
-        // Update data tree with organ metadata
-        if (Object.keys(organMetaFromServer).length > 0) {
+    // Update data tree with organ metadata
+    if (Object.keys(organMetaFromServer).length > 0) {
             // Convert to {label_id: {name, voxel_count, color}} format for updateOrganList
             const organData = {};
             for (const [id, meta] of Object.entries(organMetaFromServer)) {
