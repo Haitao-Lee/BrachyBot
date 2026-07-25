@@ -1135,6 +1135,15 @@
         }
         // Re-render BEFORE the server round-trip
         renderSessionList();
+        // Clean up browser-side durable caches for the deleted session so
+        // cross-session and cross-user data cannot bleed.  IndexedDB stores
+        // CT volumes, label volumes, 3D meshes, and report figures; the
+        // legacy localStorage path holds manual-state, report forms, and
+        // report snapshots scoped to this specific session.
+        if (window.SessionCache) {
+            window.SessionCache.invalidateSession(id).catch(function(){});
+        }
+        try { removeSessionScopedLocalState(id); } catch (_) {}
         try {
             const response = await workspaceFetch(`/api/sessions/${encodeURIComponent(id)}`, { method: 'DELETE' });
             const data = await response.json().catch(() => ({}));
