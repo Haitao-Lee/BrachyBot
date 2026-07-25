@@ -757,12 +757,16 @@ async function refreshPlanningUI(options = {}) {
             try {
                 const ctrl = new AbortController();
                 _refreshInflight = ctrl;
-                const res = await fetch(API + '/planning/results', {
-                    signal: ctrl.signal,
-                    headers: expectedSessionId
-                        ? { 'X-BrachyBot-Session': expectedSessionId }
-                        : {},
-                });
+                const timer = setTimeout(function(){ ctrl.abort(); }, 30000);
+                let res;
+                try {
+                    res = await fetch(API + '/planning/results', {
+                        signal: ctrl.signal,
+                        headers: expectedSessionId
+                            ? { 'X-BrachyBot-Session': expectedSessionId }
+                            : {},
+                    });
+                } finally { clearTimeout(timer); }
                 if (!res.ok) { console.warn('[refreshPlanningUI] /planning/results failed:', res.status); _refreshInflight = null; return resolve(); }
                 const data = await res.json();
                 _refreshInflight = null;
