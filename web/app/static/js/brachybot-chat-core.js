@@ -190,6 +190,8 @@ async function clearLocalChatData(options = {}) {
     } catch (e) {
         console.warn('clearLocalChatData: partial failure', e);
     }
+    // Also clear IndexedDB session cache (CT volumes, meshes, labels).
+    try { if (window.SessionCache) window.SessionCache.invalidateAll(); } catch (_) {}
     // Reload the page so the cleared state takes effect everywhere
     // (sidebar re-renders, report panel resets, etc).
     try { location.reload(); } catch (_) {}

@@ -265,34 +265,70 @@ function _volumeZToDisplayY(z, resampleRatio) {
 
 async function loadVolumeData(options = {}) {
     const scope = _captureViewerDataScope(options.sessionId);
-    // Threshold is an optional display filter, not a segmentation result.
-    // Reset it when a new volume is loaded so a stale session setting cannot
-    // create an unexplained red whole-body overlay.
+    const sid = scope.sessionId || (typeof activeSessionId !== 'undefined' ? String(activeSessionId) : '');
     if (_viewerDataScopeIsCurrent(scope)) {
         state.viewerSettings.threshold = null;
         const thresholdInput = document.getElementById('viewerThreshold');
         if (thresholdInput) thresholdInput.value = '';
     }
-    const res = await fetch(API + '/viewer/volume', {
-        headers: _viewerDataHeaders(scope.sessionId),
-    });
-    if (!res.ok) throw new Error('Failed to load volume');
-    if (!_viewerDataScopeIsCurrent(scope)) return false;
 
-    const shapeZ = parseInt(res.headers.get('X-Shape-Z'));
-    const shapeY = parseInt(res.headers.get('X-Shape-Y'));
-    const shapeX = parseInt(res.headers.get('X-Shape-X'));
+    let buffer = null, shapeZ, shapeY, shapeX, spacingX, spacingY, spacingZ, fromCache = false;
+
+    // --- browser cache: CT volume is immutable per session ---
+    if (sid && window.SessionCache) {
+        const cached = await window.SessionCache.get(sid, 'ct', 'volume');
+        if (cached && cached.byteLength > 16) {
+            try {
+                const view = new DataView(cached);
+                const hdrLen = view.getInt32(0, true);
+                if (hdrLen > 0 && hdrLen < 512 && cached.byteLength > hdrLen + 8) {
+                    const hdrBytes = new Uint8Array(cached, 4, hdrLen);
+                    const hdr = JSON.parse(new TextDecoder().decode(hdrBytes));
+                    shapeZ = hdr.z; shapeY = hdr.y; shapeX = hdr.x;
+                    spacingX = hdr.sx; spacingY = hdr.sy; spacingZ = hdr.sz;
+                    if (shapeZ > 0 && shapeY > 0 && shapeX > 0) {
+                        buffer = cached.slice(4 + hdrLen);
+                        fromCache = true;
+                    }
+                }
+            } catch (_) { /* corrupt cache, fall through */ }
+        }
+    }
+
+    if (!buffer) {
+        const res = await fetch(API + '/viewer/volume', {
+            headers: _viewerDataHeaders(scope.sessionId),
+        });
+        if (!res.ok) throw new Error('Failed to load volume');
+        if (!_viewerDataScopeIsCurrent(scope)) return false;
+
+        shapeZ = parseInt(res.headers.get('X-Shape-Z'));
+        shapeY = parseInt(res.headers.get('X-Shape-Y'));
+        shapeX = parseInt(res.headers.get('X-Shape-X'));
+        spacingX = parseFloat(res.headers.get('X-Spacing-X'));
+        spacingY = parseFloat(res.headers.get('X-Spacing-Y'));
+        spacingZ = parseFloat(res.headers.get('X-Spacing-Z'));
+        buffer = await res.arrayBuffer();
+        if (!_viewerDataScopeIsCurrent(scope)) return false;
+    }
+
     volumeShape = [shapeZ, shapeY, shapeX];
-    volumeSpacing = [
-        parseFloat(res.headers.get('X-Spacing-X')),
-        parseFloat(res.headers.get('X-Spacing-Y')),
-        parseFloat(res.headers.get('X-Spacing-Z'))
-    ];
-
-    const buffer = await res.arrayBuffer();
-    if (!_viewerDataScopeIsCurrent(scope)) return false;
+    volumeSpacing = [spacingX, spacingY, spacingZ];
     volumeData = new Int16Array(buffer);
-    uiDebugLog(`Volume loaded: ${shapeZ}x${shapeY}x${shapeX}, ${volumeData.length} voxels`);
+    uiDebugLog(`Volume loaded: ${shapeZ}x${shapeY}x${shapeX}, ${volumeData.length} voxels${fromCache ? ' (cache)' : ''}`);
+
+    // Async cache write — never block rendering.
+    if (!fromCache && sid && window.SessionCache && buffer.byteLength > 0) {
+        const hdr = JSON.stringify({ z: shapeZ, y: shapeY, x: shapeX, sx: spacingX, sy: spacingY, sz: spacingZ });
+        const hdrBytes = new TextEncoder().encode(hdr);
+        const hdrLenBuf = new ArrayBuffer(4);
+        new DataView(hdrLenBuf).setInt32(0, hdrBytes.length, true);
+        const cached = new Uint8Array(4 + hdrBytes.length + buffer.byteLength);
+        cached.set(new Uint8Array(hdrLenBuf), 0);
+        cached.set(hdrBytes, 4);
+        cached.set(new Uint8Array(buffer), 4 + hdrBytes.length);
+        window.SessionCache.put(sid, 'ct', 'volume', cached.buffer).catch(function() {});
+    }
 
     // Update Image Analysis now that volume data is available
     if (!imageAnalysisData.ct) {
