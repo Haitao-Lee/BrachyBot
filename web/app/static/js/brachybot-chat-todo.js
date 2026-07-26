@@ -1005,6 +1005,11 @@ function readChatChunk(reader, timeoutMs = CHAT_IDLE_TIMEOUT_MS, onTimeout = nul
     });
 }
 
+function _isCurrentTurnSession(turnSessionId) {
+    if (activeSessionId !== turnSessionId) return;
+    return true;
+}
+
 function _isMonitorStartRequest(text) {
     return /(?:monitor|training|coach|guide|supervise|watch|observe|培训|训练|监测|监督|指导|教我|带我)/i.test(text || '')
         && !/(?:stop|finish|end|停止|结束|关闭)/i.test(text || '');
@@ -1436,13 +1441,12 @@ async function sendChat(prefill, options) {
             const hasActiveWork = (todo && todo.items && todo.items.some(
                 i => i.status === 'active' || i.status === 'pending',
             )) || steps.some(s => s.status === 'active' || s.status === 'pending');
-            const timeoutMs = hasActiveWork
-                ? CHAT_PLANNING_IDLE_TIMEOUT_MS : CHAT_IDLE_TIMEOUT_MS;
-            const { done, value } = await readChatChunk(
-                reader, timeoutMs,
-                () => {
+            const onReadTimeout = () => {
                 try { turnAbortController.abort(); } catch (_) {}
-            });
+            };
+            const { done, value } = hasActiveWork
+                ? await readChatChunk(reader, CHAT_PLANNING_IDLE_TIMEOUT_MS, onReadTimeout)
+                : await readChatChunk(reader, CHAT_IDLE_TIMEOUT_MS, onReadTimeout);
             if (done) break;
             buffer += decoder.decode(value, { stream: true });
             const lines = buffer.split('\n');
@@ -1453,7 +1457,7 @@ async function sendChat(prefill, options) {
                 // old case immediately if an already-buffered SSE chunk races
                 // with the selection change; the worker/event journal remains
                 // alive and the selected case can replay it later.
-                if (activeSessionId !== turnSessionId) {
+                if (!_isCurrentTurnSession(turnSessionId)) {
                     try { reader.cancel(); } catch (_) {}
                     break readLoop;
                 }

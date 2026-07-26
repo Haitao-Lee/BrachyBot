@@ -195,12 +195,14 @@ class BrachyAgentMultiAgentWrapper:
         self.orchestrator.update_global_context(context)
 
     async def review_plan_append(self, dose_metrics: Dict, plan_info: Dict,
-                                  plan_config: Dict = None, lang: str = "en") -> str:
+                                  plan_config: Dict = None, lang: str = "en",
+                                  skip_distill: bool = False) -> str:
         """Run PlanReviewer, return appendix string. No retries."""
         if not self._enabled:
             return ""
         return await self.orchestrator.review_plan_append(
-            dose_metrics, plan_info, plan_config, lang
+            dose_metrics, plan_info, plan_config, lang,
+            skip_distill=skip_distill,
         )
 
     async def review_facts_append(self, claims: list, sources: list,
@@ -214,10 +216,12 @@ class BrachyAgentMultiAgentWrapper:
         )
 
     async def check_completeness_append(self, user_message: str, response: str,
-                                          steps: list = None, lang: str = "en") -> str:
+                                          steps: list = None, lang: str = "en",
+                                          skip_distill: bool = False) -> str:
         """Run CompletenessChecker, return appendix string. No retries."""
         if not self._enabled:
             return ""
         return await self.orchestrator.check_completeness_append(
-            user_message, response, steps, lang
+            user_message, response, steps, lang,
+            skip_distill=skip_distill,
         )

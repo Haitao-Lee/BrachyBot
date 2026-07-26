@@ -816,10 +816,24 @@ class WorkspaceStore:
             if not path.exists():
                 return
             import SimpleITK as sitk
-            image = sitk.ReadImage(str(path))
+            # Restore the same physical grid used by the viewer and all
+            # current segmentation outputs.  Keeping a raw-direction CT here
+            # beside LPI masks recreates the mirror/translation bug after a
+            # server restart.
+            raw_image = sitk.ReadImage(str(path))
+            image = sitk.DICOMOrient(raw_image, "LPI")
+            import numpy as np
+            array = sitk.GetArrayFromImage(image)
             memory.planning_results["ct_path"] = str(path)
             memory.planning_results["ct_image"] = image
             memory.planning_results["ct_sitk"] = image
+            memory.planning_results["ct_image_raw"] = raw_image
+            memory.planning_results["ct_data"] = array
+            memory.planning_results["ct_shape"] = list(array.shape)
+            memory.planning_results["ct_spacing"] = tuple(float(v) for v in image.GetSpacing())
+            memory.planning_results["ct_origin"] = tuple(float(v) for v in image.GetOrigin())
+            memory.planning_results["ct_direction"] = tuple(float(v) for v in image.GetDirection())
+            memory.planning_results["ct_axis_map"] = {"axial": 0, "sagittal": 2, "coronal": 1}
         except Exception:
             # A damaged CT must not prevent the rest of the session metadata
             # from being inspected or deleted.

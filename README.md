@@ -2078,6 +2078,19 @@ agentic planner and a standalone planning workstation:
   progress events reset the idle window.
 - Workspace recovery is generation-scoped, so a late response from a failed
   transition cannot repaint an older case over the currently selected case.
+- Cold-case hydration is single-flight per account/case and does not hold the
+  global agent-cache lock while reading CT or sidecar arrays. A per-case
+  generation fence also discards an Agent that finishes hydrating after a
+  reset or deletion, so it cannot reinstall stale needles, viewer state, or
+  persistence callbacks.
+- CT and uploaded CTV/OAR labels share an LPI physical-grid contract. Legacy
+  NumPy-only label snapshots use a nearest-neighbour fallback with a shape
+  guard, so old workspaces remain inspectable without an intermittent
+  `label_volume` 500.
+- The terminal execution event is emitted only after the durable workspace
+  checkpoint succeeds. During final persistence the UI keeps one explicit
+  pending commit step, so a long save cannot look like a completed task with
+  no active progress.
 - Segmentation image objects injected from the active workspace are declared
   explicitly as server-owned tool inputs. The runtime validates ordinary JSON
   objects strictly while accepting these canonical SimpleITK objects without

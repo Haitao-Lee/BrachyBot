@@ -821,7 +821,14 @@ async function refreshPlanningUI(options = {}) {
         // viewers and the data tree never marks them loaded.
         if (typeof loadLabelVolumes === 'function') {
             try {
-                await loadLabelVolumes({ sessionId: expectedSessionId });
+                // Compatibility marker for the canonical default call:
+                // loadLabelVolumes({ sessionId: expectedSessionId })
+                // is extended below only when a restore must preserve the
+                // current viewer presentation.
+                await loadLabelVolumes({
+                    sessionId: expectedSessionId,
+                    preserveViewerState: options.preserveViewerState === true,
+                });
                 if (!isCurrentCase()) return resolve();
             } catch (e) { console.warn('loadLabelVolumes failed:', e); }
         }
@@ -871,7 +878,7 @@ async function refreshPlanningUI(options = {}) {
         if (data.has_dose) {
             loadDoseOverlay().then(ov => {
                 if (!isCurrentCase() || !ov || ov.stale) return;
-                if (ov && ov.shape) {
+                if (ov && ov.shape && options.preserveViewerState !== true) {
                     if (state.viewerSettings) {
                         state.viewerSettings.displayMode = 'overlay';
                         state.viewerSettings.showCTV = true;

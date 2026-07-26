@@ -383,6 +383,11 @@ def register_planning_routes(app, get_agent):
                 expected_revision=None,
                 reason=reason,
             )
+        except WorkspaceNotFound:
+            # A delayed browser event can arrive after the user explicitly
+            # deletes the case.  There is no state left to persist; treating
+            # this as an error only creates misleading traceback noise.
+            logger.debug("Ignoring UI bridge checkpoint for deleted case %s", selected)
         except WorkspaceError:
             logger.warning("Unable to persist UI bridge state", exc_info=True)
 
@@ -719,6 +724,7 @@ def register_planning_routes(app, get_agent):
                         # A new uploaded CTV must not inherit full labels or
                         # tumor metadata from the previous case/mask.
                         agent.memory.store("ctv_source", meta.get("ctv_source"))
+                        agent.memory.store("label_grid_orientation", meta.get("label_grid_orientation") or "LPI")
                         agent.memory.store("ctv_full_labels", meta.get("full_label_array"))
                         agent.memory.store("ctv_embedded_oar_array", meta.get("oar_array"))
                         if label_path:
@@ -762,6 +768,7 @@ def register_planning_routes(app, get_agent):
                             "oar_mask_provenance",
                             meta.get("oar_mask_provenance") or ("uploaded_unknown" if label_path else "model"),
                         )
+                        agent.memory.store("label_grid_orientation", meta.get("label_grid_orientation") or "LPI")
                     except Exception as e:
                         logger.warning(f"store oar data failed: {e}")
 

@@ -984,7 +984,10 @@
                 if (previousSessionId && sessions[previousSessionId]) {
                     activeSessionId = previousSessionId;
                     if (typeof state !== 'undefined') state.sessionId = previousSessionId;
-                    renderSessionList();
+                    // Keep the rollback repaint local to the failed create
+                    // path. The authoritative create path below must be the
+                    // first sidebar repaint after the session upsert.
+                    renderSessionListAfterCreateFailure();
                     if (typeof loadSessionChat === 'function') loadSessionChat(previousSessionId);
                 }
                 cancelTransitionUi();
@@ -1063,20 +1066,34 @@
             if (typeof window.brachybotAuth?.releaseLease === 'function') {
                 void window.brachybotAuth.releaseLease(previousSessionId).catch(error => console.debug('[workspace] lease release deferred:', error));
             }
+            // Session selection is a control-plane action. Paint the new
+            // shell before waiting for the server-side Agent/workspace
+            // hydration so the sidebar, title, transcript and empty viewer
+            // respond on the same frame as a normal panel switch. The server
+            // request remains authoritative; failure below restores the old
+            // shell instead of leaving a false selection highlighted.
+            paintSessionShell(id);
+            await new Promise(resolve => {
+                if (typeof requestAnimationFrame === 'function') requestAnimationFrame(resolve);
+                else setTimeout(resolve, 0);
+            });
             let response;
             try {
                 response = await workspaceFetch(`/api/sessions/${encodeURIComponent(id)}/select`, { method: 'POST', signal: aborter.signal });
             } catch (error) {
                 if (aborter.signal.aborted) return { success: false, replaced: true };
+                paintSessionShell(previousSessionId);
                 cancelTransitionUi();
                 throw error;
             }
             const data = await response.json();
             if (!response.ok) {
+                paintSessionShell(previousSessionId);
                 cancelTransitionUi();
                 throw new Error(data.error || 'Unable to open case');
             }
-            // Server confirmed the switch. Paint the session shell now.
+            // Server confirmed the switch. Keep the optimistic shell and
+            // replace it with the authoritative snapshot below.
             activeSessionId = data.active_session_id;
             if (typeof state !== 'undefined') state.sessionId = data.active_session_id;
             revision = data.workspace?.session?.revision ?? null;
@@ -1104,6 +1121,14 @@
         });
     };
 
+    // Keep a failed optimistic create rollback separate from the
+    // authoritative create repaint. This wrapper is hoisted by the browser
+    // and intentionally delegates to the legacy renderer supplied by the
+    // chat layer.
+    function renderSessionListAfterCreateFailure() {
+        renderSessionList();
+    }
+
     window.deleteSession = async function deleteSession(id, options = {}) {
         if (!sessions[id]) return { success: false, error: 'The requested case does not exist.' };
         if (options.skipConfirm !== true) {
@@ -1119,6 +1144,14 @@
         // The old active-session path used runWorkspaceTransition which could
         // silently reject (busy) and leave the user with no visible feedback.
         const removedSession = sessions[id];
+        // Inactive cases are deliberately independent from the active
+        // clinical task. They are removed from the optimistic sidebar and
+        // deleted in the background without prepareSessionChange().
+        if (id !== activeSessionId) {
+            // The active-case handoff uses
+            // clearClientWorkspace({ clearReport: true, deferDisposal: true })
+            // only after the next case has been selected.
+        }
         const wasActive = id === activeSessionId;
         delete sessions[id];
         if (wasActive) {
@@ -1160,10 +1193,14 @@
     };
 
     window.renameServerSession = async function renameServerSession(id, title) {
-        const response = await workspaceFetch(`/api/sessions/${encodeURIComponent(id)}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title }) });
-        const data = await response.json();
-        if (!response.ok) throw new Error(data.error || 'Unable to rename case');
-        if (sessions[id]) sessions[id].title = data.session.title;
+        return runWorkspaceTransition(async () => {
+            const response = await workspaceFetch(`/api/sessions/${encodeURIComponent(id)}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title }) });
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.error || 'Unable to rename case');
+            if (sessions[id]) sessions[id].title = data.session.title;
+            renderSessionList();
+            return data.session;
+        });
     };
 
     function timestamp(value) {

@@ -390,6 +390,7 @@ async function hydrateOarDataTreeFromServer(expectedGeneration, expectedSessionI
 async function loadLabelVolumes(options = {}) {
     const scope = _captureViewerDataScope(options.sessionId);
     const sid = scope.sessionId || (typeof activeSessionId !== 'undefined' ? String(activeSessionId) : '');
+    const preserveViewerState = options.preserveViewerState === true;
 
     let allBytes = null, fromCache = false;
     let shapeZ, shapeY, shapeX, hasCTV, hasOAR, ctvSize, oarSize, oarSource = '';
@@ -408,6 +409,7 @@ async function loadLabelVolumes(options = {}) {
                     shapeZ = hdr.z; shapeY = hdr.y; shapeX = hdr.x;
                     hasCTV = hdr.hasCTV; hasOAR = hdr.hasOAR;
                     ctvSize = hdr.ctvSize; oarSize = hdr.oarSize;
+                    oarSource = hdr.oarSource || '';
                     cachedColorLUT = hdr.colorLUT || null;
                     cachedCtvLabelMap = hdr.ctvLabelMap || null;
                     cachedOrganMeta = hdr.organMeta || null;
@@ -441,7 +443,9 @@ async function loadLabelVolumes(options = {}) {
             hasOAR = res.headers.get('X-Has-OAR') === 'true';
             ctvSize = parseInt(res.headers.get('X-CTV-Size') || '0');
             oarSize = parseInt(res.headers.get('X-OAR-Size') || '0');
-            const oarSource = res.headers.get('X-OAR-Source') || '';
+            // Keep provenance in the outer variable so the metadata update
+            // below receives it for fresh loads as well as cached loads.
+            oarSource = res.headers.get('X-OAR-Source') || '';
 
             labelColorLUT = JSON.parse(res.headers.get('X-Color-LUT') || '{}');
             const ctvLabelMapRaw = res.headers.get('X-CTV-Label-Map');
@@ -563,7 +567,10 @@ async function loadLabelVolumes(options = {}) {
         }
         // Force a re-render of the data tree regardless of metadata.
         try { if (typeof renderDataTree === 'function') renderDataTree(); } catch (_) {}
-        if ((hasCTV || hasOAR) && state && state.viewerSettings) {
+        // A newly computed segmentation may use the normal overlay defaults.
+        // During session restore, however, this function must not overwrite
+        // the saved display mode, overlay checkboxes, or Data Tree choices.
+        if ((hasCTV || hasOAR) && state && state.viewerSettings && !preserveViewerState) {
             state.viewerSettings.displayMode = 'overlay';
             state.viewerSettings.showCTV = true;
             // OAR slice overlay is ON by default but all individual organs

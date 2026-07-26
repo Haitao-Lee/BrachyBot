@@ -24,7 +24,9 @@
 
     var _db = null;
     var _opening = null;
-    var _runningSize = 0;   // best-effort aggregate, corrected on eviction scan
+    var _runningSize = 0;
+    var _sizeInitialized = false;
+    var _sizeInitialization = null;
 
     function openDB() {
         if (_db) return Promise.resolve(_db);
@@ -49,7 +51,17 @@
             var tx = db.transaction(STORE, 'readwrite');
             tx.onerror = function () { reject(tx.error); };
             var store = tx.objectStore(STORE);
-            store.put({ sessionId: key[0], ns: key[1], key: key[2], data: data, size: data.byteLength, timestamp: Date.now() }).onsuccess = function () { resolve(true); };
+            var oldSize = 0;
+            var getReq = store.get(key);
+            getReq.onerror = function () { reject(getReq.error); };
+            getReq.onsuccess = function () {
+                oldSize = Number(getReq.result && getReq.result.size) || 0;
+                store.put({
+                    sessionId: key[0], ns: key[1], key: key[2],
+                    data: data, size: data.byteLength, timestamp: Date.now(),
+                });
+            };
+            tx.oncomplete = function () { resolve(data.byteLength - oldSize); };
         });
     }
 
@@ -67,11 +79,16 @@
         return new Promise(function (resolve) {
             var tx = db.transaction(STORE, 'readwrite');
             var store = tx.objectStore(STORE);
+            var deletedBytes = 0;
             store.openCursor(keyRange).onsuccess = function (e) {
                 var cursor = e.target.result;
-                if (cursor) { cursor.delete(); cursor.continue(); }
-                else { resolve(); }
+                if (cursor) {
+                    deletedBytes += Number(cursor.value && cursor.value.size) || 0;
+                    cursor.delete();
+                    cursor.continue();
+                } else { resolve(deletedBytes); }
             };
+            tx.onerror = function () { resolve(0); };
         });
     }
 
@@ -88,6 +105,21 @@
         });
     }
 
+    async function ensureRunningSize(db) {
+        if (_sizeInitialized) return;
+        if (_sizeInitialization) return _sizeInitialization;
+        _sizeInitialization = dbGetAll(db).then(function (entries) {
+            _runningSize = entries.reduce(function (total, entry) {
+                return total + (Number(entry.size) || 0);
+            }, 0);
+            _sizeInitialized = true;
+        }).catch(function () {
+            // Cache accounting must never block a clinical restore.
+            _sizeInitialized = true;
+        }).finally(function () { _sizeInitialization = null; });
+        return _sizeInitialization;
+    }
+
     function scheduleEviction() {
         if (_evictionScheduled) return;
         _evictionScheduled = true;
@@ -99,18 +131,19 @@
     var _evictionScheduled = false;
 
     async function sessionCacheEvict() {
-        if (_runningSize <= MAX_BYTES) return;
         var db = await openDB();
         if (!db) return;
+        await ensureRunningSize(db);
+        if (_runningSize <= MAX_BYTES) return;
         try {
             var entries = await dbGetAll(db);
             entries.sort(function (a, b) { return a.timestamp - b.timestamp; });
             var toFree = _runningSize - MAX_BYTES;
             var evicted = 0;
             for (var i = 0; i < entries.length - 4 && toFree > 0; i++) {
-                await dbDeleteAll(db, entries[i].key);
-                toFree -= entries[i].size;
-                evicted += entries[i].size;
+                var deleted = await dbDeleteAll(db, entries[i].key);
+                toFree -= deleted;
+                evicted += deleted;
             }
             _runningSize = Math.max(0, _runningSize - evicted);
         } catch (_) {}
@@ -120,34 +153,37 @@
         get: async function (sessionId, ns, key) {
             var db = await openDB();
             if (!db) return null;
-            // Race against a timeout so a hung IndexedDB never blocks restore.
-            var result = null;
-            var done = false;
-            dbGet(db, [sessionId, ns, key]).then(function (r) { if (!done) result = r; });
-            await new Promise(function (r) { setTimeout(r, CACHE_GET_TIMEOUT_MS); });
-            done = true;
-            return result;
+            await ensureRunningSize(db);
+            // Return as soon as IndexedDB responds. The previous code started
+            // dbGet() but always slept for the full timeout on every cache hit.
+            return Promise.race([
+                dbGet(db, [sessionId, ns, key]),
+                new Promise(function (resolve) {
+                    setTimeout(function () { resolve(null); }, CACHE_GET_TIMEOUT_MS);
+                }),
+            ]);
         },
         put: async function (sessionId, ns, key, data) {
             var db = await openDB();
             if (!db) return;
-            await dbPut(db, [sessionId, ns, key], data);
-            _runningSize += data.byteLength;
+            await ensureRunningSize(db);
+            var delta = await dbPut(db, [sessionId, ns, key], data);
+            _runningSize = Math.max(0, _runningSize + delta);
             scheduleEviction();
         },
         invalidateSession: async function (sessionId) {
             var db = await openDB();
             if (!db) return;
-            // We don't know exactly how many bytes this session occupies.
-            // Eviction will correct _runningSize on its next scan.
-            _runningSize = Math.max(0, _runningSize / 2);
-            await dbDeleteAll(db, IDBKeyRange.bound([sessionId, '', ''], [sessionId, '\uffff', '\uffff']));
+            await ensureRunningSize(db);
+            var deleted = await dbDeleteAll(db, IDBKeyRange.bound([sessionId, '', ''], [sessionId, '\uffff', '\uffff']));
+            _runningSize = Math.max(0, _runningSize - deleted);
         },
         invalidateAll: async function () {
             var db = await openDB();
             if (!db) return;
             await dbDeleteAll(db, null);
             _runningSize = 0;
+            _sizeInitialized = true;
         },
         estimatedSize: function () { return _runningSize; },
     };
