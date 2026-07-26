@@ -33,6 +33,53 @@ _label_color = _server_support._label_color
 _validate_path = _server_support._validate_path
 
 
+def _resample_legacy_label_array(array, reference, target_shape):
+    """Fit a legacy array onto the CT grid without ``CopyInformation``.
+
+    Older snapshots stored only a NumPy label array, not its physical image
+    metadata.  SimpleITK raises when ``CopyInformation`` is applied to
+    different-sized images; that was the source of the intermittent
+    ``label_volume`` 500.  The fallback preserves the CT orientation and
+    physical extent as far as the legacy metadata permits, then uses nearest
+    neighbour interpolation and a final shape guard.
+    """
+    source = sitk.GetImageFromArray(np.asarray(array, dtype=np.uint8))
+    if reference is not None:
+        source_size = source.GetSize()
+        reference_size = reference.GetSize()
+        reference_spacing = reference.GetSpacing()
+        source_spacing = tuple(
+            float(reference_spacing[index])
+            * max(int(reference_size[index]) - 1, 1)
+            / max(int(source_size[index]) - 1, 1)
+            for index in range(3)
+        )
+        source.SetSpacing(source_spacing)
+        source.SetOrigin(reference.GetOrigin())
+        source.SetDirection(reference.GetDirection())
+        resampled = sitk.Resample(
+            source,
+            reference,
+            sitk.Transform(),
+            sitk.sitkNearestNeighbor,
+            0,
+            sitk.sitkUInt8,
+        )
+        result = sitk.GetArrayFromImage(resampled).astype(np.uint8, copy=False)
+    else:
+        result = np.zeros(target_shape, dtype=np.uint8)
+        common = tuple(min(int(result.shape[index]), int(array.shape[index])) for index in range(3))
+        source_slices = tuple(slice(0, length) for length in common)
+        result[source_slices] = np.asarray(array, dtype=np.uint8)[source_slices]
+    if tuple(result.shape) == tuple(target_shape):
+        return result
+    guarded = np.zeros(target_shape, dtype=np.uint8)
+    common = tuple(min(int(guarded.shape[index]), int(result.shape[index])) for index in range(3))
+    slices = tuple(slice(0, length) for length in common)
+    guarded[slices] = result[slices]
+    return guarded
+
+
 def _requires_label_faithful_mesh(agent, source: str, label_id: int) -> bool:
     """Return whether a mesh must preserve the exact planning-mask boundary.
 
@@ -164,6 +211,7 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
                 "ctv_array", "ctv_mask", "ctv_full_labels", "ctv_label_map",
                 "ctv_path", "ctv_source", "ctv_volume_mm3", "ctv_voxel_count",
                 "oar_array", "oar_mask", "oar_is_full", "oar_source",
+                "label_grid_orientation",
                 "organ_names", "organ_counts", "dose_metrics", "dose_distribution",
                 "dose_distribution_gy", "seed_plan", "seed_plan_serialized",
                 "seed_positions", "trajectories", "refined_trajectories",
@@ -175,6 +223,9 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
             agent.memory.conversation_state["oar_segmentation_done"] = False
             agent.memory.current_phase = PlanningPhase.IDLE
             agent.memory.store("ct_source_kind", kind)
+            # Label arrays produced after this load are normalized to the
+            # viewer's LPI CT grid. Persist this invariant with the case.
+            agent.memory.store("label_grid_orientation", "LPI")
 
             # Update UI state so LLM knows CT is loaded
             agent.memory.set_ui_state({"ct_path": ct_path})
@@ -399,18 +450,39 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
         try:
             import numpy as np
             import json as _json
+            from tool_factory.segmentation_alignment import align_label_to_reference
 
             # Use full multi-label array for CTV (includes tumor, artery, vein, pancreas, etc.)
             # Falls back to binary ctv_array if full labels not available
             ctv_source = str(agent.memory.retrieve("ctv_source", "") or "").strip().lower()
+            oar_source = str(agent.memory.retrieve("oar_source", "") or "").strip().lower()
+            ct_ref = agent.memory.retrieve("ct_image")
+
+            def _uploaded_label_array(source, array_key, path_key):
+                """Reload uploaded labels on the current LPI CT grid.
+
+                Older snapshots may contain a same-shaped raw-grid array. If
+                the case still has the original uploaded path, use its physical
+                metadata instead of trusting the legacy array orientation.
+                """
+                path = agent.memory.retrieve(path_key)
+                if source in {"manual_label", "uploaded_unknown"} and path and ct_ref is not None:
+                    try:
+                        return sitk.GetArrayFromImage(
+                            align_label_to_reference(str(path), ct_ref, "LPI")
+                        )
+                    except Exception as exc:
+                        logger.warning("[label_volume] uploaded %s alignment failed: %s", array_key, exc)
+                return agent._get_label_array(array_key)
+
             ctv_full_memory = agent._get_label_array("ctv_full_labels")
             # Only model-produced multi-label CTV output may be split into
             # embedded artery/vein/pancreas OAR labels. Uploaded CTV data is
             # opaque user data and remains a foreground CTV mask.
             ctv_full = ctv_full_memory if ctv_source == "model" else None
             if ctv_full is None:
-                ctv_full = agent._get_label_array("ctv_array")
-            oar_array = agent._get_label_array("oar_array")
+                ctv_full = _uploaded_label_array(ctv_source, "ctv_array", "ctv_path")
+            oar_array = _uploaded_label_array(oar_source, "oar_array", "oar_path")
 
             # Reorganize labels for data tree:
             # - CTV node: only tumor (label 1)
@@ -453,27 +525,11 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
             # Ensure label arrays have same shape as CT
             if ctv_array is not None and ctv_array.shape != shape:
                 logger.warning(f"CTV shape mismatch: {ctv_array.shape} vs CT {shape}, resampling...")
-                import SimpleITK as sitk
-                ctv_sitk = sitk.GetImageFromArray(ctv_array.astype(np.uint8))
-                ct_ref = agent.memory.retrieve("ct_image")
-                if ct_ref is not None:
-                    resampler = sitk.ResampleImageFilter()
-                    resampler.SetReferenceImage(ct_ref)
-                    resampler.SetInterpolator(sitk.sitkNearestNeighbor)
-                    resampler.SetDefaultPixelValue(0)
-                    ctv_array = sitk.GetArrayFromImage(resampler.Execute(ctv_sitk))
+                ctv_array = _resample_legacy_label_array(ctv_array, ct_ref, shape)
 
             if oar_array is not None and oar_array.shape != shape:
                 logger.warning(f"OAR shape mismatch: {oar_array.shape} vs CT {shape}, resampling...")
-                import SimpleITK as sitk
-                oar_sitk = sitk.GetImageFromArray(oar_array.astype(np.uint8))
-                ct_ref = agent.memory.retrieve("ct_image")
-                if ct_ref is not None:
-                    resampler = sitk.ResampleImageFilter()
-                    resampler.SetReferenceImage(ct_ref)
-                    resampler.SetInterpolator(sitk.sitkNearestNeighbor)
-                    resampler.SetDefaultPixelValue(0)
-                    oar_array = sitk.GetArrayFromImage(resampler.Execute(oar_sitk))
+                oar_array = _resample_legacy_label_array(oar_array, ct_ref, shape)
 
             # Build color LUT for all labels
             color_lut = {}

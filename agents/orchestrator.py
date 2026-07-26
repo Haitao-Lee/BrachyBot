@@ -381,8 +381,15 @@ Bullet-point summary of requirements and what was addressed:""",
         return "\n".join(lines)
 
     async def review_plan_append(self, dose_metrics: Dict, plan_info: Dict,
-                                  plan_config: Dict = None, lang: str = "en") -> str:
-        """Run PlanReviewer with distilled context. No retries."""
+                                  plan_config: Dict = None, lang: str = "en",
+                                  skip_distill: bool = False) -> str:
+        """Run PlanReviewer with structured context. No retries.
+
+        The normal chat workflow already supplies a bounded, role-specific
+        context snapshot. It skips the optional LLM distillation pass there so
+        one review costs one reviewer call instead of a serial distiller plus
+        reviewer call. Other callers can retain distillation explicitly.
+        """
         try:
             context_snapshot = self._context_snapshot()
             role_data = {
@@ -391,9 +398,12 @@ Bullet-point summary of requirements and what was addressed:""",
                 "plan_config": plan_config or {},
                 "lang": lang,
             }
-            content = await self._distill_context(
-                "plan_reviewer", role_data, context_snapshot
-            )
+            if skip_distill:
+                content = self._build_agent_context(role_data, context_snapshot)
+            else:
+                content = await self._distill_context(
+                    "plan_reviewer", role_data, context_snapshot
+                )
             message = AgentMessage(
                 sender=AgentRole.ROUTER,
                 receiver=AgentRole.PLAN_REVIEWER,
@@ -444,8 +454,9 @@ Bullet-point summary of requirements and what was addressed:""",
         return ""
 
     async def check_completeness_append(self, user_message: str, response: str,
-                                          steps: list = None, lang: str = "en") -> str:
-        """Run CompletenessChecker with distilled context. No retries."""
+                                          steps: list = None, lang: str = "en",
+                                          skip_distill: bool = False) -> str:
+        """Run CompletenessChecker with structured context. No retries."""
         try:
             context_snapshot = self._context_snapshot()
             role_data = {
@@ -454,9 +465,12 @@ Bullet-point summary of requirements and what was addressed:""",
                 "steps": steps or [],
                 "lang": lang,
             }
-            content = await self._distill_context(
-                "completeness_checker", role_data, context_snapshot
-            )
+            if skip_distill:
+                content = self._build_agent_context(role_data, context_snapshot)
+            else:
+                content = await self._distill_context(
+                    "completeness_checker", role_data, context_snapshot
+                )
             message = AgentMessage(
                 sender=AgentRole.ROUTER,
                 receiver=AgentRole.COMPLETENESS_CHECKER,

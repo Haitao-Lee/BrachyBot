@@ -1271,12 +1271,14 @@ class ChatWorkflowMixin:
                     _config = self.memory.retrieve("plan_config", {}) or {}
                     _plan_info = {"total_seeds": self.memory.retrieve("total_seeds", 0)}
                     return await self.multi_agent_wrapper.review_plan_append(
-                        _metrics, _plan_info, _config, _lang
+                        _metrics, _plan_info, _config, _lang,
+                        skip_distill=True,
                     )
 
                 async def _run_completeness():
                     return await self.multi_agent_wrapper.check_completeness_append(
-                        message, response, steps, _lang
+                        message, response, steps, _lang,
+                        skip_distill=True,
                     )
 
                 try:
@@ -1624,12 +1626,14 @@ class ChatWorkflowMixin:
                     _config = self.memory.retrieve("plan_config", {}) or {}
                     _plan_info = {"total_seeds": self.memory.retrieve("total_seeds", 0)}
                     return await self.multi_agent_wrapper.review_plan_append(
-                        _metrics, _plan_info, _config, self.memory.user_lang
+                        _metrics, _plan_info, _config, self.memory.user_lang,
+                        skip_distill=True,
                     )
 
                 async def _run_post_completeness():
                     return await self.multi_agent_wrapper.check_completeness_append(
-                        message, response, steps, self.memory.user_lang
+                        message, response, steps, self.memory.user_lang,
+                        skip_distill=True,
                     )
 
                 _post_plan_result, _post_cc_result = _post_loop.run_until_complete(
@@ -2001,6 +2005,7 @@ class ChatWorkflowMixin:
                 self.memory.store("tumor_type_used", result.metadata["tumor_type_used"])
             if result.metadata.get("ctv_source"):
                 self.memory.store("ctv_source", result.metadata["ctv_source"])
+            self.memory.store("label_grid_orientation", result.metadata.get("label_grid_orientation") or "LPI")
             # Replace provenance-bearing sidecars atomically. A manual CTV
             # upload must clear any previous model multi-label/OAR payload.
             self.memory.store("ctv_full_labels", result.metadata.get("full_label_array"))
@@ -2039,6 +2044,7 @@ class ChatWorkflowMixin:
                     "uploaded_unknown" if oar_path else "model"
                 ),
             )
+            self.memory.store("label_grid_orientation", result.metadata.get("label_grid_orientation") or "LPI")
             return result.message
         self.memory.store("last_segmentation_success", False)
         return f"OAR segmentation failed: {result.error}"

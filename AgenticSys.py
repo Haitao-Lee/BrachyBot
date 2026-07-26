@@ -1931,6 +1931,7 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
                 self.memory.store("tumor_type_used", tumor_type_used)
             if meta.get("ctv_source"):
                 self.memory.store("ctv_source", meta["ctv_source"])
+            self.memory.store("label_grid_orientation", meta.get("label_grid_orientation") or "LPI")
             logger.info(f"[STORE] ctv_segmentation: ctv_voxels={_cv}, ctv_volume_mm3={_cvm3}, tumor_type={tumor_type_used}")
         elif tool_name == "oar_segmentation":
             if "oar_array" in meta:
@@ -1943,6 +1944,7 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
                 self.memory.store("organ_names", meta["organ_names"])
             if "organ_counts" in meta:
                 self.memory.store("organ_counts", meta["organ_counts"])
+            self.memory.store("label_grid_orientation", meta.get("label_grid_orientation") or "LPI")
         elif tool_name == "dose_engine" and result.data is not None:
             self.memory.store("dose_distribution", result.data)
         elif tool_name == "planning_pipeline":

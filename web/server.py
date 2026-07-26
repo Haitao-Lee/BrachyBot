@@ -217,6 +217,16 @@ def create_app(config: Optional[Dict] = None):
     # never cause two users to share an in-memory BrachyAgent.
     _sessions: Dict[tuple, Any] = {}
     _session_timestamps: Dict[tuple, float] = {}
+    # Cold-case hydration can read large NPY sidecars and rebuild CT metadata.
+    # Keep one initializer per account/case, but never hold _sessions_lock
+    # while doing that work.  This lets unrelated cases keep serving requests
+    # and prevents concurrent label/planning requests from serializing behind
+    # a global lock for minutes.
+    _session_initializers: Dict[tuple, threading.Event] = {}
+    # Incremented whenever an in-flight case hydration is invalidated.  A
+    # deleted/reset case must never be installed in the cache after its
+    # removal request has started, even if the disk read finishes later.
+    _session_generations: Dict[tuple, int] = {}
     _sessions_lock = threading.RLock()
     _max_sessions = 50  # Maximum number of concurrent sessions
     _session_timeout = 3600  # Session timeout in seconds (1 hour)
@@ -280,89 +290,130 @@ def create_app(config: Optional[Dict] = None):
         cache_key = (user["id"], resolved_session_id)
 
         with _sessions_lock:
-            # Clean up old sessions periodically
+            # Clean up old sessions periodically.
             _cleanup_old_sessions()
-
-            # Return existing agent if session exists
-            if cache_key in _sessions:
+            cached = _sessions.get(cache_key)
+            if cached is not None:
                 _session_timestamps[cache_key] = time.time()
                 if has_request_context():
-                    g.brachybot_agent = _sessions[cache_key]
+                    g.brachybot_agent = cached
                     g.brachybot_workspace = (user["id"], resolved_session_id)
-                return _sessions[cache_key]
+                return cached
+            initializer = _session_initializers.get(cache_key)
+            is_initializer = initializer is None
+            if is_initializer:
+                initializer = threading.Event()
+                _session_initializers[cache_key] = initializer
+                hydration_generation = _session_generations.get(cache_key, 0)
 
-            # Check if we've hit the max sessions limit
-            if len(_sessions) >= _max_sessions:
-                # Never evict the agent owned by a detached task. A browser
-                # may switch cases while planning continues; hydrating a new
-                # copy of that case before the task commits would split its
-                # clinical state. If all cached cases are active, temporarily
-                # exceed the soft LRU bound instead of sacrificing correctness.
-                evictable = [
-                    key for key in _session_timestamps
-                    if not _agent_has_running_task(key)
-                ]
-                if evictable:
-                    oldest_session = min(evictable, key=_session_timestamps.get)
-                    evicted = _sessions.pop(oldest_session, None)
-                    if evicted is not None:
-                        try:
-                            workspace_store.flush_agent_checkpoint(oldest_session[0], oldest_session[1], evicted, "agent.cache_evicted")
-                        except WorkspaceError:
-                            logger.warning("Failed to persist evicted case workspace", exc_info=True)
-                    _session_timestamps.pop(oldest_session, None)
-                    _server_support._drop_ui_bucket(oldest_session[1])
-                    logger.info("Removed oldest inactive session: %s", oldest_session)
-                else:
-                    logger.warning(
-                        "Agent cache soft limit reached with only active case tasks; retaining %d agents",
-                        len(_sessions),
-                    )
+        # A label and a planning request can arrive together after a case
+        # switch.  Wait for the single authoritative hydration rather than
+        # constructing a second Agent or taking the global cache lock.
+        if not is_initializer:
+            if not initializer.wait(timeout=300):
+                logger.error("Timed out hydrating case %s", resolved_session_id)
+                return None
+            with _sessions_lock:
+                cached = _sessions.get(cache_key)
+                if cached is not None:
+                    _session_timestamps[cache_key] = time.time()
+                    if has_request_context():
+                        g.brachybot_agent = cached
+                        g.brachybot_workspace = (user["id"], resolved_session_id)
+                return cached
 
-            # Create new agent for this session
+        try:
+            # Enforce the soft LRU limit while the lock is held, but keep all
+            # disk/GPU hydration below outside it.
+            with _sessions_lock:
+                if len(_sessions) >= _max_sessions:
+                    evictable = [
+                        key for key in _session_timestamps
+                        if not _agent_has_running_task(key)
+                    ]
+                    if evictable:
+                        oldest_session = min(evictable, key=_session_timestamps.get)
+                        evicted = _sessions.pop(oldest_session, None)
+                        if evicted is not None:
+                            try:
+                                workspace_store.flush_agent_checkpoint(
+                                    oldest_session[0], oldest_session[1], evicted,
+                                    "agent.cache_evicted",
+                                )
+                            except WorkspaceError:
+                                logger.warning("Failed to persist evicted case workspace", exc_info=True)
+                        _session_timestamps.pop(oldest_session, None)
+                        _server_support._drop_ui_bucket(oldest_session[1])
+                        logger.info("Removed oldest inactive session: %s", oldest_session)
+                    else:
+                        logger.warning(
+                            "Agent cache soft limit reached with only active case tasks; retaining %d agents",
+                            len(_sessions),
+                        )
+
+            from AgenticSys import BrachyAgent
+            agent_config = dict(config.get("agent_config", {}) or {})
+            workspace_root = workspace_store.workspace_root(user["id"], resolved_session_id, create=True)
+            agent_config["_workspace_state_dir"] = str(workspace_root / "agent_state")
+            # Multimodal follow-ups must read screenshots from this case,
+            # never from the legacy shared uploads directory or another case.
+            agent_config["_workspace_root"] = str(workspace_root)
+            agent_config["_workspace_session_id"] = resolved_session_id
+            agent = BrachyAgent(session_id=resolved_session_id, config=agent_config)
+            # This may read large sidecar arrays; it intentionally runs
+            # outside _sessions_lock so other cases remain responsive.
+            hydrated_snapshot = workspace_store.hydrate_agent(user["id"], resolved_session_id, agent)
+            # A delete/reset may have invalidated this initializer while the
+            # CT and NPY sidecars were being read.  Check both the generation
+            # and the authoritative active-session row before touching the UI
+            # bridge or installing the agent in the process cache.
+            with _sessions_lock:
+                generation_is_current = (
+                    _session_generations.get(cache_key, 0) == hydration_generation
+                )
+            if not generation_is_current:
+                logger.info("Discarded stale hydration for case %s", resolved_session_id)
+                return None
             try:
-                from AgenticSys import BrachyAgent
-                agent_config = dict(config.get("agent_config", {}) or {})
-                workspace_root = workspace_store.workspace_root(user["id"], resolved_session_id, create=True)
-                agent_config["_workspace_state_dir"] = str(
-                    workspace_root / "agent_state"
-                )
-                # Multimodal follow-ups must read screenshots from this case,
-                # never from the legacy shared uploads directory or another case.
-                agent_config["_workspace_root"] = str(workspace_root)
-                agent_config["_workspace_session_id"] = resolved_session_id
-                agent = BrachyAgent(
-                    session_id=resolved_session_id,
-                    config=agent_config,
-                )
-                hydrated_snapshot = workspace_store.hydrate_agent(user["id"], resolved_session_id, agent)
-                # UI-controller events and training feedback are not part of
-                # AgentMemory. Restore their per-case bridge before any tool
-                # reads UI state after a server restart or cache eviction.
-                bridge = ((hydrated_snapshot.get("ui") or {}).get("bridge") or {})
-                if isinstance(bridge, dict):
-                    bucket = _server_support._ui_bucket(resolved_session_id)
-                    with _server_support._UI_BRIDGE_LOCK:
-                        bucket["state"] = dict(bridge.get("state") or {})
-                        bucket["events"] = list(bridge.get("events") or [])
-                        bucket["training"] = dict(bridge.get("training") or {})
-                        bucket["updated_at"] = bridge.get("updated_at") or time.time()
-                agent.memory.set_persistence_callback(
-                    lambda reason, owner=user["id"], case_id=resolved_session_id, current=agent:
-                    workspace_store.schedule_agent_checkpoint(owner, case_id, current, reason)
-                )
+                workspace_store.get_session(user["id"], resolved_session_id)
+            except WorkspaceError:
+                logger.info("Discarded hydration for removed case %s", resolved_session_id)
+                return None
+            bridge = ((hydrated_snapshot.get("ui") or {}).get("bridge") or {})
+            if isinstance(bridge, dict):
+                bucket = _server_support._ui_bucket(resolved_session_id)
+                with _server_support._UI_BRIDGE_LOCK:
+                    bucket["state"] = dict(bridge.get("state") or {})
+                    bucket["events"] = list(bridge.get("events") or [])
+                    bucket["training"] = dict(bridge.get("training") or {})
+                    bucket["updated_at"] = bridge.get("updated_at") or time.time()
+            agent.memory.set_persistence_callback(
+                lambda reason, owner=user["id"], case_id=resolved_session_id, current=agent:
+                workspace_store.schedule_agent_checkpoint(owner, case_id, current, reason)
+            )
+            with _sessions_lock:
+                # The removal can race the active-row check above.  Recheck
+                # the generation while holding the same lock used by delete.
+                if _session_generations.get(cache_key, 0) != hydration_generation:
+                    logger.info("Discarded hydration invalidated during install for case %s", resolved_session_id)
+                    return None
                 _sessions[cache_key] = agent
                 _session_timestamps[cache_key] = time.time()
-                if has_request_context():
-                    g.brachybot_agent = agent
-                    g.brachybot_workspace = (user["id"], resolved_session_id)
-                logger.info("Created hydrated agent for account case session %s", resolved_session_id)
-                return agent
-            except Exception as e:
-                import traceback
-                logger.error(f"Failed to initialize BrachyAgent for session {resolved_session_id}: {e}")
-                logger.error(traceback.format_exc())
-                return None
+            if has_request_context():
+                g.brachybot_agent = agent
+                g.brachybot_workspace = (user["id"], resolved_session_id)
+            logger.info("Created hydrated agent for account case session %s", resolved_session_id)
+            return agent
+        except Exception as e:
+            import traceback
+            logger.error(f"Failed to initialize BrachyAgent for session {resolved_session_id}: {e}")
+            logger.error(traceback.format_exc())
+            return None
+        finally:
+            with _sessions_lock:
+                event = _session_initializers.pop(cache_key, None)
+                if event is not None:
+                    event.set()
 
     def _cleanup_old_sessions():
         """Remove sessions that have exceeded the timeout."""
@@ -419,6 +470,7 @@ def create_app(config: Optional[Dict] = None):
             return
         key = (user["id"], resolved_session_id)
         with _sessions_lock:
+            _session_generations[key] = _session_generations.get(key, 0) + 1
             agent = _sessions.pop(key, None)
             _session_timestamps.pop(key, None)
             if agent is not None and not flush:

@@ -178,12 +178,19 @@ class CTVSegmentationTool(BaseTool):
         result = None
         from_label_path = False
         if label_path and os.path.exists(label_path):
-            # The viewer normalizes every CT to LPI before extracting slices.
-            # Preserve physical alignment for manually supplied labels by
-            # applying the identical orientation transform here.  The route
-            # layer has already checked the original CT/mask geometry, so this
-            # is a reindexing operation, not an implicit resample.
-            label_img = sitk.DICOMOrient(sitk.ReadImage(label_path), "LPI")
+            # Match both orientation and physical grid. Same-shaped NIfTI
+            # arrays are not sufficient: origin/spacing/direction differences
+            # can still mirror or translate a mask in the 2D viewer.
+            if image is None and image_path is not None:
+                image = sitk.ReadImage(image_path)
+            from tool_factory.segmentation_alignment import align_label_to_reference
+            if image is None:
+                # Direct mask-only callers have no physical reference.  The
+                # production route supplies the CT and uses physical-grid
+                # resampling, while this fallback preserves tool compatibility.
+                label_img = sitk.DICOMOrient(sitk.ReadImage(str(label_path)), "LPI")
+            else:
+                label_img = align_label_to_reference(label_path, image, "LPI")
             ctv_array = sitk.GetArrayFromImage(label_img)
             ctv_mask = label_img
             from_label_path = True
@@ -232,8 +239,49 @@ class CTVSegmentationTool(BaseTool):
             result = tool._execute(**tool_kwargs)
             if result.success:
                 result_meta = result.metadata or {}
-                ctv_array = result_meta.get("mask_array", result.data)
-                ctv_mask = result_meta.get("mask", image)
+                from tool_factory.segmentation_alignment import (
+                    align_label_array_to_reference,
+                    align_label_image_to_reference,
+                )
+
+                # Normalize model output on the same LPI physical grid used by
+                # the viewer.  The predictor may have run on the raw image
+                # orientation, even when the returned array has the same shape.
+                reference_lpi = sitk.DICOMOrient(image, "LPI")
+
+                def _align_output(value, fallback_dtype=np.uint8):
+                    if value is None:
+                        return None
+                    if isinstance(value, sitk.Image):
+                        aligned = align_label_image_to_reference(value, image, "LPI")
+                        return sitk.GetArrayFromImage(aligned)
+                    aligned = align_label_array_to_reference(
+                        value, image, "LPI", dtype=fallback_dtype,
+                    )
+                    return sitk.GetArrayFromImage(aligned)
+
+                ctv_mask_value = result_meta.get("ctv_mask")
+                if ctv_mask_value is None:
+                    ctv_mask_value = result_meta.get("mask")
+                if isinstance(ctv_mask_value, sitk.Image):
+                    ctv_mask = align_label_image_to_reference(ctv_mask_value, image, "LPI")
+                    ctv_array = sitk.GetArrayFromImage(ctv_mask)
+                else:
+                    ctv_array = _align_output(
+                        result_meta.get("ctv_array", result_meta.get("mask_array", result.data))
+                    )
+                    ctv_mask = sitk.GetImageFromArray(ctv_array.astype(np.uint8))
+                    ctv_mask.CopyInformation(reference_lpi)
+                if result_meta.get("full_label_array") is not None:
+                    result_meta["full_label_array"] = _align_output(
+                        result_meta["full_label_array"], fallback_dtype=np.uint16
+                    )
+                if result_meta.get("oar_array") is not None:
+                    result_meta["oar_array"] = _align_output(
+                        result_meta["oar_array"], fallback_dtype=np.uint16
+                    )
+                result_meta["ctv_array"] = ctv_array
+                result_meta["ctv_mask"] = ctv_mask
             else:
                 return result
 
@@ -287,6 +335,7 @@ class CTVSegmentationTool(BaseTool):
             "ctv_voxel_count": voxel_count,
             "tumor_type_used": tumor_type or ("manual_label" if from_label_path else "auto"),
             "ctv_source": "manual_label" if from_label_path else "model",
+            "label_grid_orientation": "LPI",
             "manual_label_orientation": "LPI" if from_label_path else None,
             "label_counts": res_meta.get("label_counts", {}),
             "label_map": label_map,

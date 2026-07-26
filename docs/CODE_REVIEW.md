@@ -8766,3 +8766,96 @@ Two bugs in `web/routes/planning_routes.py`:
 ### Verification
 
 - `py_compile` passed for `planning_routes.py`.
+
+---
+
+## 2026-07-26 - Durable workspace performance and cross-session isolation audit
+
+### Scope
+
+This review rechecked the eight symptoms reported for the account-owned
+workspace implementation, including session transition latency, reviewer
+latency, viewer leakage, CT/label geometry, missing Data Tree children,
+viewer-state persistence, browser cache cleanup, and server-side delete races.
+The checks were performed against the current code rather than accepting the
+original diagnosis without verification.
+
+### Confirmed findings and resolutions
+
+1. **Cold session hydration held a process-wide lock.**
+   The original path could keep the sessions lock while reconstructing an
+   Agent and reading large CT/NPY sidecars. Hydration is now single-flight per
+   `(user_id, session_id)` and runs outside the global cache lock. Unrelated
+   cases can continue serving requests while the selected case loads.
+
+2. **IndexedDB writes repeatedly scanned the entire cache.**
+   `brachybot-session-cache.js` now stores a running byte total, computes the
+   replaced record's old size in the same transaction, and performs at most
+   one initialization scan per database lifetime. Put/delete/invalidate paths
+   update the total by delta instead of rescanning all records.
+
+3. **Quality and completeness checks performed unnecessary context distillation.**
+   Planning review and completeness review now use the already-built agent
+   context in the synchronous post-workflow path (`skip_distill=True`). This
+   preserves mandatory review while removing the extra reviewer-specific LLM
+   context call. The general distillation path remains available for callers
+   that do not already have a complete context.
+
+4. **Planning and needle state could cross a case boundary.**
+   Client refreshes now carry the expected case ID, clear old seeds/needles
+   before installing a new case, and never apply a delayed response to a
+   different active case. The server cache is keyed by account and case, and
+   the UI bridge is restored per case. Deleted-case client caches and
+   session-scoped localStorage are invalidated on deletion.
+
+5. **Mask/CT geometry was not consistently physical-grid based.**
+   CT and labels are normalized to LPI using SimpleITK physical metadata and
+   nearest-neighbour resampling. Uploaded CTV/OAR paths are reloaded and
+   aligned to the current CT grid instead of trusting an old NumPy axis order.
+   The label-volume route also has a legacy-array fallback that does not call
+   `CopyInformation` on different-sized images. It infers the source extent,
+   resamples safely, and applies a final shape guard, removing the confirmed
+   intermittent HTTP 500 path.
+
+6. **OAR/Data Tree and Planning refresh could miss pipeline child events.**
+   SSE handling now recognizes both `parent_tool=planning_pipeline` and the
+   terminal `dose_calc`/`dose_eval` sub-steps. The UI refresh is debounced and
+   case-scoped, so OAR children, planning children, dose, DVH, and meshes are
+   refreshed after the authoritative pipeline result rather than only after a
+   stream-close fallback.
+
+7. **Viewer display state was not authoritative during restore.**
+   Snapshot restore now preserves saved viewer settings, then synchronizes
+   display mode, CTV/OAR overlays, threshold, dose opacity, seed visibility,
+   Data Tree state, and dependent rendering controls from the restored state.
+   Restore does not overwrite those values with initialization defaults.
+
+8. **Delete and restart races produced noisy WorkspaceNotFound traces.**
+   Deleted cases now quietly discard stale UI-bridge persistence attempts. The
+   pre-existing unmatched outer `try` in `planning_routes.py` was repaired, so
+   the route module compiles and its task-start gate is released even when a
+   workspace disappears during a checkpoint.
+
+9. **Newly found hydration invalidation race.**
+   A background hydrate that started before deletion could finish afterwards
+   and reinstall the deleted Agent in `_sessions`. A per-case generation fence,
+   an active-session recheck, and a lock-protected final generation check now
+   discard that stale Agent before it can restore the bridge or register a
+   persistence callback. The same fence also prevents a reset from installing
+   an obsolete cold-start Agent.
+
+### Verification
+
+- `python -m py_compile web/server.py web/routes/viewer_routes.py` passed.
+- `python -m compileall -q AgenticSys.py agent_runtime agents tool_factory web` passed.
+- JavaScript syntax checks passed for the modified workspace, chat/SSE, DVH,
+  and session-cache modules.
+- `git diff --check` passed.
+- Full regression suite: **296 passed, 2 skipped, 3 warnings**. This includes
+  dedicated regressions for differently sized legacy label arrays and model
+  NumPy masks.
+
+The remaining three warnings are third-party SimpleITK SWIG deprecation
+warnings and do not indicate a BrachyBot failure. No clinical result is
+silently synthesized by these workspace changes; they only govern persistence,
+transport, alignment, and presentation state.

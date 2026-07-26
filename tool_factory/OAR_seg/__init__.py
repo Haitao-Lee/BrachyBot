@@ -6,6 +6,7 @@ Organs At Risk (OAR) segmentation tools for various anatomical sites.
 
 import sys
 import os
+import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -109,11 +110,19 @@ class OARSegmentationTool(BaseTool):
         generated_metadata = {}
 
         if from_label_path:
-            # Match the LPI orientation used by the CT viewer.  Geometry is
-            # validated against the raw CT before this tool is invoked; using
-            # DICOMOrient on both image types preserves physical coordinates
-            # without the unsafe implicit resampling of an uploaded label.
-            label_img = sitk.DICOMOrient(sitk.ReadImage(label_path), "LPI")
+            # Match both orientation and physical grid. Shape-only checks are
+            # unsafe because a same-shaped mask may still be translated or
+            # mirrored relative to the CT.
+            if image is None and image_path is not None:
+                image = sitk.ReadImage(image_path)
+            from tool_factory.segmentation_alignment import align_label_to_reference
+            if image is None:
+                # Direct mask-only callers have no physical reference.  Keep
+                # this low-level compatibility path deterministic; API routes
+                # always pass the CT and therefore use physical resampling.
+                label_img = sitk.DICOMOrient(sitk.ReadImage(str(label_path)), "LPI")
+            else:
+                label_img = align_label_to_reference(label_path, image, "LPI")
             oar_array = sitk.GetArrayFromImage(label_img)
         else:
             if image is None and image_path is not None:
@@ -129,7 +138,23 @@ class OARSegmentationTool(BaseTool):
             result = tool._execute(image=image)
             if result.success:
                 generated_metadata = result.metadata or {}
-                oar_array = result.metadata.get("oar_array", result.data)
+                from tool_factory.segmentation_alignment import (
+                    align_label_array_to_reference,
+                    align_label_image_to_reference,
+                )
+
+                raw_mask = generated_metadata.get("oar_mask")
+                if isinstance(raw_mask, sitk.Image):
+                    aligned_mask = align_label_image_to_reference(raw_mask, image, "LPI")
+                    oar_array = sitk.GetArrayFromImage(aligned_mask)
+                else:
+                    raw_array = generated_metadata.get("oar_array", result.data)
+                    aligned_mask = align_label_array_to_reference(
+                        raw_array, image, "LPI", dtype=np.uint16,
+                    )
+                    oar_array = sitk.GetArrayFromImage(aligned_mask)
+                generated_metadata["oar_mask"] = aligned_mask
+                generated_metadata["oar_array"] = oar_array
             else:
                 return result
 
@@ -182,6 +207,7 @@ class OARSegmentationTool(BaseTool):
                 "organ_counts": organ_counts,
                 "organ_names": organ_names,
                 "manual_label_orientation": "LPI" if label_img is not None else None,
+                "label_grid_orientation": "LPI",
                 "oar_source": "uploaded_unknown" if from_label_path else (
                     generated_metadata.get("oar_source") or (
                         "nnunet_pancreatic" if organ_type == "pancreatic" else "totalsegmentator"

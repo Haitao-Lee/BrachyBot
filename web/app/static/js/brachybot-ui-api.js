@@ -1808,11 +1808,15 @@ async function _restoreActiveSessionWorkspace(options = {}) {
     ].some(key => storedKeys.has(key));
 
     const labelTask = (!hasPlanning && typeof loadLabelVolumes === 'function')
-        ? loadLabelVolumes({ sessionId: sessionAtStart })
+        ? loadLabelVolumes({ sessionId: sessionAtStart, preserveViewerState: true })
         : Promise.resolve();
 
     const planningTask = (hasPlanning && typeof refreshPlanningUI === 'function')
-        ? refreshPlanningUI({ switchToViewers: false, sessionId: sessionAtStart })
+        ? refreshPlanningUI({
+            switchToViewers: false,
+            sessionId: sessionAtStart,
+            preserveViewerState: true,
+        })
         : Promise.resolve();
 
     // Wait for CT first — slices are the base layer.  Label / planning
