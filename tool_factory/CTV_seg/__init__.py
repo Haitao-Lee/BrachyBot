@@ -33,6 +33,7 @@ from .covid_voco import VoCoCOVIDSegTool
 from .aorta_voco import VoCoAortaSegTool
 from .brats21_voco import VoCoBRATS21SegTool
 from .pancreatic_tumor_nnunet import NNUNetPancreaticTumorTool
+from .biomedparse_v2 import BiomedParseV2CTVTool, SITE_SPECS as BIOMEDPARSE_SITE_SPECS
 from .model_catalog import CTVModelCatalogTool, catalog_with_local_status
 
 # Removed VoCoProstateTool (was using wrong Amos-MR weights)
@@ -56,9 +57,24 @@ TOOL_REGISTRY = {
     "voco_colon": VoCoColonTumorTool,
     "voco_kidney": VoCoKidneyTumorTool,
     "voco_lung": VoCoLungTumorTool,
+    # Microsoft BiomedParse v2 is an explicit research-only adapter.  It is
+    # never used for the pancreatic production alias, which remains nnU-Net.
+    **{key: BiomedParseV2CTVTool for key in BIOMEDPARSE_SITE_SPECS},
     # Anatomical, embolism, infection, and MRI-only research models remain
     # importable below but are intentionally excluded from automatic CTV
     # routing. Treating their masks as a CT tumor target would be unsafe.
+}
+
+
+# When an optional legacy site model has no local checkpoint, use the
+# corresponding BiomedParse research candidate if that external runtime is
+# explicitly installed.  A missing fallback remains a hard, honest error;
+# BrachyBot must not claim that an unavailable model produced a CTV.
+BIOMEDPARSE_FALLBACKS = {
+    "voco_liver": "biomedparse_liver_tumor",
+    "voco_kidney": "biomedparse_kidney_lesion",
+    "voco_lung": "biomedparse_lung_lesion",
+    "voco_colon": "biomedparse_colon_primary",
 }
 
 
@@ -167,6 +183,9 @@ class CTVSegmentationTool(BaseTool):
             "\u80ba": "voco_lung",
             "colon": "voco_colon",
             "\u7ed3\u80a0": "voco_colon",
+            "head_neck": "biomedparse_head_neck_cancer",
+            "head and neck": "biomedparse_head_neck_cancer",
+            "\u5934\u9888": "biomedparse_head_neck_cancer",
             "prostate": "prostate_tumor",
             "\u524d\u5217\u817a": "prostate_tumor",
         }
@@ -236,7 +255,24 @@ class CTVSegmentationTool(BaseTool):
             tool_kwargs = {"image": image, "target_value": target_value, "fast_mode": fast_mode}
             if isinstance(tool, NNUNetPancreaticTumorTool):
                 tool_kwargs["return_all_labels"] = True
-            result = tool._execute(**tool_kwargs)
+            fallback_type = BIOMEDPARSE_FALLBACKS.get(tumor_type)
+            model_path = getattr(tool, "MODEL_PATH", None)
+            if (
+                fallback_type
+                and isinstance(model_path, str)
+                and not os.path.isfile(model_path)
+            ):
+                # Optional VoCo checkpoints are not silently fabricated.  If
+                # the explicitly installed BiomedParse runtime is available,
+                # use it as a research candidate and retain provenance.
+                fallback_tool = BiomedParseV2CTVTool()
+                result = fallback_tool._execute(image=image, tumor_type=fallback_type)
+                if result.metadata is None:
+                    result.metadata = {}
+                result.metadata["requested_tumor_type"] = tumor_type
+                result.metadata["fallback_from_unavailable_model"] = True
+            else:
+                result = tool._execute(**tool_kwargs)
             if result.success:
                 result_meta = result.metadata or {}
                 from tool_factory.segmentation_alignment import (
@@ -334,7 +370,11 @@ class CTVSegmentationTool(BaseTool):
             "full_label_array": res_meta.get("full_label_array"),
             "ctv_voxel_count": voxel_count,
             "tumor_type_used": tumor_type or ("manual_label" if from_label_path else "auto"),
-            "ctv_source": "manual_label" if from_label_path else "model",
+            "ctv_source": (
+                "manual_label"
+                if from_label_path
+                else res_meta.get("ctv_source", "model")
+            ),
             "label_grid_orientation": "LPI",
             "manual_label_orientation": "LPI" if from_label_path else None,
             "label_counts": res_meta.get("label_counts", {}),
@@ -342,6 +382,20 @@ class CTVSegmentationTool(BaseTool):
             "label_stats": res_meta.get("label_stats", {}),
             "model_catalog": catalog_with_local_status(),
         }
+        for provenance_key in (
+            "research_only",
+            "clinical_validation_status",
+            "model_name",
+            "repository",
+            "model_url",
+            "checkpoint",
+            "text_prompt",
+            "object_existence_confidence",
+            "requested_tumor_type",
+            "fallback_from_unavailable_model",
+        ):
+            if provenance_key in res_meta:
+                meta[provenance_key] = res_meta[provenance_key]
         # Pass through OAR data if present (e.g. artery/vein from nnUNet pancreatic)
         if "oar_array" in res_meta:
             meta["oar_array"] = res_meta["oar_array"]

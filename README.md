@@ -894,6 +894,15 @@ embolism, infection, and MRI-only models are deliberately excluded from
 automatic CT CTV routing. If the site cannot be inferred, chat asks for it;
 the Python API requires `tumor_type` unless `ctv_path` is supplied.
 
+For non-pancreatic sites whose optional local checkpoint is unavailable, an
+explicitly installed Microsoft BiomedParse v2 research adapter can provide a
+text-guided CTV candidate for liver, kidney, lung, colon, or head/neck. The
+existing pancreatic nnU-Net route is never replaced by BiomedParse. This
+adapter is not clinically validated, does not download weights automatically,
+and requires contour review before planning. Configure `BIOMEDPARSE_ROOT` and
+`BIOMEDPARSE_V2_CHECKPOINT` in an isolated upstream environment; see
+[BiomedParse v2 setup and limitations](docs/BIOMEDPARSE_V2_SETUP.md).
+
 The myDoseNet CNN dose prediction model is resolved from
 `BRACHYBOT_DOSE_MODEL_PATH`, `plans/dose_pre/dose_model.pth`, or the legacy
 `dose_pre/dose_model.pth` location. `BRACHYBOT_DOSE_MODEL_SCALE_GY` defines the

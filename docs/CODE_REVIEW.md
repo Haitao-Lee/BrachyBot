@@ -8859,3 +8859,78 @@ The remaining three warnings are third-party SimpleITK SWIG deprecation
 warnings and do not indicate a BrachyBot failure. No clinical result is
 silently synthesized by these workspace changes; they only govern persistence,
 transport, alignment, and presentation state.
+
+---
+
+## 2026-07-26 - Surgical guide entry points and optional BiomedParse v2 CTV adapter
+
+### Surgical guide verification
+
+The patient-specific puncture-guide workflow was already present in the current
+baseline and was verified rather than duplicated:
+
+- `surgical_guide` is registered in the agent tool registry and is described in
+  the planning prompts.
+- The Input panel exposes guide generation, selected needle channels, editable
+  millimetre parameters, saved versions, STL export, and STL validation.
+- The chat tool accepts `action=generate|status` and uses the same versioned,
+  case-scoped geometry contract as the web route.
+- CT/needle preconditions, physical-coordinate preservation, watertightness,
+  stale-version invalidation, and adjustable manufacturing dimensions remain
+  covered by `tests/test_surgical_guide.py`.
+
+This means a user can generate the guide from the button after a plan or ask
+the agent explicitly after planning. The agent must report the guide version
+and automated QA, and it must not call the guide before CT and planned needle
+geometry exist or describe it as clinically approved.
+
+### BiomedParse v2 assessment
+
+The official Microsoft project is a suitable **research candidate** for
+non-pancreatic CT lesion candidates because it documents 3D text-guided
+inference and CT prompts for liver tumors, kidney lesions, lung lesions, colon
+primaries, and head/neck cancer. It is not a site-specific clinically
+validated CTV model. The official repository and model card are the source of
+truth for installation, checkpoint access, and supported prompts:
+
+- https://github.com/microsoft/BiomedParse/tree/v2
+- https://huggingface.co/microsoft/BiomedParse
+- https://doi.org/10.1038/s41592-024-02499-w
+
+The adapter in `tool_factory/CTV_seg/biomedparse_v2.py` is intentionally
+optional and lazy:
+
+- The existing `nnunet_pancreatic` route remains the only pancreatic automatic
+  path; BiomedParse has no pancreatic fallback route in this project.
+- For liver, kidney, lung, and colon, the existing local VoCo model is tried
+  first. If its checkpoint is absent and an explicitly configured BiomedParse
+  checkout/checkpoint exists, the matching research candidate is used.
+- Head/neck exposes an explicit BiomedParse candidate because there is no
+  current local lesion model in the automatic registry.
+- Without the external checkout, its pinned isolated dependencies, or the
+  checkpoint, the tool fails closed with actionable metadata. Empty masks also
+  fail closed. No checkpoint is downloaded or committed automatically.
+- Outputs are normalized to the existing LPI physical-grid contract and retain
+  model URL, checkpoint, prompt, existence confidence, `research_only=true`,
+  and `clinical_validation_status=not_established` metadata.
+- The official torch/Hydra stack is not added to core requirements; setup and
+  clinical limitations are documented in
+  `docs/BIOMEDPARSE_V2_SETUP.md`.
+
+The normal selector continues to show tumor types rather than implementation
+brands. Its availability probe includes the optional catalog so a configured
+BiomedParse fallback is shown as actionable while still preserving the
+research-only provenance in the server result.
+
+### Verification
+
+- Full regression suite: **301 passed, 2 skipped, 3 warnings**.
+- Targeted BiomedParse, surgical-guide, and review regressions passed.
+- `compileall` passed for `AgenticSys.py`, `agent_runtime`, `agents`,
+  `tool_factory`, and `web`.
+- All JavaScript files passed `node --check`.
+- `git diff --check` passed.
+
+The three warnings remain third-party SimpleITK SWIG deprecations. No local
+checkpoint is included, so real BiomedParse inference still requires an
+explicitly provisioned upstream runtime and separate clinical validation.
