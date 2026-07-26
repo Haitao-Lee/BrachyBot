@@ -246,17 +246,26 @@ def register_planning_routes(app, get_agent):
             },
         }
         try:
-            # Schedule a deferred agent checkpoint so the chat response is
-            # returned without blocking on large array I/O (dose_metrics,
-            # seed_plan, CTV/OAR masks can be hundreds of MB).  The debounced
-            # timer ensures the write completes within 0.75 s of the response;
-            # any save failure is now logged by _checkpoint_timer.
-            store.schedule_agent_checkpoint(task.user_id, task.session_id, task.agent, "chat.task.finalized")
+            # A clinical task is not complete until its result snapshot is
+            # durable.  A deferred checkpoint here created a race: the UI
+            # received ``done`` and could switch cases before CTV/OAR masks,
+            # dose arrays, planning geometry, or the surgical-guide state had
+            # reached disk.  Reopening the case then restored the chat but not
+            # the clinical result.  Commit before the terminal event; the
+            # ChatTask manager deliberately withholds ``done`` while this
+            # callback is running, so the UI still has an honest finalizing
+            # step instead of a false completed state.
+            store.flush_agent_checkpoint(task.user_id, task.session_id, task.agent, "chat.task.finalized")
             snapshot = store.load_snapshot(task.user_id, task.session_id)
             chat = snapshot.get("chat") if isinstance(snapshot.get("chat"), dict) else {}
             messages = list(chat.get("messages") or [])
 
-            def append_message(message_type: str, content: str, steps: Any = None) -> None:
+            def append_message(
+                message_type: str,
+                content: str,
+                steps: Any = None,
+                timestamp_ms: Optional[int] = None,
+            ) -> None:
                 content = str(content or "")
                 if not content and message_type != "thinking":
                     return
@@ -264,7 +273,16 @@ def register_planning_routes(app, get_agent):
                     "type": message_type,
                     "content": content,
                     "steps": steps,
-                    "timestamp": int(task.finished_at or time.time()) * 1000,
+                    # Preserve the task start time for the user turn.  A
+                    # detached browser can finalize this transcript long
+                    # after the request was entered; using the finish time
+                    # for every row makes restored histories appear to have
+                    # been sent all at once.
+                    "timestamp": int(
+                        timestamp_ms
+                        if timestamp_ms is not None
+                        else (task.finished_at or time.time()) * 1000
+                    ),
                 }
                 previous = messages[-1] if messages else None
                 if previous and previous.get("type") == candidate["type"] and str(previous.get("content") or "") == content:
@@ -275,7 +293,7 @@ def register_planning_routes(app, get_agent):
             # transcript; the browser's visible user bubble contains the
             # original request without that server detail.
             display_message = task.message.split("\n\n[Uploaded image path:", 1)[0]
-            append_message("user", display_message)
+            append_message("user", display_message, timestamp_ms=int(task.created_at * 1000))
             persisted_steps = list(task.steps)
             if final_status == "completed":
                 # The matching event is published to live/replay subscribers
@@ -284,7 +302,12 @@ def register_planning_routes(app, get_agent):
                 # completed presentation.
                 persisted_steps.append(task.commit_step("done"))
             if persisted_steps:
-                append_message("thinking", "", persisted_steps)
+                append_message(
+                    "thinking",
+                    "",
+                    persisted_steps,
+                    timestamp_ms=int((task.finished_at or time.time()) * 1000),
+                )
             # A user-cancelled turn must never resurrect buffered draft text
             # when the case is reopened. Preserve the request and trace for
             # audit, then record one explicit terminal status instead.
@@ -303,6 +326,10 @@ def register_planning_routes(app, get_agent):
                 {
                     "chat": {
                         "messages": messages,
+                        # Keep a case-level trace as a compact, direct source
+                        # for restore diagnostics. The thinking message above
+                        # remains the presentation format used by the chat UI.
+                        "execution_trace": persisted_steps,
                         # Only running tasks occupy ``task_id``. Keep the last
                         # id separately for audit without making a completed
                         # turn look resumable after a browser restart.

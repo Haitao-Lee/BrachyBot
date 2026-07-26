@@ -8991,3 +8991,88 @@ The three warnings remain third-party SimpleITK SWIG deprecation warnings.
 This optimization changes scheduling and status transport only; it does not
 change coordinate conversion, dose calculation, planning candidate selection,
 or clinical review logic.
+
+## 2026-07-27 - Durable case product restore and background hydration completion
+
+### Confirmed symptoms
+
+- The fast session shell could repaint chat while the latest full workspace
+  snapshot was still behind the terminal checkpoint of a completed task.
+- CT, labels, and planning results were not restored in a dependency-safe
+  order. Starting label/planning requests before CT hydration could leave the
+  OAR Data Tree or Planning branch empty even though the 2D viewer had data.
+- A detached task could publish its terminal chat state before its planning
+  arrays and surgical-guide metadata had been synchronously persisted.
+- Historical snapshots containing only `chat.execution_trace` could reopen
+  without a visible transcript.
+- The Figure 1 right close-up could let translucent CTV geometry occlude needle
+  paths, and the temporary capture pass did not restore every child material
+  and render-order property.
+- Empty surgical-guide calls were rejected even though the only meaningful
+  operation was generation.
+- A restore failure could leave the corner loading indicator active forever.
+- Hiding the Planning Data Tree parent hid 3D children but left the independent
+  2D dose projection canvas painted on the current slice.
+
+### Implemented fixes
+
+- Background restore now fetches an authoritative, session-scoped workspace
+  snapshot using `X-BrachyBot-Session` before clinical hydration. The visible
+  shell restores chat, timestamps, tool history, report state, task metadata,
+  and the execution trace immediately; a fixed bottom-right non-blocking
+  spinner indicates that CT, labels, planning, guide meshes, DVH, and report
+  assets are still being hydrated.
+- Existing cases keep the spinner until the case-scoped restore completes or
+  fails; the failure path clears it. New empty sessions skip the misleading
+  opening-case loader and immediately clear the previous case presentation.
+- CT is awaited as the geometry dependency. CTV/OAR label loading and planning
+  result loading then start in parallel; planning skips the duplicate label
+  request. A generation/session fence prevents late responses from changing a
+  different active case.
+- `preserveClinicalData` reapplies only saved presentation properties after
+  current-case loaders create the Data Tree entries. It does not overwrite
+  current OAR/CTV/planning arrays, coordinate metadata, or geometry with a
+  stale browser snapshot.
+- Chat finalization synchronously flushes the agent checkpoint before terminal
+  `done` publication. The original user timestamp and durable execution trace
+  are retained, so reopening a completed or detached task restores the same
+  conversation and tool history. A legacy trace-only snapshot gets a safe
+  read-only thinking row instead of silently appearing empty.
+- Report figures are restored from the session-scoped IndexedDB cache in
+  parallel after the control plane paints. Figure 1 temporarily promotes seed
+  and needle render order with depth testing disabled for the close-up, then
+  restores all captured child materials and render-order values.
+- `surgical_guide` treats an omitted or empty action as `generate`, while the
+  persisted planning checkpoint retains guide metadata and the guide mesh is
+  loaded asynchronously under the active-session fence.
+- Planning-parent visibility now updates `dataTreeState.planning.visible`,
+  dose-overlay visibility, color bars, and all independent 2D dose/contour
+  canvases. Hiding the parent therefore removes dose projections immediately,
+  not only the 3D Planning children.
+
+### Deliberate boundaries
+
+- Server-owned tasks survive browser/session switches; only an explicit Stop
+  action cancels a task. Switching sessions only detaches the current browser
+  stream and never cancels the task.
+- On server restart, a running task is marked interrupted rather than being
+  presented as completed. The last reliable checkpoint remains available for
+  explicit resume.
+- Clinical arrays and meshes are not trusted from browser JSON. They are
+  rehydrated through authenticated, case-owned server endpoints using the
+  saved workspace artifacts, preserving the existing coordinate chain.
+
+### Verification
+
+- Targeted workspace, surgical-guide, and restore regressions: **69 passed, 3
+  warnings**.
+- Full regression suite: **310 passed, 2 skipped, 3 warnings**.
+- `compileall` passed for `AgenticSys.py`, `agent_runtime`, `agents`,
+  `tool_factory`, and `web`.
+- All JavaScript files passed `node --check`.
+- `git diff --check` passed.
+
+The three warnings remain third-party SimpleITK SWIG deprecation warnings. The
+changes above affect restore scheduling, durable presentation, report capture,
+and visibility synchronization; they do not change coordinate conversion,
+dose calculation, candidate-path selection, or clinical review thresholds.

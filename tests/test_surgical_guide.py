@@ -152,6 +152,14 @@ def test_agent_tool_uses_the_same_versioned_guide_contract_as_the_web_route():
     assert guide_version_summaries(agent)[0]["version"] == 1
 
 
+def test_surgical_guide_defaults_to_generate_when_action_is_omitted():
+    """An empty LLM tool call follows the documented safe default action."""
+    agent = _synthetic_agent()
+    result = SurgicalGuideTool(agent).execute(parameters={"channel_radius_mm": 1.3})
+    assert result.success is True
+    assert result.metadata["guide"]["version"] == 1
+
+
 def test_surgical_guide_has_manual_and_chat_entry_points():
     schema = SurgicalGuideTool().input_schema
     assert schema["properties"]["action"]["enum"] == ["generate", "status"]

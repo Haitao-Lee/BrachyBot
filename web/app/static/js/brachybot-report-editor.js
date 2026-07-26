@@ -769,13 +769,33 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
                 if (!mesh) continue;
                 _saved[id] = { mesh, visible: mesh.visible };
                 const surface = (typeof getMeshSurface === 'function') ? getMeshSurface(mesh) : mesh;
-                if (surface?.material) _savedMaterials[id] = {
-                    surface,
-                    visible: surface.visible,
-                    opacity: surface.material.opacity,
-                    transparent: surface.material.transparent,
-                    depthWrite: surface.material.depthWrite,
-                };
+                if (surface) {
+                    const materials = [];
+                    const renderOrders = [];
+                    const seenMaterials = new Set();
+                    surface.traverse?.(object => {
+                        renderOrders.push({ object, value: object.renderOrder });
+                        const objectMaterials = Array.isArray(object.material)
+                            ? object.material : [object.material];
+                        objectMaterials.forEach(material => {
+                            if (!material || seenMaterials.has(material)) return;
+                            seenMaterials.add(material);
+                            materials.push({
+                                material,
+                                opacity: material.opacity,
+                                transparent: material.transparent,
+                                depthWrite: material.depthWrite,
+                                depthTest: material.depthTest,
+                            });
+                        });
+                    });
+                    _savedMaterials[id] = {
+                        surface,
+                        visible: surface.visible,
+                        materials,
+                        renderOrders,
+                    };
+                }
             }
             // Endpoint handles are interaction affordances, not treatment
             // geometry. Keep their state for restoration but exclude them
@@ -801,13 +821,20 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
                     mesh.visible = saved.visible;
                 }
                 for (const material of Object.values(_savedMaterials)) {
-                    if (material?.surface?.material) {
-                        material.surface.visible = material.visible;
-                        material.surface.material.opacity = material.opacity;
-                        material.surface.material.transparent = material.transparent;
-                        material.surface.material.depthWrite = material.depthWrite;
-                        material.surface.material.needsUpdate = true;
-                    }
+                    if (!material?.surface) continue;
+                    material.surface.visible = material.visible;
+                    (material.renderOrders || []).forEach(savedOrder => {
+                        if (savedOrder.object) savedOrder.object.renderOrder = savedOrder.value;
+                    });
+                    (material.materials || []).forEach(savedMaterial => {
+                        const target = savedMaterial.material;
+                        if (!target) return;
+                        target.opacity = savedMaterial.opacity;
+                        target.transparent = savedMaterial.transparent;
+                        target.depthWrite = savedMaterial.depthWrite;
+                        target.depthTest = savedMaterial.depthTest;
+                        target.needsUpdate = true;
+                    });
                 }
                 if (_savedSkin?.mesh) {
                     _savedSkin.mesh.visible = _savedSkin.visible;
@@ -1029,6 +1056,33 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
             // Needles visible but thin
             for (const [id, mesh] of Object.entries(scene3D.meshes)) {
                 if (id.startsWith('needle_') && mesh?.material) { mesh.material.opacity = 0.8; }
+            }
+
+            // The CTV is translucent, but depth testing can still hide a
+            // needle from selected camera angles. Promote only treatment
+            // geometry for this temporary publication capture; the complete
+            // material and render state is restored in _restoreFigure1State.
+            const promotePlanGeometry = (mesh, order) => {
+                if (!mesh) return;
+                mesh.renderOrder = order;
+                mesh.traverse?.(child => {
+                    child.renderOrder = order;
+                    const materials = Array.isArray(child.material)
+                        ? child.material : [child.material];
+                    materials.forEach(material => {
+                        if (!material) return;
+                        material.depthTest = false;
+                        material.depthWrite = false;
+                        material.needsUpdate = true;
+                    });
+                });
+            };
+            for (const [id, mesh] of Object.entries(scene3D.meshes)) {
+                if (id.startsWith('needle_') && mesh?.userData?.type !== 'needle_handle') {
+                    promotePlanGeometry(mesh, 2000);
+                } else if (id.startsWith('seed_')) {
+                    promotePlanGeometry(mesh, 2100);
+                }
             }
 
             // Excluding the full needle shaft keeps the right panel a true

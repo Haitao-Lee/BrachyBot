@@ -34,6 +34,7 @@ class SurgicalGuideTool(BaseTool):
                 "action": {
                     "type": "string",
                     "enum": ["generate", "status"],
+                    "default": "generate",
                     "description": "Generate a new guide or inspect the current guide.",
                 },
                 "needle_ids": {
@@ -46,7 +47,10 @@ class SurgicalGuideTool(BaseTool):
                     "description": "Optional skin offset, plate, sleeve, and bore parameters in mm.",
                 },
             },
-            "required": ["action"],
+            # The planner commonly requests the default operation with an
+            # empty tool-call object.  Keep generation as the safe default;
+            # an explicit status action remains available for inspection.
+            "required": [],
         }
 
     def _execute(self, **kwargs: Any) -> ToolResult:
@@ -61,7 +65,7 @@ class SurgicalGuideTool(BaseTool):
         agent = kwargs.get("_agent") or self._agent
         if agent is None:
             return ToolResult(success=False, error="Case agent is unavailable")
-        action = str(kwargs.get("action") or "").strip().lower()
+        action = str(kwargs.get("action") or "generate").strip().lower()
         if action == "status":
             return ToolResult(
                 success=True,

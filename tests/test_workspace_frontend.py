@@ -49,6 +49,34 @@ def test_workspace_delete_uses_custom_confirmation_and_cancels_active_stream():
     assert "void loadServerSessions().then(() => renderSessionList())" in inactive_branch
 
 
+def test_session_restore_uses_corner_non_blocking_hydration_and_fresh_snapshot():
+    """Case switching must show progress without masking the workspace."""
+    workspace = read("web/app/static/js/brachybot-workspace.js")
+    css = read("web/app/static/css/brachybot-auth.css")
+    assert "authoritativeWorkspace" in workspace
+    assert "'/api/workspace/snapshot'" in workspace
+    assert "X-BrachyBot-Session" in workspace
+    assert "position: fixed; right: 18px; bottom: 18px" in css
+    assert "body.workspace-hydrating::after { display: none; }" in css
+    assert "pointer-events: none" in css
+
+
+def test_surgical_guide_empty_tool_call_uses_generate_default():
+    """The chat tool may omit action when requesting the default guide."""
+    tool = read("tool_factory/surgical_guide/__init__.py")
+    assert '"default": "generate"' in tool
+    assert '"required": []' in tool
+    assert 'or "generate"' in tool
+
+
+def test_final_chat_commit_flushes_clinical_agent_snapshot_before_done():
+    """A terminal response cannot race durable planning-result persistence."""
+    routes = read("web/routes/planning_routes.py")
+    block = routes.split("def finalize_chat_task", 1)[1].split("def owned_case_path", 1)[0]
+    assert "store.flush_agent_checkpoint" in block
+    assert "store.schedule_agent_checkpoint" not in block
+
+
 def test_new_case_creation_avoids_empty_workspace_hydration_and_redundant_round_trips():
     workspace = read("web/app/static/js/brachybot-workspace.js")
     auth = read("web/app/static/js/brachybot-auth.js")
@@ -231,6 +259,20 @@ def test_session_restore_uses_lightweight_status_and_background_assets():
     cache_get = cache_api.split("put: async", 1)[0]
     assert "beginRunningSizeInitialization(db)" in cache_get
     assert "await ensureRunningSize(db)" not in cache_get
+
+
+def test_session_restore_hydrates_ct_before_label_or_planning_layers():
+    """Clinical overlays must not race the Agent's CT geometry hydration."""
+    cache = read("web/app/static/js/brachybot-session-cache.js")
+    workspace = read("web/app/static/js/brachybot-workspace.js")
+    ui_api = read("web/app/static/js/brachybot-ui-api.js")
+    routes = read("web/routes/planning_routes.py")
+    ct_wait = ui_api.index("await ctTask;")
+    labels_start = ui_api.index("const labelTask", ct_wait)
+    planning_start = ui_api.index("const planningTask", ct_wait)
+    assert labels_start > ct_wait
+    assert planning_start > ct_wait
+    assert "Agent. The shell remains responsive, but CT must hydrate first." in ui_api
     assert "_pendingSizeDelta" in cache
     assert "function hydrateReportFigureAssets" in workspace
     assert "Promise.all(pending.map" in workspace
@@ -674,6 +716,43 @@ def test_active_progress_animation_remains_continuous_with_a_low_motion_fallback
     assert "animation-name: pill-breathe-soft !important" in report_css
     assert "animation-name: todo-active-breathe-soft !important" in responsive_css
     assert "animation-name: pipeline-dot-breathe-soft !important" in responsive_css
+
+
+def test_background_case_restore_shows_a_corner_indicator_and_restores_case_products():
+    """Case switching must paint fast while every durable product hydrates case-locally."""
+    workspace = read("web/app/static/js/brachybot-workspace.js")
+    ui_api = read("web/app/static/js/brachybot-ui-api.js")
+    index = read("web/app/index.html")
+
+    assert 'id="workspaceHydrationNotice"' in index
+    assert "position: fixed; right: 18px; bottom: 18px" in read("web/app/static/css/brachybot-auth.css")
+    assert "Restoring case resources..." in workspace
+    assert "X-BrachyBot-Session" in workspace
+    assert "applyChatSnapshotFast(workspace)" in workspace
+    assert "loadLabelVolumes({ sessionId: sessionAtStart" in ui_api
+    assert "skipLabelLoad: true" in ui_api
+    assert "await ctTask;" in ui_api
+    assert "preserveClinicalData: true" in ui_api
+    assert "hydrateReportFigureAssets" in workspace
+    assert "restoreSceneView(uiState.viewer?.scene, uiState.viewer?.dvh" in workspace
+
+
+def test_planning_parent_visibility_clears_independent_dose_projection_layers():
+    """Hiding Planning must remove dose canvases as well as 3D children."""
+    viewer = read("web/app/static/js/brachybot-viewer-volume.js")
+
+    assert "function _setPlanningDoseProjectionVisibility(visible)" in viewer
+    assert "dataTreeState.planning.visible = !!visible" in viewer
+    assert "doseOverlayCanvas" in viewer
+    assert "_setPlanningDoseProjectionVisibility(dataTreeState.planning.visible)" in viewer
+
+
+def test_finalized_detached_chat_keeps_start_timestamp_and_trace_for_restore():
+    """A browser reconnect must recover the original turn time and tool history."""
+    routes = read("web/routes/planning_routes.py")
+    assert "timestamp_ms=int(task.created_at * 1000)" in routes
+    assert '"execution_trace": persisted_steps' in routes
+    assert '"chat": {\n                        "messages": messages' in routes
 
 
 def test_report_modal_has_keyboard_safe_close_path():

@@ -819,7 +819,7 @@ async function refreshPlanningUI(options = {}) {
         // on. Without this re-fetch, the CTV/OAR masks from a
         // chat-triggered planning flow never appear on the
         // viewers and the data tree never marks them loaded.
-        if (typeof loadLabelVolumes === 'function') {
+        if (!options.skipLabelLoad && typeof loadLabelVolumes === 'function') {
             try {
                 // Compatibility marker for the canonical default call:
                 // loadLabelVolumes({ sessionId: expectedSessionId })
