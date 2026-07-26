@@ -591,6 +591,35 @@
         }
     }
 
+    function hydrateReportFigureAssets(snapshot, sessionId, restoreGeneration) {
+        const report = snapshot?.report?.form;
+        if (!report || !Array.isArray(report.figures) || !window.SessionCache) return;
+        const pending = report.figures.filter(f => f && f._cacheKey && !f.dataUrl);
+        if (!pending.length) return;
+        // Report figures are presentation assets. Read them concurrently after
+        // the control-plane snapshot has painted, so a large report never
+        // delays chat/session switching or the clinical viewer restore.
+        void Promise.all(pending.map(async figure => {
+            try {
+                const cached = await window.SessionCache.get(String(sessionId), 'report', figure._cacheKey);
+                if (cached && cached.byteLength > 0) {
+                    return { figure, dataUrl: new TextDecoder().decode(cached) };
+                }
+            } catch (_) {}
+            return null;
+        })).then(results => {
+            if (String(activeSessionId || '') !== String(sessionId || '')
+                || restoreGeneration !== workspaceRestoreGeneration) return;
+            results.forEach(result => {
+                if (!result) return;
+                result.figure.dataUrl = result.dataUrl;
+                delete result.figure._cacheKey;
+            });
+            try { renderReportEditor(); } catch (_) {}
+            try { _updateReportPreview(); } catch (_) {}
+        });
+    }
+
     async function applyWorkspaceSnapshot(snapshot, options = {}) {
         if (!snapshot) return;
         const sessionId = workspaceSnapshotSessionId(snapshot);
@@ -624,21 +653,7 @@
             if (report && typeof report === 'object') {
                 report.editedFields = new Set(report.editedFields || []);
                 window.reportForm = report;
-                // Rebuild figure data URLs from IndexedDB cache.
-                if (Array.isArray(report.figures) && activeSessionId && window.SessionCache) {
-                    const sid = String(activeSessionId);
-                    for (const f of report.figures) {
-                        if (f && f._cacheKey && !f.dataUrl) {
-                            try {
-                                const cached = await window.SessionCache.get(sid, 'report', f._cacheKey);
-                                if (cached && cached.byteLength > 0) {
-                                    f.dataUrl = new TextDecoder().decode(cached);
-                                    delete f._cacheKey;
-                                }
-                            } catch (_) {/* keep metadata-only figure if cache miss */}
-                        }
-                    }
-                }
+                hydrateReportFigureAssets(snapshot, sessionId, restoreGeneration);
                 const storedSources = snapshot.report?.sources;
                 if (window.Report?.sources?._map && Array.isArray(storedSources)) {
                     window.Report.sources._map = new Map(storedSources);
@@ -820,7 +835,7 @@
         activeSessionId = data.active_session_id;
     }
 
-    function paintSessionShell(sessionId, { clearWorkspace = true } = {}) {
+    function paintSessionShell(sessionId, { clearWorkspace = true, blank = false } = {}) {
         // Case selection is a control-plane action. Paint the selected case
         // immediately, then hydrate CT/labels/meshes asynchronously. Waiting
         // for a snapshot or a lazy Agent restore here makes a simple sidebar
@@ -845,12 +860,21 @@
         // highlighted case. A durable chat snapshot replaces this shell as
         // soon as the control-plane response arrives.
         if (typeof loadSessionChat === 'function') loadSessionChat(sessionId);
-        window.setWorkspaceHydrationState?.(
-            true,
-            typeof window._t === 'function'
-                ? window._t('\u6b63\u5728\u6253\u5f00\u75c5\u4f8b...', 'Opening case...')
-                : 'Opening case...',
-        );
+        // A newly-created case has no resources to hydrate.  Keeping the
+        // generic opening notice here made a zero-resource operation look as
+        // if the previous case was still being restored.  Existing-case
+        // switching keeps the notice because CT/labels/meshes may still be
+        // loaded in the background.
+        if (blank) {
+            window.setWorkspaceHydrationState?.(false);
+        } else {
+            window.setWorkspaceHydrationState?.(
+                true,
+                typeof window._t === 'function'
+                    ? window._t('\u6b63\u5728\u6253\u5f00\u75c5\u4f8b...', 'Opening case...')
+                    : 'Opening case...',
+            );
+        }
         return true;
     }
 
@@ -969,7 +993,10 @@
                 pending: true,
                 recoveryStatus: 'clean',
             };
-            paintSessionShell(optimisticId);
+            // New cases are an empty control-plane shell.  Do not show an
+            // opening-case resource spinner and do not schedule hydration;
+            // the old case's server task remains detached and case-owned.
+            paintSessionShell(optimisticId, { blank: true });
             await new Promise(resolve => {
                 if (typeof requestAnimationFrame === 'function') requestAnimationFrame(resolve);
                 else setTimeout(resolve, 0);

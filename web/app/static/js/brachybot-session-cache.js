@@ -27,6 +27,7 @@
     var _runningSize = 0;
     var _sizeInitialized = false;
     var _sizeInitialization = null;
+    var _pendingSizeDelta = 0;
 
     function openDB() {
         if (_db) return Promise.resolve(_db);
@@ -105,19 +106,45 @@
         });
     }
 
-    async function ensureRunningSize(db) {
-        if (_sizeInitialized) return;
-        if (_sizeInitialization) return _sizeInitialization;
+    function beginRunningSizeInitialization(db) {
+        if (_sizeInitialized || _sizeInitialization) return _sizeInitialization;
+        // Size accounting is quota housekeeping, not part of a clinical read.
+        // Start the one-time baseline scan in the background instead of making
+        // the first CT/mesh/report cache access wait for every old entry.
+        var scanStartedAt = Date.now();
         _sizeInitialization = dbGetAll(db).then(function (entries) {
-            _runningSize = entries.reduce(function (total, entry) {
+            var baseline = entries.reduce(function (total, entry) {
+                // Mutations committed after the scan began are represented by
+                // _pendingSizeDelta. Excluding them prevents a put/delete that
+                // races the baseline cursor from being counted twice.
+                var timestamp = Number(entry.timestamp) || 0;
+                if (timestamp && timestamp > scanStartedAt) return total;
                 return total + (Number(entry.size) || 0);
             }, 0);
+            _runningSize = Math.max(0, baseline + _pendingSizeDelta);
+            _pendingSizeDelta = 0;
             _sizeInitialized = true;
         }).catch(function () {
-            // Cache accounting must never block a clinical restore.
+            // Cache accounting must never block a clinical restore. If the
+            // baseline cannot be read, retain only deltas observed afterward.
+            _runningSize = Math.max(0, _runningSize + _pendingSizeDelta);
+            _pendingSizeDelta = 0;
             _sizeInitialized = true;
         }).finally(function () { _sizeInitialization = null; });
         return _sizeInitialization;
+    }
+
+    async function ensureRunningSize(db) {
+        if (_sizeInitialized) return;
+        return beginRunningSizeInitialization(db);
+    }
+
+    function adjustRunningSize(delta) {
+        if (_sizeInitialized) {
+            _runningSize = Math.max(0, _runningSize + delta);
+        } else {
+            _pendingSizeDelta += Number(delta) || 0;
+        }
     }
 
     function scheduleEviction() {
@@ -153,7 +180,8 @@
         get: async function (sessionId, ns, key) {
             var db = await openDB();
             if (!db) return null;
-            await ensureRunningSize(db);
+            // Never make a cache hit wait for the quota baseline scan.
+            beginRunningSizeInitialization(db);
             // Return as soon as IndexedDB responds. The previous code started
             // dbGet() but always slept for the full timeout on every cache hit.
             return Promise.race([
@@ -166,23 +194,24 @@
         put: async function (sessionId, ns, key, data) {
             var db = await openDB();
             if (!db) return;
-            await ensureRunningSize(db);
+            beginRunningSizeInitialization(db);
             var delta = await dbPut(db, [sessionId, ns, key], data);
-            _runningSize = Math.max(0, _runningSize + delta);
+            adjustRunningSize(delta);
             scheduleEviction();
         },
         invalidateSession: async function (sessionId) {
             var db = await openDB();
             if (!db) return;
-            await ensureRunningSize(db);
+            beginRunningSizeInitialization(db);
             var deleted = await dbDeleteAll(db, IDBKeyRange.bound([sessionId, '', ''], [sessionId, '\uffff', '\uffff']));
-            _runningSize = Math.max(0, _runningSize - deleted);
+            adjustRunningSize(-deleted);
         },
         invalidateAll: async function () {
             var db = await openDB();
             if (!db) return;
             await dbDeleteAll(db, null);
             _runningSize = 0;
+            _pendingSizeDelta = 0;
             _sizeInitialized = true;
         },
         estimatedSize: function () { return _runningSize; },

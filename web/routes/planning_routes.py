@@ -2088,6 +2088,47 @@ def register_planning_routes(app, get_agent):
     @rate_limit
     def api_status():
         """Get system status."""
+        # Session restoration only needs durable paths, artifact keys, and
+        # recovery metadata. Hydrating the full Agent here reads CT/plan data
+        # and can take minutes, so keep this explicit lightweight branch free
+        # of get_agent(); the normal status contract remains unchanged.
+        if request.args.get("lightweight", "").lower() in TRUE_VALUES:
+            try:
+                store, user, session_id = request_case_context()
+                snapshot = store.load_snapshot(user["id"], session_id)
+                agent_state = snapshot.get("agent") or {}
+                results = agent_state.get("planning_results") or {}
+                ui_state = agent_state.get("ui_state") or {}
+                controls = ((snapshot.get("ui") or {}).get("state") or {}).get("controls") or {}
+
+                def first_path(*keys):
+                    for source in (results, ui_state, controls):
+                        for key in keys:
+                            value = source.get(key) if isinstance(source, dict) else None
+                            if isinstance(value, str) and value.strip():
+                                return value.strip()
+                            if isinstance(value, dict) and isinstance(value.get("value"), str) and value["value"].strip():
+                                return value["value"].strip()
+                    return None
+
+                operation = snapshot.get("operation") or {}
+                return jsonify({
+                    "session_id": session_id,
+                    "ct_path": first_path("ct_path", "ctPath", "ct_image_path", "ctImagePath"),
+                    "ctv_path": first_path("ctv_path", "ctvPath", "ctv_mask_path", "ctvMaskPath"),
+                    "oar_path": first_path("oar_path", "oarPath", "oar_mask_path", "oarMaskPath"),
+                    "stored_keys": sorted(str(key) for key in results.keys()),
+                    "brain_available": None,
+                    "runtime": agent_state.get("runtime_state") or {},
+                    "workspace": {
+                        "revision": snapshot.get("session", {}).get("revision"),
+                        "recovery_status": snapshot.get("session", {}).get("recovery_status") or operation.get("state", "ready"),
+                        "checkpoint_state": operation.get("state", "idle"),
+                    },
+                    "lightweight": True,
+                })
+            except WorkspaceError as exc:
+                return jsonify({"error": str(exc)}), 404
         agent = get_agent()
         if agent is None:
             return jsonify({"error": "Agent not available"}), 500

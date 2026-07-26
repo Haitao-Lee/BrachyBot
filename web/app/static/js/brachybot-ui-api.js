@@ -1645,6 +1645,40 @@ async function loadCTToViewers(ctPath, options = {}) {
     }
 }
 
+function _statusFromWorkspaceSnapshot(workspace, sessionId) {
+    const agent = workspace?.agent || {};
+    const results = agent.planning_results || {};
+    const controls = workspace?.ui?.state?.controls || workspace?.ui?.controls || {};
+    const uiState = agent.ui_state || {};
+    const value = (keys) => {
+        for (const source of [results, uiState, controls]) {
+            for (const key of keys) {
+                const candidate = source?.[key];
+                if (typeof candidate === 'string' && candidate.trim()) return candidate;
+                if (candidate && typeof candidate === 'object' && typeof candidate.value === 'string' && candidate.value.trim()) {
+                    return candidate.value;
+                }
+            }
+        }
+        return '';
+    };
+    const operation = workspace?.operation || {};
+    return {
+        session_id: String(sessionId || workspace?.session_id || ''),
+        ct_path: value(['ct_path', 'ctPath', 'ct_image_path', 'ctImagePath']),
+        ctv_path: value(['ctv_path', 'ctvPath', 'ctv_mask_path', 'ctvMaskPath']),
+        oar_path: value(['oar_path', 'oarPath', 'oar_mask_path', 'oarMaskPath']),
+        stored_keys: Object.keys(results),
+        brain_available: false,
+        runtime: agent.runtime_state || {},
+        workspace: {
+            revision: workspace?.session?.revision ?? workspace?.workspace?.revision ?? null,
+            recovery_status: workspace?.session?.recovery_status || operation.state || 'ready',
+        },
+        lightweight: true,
+    };
+}
+
 async function _restoreActiveSessionWorkspace(options = {}) {
     const sessionAtStart = _activeApiSessionId();
     // Helper: yield to the browser's rendering pipeline so DOM mutations
@@ -1682,12 +1716,19 @@ async function _restoreActiveSessionWorkspace(options = {}) {
     }
 
     let status = options.status || null;
+    // A supplied workspace snapshot already contains the compact paths and
+    // artifact keys needed to start the viewer loaders. Do not call the heavy
+    // /api/status endpoint here: that endpoint hydrates a full Agent and can
+    // synchronously read CT/plan arrays before the UI becomes usable.
+    if ((!status || status.session_id !== sessionAtStart) && workspace && options.background === true) {
+        status = _statusFromWorkspaceSnapshot(workspace, sessionAtStart);
+    }
     if (!status || status.session_id !== sessionAtStart) {
         const stCtrl = new AbortController();
         const stTimer = setTimeout(function(){ stCtrl.abort(); }, 30000);
         let response;
         try {
-            response = await fetch(API + '/status', {
+            response = await fetch(API + '/status?lightweight=1', {
                 headers: { 'X-BrachyBot-Session': sessionAtStart },
                 signal: stCtrl.signal,
             });
@@ -1712,26 +1753,35 @@ async function _restoreActiveSessionWorkspace(options = {}) {
     // rapidly switched sessions.
     refreshDicomRTImportStatus({ sessionId: sessionAtStart, silent: true });
 
-    // Training state belongs to the selected planning session as well.
-    try {
-        const uiCtrl = new AbortController();
-        const uiTimer = setTimeout(function(){ uiCtrl.abort(); }, 10000);
-        let uiResponse;
+    // Training state belongs to the selected planning session as well. The
+    // workspace snapshot already carries this state during background restore;
+    // avoid a second request on the critical hydration path.
+    if (!(options.background === true && workspace)) {
         try {
-            uiResponse = await fetch(API + '/ui/state', {
-                headers: { 'X-BrachyBot-Session': sessionAtStart },
-                signal: uiCtrl.signal,
-            });
-        } finally { clearTimeout(uiTimer); }
-        if (uiResponse.ok && _activeApiSessionId() === sessionAtStart) {
-            const uiData = await uiResponse.json();
-            const training = uiData.training || {};
-            trainingMonitorState.active = !!training.active;
-            trainingMonitorState.goal = training.goal || '';
-            trainingMonitorState.sessionId = sessionAtStart;
+            const uiCtrl = new AbortController();
+            const uiTimer = setTimeout(function(){ uiCtrl.abort(); }, 10000);
+            let uiResponse;
+            try {
+                uiResponse = await fetch(API + '/ui/state', {
+                    headers: { 'X-BrachyBot-Session': sessionAtStart },
+                    signal: uiCtrl.signal,
+                });
+            } finally { clearTimeout(uiTimer); }
+            if (uiResponse.ok && _activeApiSessionId() === sessionAtStart) {
+                const uiData = await uiResponse.json();
+                const training = uiData.training || {};
+                trainingMonitorState.active = !!training.active;
+                trainingMonitorState.goal = training.goal || '';
+                trainingMonitorState.sessionId = sessionAtStart;
+            }
+        } catch (error) {
+            console.debug('[session restore] UI state unavailable:', error);
         }
-    } catch (error) {
-        console.debug('[session restore] UI state unavailable:', error);
+    } else {
+        const training = workspace?.ui?.bridge?.training || workspace?.ui?.state?.training || {};
+        trainingMonitorState.active = !!training.active;
+        trainingMonitorState.goal = training.goal || '';
+        trainingMonitorState.sessionId = sessionAtStart;
     }
 
     const ctPath = String(status.ct_path || '').trim();

@@ -45,14 +45,24 @@
 - Asynchronous 3D segmentation prewarm requests are invalidated on case
   changes before their results can add meshes. This prevents old OAR/CTV
   surfaces from reappearing after a new session is created.
-- Case creation, switching, and deletion are serialized as one workspace
-  transition. The sidebar is briefly unavailable while the selected case is
-  persisted and restored, preventing rapid clicks or out-of-order responses
-  from mixing one case's chat with another case's viewer state.
-- The control-plane transition now paints the server-owned lightweight case
-  snapshot immediately; CT, meshes, dose arrays, and agent hydration continue
-  in a generation-scoped background task. A rapid second switch cancels the
-  old restore instead of blocking the sidebar for the full GPU/data load.
+- Case creation, switching, and deletion use a serialized control-plane
+  transition with optimistic shell painting. The selected case title, chat
+  transcript, and lightweight state appear immediately; generation fences
+  prevent rapid clicks or out-of-order responses from mixing one case's chat
+  with another case's viewer state.
+- Creating a new empty case takes the blank-shell path: it clears the prior
+  case's visible resources and transcript immediately, shows no misleading
+  `Opening case...` hydration notice, and does not issue a background clinical
+  restore for a case that has no CT, labels, meshes, dose, or report assets.
+- CT, labels, meshes, dose arrays, report figures, and Agent hydration continue
+  in a visible, generation-scoped background restore. A rapid second switch
+  detaches the old restore instead of blocking the sidebar for the full GPU or
+  data load. The task owned by the previous case remains server-side and is
+  replayed when that case is selected again.
+- Browser IndexedDB cache accounting is non-blocking: the first cache read does
+  not wait for a full quota scan, and report figures are restored concurrently.
+  A lightweight `/api/status?lightweight=1` endpoint reads durable paths and
+  checkpoint keys without hydrating the full Agent.
 - Dynamically generated clinical evaluation text follows the global EN/中文
   switch, including metric labels, review items, source policy, and empty
   states. Viewer resize handles keep their drag hit area while the divider
