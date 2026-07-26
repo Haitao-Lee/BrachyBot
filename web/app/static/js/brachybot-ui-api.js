@@ -861,7 +861,10 @@ async function refreshTumorTypeAvailability() {
     const select = document.getElementById('ctvModelSelect');
     if (!select) return;
     try {
-        const response = await fetch(API + '/ctv/models?include_experimental=0');
+        // Include the optional research catalog so a configured BiomedParse
+        // runtime can mark the corresponding tumor type as actionable. The
+        // catalog is not rendered as model-brand text in the selector.
+        const response = await fetch(API + '/ctv/models?include_experimental=1');
         const payload = await response.json();
         if (!response.ok || !payload?.success) throw new Error(payload?.error || `HTTP ${response.status}`);
         const availability = new Map();
@@ -871,7 +874,11 @@ async function refreshTumorTypeAvailability() {
             // A model is selectable automatically only when its required
             // local resource is present. Manual CTV import remains available
             // for every tumor type, so unavailable options stay selectable.
-            availability.set(type, !!model.local_present);
+            // An optional site is automatically actionable when its local
+            // model exists or its explicitly configured BiomedParse research
+            // fallback is available. The server still preserves provenance
+            // and blocks empty/failed candidates.
+            availability.set(type, !!model.local_present || !!model.fallback_available || !!model.runtime_available);
         });
         Array.from(select.options).forEach(option => {
             if (availability.has(option.value)) {
@@ -893,6 +900,7 @@ function updateTumorTypeSelector(value) {
         pancreas: 'nnunet_pancreatic', pancreatic: 'nnunet_pancreatic',
         liver: 'voco_liver', kidney: 'voco_kidney', lung: 'voco_lung',
         colon: 'voco_colon', prostate: 'prostate_tumor',
+        'head and neck': 'biomedparse_head_neck_cancer', head_neck: 'biomedparse_head_neck_cancer',
         '胰腺': 'nnunet_pancreatic', '肝脏': 'voco_liver', '肾': 'voco_kidney',
         '肺': 'voco_lung', '结肠': 'voco_colon', '前列腺': 'prostate_tumor',
     };

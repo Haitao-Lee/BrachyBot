@@ -150,3 +150,14 @@ def test_agent_tool_uses_the_same_versioned_guide_contract_as_the_web_route():
     assert result.success is True
     assert result.metadata["guide"]["version"] == 1
     assert guide_version_summaries(agent)[0]["version"] == 1
+
+
+def test_surgical_guide_has_manual_and_chat_entry_points():
+    schema = SurgicalGuideTool().input_schema
+    assert schema["properties"]["action"]["enum"] == ["generate", "status"]
+    index = open("web/app/index.html", encoding="utf-8").read()
+    script = open("web/app/static/js/brachybot-surgical-guide.js", encoding="utf-8").read()
+    prompt = open("config/prompts/system_prompt.md", encoding="utf-8").read()
+    assert "generateSurgicalGuideButton" in index
+    assert "function generateSurgicalGuide" in script
+    assert "surgical_guide" in prompt

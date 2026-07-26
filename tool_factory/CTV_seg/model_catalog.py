@@ -97,6 +97,91 @@ CTV_MODEL_CATALOG: List[Dict[str, object]] = [
         "sources": ["https://github.com/Luffy03/Large-Scale-Medical"],
     },
     {
+        "id": "biomedparse_v2_liver_tumor",
+        "site": "liver",
+        "modality": "CT",
+        "target": "liver tumor CTV candidate",
+        "status": "external_research_runtime_requires_opt_in",
+        "tool": "ctv_segmentation",
+        "tumor_type": "biomedparse_liver_tumor",
+        "runtime_root_env": "BIOMEDPARSE_ROOT",
+        "checkpoint_env": "BIOMEDPARSE_V2_CHECKPOINT",
+        "notes": "Official BiomedParse v2 text-guided candidate; requires the isolated official runtime and clinician contour review.",
+        "sources": [
+            "https://github.com/microsoft/BiomedParse/tree/v2",
+            "https://huggingface.co/microsoft/BiomedParse",
+            "https://doi.org/10.1038/s41592-024-02499-w",
+        ],
+    },
+    {
+        "id": "biomedparse_v2_kidney_lesion",
+        "site": "kidney",
+        "modality": "CT",
+        "target": "kidney lesion CTV candidate",
+        "status": "external_research_runtime_requires_opt_in",
+        "tool": "ctv_segmentation",
+        "tumor_type": "biomedparse_kidney_lesion",
+        "runtime_root_env": "BIOMEDPARSE_ROOT",
+        "checkpoint_env": "BIOMEDPARSE_V2_CHECKPOINT",
+        "notes": "Official BiomedParse v2 lesion candidate; requires the isolated official runtime and clinician contour review.",
+        "sources": [
+            "https://github.com/microsoft/BiomedParse/tree/v2",
+            "https://huggingface.co/microsoft/BiomedParse",
+            "https://doi.org/10.1038/s41592-024-02499-w",
+        ],
+    },
+    {
+        "id": "biomedparse_v2_lung_lesion",
+        "site": "lung",
+        "modality": "CT",
+        "target": "lung lesion CTV candidate",
+        "status": "external_research_runtime_requires_opt_in",
+        "tool": "ctv_segmentation",
+        "tumor_type": "biomedparse_lung_lesion",
+        "runtime_root_env": "BIOMEDPARSE_ROOT",
+        "checkpoint_env": "BIOMEDPARSE_V2_CHECKPOINT",
+        "notes": "Official BiomedParse v2 lesion candidate; requires the isolated official runtime and clinician contour review.",
+        "sources": [
+            "https://github.com/microsoft/BiomedParse/tree/v2",
+            "https://huggingface.co/microsoft/BiomedParse",
+            "https://doi.org/10.1038/s41592-024-02499-w",
+        ],
+    },
+    {
+        "id": "biomedparse_v2_colon_primary",
+        "site": "colon",
+        "modality": "CT",
+        "target": "colon cancer primary CTV candidate",
+        "status": "external_research_runtime_requires_opt_in",
+        "tool": "ctv_segmentation",
+        "tumor_type": "biomedparse_colon_primary",
+        "runtime_root_env": "BIOMEDPARSE_ROOT",
+        "checkpoint_env": "BIOMEDPARSE_V2_CHECKPOINT",
+        "notes": "Official BiomedParse v2 text-guided candidate; requires the isolated official runtime and clinician contour review.",
+        "sources": [
+            "https://github.com/microsoft/BiomedParse/tree/v2",
+            "https://huggingface.co/microsoft/BiomedParse",
+            "https://doi.org/10.1038/s41592-024-02499-w",
+        ],
+    },
+    {
+        "id": "biomedparse_v2_head_neck_cancer",
+        "site": "head_neck",
+        "modality": "CT",
+        "target": "head and neck cancer CTV candidate",
+        "status": "external_research_runtime_requires_opt_in",
+        "tool": "ctv_segmentation",
+        "tumor_type": "biomedparse_head_neck_cancer",
+        "runtime_root_env": "BIOMEDPARSE_ROOT",
+        "checkpoint_env": "BIOMEDPARSE_V2_CHECKPOINT",
+        "notes": "Official BiomedParse v2 text-guided candidate; requires the isolated official runtime and clinician contour review.",
+        "sources": [
+            "https://github.com/microsoft/BiomedParse/tree/v2",
+            "https://huggingface.co/microsoft/BiomedParse",
+            "https://doi.org/10.1038/s41592-024-02499-w",
+        ],
+    },
+    {
         "id": "totalsegmentator_whole_prostate",
         "site": "prostate",
         "modality": "CT",
@@ -239,6 +324,19 @@ def catalog_with_local_status(repo_root: Optional[str] = None) -> List[Dict[str,
         repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 
     items: List[Dict[str, object]] = []
+    # This import is lightweight because the BiomedParse adapter imports its
+    # official torch/Hydra stack only inside the first inference call.
+    try:
+        from .biomedparse_v2 import _availability as _biomedparse_availability
+        biomedparse_available = bool(_biomedparse_availability().get("available"))
+    except Exception:
+        biomedparse_available = False
+    fallback_for = {
+        "voco_liver": "biomedparse_liver_tumor",
+        "voco_kidney": "biomedparse_kidney_lesion",
+        "voco_lung": "biomedparse_lung_lesion",
+        "voco_colon": "biomedparse_colon_primary",
+    }
     for item in CTV_MODEL_CATALOG:
         entry = dict(item)
         rel = entry.get("local_expected_path")
@@ -247,6 +345,11 @@ def catalog_with_local_status(repo_root: Optional[str] = None) -> List[Dict[str,
             entry["local_present"] = os.path.exists(entry["local_path"])
         else:
             entry["local_present"] = False
+        if str(entry.get("tumor_type", "")) in fallback_for:
+            entry["fallback_tumor_type"] = fallback_for[str(entry["tumor_type"])]
+            entry["fallback_available"] = biomedparse_available
+        if entry.get("runtime_root_env") == "BIOMEDPARSE_ROOT":
+            entry["runtime_available"] = biomedparse_available
         items.append(entry)
     return items
 
