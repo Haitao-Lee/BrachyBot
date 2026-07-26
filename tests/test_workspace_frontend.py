@@ -56,7 +56,9 @@ def test_new_case_creation_avoids_empty_workspace_hydration_and_redundant_round_
     new_case = workspace.split("window.newChat =", 1)[1].split("window.switchSession =", 1)[0]
     assert "await loadServerSessions()" not in new_case
     assert "void persistWorkspace('session.switching')" in new_case
-    assert "paintSessionShell(optimisticId)" in new_case
+    assert "paintSessionShell(optimisticId, { blank: true })" in new_case
+    assert "function paintSessionShell(sessionId, { clearWorkspace = true, blank = false } = {})" in workspace
+    assert "if (blank)" in workspace
     assert "clearClientWorkspace({ clearReport: true, deferDisposal: true })" in workspace
     assert "scheduleBackgroundWorkspaceRestore" not in new_case
     assert "applyLeaseResult" in new_case
@@ -216,6 +218,28 @@ def test_workspace_hydration_has_visible_nonblocking_progress_state():
     assert "setWorkspaceHydrationState" in workspace
     assert "_restoreActiveSessionWorkspace" in ui_api
     assert "workspaceHydrationNotice" in index
+
+
+def test_session_restore_uses_lightweight_status_and_background_assets():
+    """The control plane must not hydrate the full Agent or await report blobs."""
+    cache = read("web/app/static/js/brachybot-session-cache.js")
+    workspace = read("web/app/static/js/brachybot-workspace.js")
+    ui_api = read("web/app/static/js/brachybot-ui-api.js")
+    routes = read("web/routes/planning_routes.py")
+
+    cache_api = cache.split("var api = {", 1)[1]
+    cache_get = cache_api.split("put: async", 1)[0]
+    assert "beginRunningSizeInitialization(db)" in cache_get
+    assert "await ensureRunningSize(db)" not in cache_get
+    assert "_pendingSizeDelta" in cache
+    assert "function hydrateReportFigureAssets" in workspace
+    assert "Promise.all(pending.map" in workspace
+    assert "status?lightweight=1" in ui_api
+    assert "_statusFromWorkspaceSnapshot" in ui_api
+    assert "get_agent();" in routes  # normal status remains available
+    assert "lightweight" in routes
+    lightweight_block = routes.split('if request.args.get("lightweight"', 1)[1].split("agent = get_agent()", 1)[0]
+    assert "get_agent()" not in lightweight_block
 
 
 def test_deleted_case_cancels_pending_agent_checkpoint():

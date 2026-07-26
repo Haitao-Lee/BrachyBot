@@ -8934,3 +8934,60 @@ research-only provenance in the server result.
 The three warnings remain third-party SimpleITK SWIG deprecations. No local
 checkpoint is included, so real BiomedParse inference still requires an
 explicitly provisioned upstream runtime and separate clinical validation.
+
+## 2026-07-27 - Session restore performance and non-blocking hydration
+
+### Confirmed bottlenecks
+
+The session restore path had two real, independent latency sources:
+
+1. The browser cache started a full IndexedDB entry scan and awaited it from
+   the first `get`, `put`, and session invalidation. The scan was intended for
+   quota accounting, but it was on the clinical restore critical path.
+2. When a background restore did not receive an already-loaded workspace
+   snapshot, the browser called the full `/api/status` endpoint. That endpoint
+   creates/hydrates the selected Agent and can read CT and planning artifacts;
+   it is appropriate for a complete status view, not for switching the visible
+   case shell.
+3. Report figure cache entries were read serially while applying the snapshot,
+   so a report with several large screenshots could delay the first paint.
+
+### Implemented fixes
+
+- IndexedDB size accounting now starts its one-time baseline scan in the
+  background. Normal cache reads and writes return on the IndexedDB operation;
+  pending size deltas are reconciled when the baseline completes. Full entry
+  enumeration remains reserved for deferred quota eviction.
+- Added `/api/status?lightweight=1`. It reads only the authenticated durable
+  snapshot, returns case-owned input paths, artifact keys, runtime checkpoint
+  metadata, and revision information, and deliberately does not call
+  `get_agent()`.
+- Background restore derives the same lightweight status directly from the
+  already-fetched workspace snapshot whenever possible. The full status
+  endpoint remains unchanged for callers that need device/provider health and
+  live Agent status.
+- Report figures are restored with concurrent cache reads after the control
+  plane has painted. A session/generation fence prevents late figure data from
+  changing another case.
+- The existing generation fences remain in force for CT, labels, dose, meshes,
+  DVH, report assets, and task replay. Switching cases changes the visible
+  shell immediately; resource hydration continues in a case-scoped background
+  task and does not cancel the server-owned task.
+- Empty-case creation uses a separate blank-shell path. It cancels only the
+  browser's previous hydration callbacks, clears the old visible workspace,
+  suppresses the misleading `Opening case...` notice, and skips clinical
+  resource restoration because a new case has no resources yet. This does not
+  abort or mutate the previous case's server-owned task.
+
+### Verification
+
+- `node --check` passed for the session cache, workspace bridge, and UI API.
+- `python -m py_compile web/routes/planning_routes.py` passed.
+- `git diff --check` passed.
+- Full regression suite: **302 passed, 2 skipped, 3 warnings**.
+- Frontend workspace regressions: **54 passed**.
+
+The three warnings remain third-party SimpleITK SWIG deprecation warnings.
+This optimization changes scheduling and status transport only; it does not
+change coordinate conversion, dose calculation, planning candidate selection,
+or clinical review logic.
