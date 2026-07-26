@@ -8699,3 +8699,70 @@ called immediately after `renderDataTree()` inside
 ### Verification
 
 - JS braces balanced in `brachybot-workspace.js` (1235/1235).
+
+---
+
+## 2026-07-25 — Browser-side data leak on session delete
+
+### Confirmed issue
+
+1. Deleting a session via the workspace bridge did NOT invalidate
+   its IndexedDB `SessionCache` entries. CT volumes, label volumes,
+   3D meshes, and report figures for the deleted session remained
+   in the browser cache until the 800 MB LRU cap forced eviction.
+
+2. Legacy `localStorage` entries (`brachybot_manual_state`,
+   `brachyplan_reportForm`, `brachyplan_report_audit`,
+   `brachyplan_report_snapshots`) were only cleaned by the legacy
+   `deleteSession()` in `chat-core.js`, never in the server-backed
+   `window.deleteSession()` in `workspace.js`.
+
+### Resolution
+
+1. `window.deleteSession()` (`brachybot-workspace.js`) now calls
+   `window.SessionCache.invalidateSession(id)` to remove cached
+   CT/label/mesh/report data from IndexedDB immediately on delete.
+
+2. Also calls `removeSessionScopedLocalState(id)` to scrub
+   session-scoped localStorage keys that were previously only
+   cleaned in the legacy fallback path.
+
+### Verification
+
+- JS braces balanced in `brachybot-workspace.js`.
+
+---
+
+## 2026-07-25 — Pre-existing SyntaxError in planning_routes.py chat task start
+
+### Confirmed issue
+
+Two bugs in `web/routes/planning_routes.py`:
+
+1. **`checkpoint_ui_bridge`**: `WorkspaceNotFound` (raised when a
+   deleted session's UI state is persisted by a stale frontend)
+   fell through to the generic `WorkspaceError` catch, which logged
+   a noisy `WARNING` with full traceback on every retry.
+
+2. **`chat_task_start`**: The outer `try:` at line 2671 had no
+   matching `except` or `finally` block. The inner `try/except/
+   finally` at 16 spaces was complete, but the outer `try:` at 12
+   spaces was never closed, causing `SyntaxError: expected 'except'
+   or 'finally' block` at the following `def generate_task()`.
+
+### Resolution
+
+1. Added `import WorkspaceNotFound` and a specific `except
+   WorkspaceNotFound` handler above the generic `WorkspaceError`
+   catch. Deleted-session persistence attempts are now silently
+   dropped.
+
+2. Added `except Exception: start_gate.set()` for the outer try
+   around `checkpoint_operation()`. If the workspace checkpoint
+   write fails (e.g. workspace was deleted between task creation
+   and persistence), the start gate is still released so the SSE
+   stream can proceed.
+
+### Verification
+
+- `py_compile` passed for `planning_routes.py`.
