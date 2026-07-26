@@ -2871,8 +2871,26 @@ function showAllOrgans() {
     if (state.ctLoaded) loadAllSlices();
 }
 
+function _setPlanningDoseProjectionVisibility(visible) {
+    if (typeof state === 'undefined') return;
+    if (state.doseOverlay) state.doseOverlay.visible = !!visible;
+    // Dose projections use independent canvases instead of the CT canvas.
+    // Hiding the Planning parent must clear those layers immediately; merely
+    // changing doseOverlay.visible would leave the last painted slice visible.
+    ['axial', 'sagittal', 'coronal'].forEach(axis => {
+        ['doseOverlayCanvas', 'doseCanvas', 'contourCanvas'].forEach(prefix => {
+            const canvas = document.getElementById(prefix + capitalize(axis));
+            if (!canvas) return;
+            if (!visible) canvas.getContext('2d')?.clearRect(0, 0, canvas.width, canvas.height);
+            canvas.style.display = visible ? 'block' : 'none';
+        });
+    });
+    if (typeof updateDoseColorbars === 'function') updateDoseColorbars(!!visible);
+}
+
 function setGroupVisibility(category, visible) {
     if (category === 'planning') {
+        dataTreeState.planning.visible = !!visible;
         _planningVisualEntries().forEach(item => { item.visible = visible; });
         _planningItems('seeds').forEach(seed => {
             const mesh = scene3D.meshes[seed.id];
@@ -2887,7 +2905,7 @@ function setGroupVisibility(category, visible) {
             const mesh = scene3D.meshes[`dose_iso_${level.threshold}`];
             if (mesh) applyMeshVisibility(mesh, visible, level.opacity ?? 0.3);
         });
-        if (state.doseOverlay) state.doseOverlay.visible = visible;
+        _setPlanningDoseProjectionVisibility(visible);
         (dataTreeState.planning.meshes || []).forEach(item => {
             const mesh = scene3D.meshes[item.id];
             if (mesh) applyMeshVisibility(mesh, visible, item.opacity ?? 0.7);
@@ -3212,6 +3230,7 @@ function toggleDataVisibility(id) {
             const m = scene3D.meshes[item.id];
             if (m) applyMeshVisibility(m, item.visible, item.opacity ?? 0.7);
         });
+        _setPlanningDoseProjectionVisibility(dataTreeState.planning.visible);
     }
 
     // Sync with existing overlay system

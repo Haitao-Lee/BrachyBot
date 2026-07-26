@@ -110,10 +110,34 @@
             backgroundRestoreTimer = null;
             if (generation !== backgroundRestoreGeneration || sessionId !== activeSessionId) return;
             try {
+                // The snapshot returned by the fast select endpoint can be
+                // one revision behind a task that finished while the case
+                // was hidden. Refresh the small JSON snapshot before loading
+                // large CT/mesh assets; otherwise a restored case may show
+                // its chat while silently missing the just-finished plan.
+                let authoritativeWorkspace = workspace;
+                try {
+                    const response = await workspaceFetch('/api/workspace/snapshot', {
+                        headers: { 'X-BrachyBot-Session': String(sessionId) },
+                    }, 10000);
+                    if (response.ok) {
+                        const payload = await response.json();
+                        const candidate = payload?.workspace;
+                        if (workspaceSnapshotSessionId(candidate) === String(sessionId)) {
+                            authoritativeWorkspace = candidate;
+                            window._activeWorkspaceSnapshot = candidate;
+                            rememberWorkspaceRevision(candidate);
+                        }
+                    }
+                } catch (refreshError) {
+                    // The already received snapshot is still a valid fallback
+                    // for a temporarily unavailable control-plane request.
+                    console.debug('[workspace] fresh snapshot deferred:', refreshError);
+                }
                 if (typeof restoreActiveSessionWorkspace === 'function') {
                     await restoreActiveSessionWorkspace({
                         clearReport: false,
-                        workspace,
+                        workspace: authoritativeWorkspace,
                         background: true,
                         // The optimistic shell has already cleared the old
                         // case. Do not erase a just-resumed task trace while
@@ -123,6 +147,13 @@
                 }
             } catch (error) {
                 console.warn('[workspace] background case restore failed:', error);
+            } finally {
+                // The restore wrapper normally clears this state itself. Keep
+                // the fallback here so a failed snapshot refresh or a missing
+                // loader cannot leave a permanent spinner in the corner.
+                if (generation === backgroundRestoreGeneration && sessionId === activeSessionId) {
+                    window.setWorkspaceHydrationState?.(false);
+                }
             }
         }, 0);
     }
@@ -382,8 +413,22 @@
         // Chat is the first-paint part of a workspace.  It contains no CT,
         // GPU, WebGL, or model state, so restoring it here keeps reconnects
         // responsive while the clinical data plane hydrates in the background.
-        if (Array.isArray(chat.messages)) {
-            sessions[sessionId].messages = jsonClone(chat.messages);
+        let messages = Array.isArray(chat.messages) ? chat.messages : null;
+        // Older snapshots stored the last tool trace separately before chat
+        // messages became the canonical transcript. Reconstruct a read-only
+        // thinking row when that legacy shape is encountered so tool history
+        // is not silently lost after a browser refresh.
+        if (!messages && Array.isArray(chat.execution_trace) && chat.execution_trace.length) {
+            const rawTimestamp = Number(chat.updated_at || snapshot.saved_at || Date.now());
+            messages = [{
+                type: 'thinking',
+                content: '',
+                steps: jsonClone(chat.execution_trace),
+                timestamp: rawTimestamp < 1e12 ? rawTimestamp * 1000 : rawTimestamp,
+            }];
+        }
+        if (messages) {
+            sessions[sessionId].messages = jsonClone(messages);
             sessions[sessionId].pending = false;
             if (typeof loadSessionChat === 'function') loadSessionChat(sessionId);
         }
@@ -678,15 +723,25 @@
                 delete window._detachedChatTasks?.[sessionId];
                 window._sessionChatTaskStatuses[sessionId] = chat.task_status || 'idle';
             }
-            if (!options.skipChat && Array.isArray(chat.messages) && typeof sessions !== 'undefined' && sessions[sessionId]) {
+            let chatMessages = Array.isArray(chat.messages) ? chat.messages : null;
+            if (!chatMessages && Array.isArray(chat.execution_trace) && chat.execution_trace.length) {
+                const rawTimestamp = Number(chat.updated_at || snapshot.saved_at || Date.now());
+                chatMessages = [{
+                    type: 'thinking',
+                    content: '',
+                    steps: jsonClone(chat.execution_trace),
+                    timestamp: rawTimestamp < 1e12 ? rawTimestamp * 1000 : rawTimestamp,
+                }];
+            }
+            if (!options.skipChat && Array.isArray(chatMessages) && typeof sessions !== 'undefined' && sessions[sessionId]) {
                 // Preserve live browser-side messages that arrived after the
                 // last server save (e.g. detached bot responses during a
                 // session switch).  If the local copy has more messages than
                 // the snapshot the browser is more up-to-date; otherwise the
                 // snapshot is authoritative (page refresh, stale cache).
                 const localMsgs = sessions[sessionId].messages || [];
-                if (chat.messages.length >= localMsgs.length) {
-                    sessions[sessionId].messages = chat.messages;
+                if (chatMessages.length >= localMsgs.length) {
+                    sessions[sessionId].messages = chatMessages;
                 }
                 sessions[sessionId].pending = false;
                 if (typeof loadSessionChat === 'function' && sessionId === String(activeSessionId || '')) {
@@ -1187,8 +1242,14 @@
             const remaining = Object.keys(sessions).filter(k => k !== id);
             if (remaining.length) {
                 const nextId = remaining[0];
-                if (typeof window.cancelActiveChatTurn === 'function') {
-                    await window.cancelActiveChatTurn('Session deleted');
+                if (typeof window.detachActiveChatTurn === 'function') {
+                    // Deleting a case changes the visible workspace but is
+                    // not the explicit Stop action. Detach this browser's
+                    // stream and let the server-owned task finish; the
+                    // deleted case may no longer accept a final checkpoint,
+                    // but another case must never be cancelled as a side
+                    // effect of this UI operation.
+                    window.detachActiveChatTurn('Session deleted');
                 }
                 await window.switchSession(nextId);
             }

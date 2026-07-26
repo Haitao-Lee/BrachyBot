@@ -1838,15 +1838,13 @@ async function _restoreActiveSessionWorkspace(options = {}) {
         return status;
     }
 
-    // --- CT data exists: load in parallel with label / planning ---
-    // Clear state once before starting parallel work.  Each data source
-    // renders its own results as soon as it arrives.
+    // --- CT data exists: restore dependency layers in order ---
+    // Labels and planning results depend on CT geometry held by the current
+    // Agent. The shell remains responsive, but CT must hydrate first.
     resetAllState({ deferDisposal: true });
     // Let the reset paint before initiating network I/O.
     await _yield();
 
-    // Start all three heavy fetches concurrently so they overlap on the
-    // wire rather than waiting for each other sequentially.
     let ctVolumeResult = null;
     let ctMetaResult = null;
     const ctTask = (async () => {
@@ -1865,7 +1863,19 @@ async function _restoreActiveSessionWorkspace(options = {}) {
         'seed_plan', 'seed_plan_serialized', 'manual_planning_preview',
     ].some(key => storedKeys.has(key));
 
-    const labelTask = (!hasPlanning && typeof loadLabelVolumes === 'function')
+    // These tasks depend on the CT being present in the current Agent. They
+    // are created after ctTask resolves below; starting them here races the
+    // Agent hydration and can leave Data Tree/Planning empty.
+    // CT is the base layer for every subsequent restore request.
+    await ctTask;
+    if (_activeApiSessionId() !== sessionAtStart) return null;
+    await _yield();
+
+    // Labels and planning results share the CT grid but are otherwise
+    // independent restore products. Start both after CT is ready so OAR/CTV
+    // reconstruction cannot disappear when a planning refresh is slow or
+    // returns no dose payload.
+    const labelTask = (typeof loadLabelVolumes === 'function')
         ? loadLabelVolumes({ sessionId: sessionAtStart, preserveViewerState: true })
         : Promise.resolve();
 
@@ -1874,18 +1884,26 @@ async function _restoreActiveSessionWorkspace(options = {}) {
             switchToViewers: false,
             sessionId: sessionAtStart,
             preserveViewerState: true,
+            skipLabelLoad: true,
         })
         : Promise.resolve();
-
-    // Wait for CT first — slices are the base layer.  Label / planning
-    // layers render independently as soon as their tasks complete.
-    await ctTask;
-    if (_activeApiSessionId() !== sessionAtStart) return null;
-    await _yield();
 
     await Promise.allSettled([labelTask, planningTask]);
     if (_activeApiSessionId() !== sessionAtStart) return null;
     await _yield();
+
+    // Clinical loaders create the current case's Data Tree entries after the
+    // lightweight snapshot has painted. Reapply only presentation state now
+    // that those entries exist; never replace their arrays, labels, geometry,
+    // or coordinate metadata with a browser snapshot.
+    if (workspace && typeof applyWorkspaceSnapshot === 'function') {
+        await applyWorkspaceSnapshot(workspace, {
+            preserveClinicalData: true,
+            skipChat: true,
+            skipTaskResume: true,
+        });
+        if (_activeApiSessionId() !== sessionAtStart) return null;
+    }
 
     // --- manual state from stored keys ---
     if (typeof _saveManualState === 'function') {
