@@ -102,6 +102,36 @@ def test_chat_task_replays_events_and_is_case_scoped():
     assert manager.get(task.task_id, "user-a", "case-b") is None
 
 
+def test_lazy_agent_supplier_keeps_task_handshake_non_blocking():
+    """Cold case hydration belongs to the worker, not the HTTP handshake."""
+    manager = ChatTaskManager()
+    gate = threading.Event()
+    supplied = threading.Event()
+    agent = _Agent([
+        _event("response", {"response": "hydrated"}),
+        _event("done", {}),
+    ])
+
+    def supplier():
+        supplied.set()
+        return agent
+
+    task = manager.start(
+        _App(), "user-a", "case-a", None, "hello", {},
+        start_gate=gate, agent_supplier=supplier,
+    )
+    assert task.status == "running"
+    assert supplied.is_set() is False
+    gate.set()
+    deadline = time.time() + 2
+    while task.status == "running" and time.time() < deadline:
+        time.sleep(0.01)
+    assert supplied.is_set() is True
+    assert task.status == "completed"
+    assert task.response == "hydrated"
+    assert any(step.get("tool") == "workspace_hydration" for step in task.steps)
+
+
 def test_only_explicit_cancel_stops_a_running_case_task():
     manager = ChatTaskManager()
     gate = threading.Event()
