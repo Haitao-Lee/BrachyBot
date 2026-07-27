@@ -1684,6 +1684,25 @@ function _statusFromWorkspaceSnapshot(workspace, sessionId) {
     };
 }
 
+function _workspaceNeedsClinicalRestore(workspace, status) {
+    // An authoritative empty workspace must win over any stale lightweight
+    // status object left by the previous case. This is the key guard against
+    // an empty New case inheriting the old case's loading spinner or paths.
+    if (workspace && typeof workspace === 'object') {
+        if (typeof window.workspaceSnapshotHasClinicalResources === 'function') {
+            return window.workspaceSnapshotHasClinicalResources(workspace);
+        }
+        return Object.keys(workspace?.agent?.planning_results || {}).length > 0;
+    }
+    const candidate = status || {};
+    return Boolean(
+        String(candidate.ct_path || '').trim()
+        || String(candidate.ctv_path || '').trim()
+        || String(candidate.oar_path || '').trim()
+        || (Array.isArray(candidate.stored_keys) && candidate.stored_keys.length)
+    );
+}
+
 async function _restoreActiveSessionWorkspace(options = {}) {
     const sessionAtStart = _activeApiSessionId();
     // Helper: yield to the browser's rendering pipeline so DOM mutations
@@ -1964,6 +1983,12 @@ async function _restoreActiveSessionWorkspace(options = {}) {
     return status;
 }
 async function restoreActiveSessionWorkspace(options = {}) {
+    const authoritativeWorkspace = options.workspace || window._activeWorkspaceSnapshot || null;
+    if (authoritativeWorkspace && !_workspaceNeedsClinicalRestore(authoritativeWorkspace, options.status)) {
+        console.debug('[session restore] skipped empty case', authoritativeWorkspace.session_id || authoritativeWorkspace.session?.id);
+        window.setWorkspaceHydrationState?.(false);
+        return options.status || null;
+    }
     // Show a small non-blocking status while the case is restored. Clinical
     // controls remain usable; heavy meshes and report figures may finish in
     // the background after the essential transcript and paths are visible.
@@ -2144,11 +2169,20 @@ async function init() {
     // The initial shell must remain interactive while heavy CT/mesh restoration
     // runs in the background.  The session snapshot has already painted the
     // durable chat/control-plane state above, so waiting here only delays input.
-    void restoreActiveSessionWorkspace({ status: _statusData, clearReport: true, background: true })
-        .catch(error => {
-            console.warn('Active session workspace restore failed:', error);
-            if (typeof clearClientWorkspace === 'function') clearClientWorkspace({ clearReport: true });
-        });
+    const authoritativeWorkspace = window._activeWorkspaceSnapshot || null;
+    if (_workspaceNeedsClinicalRestore(authoritativeWorkspace, _statusData)) {
+        void restoreActiveSessionWorkspace({ status: _statusData, clearReport: true, background: true })
+            .catch(error => {
+                console.warn('Active session workspace restore failed:', error);
+                if (typeof clearClientWorkspace === 'function') clearClientWorkspace({ clearReport: true });
+            });
+    } else {
+        // A newly-created or deliberately empty case has nothing to hydrate.
+        // Do not show a misleading Loading case resources notice or start a
+        // cold Agent solely to prove that the case is empty.
+        console.debug('[session restore] initial case has no clinical resources; hydration skipped');
+        window.setWorkspaceHydrationState?.(false);
+    }
     if (typeof loadSessionChat === 'function' && activeSessionId) loadSessionChat(activeSessionId);
     syncUIBridgeState('init').catch(e => console.warn('Initial UI state sync failed:', e));
 

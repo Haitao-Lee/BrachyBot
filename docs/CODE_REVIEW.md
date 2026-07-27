@@ -9179,3 +9179,88 @@ expire.
 These changes affect source retrieval error handling and response fallback
 selection only. They do not weaken URL validation, source verification, tool
 authorization, clinical planning, dose calculation, or coordinate conversion.
+
+## 2026-07-27 - Non-blocking workspace checkpoint and live-progress recovery
+
+### Confirmed root causes
+
+- The successful chat path treated `workspace_checkpoint` as part of the user-visible
+  task. `finalize_chat_task()` synchronously serialized the Agent memory before
+  sending the terminal SSE event. CT-sized arrays, nested CTV/OAR masks, dose data,
+  snapshot JSON, sidecar cleanup, and SQLite metadata therefore appeared as a frozen
+  final step. A slow or interrupted write could leave the UI at `11/12` while no
+  clinical operation was still running.
+- A process restart could not reliably reuse nested arrays stored below OAR/CTV
+  structure names. Each checkpoint could rewrite unchanged NPY sidecars, and the
+  previous quota implementation rescanned the whole account for every array.
+- Long model/tool phases can legitimately produce no business SSE event. Without a
+  protocol heartbeat, the browser read timeout could emit
+  `Connection interrupted; restoring live progress...` even though the server task
+  was still alive.
+- Empty or newly-created sessions were allowed to enter the clinical restore wrapper.
+  This caused a misleading `Loading case resources...` notice and could leave a stale
+  restore timer attached after a case was deleted or switched.
+
+### Implemented fixes
+
+- Chat completion now commits the lightweight transcript, execution trace, and
+  operation status first, emits the final response, and starts the heavy Agent
+  checkpoint in a daemon worker. The checkpoint is no longer added to the main
+  Execution Trace. Its independent status is exposed as task metadata for diagnostics;
+  a slow or failed save cannot turn a completed clinical response into a pending UI
+  step.
+- Planning, surgical-guide, and request-completion checkpoints use a debounced
+  background path. Generation fencing invalidates delayed callbacks so an older
+  `running` snapshot cannot overwrite a newer `ready` or deleted-case state.
+- Checkpoint logging now identifies each phase and duration: `started`, account
+  capacity scan, artifact encoding, prepared array counts, snapshot write, artifact
+  commit/prune, `completed`, and `failed` with a traceback. Agent hydration logs
+  construction, snapshot read, array decode, CT restore, and total duration. These
+  fields make a production stall diagnosable without guessing from the browser.
+- Persisted nested array references are indexed recursively and reused after a server
+  restart when their planning version is unchanged. Quota accounting scans the user
+  workspace once per checkpoint and applies incremental size deltas for each new or
+  replaced artifact.
+- The task journal emits an SSE comment heartbeat every 10 seconds while a worker is
+  running. Comments do not create a fake step or call an LLM, but they keep proxies,
+  browsers, progress timers, and reconnect logic alive during quiet computation.
+- Workspace hydration now has an authoritative clinical-resource gate. Empty cases,
+  deleted cases, and stale session generations skip restoration and clear their notice
+  timers. Existing clinical sessions still restore asynchronously with generation
+  fencing.
+- Final report/review text no longer prints the internal-looking observed-metrics
+  disclaimer as a standalone sentence; it uses a concise clinical review
+  instruction instead, while retaining the safety requirement to verify thresholds
+  against applicable evidence.
+
+### How to diagnose a real delay
+
+Search the server log by session ID and follow the first missing checkpoint phase:
+
+1. `workspace checkpoint started` confirms scheduling reached the worker.
+2. `capacity scanned` distinguishes account-tree scanning from later work.
+3. `artifacts encoded` reports newly-created versus reused arrays.
+4. `snapshot written` and `artifacts committed` separate JSON/SQLite/prune time.
+5. `workspace checkpoint failed` includes the exception and traceback; a deleted
+   workspace is discarded rather than recreated.
+
+For a user-visible task, the terminal answer is independent of steps 1-5. A first
+checkpoint containing newly-created clinical arrays can still consume disk I/O, but
+it runs in the background and the case remains usable. A browser disconnect only
+detaches the SSE subscriber; the case-owned task journal remains resumable until the
+user explicitly presses Stop.
+
+### Verification
+
+- Full regression suite: **320 passed, 2 skipped, 3 warnings** in 29.83 seconds.
+- Targeted checkpoint, task, frontend, and workspace regressions: **81 passed, 3
+  warnings**.
+- `py_compile` passed for the modified server, workspace, task, planning, surgical
+  guide, and response modules.
+- `node --check` passed for the modified workspace, UI API, and report-export scripts.
+- `git diff --check` passed. The remaining warnings are existing third-party
+  SimpleITK SWIG deprecation warnings.
+
+These changes affect persistence scheduling, stream liveness, restore gating, and
+user-facing wording only. They do not change the clinical planning algorithm, dose
+model, coordinate conversion, obstacle filtering, or review thresholds.

@@ -15,6 +15,8 @@
     const workspaceRestoreTimers = new Set();
     let backgroundRestoreGeneration = 0;
     let backgroundRestoreTimer = null;
+    let backgroundRestoreNoticeTimer = null;
+    let hydrationHideTimer = null;
     // Control ids whose .value is persisted in model space but displayed
     // in physical Gy to the operator.  applyControls() must convert them
     // back via doseModelToGy() during workspace restoration.
@@ -63,6 +65,10 @@
             clearTimeout(backgroundRestoreTimer);
             backgroundRestoreTimer = null;
         }
+        if (backgroundRestoreNoticeTimer) {
+            clearTimeout(backgroundRestoreNoticeTimer);
+            backgroundRestoreNoticeTimer = null;
+        }
         document.body.classList.remove('workspace-hydrating');
         window.setWorkspaceHydrationState?.(false);
     }
@@ -72,6 +78,10 @@
         if (!notice) return;
         const target = document.getElementById('workspaceHydrationMessage');
         if (target && message) target.textContent = message;
+        if (hydrationHideTimer) {
+            clearTimeout(hydrationHideTimer);
+            hydrationHideTimer = null;
+        }
         // Cancel any in-progress exit animation so a rapid show-hide or
         // show-again transition does not leave the notice stuck mid-animation.
         notice.getAnimations().forEach(a => a.cancel());
@@ -89,13 +99,63 @@
                     notice.classList.remove('workspace-hydration-out');
                 }
             }, { once: true });
+            // Some embedded browsers do not dispatch animationend when the
+            // element is hidden during a fast session transition. The
+            // fallback prevents a stale "Opening/Loading" notice forever.
+            hydrationHideTimer = setTimeout(() => {
+                if (notice.classList.contains('workspace-hydration-out')) {
+                    notice.hidden = true;
+                    notice.classList.remove('workspace-hydration-out');
+                }
+                hydrationHideTimer = null;
+            }, 700);
         }
         document.body.classList.toggle('workspace-hydrating', !!active);
     };
 
+    function workspaceSnapshotHasClinicalResources(snapshot) {
+        if (!snapshot || typeof snapshot !== 'object') return false;
+        const agent = snapshot.agent && typeof snapshot.agent === 'object' ? snapshot.agent : {};
+        const results = agent.planning_results && typeof agent.planning_results === 'object'
+            ? agent.planning_results : {};
+        const uiState = agent.ui_state && typeof agent.ui_state === 'object' ? agent.ui_state : {};
+        const controls = snapshot.ui?.state?.controls || snapshot.ui?.controls || {};
+        const pathValue = (value) => {
+            if (typeof value === 'string') return value.trim();
+            return value && typeof value.value === 'string' ? value.value.trim() : '';
+        };
+        const paths = [
+            results.ct_path,
+            results.ctPath,
+            results.ct_image_path,
+            uiState.ct_path,
+            uiState.ctPath,
+            pathValue(controls.ctPath),
+            pathValue(controls.ctImagePath),
+        ];
+        if (paths.some(Boolean)) return true;
+        // The empty snapshot deliberately has no planning result keys. These
+        // keys are the durable data-plane contract and avoid treating a stale
+        // UI-only snapshot as a clinical case that needs hydration.
+        return [
+            'ct_data', 'ct_image', 'ctv_array', 'ctv_mask', 'oar_array',
+            'dose_distribution', 'dose_distribution_gy', 'dose_metrics',
+            'trajectories', 'seed_plan', 'seed_plan_serialized',
+            'surgical_guide',
+        ].some(key => Object.prototype.hasOwnProperty.call(results, key));
+    }
+    window.workspaceSnapshotHasClinicalResources = workspaceSnapshotHasClinicalResources;
+
     function scheduleBackgroundWorkspaceRestore(workspace, sessionId) {
+        if (String(sessionId || '') !== String(activeSessionId || '')
+            || !workspaceSnapshotHasClinicalResources(workspace)) {
+            cancelBackgroundWorkspaceRestore();
+            console.debug('[workspace] background restore skipped: empty or stale case', sessionId);
+            return;
+        }
         const generation = ++backgroundRestoreGeneration;
         if (backgroundRestoreTimer) clearTimeout(backgroundRestoreTimer);
+        if (backgroundRestoreNoticeTimer) clearTimeout(backgroundRestoreNoticeTimer);
         // Hydration is deliberately non-blocking.  Keep a small progress hint
         // while the first assets arrive, but never leave a permanent spinner
         // over the chat when a large CT/mesh restore is still running.
@@ -106,14 +166,15 @@
                 : 'Restoring case resources...',
         );
         document.body.classList.add('workspace-hydrating');
-        const noticeTimer = setTimeout(() => {
+        backgroundRestoreNoticeTimer = setTimeout(() => {
             if (generation !== backgroundRestoreGeneration || sessionId !== activeSessionId) return;
             window.setWorkspaceHydrationState?.(
                 false,
                 typeof window._t === 'function'
                     ? window._t('资源继续在后台加载', 'Resources continue loading in the background')
-                    : 'Resources continue loading in the background',
+                : 'Resources continue loading in the background',
             );
+            backgroundRestoreNoticeTimer = null;
         }, 30000);
         backgroundRestoreTimer = setTimeout(async () => {
             backgroundRestoreTimer = null;
@@ -157,7 +218,10 @@
             } catch (error) {
                 console.warn('[workspace] background case restore failed:', error);
             } finally {
-                clearTimeout(noticeTimer);
+                if (backgroundRestoreNoticeTimer) {
+                    clearTimeout(backgroundRestoreNoticeTimer);
+                    backgroundRestoreNoticeTimer = null;
+                }
                 // The restore wrapper normally clears this state itself. Keep
                 // the fallback here so a failed snapshot refresh or a missing
                 // loader cannot leave a permanent spinner in the corner.
@@ -897,7 +961,15 @@
 
     function applySessionList(data) {
         sessions = sessionMapFromPayload(data);
-        activeSessionId = data.active_session_id;
+        const requested = String(data.active_session_id || '');
+        const available = Object.keys(sessions);
+        activeSessionId = requested && sessions[requested]
+            ? requested
+            : (available[0] || null);
+        if (!activeSessionId) {
+            window._activeWorkspaceSnapshot = null;
+            cancelBackgroundWorkspaceRestore();
+        }
     }
 
     function paintSessionShell(sessionId, { clearWorkspace = true, blank = false } = {}) {
@@ -948,6 +1020,9 @@
         if (!response.ok) throw new Error(`Session list failed: HTTP ${response.status}`);
         const data = await response.json();
         if (commit) applySessionList(data);
+        if (!data.active_session_id && !Object.keys(sessions).length) {
+            cancelBackgroundWorkspaceRestore();
+        }
         return data;
     }
 
@@ -1022,11 +1097,19 @@
 
     window.loadSessions = async function loadSessions() {
         const data = await loadServerSessions();
+        if (!activeSessionId) {
+            window._activeWorkspaceSnapshot = null;
+            window.setWorkspaceHydrationState?.(false);
+            return data;
+        }
         const workspace = await loadActiveWorkspace();
         // Paint the durable transcript before /status and clinical hydration.
         // The latter may load CT, labels, meshes, dose arrays, and an agent;
         // none of that should make a restored conversation look missing.
         applyChatSnapshotFast(workspace);
+        if (!workspaceSnapshotHasClinicalResources(workspace)) {
+            cancelBackgroundWorkspaceRestore();
+        }
         return data;
     };
 
