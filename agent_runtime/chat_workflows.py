@@ -58,6 +58,44 @@ class ChatWorkflowMixin:
             re.IGNORECASE,
         ))
 
+    @staticmethod
+    def _is_current_oar_count_request(message: str) -> bool:
+        """Recognize a live Data Tree count request, not a guideline query."""
+        text = str(message or "").strip().lower()
+        if re.search(r"(?:guideline|standard|constraint|limit|recommended|clinical)", text):
+            return False
+        return bool(
+            re.search(r"(?:how many|number of|count of)\s+(?:the\s+)?(?:oars?|organs?)", text)
+            or re.search(r"(?:oars?|organs?).*(?:how many|how much|number|count)", text)
+            or re.search(r"(?:多少|几种|数量|数一下).*(?:oar|危及器官|器官)", text)
+            or re.search(r"(?:oar|危及器官|器官).*(?:多少|几种|数量)", text)
+        )
+
+    def _build_current_oar_count_response(self, lang: str = "en") -> str:
+        """Answer from the current case state without an external tool call."""
+        names = self.memory.retrieve("organ_names", {}) or {}
+        counts = self.memory.retrieve("organ_counts", {}) or {}
+        oar_array = self.memory.retrieve("oar_array")
+        if isinstance(names, dict):
+            labels = [str(value) for value in names.values() if str(value).strip()]
+        elif isinstance(names, (list, tuple, set)):
+            labels = [str(value) for value in names if str(value).strip()]
+        else:
+            labels = []
+        labels = list(dict.fromkeys(labels))
+        if not labels and isinstance(oar_array, np.ndarray):
+            labels = [f"OAR {int(label)}" for label in np.unique(oar_array) if int(label) > 0]
+        count = len(labels)
+        if count == 0:
+            if lang == "zh":
+                return "当前病例的 Data Tree 中尚未加载可识别的 OAR 节点。"
+            return "No identifiable OAR nodes are currently loaded in this case's Data Tree."
+        if lang == "zh":
+            detail = "、".join(labels)
+            return f"当前病例 Data Tree 中有 {count} 个 OAR 结构。它们是：{detail}。这是当前已加载的分割结果，不是临床指南推荐的 OAR 清单。"
+        detail = ", ".join(labels)
+        return f"The current case Data Tree contains {count} loaded OAR structures: {detail}. This is the loaded segmentation state, not a guideline-recommended OAR list."
+
     def _build_3d_status_response(self, lang: str = "en") -> str:
         """Explain the current 3D state without inventing a rendering cause."""
         ui_state = self.memory.get_ui_state() or {}
@@ -836,6 +874,28 @@ class ChatWorkflowMixin:
             )
             yield yield_event("step", local_route_step)
         self._turn_timings["router_ms"] = round((time.perf_counter() - _route_started) * 1000, 1)
+
+        # A request for the number of currently loaded OARs is a local UI
+        # state query. It reads the active case instead of searching the
+        # clinical KB, taking a screenshot, or asking the model to infer it.
+        if self._is_current_oar_count_request(message):
+            state_step = add_step(
+                "ui", "Current Data Tree",
+                "Reading loaded OAR structures from the active case...",
+                status="pending",
+            )
+            yield yield_event("step", state_step)
+            response = self._build_current_oar_count_response(self.memory.user_lang)
+            state_step["status"] = "done"
+            state_step["content"] = "Current OAR state read"
+            yield yield_event("step", state_step)
+            self.memory.add_message("assistant", response)
+            self._finish_turn(response)
+            llm_meta["route"] = "live_ui_state"
+            llm_meta["phase_timings_ms"] = dict(getattr(self, "_turn_timings", {}) or {})
+            yield from final_response_events({"response": response, "llm_meta": llm_meta})
+            yield yield_event("done", {"context": {"message_count": len(self.memory.conversation)}})
+            return
 
         # Direct tool execution — only for locally-confirmed actionable intents.
         # Knowledge queries, status checks, and small talk always route through

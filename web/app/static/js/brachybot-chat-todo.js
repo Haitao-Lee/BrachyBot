@@ -1759,7 +1759,14 @@ async function sendChat(prefill, options) {
                             if (data.status === 'done' && data.tool && SEG_TOOLS.includes(data.tool)) {
                                 uiDebugLog('[SSE-STEP] Segmentation done:', data.tool, '- loading label volumes');
                                 if (typeof loadLabelVolumes === 'function') {
-                                    loadLabelVolumes().then(() => {
+                                    // Tool events can finish while another
+                                    // case is visible. Bind the refresh to the
+                                    // owning session so a completed OAR/CTV
+                                    // result cannot paint the wrong Data Tree.
+                                    loadLabelVolumes({
+                                        sessionId: turnSessionId,
+                                        preserveViewerState: true,
+                                    }).then(() => {
                                         if (String(activeSessionId || '') !== turnSessionId) return;
                                         if (typeof renderDataTree === 'function') renderDataTree();
                                         if (typeof startSegmentationMeshPrewarm === 'function') {

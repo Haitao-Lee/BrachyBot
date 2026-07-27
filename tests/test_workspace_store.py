@@ -100,6 +100,23 @@ def test_workspace_snapshot_round_trip_preserves_arrays_and_ui(tmp_path):
     assert snapshot["chat"]["messages"][0]["content"] == "ready"
 
 
+def test_chat_snapshot_patches_are_append_only(tmp_path):
+    """A stale browser patch must not erase a detached task transcript."""
+    store = WorkspaceStore(tmp_path / "runtime")
+    user = store.create_user("chat_owner", "hash")
+    case = store.create_session(user["id"], "Chat case")
+    first = {"type": "user", "content": "first", "timestamp": 1000}
+    second = {"type": "bot-response", "content": "answer", "timestamp": 2000}
+
+    store.save_snapshot_patch(user["id"], case.id, {"chat": {"messages": [first]}})
+    # This resembles a backgrounded browser sending its old full array after
+    # the detached worker has already appended the answer.
+    store.save_snapshot_patch(user["id"], case.id, {"chat": {"messages": [second]}})
+
+    messages = store.load_snapshot(user["id"], case.id)["chat"]["messages"]
+    assert [message["content"] for message in messages] == ["first", "answer"]
+
+
 def test_two_case_workspaces_round_trip_without_cross_case_contamination(tmp_path):
     store = WorkspaceStore(tmp_path / "runtime")
     user = store.create_user("multi_case_planner", "hash")

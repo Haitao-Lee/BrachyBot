@@ -328,7 +328,8 @@ print(json.dumps(result))
                     )
                 # Store tool call + result in conversation for context persistence
                 self.memory.add_message("assistant", f"[Called {tc['tool']}]")
-                result_summary = result.message[:500] if result.success else f"Error: {result.error}"
+                _reason = result.error or result.message or "execution failed"
+                result_summary = result.message[:500] if result.success else f"Error: {_reason}"
                 self.memory.add_message("user", f"[Tool result: {result_summary}]")
             except Exception as e:
                 tool_step["status"] = "error"
@@ -1344,6 +1345,15 @@ Output (JSON array of strings):"""
                 # Validate required parameters for web_fetch
                 if not p.get("url", "").strip():
                     logger.warning(f"Dropping web_fetch call with no URL")
+                    continue
+            elif tn == "ui_screenshot":
+                # A malformed screenshot call can otherwise enter the retry
+                # loop and waste several model calls before failing with a
+                # low-level missing-parameter error.  Do not guess a target.
+                target = str(p.get("target") or "").strip()
+                question = str(p.get("question") or "").strip()
+                if not target or not question:
+                    logger.warning("Dropping ui_screenshot call without target and question")
                     continue
             valid.append(tc)
         return valid

@@ -96,9 +96,9 @@
     function scheduleBackgroundWorkspaceRestore(workspace, sessionId) {
         const generation = ++backgroundRestoreGeneration;
         if (backgroundRestoreTimer) clearTimeout(backgroundRestoreTimer);
-        // Keep the spinner visible until the viewer is fully populated.
-        // The spinner hides only when _restoreActiveSessionWorkspace
-        // finishes loading CT, labels, and planning data.
+        // Hydration is deliberately non-blocking.  Keep a small progress hint
+        // while the first assets arrive, but never leave a permanent spinner
+        // over the chat when a large CT/mesh restore is still running.
         window.setWorkspaceHydrationState?.(
             true,
             typeof window._t === 'function'
@@ -106,6 +106,15 @@
                 : 'Restoring case resources...',
         );
         document.body.classList.add('workspace-hydrating');
+        const noticeTimer = setTimeout(() => {
+            if (generation !== backgroundRestoreGeneration || sessionId !== activeSessionId) return;
+            window.setWorkspaceHydrationState?.(
+                false,
+                typeof window._t === 'function'
+                    ? window._t('资源继续在后台加载', 'Resources continue loading in the background')
+                    : 'Resources continue loading in the background',
+            );
+        }, 30000);
         backgroundRestoreTimer = setTimeout(async () => {
             backgroundRestoreTimer = null;
             if (generation !== backgroundRestoreGeneration || sessionId !== activeSessionId) return;
@@ -148,6 +157,7 @@
             } catch (error) {
                 console.warn('[workspace] background case restore failed:', error);
             } finally {
+                clearTimeout(noticeTimer);
                 // The restore wrapper normally clears this state itself. Keep
                 // the fallback here so a failed snapshot refresh or a missing
                 // loader cannot leave a permanent spinner in the corner.
@@ -978,10 +988,11 @@
             preserveClinicalData: true,
             skipTaskResume: true,
         });
-        // The completed task may have produced CT labels, planning arrays,
-        // DVH data, report fields, or meshes while this case was not visible.
-        // Replace any stale in-flight hydration with one authoritative pass.
-        scheduleBackgroundWorkspaceRestore(workspace, ownerSessionId);
+        // The active case already received the authoritative SSE tool events.
+        // Starting a second full CT/mesh restore here races the live viewer,
+        // replays expensive array work, and shows a misleading loading notice
+        // after a task has completed. Full hydration remains reserved for a
+        // cold session switch or browser reconnect.
         return true;
     }
 
