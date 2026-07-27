@@ -75,6 +75,12 @@ The tool will:
     }
 
     @staticmethod
+    def _failure(message: str) -> ToolResult:
+        """Keep legacy ``message`` and newer ``error`` fields consistent."""
+        reason = str(message or "web fetch failed").strip()
+        return ToolResult(success=False, message=reason, error=reason)
+
+    @staticmethod
     def _validate_public_url(url: str) -> tuple[bool, str]:
         """Reject credentials and hosts that resolve outside the public Internet."""
         try:
@@ -164,17 +170,14 @@ The tool will:
         try:
             max_length = max(256, min(int(kwargs.get("max_length", 5000)), 100_000))
         except (TypeError, ValueError):
-            return ToolResult(success=False, message="max_length must be an integer")
+            return self._failure("max_length must be an integer")
 
         if not url:
-            return ToolResult(
-                success=False,
-                message="No URL provided"
-            )
+            return self._failure("No URL provided")
 
         is_public, reason = self._validate_public_url(url)
         if not is_public:
-            return ToolResult(success=False, message=reason)
+            return self._failure(reason)
 
         logger.info(f"Fetching URL: {url}")
 
@@ -214,7 +217,7 @@ The tool will:
             for _ in range(6):
                 is_public, reason = self._validate_public_url(current_url)
                 if not is_public:
-                    return ToolResult(success=False, message=reason)
+                    return self._failure(reason)
                 response = requests.get(
                     current_url,
                     headers=headers,
@@ -227,18 +230,18 @@ The tool will:
                 location = response.headers.get('location')
                 response.close()
                 if not location:
-                    return ToolResult(success=False, message="Redirect missing Location header")
+                    return self._failure("Redirect missing Location header")
                 current_url = urljoin(current_url, location)
             else:
-                return ToolResult(success=False, message="Too many redirects")
+                return self._failure("Too many redirects")
 
             if response is None:
-                return ToolResult(success=False, message="No response received")
+                return self._failure("No response received")
             status_code = response.status_code
 
             if status_code != 200:
                 response.close()
-                return ToolResult(success=False, message=f"HTTP {status_code}")
+                return self._failure(f"HTTP {status_code}")
 
             content_type = response.headers.get('content-type', '').lower()
             media_type = content_type.split(';', 1)[0].strip()
@@ -251,7 +254,7 @@ The tool will:
             )
             if not allowed_content:
                 response.close()
-                return ToolResult(success=False, message=f"Unsupported content type: {content_type}")
+                return self._failure(f"Unsupported content type: {content_type}")
 
             max_download_bytes = min(max(max_length * 8, 128 * 1024), 2 * 1024 * 1024)
             chunks = []
@@ -300,11 +303,11 @@ The tool will:
         except requests.Timeout:
             if 'response' in locals() and response is not None:
                 response.close()
-            return ToolResult(success=False, message="Request timed out")
+            return self._failure("Request timed out")
         except Exception as e:
             if 'response' in locals() and response is not None:
                 response.close()
-            return ToolResult(success=False, message=str(e))
+            return self._failure(f"Request failed: {e}")
 
     def _fetch_pubmed_api(self, url: str, max_length: int) -> ToolResult:
         """Fetch PubMed article using API. Supports PubMed URLs and Nature URLs with DOI."""
@@ -330,7 +333,7 @@ The tool will:
                     doi = f"10.1038/{art_match.group(1)}"
 
         if not pmid and not doi:
-            return ToolResult(success=False, message="Cannot extract PMID or DOI from URL")
+            return self._failure("Cannot extract PMID or DOI from URL")
 
         # If we have DOI but no PMID, look up PMID via DOI
         if doi and not pmid:
@@ -346,7 +349,7 @@ The tool will:
                 pass
 
         if not pmid:
-            return ToolResult(success=False, message="Could not find PubMed ID for this article")
+            return self._failure("Could not find PubMed ID for this article")
         try:
             # Use PubMed E-utilities API
             api_url = f"https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi?db=pubmed&id={pmid}&rettype=abstract&retmode=text"
@@ -364,9 +367,9 @@ The tool will:
                     message=f"Fetched PubMed article: {pmid}"
                 )
 
-            return ToolResult(success=False, message="PubMed API failed")
+            return self._failure("PubMed API failed")
         except Exception as e:
-            return ToolResult(success=False, message=str(e))
+            return self._failure(f"PubMed request failed: {e}")
 
     def _fetch_github_api(self, url: str, max_length: int) -> ToolResult:
         """Fetch GitHub content using API."""
@@ -374,7 +377,7 @@ The tool will:
         # Extract owner/repo from URL
         match = re.search(r'github\.com/([^/]+)/([^/]+)', url)
         if not match:
-            return ToolResult(success=False, message="Cannot parse GitHub URL")
+            return self._failure("Cannot parse GitHub URL")
 
         owner, repo = match.group(1), match.group(2)
         try:
@@ -391,6 +394,6 @@ The tool will:
                     message=f"Fetched GitHub README: {owner}/{repo}"
                 )
 
-            return ToolResult(success=False, message="GitHub API failed")
+            return self._failure("GitHub API failed")
         except Exception as e:
-            return ToolResult(success=False, message=str(e))
+            return self._failure(f"GitHub request failed: {e}")

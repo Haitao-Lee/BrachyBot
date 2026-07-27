@@ -102,6 +102,79 @@ class Round9RegressionTests(unittest.TestCase):
         self.assertIn("_screenshot_called_this_turn = set()", runtime)
         self.assertIn("all(tc.get(\"tool\") == \"ui_screenshot\"", runtime)
 
+    def test_invalid_screenshot_calls_are_filtered_before_tool_execution(self):
+        from agent_runtime.response_tools import ResponseToolMixin
+
+        calls = ResponseToolMixin()._normalize_tool_params([
+            {"tool": "ui_screenshot", "params": {}},
+            {"tool": "ui_screenshot", "params": {"target": "dvh", "question": "Describe the curve"}},
+        ])
+        assert len(calls) == 1
+        assert calls[0]["params"]["target"] == "dvh"
+
+    def test_web_fetch_failure_keeps_reason_and_does_not_hide_successful_search(self):
+        from agent_runtime.llm_runtime import (
+            _collect_tool_fallback_text,
+            _is_placeholder_tool_response,
+        )
+        from tool_factory.web_fetch import WebFetchTool
+
+        failed = WebFetchTool()._execute(url="")
+        assert failed.success is False
+        assert failed.error == "No URL provided"
+        assert failed.message == failed.error
+
+        steps = [
+            {
+                "type": "tool",
+                "tool": "web_fetch",
+                "status": "error",
+                "result": "Error: Request failed: blocked",
+            },
+            {
+                "type": "tool",
+                "tool": "web_search",
+                "status": "done",
+                "result": "Search results: DeepRare\nSource: https://example.org",
+            },
+        ]
+        successes, failures = _collect_tool_fallback_text(
+            steps,
+            [{"role": "tool", "content": "Search results: DeepRare\nSource: https://example.org"}],
+        )
+        assert successes
+        assert failures
+        assert _is_placeholder_tool_response("Tools executed. Check the execution trace above for results.")
+
+    def test_oar_count_uses_current_case_state_not_external_tools(self):
+        from agent_runtime.chat_workflows import ChatWorkflowMixin
+
+        class Memory:
+            user_lang = "en"
+
+            def retrieve(self, key, default=None):
+                return {"organ_names": {1: "stomach", 2: "duodenum"}}.get(key, default)
+
+        class Workflow(ChatWorkflowMixin):
+            memory = Memory()
+
+        workflow = Workflow()
+        assert workflow._is_current_oar_count_request("How many OARs are loaded?")
+        assert not workflow._is_current_oar_count_request("What are the pancreatic OAR constraints?")
+        assert "2 loaded OAR structures" in workflow._build_current_oar_count_response("en")
+
+    def test_segmentation_refresh_is_bound_to_the_origin_case(self):
+        chat = self.read("web/app/static/js/brachybot-chat-todo.js")
+        assert "loadLabelVolumes({" in chat
+        assert "sessionId: turnSessionId" in chat
+        assert "preserveViewerState: true" in chat
+
+    def test_completed_task_does_not_start_a_second_full_restore(self):
+        workspace = self.read("web/app/static/js/brachybot-workspace.js")
+        block = workspace.split("async function refreshSessionAfterTaskCompletion", 1)[1].split("async function recoverWorkspaceAfterTransitionFailure", 1)[0]
+        assert "scheduleBackgroundWorkspaceRestore(workspace, ownerSessionId)" not in block
+        assert "Full hydration remains reserved" in block
+
     def test_3d_telemetry_and_recovery_are_present(self):
         ui_api = self.read("web/app/static/js/brachybot-ui-api.js")
         core = self.read("agent_runtime/core.py")

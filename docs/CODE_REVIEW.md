@@ -9129,3 +9129,53 @@ thresholds. A cold first chat can still take time while the case Agent and
 models are being restored, but the user now sees that work as an explicit
 pending step and can cancel it without waiting for the HTTP connection to
 expire.
+
+## 2026-07-27 - Non-fatal web source failures and evidence-preserving fallback
+
+### Confirmed symptoms
+
+- A blocked page such as a Zhihu article could make `web_fetch` return a
+  `ToolResult` with only `message` populated. The generic formatter read only
+  `error`, so the Execution Trace displayed `Error: None`.
+- When the model returned an empty response or repeated the transport
+  placeholder after a mixed web turn, the fallback inspected only legacy
+  message shapes. It missed current `role=tool` messages, so a successful
+  `web_search` could be discarded together with one failed `web_fetch` and
+  the user received `Tools executed. Check the execution trace above for
+  results.` instead of an answer.
+- The synthesis prompt treated any one web-tool error as a complete search
+  failure, even when another web tool had produced usable evidence.
+
+### Implemented fixes
+
+- `WebFetchTool` now writes the same human-readable reason to both the legacy
+  `message` field and the structured `error` field, including validation,
+  timeout, and request-exception paths. This preserves compatibility while
+  making the failure visible and actionable.
+- LLM runtime error formatting falls back from `error` to `message`, and the
+  fallback collector reads both current `role=tool` messages and historical
+  `[Tool result: ...]` messages. Successful evidence is retained separately
+  from source-failure notes.
+- Transport placeholders are treated as empty model output. If at least one
+  search/fetch result succeeded, the available evidence is returned and the
+  failed source is not allowed to erase it. If every source failed, the user
+  receives a concise retry explanation instead of an opaque trace-only
+  response.
+- `ToolResultPipeline` now escalates the full failure reason only when all web
+  sources failed. A single blocked URL therefore does not force the final
+  answer into the global web-failure warning path.
+- Malformed `ui_screenshot` calls remain rejected before execution; this is
+  independent of web-source failures and prevents a missing-target error from
+  creating another retry cascade.
+
+### Verification
+
+- `py_compile` passed for the modified runtime, core formatter, response tools,
+  and web fetch tool.
+- Targeted regression suite: **97 passed, 3 warnings**.
+- `git diff --check` passed. The warnings are the existing SimpleITK SWIG
+  deprecation warnings.
+
+These changes affect source retrieval error handling and response fallback
+selection only. They do not weaken URL validation, source verification, tool
+authorization, clinical planning, dose calculation, or coordinate conversion.

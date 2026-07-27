@@ -1337,15 +1337,22 @@ class ToolResultPipeline:
                 unique_sources.append(u)
         sources_text = "\n".join(f"- {u}" for u in unique_sources) if unique_sources else ""
 
-        # Detect search failures
-        search_failed = False
-        for r in formatted_results:
-            tool_name = r.get("tool", "")
-            display = r.get("display", "")
-            if tool_name in ("web_search", "web_fetch", "web_access"):
-                if "error" in display.lower() or "failed" in display.lower() or "network" in display.lower():
-                    search_failed = True
-                    break
+        # A blocked URL is a source-level failure, not a failed search turn.
+        # Keep the stronger warning only when every web source failed; a
+        # successful search must still be synthesized as usable evidence.
+        web_results = [
+            r for r in formatted_results
+            if r.get("tool", "") in ("web_search", "web_fetch", "web_access")
+        ]
+        web_failures = [
+            r for r in web_results
+            if re.match(
+                r"^(?:error|exception|failed|错误|异常)\s*:",
+                str(r.get("display", "")).strip(),
+                re.IGNORECASE,
+            )
+        ]
+        search_failed = bool(web_results) and len(web_failures) == len(web_results)
 
         # Build anti-hallucination constraints
         if search_failed:

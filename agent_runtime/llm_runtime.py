@@ -24,6 +24,76 @@ logger = logging.getLogger(__name__)
 _RUNTIME_CONTEXT_MARKER = "[BrachyBot runtime context: data only]"
 
 
+def _tool_failure_reason(result) -> str:
+    """Return a useful failure reason even for legacy tools that only set message."""
+    return str(
+        getattr(result, "error", None)
+        or getattr(result, "message", None)
+        or "execution failed"
+    ).strip()
+
+
+def _is_placeholder_tool_response(text: str) -> bool:
+    """Identify transport-level placeholders that must never replace real evidence."""
+    normalized = re.sub(r"\s+", " ", str(text or "")).strip().lower()
+    return normalized in {
+        "tools executed. check the execution trace above for results.",
+        "tools executed. check the execution trace above for results",
+        "no response generated.",
+        "no response generated",
+    } or normalized.startswith(
+        "i completed the requested searches but could not retrieve detailed content"
+    )
+
+
+def _collect_tool_fallback_text(steps: List[Dict], messages: List[Dict]) -> Tuple[List[str], List[str]]:
+    """Collect successful evidence and failure notes for empty-model fallbacks.
+
+    Current tool turns store results in ``role=tool`` messages, while older
+    turns also stored ``[Tool result: ...]`` user messages. Reading both
+    formats prevents one failed fetch from hiding a successful search.
+    """
+    successes: List[str] = []
+    failures: List[str] = []
+
+    def add_unique(target: List[str], value: str, limit: int = 3) -> None:
+        value = str(value or "").strip()
+        if len(value) <= 10 or value in target or len(target) >= limit:
+            return
+        target.append(value[:4000])
+
+    for step in steps or []:
+        if step.get("type") != "tool":
+            continue
+        result = str(step.get("result") or "").strip()
+        if not result:
+            continue
+        if step.get("status") == "error":
+            add_unique(failures, result)
+        elif step.get("tool") != "fact_checker" and not _is_placeholder_tool_response(result):
+            add_unique(successes, result)
+
+    for msg in messages or []:
+        content = msg.get("content") if isinstance(msg, dict) else None
+        candidates = []
+        if msg.get("role") == "tool" and isinstance(content, str):
+            candidates.append(content)
+        elif msg.get("role") == "user" and isinstance(content, str) and "[Tool result:" in content:
+            match = re.search(r"\[Tool result:\s*(.+?)\]", content, re.DOTALL)
+            if match:
+                candidates.append(match.group(1))
+        for candidate in candidates:
+            candidate = str(candidate).strip()
+            if not candidate or _is_placeholder_tool_response(candidate):
+                continue
+            if re.match(r"^(?:error|exception|failed)\s*:", candidate, re.IGNORECASE):
+                add_unique(failures, candidate)
+            else:
+                add_unique(successes, candidate)
+
+    return successes, failures
+
+
 @lru_cache(maxsize=128)
 def _build_static_system_prompt_cached(message: str, current_date: str) -> str:
     """Render trusted repository policy without embedding runtime data."""
@@ -828,31 +898,17 @@ class LLMRuntimeMixin:
 
         if not final_response:
             if tools_executed:
-                # Extract tool results from steps (most reliable source)
-                tool_results_text = []
-                for step in steps:
-                    if step.get("type") == "tool" and step.get("result"):
-                        tool_name = step.get("title", "tool")
-                        result = step.get("result", "")
-                        if result and len(result) > 5:
-                            tool_results_text.append(f"**{tool_name}**: {result}")
-
-
-                # Also extract from messages (Anthropic format)
-                if not tool_results_text:
-                    for msg in messages:
-                        if isinstance(msg.get("content"), list):
-                            for block in msg["content"]:
-                                if isinstance(block, dict) and block.get("type") == "tool_result":
-                                    content = block.get("content", "")
-                                    if content and len(content) > 10:
-                                        tool_results_text.append(content[:2000])
-
+                tool_results_text, failure_notes = _collect_tool_fallback_text(steps, messages)
                 if tool_results_text:
-                    final_response = "Based on the search results:\n\n" + "\n\n".join(tool_results_text)
+                    final_response = "Based on the available results:\n\n" + "\n\n".join(tool_results_text)
                 elif accumulated_text and len(accumulated_text) > 10:
                     final_response = accumulated_text
                     logger.info(f"Using accumulated_text as fallback: {len(final_response)} chars")
+                elif failure_notes:
+                    final_response = (
+                        "I could not retrieve the requested source content. The source may block automated access; "
+                        "please retry or provide another URL.\n\n" + "\n".join(failure_notes)
+                    )
                 else:
                     final_response = "I completed the requested searches but could not retrieve detailed content. The sources may require browser access."
                     logger.warning(f"Tool result fallback: no results found in {len(messages)} messages")
@@ -2173,7 +2229,7 @@ class LLMRuntimeMixin:
                                 if metrics_summary:
                                     result_text += f" | Metrics: {metrics_summary}"
                         else:
-                            error_msg = result.error or ""
+                            error_msg = _tool_failure_reason(result)
                             if hasattr(result, "data") and result.data and "stderr" in result.data:
                                 stderr = result.data["stderr"][:300]
                                 error_msg = f"{error_msg}: {stderr}" if error_msg else stderr
@@ -2404,28 +2460,26 @@ class LLMRuntimeMixin:
                 final_response = stripped.rstrip('：;，。、,;.-:—…').rstrip() + '。'
                 logger.info(f"[LLM response] Detected mid-sentence truncation at len={len(stripped)}, appended closure")
 
+        # A provider may echo the transport placeholder after tool execution.
+        # Treat it like an empty response so successful search evidence can be
+        # used instead of telling the user to inspect an internal trace.
+        if _is_placeholder_tool_response(final_response):
+            final_response = ""
+
         # If final_response is still empty, try fallbacks
         if not final_response:
             if accumulated_text:
                 final_response = accumulated_text
             elif tools_executed:
-                # Extract tool results from messages to provide a useful fallback
-                tool_results_text = []
-                for msg in messages:
-                    if isinstance(msg.get("content"), list):
-                        for block in msg["content"]:
-                            if isinstance(block, dict) and block.get("type") == "tool_result":
-                                content = block.get("content", "")
-                                if content and len(content) > 20:
-                                    tool_results_text.append(content[:2000])
-                    elif isinstance(msg.get("content"), str) and msg["role"] == "user":
-                        if "[Tool result:" in msg["content"]:
-                            import re as _re
-                            result_match = _re.search(r'\[Tool result: (.+?)\]', msg["content"])
-                            if result_match:
-                                tool_results_text.append(result_match.group(1)[:2000])
+                tool_results_text, failure_notes = _collect_tool_fallback_text(steps, messages)
                 if tool_results_text:
-                    final_response = "\n\n".join(tool_results_text)
+                    final_response = "Based on the available results:\n\n" + "\n\n".join(tool_results_text)
+                elif failure_notes:
+                    final_response = (
+                        "I could not retrieve one or more requested sources, but the remaining tools completed. "
+                        "Please use the available source links and retry the blocked URL if needed.\n\n"
+                        + "\n".join(failure_notes)
+                    )
                 else:
                     final_response = "Tools executed. Check the execution trace above for results."
             else:

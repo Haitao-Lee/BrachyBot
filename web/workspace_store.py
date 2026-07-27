@@ -14,6 +14,7 @@ untrusted code.
 from __future__ import annotations
 
 import json
+import hashlib
 import logging
 import math
 import os
@@ -231,6 +232,61 @@ def _array_references(value: Any) -> set[str]:
     for item in value.values():
         references.update(_array_references(item))
     return references
+
+
+def _chat_record_key(record: Any) -> str:
+    """Return a stable identity for one durable chat record.
+
+    Chat writes can arrive from the live browser and the detached task
+    finalizer in either order.  Hashing the complete JSON record makes the
+    merge append-only without treating two legitimate repeated questions as
+    duplicates merely because their text is equal.
+    """
+    try:
+        payload = json.dumps(_safe_json(record), ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    except Exception:
+        payload = str(record)
+    return hashlib.sha256(payload.encode("utf-8", "replace")).hexdigest()
+
+
+def _merge_chat_records(existing: Any, incoming: Any) -> List[Any]:
+    """Union append-only chat records while preserving their display order."""
+    merged: List[Any] = []
+    seen: set[str] = set()
+    for record in list(existing or []) + list(incoming or []):
+        key = _chat_record_key(record)
+        if key in seen:
+            continue
+        seen.add(key)
+        merged.append(record)
+
+    def sort_key(item: Any) -> Tuple[float, int]:
+        if isinstance(item, Mapping):
+            value = item.get("timestamp", item.get("created_at", 0))
+            try:
+                return float(value or 0), len(merged)
+            except (TypeError, ValueError):
+                pass
+        return 0.0, len(merged)
+
+    # Existing records are already ordered.  Stable sorting only moves a
+    # detached record into its timestamp position when it completed later.
+    ordered = sorted(enumerate(merged), key=lambda pair: (sort_key(pair[1])[0], pair[0]))
+    return [pair[1] for pair in ordered]
+
+
+def _merge_chat_patch(current: Mapping[str, Any], incoming: Mapping[str, Any]) -> Dict[str, Any]:
+    """Merge chat content without allowing a stale client to erase history."""
+    result = dict(current or {})
+    for key in ("messages", "execution_trace"):
+        if key in incoming and isinstance(incoming[key], list):
+            result[key] = _merge_chat_records(result.get(key), incoming[key])
+    # Task control fields are state, not append-only content.  The latest
+    # finalizer/browser update is authoritative for these small fields.
+    for key, value in incoming.items():
+        if key not in {"messages", "execution_trace"}:
+            result[key] = _safe_json(value)
+    return result
 
 
 def _safe_workspace_child(root: Path, relative: str) -> Path:
@@ -580,7 +636,15 @@ class WorkspaceStore:
         for key in ("ui", "report", "chat", "operation"):
             if key in patch and isinstance(patch[key], Mapping):
                 current = snapshot.get(key) if isinstance(snapshot.get(key), Mapping) else {}
-                snapshot[key] = {**current, **_safe_json(patch[key])}
+                safe_patch = _safe_json(patch[key])
+                if key == "chat":
+                    # Chat is append-only.  A browser that was backgrounded
+                    # before the latest turn completed can submit an older
+                    # full array; shallow replacement would erase the newer
+                    # Execution Trace and assistant response on restart.
+                    snapshot[key] = _merge_chat_patch(current, safe_patch)
+                else:
+                    snapshot[key] = {**current, **safe_patch}
         snapshot["saved_at"] = _now()
         self._write_snapshot(user_id, root / "snapshot.json", snapshot)
         with self._connection() as connection:
@@ -633,6 +697,9 @@ class WorkspaceStore:
                 "current_phase": getattr(memory.current_phase, "value", str(memory.current_phase)),
                 "conversation_state": _safe_json(memory.conversation_state),
                 "user_lang": str(memory.user_lang or "en"),
+                # Persist versions so a post-restart checkpoint can reuse
+                # unchanged NPY sidecars instead of rewriting CT-sized arrays.
+                "planning_versions": _safe_json(planning_versions),
                 "ui_state": _safe_json(memory.get_ui_state()),
                 "runtime_state": _safe_json(
                     agent.run_ledger.export_state()
@@ -640,6 +707,10 @@ class WorkspaceStore:
                 ),
             }
         root = self.workspace_root(user_id, session_id, create=True)
+        durable_snapshot = self.load_snapshot(user_id, session_id)
+        durable_state = durable_snapshot.get("agent") if isinstance(durable_snapshot.get("agent"), Mapping) else {}
+        durable_results = durable_state.get("planning_results") if isinstance(durable_state.get("planning_results"), Mapping) else {}
+        durable_versions = durable_state.get("planning_versions") if isinstance(durable_state.get("planning_versions"), Mapping) else {}
         created_array_paths: List[str] = []
 
         def reuse_array(source_key: str, name: str) -> Optional[str]:
@@ -647,6 +718,21 @@ class WorkspaceStore:
             cached = self._array_refs.get(cache_key)
             version = int(planning_versions.get(source_key, 0))
             if not cached or cached[0] != version:
+                previous_version = durable_versions.get(source_key)
+                previous = durable_results.get(source_key)
+                # A fresh process has no in-memory _array_refs.  Reuse a
+                # directly persisted top-level array when its memory version
+                # still matches the durable snapshot; changed arrays have a
+                # new version and are written atomically below.
+                if (previous_version is not None and int(previous_version) == version
+                        and isinstance(previous, Mapping) and previous.get("$array")):
+                    candidate = str(previous["$array"])
+                    try:
+                        if _safe_workspace_child(root, candidate).is_file():
+                            self._array_refs[cache_key] = (version, candidate)
+                            return candidate
+                    except (TypeError, ValueError, WorkspaceError):
+                        pass
                 return None
             relative = cached[1]
             try:
@@ -791,6 +877,10 @@ class WorkspaceStore:
             memory.conversation_state = _restore_json(state.get("conversation_state") or memory.conversation_state)
             memory.user_lang = str(state.get("user_lang") or "en")
             memory._ui_state = _restore_json(state.get("ui_state") or {})
+            if hasattr(memory, "_planning_versions") and isinstance(state.get("planning_versions"), Mapping):
+                memory._planning_versions = {
+                    str(key): int(value or 0) for key, value in state["planning_versions"].items()
+                }
             available = sorted(memory.planning_results.keys())
             memory.conversation_state["data_available"] = available
         if isinstance(state.get("config"), Mapping):
