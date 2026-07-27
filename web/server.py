@@ -278,12 +278,17 @@ def create_app(config: Optional[Dict] = None):
         workspace_store.get_session(user["id"], session_id)
         return user, session_id
 
-    def get_agent(session_id: str = None):
+    def get_agent(session_id: str = None, *, _owner: Optional[Dict[str, Any]] = None):
         """Get a hydrated agent for the authenticated user's selected case."""
         nonlocal _sessions, _session_timestamps
 
         try:
-            user, resolved_session_id = _request_session_context(session_id)
+            if _owner is not None:
+                user = dict(_owner)
+                resolved_session_id = _normalize_session_id(session_id)
+                workspace_store.get_session(user["id"], resolved_session_id)
+            else:
+                user, resolved_session_id = _request_session_context(session_id)
         except (ValueError, WorkspaceError) as exc:
             logger.warning("Rejected case session: %s", exc)
             return None
@@ -457,6 +462,10 @@ def create_app(config: Optional[Dict] = None):
                     g.brachybot_agent = agent
                     g.brachybot_workspace = (user["id"], resolved_session_id)
             return agent
+
+    def get_agent_for_owner(user: Dict[str, Any], session_id: str):
+        """Hydrate a case from a detached worker without a browser cookie."""
+        return get_agent(session_id, _owner=user)
 
     def drop_agent(session_id: str, *, flush: bool = True) -> None:
         """Drop only the current user's cached agent; durable data remains intact."""
@@ -1364,7 +1373,12 @@ def create_app(config: Optional[Dict] = None):
 
 
     register_viewer_routes(app, get_agent, _load_ct_image, _extract_dicom_tags)
-    register_planning_routes(app, get_agent)
+    register_planning_routes(
+        app,
+        get_agent,
+        get_cached_agent=get_cached_agent,
+        get_agent_for_owner=get_agent_for_owner,
+    )
     register_surgical_guide_routes(app, get_agent)
     register_session_routes(
         app,

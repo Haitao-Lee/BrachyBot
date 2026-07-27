@@ -943,6 +943,20 @@ async function refreshPlanningUI(options = {}) {
             );
         }
 
+        // During case restoration meshes are intentionally background work.
+        // Metrics, labels, dose metadata, and the durable report snapshot are
+        // already usable; waiting for a slow mesh endpoint would make a case
+        // look hung for minutes and block the next user action.
+        if (options.backgroundRestore === true) {
+            Promise.all(_meshPromises).then(() => {
+                if (!isCurrentCase()) return;
+                if (typeof reportAutoFill === 'function') {
+                    return reportAutoFill({ sessionId: expectedSessionId }).catch(() => {});
+                }
+            }).catch(error => console.warn('[3D auto-load] background restore:', error));
+            return resolve();
+        }
+
         // Wait for all 3D mesh loads to complete. Report state is filled only
         // after the selected case has passed the same generation check; an
         // older case must never overwrite the newly selected report.

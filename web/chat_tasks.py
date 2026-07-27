@@ -232,8 +232,14 @@ class ChatTaskManager:
         ui_state: Optional[Dict[str, Any]],
         on_finish: Optional[Callable[[ChatTask], Optional[bool]]] = None,
         start_gate: Optional[threading.Event] = None,
+        agent_supplier: Optional[Callable[[], Any]] = None,
     ) -> ChatTask:
-        """Start one worker, rejecting concurrent turns in the same case."""
+        """Start one worker, rejecting concurrent turns in the same case.
+
+        ``agent_supplier`` keeps the HTTP/SSE handshake independent from cold
+        workspace hydration.  A browser can receive a task immediately while
+        the worker reconstructs the case-owned Agent in the background.
+        """
         with self._lock:
             self._purge_locked()
             if self.active(user_id, session_id) is not None:
@@ -253,10 +259,43 @@ class ChatTaskManager:
             try:
                 if start_gate is not None:
                     start_gate.wait()
+                if not task.is_running():
+                    return
                 # The Agent may access Flask-independent services through the
                 # application extensions; install an app context, but never a
                 # browser session cookie. The task's owner/case is explicit.
                 with app.app_context():
+                    if task.agent is None and agent_supplier is not None:
+                        task.publish(task.encode_event(
+                            "step",
+                            {
+                                "id": f"workspace-hydration-{task.task_id}",
+                                "type": "tool",
+                                "tool": "workspace_hydration",
+                                "title": "Loading case resources",
+                                "status": "pending",
+                                "content": "Restoring the case before starting this chat turn.",
+                            },
+                        ))
+                        task.agent = agent_supplier()
+                        if task.agent is None:
+                            raise RuntimeError("Case resources are not available")
+                        if not task.is_running():
+                            return
+                        task.publish(task.encode_event(
+                            "step",
+                            {
+                                "id": f"workspace-hydration-{task.task_id}",
+                                "type": "tool",
+                                "tool": "workspace_hydration",
+                                "title": "Loading case resources",
+                                "status": "done",
+                                "content": "Case resources restored.",
+                            },
+                        ))
+                    if task.agent is None:
+                        raise RuntimeError("Agent not available")
+                    agent = task.agent
                     agent.memory.set_ui_state(ui_state or {})
                     for event in agent.chat_with_stream(task.message):
                         # Explicit Stop is the only normal cancellation path.
@@ -316,7 +355,7 @@ class ChatTaskManager:
                 task.publish(
                     "event: error\ndata: " + json.dumps({"message": str(exc)}) + "\n\n"
                 )
-                if on_finish is not None:
+                if on_finish is not None and task.agent is not None:
                     try:
                         with app.app_context():
                             on_finish(task)
@@ -325,7 +364,7 @@ class ChatTaskManager:
                         logger.exception("Chat task %s finalization failed", task.task_id)
                 task.finish("failed", str(exc))
             finally:
-                if on_finish is not None and not finalized:
+                if on_finish is not None and not finalized and task.agent is not None:
                     try:
                         with app.app_context():
                             on_finish(task)
@@ -343,7 +382,8 @@ class ChatTaskManager:
         if not cancelled:
             return False
         try:
-            task.agent._cancel_active_turn()
+            if task.agent is not None:
+                task.agent._cancel_active_turn()
         except Exception:
             logger.exception("Unable to cancel chat task %s", task.task_id)
         return True

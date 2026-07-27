@@ -141,7 +141,13 @@ def _current_planning_snapshot(agent):
     )
 
 
-def register_planning_routes(app, get_agent):
+def register_planning_routes(
+    app,
+    get_agent,
+    *,
+    get_cached_agent=None,
+    get_agent_for_owner=None,
+):
 
     # Chat workers are case-scoped and outlive an individual browser stream.
     # Switching the selected case therefore only changes presentation; it
@@ -2381,16 +2387,32 @@ def register_planning_routes(app, get_agent):
     @rate_limit
     def api_chat_abort():
         """Clean up incomplete conversation after user aborts streaming."""
-        agent = get_agent()
-        if agent is None:
-            return jsonify({"error": "Agent not available"}), 500
         try:
-            try:
-                _, user, session_id = request_case_context()
-            except WorkspaceError:
-                user = session_id = None
-            if user and session_id:
-                chat_tasks.cancel(chat_tasks.active(user["id"], session_id))
+            _, user, session_id = request_case_context()
+            task = chat_tasks.active(user["id"], session_id)
+            if task is not None:
+                chat_tasks.cancel(task)
+            agent = (get_cached_agent(session_id) if callable(get_cached_agent) else None)
+            if agent is None and task is not None:
+                agent = task.agent
+            if agent is None:
+                # Stop must be responsive even while the case is hydrating.
+                try:
+                    store, _, _ = request_case_context()
+                    if task is not None:
+                        store.save_snapshot_patch(
+                            user["id"], session_id,
+                            {"operation": {
+                                "state": "interrupted",
+                                "message": "Chat was cancelled by the user.",
+                                "updated_at": time.time(),
+                                "checkpoint": {"kind": "chat", "cancelled": True},
+                            }},
+                            reason="chat.task.cancelled_during_hydration",
+                        )
+                except WorkspaceError:
+                    pass
+                return jsonify({"success": True, "cancel_requested": bool(task)})
             agent._cancel_active_turn()
             # Remove the last incomplete conversation turn
             # AgentMemory owns the lock that protects conversation state.
@@ -2691,22 +2713,42 @@ def register_planning_routes(app, get_agent):
         stream = data.get("stream", True)  # Default to streaming
         image_path = data.get("image_path", None)  # Optional image path
         clear_context = data.get("clear_context", False)  # Optional: clear conversation history
-        # ``session_id`` remains tolerated in older browser payloads, but the
-        # authenticated user's selected workspace is always authoritative.
-        agent = get_agent()
-        if agent is None:
-            return jsonify({"error": "Agent not available"}), 500
-
-        # Handle clear_context for backward compatibility
-        if clear_context:
-            agent.memory.clear_conversation()
-            logger.info("Conversation context cleared")
-
-        if clear_context and not message and not image_path:
-            return jsonify({"success": True, "message": "Conversation context cleared"})
-
         if not message and not image_path:
             return jsonify({"error": "message or image is required"}), 400
+
+        # ``session_id`` remains tolerated in older browser payloads, but the
+        # authenticated user's selected workspace is always authoritative.
+        # Streaming requests must not wait for a cold Agent: the browser has a
+        # short connection timeout, while workspace hydration may read large
+        # CT/NPY sidecars. Resolve the case first and use a lazy worker agent.
+        agent = None
+        owner = None
+        session_id = None
+        if stream:
+            try:
+                store, owner, session_id = request_case_context()
+            except WorkspaceError:
+                return jsonify({"error": "Authentication required"}), 401
+            if callable(get_cached_agent):
+                agent = get_cached_agent(session_id)
+        else:
+            agent = get_agent()
+            if agent is None:
+                return jsonify({"error": "Agent not available"}), 500
+
+        # Clear-context with no new turn is an explicit synchronous operation;
+        # a queued turn below applies the clear inside its worker before chat.
+        if clear_context and not message and not image_path:
+            if agent is None:
+                agent = get_agent()
+            if agent is None:
+                return jsonify({"error": "Agent not available"}), 500
+            agent.memory.clear_conversation()
+            logger.info("Conversation context cleared")
+            return jsonify({"success": True, "message": "Conversation context cleared"})
+        if clear_context and agent is not None:
+            agent.memory.clear_conversation()
+            logger.info("Conversation context cleared")
 
         if image_path and (not _validate_path(image_path, purpose="read") or not owned_case_path(image_path)):
             return jsonify({"error": "image_path must belong to the active case workspace"}), 403
@@ -2721,21 +2763,28 @@ def register_planning_routes(app, get_agent):
             full_message = f"{message}\n\n[Uploaded image path: {image_path}]"
 
         if stream:
-            try:
-                store, user, session_id = request_case_context()
-            except WorkspaceError:
-                return jsonify({"error": "Authentication required"}), 401
+            def agent_supplier():
+                resolved = (
+                    get_agent_for_owner(owner, session_id)
+                    if callable(get_agent_for_owner)
+                    else get_agent(session_id)
+                )
+                if resolved is not None and clear_context:
+                    resolved.memory.clear_conversation()
+                return resolved
+
             start_gate = threading.Event()
             try:
                 task = chat_tasks.start(
                     current_app._get_current_object(),
-                    user["id"],
+                    owner["id"],
                     session_id,
                     agent,
                     full_message,
                     ui_state,
                     on_finish=finalize_chat_task,
                     start_gate=start_gate,
+                    agent_supplier=agent_supplier if agent is None else None,
                 )
             except RuntimeError as exc:
                 return jsonify({
@@ -2744,16 +2793,25 @@ def register_planning_routes(app, get_agent):
                 }), 409
 
             try:
-                checkpoint_operation(
-                    agent,
-                    "running",
-                    "Chat response is in progress",
-                    checkpoint={
-                        "kind": "chat",
-                        "task_id": task.task_id,
-                        "user_message": message[:500],
-                    },
-                )
+                checkpoint = {
+                    "kind": "chat",
+                    "task_id": task.task_id,
+                    "user_message": message[:500],
+                }
+                if agent is not None:
+                    checkpoint_operation(agent, "running", "Chat response is in progress", checkpoint=checkpoint)
+                else:
+                    store.save_snapshot_patch(
+                        owner["id"], session_id,
+                        {"operation": {
+                            "state": "running",
+                            "message": "Case resources are loading; chat is queued.",
+                            "updated_at": time.time(),
+                            "started_at": time.time(),
+                            "checkpoint": checkpoint,
+                        }},
+                        reason="chat.task.queued_during_hydration",
+                    )
                 # Persist the task identity separately from the agent
                 # checkpoint.  This small merge makes the running task
                 # discoverable after a case switch or browser refresh even
@@ -2764,7 +2822,7 @@ def register_planning_routes(app, get_agent):
                     # refresh restores the request, Thinking state, and task
                     # identity together rather than showing an orphaned
                     # progress animation with no initiating command.
-                    snapshot = store.load_snapshot(user["id"], session_id)
+                    snapshot = store.load_snapshot(owner["id"], session_id)
                     chat = snapshot.get("chat") if isinstance(snapshot.get("chat"), dict) else {}
                     messages = list(chat.get("messages") or [])
                     display_message = full_message.split("\n\n[Uploaded image path:", 1)[0]
@@ -2780,7 +2838,7 @@ def register_planning_routes(app, get_agent):
                             "timestamp": int(time.time() * 1000),
                         })
                     store.save_snapshot_patch(
-                        user["id"],
+                        owner["id"],
                         session_id,
                         {
                             "chat": {

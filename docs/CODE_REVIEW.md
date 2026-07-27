@@ -9076,3 +9076,56 @@ The three warnings remain third-party SimpleITK SWIG deprecation warnings. The
 changes above affect restore scheduling, durable presentation, report capture,
 and visibility synchronization; they do not change coordinate conversion,
 dose calculation, candidate-path selection, or clinical review thresholds.
+
+## 2026-07-27 - Cold-session chat handshake and restart recovery
+
+### Confirmed root cause
+
+The supplied restart log shows two separate cold-case hydration paths: the
+server constructs a `BrachyAgent`, reads the case CT, and initializes the
+nnU-Net/device state before the request can continue. That work is expected to
+be expensive for a case with CT/NPY/model artifacts, but it was incorrectly
+performed synchronously by `get_agent()` on the `/api/chat` request. The browser
+chat client has a finite connection timeout, so it later reported
+`Send failed: signal is aborted without reason`. This was a request-handshake
+timeout, not evidence that the LLM had entered a loop. The log also shows that
+the CT loader correctly reoriented the volume to LPI; this patch does not alter
+that coordinate-chain behavior.
+
+### Implemented fixes
+
+- Added a case-owned lazy Agent supplier to `ChatTaskManager`. Streaming chat
+  now returns its SSE/task identity immediately, then publishes a visible
+  `Loading case resources` pending step while the worker hydrates the Agent.
+  The worker checks cancellation before and after hydration and never reports a
+  successful answer when hydration fails.
+- Added an owner-explicit `get_agent_for_owner()` path for detached workers.
+  It validates the authenticated user and case directly instead of depending on
+  a browser Flask session cookie.
+- Streaming `/api/chat` now uses the cached Agent when available and otherwise
+  queues the turn without blocking the HTTP handshake. The existing synchronous
+  path is retained for non-stream callers.
+- `/api/chat/abort` now cancels a cold task without first hydrating the case, so
+  the Stop button remains responsive during CT/model restoration.
+- Browser initialization now requests `/api/status?lightweight=1`, paints the
+  durable chat/control-plane snapshot first, and starts clinical restoration in
+  background mode. CT loading has a bounded client timeout; slow mesh loading
+  is detached from the interactive shell and remains session-generation fenced.
+- Added a regression test proving that a task with a cold Agent reaches the
+  worker supplier and completes without making the task-start handshake wait.
+
+### Verification
+
+- `python -m py_compile web/server.py web/routes/planning_routes.py web/chat_tasks.py`
+- `node --check web/app/static/js/brachybot-ui-api.js`
+- `node --check web/app/static/js/brachybot-dvh-planning.js`
+- `git diff --check`
+- Targeted regression suite: **70 passed, 3 warnings**
+
+The warnings remain third-party SimpleITK SWIG deprecation warnings. The
+change affects request scheduling and restart UX only; it does not change the
+planning algorithm, dose model, coordinate conversion, or clinical review
+thresholds. A cold first chat can still take time while the case Agent and
+models are being restored, but the user now sees that work as an explicit
+pending step and can cancel it without waiting for the HTTP connection to
+expire.

@@ -1514,6 +1514,8 @@ async function loadCTToViewers(ctPath, options = {}) {
         } catch (_) {}
     }
 
+    const loadCtrl = new AbortController();
+    const loadTimer = setTimeout(() => loadCtrl.abort(), Number(options.timeoutMs || 60000));
     try {
         const res = await fetch(API + '/viewer/load', {
             method: 'POST',
@@ -1526,6 +1528,7 @@ async function loadCTToViewers(ctPath, options = {}) {
                 window_center: windowCenter,
                 window_width: windowWidth,
             }),
+            signal: loadCtrl.signal,
         });
 
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -1642,6 +1645,8 @@ async function loadCTToViewers(ctPath, options = {}) {
             else console.warn('[session restore] Failed to restore CT:', e);
         }
         throw e;
+    } finally {
+        clearTimeout(loadTimer);
     }
 }
 
@@ -1851,6 +1856,7 @@ async function _restoreActiveSessionWorkspace(options = {}) {
         try {
             ctVolumeResult = await loadCTToViewers(ctPath, {
                 announce: false, sessionId: sessionAtStart, skipReset: true,
+                timeoutMs: options.background === true ? 45000 : 60000,
             });
         } catch (e) {
             console.warn('[session restore] CT load failed:', e);
@@ -1885,6 +1891,7 @@ async function _restoreActiveSessionWorkspace(options = {}) {
             sessionId: sessionAtStart,
             preserveViewerState: true,
             skipLabelLoad: true,
+            backgroundRestore: options.background === true,
         })
         : Promise.resolve();
 
@@ -1957,19 +1964,25 @@ async function _restoreActiveSessionWorkspace(options = {}) {
     return status;
 }
 async function restoreActiveSessionWorkspace(options = {}) {
-    // Show the global spinner until all clinical data (CT, labels,
-    // planning) has arrived.  Without this the viewer and Data Tree
-    // appear blank while loading, and the operator thinks data was
-    // lost or a restore step was skipped.
+    // Show a small non-blocking status while the case is restored. Clinical
+    // controls remain usable; heavy meshes and report figures may finish in
+    // the background after the essential transcript and paths are visible.
     window.setWorkspaceHydrationState?.(
         true,
         typeof _t === 'function'
             ? _t('正在加载病例资源…', 'Loading case resources...')
             : 'Loading case resources...',
     );
+    const slowNoticeTimer = setTimeout(() => {
+        const notice = document.getElementById('workspaceHydrationNotice');
+        if (notice && !notice.hidden) {
+            notice.textContent = 'Resources are still loading in the background; chat is available.';
+        }
+    }, 30000);
     try {
         return await _restoreActiveSessionWorkspace(options);
     } finally {
+        clearTimeout(slowNoticeTimer);
         window.setWorkspaceHydrationState?.(false);
     }
 }
@@ -2007,7 +2020,10 @@ async function init() {
     // There is intentionally no startup call to /planning/clear: an existing
     // durable case must be restored rather than reset by a browser refresh.
     let _statusData = null;
-    const _statusPromise = fetch(API + '/status').then(async resp => {
+    // The full status route hydrates an Agent. Initialization must use the
+    // compact control-plane contract so a browser refresh never blocks chat on
+    // CT/NPY/GPU restoration.
+    const _statusPromise = fetch(API + '/status?lightweight=1').then(async resp => {
         if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
         const data = await resp.json();
         _statusData = data;
@@ -2122,12 +2138,17 @@ async function init() {
     // Load default hyperparameters from config
     await loadDefaultParams();
 
-    try {
-        await restoreActiveSessionWorkspace({ status: _statusData, clearReport: true });
-    } catch (error) {
-        console.warn('Active session workspace restore failed:', error);
-        clearClientWorkspace({ clearReport: true });
-    }
+    // Do not hold initialization, chat input, or panel switching behind CT,
+    // NPY, mesh, or report restoration. Loader callbacks are fenced by the
+    // selected session, so a later switch cannot receive old data.
+    // The initial shell must remain interactive while heavy CT/mesh restoration
+    // runs in the background.  The session snapshot has already painted the
+    // durable chat/control-plane state above, so waiting here only delays input.
+    void restoreActiveSessionWorkspace({ status: _statusData, clearReport: true, background: true })
+        .catch(error => {
+            console.warn('Active session workspace restore failed:', error);
+            if (typeof clearClientWorkspace === 'function') clearClientWorkspace({ clearReport: true });
+        });
     if (typeof loadSessionChat === 'function' && activeSessionId) loadSessionChat(activeSessionId);
     syncUIBridgeState('init').catch(e => console.warn('Initial UI state sync failed:', e));
 
