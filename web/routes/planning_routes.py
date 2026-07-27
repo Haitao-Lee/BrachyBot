@@ -219,7 +219,17 @@ def register_planning_routes(
         if state == "running":
             operation["started_at"] = time.time()
         try:
-            store.mark_operation(user["id"], session_id, agent, operation)
+            # Operation checkpoints are progress metadata, not a reason to
+            # serialize the full Agent on the planning thread. The store
+            # debounces these writes and performs array work in its daemon
+            # checkpoint worker, preserving the latest operation payload.
+            store.schedule_agent_checkpoint(
+                user["id"],
+                session_id,
+                agent,
+                "operation.checkpoint",
+                operation=operation,
+            )
         except WorkspaceError:
             logger.warning("Unable to checkpoint workspace operation", exc_info=True)
 
@@ -244,6 +254,10 @@ def register_planning_routes(
                 else (task.error or "Chat response was interrupted")
             ),
             "updated_at": time.time(),
+            # The transcript is committed before the task emits `done`; the
+            # large Agent arrays are persisted by the background checkpoint
+            # below. Keep this marker explicit for restart diagnostics.
+            "persist_state": "pending",
             "checkpoint": {
                 "kind": "chat",
                 "task_id": task.task_id,
@@ -252,16 +266,6 @@ def register_planning_routes(
             },
         }
         try:
-            # A clinical task is not complete until its result snapshot is
-            # durable.  A deferred checkpoint here created a race: the UI
-            # received ``done`` and could switch cases before CTV/OAR masks,
-            # dose arrays, planning geometry, or the surgical-guide state had
-            # reached disk.  Reopening the case then restored the chat but not
-            # the clinical result.  Commit before the terminal event; the
-            # ChatTask manager deliberately withholds ``done`` while this
-            # callback is running, so the UI still has an honest finalizing
-            # step instead of a false completed state.
-            store.flush_agent_checkpoint(task.user_id, task.session_id, task.agent, "chat.task.finalized")
             snapshot = store.load_snapshot(task.user_id, task.session_id)
             chat = snapshot.get("chat") if isinstance(snapshot.get("chat"), dict) else {}
             messages = list(chat.get("messages") or [])
@@ -301,12 +305,6 @@ def register_planning_routes(
             display_message = task.message.split("\n\n[Uploaded image path:", 1)[0]
             append_message("user", display_message, timestamp_ms=int(task.created_at * 1000))
             persisted_steps = list(task.steps)
-            if final_status == "completed":
-                # The matching event is published to live/replay subscribers
-                # immediately after this transaction succeeds. Include it in
-                # the durable trace now so a server restart restores the same
-                # completed presentation.
-                persisted_steps.append(task.commit_step("done"))
             if persisted_steps:
                 append_message(
                     "thinking",
@@ -348,6 +346,92 @@ def register_planning_routes(
                 expected_revision=None,
                 reason="chat.task.finalized",
             )
+
+            # Agent checkpoints can encode CT/label/dose arrays and prune
+            # superseded sidecars. They are intentionally detached from the
+            # chat response: the small transcript transaction above is enough
+            # for immediate replay, while this worker makes the clinical data
+            # durable without blocking SSE `done`, input, or case switching.
+            task.set_persistence_status("pending")
+            app_instance = current_app._get_current_object()
+
+            def persist_agent_checkpoint() -> None:
+                started = time.perf_counter()
+                ready_operation = {
+                    **operation,
+                    "persist_state": "ready",
+                    "persisted_at": time.time(),
+                    "checkpoint": {
+                        **(operation.get("checkpoint") or {}),
+                        "persist_state": "ready",
+                    },
+                }
+                try:
+                    with app_instance.app_context():
+                        store.flush_agent_checkpoint(
+                            task.user_id,
+                            task.session_id,
+                            task.agent,
+                            "chat.task.finalized.background",
+                            operation=ready_operation,
+                        )
+                    task.set_persistence_status("ready")
+                    logger.info(
+                        "Background workspace checkpoint completed task=%s session=%s duration_ms=%.1f",
+                        task.task_id,
+                        task.session_id,
+                        (time.perf_counter() - started) * 1000.0,
+                    )
+                except WorkspaceNotFound:
+                    # A deleted case must never be recreated by a late save.
+                    task.set_persistence_status("discarded", "Case workspace was deleted")
+                    logger.info(
+                        "Background workspace checkpoint discarded task=%s session=%s duration_ms=%.1f",
+                        task.task_id,
+                        task.session_id,
+                        (time.perf_counter() - started) * 1000.0,
+                    )
+                except Exception as exc:  # pragma: no cover - integration path
+                    task.set_persistence_status("error", str(exc))
+                    logger.exception(
+                        "Background workspace checkpoint failed task=%s session=%s duration_ms=%.1f",
+                        task.task_id,
+                        task.session_id,
+                        (time.perf_counter() - started) * 1000.0,
+                    )
+                    try:
+                        with app_instance.app_context():
+                            failed_operation = {
+                                **operation,
+                                "persist_state": "error",
+                                "persist_error": str(exc),
+                                "updated_at": time.time(),
+                                "checkpoint": {
+                                    **(operation.get("checkpoint") or {}),
+                                    "persist_state": "error",
+                                    "persist_error": str(exc),
+                                },
+                            }
+                            store.save_snapshot_patch(
+                                task.user_id,
+                                task.session_id,
+                                {"operation": failed_operation},
+                                expected_revision=None,
+                                reason="chat.task.checkpoint_failed",
+                            )
+                    except WorkspaceError:
+                        logger.debug(
+                            "Unable to persist background checkpoint failure for task %s",
+                            task.task_id,
+                            exc_info=True,
+                        )
+
+            checkpoint_thread = threading.Thread(
+                target=persist_agent_checkpoint,
+                name=f"brachy-checkpoint-{task.task_id[:8]}",
+                daemon=True,
+            )
+            checkpoint_thread.start()
             return True
         except WorkspaceError:
             logger.warning("Unable to persist detached chat task %s", task.task_id, exc_info=True)

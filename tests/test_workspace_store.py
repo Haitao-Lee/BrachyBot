@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import threading
 from io import BytesIO
 from types import SimpleNamespace
@@ -277,6 +278,43 @@ def test_checkpoint_reuses_unchanged_arrays_and_prunes_replaced_versions(tmp_pat
     restored = _Agent()
     store.hydrate_agent(user["id"], case.id, restored)
     assert float(restored.memory.retrieve("dose_distribution_gy").max()) == 2.0
+
+
+def test_checkpoint_reuses_nested_arrays_after_restart_and_logs_stages(tmp_path, caplog):
+    """Restart checkpoints must not rewrite unchanged per-organ mask arrays."""
+    runtime = tmp_path / "runtime"
+    store = WorkspaceStore(runtime)
+    user = store.create_user("nested_owner", "hash")
+    case = store.create_session(user["id"], "Nested masks")
+
+    def make_agent():
+        agent = _Agent()
+        agent.memory.planning_results["oar_array"] = {
+            "stomach": np.ones((3, 2, 2), dtype=np.uint8),
+            "vertebrae_L1": np.full((3, 2, 2), 2, dtype=np.uint8),
+        }
+        agent.memory._planning_versions["oar_array"] = 1
+        return agent
+
+    first = make_agent()
+    with caplog.at_level(logging.INFO, logger="web.workspace_store"):
+        store.snapshot_agent(user["id"], case.id, first, reason="nested.initial")
+    arrays_dir = store.workspace_root(user["id"], case.id) / "arrays"
+    initial = sorted(path.name for path in arrays_dir.glob("*.npy"))
+
+    restarted = WorkspaceStore(runtime)
+    with caplog.at_level(logging.INFO, logger="web.workspace_store"):
+        restarted.snapshot_agent(user["id"], case.id, make_agent(), reason="nested.restart")
+    assert sorted(path.name for path in arrays_dir.glob("*.npy")) == initial
+    messages = "\n".join(record.getMessage() for record in caplog.records)
+    assert "workspace checkpoint started" in messages
+    assert "workspace checkpoint capacity scanned" in messages
+    assert "workspace checkpoint artifacts encoded" in messages
+    assert "workspace checkpoint prepared" in messages
+    assert "workspace checkpoint snapshot written" in messages
+    assert "workspace checkpoint artifacts committed" in messages
+    assert "workspace checkpoint completed" in messages
+    assert "arrays_reused=5" in messages
 
 
 def test_generated_artifacts_apply_replacement_aware_account_quota(tmp_path):

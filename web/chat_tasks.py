@@ -56,6 +56,11 @@ class ChatTask:
     error: str = ""
     completion_status: str = ""
     result_committed: bool = False
+    # Transcript persistence and the heavy Agent checkpoint have separate
+    # lifecycles.  The chat response is durable before the task becomes
+    # terminal; the clinical arrays may finish in the background afterwards.
+    persistence_status: str = "not_started"
+    persistence_error: str = ""
 
     def __post_init__(self) -> None:
         self._events: List[str] = []
@@ -147,18 +152,34 @@ class ChatTask:
         with self._condition:
             return len(self._events)
 
+    def set_persistence_status(self, status: str, error: str = "") -> None:
+        with self._condition:
+            self.persistence_status = str(status or "not_started")
+            self.persistence_error = str(error or "")
+            self._condition.notify_all()
+
     def iter_events(self, after_seq: int = 0) -> Iterable[str]:
         """Replay from a sequence and then follow live events until terminal."""
         index = max(0, int(after_seq or 0))
         while True:
+            heartbeat = False
             with self._condition:
                 while index >= len(self._events) and self.status == "running":
-                    self._condition.wait(timeout=1.0)
+                    # A long model/tool phase may legitimately produce no
+                    # user-visible event for a while. Emit a protocol comment
+                    # after a bounded idle interval so reverse proxies and
+                    # browsers keep the stream open instead of showing a
+                    # misleading "connection interrupted" recovery state.
+                    if not self._condition.wait(timeout=10.0):
+                        heartbeat = True
+                        break
                 batch = self._events[index:]
                 index = len(self._events)
                 terminal = self.status != "running" and index >= len(self._events)
             for event in batch:
                 yield event
+            if heartbeat and not terminal:
+                yield ": brachybot-task-alive\n\n"
             if terminal:
                 return
 
@@ -179,6 +200,8 @@ class ChatTask:
                 "event_count": len(self._events),
                 "response_available": bool(self.response or self.streamed_response),
                 "result_committed": bool(self.result_committed),
+                "persistence_status": self.persistence_status,
+                "persistence_error": self.persistence_error or None,
                 "error": self.error or None,
             }
 
@@ -320,11 +343,10 @@ class ChatTaskManager:
                         task.publish(event)
                     if task.is_running():
                         task.completion_status = "completed"
-                        # Keep the durable checkpoint visible as an active
-                        # step. The browser must never observe terminal `done`
-                        # before the case snapshot, report, and artifacts have
-                        # been committed successfully.
-                        task.publish(task.encode_event("step", task.commit_step("pending")))
+                        # The final response is gated by the lightweight chat
+                        # transcript transaction.  The expensive Agent
+                        # checkpoint is scheduled by on_finish and must not be
+                        # exposed as a fake pending tool step or delay `done`.
                         committed = True
                         if on_finish is not None:
                             committed = on_finish(task) is not False
@@ -339,10 +361,11 @@ class ChatTaskManager:
                             task.finish("failed", failure)
                             return
                         task.result_committed = True
-                        task.publish(task.encode_event("step", task.commit_step("done")))
                         # The Agent normally emits `done`. The task boundary
-                        # supplies it when an adapter omits it, but only after
-                        # durable finalization has succeeded.
+                        # supplies it when an adapter omits it. The lightweight
+                        # transcript is already committed; clinical array
+                        # persistence continues independently and reports its
+                        # state through task metadata rather than the trace.
                         task.publish(terminal_event or "event: done\ndata: {}\n\n")
                         task.finish("completed")
                     if on_finish is not None:

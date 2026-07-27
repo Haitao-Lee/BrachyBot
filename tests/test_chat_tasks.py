@@ -1,9 +1,10 @@
 import threading
 import time
+from unittest.mock import patch
 
 import pytest
 
-from web.chat_tasks import ChatTaskManager
+from web.chat_tasks import ChatTask, ChatTaskManager
 from web.server import _case_has_running_chat_task
 
 
@@ -94,8 +95,6 @@ def test_chat_task_replays_events_and_is_case_scoped():
         _event("start", {"language": {"code": "en"}}),
         _event("step", {"id": 1, "type": "user", "status": "done"}),
         _event("response", {"response": "finished"}),
-        _event("step", task.commit_step("pending")),
-        _event("step", task.commit_step("done")),
         _event("done", {}),
     ]
     assert manager.get(task.task_id, "user-a", "case-a") is task
@@ -250,7 +249,7 @@ def test_cancelling_one_case_does_not_cancel_another_running_case():
 
 
 def test_terminal_done_is_withheld_until_case_results_are_committed():
-    """The UI must not observe completion before the workspace is durable."""
+    """The UI must not observe completion before the turn commit callback returns."""
 
     manager = ChatTaskManager()
     finalization_started = threading.Event()
@@ -291,6 +290,14 @@ def test_terminal_done_is_withheld_until_case_results_are_committed():
     assert task.status == "completed"
     assert task.result_committed is True
     assert observed[-1] == _event("done", {})
+
+
+def test_idle_task_stream_emits_sse_keepalive_comment():
+    """Long model phases must not be mistaken for a broken live connection."""
+    task = ChatTask("task-id", "user-a", "case-a", _Agent([]), "hello")
+    with patch.object(task._condition, "wait", return_value=False):
+        event = next(task.iter_events(0))
+    assert event == ": brachybot-task-alive\n\n"
 
 
 def test_failed_case_commit_never_emits_a_false_done_event():

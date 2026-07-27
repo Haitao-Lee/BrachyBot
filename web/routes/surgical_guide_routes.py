@@ -62,9 +62,16 @@ def register_surgical_guide_routes(app, get_agent):
     def snapshot(agent: Any, reason: str, operation: Dict[str, Any] | None = None) -> None:
         store, user, session_id = request_case_context()
         if operation is not None:
-            store.mark_operation(user["id"], session_id, agent, operation)
+            # Guide generation can encode a large mesh and STL sidecar. Keep
+            # operation metadata durable, but let the workspace store debounce
+            # and persist the heavy Agent checkpoint in its background timer.
+            store.schedule_agent_checkpoint(
+                user["id"], session_id, agent, "surgical_guide.operation", operation=operation,
+            )
         else:
-            store.flush_agent_checkpoint(user["id"], session_id, agent, reason)
+            store.schedule_agent_checkpoint(
+                user["id"], session_id, agent, reason,
+            )
 
     @app.route("/api/surgical-guides", methods=["GET"])
     @require_api_key

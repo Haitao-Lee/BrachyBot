@@ -347,10 +347,11 @@ class WorkspaceStore:
         self.staging_dir = self.runtime_dir / ".staging"
         self._lock = threading.RLock()
         self._checkpoint_timers: Dict[Tuple[str, str], threading.Timer] = {}
+        self._checkpoint_generations: Dict[Tuple[str, str], int] = {}
         self._case_locks: Dict[Tuple[str, str], threading.RLock] = {}
         # Array references are process-local acceleration metadata. The durable
-        # snapshot remains authoritative; after restart the first checkpoint
-        # safely writes fresh sidecars and prunes superseded files.
+        # snapshot remains authoritative; after restart the encoder rebuilds a
+        # nested name-to-path index so unchanged sidecars can be reused safely.
         self._array_refs: Dict[Tuple[str, str, str, str], Tuple[int, str]] = {}
         self._ensure_layout()
         self._initialize_database()
@@ -663,13 +664,81 @@ class WorkspaceStore:
         *,
         reason: str = "agent.checkpoint",
         operation: Optional[Mapping[str, Any]] = None,
+        checkpoint_generation: Optional[int] = None,
     ) -> Dict[str, Any]:
         """Persist one coherent agent checkpoint for an account-owned case."""
-        payload = self._prepare_agent_snapshot(user_id, session_id, agent)
-        with self._case_guard(user_id, session_id):
-            return self._commit_agent_snapshot(
-                user_id, session_id, payload, reason=reason, operation=operation,
+        started = time.perf_counter()
+        logger.info(
+            "workspace checkpoint started session=%s reason=%s",
+            session_id, reason,
+        )
+        try:
+            prepare_started = time.perf_counter()
+            payload = self._prepare_agent_snapshot(user_id, session_id, agent)
+            prepare_ms = (time.perf_counter() - prepare_started) * 1000.0
+            if checkpoint_generation is not None:
+                with self._lock:
+                    current_generation = self._checkpoint_generations.get((user_id, session_id), 0)
+                if int(checkpoint_generation) != int(current_generation):
+                    self._discard_snapshot_payload(payload)
+                    logger.info(
+                        "workspace checkpoint discarded stale session=%s reason=%s generation=%s current_generation=%s duration_ms=%.1f",
+                        session_id,
+                        reason,
+                        checkpoint_generation,
+                        current_generation,
+                        (time.perf_counter() - started) * 1000.0,
+                    )
+                    return {}
+            logger.info(
+                "workspace checkpoint prepared session=%s reason=%s duration_ms=%.1f arrays_created=%d arrays_reused=%d result_keys=%d",
+                session_id,
+                reason,
+                prepare_ms,
+                len(payload.get("created_array_paths") or []),
+                int(payload.get("reused_array_count") or 0),
+                len(payload.get("encoded_results") or {}),
             )
+            commit_started = time.perf_counter()
+            with self._case_guard(user_id, session_id):
+                result = self._commit_agent_snapshot(
+                    user_id, session_id, payload, reason=reason, operation=operation,
+                )
+            logger.info(
+                "workspace checkpoint completed session=%s reason=%s duration_ms=%.1f commit_ms=%.1f discarded=%s",
+                session_id,
+                reason,
+                (time.perf_counter() - started) * 1000.0,
+                (time.perf_counter() - commit_started) * 1000.0,
+                not bool(result),
+            )
+            return result
+        except Exception:
+            logger.warning(
+                "workspace checkpoint failed session=%s reason=%s duration_ms=%.1f",
+                session_id,
+                reason,
+                (time.perf_counter() - started) * 1000.0,
+                exc_info=True,
+            )
+            raise
+
+    def _discard_snapshot_payload(self, payload: Mapping[str, Any]) -> None:
+        """Remove sidecars produced by a checkpoint invalidated before commit."""
+        root = payload.get("root")
+        created_array_paths = list(payload.get("created_array_paths") or [])
+        if not isinstance(root, Path):
+            return
+        for relative in created_array_paths:
+            try:
+                _safe_workspace_child(root, str(relative)).unlink(missing_ok=True)
+            except (OSError, WorkspaceError):
+                continue
+        with self._lock:
+            for cache_key, value in list(self._array_refs.items()):
+                if cache_key[:2] == (str(payload.get("user_id") or ""), str(payload.get("session_id") or "")):
+                    if value[1] in created_array_paths:
+                        self._array_refs.pop(cache_key, None)
 
     def _prepare_agent_snapshot(
         self,
@@ -712,24 +781,47 @@ class WorkspaceStore:
         durable_results = durable_state.get("planning_results") if isinstance(durable_state.get("planning_results"), Mapping) else {}
         durable_versions = durable_state.get("planning_versions") if isinstance(durable_state.get("planning_versions"), Mapping) else {}
         created_array_paths: List[str] = []
+        reused_array_count = 0
+
+        # Reuse nested arrays after a process restart.  A top-level lookup is
+        # insufficient for OAR/CTV payloads because their arrays are commonly
+        # stored below a structure-name mapping.  Rebuilding this name-to-path
+        # index keeps restart checkpoints from rewriting hundreds of megabytes
+        # of unchanged masks.
+        durable_array_refs: Dict[Tuple[str, str], str] = {}
+
+        def collect_array_refs(value: Any, name: str, source_key: str) -> None:
+            if isinstance(value, Mapping):
+                if "$array" in value:
+                    durable_array_refs[(source_key, name)] = str(value["$array"])
+                    return
+                for key, item in value.items():
+                    collect_array_refs(item, f"{name}_{key}", source_key)
+            elif isinstance(value, (list, tuple)):
+                for index, item in enumerate(value):
+                    collect_array_refs(item, f"{name}_{index}", source_key)
+
+        for source_key, value in durable_results.items():
+            collect_array_refs(value, _safe_filename(source_key), str(source_key))
 
         def reuse_array(source_key: str, name: str) -> Optional[str]:
+            nonlocal reused_array_count
             cache_key = (user_id, session_id, source_key, name)
             cached = self._array_refs.get(cache_key)
             version = int(planning_versions.get(source_key, 0))
             if not cached or cached[0] != version:
                 previous_version = durable_versions.get(source_key)
-                previous = durable_results.get(source_key)
                 # A fresh process has no in-memory _array_refs.  Reuse a
-                # directly persisted top-level array when its memory version
-                # still matches the durable snapshot; changed arrays have a
-                # new version and are written atomically below.
-                if (previous_version is not None and int(previous_version) == version
-                        and isinstance(previous, Mapping) and previous.get("$array")):
-                    candidate = str(previous["$array"])
+                # directly persisted array, including nested OAR/CTV arrays,
+                # when its memory version still matches the durable snapshot;
+                # changed arrays have a new version and are written atomically.
+                candidate = durable_array_refs.get((source_key, name))
+                if (candidate and previous_version is not None
+                        and int(previous_version) == version):
                     try:
                         if _safe_workspace_child(root, candidate).is_file():
                             self._array_refs[cache_key] = (version, candidate)
+                            reused_array_count += 1
                             return candidate
                     except (TypeError, ValueError, WorkspaceError):
                         pass
@@ -737,6 +829,7 @@ class WorkspaceStore:
             relative = cached[1]
             try:
                 if _safe_workspace_child(root, relative).is_file():
+                    reused_array_count += 1
                     return relative
             except WorkspaceError:
                 pass
@@ -747,9 +840,32 @@ class WorkspaceStore:
             self._array_refs[cache_key] = (int(planning_versions.get(source_key, 0)), relative)
             created_array_paths.append(relative)
 
+        capacity_started = time.perf_counter()
+        user = self.get_user_by_id(user_id)
+        quota = int(user["storage_quota_bytes"]) if user else DEFAULT_USER_QUOTA_BYTES
+        capacity_remaining = quota - self.user_storage_bytes(user_id)
+        logger.info(
+            "workspace checkpoint capacity scanned session=%s duration_ms=%.1f remaining_bytes=%d",
+            session_id,
+            (time.perf_counter() - capacity_started) * 1000.0,
+            capacity_remaining,
+        )
+
+        def ensure_snapshot_capacity(path: Path, new_size: int) -> None:
+            nonlocal capacity_remaining
+            try:
+                previous_size = path.stat().st_size if path.exists() else 0
+            except OSError:
+                previous_size = 0
+            delta = max(0, int(new_size) - int(previous_size))
+            if delta > capacity_remaining:
+                raise WorkspaceQuotaExceeded("Account storage quota would be exceeded")
+            capacity_remaining -= delta
+
+        encode_started = time.perf_counter()
         encoder = _ArtifactEncoder(
             root,
-            ensure_capacity=lambda path, size: self._ensure_replacement_capacity(user_id, path, size),
+            ensure_capacity=ensure_snapshot_capacity,
             reuse_array=reuse_array,
             record_array=record_array,
             array_version=lambda source_key: int(planning_versions.get(source_key, 0)),
@@ -762,11 +878,21 @@ class WorkspaceStore:
             if isinstance(encoded, dict) and "$image" in encoded:
                 continue
             encoded_results[str(key)] = encoded
+        logger.info(
+            "workspace checkpoint artifacts encoded session=%s duration_ms=%.1f arrays_created=%d arrays_reused=%d",
+            session_id,
+            (time.perf_counter() - encode_started) * 1000.0,
+            len(created_array_paths),
+            reused_array_count,
+        )
         return {
             "agent_state": agent_state,
             "encoded_results": encoded_results,
             "created_array_paths": created_array_paths,
+            "reused_array_count": reused_array_count,
             "root": root,
+            "user_id": user_id,
+            "session_id": session_id,
         }
 
     def _commit_agent_snapshot(
@@ -784,6 +910,7 @@ class WorkspaceStore:
         encoded_results = payload["encoded_results"]
         created_array_paths = payload["created_array_paths"]
         root = payload["root"]
+        commit_started = time.perf_counter()
         try:
             snapshot = self.load_snapshot(user_id, session_id)
         except WorkspaceNotFound:
@@ -804,7 +931,13 @@ class WorkspaceStore:
             if operation is not None:
                 snapshot["operation"] = _safe_json(operation)
             snapshot["saved_at"] = _now()
+            write_started = time.perf_counter()
             self._write_snapshot(user_id, root / "snapshot.json", snapshot)
+            logger.info(
+                "workspace checkpoint snapshot written session=%s duration_ms=%.1f",
+                session_id,
+                (time.perf_counter() - write_started) * 1000.0,
+            )
         except Exception:
             for relative in created_array_paths:
                 try:
@@ -816,6 +949,7 @@ class WorkspaceStore:
                     self._array_refs.pop(cache_key, None)
             raise
 
+        prune_started = time.perf_counter()
         referenced_arrays = _array_references(encoded_results)
         arrays_dir = root / "arrays"
         for path in arrays_dir.glob("*.npy"):
@@ -835,6 +969,12 @@ class WorkspaceStore:
                 "UPDATE case_sessions SET updated_at = ?, revision = revision + 1, recovery_status = ? WHERE id = ? AND user_id = ?",
                 (_now(), recovery_status, session_id, user_id),
             )
+        logger.info(
+            "workspace checkpoint artifacts committed session=%s duration_ms=%.1f prune_ms=%.1f",
+            session_id,
+            (time.perf_counter() - commit_started) * 1000.0,
+            (time.perf_counter() - prune_started) * 1000.0,
+        )
         self._audit(user_id, session_id, reason, {"result_keys": sorted(encoded_results.keys())})
         return self.load_snapshot(user_id, session_id)
 
@@ -855,10 +995,19 @@ class WorkspaceStore:
 
     def hydrate_agent(self, user_id: str, session_id: str, agent: Any) -> Dict[str, Any]:
         """Load a checkpoint into a fresh agent without evaluating any code."""
+        started = time.perf_counter()
+        logger.info("workspace hydration started session=%s", session_id)
+        snapshot_started = time.perf_counter()
         snapshot = self.load_snapshot(user_id, session_id)
+        logger.info(
+            "workspace hydration snapshot loaded session=%s duration_ms=%.1f",
+            session_id,
+            (time.perf_counter() - snapshot_started) * 1000.0,
+        )
         root = self.workspace_root(user_id, session_id)
         state = snapshot.get("agent") or {}
         memory = agent.memory
+        decode_started = time.perf_counter()
         with memory._lock:
             memory.planning_results.clear()
             for key, value in (state.get("planning_results") or {}).items():
@@ -883,14 +1032,32 @@ class WorkspaceStore:
                 }
             available = sorted(memory.planning_results.keys())
             memory.conversation_state["data_available"] = available
+        logger.info(
+            "workspace hydration arrays decoded session=%s duration_ms=%.1f result_keys=%d",
+            session_id,
+            (time.perf_counter() - decode_started) * 1000.0,
+            len(memory.planning_results),
+        )
         if isinstance(state.get("config"), Mapping):
             agent.config.update(_restore_json(state["config"]))
         if hasattr(agent, "run_ledger") and isinstance(state.get("runtime_state"), Mapping):
             agent.run_ledger.restore_state(_restore_json(state["runtime_state"]))
+        ct_started = time.perf_counter()
         self._hydrate_ct_image(root, memory)
+        logger.info(
+            "workspace hydration CT phase finished session=%s duration_ms=%.1f ct_loaded=%s",
+            session_id,
+            (time.perf_counter() - ct_started) * 1000.0,
+            memory.retrieve("ct_data") is not None,
+        )
         operation = snapshot.get("operation") or {}
         if operation.get("state") == "running":
             snapshot = self.mark_session_interrupted(user_id, session_id, "Server restarted before the task completed")
+        logger.info(
+            "workspace hydration completed session=%s duration_ms=%.1f",
+            session_id,
+            (time.perf_counter() - started) * 1000.0,
+        )
         return snapshot
 
     @staticmethod
@@ -929,22 +1096,50 @@ class WorkspaceStore:
             # from being inspected or deleted.
             return
 
-    def schedule_agent_checkpoint(self, user_id: str, session_id: str, agent: Any, reason: str) -> None:
+    def schedule_agent_checkpoint(
+        self,
+        user_id: str,
+        session_id: str,
+        agent: Any,
+        reason: str,
+        operation: Optional[Mapping[str, Any]] = None,
+    ) -> None:
         """Debounce high-frequency memory changes without dropping durability."""
         key = (user_id, session_id)
         with self._lock:
             existing = self._checkpoint_timers.pop(key, None)
             if existing:
                 existing.cancel()
-            timer = threading.Timer(0.75, self._checkpoint_timer, args=(user_id, session_id, agent, reason))
+            generation = self._checkpoint_generations.get(key, 0) + 1
+            self._checkpoint_generations[key] = generation
+            timer = threading.Timer(
+                0.75,
+                self._checkpoint_timer,
+                args=(user_id, session_id, agent, reason, operation, generation),
+            )
             timer.daemon = True
             self._checkpoint_timers[key] = timer
             timer.start()
 
-    def _checkpoint_timer(self, user_id: str, session_id: str, agent: Any, reason: str) -> None:
+    def _checkpoint_timer(
+        self,
+        user_id: str,
+        session_id: str,
+        agent: Any,
+        reason: str,
+        operation: Optional[Mapping[str, Any]] = None,
+        generation: Optional[int] = None,
+    ) -> None:
         key = (user_id, session_id)
         try:
-            self.snapshot_agent(user_id, session_id, agent, reason=reason)
+            self.snapshot_agent(
+                user_id,
+                session_id,
+                agent,
+                reason=reason,
+                operation=operation,
+                checkpoint_generation=generation,
+            )
         except WorkspaceNotFound:
             pass
         except Exception:
@@ -954,15 +1149,32 @@ class WorkspaceStore:
             )
         finally:
             with self._lock:
-                self._checkpoint_timers.pop(key, None)
+                if generation is None or self._checkpoint_generations.get(key, 0) == int(generation):
+                    self._checkpoint_timers.pop(key, None)
 
-    def flush_agent_checkpoint(self, user_id: str, session_id: str, agent: Any, reason: str) -> Dict[str, Any]:
+    def flush_agent_checkpoint(
+        self,
+        user_id: str,
+        session_id: str,
+        agent: Any,
+        reason: str,
+        operation: Optional[Mapping[str, Any]] = None,
+    ) -> Dict[str, Any]:
         key = (user_id, session_id)
         with self._lock:
             timer = self._checkpoint_timers.pop(key, None)
             if timer:
                 timer.cancel()
-        return self.snapshot_agent(user_id, session_id, agent, reason=reason)
+            generation = self._checkpoint_generations.get(key, 0) + 1
+            self._checkpoint_generations[key] = generation
+        return self.snapshot_agent(
+            user_id,
+            session_id,
+            agent,
+            reason=reason,
+            operation=operation,
+            checkpoint_generation=generation,
+        )
 
     def discard_agent_checkpoint(self, user_id: str, session_id: str) -> None:
         """Cancel a pending checkpoint when a case is explicitly deleted.
@@ -976,6 +1188,7 @@ class WorkspaceStore:
             timer = self._checkpoint_timers.pop(key, None)
             if timer:
                 timer.cancel()
+            self._checkpoint_generations[key] = self._checkpoint_generations.get(key, 0) + 1
 
     def mark_operation(self, user_id: str, session_id: str, agent: Any, operation: Mapping[str, Any]) -> Dict[str, Any]:
         return self.snapshot_agent(user_id, session_id, agent, reason="operation.checkpoint", operation=operation)

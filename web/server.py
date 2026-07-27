@@ -315,9 +315,19 @@ def create_app(config: Optional[Dict] = None):
         # switch.  Wait for the single authoritative hydration rather than
         # constructing a second Agent or taking the global cache lock.
         if not is_initializer:
+            wait_started = time.perf_counter()
             if not initializer.wait(timeout=300):
-                logger.error("Timed out hydrating case %s", resolved_session_id)
+                logger.error(
+                    "Timed out hydrating case %s wait_ms=%.1f",
+                    resolved_session_id,
+                    (time.perf_counter() - wait_started) * 1000.0,
+                )
                 return None
+            logger.info(
+                "Case hydration waiter released session=%s wait_ms=%.1f",
+                resolved_session_id,
+                (time.perf_counter() - wait_started) * 1000.0,
+            )
             with _sessions_lock:
                 cached = _sessions.get(cache_key)
                 if cached is not None:
@@ -327,6 +337,7 @@ def create_app(config: Optional[Dict] = None):
                         g.brachybot_workspace = (user["id"], resolved_session_id)
                 return cached
 
+        hydration_started = time.perf_counter()
         try:
             # Enforce the soft LRU limit while the lock is held, but keep all
             # disk/GPU hydration below outside it.
@@ -364,10 +375,22 @@ def create_app(config: Optional[Dict] = None):
             # never from the legacy shared uploads directory or another case.
             agent_config["_workspace_root"] = str(workspace_root)
             agent_config["_workspace_session_id"] = resolved_session_id
+            construct_started = time.perf_counter()
             agent = BrachyAgent(session_id=resolved_session_id, config=agent_config)
+            logger.info(
+                "Case agent constructed session=%s duration_ms=%.1f",
+                resolved_session_id,
+                (time.perf_counter() - construct_started) * 1000.0,
+            )
             # This may read large sidecar arrays; it intentionally runs
             # outside _sessions_lock so other cases remain responsive.
+            hydrate_started = time.perf_counter()
             hydrated_snapshot = workspace_store.hydrate_agent(user["id"], resolved_session_id, agent)
+            logger.info(
+                "Case agent hydrated session=%s duration_ms=%.1f",
+                resolved_session_id,
+                (time.perf_counter() - hydrate_started) * 1000.0,
+            )
             # A delete/reset may have invalidated this initializer while the
             # CT and NPY sidecars were being read.  Check both the generation
             # and the authoritative active-session row before touching the UI
@@ -407,11 +430,20 @@ def create_app(config: Optional[Dict] = None):
             if has_request_context():
                 g.brachybot_agent = agent
                 g.brachybot_workspace = (user["id"], resolved_session_id)
-            logger.info("Created hydrated agent for account case session %s", resolved_session_id)
+            logger.info(
+                "Created hydrated agent for account case session %s total_ms=%.1f",
+                resolved_session_id,
+                (time.perf_counter() - hydration_started) * 1000.0,
+            )
             return agent
         except Exception as e:
             import traceback
-            logger.error(f"Failed to initialize BrachyAgent for session {resolved_session_id}: {e}")
+            logger.error(
+                "Failed to initialize BrachyAgent for session %s duration_ms=%.1f: %s",
+                resolved_session_id,
+                (time.perf_counter() - hydration_started) * 1000.0,
+                e,
+            )
             logger.error(traceback.format_exc())
             return None
         finally:

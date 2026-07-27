@@ -209,8 +209,8 @@ function _autoFillInterpretation() {
 
     if (v100 !== null) {
         lines.push(zh
-            ? `- CTV V100：${v100.toFixed(1)}%。这是观测到的覆盖指标，不是本地模板的通过/不通过结论。`
-            : `- CTV V100: ${v100.toFixed(1)}%. This is an observed coverage metric, not a local-template pass/fail verdict.`);
+            ? `- CTV V100：${v100.toFixed(1)}%。请结合适用指南或已确认的病例方案核对靶区覆盖要求。`
+            : `- CTV V100: ${v100.toFixed(1)}%. Compare it with the applicable target-coverage criteria.`);
     }
     if (d90 !== null) {
         const rxGy = typeof _getCurrentPrescriptionGy === 'function'

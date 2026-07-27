@@ -653,8 +653,7 @@ print(json.dumps(result))
                     f"- {organ}: Dmax={dmax:.2f} Gy, D2cc={d2cc:.2f} Gy."
                 )
         review_items.append(
-            f"- V100={v100:.1f}%, V150={v150:.1f}%, V200={v200:.1f}%, D90={d90:.2f} Gy. "
-            f"{L('这些是观测指标,不是本地模板自动达标结论。', 'These are observed metrics, not a local-template acceptability verdict.')}"
+            f"- V100={v100:.1f}%, V150={v150:.1f}%, V200={v200:.1f}%, D90={d90:.2f} Gy."
         )
         lines.extend(review_items)
         lines.append("")

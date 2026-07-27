@@ -52,6 +52,7 @@ def test_workspace_delete_uses_custom_confirmation_and_cancels_active_stream():
 def test_session_restore_uses_corner_non_blocking_hydration_and_fresh_snapshot():
     """Case switching must show progress without masking the workspace."""
     workspace = read("web/app/static/js/brachybot-workspace.js")
+    ui_api = read("web/app/static/js/brachybot-ui-api.js")
     css = read("web/app/static/css/brachybot-auth.css")
     assert "authoritativeWorkspace" in workspace
     assert "'/api/workspace/snapshot'" in workspace
@@ -59,6 +60,16 @@ def test_session_restore_uses_corner_non_blocking_hydration_and_fresh_snapshot()
     assert "position: fixed; right: 18px; bottom: 18px" in css
     assert "body.workspace-hydrating::after { display: none; }" in css
     assert "pointer-events: none" in css
+    assert "workspaceSnapshotHasClinicalResources" in workspace
+    assert "initial case has no clinical resources; hydration skipped" in ui_api
+
+
+def test_task_stream_has_keepalive_and_workspace_restore_has_stale_notice_fallback():
+    chat_tasks = read("web/chat_tasks.py")
+    workspace = read("web/app/static/js/brachybot-workspace.js")
+    assert "brachybot-task-alive" in chat_tasks
+    assert "hydrationHideTimer" in workspace
+    assert "background restore skipped: empty or stale case" in workspace
 
 
 def test_surgical_guide_empty_tool_call_uses_generate_default():
@@ -69,12 +80,15 @@ def test_surgical_guide_empty_tool_call_uses_generate_default():
     assert 'or "generate"' in tool
 
 
-def test_final_chat_commit_flushes_clinical_agent_snapshot_before_done():
-    """A terminal response cannot race durable planning-result persistence."""
+def test_final_chat_commit_separates_transcript_from_heavy_checkpoint():
+    """The response is released after the small transcript write, not NPY I/O."""
     routes = read("web/routes/planning_routes.py")
     block = routes.split("def finalize_chat_task", 1)[1].split("def owned_case_path", 1)[0]
     assert "store.flush_agent_checkpoint" in block
-    assert "store.schedule_agent_checkpoint" not in block
+    assert "checkpoint_thread.start()" in block
+    assert '"persist_state": "pending"' in block
+    assert '"chat.task.finalized.background"' in block
+    assert 'task.commit_step("done")' not in block
 
 
 def test_new_case_creation_avoids_empty_workspace_hydration_and_redundant_round_trips():
