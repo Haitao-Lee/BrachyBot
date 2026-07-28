@@ -962,6 +962,15 @@ async function refreshPlanningUI(options = {}) {
         // older case must never overwrite the newly selected report.
         await Promise.all(_meshPromises);
         if (!isCurrentCase()) return resolve();
+        if (typeof window.ensureSurgicalGuideForCurrentPlan === 'function') {
+            // Guide meshing is real CPU work. Start it after the plan has
+            // painted, but never hold the planning response or Viewer usable
+            // state hostage while the printable artifact is generated.
+            void window.ensureSurgicalGuideForCurrentPlan({
+                sessionId: expectedSessionId,
+                autoGenerate: options.autoGenerateGuide === true,
+            });
+        }
         try {
             if (typeof reportAutoFill === 'function') {
                 await reportAutoFill({ sessionId: expectedSessionId });

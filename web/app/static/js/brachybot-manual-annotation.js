@@ -732,6 +732,16 @@ async function runSegmentationStep(kind) {
             startSegmentationMeshPrewarm(kind === 'ctv_segmentation' ? 'ctv' : 'oar');
         }
         if (!isCurrentOwner()) return { success: true, kind, labels: n, detached: true };
+        if (apiKind === 'ctv' && String(body.tumor_type || '').startsWith('biomedparse_')) {
+            fetch(API + '/ctv/models/validation', {
+                method: 'POST',
+                headers: sessionHeaders,
+                body: JSON.stringify({
+                    tumor_type: body.tumor_type,
+                    data_tree_viewer_passed: true,
+                }),
+            }).catch(error => console.warn('[CTV] validation acknowledgement failed:', error));
+        }
         _saveManualState({ [kind]: true, active_step: null, active_step_started_at: null });
         _manualWorkflowProgress(kind, 'done', label, label, _manualWorkflowLabel('\u5df2\u5b8c\u6210', 'Completed'));
         reportUIEvent('segmentation.step', `${label} completed`, { kind, labels: n, status: 'done' });
@@ -1254,6 +1264,198 @@ function _needleSliceSegment(needle, associatedSeeds, axisIdx, sliceIndex, orien
     return { start: toDisplay(outer), end: toDisplay(hit) };
 }
 
+let _seed2DDrag = null;
+
+function _seedNeedleRecord(seed) {
+    const key = _overlayTrajectoryKey(seed?.trajectory_id);
+    return (dataTreeState.planning?.needles || []).find(
+        needle => _overlayTrajectoryKey(needle?.trajectory_id) === key,
+    ) || null;
+}
+
+function _pointerOnOverlay(event, overlayCanvas) {
+    const rect = overlayCanvas.getBoundingClientRect();
+    if (!rect.width || !rect.height) return null;
+    return {
+        x: (event.clientX - rect.left) * overlayCanvas.width / rect.width,
+        y: (event.clientY - rect.top) * overlayCanvas.height / rect.height,
+    };
+}
+
+function _projectPointerAlongNeedle2D(event, needle, view) {
+    const pointer = _pointerOnOverlay(event, view.canvas);
+    const points = Array.isArray(needle?.points) ? needle.points : [];
+    if (!pointer || points.length < 2) return null;
+    let best = null;
+    let bestDistance = Infinity;
+    for (let index = 0; index < points.length - 1; index += 1) {
+        const worldA = points[index].map(Number);
+        const worldB = points[index + 1].map(Number);
+        const indexA = _worldToIndex(...worldA);
+        const indexB = _worldToIndex(...worldB);
+        if (!indexA || !indexB) continue;
+        const a = view.toDisplay(view.orientIdx(indexA));
+        const b = view.toDisplay(view.orientIdx(indexB));
+        const dx = b.x - a.x;
+        const dy = b.y - a.y;
+        const norm2 = dx * dx + dy * dy;
+        if (norm2 < 1e-8) continue;
+        const parameter = Math.max(0, Math.min(
+            1,
+            ((pointer.x - a.x) * dx + (pointer.y - a.y) * dy) / norm2,
+        ));
+        const projectedX = a.x + parameter * dx;
+        const projectedY = a.y + parameter * dy;
+        const distance = Math.hypot(pointer.x - projectedX, pointer.y - projectedY);
+        if (distance < bestDistance) {
+            bestDistance = distance;
+            best = worldA.map((value, axis) => value + parameter * (worldB[axis] - value));
+        }
+    }
+    return best;
+}
+
+function _finishSeed2DDrag(event, cancelled = false) {
+    const drag = _seed2DDrag;
+    if (!drag) return;
+    clearTimeout(drag.timer);
+    _seed2DDrag = null;
+    drag.sliceCanvas.style.cursor = '';
+    if (drag.pointerId !== undefined && drag.sliceCanvas.releasePointerCapture) {
+        try { drag.sliceCanvas.releasePointerCapture(drag.pointerId); } catch (_) {}
+    }
+    const seed = dataTreeState.planning.seeds.find(item => item.id === drag.seedId);
+    if (seed) delete seed._interactionSelected;
+    redrawSeedNeedleOverlays();
+    if (!cancelled && drag.armed && drag.moved && seed && typeof onManualSeedEdited === 'function') {
+        onManualSeedEdited(seed.id, seed.position || seed.pos, drag.rollback)
+            .catch(error => console.warn('[seed-2d] update failed:', error));
+    }
+}
+
+function _showSeed2DContextMenu(event, seed) {
+    if (!seed) return;
+    if (typeof hideContextMenu === 'function') hideContextMenu();
+    const needle = _seedNeedleRecord(seed);
+    const position = (seed.position || seed.pos || [0, 0, 0])
+        .map(value => Number(value).toFixed(1)).join(', ');
+    const menu = document.createElement('div');
+    menu.className = 'ctx-menu';
+    menu.id = 'ctxMenu';
+    menu.style.left = `${event.clientX}px`;
+    menu.style.top = `${event.clientY}px`;
+    const title = typeof window._t === 'function'
+        ? window._t('粒子', 'Seed')
+        : 'Seed';
+    const owner = typeof window._t === 'function'
+        ? window._t('所属针道', 'Needle')
+        : 'Needle';
+    const remove = typeof window._t === 'function'
+        ? window._t('删除当前粒子', 'Delete seed')
+        : 'Delete seed';
+    menu.innerHTML = `
+        <div class="ctx-menu-item ctx-menu-summary" aria-disabled="true">
+            <strong>${title} ${seed.id}</strong>
+            <small>${owner}: ${needle?.id || seed.trajectory_id}<br>${position} mm</small>
+        </div>
+        <div class="ctx-menu-sep"></div>
+        <button class="ctx-menu-item" type="button" data-delete-seed="${seed.id}">
+            <span class="ctx-icon">&#128465;</span>${remove}
+        </button>`;
+    document.body.appendChild(menu);
+    window.__brachyContextMenuElement = menu;
+    const rect = menu.getBoundingClientRect();
+    if (rect.right > window.innerWidth) menu.style.left = `${event.clientX - rect.width}px`;
+    if (rect.bottom > window.innerHeight) menu.style.top = `${event.clientY - rect.height}px`;
+    menu.querySelector('[data-delete-seed]')?.addEventListener('click', () => {
+        if (typeof hideContextMenu === 'function') hideContextMenu();
+        if (typeof deleteSeed3D === 'function') deleteSeed3D(seed.id);
+    });
+    setTimeout(() => {
+        document.addEventListener('click', hideContextMenu, { once: true });
+        document.addEventListener('contextmenu', hideContextMenu, { once: true });
+    }, 0);
+}
+
+function _ensureSeed2DInteraction(sliceCanvas, view) {
+    sliceCanvas._seedOverlayView = view;
+    if (sliceCanvas._seedInteractionInstalled) return;
+    sliceCanvas._seedInteractionInstalled = true;
+    const hitSeed = event => {
+        const current = sliceCanvas._seedOverlayView;
+        const pointer = current ? _pointerOnOverlay(event, current.canvas) : null;
+        if (!pointer) return null;
+        return (current.hitRegions || [])
+            .map(region => ({ ...region, distance: Math.hypot(pointer.x - region.x, pointer.y - region.y) }))
+            .filter(region => region.distance <= Math.max(10, region.radius + 5))
+            .sort((a, b) => a.distance - b.distance)[0] || null;
+    };
+    sliceCanvas.addEventListener('pointerdown', event => {
+        if (event.button !== 0 || _seed2DDrag) return;
+        const hit = hitSeed(event);
+        if (!hit) return;
+        const seed = dataTreeState.planning.seeds.find(item => item.id === hit.seedId);
+        const needle = _seedNeedleRecord(seed);
+        if (!seed || !needle) return;
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        seed._interactionSelected = true;
+        _seed2DDrag = {
+            seedId: seed.id,
+            needle,
+            sliceCanvas,
+            pointerId: event.pointerId,
+            startX: event.clientX,
+            startY: event.clientY,
+            rollback: typeof _cloneManualSeeds === 'function' ? _cloneManualSeeds() : null,
+            armed: false,
+            moved: false,
+            timer: setTimeout(() => {
+                if (!_seed2DDrag || _seed2DDrag.seedId !== seed.id) return;
+                _seed2DDrag.armed = true;
+                sliceCanvas.style.cursor = 'grabbing';
+                redrawSeedNeedleOverlays();
+            }, 220),
+        };
+        sliceCanvas.style.cursor = 'wait';
+        try { sliceCanvas.setPointerCapture(event.pointerId); } catch (_) {}
+        redrawSeedNeedleOverlays();
+    }, true);
+    sliceCanvas.addEventListener('pointermove', event => {
+        const drag = _seed2DDrag;
+        if (!drag || drag.sliceCanvas !== sliceCanvas) return;
+        if (!drag.armed) {
+            if (Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) > 6) {
+                _finishSeed2DDrag(event, true);
+            }
+            return;
+        }
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        const projected = _projectPointerAlongNeedle2D(event, drag.needle, sliceCanvas._seedOverlayView);
+        const seed = dataTreeState.planning.seeds.find(item => item.id === drag.seedId);
+        if (!projected || !seed) return;
+        seed.position = projected;
+        seed.pos = projected;
+        drag.moved = true;
+        if (typeof _upsertSceneMesh === 'function' && typeof _makeSeedMesh === 'function') {
+            _upsertSceneMesh(seed.id, _makeSeedMesh(seed));
+        }
+        if (typeof _syncSeedsOverlayFromDataTree === 'function') _syncSeedsOverlayFromDataTree();
+        redrawSeedNeedleOverlays();
+    }, true);
+    sliceCanvas.addEventListener('pointerup', event => _finishSeed2DDrag(event), true);
+    sliceCanvas.addEventListener('pointercancel', event => _finishSeed2DDrag(event, true), true);
+    sliceCanvas.addEventListener('contextmenu', event => {
+        const hit = hitSeed(event);
+        if (!hit) return;
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        const seed = dataTreeState.planning.seeds.find(item => item.id === hit.seedId);
+        _showSeed2DContextMenu(event, seed);
+    }, true);
+}
+
 // Product overlay: finite needle projection + true seed-cylinder contour.
 // This is the canonical seed/needle overlay implementation.
 function renderSeedsOverlay(axis, sliceIndex) {
@@ -1293,6 +1495,8 @@ function renderSeedsOverlay(axis, sliceIndex) {
         x: idx[dimA] * scaleX,
         y: (axis === 'axial' ? idx[dimB] : _volumeZToDisplayY(idx[dimB], geom.resampleRatio)) * scaleY,
     });
+    const view = { axis, canvas, orientIdx, toDisplay, hitRegions: [] };
+    _ensureSeed2DInteraction(sliceCanvas, view);
 
     const seeds = state.seedsOverlay.seeds || [];
     const seedsByTrajectory = new Map();
@@ -1366,9 +1570,15 @@ function renderSeedsOverlay(axis, sliceIndex) {
         ctx.fillStyle = `rgba(${seedRgb[0]}, ${seedRgb[1]}, ${seedRgb[2]}, ${0.18 * alpha})`;
         ctx.fill();
         ctx.strokeStyle = `rgba(${seedRgb[0]}, ${seedRgb[1]}, ${seedRgb[2]}, ${alpha})`;
-        ctx.lineWidth = 1.4;
+        ctx.lineWidth = seedState?._interactionSelected ? 3.0 : 1.4;
         ctx.stroke();
         ctx.restore();
+        const center = outline.reduce(
+            (sum, point) => ({ x: sum.x + point.x / outline.length, y: sum.y + point.y / outline.length }),
+            { x: 0, y: 0 },
+        );
+        const radius = Math.max(...outline.map(point => Math.hypot(point.x - center.x, point.y - center.y)), 4);
+        view.hitRegions.push({ seedId: seed.id, x: center.x, y: center.y, radius });
     }
 }
 

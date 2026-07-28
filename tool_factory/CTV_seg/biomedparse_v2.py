@@ -12,6 +12,9 @@ from __future__ import annotations
 import os
 import sys
 import threading
+import json
+import tempfile
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
@@ -68,6 +71,88 @@ SITE_SPECS: Dict[str, Dict[str, Any]] = {
 # an unavailable optional model returns a clear, actionable result.
 _RUNTIME_LOCK = threading.RLock()
 _RUNTIME_CACHE: Dict[Tuple[str, str], Tuple[Any, ...]] = {}
+
+
+def _validation_registry_path() -> Path:
+    configured = os.environ.get("BRACHYBOT_RUNTIME_DIR")
+    runtime_root = (
+        Path(configured).expanduser().resolve()
+        if configured
+        else Path(__file__).resolve().parents[2] / ".runtime"
+    )
+    return runtime_root / "model_validation" / "biomedparse_v2.json"
+
+
+def _validation_records() -> Dict[str, Dict[str, Any]]:
+    path = _validation_registry_path()
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError):
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _record_successful_validation(
+    tumor_type: str,
+    *,
+    image: sitk.Image,
+    mask: sitk.Image,
+    voxel_count: int,
+) -> None:
+    """Persist technical-chain evidence; this never implies clinical validity."""
+    records = _validation_records()
+    records[tumor_type] = {
+        "technical_call_chain_passed": True,
+        "space_alignment_passed": (
+            tuple(mask.GetSize()) == tuple(image.GetSize())
+            and tuple(mask.GetSpacing()) == tuple(image.GetSpacing())
+            and tuple(mask.GetOrigin()) == tuple(image.GetOrigin())
+            and tuple(mask.GetDirection()) == tuple(image.GetDirection())
+        ),
+        "result_save_path_passed": False,
+        "data_tree_viewer_passed": False,
+        "voxel_count": int(voxel_count),
+        "checked_at": datetime.now(timezone.utc).isoformat(),
+        "clinical_case_validation": False,
+    }
+    path = _validation_registry_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, temp_name = tempfile.mkstemp(prefix="biomedparse-", suffix=".json", dir=str(path.parent))
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            json.dump(records, handle, ensure_ascii=True, indent=2, sort_keys=True)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temp_name, path)
+    finally:
+        if os.path.exists(temp_name):
+            os.unlink(temp_name)
+
+
+def record_pipeline_validation(tumor_type: str, **flags: bool) -> None:
+    """Advance only observed integration stages for one research tumor type."""
+    if tumor_type not in SITE_SPECS:
+        return
+    records = _validation_records()
+    record = dict(records.get(tumor_type, {}))
+    for key in ("result_save_path_passed", "data_tree_viewer_passed"):
+        if key in flags:
+            record[key] = bool(flags[key])
+    record["checked_at"] = datetime.now(timezone.utc).isoformat()
+    record.setdefault("clinical_case_validation", False)
+    records[tumor_type] = record
+    path = _validation_registry_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, temp_name = tempfile.mkstemp(prefix="biomedparse-", suffix=".json", dir=str(path.parent))
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            json.dump(records, handle, ensure_ascii=True, indent=2, sort_keys=True)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temp_name, path)
+    finally:
+        if os.path.exists(temp_name):
+            os.unlink(temp_name)
 
 
 def _repo_root() -> Optional[Path]:
@@ -316,6 +401,12 @@ class BiomedParseV2CTVTool(BaseTool):
             ctv_mask.CopyInformation(lpi_image)
             spacing = ctv_mask.GetSpacing()
             volume_mm3 = float(voxel_count * spacing[0] * spacing[1] * spacing[2])
+            _record_successful_validation(
+                tumor_type,
+                image=lpi_image,
+                mask=ctv_mask,
+                voxel_count=voxel_count,
+            )
             metadata = {
                 **availability,
                 "ctv_mask": ctv_mask,
@@ -352,4 +443,6 @@ __all__ = [
     "BIOMEDPARSE_REPOSITORY",
     "BiomedParseV2CTVTool",
     "SITE_SPECS",
+    "_validation_records",
+    "record_pipeline_validation",
 ]

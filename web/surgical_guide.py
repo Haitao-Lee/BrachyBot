@@ -732,12 +732,20 @@ def generate_surgical_guide(
     snapshot = _current_planning_snapshot(agent)
     prior = memory.retrieve("surgical_guide")
     version = int(prior.get("version", 0)) + 1 if isinstance(prior, Mapping) else 1
+    planning_id = str(memory.retrieve("manual_planning_id") or "")
+    planning_version = int(memory.retrieve("manual_plan_version") or 0)
     path_checks = _planned_path_deviation(paths)
     return {
         "id": "patient_specific_puncture_guide",
+        "object_id": "patient_specific_puncture_guide",
+        "data_tree_node_id": "patient_specific_puncture_guide",
         "label": f"Puncture guide v{version}",
         "version": version,
         "status": "ready",
+        "planning_id": planning_id or None,
+        "planning_version": planning_version,
+        "data_version": version,
+        "data_type": "surgical_guide",
         "coordinate_system": "SimpleITK physical patient-world coordinates (mm)",
         "parameters": params,
         "source_plan_signature": planning_signature(snapshot),

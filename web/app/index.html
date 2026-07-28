@@ -322,15 +322,17 @@
                     <label class="form-label" data-i18n-zh="肿瘤类型" data-i18n-en="Tumor Type">Tumor Type</label>
                     <select class="form-input" id="ctvModelSelect" aria-describedby="ctvModelHelp">
                         <!-- Values retain the implementation key for the API; users choose a tumor type, not a model brand. -->
-                        <option value="nnunet_pancreatic" data-availability="available" data-i18n-zh="胰腺肿瘤" data-i18n-en="Pancreatic tumor">Pancreatic tumor</option>
-                        <option value="biomedparse_liver_tumor" data-availability="unavailable" data-i18n-zh="肝脏肿瘤" data-i18n-en="Liver tumor">Liver tumor</option>
-                        <option value="biomedparse_kidney_lesion" data-availability="unavailable" data-i18n-zh="肾脏肿瘤" data-i18n-en="Kidney tumor">Kidney tumor</option>
-                        <option value="biomedparse_lung_lesion" data-availability="unavailable" data-i18n-zh="肺部肿瘤" data-i18n-en="Lung tumor">Lung tumor</option>
-                        <option value="biomedparse_colon_primary" data-availability="unavailable" data-i18n-zh="结肠肿瘤" data-i18n-en="Colon tumor">Colon tumor</option>
-                        <option value="prostate_tumor" data-availability="unavailable" data-i18n-zh="前列腺肿瘤" data-i18n-en="Prostate tumor">Prostate tumor</option>
-                        <option value="biomedparse_head_neck_cancer" data-availability="unavailable" data-i18n-zh="头颈部肿瘤" data-i18n-en="Head and neck tumor">Head and neck tumor</option>
+                        <option value="nnunet_pancreatic" data-capability-state="loading" data-i18n-zh="胰腺肿瘤" data-i18n-en="Pancreatic tumor">Pancreatic tumor</option>
+                        <option value="biomedparse_liver_tumor" data-capability-state="loading" data-i18n-zh="肝脏肿瘤" data-i18n-en="Liver tumor">Liver tumor</option>
+                        <option value="biomedparse_kidney_lesion" data-capability-state="loading" data-i18n-zh="肾脏病灶" data-i18n-en="Kidney lesion">Kidney lesion</option>
+                        <option value="biomedparse_lung_lesion" data-capability-state="loading" data-i18n-zh="肺部病灶" data-i18n-en="Lung lesion">Lung lesion</option>
+                        <option value="biomedparse_colon_primary" data-capability-state="loading" data-i18n-zh="结肠原发肿瘤" data-i18n-en="Colon primary tumor">Colon primary tumor</option>
+                        <option value="prostate_tumor" data-capability-state="loading" data-i18n-zh="前列腺全腺体靶区" data-i18n-en="Whole-prostate target">Whole-prostate target</option>
+                        <option value="biomedparse_head_neck_cancer" data-capability-state="loading" data-i18n-zh="头颈部肿瘤" data-i18n-en="Head and neck tumor">Head and neck tumor</option>
                     </select>
-                    <div id="ctvModelHelp" style="font-size:0.58rem;color:var(--text-dim);margin-top:3px;" data-i18n-zh="绿色肿瘤类型可直接自动分割；红色肿瘤类型请上传匹配的 CTV mask 后再规划。" data-i18n-en="Green tumor types can be segmented automatically. Red tumor types require an uploaded matching CTV mask before planning.">Green tumor types can be segmented automatically. Red tumor types require an uploaded matching CTV mask before planning.</div>
+                    <div id="ctvModelHelp" class="tumor-type-help" aria-live="polite"
+                        data-i18n-zh="正在检查当前运行环境中的分割能力..."
+                        data-i18n-en="Checking segmentation capability in this runtime...">Checking segmentation capability in this runtime...</div>
                 </div>
 
                 <!-- OAR file picker -->
@@ -603,43 +605,43 @@
                     </div>
 
                     <!-- Manual fine planning and training monitor -->
-                    <div class="form-section-title" style="font-size:0.65rem;margin-top:8px;">Manual Fine Planning</div>
-                    <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px;">
-                        <button class="btn btn-outline" id="monitorStartButton" onclick="startTrainingMode('Monitor manual/automatic planning')" style="font-size:0.6rem;padding:5px 6px;" data-i18n-zh="开始监测" data-i18n-en="Monitor">Monitor</button>
-                        <button class="btn btn-outline" id="monitorStopButton" onclick="stopTrainingMode()" style="font-size:0.6rem;padding:5px 6px;" data-i18n-zh="结束监测" data-i18n-en="Finish Monitor" disabled>Finish Monitor</button>
-                        <button class="btn btn-outline" onclick="addManualNeedle()" style="font-size:0.6rem;padding:5px 6px;">Add Needle</button>
-                        <button class="btn btn-outline" onclick="addManualSeed()" style="font-size:0.6rem;padding:5px 6px;">Add Seed</button>
-                        <button class="btn btn-outline" onclick="recomputeManualDose('manual_button')" style="font-size:0.6rem;padding:5px 6px;">Recompute AI Dose</button>
-                        <button class="btn btn-outline" onclick="replanManualPlan()" style="font-size:0.6rem;padding:5px 6px;">Replan Geometry</button>
-                        <button class="btn btn-outline" id="generateSurgicalGuideButton" onclick="generateSurgicalGuide()" style="font-size:0.6rem;padding:5px 6px;" data-i18n-zh="生成导板" data-i18n-en="Generate guide">Generate guide</button>
-                        <button class="btn btn-outline" onclick="exportSurgicalGuideSTL()" style="font-size:0.6rem;padding:5px 6px;" data-i18n-zh="导出导板 STL" data-i18n-en="Export guide STL">Export guide STL</button>
-                        <button class="btn btn-outline" onclick="requestPlanningAdvice()" style="font-size:0.6rem;padding:5px 6px;">Detailed Advice</button>
-                        <button class="btn btn-outline" onclick="checkSystemReadiness()" style="font-size:0.6rem;padding:5px 6px;">Readiness</button>
+                    <div class="form-section-title manual-planning-title" data-i18n-zh="手动精细规划" data-i18n-en="Manual Fine Planning">Manual Fine Planning</div>
+                    <div class="manual-planning-actions">
+                        <button class="btn btn-outline" id="monitorStartButton" onclick="startTrainingMode('Monitor manual/automatic planning')" data-i18n-zh="开始监测" data-i18n-en="Monitor">Monitor</button>
+                        <button class="btn btn-outline" id="monitorStopButton" onclick="stopTrainingMode()" data-i18n-zh="结束监测" data-i18n-en="Finish Monitor" disabled>Finish Monitor</button>
+                        <button class="btn btn-outline" onclick="addManualNeedle()" data-i18n-zh="添加穿刺针" data-i18n-en="Add Needle">Add Needle</button>
+                        <button class="btn btn-outline" onclick="addManualSeed()" data-i18n-zh="添加粒子" data-i18n-en="Add Seed">Add Seed</button>
+                        <button class="btn btn-outline" onclick="recomputeManualDose('manual_button')" data-i18n-zh="重新计算 AI 剂量" data-i18n-en="Recompute AI Dose">Recompute AI Dose</button>
+                        <button class="btn btn-outline" onclick="replanManualPlan()" data-i18n-zh="重新规划几何" data-i18n-en="Replan Geometry">Replan Geometry</button>
+                        <button class="btn btn-outline" id="generateSurgicalGuideButton" onclick="generateSurgicalGuide()" data-i18n-zh="生成导板" data-i18n-en="Generate Guide" disabled>Generate Guide</button>
+                        <button class="btn btn-outline" onclick="exportSurgicalGuideSTL()" data-i18n-zh="导出导板 STL" data-i18n-en="Export Guide STL">Export Guide STL</button>
+                        <button class="btn btn-outline" onclick="requestPlanningAdvice()" data-i18n-zh="详细建议" data-i18n-en="Detailed Advice">Detailed Advice</button>
+                        <button class="btn btn-outline" onclick="checkSystemReadiness()" data-i18n-zh="就绪检查" data-i18n-en="Readiness">Readiness</button>
                     </div>
-                    <details id="surgicalGuideParameters" style="margin-top:6px;border:1px solid var(--border);border-radius:5px;padding:5px 7px;">
-                        <summary style="cursor:pointer;font-size:0.63rem;color:var(--text-secondary);" data-i18n-zh="穿刺导板参数" data-i18n-en="Puncture guide parameters">Puncture guide parameters</summary>
-                        <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px;margin-top:6px;">
-                            <label class="form-label" style="font-size:0.57rem;"><span data-i18n-zh="皮肤阈值 (HU)" data-i18n-en="Skin threshold (HU)">Skin threshold (HU)</span><input id="guideSkinThreshold" type="number" min="-800" max="100" step="10" value="-300"></label>
-                            <label class="form-label" style="font-size:0.57rem;"><span data-i18n-zh="皮肤间隙 (mm)" data-i18n-en="Skin clearance (mm)">Skin clearance (mm)</span><input id="guideSkinClearance" type="number" min="0" max="5" step="0.1" value="1"></label>
-                            <label class="form-label" style="font-size:0.57rem;"><span data-i18n-zh="导板厚度 (mm)" data-i18n-en="Plate thickness (mm)">Plate thickness (mm)</span><input id="guidePlateThickness" type="number" min="1" max="10" step="0.1" value="3"></label>
-                            <label class="form-label" style="font-size:0.57rem;"><span data-i18n-zh="覆盖边缘 (mm)" data-i18n-en="Patch margin (mm)">Patch margin (mm)</span><input id="guidePatchMargin" type="number" min="10" max="80" step="1" value="24"></label>
-                            <label class="form-label" style="font-size:0.57rem;"><span data-i18n-zh="导向孔径 (mm)" data-i18n-en="Channel diameter (mm)">Channel diameter (mm)</span><input id="guideChannelDiameter" type="number" min="0.6" max="12" step="0.1" value="2.2"></label>
-                            <label class="form-label" style="font-size:0.57rem;"><span data-i18n-zh="套筒外径 (mm)" data-i18n-en="Sleeve outer diameter (mm)">Sleeve outer diameter (mm)</span><input id="guideSleeveOuterDiameter" type="number" min="2" max="24" step="0.1" value="6"></label>
-                            <label class="form-label" style="font-size:0.57rem;"><span data-i18n-zh="套筒外侧长度 (mm)" data-i18n-en="Sleeve outward length (mm)">Sleeve outward length (mm)</span><input id="guideSleeveOutward" type="number" min="1" max="30" step="0.5" value="8"></label>
-                            <label class="form-label" style="font-size:0.57rem;"><span data-i18n-zh="套筒内侧长度 (mm)" data-i18n-en="Sleeve inward length (mm)">Sleeve inward length (mm)</span><input id="guideSleeveInward" type="number" min="1" max="30" step="0.5" value="8"></label>
-                            <label class="form-label" style="font-size:0.57rem;"><span data-i18n-zh="几何分辨率 (mm)" data-i18n-en="Geometry resolution (mm)">Geometry resolution (mm)</span><input id="guideGeometryResolution" type="number" min="0.5" max="2" step="0.1" value="1"></label>
+                    <details id="surgicalGuideParameters" class="guide-parameters">
+                        <summary data-i18n-zh="穿刺导板参数" data-i18n-en="Puncture Guide Parameters">Puncture Guide Parameters</summary>
+                        <div class="guide-parameter-grid">
+                            <label><span data-i18n-zh="皮肤阈值" data-i18n-en="Skin threshold">Skin threshold</span><span class="guide-input-unit"><input id="guideSkinThreshold" type="number" min="-800" max="100" step="10" value="-300"><span>HU</span></span></label>
+                            <label><span data-i18n-zh="皮肤间隙" data-i18n-en="Skin clearance">Skin clearance</span><span class="guide-input-unit"><input id="guideSkinClearance" type="number" min="0" max="5" step="0.1" value="1"><span>mm</span></span></label>
+                            <label><span data-i18n-zh="导板厚度" data-i18n-en="Plate thickness">Plate thickness</span><span class="guide-input-unit"><input id="guidePlateThickness" type="number" min="1" max="10" step="0.1" value="3"><span>mm</span></span></label>
+                            <label><span data-i18n-zh="覆盖边缘" data-i18n-en="Patch margin">Patch margin</span><span class="guide-input-unit"><input id="guidePatchMargin" type="number" min="10" max="80" step="1" value="24"><span>mm</span></span></label>
+                            <label><span data-i18n-zh="导向孔径" data-i18n-en="Channel diameter">Channel diameter</span><span class="guide-input-unit"><input id="guideChannelDiameter" type="number" min="0.6" max="12" step="0.1" value="2.2"><span>mm</span></span></label>
+                            <label><span data-i18n-zh="套筒外径" data-i18n-en="Sleeve outer diameter">Sleeve outer diameter</span><span class="guide-input-unit"><input id="guideSleeveOuterDiameter" type="number" min="2" max="24" step="0.1" value="6"><span>mm</span></span></label>
+                            <label><span data-i18n-zh="套筒外侧长度" data-i18n-en="Sleeve outward length">Sleeve outward length</span><span class="guide-input-unit"><input id="guideSleeveOutward" type="number" min="1" max="30" step="0.5" value="8"><span>mm</span></span></label>
+                            <label><span data-i18n-zh="套筒内侧长度" data-i18n-en="Sleeve inward length">Sleeve inward length</span><span class="guide-input-unit"><input id="guideSleeveInward" type="number" min="1" max="30" step="0.5" value="8"><span>mm</span></span></label>
+                            <label><span data-i18n-zh="几何分辨率" data-i18n-en="Geometry resolution">Geometry resolution</span><span class="guide-input-unit"><input id="guideGeometryResolution" type="number" min="0.5" max="2" step="0.1" value="1"><span>mm</span></span></label>
                         </div>
-                        <div style="display:flex;align-items:center;gap:6px;margin-top:6px;">
+                        <div class="guide-parameter-grid guide-select-grid">
+                            <label><span data-i18n-zh="导向针道（不选表示全部）" data-i18n-en="Guided needles (empty means all)">Guided needles (empty means all)</span><select id="guideNeedleSelection" multiple size="4" aria-label="Needles included in puncture guide"></select></label>
+                            <label><span data-i18n-zh="已保存导板版本" data-i18n-en="Saved guide version">Saved guide version</span><select id="guideVersionSelect" aria-label="Saved puncture guide version"></select><button class="btn btn-outline guide-inline-button" type="button" onclick="loadSelectedSurgicalGuideVersion()" data-i18n-zh="显示所选版本" data-i18n-en="Show Selected Version">Show Selected Version</button></label>
+                        </div>
+                        <div class="guide-validation-row">
                             <input id="guideStlValidationFile" type="file" accept=".stl,model/stl" hidden>
-                            <button class="btn btn-outline" type="button" onclick="document.getElementById('guideStlValidationFile').click()" style="font-size:0.56rem;padding:3px 5px;"><span data-i18n-zh="校验导入的 STL" data-i18n-en="Validate imported STL">Validate imported STL</span></button>
-                            <span id="guideStlValidationStatus" role="status" style="font-size:0.54rem;color:var(--text-dim);" data-i18n-zh="仅进行制造前网格校验，不覆盖当前导板。" data-i18n-en="Manufacturing mesh validation only; the current guide is never overwritten.">Manufacturing mesh validation only; the current guide is never overwritten.</span>
+                            <button class="btn btn-outline" type="button" onclick="document.getElementById('guideStlValidationFile').click()" data-i18n-zh="校验导入的 STL" data-i18n-en="Validate Imported STL">Validate Imported STL</button>
+                            <span id="guideStlValidationStatus" role="status" data-i18n-zh="仅执行制造前网格校验，不覆盖当前导板。" data-i18n-en="Manufacturing mesh validation only; the current guide is never overwritten.">Manufacturing mesh validation only; the current guide is never overwritten.</span>
                         </div>
-                        <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px;margin-top:6px;">
-                            <label class="form-label" style="font-size:0.57rem;"><span data-i18n-zh="导向针道（不选=全部）" data-i18n-en="Guided needles (empty = all)">Guided needles (empty = all)</span><select id="guideNeedleSelection" multiple size="4" aria-label="Needles included in puncture guide"></select></label>
-                            <label class="form-label" style="font-size:0.57rem;"><span data-i18n-zh="已保存导板版本" data-i18n-en="Saved guide version">Saved guide version</span><select id="guideVersionSelect" aria-label="Saved puncture guide version"></select><button class="btn btn-outline" type="button" onclick="loadSelectedSurgicalGuideVersion()" style="font-size:0.56rem;padding:3px 5px;margin-top:3px;"><span data-i18n-zh="显示所选版本" data-i18n-en="Show selected version">Show selected version</span></button></label>
-                        </div>
-                        <button class="btn btn-outline" type="button" onclick="resetSurgicalGuideControls()" style="font-size:0.56rem;padding:3px 5px;margin-top:6px;" data-i18n-zh="恢复默认参数" data-i18n-en="Restore default parameters">Restore default parameters</button>
-                        <div style="margin-top:5px;font-size:0.54rem;color:var(--text-dim);" data-i18n-zh="更改将在下次生成导板时应用，并随当前病例保存。" data-i18n-en="Changes apply to the next generated guide and are saved with this case.">Changes apply to the next generated guide and are saved with this case.</div>
+                        <button class="btn btn-outline guide-reset-button" type="button" onclick="resetSurgicalGuideControls()" data-i18n-zh="恢复默认参数" data-i18n-en="Restore Default Parameters">Restore Default Parameters</button>
+                        <div class="guide-parameter-help" data-i18n-zh="更改将在下次生成导板时应用，并随当前病例保存。" data-i18n-en="Changes apply to the next generated guide and are saved with this case.">Changes apply to the next generated guide and are saved with this case.</div>
                     </details>
                 </div>
             </div>

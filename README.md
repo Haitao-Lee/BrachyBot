@@ -2278,3 +2278,30 @@ MIT License. See the [LICENSE](LICENSE) file for details.
 **BrachyBot** — Growing smarter with every plan.
 
 </div>
+## Manual Planning, Monitoring, and CTV Capability Status
+
+The manual-planning path uses the same session-owned planning records as the
+automatic path. Seeds are projected onto their owning needle, constrained to
+the physical implant span, and committed through a versioned backend
+transaction. The 2D and 3D editors share the resulting records; seed edits
+invalidate dose, DVH, report, and guide artifacts instead of leaving stale
+results visible.
+
+Monitor is a real case-scoped workflow mode. It adds a subtle theme-colored
+edge state only while active, aggregates meaningful planning events, checks
+needle/seed geometry and stale artifacts, and posts localized stage feedback
+and focused evidence in the chat stream. Finish Monitor performs a final
+structured quality summary and exits the global visual state. It does not run
+an always-animated Monitor button.
+
+Surgical Guide generation is available from Manual Fine Planning and uses the
+current needle geometry plus saved guide parameters. Generated versions have
+stable case/planning IDs, validation metadata, Data Tree registration, viewer
+presentation, export, and invalidation when geometry changes.
+
+BiomedParse v2 is exposed as a research/experimental route for supported
+non-pancreatic tumor prompts when the official runtime and checkpoint are
+installed. Its technical status is reported separately from clinical
+validation. The validated pancreatic nnU-Net path remains the only verified
+pancreatic entry; the legacy unverified pancreatic alternative is hidden from
+the UI and mapped for old snapshots.

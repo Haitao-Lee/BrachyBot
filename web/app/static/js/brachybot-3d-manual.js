@@ -145,6 +145,8 @@ function _manualPayload(options = {}) {
             trajectory_id: n.trajectory_id,
         })),
         dose_engine: 'dose_unet_spacing1mm',
+        planning_id: manualPlanningState.planningId || dataTreeState.planning.id || null,
+        planning_version: Number(manualPlanningState.planningVersion || dataTreeState.planning.version || 0),
     };
     if (options.reprojectSeeds) {
         payload.reproject_seeds = true;
@@ -153,6 +155,93 @@ function _manualPayload(options = {}) {
         );
     }
     return payload;
+}
+
+function _cloneManualSeeds(seeds = dataTreeState?.planning?.seeds || []) {
+    return seeds.map(seed => ({
+        ...seed,
+        position: _vec3Array(seed.position || seed.pos),
+        pos: _vec3Array(seed.position || seed.pos),
+        direction: _normalizeArray3(seed.direction || [0, 0, 1]),
+    }));
+}
+
+function _applyAuthoritativeManualSeeds(data) {
+    if (!data || !Array.isArray(data.seeds)) return;
+    const previousAppearance = new Map(
+        (dataTreeState.planning.seeds || []).map(seed => [String(seed.id), seed]),
+    );
+    const authoritativeIds = new Set(data.seeds.map(seed => String(seed.id)));
+    Object.entries(scene3D?.meshes || {}).forEach(([id, mesh]) => {
+        if (mesh?.userData?.type === 'seed' && !authoritativeIds.has(String(id))) {
+            scene3D.scene?.remove(mesh);
+            mesh.geometry?.dispose?.();
+            if (Array.isArray(mesh.material)) mesh.material.forEach(material => material?.dispose?.());
+            else mesh.material?.dispose?.();
+            delete scene3D.meshes[id];
+        }
+    });
+    dataTreeState.planning.seeds = data.seeds.map(seed => {
+        const old = previousAppearance.get(String(seed.id)) || {};
+        const position = _vec3Array(seed.position || seed.pos);
+        return {
+            ...seed,
+            position,
+            pos: position,
+            visible: seed.visible !== false,
+            opacity: Number.isFinite(Number(seed.opacity)) ? Number(seed.opacity) : (old.opacity ?? 1.0),
+            color: seed.color || old.color || '#ffcc00',
+        };
+    });
+    dataTreeState.planning.seeds.forEach(seed => _upsertSceneMesh(seed.id, _makeSeedMesh(seed)));
+    manualPlanningState.planningId = data.planning_id || manualPlanningState.planningId;
+    manualPlanningState.planningVersion = Number(data.planning_version ?? manualPlanningState.planningVersion ?? 0);
+    manualPlanningState.artifactStatus = { ...(data.artifact_status || {}) };
+    dataTreeState.planning.id = manualPlanningState.planningId;
+    dataTreeState.planning.version = manualPlanningState.planningVersion;
+    dataTreeState.planning.artifactStatus = { ...manualPlanningState.artifactStatus };
+    _syncSeedsOverlayFromDataTree();
+    renderDataTree();
+    if (scene3D.requestRender) scene3D.requestRender(3);
+}
+
+async function _commitManualSeeds(reason, rollbackSeeds) {
+    const ownerSessionId = _activeApiSessionId();
+    const payload = _manualPayload();
+    const response = await fetch(API + '/manual_planning/update_seeds', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            session_id: ownerSessionId,
+            planning_id: payload.planning_id,
+            expected_version: payload.planning_version,
+            seeds: payload.seeds,
+            needles: payload.needles,
+            reason,
+        }),
+    });
+    const data = await response.json().catch(() => null);
+    const sameSession = ownerSessionId === _activeApiSessionId();
+    if (!response.ok || !data || !data.success) {
+        if (sameSession && Array.isArray(rollbackSeeds)) {
+            _applyAuthoritativeManualSeeds({
+                seeds: rollbackSeeds,
+                planning_id: payload.planning_id,
+                planning_version: payload.planning_version,
+                artifact_status: manualPlanningState.artifactStatus,
+            });
+        }
+        const error = new Error((data && data.error) || `HTTP ${response.status}`);
+        error.code = data && data.code;
+        error.authoritative = data;
+        throw error;
+    }
+    if (!sameSession) return { ...data, stale: true };
+    _applyAuthoritativeManualSeeds(data);
+    if (typeof scheduleWorkspaceSave === 'function') {
+        scheduleWorkspaceSave(`manual.seed.${reason}`);
+    }
+    return data;
 }
 
 async function _persistNeedleGeometryOnly() {
@@ -255,6 +344,7 @@ async function addManualSeed() {
         opacity: 1.0,
         color: '#ffcc00',
     };
+    const rollbackSeeds = _cloneManualSeeds();
     dataTreeState.planning.seeds.push(seed);
     const traj = dataTreeState.planning.trajectories.find(t => t.id === needle.trajectory_id);
     if (traj) traj.seeds = dataTreeState.planning.seeds.filter(s => s.trajectory_id === traj.id);
@@ -262,6 +352,7 @@ async function addManualSeed() {
     _syncSeedsOverlayFromDataTree();
     renderDataTree();
     reportUIEvent('manual.seed.add', seed.id, { position: seed.position, trajectory_id: seed.trajectory_id });
+    await _commitManualSeeds('add', rollbackSeeds);
     await recomputeManualDose('seed_add');
 }
 
@@ -484,7 +575,8 @@ function _projectPointOntoNeedle(position, needle) {
     return best ? [best.x, best.y, best.z] : _vec3Array(position);
 }
 
-async function onManualSeedEdited(seedId, position) {
+async function onManualSeedEdited(seedId, position, rollbackSeeds = null) {
+    const rollback = Array.isArray(rollbackSeeds) ? rollbackSeeds : _cloneManualSeeds();
     const seed = dataTreeState.planning.seeds.find(s => s.id === seedId);
     const needle = seed
         ? dataTreeState.planning.needles.find(n => _normalizeTrajectoryId(n.trajectory_id) === _normalizeTrajectoryId(seed.trajectory_id))
@@ -508,6 +600,7 @@ async function onManualSeedEdited(seedId, position) {
         position: projected,
         projected_to_needle: !!needle,
     });
+    await _commitManualSeeds('move', rollback);
     await recomputeManualDose('seed_drag');
 }
 
@@ -566,6 +659,14 @@ async function onManualNeedleHandleEdited(handle) {
 
 async function _refreshManualDoseViews(data, wasDoseTextureEnabled) {
     const metrics = data?.metrics || {};
+    manualPlanningState.planningId = data?.planning_id || manualPlanningState.planningId;
+    manualPlanningState.planningVersion = Number(
+        data?.planning_version ?? manualPlanningState.planningVersion ?? 0,
+    );
+    manualPlanningState.artifactStatus = { ...(data?.artifact_status || manualPlanningState.artifactStatus || {}) };
+    dataTreeState.planning.id = manualPlanningState.planningId;
+    dataTreeState.planning.version = manualPlanningState.planningVersion;
+    dataTreeState.planning.artifactStatus = { ...manualPlanningState.artifactStatus };
     if (typeof updateMetrics === 'function') updateMetrics(metrics);
     if (typeof updateOARTable === 'function') updateOARTable(metrics.oar_metrics || {});
     if (typeof updateSeeds === 'function' && Array.isArray(data?.seeds)) updateSeeds(data.seeds);
@@ -656,6 +757,8 @@ async function startTrainingMode(goal = 'Monitor planning workflow') {
     // stop/start cycles.
     trainingMonitorState.lastFeedbackAt = 0;
     trainingMonitorState.lastScreenshotAt = 0;
+    if (typeof _clearMonitorFeedbackTimer === 'function') _clearMonitorFeedbackTimer();
+    trainingMonitorState.pendingFeedback = [];
     trainingMonitorState.goal = goal;
     trainingMonitorState.screenshotGalleryContext = { keys: new Set() };
     const language = typeof window.monitorConversationLanguage === 'function'
@@ -734,6 +837,9 @@ async function stopTrainingMode() {
     if (typeof window.setTrainingMonitorPhase === 'function') {
         window.setTrainingMonitorPhase('stopping');
     }
+    if (typeof _flushMonitorFeedback === 'function') {
+        _flushMonitorFeedback(stopSessionId, stopRunId);
+    }
     // In-flight checkpoint callbacks see the inactive flag and stop before
     // appending a late screenshot. Release the context so the next run starts
     // cleanly.
@@ -773,6 +879,8 @@ async function stopTrainingMode() {
         trainingMonitorState.screenshotGalleryContext = null;
         trainingMonitorState.lastFeedbackAt = 0;
         trainingMonitorState.lastScreenshotAt = 0;
+        if (typeof _clearMonitorFeedbackTimer === 'function') _clearMonitorFeedbackTimer();
+        trainingMonitorState.pendingFeedback = [];
         return data;
     } catch (e) {
         // The stop request was not acknowledged. Keep the monitor visibly
@@ -1164,6 +1272,10 @@ function init3DScene() {
     let pendingNeedleHandle = null;
     let pendingNeedleStart = null;
     let pendingNeedleTimer = null;
+    let pendingSeed = null;
+    let pendingSeedStart = null;
+    let pendingSeedTimer = null;
+    let seedDragRollback = null;
     let needleDragMoved = false;
     let hoveredInternalNeedleId = null;
     let dragPlane = new THREE.Plane();
@@ -1339,18 +1451,12 @@ function init3DScene() {
                 // Start drag for editable planning handles
                 if (obj.userData.type === 'seed' || obj.userData.type === 'needle_handle') {
                     if (obj.userData.type === 'needle_handle') return;
-                    isDragging = true;
+                    pendingSeed = obj;
+                    pendingSeedStart = { x: event.clientX, y: event.clientY };
+                    seedDragRollback = _cloneManualSeeds();
                     scene3D.controls.enabled = false;
-
-                    // Create drag plane perpendicular to camera
-                    const cameraDir = new THREE.Vector3();
-                    scene3D.camera.getWorldDirection(cameraDir);
-                    dragPlane.setFromNormalAndCoplanarPoint(cameraDir, obj.position);
-
-                    // Calculate offset
-                    const intersection = new THREE.Vector3();
-                    raycaster.ray.intersectPlane(dragPlane, intersection);
-                    dragOffset.copy(obj.position).sub(intersection);
+                    interactionCanvas.style.cursor = 'wait';
+                    pendingSeedTimer = setTimeout(armSeedDrag, 220);
                 }
 
                 // Show info
@@ -1373,6 +1479,12 @@ function init3DScene() {
 
     // Mouse move - drag seed
     const updateManualDrag = (event) => {
+        if (pendingSeed && !isDragging) {
+            const dx = event.clientX - pendingSeedStart.x;
+            const dy = event.clientY - pendingSeedStart.y;
+            if (Math.hypot(dx, dy) > 6) clearPendingSeedDrag();
+            return;
+        }
         if (pendingNeedleHandle && !isDragging) {
             const dx = event.clientX - pendingNeedleStart.x;
             const dy = event.clientY - pendingNeedleStart.y;
@@ -1442,6 +1554,11 @@ function init3DScene() {
                 if (preview) _upsertSceneMesh(needle.id, preview);
             }
         }
+        // Keep the 2D projection live while the 3D drag is still in progress.
+        // The overlay reads the same session-owned planning records, so this
+        // is a visual preview only; the authoritative transaction remains on
+        // pointer-up and can still roll back on failure.
+        if (typeof redrawSeedNeedleOverlays === 'function') redrawSeedNeedleOverlays();
         requestRender(1);
     };
     interactionCanvas.addEventListener('mousemove', updateManualDrag);
@@ -1451,6 +1568,10 @@ function init3DScene() {
 
     // Mouse up - end drag
     const finishManualDrag = (event) => {
+        if (pendingSeed && !isDragging) {
+            clearPendingSeedDrag();
+            return;
+        }
         if (pendingNeedleHandle && !isDragging) {
             clearPendingNeedleDrag();
             selectedObject = null;
@@ -1480,8 +1601,17 @@ function init3DScene() {
                 }
                 addChat('system', `Seed ${seedId} repositioned to [${selectedObject.position.x.toFixed(1)}, ${selectedObject.position.y.toFixed(1)}, ${selectedObject.position.z.toFixed(1)}]`);
                 if (typeof onManualSeedEdited === 'function') {
-                    onManualSeedEdited(seedId, selectedObject.position).catch(e => console.warn('manual seed edit failed:', e));
+                    const rollback = seedDragRollback;
+                    onManualSeedEdited(seedId, selectedObject.position, rollback).catch(error => {
+                        const message = typeof window._t === 'function'
+                            ? window._t(`粒子移动失败：${error.message}`, `Seed move failed: ${error.message}`)
+                            : `Seed move failed: ${error.message}`;
+                        addChat('error', message);
+                    });
                 }
+                pendingSeed = null;
+                pendingSeedStart = null;
+                seedDragRollback = null;
             } else if (finishedObject && finishedObject.userData.type === 'needle_handle' && needleDragMoved) {
                 addChat('system', `Needle endpoint updated for ${finishedObject.userData.needleId}.`);
                 if (typeof onManualNeedleHandleEdited === 'function') {
@@ -1544,10 +1674,28 @@ function init3DScene() {
         const type = obj.userData.type;
         const id = obj.userData.id;
         const needleId = type === 'needle_handle' ? obj.userData.needleId : id;
+        const seedRecord = type === 'seed'
+            ? dataTreeState.planning.seeds.find(seed => seed.id === id)
+            : null;
+        const ownerNeedle = seedRecord
+            ? dataTreeState.planning.needles.find(
+                needle => _normalizeTrajectoryId(needle.trajectory_id)
+                    === _normalizeTrajectoryId(seedRecord.trajectory_id),
+            )
+            : null;
 
         let items = `<div class="ctx-menu-item" style="opacity:0.5;cursor:default;font-size:0.6rem;">
             <span class="ctx-icon">${type === 'seed' ? '💊' : '📍'}</span> ${type}: ${id}</div>`;
         items += `<div class="ctx-menu-sep"></div>`;
+        if (seedRecord) {
+            const position = _vec3Array(seedRecord.position || seedRecord.pos)
+                .map(value => value.toFixed(1))
+                .join(', ');
+            items += `<div class="ctx-menu-item ctx-menu-summary" aria-disabled="true">
+                <strong>${seedRecord.id}</strong>
+                <small>${ownerNeedle?.id || seedRecord.trajectory_id}<br>${position} mm</small>
+            </div><div class="ctx-menu-sep"></div>`;
+        }
 
         // Highlight
         items += `<div class="ctx-menu-item" onclick="hideContextMenu();highlightSeed('${id}')">
@@ -1711,9 +1859,16 @@ function addMeshToScene(meshData) {
         const existing = dataTreeState.planning.meshes.findIndex(m => m.id === id);
         const entry = {
             id,
+            objectId: meshData.object_id || id,
+            nodeId: meshData.data_tree_node_id || id,
             label,
             source: meshData.source || 'mesh',
             labelId: meshData.label_id,
+            sessionId: String(window.activeSessionId || state?.sessionId || ''),
+            caseId: String(window.activeSessionId || state?.sessionId || ''),
+            planningId: meshData.planning_id || dataTreeState.planning.id || null,
+            dataVersion: Number(meshData.data_version || dataTreeState.planning.version || 0),
+            status: meshData.status || 'ready',
             color: colorHex,
             visible: true,
             opacity,
@@ -1807,10 +1962,47 @@ function focusPlanningSeedsForScreenshot(seedIds) {
         near: scene3D.camera.near,
         far: scene3D.camera.far,
         zoom: scene3D.camera.zoom,
+        meshStates: meshes.map(mesh => {
+            const meshState = { mesh, scale: mesh.scale.clone(), materials: [] };
+            mesh.traverse?.(child => {
+                const materials = Array.isArray(child.material) ? child.material : [child.material];
+                materials.filter(Boolean).forEach(material => {
+                    meshState.materials.push({
+                        material,
+                        color: material.color?.clone?.() || null,
+                        emissive: material.emissive?.clone?.() || null,
+                        emissiveIntensity: material.emissiveIntensity,
+                    });
+                    material.color?.set?.('#fff176');
+                    material.emissive?.set?.('#ffb300');
+                    if ('emissiveIntensity' in material) material.emissiveIntensity = 0.8;
+                    material.needsUpdate = true;
+                });
+            });
+            mesh.scale.multiplyScalar(1.35);
+            return meshState;
+        }),
     };
+
     const box = new THREE.Box3();
     meshes.forEach(mesh => box.expandByObject(mesh));
-    if (box.isEmpty()) return null;
+    // An object can become non-renderable between collection and measurement.
+    // Restore every temporary highlight before abandoning the screenshot request.
+    if (box.isEmpty()) {
+        saved.meshStates.forEach(meshState => {
+            meshState.mesh.scale.copy(meshState.scale);
+            meshState.materials.forEach(savedMaterial => {
+                if (savedMaterial.color) savedMaterial.material.color?.copy?.(savedMaterial.color);
+                if (savedMaterial.emissive) savedMaterial.material.emissive?.copy?.(savedMaterial.emissive);
+                if (savedMaterial.emissiveIntensity !== undefined) {
+                    savedMaterial.material.emissiveIntensity = savedMaterial.emissiveIntensity;
+                }
+                savedMaterial.material.needsUpdate = true;
+            });
+        });
+        if (scene3D.requestRender) scene3D.requestRender(4);
+        return null;
+    }
     const center = box.getCenter(new THREE.Vector3());
     const size = box.getSize(new THREE.Vector3());
     const maxDim = Math.max(size.x, size.y, size.z, 1);
@@ -1834,6 +2026,17 @@ function focusPlanningSeedsForScreenshot(seedIds) {
         scene3D.camera.far = saved.far;
         if (typeof saved.zoom === 'number') scene3D.camera.zoom = saved.zoom;
         scene3D.controls.target.copy(saved.target);
+        saved.meshStates.forEach(meshState => {
+            meshState.mesh.scale.copy(meshState.scale);
+            meshState.materials.forEach(savedMaterial => {
+                if (savedMaterial.color) savedMaterial.material.color?.copy?.(savedMaterial.color);
+                if (savedMaterial.emissive) savedMaterial.material.emissive?.copy?.(savedMaterial.emissive);
+                if (savedMaterial.emissiveIntensity !== undefined) {
+                    savedMaterial.material.emissiveIntensity = savedMaterial.emissiveIntensity;
+                }
+                savedMaterial.material.needsUpdate = true;
+            });
+        });
         scene3D.camera.updateProjectionMatrix();
         scene3D.controls.update();
         if (scene3D.requestRender) scene3D.requestRender(8);
@@ -2086,26 +2289,41 @@ async function loadSeeds3D() {
             }
         });
 
-        // Update dataTreeState with planning data
+        // Rebuild geometry while preserving this session's Data Tree
+        // appearance. A viewer reload must not invent a second visual state.
+        const savedSeedAppearance = new Map(
+            (dataTreeState.planning.seeds || []).map(seed => [String(seed.id), seed]),
+        );
+        const savedNeedleAppearance = new Map(
+            (dataTreeState.planning.needles || []).map(needle => [String(needle.id), needle]),
+        );
         dataTreeState.planning.seeds = data.seeds.map(seed => ({
             id: seed.id,
             position: seed.position,
             voxel_index: seed.voxel_index || null,
             direction: seed.direction,
             trajectory_id: _normalizeTrajectoryId(seed.trajectory_id),
-            visible: true,
-            opacity: 1.0,
-            color: '#ffcc00',
+            visible: savedSeedAppearance.get(String(seed.id))?.visible !== false,
+            opacity: savedSeedAppearance.get(String(seed.id))?.opacity ?? 1.0,
+            color: savedSeedAppearance.get(String(seed.id))?.color || '#ffcc00',
         }));
 
         dataTreeState.planning.needles = data.needles.map(needle => ({
             id: needle.id,
             points: needle.points,
             trajectory_id: _normalizeTrajectoryId(needle.trajectory_id),
-            visible: true,
-            opacity: 0.9,
-            color: '#ff2266',
+            visible: savedNeedleAppearance.get(String(needle.id))?.visible !== false,
+            opacity: savedNeedleAppearance.get(String(needle.id))?.opacity ?? 0.9,
+            color: savedNeedleAppearance.get(String(needle.id))?.color || '#ff2266',
         }));
+        manualPlanningState.planningId = data.planning_id || manualPlanningState.planningId;
+        manualPlanningState.planningVersion = Number(
+            data.planning_version ?? manualPlanningState.planningVersion ?? 0,
+        );
+        manualPlanningState.artifactStatus = { ...(data.artifact_status || {}) };
+        dataTreeState.planning.id = manualPlanningState.planningId;
+        dataTreeState.planning.version = manualPlanningState.planningVersion;
+        dataTreeState.planning.artifactStatus = { ...manualPlanningState.artifactStatus };
 
         // Capture the accepted automatic geometry before endpoint dragging
         // mutates the live Data Tree. This is the reference used for seed
@@ -3831,23 +4049,54 @@ function clearPlanningVisualization() {
     renderDataTree();
 }
 
-// Delete a seed from 3D scene and data tree
-function deleteSeed3D(seedId) {
-    const mesh = scene3D.meshes[seedId];
-    if (mesh) {
-        scene3D.scene.remove(mesh);
-        if (mesh.geometry) mesh.geometry.dispose();
-        if (mesh.material) mesh.material.dispose();
-        delete scene3D.meshes[seedId];
-    }
-    // Remove from dataTreeState
-    dataTreeState.planning.seeds = dataTreeState.planning.seeds.filter(s => s.id !== seedId);
-    renderDataTree();
-    addChat('system', `Deleted seed ${seedId}`);
+// Delete a seed through the same authoritative geometry transaction as drag.
+async function deleteSeed3D(seedId) {
+    const seed = dataTreeState.planning.seeds.find(item => item.id === seedId);
+    if (!seed) return false;
+    const confirmed = typeof _confirmAction === 'function'
+        ? await _confirmAction(
+            `删除粒子 ${seedId}？删除后剂量、DVH、报告和质量检查需要重新计算。`,
+            `Delete seed ${seedId}? Dose, DVH, report, and quality checks will need recalculation.`,
+            {
+                yesZh: '删除粒子',
+                yesEn: 'Delete seed',
+                noZh: '取消',
+                noEn: 'Cancel',
+                titleZh: '删除粒子',
+                titleEn: 'Delete seed',
+            },
+        )
+        : false;
+    if (!confirmed) return false;
+
+    const rollbackSeeds = _cloneManualSeeds();
+    dataTreeState.planning.seeds = dataTreeState.planning.seeds.filter(item => item.id !== seedId);
     _syncSeedsOverlayFromDataTree();
-    reportUIEvent('manual.seed.delete', seedId, {});
-    if (typeof scheduleWorkspaceSave === 'function') scheduleWorkspaceSave('manual.seed.delete');
-    if (dataTreeState.planning.seeds.length > 0) recomputeManualDose('seed_delete');
+    renderDataTree();
+    try {
+        await _commitManualSeeds('delete', rollbackSeeds);
+        reportUIEvent('manual.seed.delete', seedId, {
+            trajectory_id: seed.trajectory_id,
+            remaining_seeds: dataTreeState.planning.seeds.length,
+        });
+        const message = typeof window._t === 'function'
+            ? window._t(
+                `已删除粒子 ${seedId}。剂量、DVH、报告和质量检查已标记为需要更新。`,
+                `Seed ${seedId} deleted. Dose, DVH, report, and quality checks are now stale.`,
+            )
+            : `Seed ${seedId} deleted.`;
+        addChat('system', message);
+        if (dataTreeState.planning.seeds.length > 0) {
+            await recomputeManualDose('seed_delete');
+        }
+        return true;
+    } catch (error) {
+        const message = typeof window._t === 'function'
+            ? window._t(`删除粒子失败：${error.message}`, `Seed deletion failed: ${error.message}`)
+            : `Seed deletion failed: ${error.message}`;
+        addChat('error', message);
+        return false;
+    }
 }
 
 // Delete a needle from 3D scene and data tree

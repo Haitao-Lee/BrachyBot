@@ -1608,9 +1608,11 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
             for i, entry in enumerate(plan_source):
                 explicit_needle_points = None
                 trajectory_id = i
+                needle_id = f"needle_{i}"
                 if isinstance(entry, dict):
                     seed_list = entry.get("seeds") or []
                     trajectory_id = entry.get("trajectory_id", entry.get("id", i))
+                    needle_id = str(entry.get("needle_id") or needle_id)
                     trajectory = entry.get("trajectory")
                     if isinstance(trajectory, dict):
                         candidate_points = trajectory.get("points")
@@ -1651,11 +1653,11 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
                         logger.info(f"[seeds_3d] first seed (already world): pos={pos_world.tolist()}, dir={direc_world.tolist()}")
 
                     seed_data = {
-                        "id": f"seed_{i}_{j}",
+                        "id": str(seed.get("id") or f"seed_{i}_{j}") if isinstance(seed, dict) else f"seed_{i}_{j}",
                         "position": pos_world.tolist(),
                         "voxel_index": _world_to_ct_voxel_index(pos_world),
                         "direction": direc_world.tolist(),
-                        "trajectory_id": trajectory_id,
+                        "trajectory_id": seed.get("trajectory_id", trajectory_id) if isinstance(seed, dict) else trajectory_id,
                         "seed_index": j,
                     }
                     seeds.append(seed_data)
@@ -1683,7 +1685,7 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
                         )
                         continue
                     needles.append({
-                        "id": f"needle_{i}",
+                        "id": needle_id,
                         "points": explicit_needle_points,
                         "trajectory_id": trajectory_id,
                     })
@@ -1727,6 +1729,9 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
                 "seed_geometry": seed_geometry,
                 "total_seeds": len(seeds),
                 "total_needles": len(needles),
+                "planning_id": agent.memory.retrieve("manual_planning_id"),
+                "planning_version": int(agent.memory.retrieve("manual_plan_version") or 0),
+                "artifact_status": agent.memory.retrieve("manual_artifact_status") or {},
             })
         except Exception as e:
             logger.error(f"Seed 3D data failed: {e}")

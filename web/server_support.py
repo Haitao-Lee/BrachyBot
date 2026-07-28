@@ -443,6 +443,59 @@ def _volume_metric_as_percent(value: Any, *, units: Optional[str] = None) -> Opt
     return float(percent)
 
 
+def _segment_segment_distance(
+    first_start: list,
+    first_end: list,
+    second_start: list,
+    second_end: list,
+) -> float:
+    """Return the shortest Euclidean distance between two finite 3D segments."""
+    u = [first_end[i] - first_start[i] for i in range(3)]
+    v = [second_end[i] - second_start[i] for i in range(3)]
+    w = [first_start[i] - second_start[i] for i in range(3)]
+    a = sum(value * value for value in u)
+    b = sum(u[i] * v[i] for i in range(3))
+    c = sum(value * value for value in v)
+    d = sum(u[i] * w[i] for i in range(3))
+    e = sum(v[i] * w[i] for i in range(3))
+    denominator = a * c - b * b
+    small = 1e-9
+    s_num, s_den = denominator, denominator
+    t_num, t_den = denominator, denominator
+    if denominator < small:
+        s_num, s_den = 0.0, 1.0
+        t_num, t_den = e, c
+    else:
+        s_num = b * e - c * d
+        t_num = a * e - b * d
+        if s_num < 0.0:
+            s_num = 0.0
+            t_num, t_den = e, c
+        elif s_num > s_den:
+            s_num = s_den
+            t_num, t_den = e + b, c
+    if t_num < 0.0:
+        t_num = 0.0
+        if -d < 0.0:
+            s_num = 0.0
+        elif -d > a:
+            s_num = s_den
+        else:
+            s_num, s_den = -d, a
+    elif t_num > t_den:
+        t_num = t_den
+        if -d + b < 0.0:
+            s_num = 0.0
+        elif -d + b > a:
+            s_num = s_den
+        else:
+            s_num, s_den = -d + b, a
+    sc = 0.0 if abs(s_num) < small else s_num / max(s_den, small)
+    tc = 0.0 if abs(t_num) < small else t_num / max(t_den, small)
+    delta = [w[i] + sc * u[i] - tc * v[i] for i in range(3)]
+    return math.sqrt(sum(value * value for value in delta))
+
+
 def _latest_plan_snapshot(agent) -> Dict[str, Any]:
     if agent is None or not hasattr(agent, "memory"):
         return {}
@@ -487,29 +540,139 @@ def _latest_plan_snapshot(agent) -> Dict[str, Any]:
         point = _points(seed)
         if point:
             seed_id = str(seed.get("id") or f"seed_{index}") if isinstance(seed, dict) else f"seed_{index}"
-            seed_entries.append((seed_id, point))
-    seed_ids = [seed_id for seed_id, _ in seed_entries]
-    seed_positions = [point for _, point in seed_entries]
+            direction = _points(seed.get("direction")) if isinstance(seed, dict) else []
+            needle_id = str(
+                seed.get("needle_id")
+                or seed.get("trajectory_id")
+                or ""
+            ) if isinstance(seed, dict) else ""
+            seed_entries.append({
+                "id": seed_id,
+                "position": point,
+                "direction": direction,
+                "needle_id": needle_id,
+            })
+    seed_ids = [entry["id"] for entry in seed_entries]
+    seed_positions = [entry["position"] for entry in seed_entries]
+
+    plan_config = agent.memory.retrieve("plan_config") or {}
+    seed_info = plan_config.get("seed_info") if isinstance(plan_config, dict) else {}
+    seed_info = seed_info if isinstance(seed_info, dict) else {}
+    seed_length_mm = max(float(seed_info.get("length") or 4.5), 0.1)
+    seed_radius_mm = max(float(seed_info.get("radius") or 0.4), 0.05)
+    seed_clearance_mm = max(float(seed_info.get("minimum_clearance_mm") or 0.5), 0.0)
+
+    needle_directions = {}
+    for needle in needles:
+        if not isinstance(needle, dict):
+            continue
+        needle_id = str(needle.get("id") or needle.get("needle_id") or "")
+        points = needle.get("points") or []
+        if not needle_id or not isinstance(points, (list, tuple)) or len(points) < 2:
+            continue
+        start, end = _points(points[0]), _points(points[-1])
+        if not start or not end:
+            continue
+        vector = [end[axis] - start[axis] for axis in range(3)]
+        magnitude = math.sqrt(sum(value * value for value in vector))
+        if magnitude > 1e-9:
+            needle_directions[needle_id] = [value / magnitude for value in vector]
+
+    def _unit_direction(entry: Dict[str, Any]) -> list:
+        direction = entry.get("direction") or needle_directions.get(entry.get("needle_id")) or []
+        if len(direction) >= 3:
+            magnitude = math.sqrt(sum(float(direction[axis]) ** 2 for axis in range(3)))
+            if magnitude > 1e-9:
+                return [float(direction[axis]) / magnitude for axis in range(3)]
+        return [0.0, 0.0, 1.0]
+
+    def _segment_endpoints(entry: Dict[str, Any]) -> tuple:
+        center = entry["position"]
+        direction = _unit_direction(entry)
+        half = seed_length_mm / 2.0
+        return (
+            [center[axis] - direction[axis] * half for axis in range(3)],
+            [center[axis] + direction[axis] * half for axis in range(3)],
+        )
+
+    def _segment_distance(left_entry: Dict[str, Any], right_entry: Dict[str, Any]) -> float:
+        """Shortest distance between the physical center axes of two seeds."""
+        p1, q1 = _segment_endpoints(left_entry)
+        p2, q2 = _segment_endpoints(right_entry)
+        u = [q1[i] - p1[i] for i in range(3)]
+        v = [q2[i] - p2[i] for i in range(3)]
+        w = [p1[i] - p2[i] for i in range(3)]
+        a = sum(value * value for value in u)
+        b = sum(u[i] * v[i] for i in range(3))
+        c = sum(value * value for value in v)
+        d = sum(u[i] * w[i] for i in range(3))
+        e = sum(v[i] * w[i] for i in range(3))
+        denominator = a * c - b * b
+        small = 1e-9
+        s_num, s_den = denominator, denominator
+        t_num, t_den = denominator, denominator
+        if denominator < small:
+            s_num, s_den = 0.0, 1.0
+            t_num, t_den = e, c
+        else:
+            s_num = b * e - c * d
+            t_num = a * e - b * d
+            if s_num < 0.0:
+                s_num = 0.0
+                t_num, t_den = e, c
+            elif s_num > s_den:
+                s_num = s_den
+                t_num, t_den = e + b, c
+        if t_num < 0.0:
+            t_num = 0.0
+            if -d < 0.0:
+                s_num = 0.0
+            elif -d > a:
+                s_num = s_den
+            else:
+                s_num, s_den = -d, a
+        elif t_num > t_den:
+            t_num = t_den
+            if -d + b < 0.0:
+                s_num = 0.0
+            elif -d + b > a:
+                s_num = s_den
+            else:
+                s_num, s_den = -d + b, a
+        sc = 0.0 if abs(s_num) < small else s_num / max(s_den, small)
+        tc = 0.0 if abs(t_num) < small else t_num / max(t_den, small)
+        delta = [w[i] + sc * u[i] - tc * v[i] for i in range(3)]
+        return math.sqrt(sum(value * value for value in delta))
+
     close_pairs = []
-    interference_threshold_mm = 0.8
-    for left in range(len(seed_positions)):
-        for right in range(left + 1, len(seed_positions)):
-            distance = math.sqrt(sum(
+    interference_threshold_mm = 2.0 * seed_radius_mm + seed_clearance_mm
+    for left in range(len(seed_entries)):
+        for right in range(left + 1, len(seed_entries)):
+            axis_distance = _segment_distance(seed_entries[left], seed_entries[right])
+            center_distance = math.sqrt(sum(
                 (seed_positions[left][axis] - seed_positions[right][axis]) ** 2
                 for axis in range(3)
             ))
-            if distance < interference_threshold_mm:
+            if axis_distance < interference_threshold_mm:
                 close_pairs.append({
                     "first": left,
                     "second": right,
                     "first_id": seed_ids[left],
                     "second_id": seed_ids[right],
-                    "distance_mm": round(distance, 3),
+                    "first_needle_id": seed_entries[left]["needle_id"],
+                    "second_needle_id": seed_entries[right]["needle_id"],
+                    "center_distance_mm": round(center_distance, 3),
+                    "axis_distance_mm": round(axis_distance, 3),
+                    "surface_clearance_mm": round(axis_distance - (2.0 * seed_radius_mm), 3),
+                    "risk": "overlap" if axis_distance < (2.0 * seed_radius_mm) else "too_close",
                 })
     if seed_positions:
         seed_interference = {
             "status": "attention" if close_pairs else "clear",
             "threshold_mm": interference_threshold_mm,
+            "seed_length_mm": seed_length_mm,
+            "seed_radius_mm": seed_radius_mm,
+            "minimum_clearance_mm": seed_clearance_mm,
             "seed_count": len(seed_positions),
             "close_pairs": close_pairs[:50],
         }
@@ -517,9 +680,84 @@ def _latest_plan_snapshot(agent) -> Dict[str, Any]:
         seed_interference = {
             "status": "unavailable",
             "threshold_mm": interference_threshold_mm,
+            "seed_length_mm": seed_length_mm,
+            "seed_radius_mm": seed_radius_mm,
+            "minimum_clearance_mm": seed_clearance_mm,
             "seed_count": 0,
             "close_pairs": [],
         }
+
+    needle_entries = []
+    for index, needle in enumerate(needles):
+        if not isinstance(needle, dict):
+            continue
+        points = needle.get("points") or []
+        if not isinstance(points, (list, tuple)) or len(points) < 2:
+            continue
+        start, end = _points(points[0]), _points(points[-1])
+        if start and end:
+            needle_entries.append({
+                "id": str(needle.get("id") or needle.get("needle_id") or f"needle_{index}"),
+                "start": start,
+                "end": end,
+            })
+    needle_diameter_mm = max(float(plan_config.get("needle_diameter_mm") or 1.2), 0.1)
+    needle_clearance_mm = max(float(plan_config.get("needle_clearance_mm") or 1.0), 0.0)
+    needle_threshold_mm = needle_diameter_mm + needle_clearance_mm
+    needle_close_pairs = []
+    for left in range(len(needle_entries)):
+        for right in range(left + 1, len(needle_entries)):
+            distance = _segment_segment_distance(
+                needle_entries[left]["start"],
+                needle_entries[left]["end"],
+                needle_entries[right]["start"],
+                needle_entries[right]["end"],
+            )
+            if distance < needle_threshold_mm:
+                needle_close_pairs.append({
+                    "first_id": needle_entries[left]["id"],
+                    "second_id": needle_entries[right]["id"],
+                    "distance_mm": round(distance, 3),
+                    "minimum_distance_mm": round(needle_threshold_mm, 3),
+                    "risk": "intersecting" if distance < needle_diameter_mm else "too_close",
+                })
+
+    obstacle_hits = []
+    if needle_entries:
+        try:
+            from tool_factory.seed_plan.planning_pipeline import (
+                _merge_embedded_hard_obstacles,
+                _resolve_data_tree_obstacle_labels,
+                _world_segment_hits_obstacle,
+            )
+
+            ct_image = agent.memory.retrieve("ct_image")
+            if ct_image is None:
+                ct_image = agent.memory.retrieve("image")
+            ctv_mask = agent.memory.retrieve("ctv_mask")
+            if ctv_mask is None:
+                ctv_mask = agent.memory.retrieve("ctv_label_data")
+            oar_mask = agent.memory.retrieve("oar_mask")
+            if oar_mask is None:
+                oar_mask = agent.memory.retrieve("oar_label_data")
+            if ct_image is not None and ctv_mask is not None:
+                merged_oar, embedded_labels = _merge_embedded_hard_obstacles(oar_mask, agent)
+                obstacle_labels, _ = _resolve_data_tree_obstacle_labels(agent)
+                obstacle_labels.update(embedded_labels)
+                for needle in needle_entries:
+                    if _world_segment_hits_obstacle(
+                        [needle["start"], needle["end"]],
+                        ct_image,
+                        ctv_mask,
+                        merged_oar,
+                        obstacle_labels,
+                    ):
+                        obstacle_hits.append(needle["id"])
+        except (ImportError, OSError, ValueError, TypeError, AttributeError) as exc:
+            logger.warning("Monitor could not validate needle obstacles: %s", exc)
+
+    artifact_status = agent.memory.retrieve("manual_artifact_status") or {}
+    guide = agent.memory.retrieve("surgical_guide") or {}
     return {
         "metrics": metrics if isinstance(metrics, dict) else {},
         "total_seeds": int(total_seeds or 0),
@@ -530,6 +768,27 @@ def _latest_plan_snapshot(agent) -> Dict[str, Any]:
         "seed_ids": seed_ids,
         "seed_positions": seed_positions,
         "seed_interference": seed_interference,
+        "needle_geometry": {
+            "needle_count": len(needle_entries),
+            "diameter_mm": needle_diameter_mm,
+            "minimum_distance_mm": needle_threshold_mm,
+            "close_pairs": needle_close_pairs[:50],
+            "obstacle_hits": obstacle_hits,
+        },
+        "artifact_status": artifact_status if isinstance(artifact_status, dict) else {},
+        "surgical_guide": {
+            "available": bool(guide),
+            "status": (
+                guide.get("status") if isinstance(guide, dict) else None
+            ) or (
+                artifact_status.get("surgical_guide")
+                if isinstance(artifact_status, dict)
+                else None
+            ) or "not_generated",
+            "planning_version": (
+                guide.get("planning_version") if isinstance(guide, dict) else None
+            ),
+        },
     }
 
 
@@ -632,17 +891,78 @@ def _build_plan_advice(agent, session_id: Optional[str] = None) -> Dict[str, Any
 
     interference = snapshot.get("seed_interference") or {}
     if interference.get("status") == "attention":
+        pairs = list(interference.get("close_pairs") or [])
+        overlap_count = sum(1 for pair in pairs if pair.get("risk") == "overlap")
         issues.append(
-            f"{len(interference.get('close_pairs') or [])} seed pair(s) are closer than "
-            f"{float(interference.get('threshold_mm') or 0.8):.1f} mm in the current world-coordinate preview."
+            f"{len(pairs)} seed pair(s) violate the physical spacing rule "
+            f"(seed {float(interference.get('seed_length_mm') or 4.5):.1f} mm x "
+            f"{float(interference.get('seed_radius_mm') or 0.4) * 2.0:.1f} mm; "
+            f"minimum surface clearance "
+            f"{float(interference.get('minimum_clearance_mm') or 0.5):.1f} mm). "
+            f"{overlap_count} pair(s) geometrically overlap."
         )
-        advice.append("Inspect the flagged seed pairs in the 3D viewer and confirm source spacing before clinical review.")
+        for pair in pairs[:8]:
+            issues.append(
+                f"{pair.get('first_id')} ({pair.get('first_needle_id') or 'unassigned'}) and "
+                f"{pair.get('second_id')} ({pair.get('second_needle_id') or 'unassigned'}): "
+                f"center distance {float(pair.get('center_distance_mm') or 0.0):.2f} mm, "
+                f"surface clearance {float(pair.get('surface_clearance_mm') or 0.0):.2f} mm "
+                f"[{pair.get('risk') or 'too_close'}]."
+            )
+        advice.append(
+            "Inspect the highlighted seed pairs in the 3D viewer, correct their "
+            "axial spacing, and recompute dose before final review."
+        )
     elif interference.get("status") == "clear":
         strengths.append(
-            f"No seed-center pair is closer than {float(interference.get('threshold_mm') or 0.8):.1f} mm in the current preview."
+            f"No seed pair violates the {float(interference.get('minimum_clearance_mm') or 0.5):.1f} mm "
+            "minimum physical surface-clearance rule in the current preview."
         )
     elif snapshot.get("total_seeds", 0) > 1:
         advice.append("Seed geometry was not available for the monitor; verify seed spacing directly in the 3D viewer.")
+
+    needle_geometry = snapshot.get("needle_geometry") or {}
+    obstacle_hits = list(needle_geometry.get("obstacle_hits") or [])
+    if obstacle_hits:
+        issues.append(
+            "Needles intersecting current Data Tree non-traversable structures: "
+            + ", ".join(obstacle_hits[:20])
+            + "."
+        )
+        advice.append(
+            "Move or remove every obstacle-intersecting needle before dose review "
+            "or Surgical Guide generation."
+        )
+    needle_pairs = list(needle_geometry.get("close_pairs") or [])
+    if needle_pairs:
+        for pair in needle_pairs[:8]:
+            issues.append(
+                f"{pair.get('first_id')} and {pair.get('second_id')} are "
+                f"{float(pair.get('distance_mm') or 0.0):.2f} mm apart "
+                f"(minimum {float(pair.get('minimum_distance_mm') or 0.0):.2f} mm; "
+                f"{pair.get('risk') or 'too_close'})."
+            )
+        advice.append(
+            "Review the highlighted needle pairs for physical collision and "
+            "guide-sleeve manufacturability."
+        )
+
+    artifact_status = snapshot.get("artifact_status") or {}
+    stale_labels = [
+        key for key, value in artifact_status.items()
+        if str(value or "").lower() in {"stale", "expired", "outdated"}
+    ]
+    if stale_labels:
+        issues.append("Outdated dependent results: " + ", ".join(sorted(stale_labels)) + ".")
+        advice.append(
+            "Recompute the outdated dose/DVH and regenerate the Surgical Guide "
+            "before finalizing the plan."
+        )
+    guide = snapshot.get("surgical_guide") or {}
+    if snapshot.get("num_trajectories", 0) > 0 and not guide.get("available"):
+        issues.append("No Surgical Guide has been generated for the current needle plan.")
+    elif str(guide.get("status") or "").lower() in {"stale", "expired", "outdated"}:
+        issues.append("The Surgical Guide does not match the current planning version.")
 
     if plan_score is not None:
         strengths.append(f"Plan score is {plan_score:.0f}/100; use it as an advisory ranking signal, not approval.")
@@ -754,6 +1074,8 @@ def _localize_monitor_text(text: Any, language: str = "en") -> str:
         "No seeds are present. Add a needle and place seeds through the CTV before dose evaluation.": "当前没有粒子。请先添加针道并在 CTV 内布置粒子，再进行剂量评估。",
         "Dose preview updated. Open Analysis to inspect DVH and OAR dose.": "剂量预览已更新。请打开分析面板检查 DVH 和 OAR 剂量。",
         "Seed geometry was not available for the monitor; verify seed spacing directly in the 3D viewer.": "监测器未获得粒子几何信息；请直接在 3D viewer 中核对粒子间距。",
+        "Regenerate the Surgical Guide from the current needle geometry before export or clinical review.": "请基于当前针道几何重新生成手术导板，再进行导出或临床审核。",
+        "Recompute dose and DVH, then refresh the report before final review.": "请重新计算剂量和 DVH，并刷新报告后再进行最终审核。",
     }
     if raw in exact:
         return exact[raw]
@@ -785,6 +1107,47 @@ def _localize_monitor_text(text: Any, language: str = "en") -> str:
         return "当前预览中没有粒子中心间距小于 " + raw[len("No seed-center pair is closer than "):].replace(" in the current preview.", "。")
     if raw.startswith("Needle edit recorded."):
         return "已记录针道编辑。请确认针道经过安全组织，并与不可穿刺 OAR 保持距离。"
+    match = re.fullmatch(
+        r"Needles intersecting current Data Tree non-traversable structures: (.+)\.",
+        raw,
+    )
+    if match:
+        return f"针道 {match.group(1)} 与当前不可穿刺结构相交。"
+    match = re.fullmatch(
+        r"(.+) and (.+) are ([0-9.]+) mm apart \(minimum ([0-9.]+) mm; (.+)\)\.",
+        raw,
+    )
+    if match:
+        return (
+            f"针道 {match.group(1)} 与 {match.group(2)} 的最短距离为 {match.group(3)} mm；"
+            f"当前配置的最小距离为 {match.group(4)} mm。"
+        )
+    match = re.fullmatch(
+        r"(.+) \((.*)\) and (.+) \((.*)\): center distance ([0-9.]+) mm, "
+        r"surface clearance ([0-9.-]+) mm \[(.+)\]\.",
+        raw,
+    )
+    if match:
+        return (
+            f"粒子 {match.group(1)}（{match.group(2)}）与 {match.group(3)}（{match.group(4)}）"
+            f"的中心距离为 {match.group(5)} mm，表面间隙为 {match.group(6)} mm"
+            f"（{match.group(7)}）。"
+        )
+    match = re.fullmatch(r"Outdated dependent results: (.+)\.", raw)
+    if match:
+        return f"手动几何编辑后，规划产物 {match.group(1)} 已过期。"
+    if raw == "No Surgical Guide has been generated for the current needle plan.":
+        return "当前针道规划尚未生成手术导板。"
+    if raw == "The Surgical Guide does not match the current planning version.":
+        return "手术导板与当前针道规划不一致，已标记为过期。"
+    if raw.startswith("Move or remove every obstacle-intersecting needle"):
+        return "请在剂量审核或生成手术导板前，移动或删除所有与不可穿刺结构相交的针道。"
+    if raw.startswith("Review the highlighted needle pairs"):
+        return "请检查高亮的针道组合是否发生物理碰撞，并确认导向套筒可制造。"
+    if raw.startswith("Recompute the outdated dose/DVH"):
+        return "请重新计算已过期的剂量和 DVH，并重新生成手术导板后再完成规划。"
+    if raw.startswith("Inspect the highlighted seed pairs"):
+        return "请在 3D viewer 中检查高亮粒子组合，修正轴向间距并重新计算剂量。"
     if raw.startswith("Seed edit recorded."):
         return "已记录粒子编辑。请重新计算剂量并核对 DVH，再放置下一枚粒子。"
     match = re.fullmatch(
@@ -1842,6 +2205,7 @@ def _compute_manual_ai_dose(
 
     agent.memory.store("manual_planning_preview", True)
     agent.memory.store("manual_ai_dose", True)
+    agent.memory.store("manual_plan_active", True)
     agent.memory.store("dose_engine", "dose_unet_spacing1mm")
     agent.memory.store("manual_seeds", norm_seeds)
     agent.memory.store("manual_needles", norm_needles)
@@ -1856,6 +2220,18 @@ def _compute_manual_ai_dose(
     agent.memory.store("dose_metrics", metrics)
     agent.memory.store("metrics", metrics)
     agent.memory.store("dvh_data", dvh_data)
+    planning_version = int(agent.memory.retrieve("manual_plan_version") or 0)
+    artifact_status = {
+        "dose": "ready",
+        "dvh": "ready",
+        "report": "stale",
+        "quality_check": "stale",
+        "surgical_guide": "stale",
+        "reason": "manual dose recomputed",
+        "planning_version": planning_version,
+        "updated_at": datetime.utcnow().isoformat(timespec="seconds") + "Z",
+    }
+    agent.memory.store("manual_artifact_status", artifact_status)
 
     return {
         "success": True,
@@ -1875,6 +2251,9 @@ def _compute_manual_ai_dose(
         "dose_range_gy": [float(dose_gy.min()), float(dose_gy.max())],
         "dose_units": DOSE_MODEL_UNITS,
         "dose_scale_gy": DOSE_MODEL_SCALE_GY,
+        "planning_id": agent.memory.retrieve("manual_planning_id"),
+        "planning_version": planning_version,
+        "artifact_status": artifact_status,
     }
 
 
@@ -2832,6 +3211,18 @@ def _localize_monitor_text_clean(value: Any, language: str = "en") -> str:
             "\u5242\u91cf\u9884\u89c8\u5df2\u66f4\u65b0\u3002\u8bf7\u6253\u5f00\u5206\u6790\u9762\u677f\u67e5\u770b DVH \u548c OAR \u5242\u91cf\u3002",
         "Seed geometry was not available for the monitor; verify seed spacing directly in the 3D viewer.":
             "\u76d1\u6d4b\u5668\u672a\u83b7\u53d6\u7c92\u5b50\u51e0\u4f55\u4fe1\u606f\uff0c\u8bf7\u76f4\u63a5\u5728 3D \u67e5\u770b\u5668\u4e2d\u6838\u5bf9\u7c92\u5b50\u95f4\u8ddd\u3002",
+        "Inspect the highlighted seed pairs in the 3D viewer, correct their axial spacing, and recompute dose before final review.":
+            "\u8bf7\u5728 3D viewer \u4e2d\u68c0\u67e5\u9ad8\u4eae\u7c92\u5b50\u7ec4\u5408\uff0c\u4fee\u6b63\u8f74\u5411\u95f4\u8ddd\u5e76\u91cd\u65b0\u8ba1\u7b97\u5242\u91cf\u3002",
+        "Move or remove every obstacle-intersecting needle before dose review or Surgical Guide generation.":
+            "\u8bf7\u5728\u5242\u91cf\u5ba1\u6838\u6216\u751f\u6210\u624b\u672f\u5bfc\u677f\u524d\uff0c\u79fb\u52a8\u6216\u5220\u9664\u6240\u6709\u4e0e\u4e0d\u53ef\u7a7f\u523a\u7ed3\u6784\u76f8\u4ea4\u7684\u9488\u9053\u3002",
+        "Review the highlighted needle pairs for physical collision and guide-sleeve manufacturability.":
+            "\u8bf7\u68c0\u67e5\u9ad8\u4eae\u9488\u9053\u7ec4\u5408\u662f\u5426\u53d1\u751f\u7269\u7406\u78b0\u649e\uff0c\u5e76\u786e\u8ba4\u5bfc\u5411\u5957\u7b52\u53ef\u5236\u9020\u3002",
+        "Recompute the outdated dose/DVH and regenerate the Surgical Guide before finalizing the plan.":
+            "\u8bf7\u91cd\u65b0\u8ba1\u7b97\u5df2\u8fc7\u671f\u7684\u5242\u91cf\u548c DVH\uff0c\u5e76\u91cd\u65b0\u751f\u6210\u624b\u672f\u5bfc\u677f\u540e\u518d\u5b8c\u6210\u89c4\u5212\u3002",
+        "No Surgical Guide has been generated for the current needle plan.":
+            "\u5f53\u524d\u9488\u9053\u89c4\u5212\u5c1a\u672a\u751f\u6210\u624b\u672f\u5bfc\u677f\u3002",
+        "The Surgical Guide does not match the current planning version.":
+            "\u624b\u672f\u5bfc\u677f\u4e0e\u5f53\u524d\u9488\u9053\u89c4\u5212\u4e0d\u4e00\u81f4\uff0c\u5df2\u6807\u8bb0\u4e3a\u8fc7\u671f\u3002",
     }
     if raw in exact:
         return exact[raw]
@@ -2846,6 +3237,19 @@ def _localize_monitor_text_clean(value: Any, language: str = "en") -> str:
          lambda match: f"CTV V150 \u4e3a {match.group(1)}%\uff0c\u8bf7\u6309\u5f53\u524d\u90e8\u4f4d\u7279\u5f02\u6027\u6807\u51c6\u5224\u65ad\u5747\u5300\u6027\u3002"),
         (r"Plan score is ([0-9.]+)/100; use it as an advisory ranking signal, not approval\.",
          lambda match: f"\u89c4\u5212\u8bc4\u5206\u4e3a {match.group(1)}/100\uff0c\u8be5\u5206\u6570\u4ec5\u7528\u4e8e\u8f85\u52a9\u6392\u5e8f\uff0c\u4e0d\u4ee3\u8868\u4e34\u5e8a\u6279\u51c6\u3002"),
+        (r"(.+) \((.*)\) and (.+) \((.*)\): center distance ([0-9.]+) mm, surface clearance ([0-9.-]+) mm \[(.+)\]\.",
+         lambda match: (
+             f"\u7c92\u5b50 {match.group(1)}\uff08{match.group(2)}\uff09\u4e0e "
+             f"{match.group(3)}\uff08{match.group(4)}\uff09\u7684\u4e2d\u5fc3\u8ddd\u79bb\u4e3a "
+             f"{match.group(5)} mm\uff0c\u8868\u9762\u95f4\u9699\u4e3a {match.group(6)} mm"
+             f"\uff08{match.group(7)}\uff09\u3002"
+         )),
+        (r"(.+) and (.+) are ([0-9.]+) mm apart \(minimum ([0-9.]+) mm; (.+)\)\.",
+         lambda match: (
+             f"\u9488\u9053 {match.group(1)} \u4e0e {match.group(2)} \u7684\u6700\u77ed\u8ddd\u79bb\u4e3a "
+             f"{match.group(3)} mm\uff1b\u5f53\u524d\u914d\u7f6e\u7684\u6700\u5c0f\u8ddd\u79bb\u4e3a "
+             f"{match.group(4)} mm\u3002"
+         )),
     )
     for pattern, formatter in patterns:
         match = re.fullmatch(pattern, raw)
@@ -2853,6 +3257,12 @@ def _localize_monitor_text_clean(value: Any, language: str = "en") -> str:
             return formatter(match)
     if raw.startswith("Top OAR doses: "):
         return "OAR \u6700\u9ad8\u5242\u91cf\u7ed3\u6784\uff1a" + raw[len("Top OAR doses: "):]
+    if raw.startswith("Needles intersecting current Data Tree non-traversable structures: "):
+        names = raw[len("Needles intersecting current Data Tree non-traversable structures: "):].rstrip(".")
+        return f"\u9488\u9053 {names} \u4e0e\u5f53\u524d Data Tree \u4e2d\u7684\u4e0d\u53ef\u7a7f\u523a\u7ed3\u6784\u76f8\u4ea4\u3002"
+    if raw.startswith("Outdated dependent results: "):
+        names = raw[len("Outdated dependent results: "):].rstrip(".")
+        return f"\u624b\u52a8\u51e0\u4f55\u7f16\u8f91\u540e\uff0c\u89c4\u5212\u4ea7\u7269 {names} \u5df2\u8fc7\u671f\u3002"
     if raw.startswith("Needle edit recorded."):
         return "\u5df2\u8bb0\u5f55\u9488\u9053\u7f16\u8f91\u3002\u8bf7\u786e\u8ba4\u9488\u9053\u7ecf\u8fc7\u5b89\u5168\u7ec4\u7ec7\uff0c\u5e76\u4e0e\u4e0d\u53ef\u7a7f\u523a OAR \u4fdd\u6301\u8ddd\u79bb\u3002"
     if raw.startswith("Seed edit recorded."):
@@ -2916,10 +3326,23 @@ def _training_feedback_for_event_clean(agent, session_id: Optional[str], event: 
     if event_type.startswith("manual.seed"):
         interference = snapshot.get("seed_interference") or {}
         if interference.get("status") == "attention":
-            threshold = float(interference.get("threshold_mm") or 0.8)
-            return _localize_monitor_text_clean(
-                f"Seed edit recorded. {len(interference.get('close_pairs') or [])} close seed pair(s) are below {threshold:.1f} mm; inspect them before continuing.",
-                language,
+            pairs = list(interference.get("close_pairs") or [])
+            worst = min(
+                pairs,
+                key=lambda pair: float(pair.get("surface_clearance_mm") or 0.0),
+            )
+            if language == "zh":
+                return (
+                    f"已记录粒子编辑。检测到 {len(pairs)} 组粒子违反物理间距要求；"
+                    f"最严重的是 {worst.get('first_id')} 与 {worst.get('second_id')}，"
+                    f"表面间隙为 {float(worst.get('surface_clearance_mm') or 0.0):.2f} mm。"
+                    "已准备对应的 3D 特写，请先调整间距再继续。"
+                )
+            return (
+                f"Seed edit recorded. {len(pairs)} pair(s) violate the physical spacing rule; "
+                f"the worst pair is {worst.get('first_id')} and {worst.get('second_id')} "
+                f"with {float(worst.get('surface_clearance_mm') or 0.0):.2f} mm surface clearance. "
+                "A focused 3D checkpoint is ready; correct the spacing before continuing."
             )
         if v100 is not None and v100_min is not None and v100 < v100_min:
             return _localize_monitor_text_clean(
@@ -2928,6 +3351,30 @@ def _training_feedback_for_event_clean(agent, session_id: Optional[str], event: 
             )
         return _localize_monitor_text_clean("Seed edit recorded. Recompute dose and verify DVH before placing the next seed.", language)
     if event_type.startswith("manual.needle"):
+        needle_geometry = snapshot.get("needle_geometry") or {}
+        obstacle_hits = list(needle_geometry.get("obstacle_hits") or [])
+        if obstacle_hits:
+            names = ", ".join(obstacle_hits[:12])
+            if language == "zh":
+                return f"针道编辑已记录。针道 {names} 与当前 Data Tree 中的不可穿刺结构相交，请先修正路径。"
+            return (
+                f"Needle edit recorded. {names} intersect the current Data Tree "
+                "non-traversable structures; correct these paths before continuing."
+            )
+        close_pairs = list(needle_geometry.get("close_pairs") or [])
+        if close_pairs:
+            worst = min(close_pairs, key=lambda pair: float(pair.get("distance_mm") or 0.0))
+            if language == "zh":
+                return (
+                    f"针道编辑已记录。{worst.get('first_id')} 与 {worst.get('second_id')} "
+                    f"的最短距离为 {float(worst.get('distance_mm') or 0.0):.2f} mm，"
+                    f"低于要求的 {float(worst.get('minimum_distance_mm') or 0.0):.2f} mm。"
+                )
+            return (
+                f"Needle edit recorded. {worst.get('first_id')} and {worst.get('second_id')} "
+                f"are {float(worst.get('distance_mm') or 0.0):.2f} mm apart, below the "
+                f"{float(worst.get('minimum_distance_mm') or 0.0):.2f} mm minimum."
+            )
         return _localize_monitor_text_clean(
             "Needle edit recorded. Check that the path traverses safe tissue and keeps distance from non-traversable OARs.",
             language,

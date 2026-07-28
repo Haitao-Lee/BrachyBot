@@ -1645,6 +1645,12 @@ const dataTreeState = {
     needles:  { visible: true, opacity: 0.8, color: '#ff6644', loaded: false, label: 'Needle Paths' },
     // Planning state
     planning: {
+        id: null,
+        version: 0,
+        visible: true,
+        opacity: 1.0,
+        color: '#60a5fa',
+        artifactStatus: {},
         trajectories: [],       // [{id, index, entry, target, visible, opacity, color, seeds: [seed_id, ...]}]
         trajectoriesLoaded: false,
         seeds: [],       // [{id, position, direction, trajectory_id, visible, opacity, color}]
@@ -2360,6 +2366,38 @@ function renderDataTree() {
     // meshes are still rendered as items via renderTreeItem under
     // their owning source (CTV, OAR, dose iso-surface).
 
+    // CTV, OAR and dose meshes already have canonical rows above. Render only
+    // independent planning artifacts here so every scene object has one owner.
+    const independentPlanningMeshes = planningMeshes.filter(mesh =>
+        ['surgical_guide', 'manual_annotation', 'planning_artifact'].includes(String(mesh.source || ''))
+    );
+    if (independentPlanningMeshes.length > 0) {
+        const artifactsVisible = independentPlanningMeshes.some(mesh => mesh.visible !== false);
+        const artifactsOpacity = independentPlanningMeshes.reduce(
+            (sum, mesh) => sum + Number(mesh.opacity ?? 0.75), 0,
+        ) / independentPlanningMeshes.length;
+        html += `<div class="tree-group" data-group="planning_meshes">
+            <div class="tree-group-header" onclick="toggleTreeGroup(this)" oncontextmenu="event.preventDefault();showGroupContextMenu(event.clientX,event.clientY,'planning_meshes')">
+                <span class="arrow">&#9660;</span>
+                <button class="eye-btn ${artifactsVisible ? '' : 'hidden'}" onclick="event.stopPropagation();setGroupVisibility('planning_meshes', ${!artifactsVisible})" title="Toggle planning artifacts">${artifactsVisible ? '&#128065;' : '&#128064;'}</button>
+                <span data-i18n-zh="规划产物" data-i18n-en="Planning Artifacts">Planning Artifacts</span>
+                <span>(${independentPlanningMeshes.length})</span>
+                <span style="margin-left:auto;display:flex;align-items:center;gap:4px;">
+                    <input type="range" class="opacity-slider" min="0" max="100" value="${Math.round(artifactsOpacity * 100)}" onclick="event.stopPropagation()" oninput="setGroupOpacity('planning_meshes', this.value)" title="Opacity">
+                </span>
+            </div>
+            <div class="tree-group-items">`;
+        independentPlanningMeshes.forEach(mesh => {
+            const status = mesh.status && mesh.status !== 'ready' ? String(mesh.status) : '';
+            html += renderTreeItem(mesh.id, {
+                ...mesh,
+                loaded: true,
+                label: mesh.label || mesh.id,
+            }, status);
+        });
+        html += `</div></div>`;
+    }
+
     // Legacy dose/seed items (if no planning data)
     if (!hasPlanning) {
         html += renderTreeItem('dose', dataTreeState.dose, state.metrics && state.metrics.v100 !== undefined ? `V100: ${(state.metrics.v100 * 100).toFixed(1)}%` : '');
@@ -2758,6 +2796,13 @@ function showGroupContextMenu(x, y, category) {
         items += `<div class="ctx-menu-item" onclick="hideContextMenu();setGroupOpacityValue('${category}', ${op})">
             <span class="ctx-icon" style="opacity:${op / 100}">&#9632;</span> ${op}%</div>`;
     }
+    items += `<label class="ctx-menu-item" onclick="event.stopPropagation()">
+        <span class="ctx-icon">&#127912;</span> Group color
+        <input type="color" value="${getGroupDisplayColor(category)}"
+            aria-label="Group color"
+            style="margin-left:auto;width:28px;height:20px;border:0;background:transparent;cursor:pointer"
+            onchange="setGroupColor('${category}', this.value);hideContextMenu()">
+    </label>`;
 
     items += `<div class="ctx-menu-sep"></div>`;
     items += `<div class="ctx-menu-item" onclick="hideContextMenu();showAllOrgans()">
@@ -3386,6 +3431,77 @@ function setGroupOpacity(category, value) {
 function setGroupOpacityValue(category, percentValue) {
     // setGroupOpacity expects value 0-100 (it divides by 100 internally)
     setGroupOpacity(category, percentValue);
+}
+
+function getGroupDisplayColor(category) {
+    if (category === 'ctv') return dataTreeState.ctv.color || '#ef4444';
+    if (category === 'oar') return dataTreeState.oar.color || '#22c55e';
+    if (category === 'planning') return dataTreeState.planning.color || '#60a5fa';
+    const entries = category === 'planning_seeds'
+        ? _planningItems('seeds')
+        : category === 'planning_needles'
+            ? _planningItems('needles')
+            : category === 'dose_isosurfaces'
+                ? _planningItems('doseLevels')
+                : category === 'planning_meshes'
+                    ? (dataTreeState.planning.meshes || [])
+                    : dataTreeState.organs.filter(organ => organ.category === category);
+    return entries.find(entry => entry?.color)?.color || '#60a5fa';
+}
+
+function setGroupColor(category, color) {
+    const normalized = String(color || '').trim();
+    if (!/^#[0-9a-f]{6}$/i.test(normalized)) return;
+    let entries = [];
+    if (category === 'ctv') {
+        dataTreeState.ctv.color = normalized;
+        entries = Object.entries(dataTreeState.ctvLabels || {}).map(([id, value]) => ({ id, value }));
+    } else if (category === 'oar') {
+        dataTreeState.oar.color = normalized;
+        entries = dataTreeState.organs.map(value => ({ id: value.id, value }));
+    } else if (category === 'planning') {
+        dataTreeState.planning.color = normalized;
+        entries = [
+            ..._planningItems('seeds').map(value => ({ id: value.id, value })),
+            ..._planningItems('needles').map(value => ({ id: value.id, value })),
+            ..._planningItems('doseLevels').map(value => ({ id: `dose_iso_${value.threshold}`, value })),
+            ...(dataTreeState.planning.meshes || []).map(value => ({ id: value.id, value })),
+        ];
+    } else if (category === 'planning_seeds') {
+        entries = _planningItems('seeds').map(value => ({ id: value.id, value }));
+    } else if (category === 'planning_needles') {
+        entries = _planningItems('needles').map(value => ({ id: value.id, value }));
+    } else if (category === 'dose_isosurfaces') {
+        entries = _planningItems('doseLevels').map(value => ({ id: `dose_iso_${value.threshold}`, value }));
+    } else if (category === 'planning_meshes') {
+        entries = (dataTreeState.planning.meshes || []).map(value => ({ id: value.id, value }));
+    } else {
+        entries = dataTreeState.organs
+            .filter(value => value.category === category)
+            .map(value => ({ id: value.id, value }));
+    }
+    entries.forEach(({ id, value }) => {
+        value.color = normalized;
+        const parsedLabelId = Number.isFinite(Number(value.labelId))
+            ? Number(value.labelId)
+            : (/^ctv_(\d+)$/.test(String(id)) ? Number(String(id).slice(4)) : null);
+        if (Number.isFinite(parsedLabelId)) {
+            labelColorLUT[parsedLabelId] = [
+                parseInt(normalized.slice(1, 3), 16),
+                parseInt(normalized.slice(3, 5), 16),
+                parseInt(normalized.slice(5, 7), 16),
+            ];
+        }
+        const mesh = scene3D.meshes[id];
+        if (mesh) _setMeshMaterialColor(mesh, normalized);
+        const savedMaterial = state.doseTexture?.originalMaterials?.[id];
+        if (savedMaterial) _setMeshMaterialColor({ material: savedMaterial }, normalized);
+    });
+    renderDataTree();
+    if (state.ctLoaded) reloadOverlays();
+    redrawSeedNeedleOverlays();
+    requestViewerVisualRefresh('group-color');
+    _scheduleDataTreeSave(`viewer.group_color:${category}`);
 }
 
 function toggleTreeGroup(header) {
