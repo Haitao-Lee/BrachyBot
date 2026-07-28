@@ -446,6 +446,17 @@ async function runPlanningStep(step) {
     }
     const ctPathEl = document.getElementById('ctPath');
     const ctPath = ctPathEl ? ctPathEl.value.trim() : '';
+    // Keep the asynchronous step attached to the case that started it. A
+    // later session switch may let the server finish, but it must not paint
+    // the newly selected case during the completion phase.
+    const ownerSessionId = typeof _activeApiSessionId === 'function'
+        ? String(_activeApiSessionId() || '')
+        : String(typeof activeSessionId !== 'undefined' ? activeSessionId || '' : '');
+    const isCurrentOwner = () => ownerSessionId === String(
+        typeof _activeApiSessionId === 'function'
+            ? _activeApiSessionId() || ''
+            : (typeof activeSessionId !== 'undefined' ? activeSessionId || '' : ''),
+    );
     if (!ctPath) {
         if (typeof addChat === 'function') {
             addChat('error', '请先在 Image Data 区域加载 CT 图像,然后再运行规划步骤。');
@@ -479,9 +490,11 @@ async function runPlanningStep(step) {
     if (btn) { btn.disabled = true; btn.innerHTML = '... ' + info.label; }
     reportUIEvent('planning.step', `${info.label} started`, { step });
     try {
+        const planningHeaders = { 'Content-Type': 'application/json' };
+        if (ownerSessionId) planningHeaders['X-BrachyBot-Session'] = ownerSessionId;
         const res = await fetch(API + '/planning/run_step', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: planningHeaders,
             body: JSON.stringify({ ct_image_path: ctPath, step: step }),
         });
         if (!res.ok) {
@@ -490,14 +503,6 @@ async function runPlanningStep(step) {
         }
         const data = await res.json();
         if (data.success) {
-            _saveManualState({ [step]: true, last_step: step, active_step: null, active_step_started_at: null });
-            _manualWorkflowProgress(step, 'done', localizedInfoLabel, info.label, _manualWorkflowLabel('已完成', 'Completed'));
-            reportUIEvent('planning.step', `${info.label} completed`, { step });
-            if (typeof addChat === 'function') {
-                addChat('system', `${_manualWorkflowLabel('已完成', 'Completed')} ${info.num}/5: ${_manualWorkflowLabel(localizedInfoLabel, info.label)}.`);
-            }
-            // Update step button badges (digit → checkmark).
-            if (typeof _refreshManualStepUI === 'function') _refreshManualStepUI();
             // A manual planning step can create or replace OAR, trajectories,
             // seeds, dose, and meshes in one server-side transaction.  Refresh
             // the result view and the OAR metadata in parallel, then render
@@ -520,6 +525,18 @@ async function runPlanningStep(step) {
             }
             if (refreshJobs.length) await Promise.allSettled(refreshJobs);
             if (typeof renderDataTree === 'function') renderDataTree();
+            // Publish completion only after the authoritative result and its
+            // viewer/Data Tree projections are ready. This keeps progress,
+            // monitor feedback, screenshots, and chat in the same order as
+            // the actual user-visible result.
+            if (!isCurrentOwner()) return { success: true, step, detached: true };
+            _saveManualState({ [step]: true, last_step: step, active_step: null, active_step_started_at: null });
+            _manualWorkflowProgress(step, 'done', localizedInfoLabel, info.label, _manualWorkflowLabel('已完成', 'Completed'));
+            reportUIEvent('planning.step', `${info.label} completed`, { step, status: 'done' });
+            if (typeof addChat === 'function') {
+                addChat('system', `${_manualWorkflowLabel('已完成', 'Completed')} ${info.num}/5: ${_manualWorkflowLabel(localizedInfoLabel, info.label)}.`);
+            }
+            if (typeof _refreshManualStepUI === 'function') _refreshManualStepUI();
             if (typeof scheduleWorkspaceSave === 'function') scheduleWorkspaceSave('manual.planning.step.completed');
             return { success: true, step };
         } else {
@@ -683,12 +700,6 @@ async function runSegmentationStep(kind) {
         const data = await res.json();
         if (!data.success) throw new Error(data.error || 'Segmentation failed');
         const n = data.total_labels || Object.keys(data.label_counts || {}).length || 0;
-        _saveManualState({ [kind]: true, active_step: null, active_step_started_at: null });
-        _manualWorkflowProgress(kind, 'done', label, label, _manualWorkflowLabel('已完成', 'Completed'));
-        reportUIEvent('segmentation.step', `${label} completed`, { kind, labels: n });
-        if (typeof addChat === 'function') {
-            addChat('system', `✅ ${label} done — ${n} label(s) found.`);
-        }
         // The segmentation response already contains authoritative organ
         // names/counts. Paint those nodes before the binary volume fetch so a
         // successful tool call can never leave an empty OAR branch.
@@ -708,11 +719,34 @@ async function runSegmentationStep(kind) {
         if (typeof renderDataTree === 'function') {
             try { renderDataTree(); } catch (_) {}
         }
-        if (typeof startSegmentationMeshPrewarm === 'function') {
+        if (typeof prewarmSegmentationMeshes === 'function') {
+            // Keep the progress row running until the structures are actually
+            // available to the 3D viewer. This prevents a false "done" state
+            // while mesh reconstruction is still running in the background.
+            await prewarmSegmentationMeshes(kind === 'ctv_segmentation' ? 'ctv' : 'oar', {
+                sessionId: ownerSessionId,
+                preserveViewerState: true,
+                allOAR: apiKind === 'oar',
+            });
+        } else if (typeof startSegmentationMeshPrewarm === 'function') {
             startSegmentationMeshPrewarm(kind === 'ctv_segmentation' ? 'ctv' : 'oar');
+        }
+        if (!isCurrentOwner()) return { success: true, kind, labels: n, detached: true };
+        _saveManualState({ [kind]: true, active_step: null, active_step_started_at: null });
+        _manualWorkflowProgress(kind, 'done', label, label, _manualWorkflowLabel('\u5df2\u5b8c\u6210', 'Completed'));
+        reportUIEvent('segmentation.step', `${label} completed`, { kind, labels: n, status: 'done' });
+        if (typeof addChat === 'function') {
+            const done = typeof window._t === 'function' ? window._t('\u5df2\u5b8c\u6210', 'Completed') : 'Completed';
+            addChat('system', `${done}: ${label} (${n} label(s)).`);
         }
         return { success: true, kind, labels: n };
     } catch (e) {
+        // A background segmentation may finish after the user has switched
+        // cases.  Its failure belongs to the originating workspace and must
+        // never overwrite the active case's progress, chat, or manual state.
+        if (!isCurrentOwner()) {
+            return { success: false, error: e.message, detached: true };
+        }
         _saveManualState({ active_step: null, active_step_started_at: null });
         _manualWorkflowProgress(kind, 'error', label, label, e.message || _manualWorkflowLabel('执行失败', 'Failed'));
         reportUIEvent('segmentation.error', `${label} failed`, { kind, error: e.message });

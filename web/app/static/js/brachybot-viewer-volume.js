@@ -1642,8 +1642,19 @@ function getDataTreeAppearanceForMesh(id, mesh) {
         item = dataTreeState.planning.meshes.find(entry => entry.id === id);
     }
     if (!item) return null;
+    // A category is a parent constraint. Child edits remain local in the
+    // Data Tree, but a hidden CTV/OAR/Planning parent must hide every
+    // descendant mesh, including meshes restored after a mode switch.
+    const parentVisible = id.startsWith('organ_')
+        ? dataTreeState.oar?.visible !== false
+        : (id === 'ctv' || id.startsWith('ctv_'))
+            ? dataTreeState.ctv?.visible !== false
+            : (id.startsWith('seed_') || id.startsWith('needle_') || id.startsWith('dose_iso_')
+                || dataTreeState.planning?.meshes?.some(entry => entry.id === id))
+                ? dataTreeState.planning?.visible !== false
+                : true;
     return {
-        visible: item.visible !== false,
+        visible: parentVisible && item.visible !== false,
         opacity: Number.isFinite(Number(item.opacity)) ? Number(item.opacity) : 1,
         color: item.color,
     };
@@ -3172,15 +3183,17 @@ function setGroupVisibility(category, visible) {
         });
     } else if (category === 'planning_trajectories') {
         _planningItems('trajectories').forEach(trajectory => { trajectory.visible = visible; });
-        // The trajectory branch owns its seed children. Keep all seed/needle
-        // projections synchronized because a trajectory may have no mesh of
-        // its own.
-        _planningItems('seeds').forEach(seed => {
+        // Only descendants of the selected trajectory branch are changed.
+        // A sibling trajectory must remain untouched when the user edits one
+        // parent node in the Data Tree.
+        const trajectories = _planningItems('trajectories');
+        const ownsTrajectory = item => trajectories.some(t => _trajectoryContains(item, t));
+        _planningItems('seeds').filter(ownsTrajectory).forEach(seed => {
             seed.visible = visible;
             const mesh = scene3D.meshes[seed.id];
             if (mesh) applyMeshVisibility(mesh, visible, seed.opacity ?? 1.0);
         });
-        _planningItems('needles').forEach(needle => {
+        _planningItems('needles').filter(ownsTrajectory).forEach(needle => {
             needle.visible = visible;
             const mesh = scene3D.meshes[needle.id];
             if (mesh) applyMeshVisibility(mesh, visible, needle.opacity ?? 0.8);

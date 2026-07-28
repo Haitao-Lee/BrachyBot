@@ -303,7 +303,42 @@ var trainingMonitorState = {
     sessionId: 'web',
     lastFeedbackAt: 0,
     lastScreenshotAt: 0,
+    // One monitor turn can produce several evidence targets.  Keep one
+    // gallery context for the whole run so each checkpoint becomes a tile in
+    // one chronological chat message instead of a separate floating gallery.
+    screenshotGalleryContext: null,
 };
+
+// Keep the monitor affordance in one place. Monitoring is case-owned state;
+// the presentation must be explicitly cleared during a case transition
+// instead of relying on a stale body class from the previous case.
+function setMonitorPresentation(active) {
+    const enabled = Boolean(active);
+    if (typeof document === 'undefined') return;
+    const translate = typeof window._t === 'function'
+        ? window._t
+        : ((zh, en) => en);
+    document.body.classList.toggle('monitor-active', enabled);
+    const icon = document.querySelector('.chat-header-icon');
+    if (icon) {
+        icon.setAttribute('data-monitoring', enabled ? 'true' : 'false');
+        icon.setAttribute('aria-busy', enabled ? 'true' : 'false');
+        icon.setAttribute(
+            'aria-label',
+            enabled ? translate('\u76d1\u6d4b\u4e2d', 'Monitoring active')
+                : translate('\u672a\u542f\u7528\u76d1\u6d4b', 'Monitoring inactive')
+        );
+    }
+    const status = document.getElementById('monitorStatus');
+    if (status) {
+        status.hidden = !enabled;
+        status.setAttribute('aria-hidden', enabled ? 'false' : 'true');
+        status.setAttribute('aria-live', 'polite');
+        const label = status.querySelector('[data-i18n-zh][data-i18n-en]');
+        if (label) label.textContent = translate('\u76d1\u6d4b\u4e2d', 'Monitoring');
+    }
+}
+window.setMonitorPresentation = setMonitorPresentation;
 
 var manualPlanningState = {
     activeNeedleId: null,
@@ -319,10 +354,17 @@ function _activeApiSessionId() {
     return (typeof activeSessionId !== 'undefined' && activeSessionId) || state.sessionId || 'web';
 }
 
-function _shouldLogTrainingFeedback(message) {
+function _shouldLogTrainingFeedback(message, type = '', label = '') {
     if (!message || !trainingMonitorState.active) return false;
     const now = Date.now();
-    const important = /dose|V100|D90|Seed|Needle|step/i.test(message);
+    // Stage completion and manual planning events are teaching checkpoints;
+    // they must not be hidden by the generic chatter throttle.
+    const highValueEvent = /^(planning|segmentation)\.step$|^manual\.(dose|seed|needle)/i.test(type);
+    const important = highValueEvent || /dose|V100|D90|Seed|Needle|step|剂量|粒子|针道|分割|步骤/i.test(`${message} ${label}`);
+    if (highValueEvent) {
+        trainingMonitorState.lastFeedbackAt = now;
+        return true;
+    }
     if (!important && now - trainingMonitorState.lastFeedbackAt < 15000) return false;
     trainingMonitorState.lastFeedbackAt = now;
     return true;
@@ -347,6 +389,9 @@ async function syncUIBridgeState(reason = 'snapshot') {
 
 async function reportUIEvent(type, label, detail = {}, options = {}) {
     const ownerSessionId = _activeApiSessionId();
+    const language = typeof effectiveUiLanguage === 'function'
+        ? effectiveUiLanguage()
+        : (window._i18nLang || 'en');
     try {
         const res = await fetch(API + '/ui/event', {
             method: 'POST',
@@ -356,16 +401,18 @@ async function reportUIEvent(type, label, detail = {}, options = {}) {
                 type,
                 label,
                 detail,
+                language,
                 ui_state: (typeof collectUIState === 'function') ? collectUIState() : {},
             }),
         });
         const data = await res.json().catch(() => null);
         if (ownerSessionId !== _activeApiSessionId()) return null;
-        if (data && data.feedback && _shouldLogTrainingFeedback(data.feedback)) {
+        const feedbackText = data && (data.feedback_localized || data.feedback);
+        if (feedbackText && _shouldLogTrainingFeedback(feedbackText, type, label)) {
             const monitorPrefix = typeof window._t === 'function'
                 ? window._t('监测建议', 'Monitor feedback')
                 : 'Monitor feedback';
-            addChat('bot-response', `**${monitorPrefix}**\n\n${data.feedback}`);
+            addChat('bot-response', `**${monitorPrefix}**\n\n${feedbackText}`);
         }
         if (data && data.suggested_screenshot && trainingMonitorState.active) {
             const now = Date.now();
@@ -374,21 +421,33 @@ async function reportUIEvent(type, label, detail = {}, options = {}) {
             // monitor must not hide the corresponding screenshot behind the
             // generic 45-second chatter throttle. Other event types remain
             // throttled to avoid filling the chat with redundant captures.
+            const isStageCheckpoint = /^(planning|segmentation)\.step$/i.test(type)
+                && /completed|complete|done/i.test(label || '');
             const isDoseCheckpoint = type === 'manual.dose'
                 || ss.target === 'dose-overview'
                 || ss.target === 'dvh';
-            if ((isDoseCheckpoint || now - trainingMonitorState.lastScreenshotAt > 45000)
+            if ((isStageCheckpoint || isDoseCheckpoint || now - trainingMonitorState.lastScreenshotAt > 45000)
                 && typeof _interceptScreenshot === 'function') {
                 trainingMonitorState.lastScreenshotAt = now;
                 // ``description`` is kept as a compatibility fallback for
                 // older servers; current training payloads use ``question``.
                 setTimeout(() => {
-                    if (ownerSessionId !== _activeApiSessionId()) return;
+                    // A delayed checkpoint must not outlive the monitor run or
+                    // leak into a newly selected case.
+                    if (!trainingMonitorState.active || ownerSessionId !== _activeApiSessionId()) return;
+                    if (!trainingMonitorState.screenshotGalleryContext) {
+                        trainingMonitorState.screenshotGalleryContext = { keys: new Set() };
+                    }
                     _interceptScreenshot(
                         ss.target || 'dose-overview',
                         ss.question || ss.description || 'Monitor screenshot',
-                        null,
-                        { sessionId: ownerSessionId },
+                        trainingMonitorState.screenshotGalleryContext,
+                        {
+                            sessionId: ownerSessionId,
+                            preservePanel: true,
+                            monitorOnly: true,
+                            focusSeedIds: ss.focus_seed_ids || [],
+                        },
                     );
                 }, 500);
             }
@@ -963,9 +1022,13 @@ function updateTumorTypeSelector(value) {
         lung: 'biomedparse_lung_lesion', colon: 'biomedparse_colon_primary',
         prostate: 'prostate_tumor',
         'head and neck': 'biomedparse_head_neck_cancer', head_neck: 'biomedparse_head_neck_cancer',
-        '胰腺': 'nnunet_pancreatic', '肝脏': 'biomedparse_liver_tumor',
-        '肾': 'biomedparse_kidney_lesion', '肺': 'biomedparse_lung_lesion',
-        '结肠': 'biomedparse_colon_primary', '前列腺': 'prostate_tumor',
+        '胰腺': 'nnunet_pancreatic', '胰脏': 'nnunet_pancreatic',
+        '肝': 'biomedparse_liver_tumor', '肝脏': 'biomedparse_liver_tumor',
+        '肾': 'biomedparse_kidney_lesion', '肾脏': 'biomedparse_kidney_lesion',
+        '肺': 'biomedparse_lung_lesion', '肺部': 'biomedparse_lung_lesion',
+        '结肠': 'biomedparse_colon_primary', '结肠癌': 'biomedparse_colon_primary',
+        '前列腺': 'prostate_tumor', '头颈': 'biomedparse_head_neck_cancer',
+        '头颈部': 'biomedparse_head_neck_cancer', '头颈肿瘤': 'biomedparse_head_neck_cancer',
     };
     const key = aliases[raw.toLowerCase()] || raw.toLowerCase();
     const select = document.getElementById('ctvModelSelect');
@@ -2887,11 +2950,11 @@ function setupMetricsResize() {
 function _confirmAction(msgZh, msgEn, options = {}) {
     return new Promise(resolve => {
         const t = window._t || ((zh) => zh);
-        const yesZh = options.yesZh || '纭';
+        const yesZh = options.yesZh || '确认';
         const yesEn = options.yesEn || 'Yes';
-        const noZh = options.noZh || '鍙栨秷';
+        const noZh = options.noZh || '取消';
         const noEn = options.noEn || 'Cancel';
-        const titleZh = options.titleZh || '纭鎿嶄綔';
+        const titleZh = options.titleZh || '确认操作';
         const titleEn = options.titleEn || 'Confirm';
         const overlay = document.createElement('div');
         overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:10000;display:flex;align-items:center;justify-content:center;';
@@ -3895,7 +3958,9 @@ function _openScreenshotModal(url, label, index = 0, total = 1) {
     close.className = 'image-modal-close';
     close.type = 'button';
     close.textContent = '×';
-    close.title = 'Close image';
+    close.title = typeof window._t === 'function'
+        ? window._t('关闭图片', 'Close image')
+        : 'Close image';
     close.addEventListener('click', () => overlay.remove());
     const image = document.createElement('img');
     image.src = url;
@@ -3903,7 +3968,9 @@ function _openScreenshotModal(url, label, index = 0, total = 1) {
     image.addEventListener('click', event => event.stopPropagation());
     const info = document.createElement('div');
     info.className = 'image-modal-info';
-    info.textContent = total > 1 ? `${label || 'Screenshot'} · ${index + 1}/${total}` : (label || 'Screenshot');
+    info.textContent = total > 1
+        ? `${label || (typeof window._t === 'function' ? window._t('截图', 'Screenshot') : 'Screenshot')} · ${index + 1}/${total}`
+        : (label || 'Screenshot');
     overlay.append(close, image, info);
     document.body.appendChild(overlay);
     const onKey = event => {
@@ -3915,11 +3982,28 @@ function _openScreenshotModal(url, label, index = 0, total = 1) {
     document.addEventListener('keydown', onKey);
 }
 
+function _localizedScreenshotTargetLabel(target) {
+    const labels = {
+        'viewer-axial': ['轴位', 'Axial'],
+        'viewer-sagittal': ['矢状位', 'Sagittal'],
+        'viewer-coronal': ['冠状位', 'Coronal'],
+        'viewer-3d': ['三维查看器', '3D viewer'],
+        'dose-overview': ['剂量总览', 'Dose overview'],
+        'dvh': ['DVH 曲线', 'DVH'],
+        'data-tree': ['数据树', 'Data Tree'],
+    };
+    const pair = labels[target] || [target || '截图', target || 'Screenshot'];
+    const language = typeof effectiveUiLanguage === 'function'
+        ? effectiveUiLanguage()
+        : (window._i18nLang || 'en');
+    return language === 'zh' ? pair[0] : pair[1];
+}
+
 function _appendScreenshotToGallery(url, target, question, galleryContext) {
     const context = galleryContext || {};
     const messages = document.getElementById('chatMessages');
     if (!messages || !url) return;
-    const label = target || 'Screenshot';
+    const label = _localizedScreenshotTargetLabel(target);
     const requestKey = `${label}|${String(question || '').trim()}`;
     // The same SSE completion can arrive through both the step and final
     // event paths. Keep one tile per logical target/question, while still
@@ -3939,7 +4023,9 @@ function _appendScreenshotToGallery(url, target, question, galleryContext) {
         message.className = 'chat-msg bot screenshot-gallery-message';
         const title = document.createElement('div');
         title.className = 'chat-gallery-title';
-        title.textContent = 'Screenshots';
+        title.textContent = typeof window._t === 'function'
+            ? window._t('截图', 'Screenshots')
+            : 'Screenshots';
         const gallery = document.createElement('div');
         gallery.className = 'chat-image-gallery';
         message.append(title, gallery);
@@ -3953,26 +4039,43 @@ function _appendScreenshotToGallery(url, target, question, galleryContext) {
     const item = document.createElement('button');
     item.type = 'button';
     item.className = 'chat-image-container chat-gallery-item';
-    item.title = 'Open screenshot';
+    item.title = typeof window._t === 'function'
+        ? window._t('打开截图', 'Open screenshot')
+        : 'Open screenshot';
     const image = document.createElement('img');
     image.className = 'chat-screenshot';
     image.src = url;
     image.alt = target || 'Screenshot';
     const zoom = document.createElement('span');
     zoom.className = 'chat-image-zoom-icon';
-    zoom.textContent = 'Open';
+    zoom.textContent = typeof window._t === 'function' ? window._t('打开', 'Open') : 'Open';
     const caption = document.createElement('span');
     caption.className = 'chat-image-caption';
-    caption.textContent = target || 'Screenshot';
+    caption.textContent = label;
     item.append(image, zoom, caption);
     context.element.appendChild(item);
     context.items.push({ url, label, question: question || '' });
-    context.title.textContent = `Screenshots (${context.items.length})`;
+    const galleryTitle = typeof window._t === 'function'
+        ? window._t('截图', 'Screenshots')
+        : 'Screenshots';
+    context.title.textContent = `${galleryTitle} (${context.items.length})`;
     item.addEventListener('click', () => {
         const index = context.items.findIndex(entry => entry.url === url && entry.label === label);
         _openScreenshotModal(url, question || target || 'Screenshot', Math.max(0, index), context.items.length);
     });
     scrollToBottom();
+}
+
+function _activeScreenshotPanel() {
+    return document.querySelector('.panel-tab.active')?.dataset?.panel || null;
+}
+
+function _restoreScreenshotPanel(panelName) {
+    if (!panelName || typeof switchPanel !== 'function') return false;
+    const tab = document.querySelector(`.panel-tab[data-panel="${panelName}"]`);
+    if (!tab || tab.classList.contains('active')) return false;
+    switchPanel(panelName, tab);
+    return true;
 }
 
 // Intercept ui_screenshot: capture the target element, upload to server,
@@ -3981,30 +4084,54 @@ function _appendScreenshotToGallery(url, target, question, galleryContext) {
 async function _interceptScreenshot(target, question, galleryContext, options = {}) {
     const ownerSessionId = String(options.sessionId || _activeApiSessionId());
     const isCurrentOwner = () => ownerSessionId === String(_activeApiSessionId());
-    if (!isCurrentOwner()) return { success: false, stale: true, error: 'case_changed' };
-    // Unified screenshot target map — single source of truth for both
-    // _interceptScreenshot (SSE-driven) and _captureScreenshot (direct).
-    uiDebugLog('[screenshot] Capturing target:', target);
-    const normalizedTarget = ({ 'dose': 'dose-overview', 'dose_distribution': 'dose-overview', 'dvh-chart': 'dvh' })[target] || target;
-    const el = normalizedTarget === 'dose-overview'
-        ? document.body
-        : await _prepareScreenshotTarget(normalizedTarget);
-    if (!isCurrentOwner()) return { success: false, stale: true, error: 'case_changed' };
-    if (!el) {
-        console.warn('[screenshot] Target element not found:', target);
-        if (typeof addChat === 'function') addChat('error', `截图失败：未找到目标元素 "${target}"`);
-        return { success: false, error: 'target_not_found' };
-    }
-    if (typeof html2canvas === 'undefined' && normalizedTarget !== 'dose-overview' && normalizedTarget !== 'dvh') {
-        console.warn('[screenshot] html2canvas not loaded');
-        if (typeof addChat === 'function') addChat('error', '截图失败：html2canvas 库未加载');
-        return { success: false, error: 'html2canvas_unavailable' };
-    }
+    const isAllowed = () => isCurrentOwner()
+        && (!options.monitorOnly || trainingMonitorState.active);
+    if (!isAllowed()) return { success: false, stale: true, error: 'case_changed' };
+
+    // Screenshots are temporary observations. Restore both the active panel
+    // and the focused seed camera after capture so monitoring never changes
+    // the user's working view or leaves the wrong panel open.
+    const previousPanel = options.preservePanel ? _activeScreenshotPanel() : null;
+    let restoreFocus = null;
+    let normalizedTarget = target;
     let dataUrl = null;
     try {
+        // Unified screenshot target map — single source of truth for both
+        // _interceptScreenshot (SSE-driven) and _captureScreenshot (direct).
+        uiDebugLog('[screenshot] Capturing target:', target);
+        normalizedTarget = ({
+            'dose': 'dose-overview',
+            'dose_distribution': 'dose-overview',
+            'dvh-chart': 'dvh',
+        })[target] || target;
+        const el = normalizedTarget === 'dose-overview'
+            ? document.body
+            : await _prepareScreenshotTarget(normalizedTarget);
+        if (!isAllowed()) return { success: false, stale: true, error: 'case_changed' };
+        if (!el) {
+            console.warn('[screenshot] Target element not found:', target);
+            if (typeof addChat === 'function') addChat('error', typeof window._t === 'function'
+                ? window._t(`截图失败：未找到目标元素 "${target}"`, `Screenshot failed: target "${target}" was not found`)
+                : `Screenshot failed: target "${target}" was not found`);
+            return { success: false, error: 'target_not_found' };
+        }
+        if (typeof html2canvas === 'undefined' && normalizedTarget !== 'dose-overview' && normalizedTarget !== 'dvh') {
+            console.warn('[screenshot] html2canvas not loaded');
+            if (typeof addChat === 'function') addChat('error', typeof window._t === 'function'
+                ? window._t('截图失败：html2canvas 库未加载', 'Screenshot failed: html2canvas is unavailable')
+                : 'Screenshot failed: html2canvas is unavailable');
+            return { success: false, error: 'html2canvas_unavailable' };
+        }
+        if (normalizedTarget === 'viewer-3d'
+            && Array.isArray(options.focusSeedIds)
+            && options.focusSeedIds.length
+            && typeof window.focusPlanningSeedsForScreenshot === 'function') {
+            restoreFocus = window.focusPlanningSeedsForScreenshot(options.focusSeedIds) || null;
+            await _waitScreenshotFrames(3);
+        }
         uiDebugLog('[screenshot] Capturing element:', el.tagName, el.id || el.className);
         dataUrl = await _captureScreenshotDataUrl(normalizedTarget, el);
-        if (!isCurrentOwner()) return { success: false, stale: true, error: 'case_changed' };
+        if (!isAllowed()) return { success: false, stale: true, error: 'case_changed' };
         if (!dataUrl) throw new Error('No screenshot data was produced');
         uiDebugLog('[screenshot] Data URL size:', Math.round(dataUrl.length / 1024), 'KB');
 
@@ -4018,7 +4145,7 @@ async function _interceptScreenshot(target, question, galleryContext, options = 
             }),
         });
         const text = await res.text();
-        if (!isCurrentOwner()) return { success: false, stale: true, error: 'case_changed' };
+        if (!isAllowed()) return { success: false, stale: true, error: 'case_changed' };
         let data = {};
         try {
             data = text ? JSON.parse(text) : {};
@@ -4034,17 +4161,29 @@ async function _interceptScreenshot(target, question, galleryContext, options = 
         uiDebugLog('[screenshot] Captured and uploaded:', screenshotUrl);
         return { success: true, url: screenshotUrl, target: normalizedTarget };
     } catch (e) {
-        if (!isCurrentOwner()) return { success: false, stale: true, error: 'case_changed' };
+        if (!isAllowed()) return { success: false, stale: true, error: 'case_changed' };
         console.warn('[screenshot] Capture or upload failed:', e);
         if (dataUrl) {
             _appendScreenshotToGallery(dataUrl, normalizedTarget, question, galleryContext);
             if (!galleryContext && typeof addChat === 'function') {
-                addChat('system', `Screenshot captured locally, but server persistence failed: ${escHtml(e.message || String(e))}`);
+                addChat('system', typeof window._t === 'function'
+                    ? window._t(`截图已在本地生成，但服务器保存失败：${e.message || String(e)}`,
+                        `Screenshot captured locally, but server persistence failed: ${e.message || String(e)}`)
+                    : `Screenshot captured locally, but server persistence failed: ${e.message || String(e)}`);
             }
         } else if (typeof addChat === 'function') {
-            addChat('error', `Screenshot failed: ${e.message || String(e)}`);
+            addChat('error', typeof window._t === 'function'
+                ? window._t(`截图失败：${e.message || String(e)}`, `Screenshot failed: ${e.message || String(e)}`)
+                : `Screenshot failed: ${e.message || String(e)}`);
         }
         return { success: false, error: e.message || String(e), target: normalizedTarget };
+    } finally {
+        if (restoreFocus) {
+            try { restoreFocus(); } catch (error) { console.debug('[screenshot] camera restore skipped:', error); }
+        }
+        if (options.preservePanel && previousPanel && _activeScreenshotPanel() !== previousPanel) {
+            if (_restoreScreenshotPanel(previousPanel)) await _waitScreenshotFrames(2);
+        }
     }
 }
 

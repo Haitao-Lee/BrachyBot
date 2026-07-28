@@ -1265,11 +1265,17 @@ async function setDoseTextureMode(enabled, opts = {}) {
             if (!_viewer3DRequestScopeIsCurrent(requestScope)) return { stale: true };
             _prepareDoseTextureSceneVisibility();
             state.doseTexture.enabled = true;
+            if (typeof window.syncSceneAppearanceFromDataTree === 'function') {
+                window.syncSceneAppearanceFromDataTree({ preserveDoseTexture: true });
+            }
             // Show 3D colorbar when dose surface mode is active
             update3DColorbar(true);
         } else {
             _restoreDoseTextureMaterials();
             state.doseTexture.enabled = false;
+            if (typeof window.syncSceneAppearanceFromDataTree === 'function') {
+                window.syncSceneAppearanceFromDataTree({ preserveDoseTexture: false });
+            }
             // Hide 3D colorbar when switching back to normal surface
             update3DColorbar(false);
         }
@@ -1286,6 +1292,9 @@ async function setDoseTextureMode(enabled, opts = {}) {
         }
         _restoreDoseTextureMaterials();
         state.doseTexture.enabled = false;
+        if (typeof window.syncSceneAppearanceFromDataTree === 'function') {
+            window.syncSceneAppearanceFromDataTree({ preserveDoseTexture: false });
+        }
         update3DColorbar(false);
     } finally {
         clearTimeout(safetyTimer);

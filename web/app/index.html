@@ -190,6 +190,10 @@
                 <div class="chat-header-sub" id="chatSessionTitle">New conversation</div>
             </div>
             <div style="margin-left:auto;display:flex;align-items:center;gap:0.4rem;">
+                <div id="monitorStatus" class="monitor-status" hidden aria-hidden="true" role="status">
+                    <span class="monitor-status-dot" aria-hidden="true"></span>
+                    <span data-i18n-zh="监测中" data-i18n-en="Monitoring">Monitoring</span>
+                </div>
                 <div class="context-badge" id="contextBadge" title="Context messages">
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
                     <span id="contextCount">0</span>

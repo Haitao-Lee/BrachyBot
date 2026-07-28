@@ -837,7 +837,16 @@
                 // The browser snapshot keeps presentation details while the
                 // server bridge keeps feedback/events emitted by tools.
                 Object.assign(trainingMonitorState, ui.bridge?.training || {}, uiState.training || {});
-                document.body.classList.toggle('monitor-active', !!trainingMonitorState.active);
+                // A snapshot can come from an older browser bridge without a
+                // reliable owner id. The workspace id is authoritative after
+                // the ownership check above.
+                trainingMonitorState.sessionId = sessionId;
+                trainingMonitorState.screenshotGalleryContext = null;
+                if (typeof window.setMonitorPresentation === 'function') {
+                    window.setMonitorPresentation(!!trainingMonitorState.active);
+                } else {
+                    document.body.classList.toggle('monitor-active', !!trainingMonitorState.active);
+                }
             }
             const report = snapshot.report && snapshot.report.form;
             if (report && typeof report === 'object') {
@@ -1056,6 +1065,21 @@
         cancelBackgroundWorkspaceRestore();
         activeSessionId = sessionId;
         if (typeof state !== 'undefined') state.sessionId = sessionId;
+        if (typeof trainingMonitorState !== 'undefined') {
+            // Background work remains attached to its original case, but its
+            // live monitor UI must never bleed into the newly selected case.
+            trainingMonitorState.active = false;
+            trainingMonitorState.goal = '';
+            trainingMonitorState.sessionId = sessionId;
+            trainingMonitorState.screenshotGalleryContext = null;
+            trainingMonitorState.lastFeedbackAt = 0;
+            trainingMonitorState.lastScreenshotAt = 0;
+            if (typeof window.setMonitorPresentation === 'function') {
+                window.setMonitorPresentation(false);
+            } else {
+                document.body.classList.remove('monitor-active');
+            }
+        }
         revision = sessionRevisions[sessionId] ?? null;
         window._activeWorkspaceSnapshot = null;
         if (clearWorkspace && typeof clearClientWorkspace === 'function') {

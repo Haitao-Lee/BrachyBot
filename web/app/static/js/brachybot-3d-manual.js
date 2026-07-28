@@ -116,11 +116,14 @@ function _restoreManualNeedles(snapshot) {
 async function _confirmNeedleReplan(needleId) {
     if (typeof _confirmAction !== 'function') return false;
     return _confirmAction(
-        `Needle ${needleId} was moved. Replan with the new geometry?`,
+        `针道 ${needleId} 已移动。是否使用新的几何位置重新规划？`,
         `Needle ${needleId} was moved. Replan with the new geometry?`,
         {
+            yesZh: '重新规划',
             yesEn: 'Replan',
+            noZh: '保留当前位置',
             noEn: 'Keep position',
+            titleZh: '针道位置已改变',
             titleEn: 'Needle position changed',
         },
     );
@@ -538,7 +541,10 @@ async function onManualNeedleHandleEdited(handle) {
         manualPlanningState.needleReplanPrompt = null;
         if (!shouldReplan) {
             await _persistNeedleGeometryOnly();
-            addChat('system', `Needle ${needleId} position kept. Replanning skipped.`);
+            const kept = typeof window._t === 'function'
+                ? window._t(`已保留 ${needleId} 的当前位置，未触发重新规划。`, `Needle ${needleId} position kept. Replanning skipped.`)
+                : `Needle ${needleId} position kept. Replanning skipped.`;
+            addChat('system', kept);
             return false;
         }
         await recomputeManualDose('needle_drag', {
@@ -548,7 +554,10 @@ async function onManualNeedleHandleEdited(handle) {
         return true;
     })().catch(error => {
         if (manualPlanningState.needleReplanPrompt === prompt) manualPlanningState.needleReplanPrompt = null;
-        addChat('error', `Needle replanning failed: ${error.message}`);
+        const failed = typeof window._t === 'function'
+            ? window._t(`针道重新规划失败：${error.message}`, `Needle replanning failed: ${error.message}`)
+            : `Needle replanning failed: ${error.message}`;
+        addChat('error', failed);
         return false;
     });
     manualPlanningState.needleReplanPrompt = prompt;
@@ -635,62 +644,98 @@ async function moveManualSeedFromUi(value) {
 }
 
 async function startTrainingMode(goal = 'Monitor planning workflow') {
-    trainingMonitorState.sessionId = _activeApiSessionId();
+    const startSessionId = _activeApiSessionId();
+    trainingMonitorState.sessionId = startSessionId;
     // A new monitoring run starts a fresh feedback/screenshot budget. These
     // timers are UX throttles, not case data, so they must not leak across
     // stop/start cycles.
     trainingMonitorState.lastFeedbackAt = 0;
     trainingMonitorState.lastScreenshotAt = 0;
     trainingMonitorState.goal = goal;
+    trainingMonitorState.screenshotGalleryContext = { keys: new Set() };
+    const language = typeof effectiveUiLanguage === 'function'
+        ? effectiveUiLanguage()
+        : (window._i18nLang || 'en');
+    // Show the monitor affordance immediately; waiting for the POST response
+    // made a healthy monitor look idle during the network round trip.
+    trainingMonitorState.active = true;
+    if (typeof window.setMonitorPresentation === 'function') {
+        window.setMonitorPresentation(true);
+    } else {
+        document.body.classList.add('monitor-active');
+    }
     try {
         const res = await fetch(API + '/training/start', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ session_id: trainingMonitorState.sessionId, goal }),
+            body: JSON.stringify({ session_id: trainingMonitorState.sessionId, goal, language }),
         });
         const data = await res.json().catch(() => null);
         if (!res.ok || !data || !data.success) throw new Error((data && data.error) || `HTTP ${res.status}`);
-        trainingMonitorState.active = true;
-        document.body.classList.add('monitor-active');
         addChat('bot-response', typeof window._t === 'function'
-            ? window._t('監測模式已启动。我会跟踪规划操作并提供阶段性反馈。', 'Monitor mode started. I will track planning actions and provide stage feedback.')
+            ? window._t('监测模式已启动。我会跟踪规划操作并提供阶段性反馈。', 'Monitor mode started. I will track planning actions and provide stage feedback.')
             : 'Monitor mode started. I will track planning actions and provide stage feedback.');
         await syncUIBridgeState('training_start');
         return data;
     } catch (e) {
-        addChat('error', `Monitor mode failed to start: ${e.message}`);
+        if (trainingMonitorState.sessionId === startSessionId) {
+            trainingMonitorState.active = false;
+            if (typeof window.setMonitorPresentation === 'function') {
+                window.setMonitorPresentation(false);
+            } else {
+                document.body.classList.remove('monitor-active');
+            }
+            trainingMonitorState.screenshotGalleryContext = null;
+        }
+        const failed = typeof window._t === 'function'
+            ? window._t(`监测模式启动失败：${e.message}`, `Monitor mode failed to start: ${e.message}`)
+            : `Monitor mode failed to start: ${e.message}`;
+        addChat('error', failed);
         return null;
     }
 }
 
 async function stopTrainingMode() {
+    const language = typeof effectiveUiLanguage === 'function'
+        ? effectiveUiLanguage()
+        : (window._i18nLang || 'en');
+    trainingMonitorState.active = false;
+    if (typeof window.setMonitorPresentation === 'function') {
+        window.setMonitorPresentation(false);
+    } else {
+        document.body.classList.remove('monitor-active');
+    }
+    // In-flight checkpoint callbacks see the inactive flag and stop before
+    // appending a late screenshot. Release the context so the next run starts
+    // cleanly.
+    trainingMonitorState.screenshotGalleryContext = null;
     try {
         const res = await fetch(API + '/training/stop', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ session_id: _activeApiSessionId() }),
+            body: JSON.stringify({ session_id: _activeApiSessionId(), language }),
         });
         const data = await res.json().catch(() => null);
         if (!res.ok || !data || !data.success) throw new Error((data && data.error) || `HTTP ${res.status}`);
         trainingMonitorState.active = false;
-        document.body.classList.remove('monitor-active');
-        const prefix = typeof window._t === 'function'
+        if (typeof window.setMonitorPresentation === 'function') {
+            window.setMonitorPresentation(false);
+        } else {
+            document.body.classList.remove('monitor-active');
+        }
+        const localizedAdvice = data.localized_advice || data.advice;
+        const fallbackPrefix = typeof window._t === 'function'
             ? window._t('规划监测已结束', 'Planning monitoring finished')
             : 'Planning monitoring finished';
-        // The server summary is already the single reviewed report. Use the
-        // structured advice only when an older server cannot provide it;
-        // otherwise the chat would show the same monitor findings twice.
-        const report = data.summary || _formatAdviceReport(data.advice);
-        const activity = data.event_counts && Object.keys(data.event_counts).length
-            ? `\n\n**${typeof window._t === 'function' ? window._t('事件概览', 'Activity') : 'Activity'}**\n`
-                + Object.entries(data.event_counts).map(([key, value]) => `- ${key}: ${value}`).join('\n')
-            : '';
-        addChat('bot-response', report + activity);
+        addChat('bot-response', data.summary || _formatAdviceReport(localizedAdvice, fallbackPrefix));
         trainingMonitorState.lastFeedbackAt = 0;
         trainingMonitorState.lastScreenshotAt = 0;
         return data;
     } catch (e) {
-        addChat('error', `Monitor mode failed to stop: ${e.message}`);
+        const failed = typeof window._t === 'function'
+            ? window._t(`监测模式停止失败：${e.message}`, `Monitor mode failed to stop: ${e.message}`)
+            : `Monitor mode failed to stop: ${e.message}`;
+        addChat('error', failed);
         return null;
     }
 }
@@ -701,35 +746,52 @@ function _formatAdviceReport(advice, prefix = '') {
         : 'No advice available yet.');
     const lines = [];
     if (prefix) lines.push(prefix);
+    const headings = typeof window._t === 'function'
+        ? {
+            strengths: window._t('当前优势', 'Strengths'),
+            issues: window._t('需要关注', 'Issues'),
+            recommendations: window._t('建议', 'Recommendations'),
+        }
+        : { strengths: 'Strengths', issues: 'Issues', recommendations: 'Recommendations' };
     if (advice.strengths && advice.strengths.length) {
-        lines.push('**Strengths**');
+        lines.push(`**${headings.strengths}**`);
         advice.strengths.forEach(x => lines.push(`- ${x}`));
     }
     if (advice.issues && advice.issues.length) {
-        lines.push('**Issues**');
+        lines.push(`**${headings.issues}**`);
         advice.issues.forEach(x => lines.push(`- ${x}`));
     }
     if (advice.advice && advice.advice.length) {
-        lines.push('**Recommendations**');
+        lines.push(`**${headings.recommendations}**`);
         advice.advice.forEach(x => lines.push(`- ${x}`));
     }
     return lines.join('\n');
 }
 
 async function requestPlanningAdvice() {
+    const language = typeof effectiveUiLanguage === 'function'
+        ? effectiveUiLanguage()
+        : (window._i18nLang || 'en');
     try {
         const res = await fetch(API + '/training/advice', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ session_id: _activeApiSessionId(), ui_state: collectUIState() }),
+            body: JSON.stringify({ session_id: _activeApiSessionId(), language, ui_state: collectUIState() }),
         });
         const data = await res.json().catch(() => null);
         if (!res.ok || !data || !data.success) throw new Error((data && data.error) || `HTTP ${res.status}`);
-        addChat('bot-response', _formatAdviceReport(data, 'Detailed plan advice based on current metrics and UI state:'));
+        const advice = data.localized_advice || data.advice;
+        const prefix = typeof window._t === 'function'
+            ? window._t('基于当前指标和界面状态的详细规划建议：', 'Detailed plan advice based on current metrics and UI state:')
+            : 'Detailed plan advice based on current metrics and UI state:';
+        addChat('bot-response', _formatAdviceReport(advice, prefix));
         reportUIEvent('training.advice', 'Detailed advice requested', {});
         return data;
     } catch (e) {
-        addChat('error', `Detailed advice failed: ${e.message}`);
+        const failed = typeof window._t === 'function'
+            ? window._t(`详细建议获取失败：${e.message}`, `Detailed advice failed: ${e.message}`)
+            : `Detailed advice failed: ${e.message}`;
+        addChat('error', failed);
         return null;
     }
 }
@@ -786,7 +848,10 @@ async function checkSystemReadiness() {
         reportUIEvent('system.readiness', 'System readiness checklist requested', { ready: !!data.ready });
         return data;
     } catch (e) {
-        addChat('error', `System readiness check failed: ${e.message}`);
+        const failed = typeof window._t === 'function'
+            ? window._t(`系统就绪检查失败：${e.message}`, `System readiness check failed: ${e.message}`)
+            : `System readiness check failed: ${e.message}`;
+        addChat('error', failed);
         return null;
     }
 }
@@ -1667,6 +1732,63 @@ function fitCameraToScene() {
     if (scene3D.requestRender) scene3D.requestRender(8);
 }
 
+// Temporarily frame a small set of seeds for a monitor evidence screenshot.
+// This is deliberately separate from Fit: monitoring must restore the user's
+// camera immediately after capture and must never change the persistent view.
+function focusPlanningSeedsForScreenshot(seedIds) {
+    if (!scene3D?.camera || !scene3D?.controls || !Array.isArray(seedIds) || !seedIds.length) return null;
+    const wanted = new Set(seedIds.map(id => String(id)));
+    const meshes = Object.entries(scene3D.meshes || {})
+        .filter(([id, mesh]) => {
+            if (!mesh || mesh.visible === false) return false;
+            const isSeed = mesh.userData?.type === 'seed' || String(id).startsWith('seed_');
+            const seedId = String(mesh.userData?.id || id);
+            return isSeed && wanted.has(seedId);
+        })
+        .map(([, mesh]) => mesh);
+    if (!meshes.length) return null;
+
+    const saved = {
+        position: scene3D.camera.position.clone(),
+        quaternion: scene3D.camera.quaternion.clone(),
+        target: scene3D.controls.target.clone(),
+        near: scene3D.camera.near,
+        far: scene3D.camera.far,
+        zoom: scene3D.camera.zoom,
+    };
+    const box = new THREE.Box3();
+    meshes.forEach(mesh => box.expandByObject(mesh));
+    if (box.isEmpty()) return null;
+    const center = box.getCenter(new THREE.Vector3());
+    const size = box.getSize(new THREE.Vector3());
+    const maxDim = Math.max(size.x, size.y, size.z, 1);
+    const viewDirection = scene3D.camera.position.clone().sub(scene3D.controls.target);
+    if (viewDirection.lengthSq() < 1e-8) viewDirection.set(0, 0, 1);
+    viewDirection.normalize();
+    const distance = maxDim * 4.0;
+    scene3D.camera.position.copy(center).add(viewDirection.multiplyScalar(distance));
+    scene3D.camera.near = Math.max(0.05, distance / 1000);
+    scene3D.camera.far = Math.max(saved.far, distance * 20);
+    scene3D.camera.lookAt(center);
+    scene3D.controls.target.copy(center);
+    scene3D.camera.updateProjectionMatrix();
+    scene3D.controls.update();
+    if (scene3D.requestRender) scene3D.requestRender(8);
+
+    return () => {
+        scene3D.camera.position.copy(saved.position);
+        scene3D.camera.quaternion.copy(saved.quaternion);
+        scene3D.camera.near = saved.near;
+        scene3D.camera.far = saved.far;
+        if (typeof saved.zoom === 'number') scene3D.camera.zoom = saved.zoom;
+        scene3D.controls.target.copy(saved.target);
+        scene3D.camera.updateProjectionMatrix();
+        scene3D.controls.update();
+        if (scene3D.requestRender) scene3D.requestRender(8);
+    };
+}
+window.focusPlanningSeedsForScreenshot = focusPlanningSeedsForScreenshot;
+
 function render3DMesh(meshData) {
     addMeshToScene(meshData);
     window.dose3D = true;
@@ -1692,6 +1814,8 @@ function _3dDataTreeNodeForMesh(id) {
     if (id.startsWith('seed_')) return (dataTreeState.planning?.seeds || []).find(s => s.id === id) || dataTreeState.seeds || dataTreeState.planning || null;
     if (id.startsWith('needle_')) return (dataTreeState.planning?.needles || []).find(n => n.id === id) || dataTreeState.needles || dataTreeState.planning || null;
     if (id.startsWith('dose_iso_')) return dataTreeState.planning?.doseLevels?.find(d => `dose_iso_${d.threshold}` === id) || dataTreeState.planning || null;
+    const meshEntry = (dataTreeState.planning?.meshes || []).find(entry => entry.id === id);
+    if (meshEntry) return meshEntry;
     return null;
 }
 
@@ -3768,8 +3892,9 @@ function setNeedleOpacityFrom3D(needleId, opacity) {
 
 async function restoreNeedleToAlgorithm(needleId) {
     const restoreSessionId = String(_activeApiSessionId() || '');
-    _setManualDoseProgress('running', `Restoring ${needleId} to the algorithm plan...`);
-    addChat('system', `Restoring ${needleId} and its seeds to the algorithm plan...`);
+    const localize = (zh, en) => typeof window._t === 'function' ? window._t(zh, en) : en;
+    _setManualDoseProgress('running', localize(`正在将 ${needleId} 恢复到算法规划位置…`, `Restoring ${needleId} to the algorithm plan...`));
+    addChat('system', localize(`正在将 ${needleId} 及其粒子恢复到算法规划结果…`, `Restoring ${needleId} and its seeds to the algorithm plan...`));
     try {
         const res = await fetch(API + '/manual_planning/restore_needle', {
             method: 'POST',
@@ -3785,16 +3910,17 @@ async function restoreNeedleToAlgorithm(needleId) {
         if (typeof refreshPlanningUI === 'function') await refreshPlanningUI();
         if (typeof loadAllSlices === 'function' && state.ctLoaded) await loadAllSlices();
         const message = data.fast_restore
-            ? `${needleId} restored to the algorithm position; original seeds and dose were restored.`
-            : `${needleId} restored to the algorithm position; associated seeds and dose were recomputed.`;
+            ? localize(`${needleId} 已恢复到算法规划位置，原始粒子和剂量已恢复。`, `${needleId} restored to the algorithm position; original seeds and dose were restored.`)
+            : localize(`${needleId} 已恢复到算法规划位置，相关粒子和剂量已重新计算。`, `${needleId} restored to the algorithm position; associated seeds and dose were recomputed.`);
         _setManualDoseProgress('done', message);
         addChat('system', message);
         reportUIEvent('manual.needle.restore', needleId, {});
         return data;
     } catch (error) {
         if (restoreSessionId !== String(_activeApiSessionId() || '')) return null;
-        _setManualDoseProgress('error', `Needle restore failed: ${error.message}`);
-        addChat('error', `Needle restore failed: ${error.message}`);
+        const message = localize(`针道恢复失败：${error.message}`, `Needle restore failed: ${error.message}`);
+        _setManualDoseProgress('error', message);
+        addChat('error', message);
         return null;
     }
 }
