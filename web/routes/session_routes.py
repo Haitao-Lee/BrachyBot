@@ -84,6 +84,19 @@ def register_session_routes(
             "sessions": [session_payload(item) for item in store.list_sessions(user["id"])],
         })
 
+    def stop_deleted_case_task(user_id: str, session_id: str) -> None:
+        """Ensure no worker can access a workspace after it is moved."""
+        manager = app.extensions.get("brachybot_chat_tasks")
+        cancel_session = getattr(manager, "cancel_session", None)
+        if callable(cancel_session) and not cancel_session(
+            user_id,
+            session_id,
+            wait_timeout=10.0,
+        ):
+            raise WorkspaceError(
+                "The case task is still stopping. Please retry deletion shortly."
+            )
+
     @app.route("/api/sessions", methods=["POST"])
     def create_case_session():
         user, error = user_or_error()
@@ -167,6 +180,7 @@ def register_session_routes(
             return error
         try:
             assert_target_editable(user, session_id)
+            stop_deleted_case_task(user["id"], session_id)
             (drop_agent_fast or drop_agent)(session_id)
             store.move_to_trash(user["id"], session_id)
         except WorkspaceLeaseConflict as exc:
@@ -211,6 +225,7 @@ def register_session_routes(
             return error
         try:
             assert_target_editable(user, session_id)
+            stop_deleted_case_task(user["id"], session_id)
             (drop_agent_fast or drop_agent)(session_id)
             store.permanently_delete(user["id"], session_id)
         except WorkspaceLeaseConflict as exc:

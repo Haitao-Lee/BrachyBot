@@ -25,9 +25,44 @@
     const WORKSPACE_RECOVERY_TIMEOUT_MS = 5000;
     let recoveryNoticeDismissKey = '';
 
+    function workspaceNow() {
+        return typeof performance !== 'undefined' && typeof performance.now === 'function'
+            ? performance.now()
+            : Date.now();
+    }
+
+    function recordWorkspacePerformance(stage, options = {}) {
+        const startedAt = Number(options.startedAt);
+        const entry = {
+            stage: String(stage || 'unknown'),
+            session_id: String(options.sessionId || activeSessionId || ''),
+            at: Date.now(),
+            duration_ms: Number.isFinite(startedAt)
+                ? Math.max(0, Number((workspaceNow() - startedAt).toFixed(1)))
+                : null,
+            details: options.details && typeof options.details === 'object'
+                ? Object.assign({}, options.details)
+                : {},
+        };
+        window.__workspacePerformance = Array.isArray(window.__workspacePerformance)
+            ? window.__workspacePerformance
+            : [];
+        window.__workspacePerformance.push(entry);
+        if (window.__workspacePerformance.length > 250) {
+            window.__workspacePerformance.splice(0, window.__workspacePerformance.length - 250);
+        }
+        console.info('[workspace-perf]', entry);
+        try {
+            window.dispatchEvent(new CustomEvent('brachybot:workspace-performance', { detail: entry }));
+        } catch (_) {}
+        return entry;
+    }
+    window.recordWorkspacePerformance = recordWorkspacePerformance;
+
     async function workspaceFetch(input, init = {}, timeoutMs = WORKSPACE_REQUEST_TIMEOUT_MS) {
         const controller = typeof AbortController === 'function' ? new AbortController() : null;
         const timer = controller ? setTimeout(() => controller.abort(), timeoutMs) : null;
+        const externalSignal = init?.signal || null;
         try {
             const options = Object.assign({}, init);
             // Honour an externally-supplied signal (e.g. transition abort) by
@@ -47,6 +82,7 @@
             return await fetch(input, options);
         } catch (error) {
             if (error?.name === 'AbortError') {
+                if (externalSignal?.aborted) throw error;
                 throw new Error('Workspace request timed out. Check that the BrachyBot server is running.');
             }
             throw error;
@@ -61,6 +97,10 @@
 
     function cancelBackgroundWorkspaceRestore() {
         backgroundRestoreGeneration += 1;
+        // Invalidate the clinical restore wrapper as well as this module's
+        // scheduling generation. A new/selected case must never inherit the
+        // previous case's delayed spinner or resource callbacks.
+        window.__workspaceHydrationRunId = (window.__workspaceHydrationRunId || 0) + 1;
         if (backgroundRestoreTimer) {
             clearTimeout(backgroundRestoreTimer);
             backgroundRestoreTimer = null;
@@ -70,12 +110,19 @@
             backgroundRestoreNoticeTimer = null;
         }
         document.body.classList.remove('workspace-hydrating');
-        window.setWorkspaceHydrationState?.(false);
+        window.setWorkspaceHydrationState?.(false, '', { immediate: true });
     }
 
-    window.setWorkspaceHydrationState = function setWorkspaceHydrationState(active, message) {
+    window.setWorkspaceHydrationState = function setWorkspaceHydrationState(active, message, scope = null) {
         const notice = document.getElementById('workspaceHydrationNotice');
         if (!notice) return;
+        const scopedSession = String(scope?.sessionId || '');
+        const scopedRun = String(scope?.runId || '');
+        const immediate = scope?.immediate === true;
+        if (!active && scope && !immediate) {
+            if ((scopedSession && notice.dataset.sessionId !== scopedSession)
+                || (scopedRun && notice.dataset.runId !== scopedRun)) return;
+        }
         const target = document.getElementById('workspaceHydrationMessage');
         if (target && message) target.textContent = message;
         if (hydrationHideTimer) {
@@ -87,7 +134,14 @@
         notice.getAnimations().forEach(a => a.cancel());
         notice.classList.remove('workspace-hydration-out');
         if (active) {
+            if (scopedSession) notice.dataset.sessionId = scopedSession;
+            if (scopedRun) notice.dataset.runId = scopedRun;
             notice.hidden = false;
+        } else if (immediate) {
+            notice.hidden = true;
+            notice.classList.remove('workspace-hydration-out');
+            delete notice.dataset.sessionId;
+            delete notice.dataset.runId;
         } else {
             notice.classList.add('workspace-hydration-out');
             notice.addEventListener('animationend', function handler() {
@@ -97,6 +151,8 @@
                 if (notice.classList.contains('workspace-hydration-out')) {
                     notice.hidden = true;
                     notice.classList.remove('workspace-hydration-out');
+                    delete notice.dataset.sessionId;
+                    delete notice.dataset.runId;
                 }
             }, { once: true });
             // Some embedded browsers do not dispatch animationend when the
@@ -106,6 +162,8 @@
                 if (notice.classList.contains('workspace-hydration-out')) {
                     notice.hidden = true;
                     notice.classList.remove('workspace-hydration-out');
+                    delete notice.dataset.sessionId;
+                    delete notice.dataset.runId;
                 }
                 hydrationHideTimer = null;
             }, 700);
@@ -154,6 +212,8 @@
             return;
         }
         const generation = ++backgroundRestoreGeneration;
+        const restoreStartedAt = workspaceNow();
+        recordWorkspacePerformance('restore.scheduled', { sessionId });
         if (backgroundRestoreTimer) clearTimeout(backgroundRestoreTimer);
         if (backgroundRestoreNoticeTimer) clearTimeout(backgroundRestoreNoticeTimer);
         // Hydration is deliberately non-blocking.  Keep a small progress hint
@@ -164,6 +224,7 @@
             typeof window._t === 'function'
                 ? window._t('正在恢复病例资源…', 'Restoring case resources...')
                 : 'Restoring case resources...',
+            { sessionId, runId: generation },
         );
         document.body.classList.add('workspace-hydrating');
         backgroundRestoreNoticeTimer = setTimeout(() => {
@@ -173,6 +234,7 @@
                 typeof window._t === 'function'
                     ? window._t('资源继续在后台加载', 'Resources continue loading in the background')
                 : 'Resources continue loading in the background',
+                { sessionId, runId: generation },
             );
             backgroundRestoreNoticeTimer = null;
         }, 30000);
@@ -215,8 +277,17 @@
                         skipClientClear: true,
                     });
                 }
+                recordWorkspacePerformance('restore.completed', {
+                    sessionId,
+                    startedAt: restoreStartedAt,
+                });
             } catch (error) {
                 console.warn('[workspace] background case restore failed:', error);
+                recordWorkspacePerformance('restore.failed', {
+                    sessionId,
+                    startedAt: restoreStartedAt,
+                    details: { error: error?.message || String(error) },
+                });
             } finally {
                 if (backgroundRestoreNoticeTimer) {
                     clearTimeout(backgroundRestoreNoticeTimer);
@@ -226,7 +297,11 @@
                 // the fallback here so a failed snapshot refresh or a missing
                 // loader cannot leave a permanent spinner in the corner.
                 if (generation === backgroundRestoreGeneration && sessionId === activeSessionId) {
-                    window.setWorkspaceHydrationState?.(false);
+                    window.setWorkspaceHydrationState?.(
+                        false,
+                        '',
+                        { sessionId, runId: generation },
+                    );
                 }
             }
         }, 0);
@@ -279,6 +354,11 @@
         invalidateDeferredWorkspaceRestore();
         setWorkspaceTransitionState(true);
         const transitionGeneration = ++workspaceTransitionGeneration;
+        const transitionStartedAt = workspaceNow();
+        recordWorkspacePerformance('transition.started', {
+            sessionId: String(activeSessionId || ''),
+            details: { generation: transitionGeneration },
+        });
         const transition = (async () => {
             try {
                 const result = await operation();
@@ -313,6 +393,11 @@
                 }
                 setWorkspaceTransitionState(false);
                 workspaceTransition = null;
+                recordWorkspacePerformance('transition.finished', {
+                    sessionId: String(activeSessionId || ''),
+                    startedAt: transitionStartedAt,
+                    details: { generation: transitionGeneration },
+                });
                 // Auto-run any session switch that was queued while this
                 // transition was in progress.  Rapid session-hopping must
                 // not silently drop every other click.
@@ -842,8 +927,18 @@
                 // the ownership check above.
                 trainingMonitorState.sessionId = sessionId;
                 trainingMonitorState.screenshotGalleryContext = null;
-                if (typeof window.setMonitorPresentation === 'function') {
-                    window.setMonitorPresentation(!!trainingMonitorState.active);
+                trainingMonitorState.runId = trainingMonitorState.run_id
+                    || trainingMonitorState.runId
+                    || null;
+                trainingMonitorState.language = trainingMonitorState.language
+                    || window.conversationLanguageForSession?.(sessionId)
+                    || window._i18nLang
+                    || 'en';
+                const monitorPhase = trainingMonitorState.active ? 'active' : 'inactive';
+                if (typeof window.setTrainingMonitorPhase === 'function') {
+                    window.setTrainingMonitorPhase(monitorPhase);
+                } else if (typeof window.setMonitorPresentation === 'function') {
+                    window.setMonitorPresentation(monitorPhase);
                 } else {
                     document.body.classList.toggle('monitor-active', !!trainingMonitorState.active);
                 }
@@ -1069,13 +1164,20 @@
             // Background work remains attached to its original case, but its
             // live monitor UI must never bleed into the newly selected case.
             trainingMonitorState.active = false;
+            trainingMonitorState.phase = 'inactive';
+            trainingMonitorState.runId = null;
             trainingMonitorState.goal = '';
             trainingMonitorState.sessionId = sessionId;
+            trainingMonitorState.language = window.conversationLanguageForSession?.(sessionId)
+                || window._i18nLang
+                || 'en';
             trainingMonitorState.screenshotGalleryContext = null;
             trainingMonitorState.lastFeedbackAt = 0;
             trainingMonitorState.lastScreenshotAt = 0;
-            if (typeof window.setMonitorPresentation === 'function') {
-                window.setMonitorPresentation(false);
+            if (typeof window.setTrainingMonitorPhase === 'function') {
+                window.setTrainingMonitorPhase('inactive');
+            } else if (typeof window.setMonitorPresentation === 'function') {
+                window.setMonitorPresentation('inactive');
             } else {
                 document.body.classList.remove('monitor-active');
             }
@@ -1088,6 +1190,8 @@
         renderSessionList();
         const title = document.getElementById('chatSessionTitle');
         if (title) title.textContent = next.title || 'New case';
+        const sessionDisplay = document.getElementById('sessionDisplay');
+        if (sessionDisplay) sessionDisplay.textContent = sessionId;
         // Do not leave the prior transcript beneath an optimistically
         // highlighted case. A durable chat snapshot replaces this shell as
         // soon as the control-plane response arrives.
@@ -1191,17 +1295,32 @@
     }
 
     window.loadSessions = async function loadSessions() {
+        const listStartedAt = workspaceNow();
         const data = await loadServerSessions();
+        recordWorkspacePerformance('startup.session_list', {
+            sessionId: String(data.active_session_id || ''),
+            startedAt: listStartedAt,
+            details: { count: Array.isArray(data.sessions) ? data.sessions.length : 0 },
+        });
         if (!activeSessionId) {
             window._activeWorkspaceSnapshot = null;
             window.setWorkspaceHydrationState?.(false);
             return data;
         }
+        const snapshotStartedAt = workspaceNow();
         const workspace = await loadActiveWorkspace();
+        recordWorkspacePerformance('startup.snapshot', {
+            sessionId: String(activeSessionId || ''),
+            startedAt: snapshotStartedAt,
+        });
         // Paint the durable transcript before /status and clinical hydration.
         // The latter may load CT, labels, meshes, dose arrays, and an agent;
         // none of that should make a restored conversation look missing.
         applyChatSnapshotFast(workspace);
+        recordWorkspacePerformance('startup.chat_first_paint', {
+            sessionId: String(activeSessionId || ''),
+            startedAt: snapshotStartedAt,
+        });
         // A browser refresh has no trustworthy live in-memory transcript.
         // Apply the server snapshot authoritatively before starting the heavy
         // CT/mesh restore; otherwise a stale local shell can hide the last
@@ -1226,6 +1345,7 @@
 
     window.newChat = async function newChat() {
         return runWorkspaceTransition(async () => {
+            const createStartedAt = workspaceNow();
             if (!await prepareSessionChange()) return { success: false, cancelled: true };
             const previousSessionId = String(activeSessionId || '');
             if (typeof flushActiveReportState === 'function') flushActiveReportState();
@@ -1251,6 +1371,10 @@
             // opening-case resource spinner and do not schedule hydration;
             // the old case's server task remains detached and case-owned.
             paintSessionShell(optimisticId, { blank: true });
+            recordWorkspacePerformance('create.shell_first_paint', {
+                sessionId: optimisticId,
+                startedAt: createStartedAt,
+            });
             await new Promise(resolve => {
                 if (typeof requestAnimationFrame === 'function') requestAnimationFrame(resolve);
                 else setTimeout(resolve, 0);
@@ -1283,6 +1407,10 @@
                 sessions[createdSession.id] = sessionStateFromPayload(createdSession);
             }
             activeSessionId = data.active_session_id || createdSession?.id || activeSessionId;
+            recordWorkspacePerformance('create.server_confirmed', {
+                sessionId: String(activeSessionId || ''),
+                startedAt: createStartedAt,
+            });
             if (typeof state !== 'undefined') state.sessionId = activeSessionId;
             revision = data.workspace?.session?.revision ?? null;
             rememberWorkspaceRevision(data.workspace);
@@ -1327,6 +1455,7 @@
             return { success: true, queued: true, session_id: id };
         }
         return runWorkspaceTransition(async () => {
+            const switchStartedAt = workspaceNow();
             _switchAbortController = new AbortController();
             const aborter = _switchAbortController;
             // Show the switching indicator IMMEDIATELY for visual feedback.
@@ -1354,6 +1483,10 @@
             // request remains authoritative; failure below restores the old
             // shell instead of leaving a false selection highlighted.
             paintSessionShell(id);
+            recordWorkspacePerformance('switch.shell_first_paint', {
+                sessionId: id,
+                startedAt: switchStartedAt,
+            });
             await new Promise(resolve => {
                 if (typeof requestAnimationFrame === 'function') requestAnimationFrame(resolve);
                 else setTimeout(resolve, 0);
@@ -1376,6 +1509,10 @@
             // Server confirmed the switch. Keep the optimistic shell and
             // replace it with the authoritative snapshot below.
             activeSessionId = data.active_session_id;
+            recordWorkspacePerformance('switch.snapshot_received', {
+                sessionId: id,
+                startedAt: switchStartedAt,
+            });
             if (typeof state !== 'undefined') state.sessionId = data.active_session_id;
             revision = data.workspace?.session?.revision ?? null;
             rememberWorkspaceRevision(data.workspace);
@@ -1395,6 +1532,10 @@
                 await applyWorkspaceSnapshot(data.workspace, { preserveClinicalData: true });
             }
             scheduleBackgroundWorkspaceRestore(data.workspace, activeSessionId);
+            recordWorkspacePerformance('switch.presentation_ready', {
+                sessionId: id,
+                startedAt: switchStartedAt,
+            });
             if (typeof window.brachybotAuth?.acquireLease === 'function') {
                 void window.brachybotAuth.acquireLease(activeSessionId).catch(error => console.debug('[workspace] lease refresh deferred:', error));
             }

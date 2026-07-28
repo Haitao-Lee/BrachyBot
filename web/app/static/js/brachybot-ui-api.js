@@ -194,6 +194,9 @@ function collectUIState() {
         } : {},
         training: (typeof trainingMonitorState !== 'undefined') ? {
             active: !!trainingMonitorState.active,
+            phase: trainingMonitorState.phase || (trainingMonitorState.active ? 'active' : 'inactive'),
+            run_id: trainingMonitorState.runId || null,
+            language: trainingMonitorState.language || null,
             goal: trainingMonitorState.goal || '',
         } : {},
         controls,
@@ -299,6 +302,9 @@ function doseModelToGy(value, fallback = doseModelScaleGy()) {
 
 var trainingMonitorState = {
     active: false,
+    phase: 'inactive',
+    runId: null,
+    language: 'en',
     goal: '',
     sessionId: 'web',
     lastFeedbackAt: 0,
@@ -309,24 +315,40 @@ var trainingMonitorState = {
     screenshotGalleryContext: null,
 };
 
+function monitorConversationLanguage(sessionId = trainingMonitorState.sessionId) {
+    if (typeof window.conversationLanguageForSession === 'function') {
+        return window.conversationLanguageForSession(sessionId);
+    }
+    return window._i18nLang || 'en';
+}
+window.monitorConversationLanguage = monitorConversationLanguage;
+
+function monitorChatText(zh, en, sessionId = trainingMonitorState.sessionId) {
+    return monitorConversationLanguage(sessionId) === 'zh' ? zh : en;
+}
+window.monitorChatText = monitorChatText;
+
 // Keep the monitor affordance in one place. Monitoring is case-owned state;
 // the presentation must be explicitly cleared during a case transition
 // instead of relying on a stale body class from the previous case.
-function setMonitorPresentation(active) {
-    const enabled = Boolean(active);
+function setMonitorPresentation(phaseOrActive) {
+    const phase = typeof phaseOrActive === 'string'
+        ? phaseOrActive
+        : (phaseOrActive ? 'active' : 'inactive');
+    const enabled = ['starting', 'active', 'stopping'].includes(phase);
     if (typeof document === 'undefined') return;
-    const translate = typeof window._t === 'function'
-        ? window._t
-        : ((zh, en) => en);
     document.body.classList.toggle('monitor-active', enabled);
+    document.body.classList.toggle('monitor-starting', phase === 'starting');
+    document.body.classList.toggle('monitor-stopping', phase === 'stopping');
+    document.body.dataset.monitorPhase = phase;
     const icon = document.querySelector('.chat-header-icon');
     if (icon) {
         icon.setAttribute('data-monitoring', enabled ? 'true' : 'false');
         icon.setAttribute('aria-busy', enabled ? 'true' : 'false');
         icon.setAttribute(
             'aria-label',
-            enabled ? translate('\u76d1\u6d4b\u4e2d', 'Monitoring active')
-                : translate('\u672a\u542f\u7528\u76d1\u6d4b', 'Monitoring inactive')
+            enabled ? monitorChatText('监测中', 'Monitoring active')
+                : monitorChatText('未启用监测', 'Monitoring inactive')
         );
     }
     const status = document.getElementById('monitorStatus');
@@ -335,10 +357,36 @@ function setMonitorPresentation(active) {
         status.setAttribute('aria-hidden', enabled ? 'false' : 'true');
         status.setAttribute('aria-live', 'polite');
         const label = status.querySelector('[data-i18n-zh][data-i18n-en]');
-        if (label) label.textContent = translate('\u76d1\u6d4b\u4e2d', 'Monitoring');
+        if (label) {
+            label.textContent = phase === 'starting'
+                ? monitorChatText('正在启动监测', 'Starting monitor')
+                : phase === 'stopping'
+                    ? monitorChatText('正在整理监测结果', 'Finalizing monitor')
+                    : monitorChatText('持续监测中', 'Monitoring');
+        }
+    }
+    const startButton = document.getElementById('monitorStartButton');
+    const stopButton = document.getElementById('monitorStopButton');
+    if (startButton) {
+        startButton.disabled = enabled;
+        startButton.setAttribute('aria-pressed', enabled ? 'true' : 'false');
+    }
+    if (stopButton) {
+        stopButton.disabled = !enabled || phase === 'starting' || phase === 'stopping';
+        stopButton.setAttribute('aria-pressed', phase === 'stopping' ? 'true' : 'false');
     }
 }
 window.setMonitorPresentation = setMonitorPresentation;
+
+function setTrainingMonitorPhase(phase) {
+    const normalized = ['inactive', 'starting', 'active', 'stopping', 'error'].includes(phase)
+        ? phase
+        : 'inactive';
+    trainingMonitorState.phase = normalized;
+    trainingMonitorState.active = normalized === 'active';
+    setMonitorPresentation(normalized);
+}
+window.setTrainingMonitorPhase = setTrainingMonitorPhase;
 
 var manualPlanningState = {
     activeNeedleId: null,
@@ -389,9 +437,8 @@ async function syncUIBridgeState(reason = 'snapshot') {
 
 async function reportUIEvent(type, label, detail = {}, options = {}) {
     const ownerSessionId = _activeApiSessionId();
-    const language = typeof effectiveUiLanguage === 'function'
-        ? effectiveUiLanguage()
-        : (window._i18nLang || 'en');
+    const language = monitorConversationLanguage(ownerSessionId);
+    const ownerRunId = trainingMonitorState.runId;
     try {
         const res = await fetch(API + '/ui/event', {
             method: 'POST',
@@ -402,17 +449,17 @@ async function reportUIEvent(type, label, detail = {}, options = {}) {
                 label,
                 detail,
                 language,
+                monitor_run_id: ownerRunId,
                 ui_state: (typeof collectUIState === 'function') ? collectUIState() : {},
             }),
         });
         const data = await res.json().catch(() => null);
         if (ownerSessionId !== _activeApiSessionId()) return null;
+        if (ownerRunId && data?.monitor_run_id && ownerRunId !== data.monitor_run_id) return null;
         const feedbackText = data && (data.feedback_localized || data.feedback);
         if (feedbackText && _shouldLogTrainingFeedback(feedbackText, type, label)) {
-            const monitorPrefix = typeof window._t === 'function'
-                ? window._t('监测建议', 'Monitor feedback')
-                : 'Monitor feedback';
-            addChat('bot-response', `**${monitorPrefix}**\n\n${feedbackText}`);
+            const monitorPrefix = monitorChatText('监测建议', 'Monitor feedback', ownerSessionId);
+            addChat('bot-response', `**${monitorPrefix}**\n\n${feedbackText}`, true, Date.now(), false, ownerSessionId);
         }
         if (data && data.suggested_screenshot && trainingMonitorState.active) {
             const now = Date.now();
@@ -434,7 +481,9 @@ async function reportUIEvent(type, label, detail = {}, options = {}) {
                 setTimeout(() => {
                     // A delayed checkpoint must not outlive the monitor run or
                     // leak into a newly selected case.
-                    if (!trainingMonitorState.active || ownerSessionId !== _activeApiSessionId()) return;
+                    if (!trainingMonitorState.active
+                        || ownerRunId !== trainingMonitorState.runId
+                        || ownerSessionId !== _activeApiSessionId()) return;
                     if (!trainingMonitorState.screenshotGalleryContext) {
                         trainingMonitorState.screenshotGalleryContext = { keys: new Set() };
                     }
@@ -1848,6 +1897,16 @@ function _workspaceNeedsClinicalRestore(workspace, status) {
 
 async function _restoreActiveSessionWorkspace(options = {}) {
     const sessionAtStart = _activeApiSessionId();
+    const restoreStartedAt = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    const recordStage = (stage, startedAt, details = {}) => {
+        if (typeof window.recordWorkspacePerformance === 'function') {
+            window.recordWorkspacePerformance(stage, {
+                sessionId: sessionAtStart,
+                startedAt,
+                details,
+            });
+        }
+    };
     // Helper: yield to the browser's rendering pipeline so DOM mutations
     // painted before this yield become visible to the user.  Without this
     // the entire restore runs in one microtask and the user sees a frozen
@@ -1865,6 +1924,7 @@ async function _restoreActiveSessionWorkspace(options = {}) {
     const workspaceSessionId = (value) => String(value?.session_id || value?.session?.id || '');
     if (workspace && workspaceSessionId(workspace) !== sessionAtStart) workspace = null;
     if (!workspace) {
+        const snapshotStartedAt = typeof performance !== 'undefined' ? performance.now() : Date.now();
         try {
             const wsCtrl = new AbortController();
             const wsTimer = setTimeout(function(){ wsCtrl.abort(); }, 15000);
@@ -1880,6 +1940,7 @@ async function _restoreActiveSessionWorkspace(options = {}) {
                 if (workspaceSessionId(candidate) === sessionAtStart) workspace = candidate;
             }
         } catch (error) { console.debug('[session restore] Workspace snapshot unavailable:', error); }
+        recordStage('restore.snapshot', snapshotStartedAt, { available: !!workspace });
     }
 
     let status = options.status || null;
@@ -1891,6 +1952,7 @@ async function _restoreActiveSessionWorkspace(options = {}) {
         status = _statusFromWorkspaceSnapshot(workspace, sessionAtStart);
     }
     if (!status || status.session_id !== sessionAtStart) {
+        const statusStartedAt = typeof performance !== 'undefined' ? performance.now() : Date.now();
         const stCtrl = new AbortController();
         const stTimer = setTimeout(function(){ stCtrl.abort(); }, 30000);
         let response;
@@ -1902,6 +1964,7 @@ async function _restoreActiveSessionWorkspace(options = {}) {
         } finally { clearTimeout(stTimer); }
         if (!response.ok) throw new Error(`Session status failed: HTTP ${response.status}`);
         status = await response.json();
+        recordStage('restore.status', statusStartedAt);
     }
     if (_activeApiSessionId() !== sessionAtStart) return null;
 
@@ -1937,18 +2000,22 @@ async function _restoreActiveSessionWorkspace(options = {}) {
             if (uiResponse.ok && _activeApiSessionId() === sessionAtStart) {
                 const uiData = await uiResponse.json();
                 const training = uiData.training || {};
-                trainingMonitorState.active = !!training.active;
+                trainingMonitorState.runId = training.run_id || null;
+                trainingMonitorState.language = training.language || monitorConversationLanguage(sessionAtStart);
                 trainingMonitorState.goal = training.goal || '';
                 trainingMonitorState.sessionId = sessionAtStart;
+                setTrainingMonitorPhase(training.active ? 'active' : 'inactive');
             }
         } catch (error) {
             console.debug('[session restore] UI state unavailable:', error);
         }
     } else {
         const training = workspace?.ui?.bridge?.training || workspace?.ui?.state?.training || {};
-        trainingMonitorState.active = !!training.active;
+        trainingMonitorState.runId = training.run_id || training.runId || null;
+        trainingMonitorState.language = training.language || monitorConversationLanguage(sessionAtStart);
         trainingMonitorState.goal = training.goal || '';
         trainingMonitorState.sessionId = sessionAtStart;
+        setTrainingMonitorPhase(training.active ? 'active' : 'inactive');
     }
 
     const ctPath = String(status.ct_path || '').trim();
@@ -2015,6 +2082,7 @@ async function _restoreActiveSessionWorkspace(options = {}) {
     let ctVolumeResult = null;
     let ctMetaResult = null;
     const ctTask = (async () => {
+        const ctStartedAt = typeof performance !== 'undefined' ? performance.now() : Date.now();
         try {
             ctVolumeResult = await loadCTToViewers(ctPath, {
                 announce: false, sessionId: sessionAtStart, skipReset: true,
@@ -2022,6 +2090,8 @@ async function _restoreActiveSessionWorkspace(options = {}) {
             });
         } catch (e) {
             console.warn('[session restore] CT load failed:', e);
+        } finally {
+            recordStage('restore.ct_first_paint', ctStartedAt, { loaded: !!state.ctLoaded });
         }
     })();
 
@@ -2043,18 +2113,23 @@ async function _restoreActiveSessionWorkspace(options = {}) {
     // independent restore products. Start both after CT is ready so OAR/CTV
     // reconstruction cannot disappear when a planning refresh is slow or
     // returns no dose payload.
+    const labelsStartedAt = typeof performance !== 'undefined' ? performance.now() : Date.now();
     const labelTask = (typeof loadLabelVolumes === 'function')
-        ? loadLabelVolumes({ sessionId: sessionAtStart, preserveViewerState: true })
+        ? Promise.resolve(loadLabelVolumes({
+            sessionId: sessionAtStart,
+            preserveViewerState: true,
+        })).finally(() => recordStage('restore.labels_data_tree', labelsStartedAt))
         : Promise.resolve();
 
+    const planningStartedAt = typeof performance !== 'undefined' ? performance.now() : Date.now();
     const planningTask = (hasPlanning && typeof refreshPlanningUI === 'function')
-        ? refreshPlanningUI({
+        ? Promise.resolve(refreshPlanningUI({
             switchToViewers: false,
             sessionId: sessionAtStart,
             preserveViewerState: true,
             skipLabelLoad: true,
             backgroundRestore: options.background === true,
-        })
+        })).finally(() => recordStage('restore.planning_dvh', planningStartedAt))
         : Promise.resolve();
 
     await Promise.allSettled([labelTask, planningTask]);
@@ -2112,24 +2187,34 @@ async function _restoreActiveSessionWorkspace(options = {}) {
     await _yield();
 
     if (workspace && typeof applyWorkspaceSnapshot === 'function') {
+        const reportStartedAt = typeof performance !== 'undefined' ? performance.now() : Date.now();
         // The server has now reconstructed the authoritative CT, labels,
         // plan, dose and Data Tree. Reapply only display preferences; a full
         // snapshot merge here can overwrite freshly restored OAR metadata
         // with an older empty tree and blank Input paths.
         await applyWorkspaceSnapshot(workspace, { preserveClinicalData: true, skipChat: true });
+        recordStage('restore.report_and_presentation', reportStartedAt);
     }
     // Re-render after the saved slice indices, visibility, and material state
     // have been applied.  This avoids a transient old-case frame on switch.
     ['axial', 'sagittal', 'coronal'].forEach(axis => {
         try { if (state.slices && Number.isFinite(Number(state.slices[axis]))) renderSliceFromVolume(axis, Number(state.slices[axis])); } catch (_) {}
     });
+    recordStage('restore.fully_interactive', restoreStartedAt, {
+        ct_loaded: !!state.ctLoaded,
+        planning: hasPlanning,
+    });
     return status;
 }
 async function restoreActiveSessionWorkspace(options = {}) {
+    const sessionAtStart = String(_activeApiSessionId() || '');
+    window.__workspaceHydrationRunId = (window.__workspaceHydrationRunId || 0) + 1;
+    const hydrationRunId = window.__workspaceHydrationRunId;
+    const hydrationScope = { sessionId: sessionAtStart, runId: hydrationRunId };
     const authoritativeWorkspace = options.workspace || window._activeWorkspaceSnapshot || null;
     if (authoritativeWorkspace && !_workspaceNeedsClinicalRestore(authoritativeWorkspace, options.status)) {
         console.debug('[session restore] skipped empty case', authoritativeWorkspace.session_id || authoritativeWorkspace.session?.id);
-        window.setWorkspaceHydrationState?.(false);
+        window.setWorkspaceHydrationState?.(false, '', hydrationScope);
         return options.status || null;
     }
     // Show a small non-blocking status while the case is restored. Clinical
@@ -2140,18 +2225,27 @@ async function restoreActiveSessionWorkspace(options = {}) {
         typeof _t === 'function'
             ? _t('正在加载病例资源…', 'Loading case resources...')
             : 'Loading case resources...',
+        hydrationScope,
     );
     const slowNoticeTimer = setTimeout(() => {
+        if (String(_activeApiSessionId() || '') !== sessionAtStart
+            || window.__workspaceHydrationRunId !== hydrationRunId) return;
         const notice = document.getElementById('workspaceHydrationNotice');
-        if (notice && !notice.hidden) {
-            notice.textContent = 'Resources are still loading in the background; chat is available.';
+        const message = document.getElementById('workspaceHydrationMessage');
+        if (notice && message && !notice.hidden) {
+            message.textContent = typeof _t === 'function'
+                ? _t(
+                    '病例资源仍在后台恢复，聊天和面板操作可以继续使用。',
+                    'Case resources are still restoring in the background; chat and panels remain available.',
+                )
+                : 'Case resources are still restoring in the background; chat and panels remain available.';
         }
     }, 30000);
     try {
         return await _restoreActiveSessionWorkspace(options);
     } finally {
         clearTimeout(slowNoticeTimer);
-        window.setWorkspaceHydrationState?.(false);
+        window.setWorkspaceHydrationState?.(false, '', hydrationScope);
     }
 }
 window.restoreActiveSessionWorkspace = restoreActiveSessionWorkspace;
@@ -2325,7 +2419,7 @@ async function init() {
         // Do not show a misleading Loading case resources notice or start a
         // cold Agent solely to prove that the case is empty.
         console.debug('[session restore] initial case has no clinical resources; hydration skipped');
-        window.setWorkspaceHydrationState?.(false);
+        window.setWorkspaceHydrationState?.(false, '', { immediate: true });
     }
     if (typeof loadSessionChat === 'function' && activeSessionId) loadSessionChat(activeSessionId);
     syncUIBridgeState('init').catch(e => console.warn('Initial UI state sync failed:', e));
@@ -3443,7 +3537,9 @@ async function _executeUIActionRaw(a, options = {}) {
         }
         if (target === 'ui.state') {
             return Promise.resolve(syncUIBridgeState(command || 'ui_controller')).then(() => {
-                if (typeof addChat === 'function') addChat('system', 'UI state snapshot synced.');
+                if (typeof addChat === 'function') {
+                    addChat('system', monitorChatText('界面状态已同步。', 'UI state synchronized.'));
+                }
                 return { success: true };
             });
         }
@@ -3461,7 +3557,12 @@ async function _executeUIActionRaw(a, options = {}) {
             else if (command === 'advice') return requestPlanningAdvice()
                 .then(result => result || ({ success: false, error: 'Planning advice is unavailable.' }));
             else if (typeof addChat === 'function') {
-                addChat('system', trainingMonitorState.active ? 'Monitor mode is active.' : 'Monitor mode is not active.');
+                addChat(
+                    'system',
+                    trainingMonitorState.active
+                        ? monitorChatText('监测模式正在运行。', 'Monitor mode is active.')
+                        : monitorChatText('监测模式未启用。', 'Monitor mode is not active.')
+                );
             }
             return;
         }
@@ -3993,8 +4094,8 @@ function _localizedScreenshotTargetLabel(target) {
         'data-tree': ['数据树', 'Data Tree'],
     };
     const pair = labels[target] || [target || '截图', target || 'Screenshot'];
-    const language = typeof effectiveUiLanguage === 'function'
-        ? effectiveUiLanguage()
+    const language = typeof window.conversationLanguageForSession === 'function'
+        ? window.conversationLanguageForSession(_activeApiSessionId())
         : (window._i18nLang || 'en');
     return language === 'zh' ? pair[0] : pair[1];
 }
@@ -4023,8 +4124,8 @@ function _appendScreenshotToGallery(url, target, question, galleryContext) {
         message.className = 'chat-msg bot screenshot-gallery-message';
         const title = document.createElement('div');
         title.className = 'chat-gallery-title';
-        title.textContent = typeof window._t === 'function'
-            ? window._t('截图', 'Screenshots')
+        title.textContent = typeof window.chatTranslate === 'function'
+            ? window.chatTranslate('截图', 'Screenshots', _activeApiSessionId())
             : 'Screenshots';
         const gallery = document.createElement('div');
         gallery.className = 'chat-image-gallery';
@@ -4039,8 +4140,8 @@ function _appendScreenshotToGallery(url, target, question, galleryContext) {
     const item = document.createElement('button');
     item.type = 'button';
     item.className = 'chat-image-container chat-gallery-item';
-    item.title = typeof window._t === 'function'
-        ? window._t('打开截图', 'Open screenshot')
+    item.title = typeof window.chatTranslate === 'function'
+        ? window.chatTranslate('打开截图', 'Open screenshot', _activeApiSessionId())
         : 'Open screenshot';
     const image = document.createElement('img');
     image.className = 'chat-screenshot';
@@ -4048,15 +4149,17 @@ function _appendScreenshotToGallery(url, target, question, galleryContext) {
     image.alt = target || 'Screenshot';
     const zoom = document.createElement('span');
     zoom.className = 'chat-image-zoom-icon';
-    zoom.textContent = typeof window._t === 'function' ? window._t('打开', 'Open') : 'Open';
+    zoom.textContent = typeof window.chatTranslate === 'function'
+        ? window.chatTranslate('打开', 'Open', _activeApiSessionId())
+        : 'Open';
     const caption = document.createElement('span');
     caption.className = 'chat-image-caption';
     caption.textContent = label;
     item.append(image, zoom, caption);
     context.element.appendChild(item);
     context.items.push({ url, label, question: question || '' });
-    const galleryTitle = typeof window._t === 'function'
-        ? window._t('截图', 'Screenshots')
+    const galleryTitle = typeof window.chatTranslate === 'function'
+        ? window.chatTranslate('截图', 'Screenshots', _activeApiSessionId())
         : 'Screenshots';
     context.title.textContent = `${galleryTitle} (${context.items.length})`;
     item.addEventListener('click', () => {

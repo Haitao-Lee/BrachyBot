@@ -70,6 +70,9 @@ def test_task_stream_has_keepalive_and_workspace_restore_has_stale_notice_fallba
     assert "brachybot-task-alive" in chat_tasks
     assert "hydrationHideTimer" in workspace
     assert "background restore skipped: empty or stale case" in workspace
+    assert "window.__workspaceHydrationRunId = (window.__workspaceHydrationRunId || 0) + 1" in workspace
+    assert "scope?.immediate === true" in workspace
+    assert "notice.hidden = true" in workspace
 
 
 def test_surgical_guide_empty_tool_call_uses_generate_default():
@@ -109,6 +112,53 @@ def test_new_case_creation_avoids_empty_workspace_hydration_and_redundant_round_
     assert "sessions[createdSession.id] = sessionStateFromPayload(createdSession)" in new_case
     assert new_case.index("sessions[createdSession.id]") < new_case.index("renderSessionList()")
     assert "window.setWorkspaceHydrationState?.(false)" in new_case
+    shell = workspace.split("function paintSessionShell", 1)[1].split(
+        "async function loadServerSessions", 1
+    )[0]
+    assert "sessionDisplay.textContent = sessionId" in shell
+
+
+def test_workspace_transitions_publish_measurable_first_paint_and_restore_stages():
+    """Session latency must be observable instead of hidden behind one loader."""
+    workspace = read("web/app/static/js/brachybot-workspace.js")
+    ui_api = read("web/app/static/js/brachybot-ui-api.js")
+    index = read("web/app/index.html")
+
+    assert "window.__workspacePerformance" in workspace
+    assert "brachybot:workspace-performance" in workspace
+    assert "create.shell_first_paint" in workspace
+    assert "switch.shell_first_paint" in workspace
+    assert "switch.presentation_ready" in workspace
+    assert "startup.chat_first_paint" in workspace
+    assert "restore.ct_first_paint" in ui_api
+    assert "restore.labels_data_tree" in ui_api
+    assert "restore.planning_dvh" in ui_api
+    assert "restore.report_and_presentation" in ui_api
+    assert "restore.fully_interactive" in ui_api
+    assert "brachybot-workspace.js?v=16" in index
+    assert "brachybot-ui-api.js?v=24" in index
+
+
+def test_workspace_fetch_preserves_external_transition_abort_semantics():
+    """A superseded switch is cancellation, not a misleading timeout error."""
+    workspace = read("web/app/static/js/brachybot-workspace.js")
+    fetch_block = workspace.split("async function workspaceFetch", 1)[1].split(
+        "function setWorkspaceHydrationState", 1
+    )[0]
+    assert "const externalSignal = init?.signal || null" in fetch_block
+    assert "if (externalSignal?.aborted) throw error" in fetch_block
+    assert "Workspace request timed out" in fetch_block
+
+
+def test_clinical_restore_can_only_close_its_own_hydration_notice():
+    """A stale restore must not mutate the loading state of a newer case."""
+    ui_api = read("web/app/static/js/brachybot-ui-api.js")
+    restore = ui_api.split(
+        "async function restoreActiveSessionWorkspace(options = {})", 1
+    )[1].split("window.restoreActiveSessionWorkspace =", 1)[0]
+    assert "const hydrationScope = { sessionId: sessionAtStart, runId: hydrationRunId }" in restore
+    assert "window.setWorkspaceHydrationState?.(false, '', hydrationScope)" in restore
+    assert "window.setWorkspaceHydrationState?.(false);" not in restore
 
 
 def test_session_switch_detaches_browser_stream_without_server_abort():
@@ -284,6 +334,14 @@ def test_uploaded_oar_mask_is_a_numbered_traversable_data_tree_source():
     assert "window.hydrateOarDataTreeFromPayload = function hydrateOarDataTreeFromPayload(payload, expectedSessionId" in viewer
     assert "dataTreeState.oar.loaded = true" in viewer
     assert "if (typeof renderDataTree === 'function') renderDataTree();" in viewer
+
+
+def test_label_volume_cache_rejects_legacy_uint8_oar_entries():
+    """Old browser caches must not wrap OAR IDs above 255."""
+    viewer = read("web/app/static/js/brachybot-viewer-volume.js")
+    assert "formatVersion: 2" in viewer
+    assert "Number(hdr.formatVersion || 0) >= 2" in viewer
+    assert "oarBytesPerVoxel === 2" in viewer
 
 
 def test_session_restore_uses_lightweight_status_and_background_assets():
@@ -816,12 +874,26 @@ def test_background_case_restore_shows_a_corner_indicator_and_restores_case_prod
     assert "Restoring case resources..." in workspace
     assert "X-BrachyBot-Session" in workspace
     assert "applyChatSnapshotFast(workspace)" in workspace
-    assert "loadLabelVolumes({ sessionId: sessionAtStart" in ui_api
+    assert "loadLabelVolumes({" in ui_api
+    assert "sessionId: sessionAtStart" in ui_api
     assert "skipLabelLoad: true" in ui_api
     assert "await ctTask;" in ui_api
     assert "preserveClinicalData: true" in ui_api
     assert "hydrateReportFigureAssets" in workspace
     assert "restoreSceneView(uiState.viewer?.scene, uiState.viewer?.dvh" in workspace
+
+
+def test_label_completion_repaints_every_2d_viewer_while_preserving_controls():
+    """A restored or newly imported mask must paint without moving a slice."""
+    viewer = read("web/app/static/js/brachybot-viewer-volume.js")
+    block = viewer.split(
+        "// Preserving viewer state means preserving controls and visibility", 1
+    )[1].split("return true;", 1)[0]
+
+    assert "if (_viewerDataScopeIsCurrent(scope) && volumeData && volumeShape)" in block
+    assert "['axial', 'sagittal', 'coronal'].forEach" in block
+    assert "renderSliceFromVolume(axis, state.slices[axis])" in block
+    assert "!preserveViewerState" not in block
 
 
 def test_planning_parent_visibility_clears_independent_dose_projection_layers():

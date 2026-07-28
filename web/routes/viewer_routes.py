@@ -7,6 +7,7 @@ import os
 import time
 import threading
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Dict, Optional
 
 import numpy as np
@@ -43,7 +44,7 @@ def _resample_legacy_label_array(array, reference, target_shape):
     physical extent as far as the legacy metadata permits, then uses nearest
     neighbour interpolation and a final shape guard.
     """
-    source = sitk.GetImageFromArray(np.asarray(array, dtype=np.uint8))
+    source = sitk.GetImageFromArray(np.asarray(array, dtype=np.uint16))
     if reference is not None:
         source_size = source.GetSize()
         reference_size = reference.GetSize()
@@ -63,17 +64,17 @@ def _resample_legacy_label_array(array, reference, target_shape):
             sitk.Transform(),
             sitk.sitkNearestNeighbor,
             0,
-            sitk.sitkUInt8,
+            sitk.sitkUInt16,
         )
-        result = sitk.GetArrayFromImage(resampled).astype(np.uint8, copy=False)
+        result = sitk.GetArrayFromImage(resampled).astype(np.uint16, copy=False)
     else:
-        result = np.zeros(target_shape, dtype=np.uint8)
+        result = np.zeros(target_shape, dtype=np.uint16)
         common = tuple(min(int(result.shape[index]), int(array.shape[index])) for index in range(3))
         source_slices = tuple(slice(0, length) for length in common)
-        result[source_slices] = np.asarray(array, dtype=np.uint8)[source_slices]
+        result[source_slices] = np.asarray(array, dtype=np.uint16)[source_slices]
     if tuple(result.shape) == tuple(target_shape):
         return result
-    guarded = np.zeros(target_shape, dtype=np.uint8)
+    guarded = np.zeros(target_shape, dtype=np.uint16)
     common = tuple(min(int(guarded.shape[index]), int(result.shape[index])) for index in range(3))
     slices = tuple(slice(0, length) for length in common)
     guarded[slices] = result[slices]
@@ -132,7 +133,7 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
             return False
         return bool(store.owns_path(user["id"], session_id, path))
 
-    def workspace_data_pending(agent):
+    def workspace_data_pending(agent, *, require: str = "all"):
         """Return a non-blocking restore response while arrays are decoding."""
         if agent is None:
             return jsonify({
@@ -142,22 +143,66 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
                 "message": "Case resources are being initialized.",
                 "retry_after_ms": 250,
             }), 202
-        if agent is not None and not getattr(agent, "_workspace_data_ready", True):
-            return jsonify({
-                "success": False,
-                "pending": True,
-                "code": "workspace_hydration_pending",
-                "message": "Case resources are still loading.",
-                "retry_after_ms": 250,
-            }), 202
         if agent is not None and getattr(agent, "_workspace_hydration_error", ""):
             return jsonify({
                 "success": False,
                 "pending": False,
                 "code": "workspace_hydration_failed",
+                "phase": getattr(agent, "_workspace_hydration_phase", "failed"),
                 "error": agent._workspace_hydration_error,
             }), 409
+        ready = (
+            getattr(agent, "_workspace_ct_ready", False)
+            if require == "ct"
+            else getattr(agent, "_workspace_data_ready", True)
+        )
+        if agent is not None and not ready:
+            return jsonify({
+                "success": False,
+                "pending": True,
+                "code": "workspace_hydration_pending",
+                "message": "Case resources are still loading.",
+                "phase": getattr(agent, "_workspace_hydration_phase", "artifacts"),
+                "retry_after_ms": 250,
+            }), 202
         return None
+
+    def loaded_ct_response(agent):
+        """Describe the hydrated CT without mutating case-owned memory."""
+        import numpy as np
+
+        ct_data = agent.memory.retrieve("ct_data")
+        if ct_data is None:
+            return None
+        shape = tuple(int(v) for v in ct_data.shape)
+        spacing = tuple(agent.memory.retrieve("ct_spacing") or (1.0, 1.0, 1.0))
+        origin = tuple(agent.memory.retrieve("ct_origin") or (0.0, 0.0, 0.0))
+        direction = tuple(
+            agent.memory.retrieve("ct_direction")
+            or (1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0)
+        )
+        axis_map = agent.memory.retrieve("ct_axis_map") or {
+            "axial": 0, "sagittal": 2, "coronal": 1,
+        }
+        return {
+            "success": True,
+            "restored": True,
+            "slices": {
+                name: {
+                    "slice_index": int(shape[axis] // 2),
+                    "total_slices": int(shape[axis]),
+                    "shape": list(shape),
+                }
+                for name, axis in axis_map.items()
+            },
+            "spacing": [float(v) for v in spacing],
+            "origin": [float(v) for v in origin],
+            "direction": [float(v) for v in direction],
+            "shape": list(shape),
+            "hu_range": [float(np.min(ct_data)), float(np.max(ct_data))],
+            "dicom": agent.memory.retrieve("ct_dicom_tags") or {},
+            "source_kind": agent.memory.retrieve("ct_source_kind") or "nifti",
+        }
 
     @app.route("/api/viewer/load", methods=["POST"])
     @require_api_key
@@ -180,6 +225,25 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
         if not _validate_path(ct_path, purpose="read") or not owned_case_path(ct_path):
             return jsonify({"error": "Invalid ct_path"}), 400
 
+        prev_ct_path = agent.memory.retrieve("ct_path")
+        try:
+            same_ct = bool(
+                prev_ct_path
+                and Path(str(prev_ct_path)).resolve() == Path(str(ct_path)).resolve()
+            )
+        except (OSError, ValueError):
+            same_ct = str(prev_ct_path or "") == str(ct_path)
+        if same_ct:
+            pending = workspace_data_pending(agent, require="ct")
+            if pending is not None:
+                return pending
+            restored = loaded_ct_response(agent)
+            if restored is not None:
+                # This is a display restore, not a new-patient import. Reusing
+                # the hydrated CT here is what keeps OAR, planning, DVH and
+                # report artifacts intact after a refresh or case switch.
+                return jsonify(restored)
+
         # Per-patient memory isolation: if a DIFFERENT CT is being
         # loaded, wipe all planning / segmentation / dose state from
         # the previous patient. The agent otherwise happily reuses
@@ -188,7 +252,6 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
         # The user's expectation: same CT path → reuse memory
         # (continuing work on the same patient); different CT path
         # → fresh start.
-        prev_ct_path = agent.memory.retrieve("ct_path")
         if prev_ct_path and prev_ct_path != ct_path:
             logger.info(f"[patient-isolation] CT changed ({prev_ct_path} → {ct_path}), clearing previous patient's state")
             try:
@@ -201,6 +264,10 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
             import SimpleITK as sitk
 
             logger.info(f"Loading CT from: {ct_path}")
+            agent._workspace_hydration_superseded = True
+            hydration_cancel = getattr(agent, "_workspace_hydration_cancel", None)
+            if hydration_cancel is not None:
+                hydration_cancel.set()
             ct_sitk, kind, src_meta = load_ct_image(ct_path)
             logger.info(f"CT source kind: {kind}; meta: {src_meta}")
 
@@ -283,6 +350,14 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
                 'coronal': 1,  # Y axis (anterior-posterior)
             }
             agent.memory.store("ct_axis_map", axis_map)
+            agent._workspace_ct_ready = True
+            agent._workspace_data_ready = True
+            agent._workspace_hydration_in_progress = False
+            agent._workspace_hydration_phase = "ready"
+            agent._workspace_hydration_error = ""
+            ready_event = getattr(agent, "_workspace_ready_event", None)
+            if ready_event is not None:
+                ready_event.set()
 
             slices = {}
             for name, axis in axis_map.items():
@@ -322,7 +397,7 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
         agent = get_agent(_lightweight=True)
         if agent is None:
             return jsonify({"error": "Agent not available"}), 500
-        pending = workspace_data_pending(agent)
+        pending = workspace_data_pending(agent, require="ct")
         if pending is not None:
             return pending
 
@@ -429,7 +504,7 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
         agent = get_agent(_lightweight=True)
         if agent is None:
             return jsonify({"error": "Agent not available"}), 500
-        pending = workspace_data_pending(agent)
+        pending = workspace_data_pending(agent, require="ct")
         if pending is not None:
             return pending
 
@@ -473,7 +548,7 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
     @require_api_key
     @rate_limit
     def api_viewer_label_volume():
-        """Return full CTV/OAR label volumes as binary uint8 for client-side rendering."""
+        """Return CTV uint8 and OAR uint16 label volumes for client rendering."""
         agent = get_agent(_lightweight=True)
         if agent is None:
             return jsonify({"error": "Agent not available"}), 500
@@ -544,8 +619,18 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
             # - OAR traversable: pancreas (label 4) from nnUNet
             ctv_array = None
             if ctv_full is not None:
-                # CTV = only tumor
-                ctv_array = (ctv_full == 1).astype(np.uint8) if np.any(ctv_full == 1) else None
+                # Model output reserves label 1 for the tumor and may contain
+                # embedded anatomy labels.  An uploaded CTV is opaque user
+                # data, so every non-zero voxel is CTV even when its source
+                # label is 255 or another application-specific value.
+                if ctv_source == "model":
+                    ctv_array = (
+                        (ctv_full == 1).astype(np.uint8)
+                        if np.any(ctv_full == 1)
+                        else None
+                    )
+                else:
+                    ctv_array = (ctv_full > 0).astype(np.uint8)
 
                 # Merge embedded nnUNet vessel/organ labels only when no
                 # user-supplied OAR mask exists.  An uploaded unknown mask is
@@ -567,7 +652,10 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
 
                 if has_nnunet_oar:
                     if oar_array is None:
-                        oar_array = np.zeros_like(ctv_full, dtype=np.uint8)
+                        # Embedded anatomy is remapped to IDs 201-203. Keep
+                        # the working volume wide enough before assignment;
+                        # uint8 wrapped those IDs before transport.
+                        oar_array = np.zeros_like(ctv_full, dtype=np.uint16)
                     elif oar_array.shape != ctv_full.shape:
                         # Shape mismatch - likely orientation issue
                         # Skip merging to avoid IndexError
@@ -575,6 +663,8 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
                         has_nnunet_oar = False  # Disable the merge below
 
                     if has_nnunet_oar:
+                        if oar_array.dtype.itemsize < 2:
+                            oar_array = oar_array.astype(np.uint16, copy=False)
                         for src_label, dst_label in nnunet_oar_labels.items():
                             mask = ctv_full == src_label
                             if np.any(mask):
@@ -615,8 +705,12 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
                 ctv_offset = len(payload)
 
             if oar_array is not None:
-                oar_u8 = oar_array.astype(np.uint8)
-                payload.extend(oar_u8.tobytes())
+                # OAR labels include nnUNet-derived IDs 201-203 and the
+                # explicit embedded-obstacle label 10000.  uint8 silently
+                # wrapped those values, making the Data Tree and 2D overlay
+                # disagree.  Keep the wire format little-endian uint16.
+                oar_u16 = np.asarray(oar_array, dtype="<u2")
+                payload.extend(oar_u16.tobytes())
 
             response = Response(bytes(payload), mimetype='application/octet-stream')
             accept_encoding = request.headers.get("Accept-Encoding", "")
@@ -631,6 +725,8 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
             response.headers['X-Has-OAR'] = 'true' if oar_array is not None else 'false'
             response.headers['X-CTV-Size'] = str(ctv_offset)
             response.headers['X-OAR-Size'] = str(len(payload) - ctv_offset) if oar_array is not None else '0'
+            response.headers['X-CTV-Bytes-Per-Voxel'] = '1'
+            response.headers['X-OAR-Bytes-Per-Voxel'] = '2'
 
             # Send CTV label names from model (not hardcoded in frontend)
             ctv_label_map = agent.memory.retrieve("ctv_label_map", {})

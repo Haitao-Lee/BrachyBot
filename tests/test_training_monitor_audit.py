@@ -45,7 +45,7 @@ def test_training_monitor_frontend_handles_high_value_checkpoints_and_report_lif
     assert "const isDoseCheckpoint = type === 'manual.dose'" in ui_api
     assert "trainingMonitorState.lastFeedbackAt = 0;" in manual
     assert "const localizedAdvice = data.localized_advice || data.advice;" in manual
-    assert "_formatAdviceReport(localizedAdvice, fallbackPrefix)" in manual
+    assert "_formatAdviceReport(localizedAdvice, fallbackPrefix, language)" in manual
     assert "description`` is kept as a compatibility fallback" in ui_api
     assert "training_events = training.get(\"events\")" in routes
     assert "events from before monitoring began" in routes
@@ -56,11 +56,33 @@ def test_training_monitor_frontend_handles_high_value_checkpoints_and_report_lif
     assert "preservePanel: true" in ui_api
     assert "focusPlanningSeedsForScreenshot" in ui_api or "focusPlanningSeedsForScreenshot" in manual
     assert "setMonitorPresentation" in ui_api
+    assert "setTrainingMonitorPhase" in ui_api
+    assert "monitorConversationLanguage" in ui_api
+    assert "monitor_run_id" in ui_api
+    assert "monitor_run_id" in routes
     assert "monitorStatus" in (root / "web/app/index.html").read_text(encoding="utf-8")
+    assert 'id="monitorStartButton"' in (root / "web/app/index.html").read_text(encoding="utf-8")
+    assert 'id="monitorStopButton"' in (root / "web/app/index.html").read_text(encoding="utf-8")
     css = (root / "web/app/static/css/brachybot-chat-status.css").read_text(encoding="utf-8")
     assert "body.monitor-active::after" in css
+    assert ".monitor-status[hidden]" in css
+    assert "#monitorStartButton," in css
     assert "monitor-edge-breathe" in css
     assert "monitor-avatar-breathe" in css
+
+
+def test_monitor_uses_per_conversation_language_instead_of_global_ui_language():
+    root = Path(__file__).resolve().parents[1]
+    chat_core = (root / "web/app/static/js/brachybot-chat-core.js").read_text(encoding="utf-8")
+    ui_api = (root / "web/app/static/js/brachybot-ui-api.js").read_text(encoding="utf-8")
+    manual = (root / "web/app/static/js/brachybot-3d-manual.js").read_text(encoding="utf-8")
+
+    assert "function detectConversationLanguage(text)" in chat_core
+    assert "function conversationLanguageForSession" in chat_core
+    assert "session.conversationLanguage = detectedLanguage" in chat_core
+    assert "const language = monitorConversationLanguage(ownerSessionId);" in ui_api
+    assert "window.monitorConversationLanguage(startSessionId)" in manual
+    assert "window.monitorConversationLanguage(stopSessionId)" in manual
 
 
 def test_monitor_maps_manual_stages_to_their_own_viewer_checkpoint():

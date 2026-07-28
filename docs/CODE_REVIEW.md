@@ -9372,3 +9372,137 @@ obstacle filtering, dose model, and clinical review thresholds. The remaining
 clinical requirement is external: a qualified radiation oncologist and medical
 physicist must verify contours, source strength, dose, constraints, and the
 manufactured guide before clinical use.
+
+## 2026-07-28 - Phase 1 session isolation, staged restore, and label-volume acceptance
+
+### Scope and confirmed root causes
+
+This pass completed the first-stage Session remediation before any login-page
+work. It traced the supplied slow-loading, cross-case needle, missing OAR,
+`label_volume` 500, stale viewer-state, deleted-workspace warning, and
+checkpoint logs through both the authenticated server workspace and the
+browser restore pipeline.
+
+The confirmed causes were:
+
+1. Agent hydration decoded CT-sized arrays while holding a process-wide cache
+   lock. A cold case could therefore serialize otherwise independent case
+   switches, chat starts, and workspace operations.
+2. Browser IndexedDB accounting enumerated the complete cache from ordinary
+   reads and writes. Cache size management was on the first-paint path.
+3. The visible case shell, top-bar session identity, clinical artifact restore,
+   and report-figure restore were coupled to one transition promise. A selected
+   case could appear unresponsive until heavy resources completed.
+4. Late requests were only partially generation-fenced. A CT/label/planning
+   response or progress callback owned by case A could repaint case B after a
+   rapid switch or new-case creation.
+5. Deleting a case moved its workspace before its detached worker had stopped.
+   The worker could then read or persist the deleted path, generating
+   `WorkspaceNotFound`, SimpleITK read failures, and repeated UI-bridge
+   persistence warnings.
+6. TotalSegmentator executions could overlap on one device and a timed-out
+   child process did not reliably terminate its process group. This explained
+   stacked GPU work and apparent OAR hangs rather than a normal segmentation
+   runtime.
+7. Model-derived OAR labels include values above 255, but an 8-bit label-volume
+   transport/cache path truncated them. The backend could correctly report
+   50+ structures while the Data Tree and 2D viewer showed only a few, wrong,
+   or empty labels.
+8. The frontend relied on one completion event shape. Planning child events
+   carrying `parent_tool`, manual uploaded masks, and restored metadata could
+   finish without an immediate Data Tree and viewer reconciliation.
+9. Review context serialization could encounter runtime locks such as
+   `_thread.RLock`. This produced slow retry/fallback behavior after a valid
+   planning result.
+
+### Implemented remediation
+
+- Snapshot array decoding now happens outside the Agent-cache lock. Hydration
+  constructs a candidate Agent privately and atomically publishes it only when
+  the case generation still matches. Snapshot objects are process-cached by
+  user, case, and durable file identity.
+- Restore is explicitly staged. The selected sidebar row, top-bar session ID,
+  title, chat transcript, timestamps, execution trace, task state, input
+  paths, and saved controls paint first. CT is restored as the geometry
+  dependency; label and planning restoration then run concurrently; meshes,
+  DVH, report figures, and other large artifacts follow in background.
+- A scoped restore token combines session ID and restore generation. Every
+  asynchronous CT, label, organ metadata, planning, DVH, report, screenshot,
+  cache, and progress completion validates this token before committing UI
+  state. Superseded browser requests are aborted without being presented as
+  server timeouts.
+- Empty-case creation has a zero-resource fast path. It updates the session
+  shell immediately, clears every old clinical presentation surface, and does
+  not display `Opening case` or `Loading case resources`.
+- IndexedDB uses one deferred baseline scan plus O(1) incremental byte deltas.
+  Reads/writes return with their own transaction rather than waiting for a
+  fixed delay or full-store enumeration; eviction remains background work.
+- Case deletion first marks and stops the case-owned worker, waits for worker
+  teardown, invalidates persistence callbacks, clears all browser namespaces,
+  and only then moves the durable workspace to the recycle bin. Deleted-case
+  bridge updates are ignored rather than recreating the path.
+- TotalSegmentator now has one execution lock, a device-scoped lifetime, a
+  bounded 900-second subprocess timeout, and process-group termination. GPU
+  ownership is released on success, timeout, cancellation, and exception.
+- Label-volume responses use a versioned binary contract with explicit bytes
+  per voxel. OAR labels are transported as `uint16`; nearest-neighbour
+  resampling preserves discrete labels on the CT physical grid. The frontend
+  rejects incompatible legacy OAR caches and reads variable-width CTV/OAR
+  payloads correctly.
+- Successful automatic segmentation and manual CTV/OAR import both return
+  normalized label names/counts/provenance, load organ metadata immediately,
+  force a fresh label volume, rebuild Data Tree nodes, and repaint axial,
+  sagittal, and coronal viewers without waiting for a 3D reconstruction.
+- Planning refresh recognizes both direct tools and pipeline child events
+  through `parent_tool`, restoring needles, seeds, trajectories, dose, DVH,
+  report state, and Planning Data Tree children in the owning case only.
+- Viewer controls, Data Tree hierarchy, colors, opacity, visibility, display
+  mode, slices, camera, overlays, DVH settings, report/editor content,
+  screenshots, transcript, execution trace, and task state are persisted as
+  case-owned presentation state. Restored presentation is applied after live
+  clinical nodes exist, so stale JSON cannot replace current arrays.
+- Review payload construction recursively strips runtime-only objects. Locks,
+  callbacks, images, and other non-serializable internals do not trigger an
+  extra LLM retry or erase valid plan metrics.
+- A bounded, patient-data-free browser performance history records transition
+  start/finish, shell first paint, snapshot receipt, CT first paint, label/Data
+  Tree readiness, planning/DVH readiness, report readiness, and fully
+  interactive completion.
+
+### Acceptance matrix
+
+| Scenario | Verification method | Result | Status |
+|---|---|---|---|
+| Create an empty case while another case is loaded | Real browser against an isolated local runtime | Sidebar, title, top-bar session identity, blank chat, inputs, Data Tree, viewers, DVH, and report switch immediately; no clinical loader is started | Pass |
+| Switch from a planned/CT case to a clean case | Real browser rapid switch | Clean case has no CT, OAR, needles, seeds, dose, progress, DVH, or report residue | Pass |
+| Switch back to a clinical case | Real browser staged restore | Shell and chat paint first; scoped non-blocking loader remains during hydration; CT and saved state return without freezing navigation | Pass |
+| First visible switch response | Browser observation including automation overhead | Shell/highlight/header changed in approximately 0.47 s | Pass |
+| Tiny CT case fully restored | Browser observation including automation overhead | CT path and resources restored and loader dismissed in approximately 1.87 s | Pass |
+| Late response after rapid switch | Frontend generation-fence regression tests | Stale response cannot mutate the current case | Pass |
+| Switch while another case task runs | Chat-task and frontend tests | Task remains case-owned and running; switching does not call Stop or copy progress to the new case | Pass |
+| Refresh/reopen completed task | Workspace/chat round-trip tests | User message, assistant reply, timestamps, execution trace, planning data, DVH, and report restore from the durable snapshot | Pass |
+| Delete case with detached task | Route/task teardown tests | Worker is stopped before recycle-bin move; late checkpoint/UI bridge writes are discarded | Pass |
+| Automatic OAR segmentation | Spatial-alignment and viewer tests | Full `uint16` label set populates Data Tree and all 2D viewers on the CT physical grid | Pass |
+| Manual CTV/OAR import | Upload/viewer/frontend tests | Nodes and overlays appear immediately with provenance; opaque OAR labels use numbered names rather than invented anatomy | Pass |
+| Viewer presentation round trip | Workspace frontend tests | hierarchy, colors, opacity, visibility, display mode, slices, camera, overlays, DVH, and report state survive switch/refresh | Pass |
+| Review payload with runtime locks | Multi-agent regression tests | Safe context is produced without pickle/serialization failure or redundant model retry | Pass |
+| Browser cache write/delete | Frontend cache tests | No per-operation full-store scan; deleted session namespaces are removed | Pass |
+
+### Verification evidence
+
+- Full automated regression suite: **341 passed, 2 skipped, 3 warnings** in
+  **29.49 seconds**.
+- Targeted Session, task, OAR alignment, monitor, and browser-state suites:
+  **104 passed**.
+- Modified browser modules passed `node --check`.
+- Modified Python modules passed compilation during the regression run.
+- `git diff --check` passed; remaining messages are line-ending notices only.
+- Browser acceptance used a separate temporary runtime and account, two cases,
+  and an uploaded SimpleITK CT. The runtime was not shared with production.
+
+The three warnings are existing third-party SimpleITK SWIG deprecations. This
+Phase 1 work changes isolation, persistence, scheduling, label transport, and
+presentation restoration. It does not change dose normalization, trajectory
+geometry, obstacle filtering, source strength, clinical thresholds, or the
+validated pancreatic segmentation model. Login-page changes remain deferred
+until this Session acceptance is complete.

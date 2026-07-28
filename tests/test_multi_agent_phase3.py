@@ -7,6 +7,7 @@ Tests for MultiAgentOrchestrator and BrachyAgentMultiAgentWrapper.
 import asyncio
 import sys
 import os
+import threading
 
 # Add parent directory to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -14,6 +15,19 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from agents.orchestrator import MultiAgentOrchestrator
 from agents.brachy_agent_wrapper import BrachyAgentMultiAgentWrapper
 from communication.protocol import AgentRole, RoutingDecision
+
+
+def test_review_context_omits_runtime_locks_without_losing_clinical_data():
+    """Reviewer context is data-only even when a caller passes live objects."""
+    orchestrator = MultiAgentOrchestrator()
+    lock = threading.RLock()
+    context = orchestrator._build_agent_context({
+        "dose_metrics": {"v100": 0.91},
+        "runtime": {"lock": lock},
+    })
+
+    assert context["dose_metrics"]["v100"] == 0.91
+    assert context["runtime"]["lock"] == "<RLock omitted>"
 
 
 async def test_orchestrator_routing():

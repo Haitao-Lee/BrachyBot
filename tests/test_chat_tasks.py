@@ -248,6 +248,42 @@ def test_cancelling_one_case_does_not_cancel_another_running_case():
     assert second_agent.cancelled is False
 
 
+def test_deleting_case_waits_for_worker_and_skips_deleted_workspace_checkpoint():
+    """Delete cancellation must quiesce the worker before files can move."""
+    manager = ChatTaskManager()
+    gate = threading.Event()
+    started = threading.Event()
+    finalized = []
+
+    class _DeletingAgent(_Agent):
+        def chat_with_stream(self, _message):
+            started.set()
+            yield _event("start", {})
+            gate.wait(timeout=2)
+            yield _event("response", {"response": "must be discarded"})
+
+        def _cancel_active_turn(self):
+            super()._cancel_active_turn()
+            gate.set()
+
+    task = manager.start(
+        _App(),
+        "user-a",
+        "case-a",
+        _DeletingAgent([]),
+        "plan",
+        {},
+        on_finish=finalized.append,
+    )
+    assert started.wait(timeout=2)
+
+    assert manager.cancel_session("user-a", "case-a", wait_timeout=2) is True
+    assert task.status == "cancelled"
+    assert task.wait_for_worker(timeout=0) is True
+    assert finalized == []
+    assert task.response == ""
+
+
 def test_terminal_done_is_withheld_until_case_results_are_committed():
     """The UI must not observe completion before the turn commit callback returns."""
 

@@ -13,6 +13,7 @@ untrusted code.
 
 from __future__ import annotations
 
+import copy
 import json
 import hashlib
 import logging
@@ -380,6 +381,13 @@ class WorkspaceStore:
         # snapshot remains authoritative; after restart the encoder rebuilds a
         # nested name-to-path index so unchanged sidecars can be reused safely.
         self._array_refs: Dict[Tuple[str, str, str, str], Tuple[int, str]] = {}
+        # Snapshot JSON is the control plane for session switching. Keep a
+        # bounded process-local copy keyed by file identity so hot case opens
+        # do not repeatedly parse the same large JSON document. The filesystem
+        # remains authoritative and every write/delete invalidates this cache.
+        self._snapshot_cache: Dict[
+            Tuple[str, str], Tuple[int, int, Dict[str, Any]]
+        ] = {}
         self._ensure_layout()
         self._initialize_database()
         self.purge_expired_trash()
@@ -617,8 +625,20 @@ class WorkspaceStore:
             snapshot = self._empty_snapshot(session_id)
         else:
             try:
-                with open(path, "r", encoding="utf-8") as handle:
-                    snapshot = json.load(handle)
+                stat = path.stat()
+                cache_key = (str(user_id), str(session_id))
+                identity = (int(stat.st_mtime_ns), int(stat.st_size))
+                with self._lock:
+                    cached = self._snapshot_cache.get(cache_key)
+                if cached is not None and cached[:2] == identity:
+                    snapshot = copy.deepcopy(cached[2])
+                else:
+                    with open(path, "r", encoding="utf-8") as handle:
+                        snapshot = json.load(handle)
+                    with self._lock:
+                        self._snapshot_cache[cache_key] = (
+                            identity[0], identity[1], copy.deepcopy(snapshot),
+                        )
             except (OSError, json.JSONDecodeError) as exc:
                 raise WorkspaceError("Case workspace snapshot is unreadable") from exc
         if snapshot.get("schema_version") != WORKSPACE_SCHEMA_VERSION:
@@ -943,8 +963,29 @@ class WorkspaceStore:
             array_version=lambda source_key: int(planning_versions.get(source_key, 0)),
         )
         encoded_results: Dict[str, Any] = {}
+        ct_path_value = str(
+            planning_results.get("ct_path")
+            or planning_results.get("ct_image_path")
+            or ""
+        ).strip()
+        ct_can_be_reloaded = False
+        if ct_path_value:
+            try:
+                ct_candidate = Path(ct_path_value).expanduser()
+                if not ct_candidate.is_absolute():
+                    ct_candidate = _safe_workspace_child(root, ct_path_value)
+                ct_can_be_reloaded = ct_candidate.is_file()
+            except (OSError, WorkspaceError, ValueError):
+                ct_can_be_reloaded = False
         for key, value in planning_results.items():
             if key in {"ct_image", "ct_sitk", "ct_image_raw"}:
+                # CT is already durably owned by the case input directory and
+                # is reconstructed on hydration. Persisting the same voxel
+                # array again made every checkpoint rewrite tens or hundreds
+                # of MB and was the main source of multi-minute "Saving case"
+                # operations.
+                continue
+            if key == "ct_data" and ct_can_be_reloaded:
                 continue
             encoded = encoder.encode(value, _safe_filename(key), str(key))
             if isinstance(encoded, dict) and "$image" in encoded:
@@ -1075,6 +1116,7 @@ class WorkspaceStore:
         load_ct: bool = True,
         mark_interrupted: bool = True,
         cancel_event: Any = None,
+        phase_callback: Optional[Callable[[str], None]] = None,
     ) -> Dict[str, Any]:
         """Load a checkpoint into a fresh agent without evaluating any code.
 
@@ -1098,41 +1140,97 @@ class WorkspaceStore:
         state = snapshot.get("agent") or {}
         memory = agent.memory
         decode_started = time.perf_counter()
+        if phase_callback is not None:
+            phase_callback("artifacts" if include_planning_results else "metadata")
         if cancel_event is not None and cancel_event.is_set():
             logger.info("workspace hydration cancelled before decode session=%s", session_id)
             return snapshot
+        decoded_results: Dict[str, Any] = {}
+        persisted_results = state.get("planning_results") or {}
+        persisted_ct_path = str(
+            _restore_hydration_metadata(persisted_results.get("ct_path")) or ""
+        ).strip()
+        has_durable_ct_path = False
+        if persisted_ct_path:
+            try:
+                persisted_ct_file = Path(persisted_ct_path).expanduser()
+                if not persisted_ct_file.is_absolute():
+                    persisted_ct_file = _safe_workspace_child(root, persisted_ct_path)
+                # Absolute paths from snapshots are accepted only when they
+                # still belong to this case workspace.
+                persisted_ct_file.resolve().relative_to(root.resolve())
+                has_durable_ct_path = persisted_ct_file.is_file()
+            except (OSError, WorkspaceError, ValueError):
+                has_durable_ct_path = False
+        for key, value in persisted_results.items():
+            if include_planning_results and key == "ct_data" and has_durable_ct_path:
+                # Backward compatibility for old snapshots that duplicated CT
+                # as an NPY sidecar. Reading the owned CT input is faster and
+                # guarantees one physical geometry source.
+                continue
+            decoded = (
+                _decode_artifacts(value, root)
+                if include_planning_results
+                else _restore_hydration_metadata(value)
+            )
+            if decoded is not None:
+                decoded_results[str(key)] = decoded
+        patient_data = _restore_json(state.get("patient_data") or {})
+        conversation = _restore_json(state.get("conversation") or [])
+        tool_results = _restore_json(state.get("tool_results") or [])
+        context_summary = str(state.get("context_summary") or "")
+        compaction_count = int(state.get("compaction_count") or 0)
+        conversation_state = _restore_json(state.get("conversation_state") or {})
+        user_lang = str(state.get("user_lang") or "en")
+        ui_state = _restore_json(state.get("ui_state") or {})
+        planning_versions = (
+            {
+                str(key): int(value or 0)
+                for key, value in state["planning_versions"].items()
+            }
+            if isinstance(state.get("planning_versions"), Mapping)
+            else {str(key): 1 for key in decoded_results}
+        )
+        if cancel_event is not None and cancel_event.is_set():
+            logger.info("workspace hydration cancelled before atomic publish session=%s", session_id)
+            return snapshot
+        # NPY decoding can take seconds for a large case. Never hold the Agent
+        # memory lock during that I/O. Publish one coherent version only after
+        # every artifact has decoded and preserve a CT loaded by the earlier
+        # CT-first hydration phase.
+        runtime_ct_keys = {
+            "ct_image", "ct_sitk", "ct_image_raw", "ct_data", "ct_shape",
+            "ct_spacing", "ct_origin", "ct_direction", "ct_axis_map",
+            "ct_window_center", "ct_window_width", "ct_source_kind",
+            "ct_source_meta", "ct_dicom_tags",
+        }
         with memory._lock:
-            if cancel_event is not None and cancel_event.is_set():
-                logger.info("workspace hydration cancelled before memory restore session=%s", session_id)
-                return snapshot
+            live_ct = {
+                key: memory.planning_results[key]
+                for key in runtime_ct_keys
+                if key in memory.planning_results
+                and memory.planning_results[key] is not None
+            }
             memory.planning_results.clear()
-            for key, value in (state.get("planning_results") or {}).items():
-                if include_planning_results:
-                    decoded = _decode_artifacts(value, root)
-                else:
-                    # Keep scalar/path metadata available for status panels,
-                    # but never pretend a large array is already in memory.
-                    decoded = _restore_hydration_metadata(value)
-                if decoded is not None:
-                    memory.planning_results[key] = decoded
+            memory.planning_results.update(decoded_results)
+            if include_planning_results:
+                for key, value in live_ct.items():
+                    memory.planning_results.setdefault(key, value)
             if hasattr(memory, "_planning_versions"):
-                memory._planning_versions = {
-                    str(key): 1 for key in memory.planning_results
-                }
-            memory.patient_data = _restore_json(state.get("patient_data") or {})
-            memory.conversation = _restore_json(state.get("conversation") or [])
-            memory.tool_results = _restore_json(state.get("tool_results") or [])
-            memory.context_summary = str(state.get("context_summary") or "")
-            memory.compaction_count = int(state.get("compaction_count") or 0)
-            memory.conversation_state = _restore_json(state.get("conversation_state") or memory.conversation_state)
-            memory.user_lang = str(state.get("user_lang") or "en")
-            memory._ui_state = _restore_json(state.get("ui_state") or {})
-            if hasattr(memory, "_planning_versions") and isinstance(state.get("planning_versions"), Mapping):
-                memory._planning_versions = {
-                    str(key): int(value or 0) for key, value in state["planning_versions"].items()
-                }
-            available = sorted(memory.planning_results.keys())
-            memory.conversation_state["data_available"] = available
+                memory._planning_versions = planning_versions
+            memory.patient_data = patient_data
+            memory.conversation = conversation
+            memory.tool_results = tool_results
+            memory.context_summary = context_summary
+            memory.compaction_count = compaction_count
+            if not conversation_state:
+                conversation_state = _restore_json(memory.conversation_state)
+            memory.conversation_state = conversation_state
+            memory.user_lang = user_lang
+            memory._ui_state = ui_state
+            memory.conversation_state["data_available"] = sorted(
+                memory.planning_results.keys()
+            )
         logger.info(
             "workspace hydration arrays decoded session=%s duration_ms=%.1f result_keys=%d",
             session_id,
@@ -1145,6 +1243,8 @@ class WorkspaceStore:
             agent.run_ledger.restore_state(_restore_json(state["runtime_state"]))
         ct_started = time.perf_counter()
         if load_ct:
+            if phase_callback is not None:
+                phase_callback("ct")
             if cancel_event is not None and cancel_event.is_set():
                 logger.info("workspace hydration cancelled before CT restore session=%s", session_id)
                 return snapshot
@@ -1405,6 +1505,8 @@ class WorkspaceStore:
                 (now, now, session_id, user_id),
             )
             connection.execute("DELETE FROM workspace_leases WHERE session_id = ?", (session_id,))
+        with self._lock:
+            self._snapshot_cache.pop((str(user_id), str(session_id)), None)
         self._audit(user_id, session_id, "session.trashed", {"title": record.title})
         return self.get_session(user_id, session_id, include_trashed=True)
 
@@ -1424,6 +1526,8 @@ class WorkspaceStore:
                 "UPDATE case_sessions SET status = 'active', deleted_at = NULL, updated_at = ?, revision = revision + 1 WHERE id = ? AND user_id = ?",
                 (_now(), session_id, user_id),
             )
+        with self._lock:
+            self._snapshot_cache.pop((str(user_id), str(session_id)), None)
         self._audit(user_id, session_id, "session.restored", {})
         return self.get_session(user_id, session_id)
 
@@ -1434,6 +1538,8 @@ class WorkspaceStore:
                 shutil.rmtree(root)
         with self._connection() as connection:
             connection.execute("DELETE FROM case_sessions WHERE id = ? AND user_id = ?", (session_id, user_id))
+        with self._lock:
+            self._snapshot_cache.pop((str(user_id), str(session_id)), None)
         self._audit(user_id, session_id, "session.purged", {"previous_status": record.status})
 
     def purge_expired_trash(self) -> int:
@@ -1479,6 +1585,18 @@ class WorkspaceStore:
         payload = json.dumps(snapshot, ensure_ascii=False, indent=2, allow_nan=False).encode("utf-8")
         self._ensure_replacement_capacity(user_id, path, len(payload))
         _atomic_bytes(path, payload)
+        try:
+            stat = path.stat()
+            session_id = str(snapshot.get("session_id") or path.parent.name)
+            with self._lock:
+                self._snapshot_cache[(str(user_id), session_id)] = (
+                    int(stat.st_mtime_ns), int(stat.st_size),
+                    copy.deepcopy(dict(snapshot)),
+                )
+        except (OSError, TypeError, ValueError):
+            # The durable atomic write already succeeded. A cache update is
+            # optional acceleration and must never turn it into a failed save.
+            pass
 
     def write_upload(self, user_id: str, session_id: str, relative: str, stream: Any, expected_bytes: int = 0) -> Path:
         self.get_session(user_id, session_id)

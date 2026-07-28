@@ -2140,10 +2140,37 @@ Audit reports:
   CT, label, planning, mesh, DVH, report, and screenshot artifacts in the
   background with session-generation fencing. Switching the browser view does
   not cancel a task owned by another case; only the explicit Stop action does.
+- Case restoration is staged: the sidebar, case title, chat transcript,
+  timestamps, execution trace, task state, input paths, report controls, and
+  saved presentation state paint first. CT is then restored as the geometry
+  dependency; labels and planning products load concurrently; meshes, DVH
+  assets, report figures, and other large artifacts follow without blocking
+  chat or case navigation. A small case-scoped loading indicator remains
+  visible only while those background resources are still pending.
+- Every asynchronous restore result carries the selected session and restore
+  generation. Late CT, label, planning, report, cache, or task results are
+  discarded before they can repaint another case. New empty cases clear the
+  previous CT, labels, needles, seeds, dose, Data Tree, DVH, report, and file
+  inputs immediately and never enter clinical hydration.
+- Browser IndexedDB quota accounting uses an asynchronous baseline plus
+  incremental size deltas. Normal reads and writes no longer enumerate the
+  complete cache. Deleting a case clears its IndexedDB and localStorage
+  namespaces and stops its detached worker before the server workspace is
+  moved to the recycle bin.
+- Workspace restore performance can be inspected through the bounded
+  `window.__workspacePerformance` event history and `[workspace-perf]` console
+  entries. It records shell first paint, snapshot receipt, CT first paint,
+  label/Data Tree readiness, planning/DVH readiness, report readiness, and
+  fully interactive completion without including patient data.
 - Uploaded CTV/OAR masks are aligned to the active CT physical grid and stored
   with provenance. Opaque uploaded OAR labels appear as numbered `OAR 1`,
   `OAR 2`, ... Data Tree nodes until the user renames or reclassifies them;
   they are never guessed to be anatomical organs.
+- Label-volume transport preserves 16-bit model labels and uses
+  nearest-neighbour physical-grid alignment. Old 8-bit OAR browser caches are
+  rejected, so labels above 255 cannot wrap into an unrelated organ or vanish
+  from the Data Tree/2D viewer. Successful model segmentation and manual mask
+  import both repaint the Data Tree and all three 2D viewers immediately.
 - The consolidated implementation review and the current validation evidence
   are maintained in [`docs/CODE_REVIEW.md`](docs/CODE_REVIEW.md).
 

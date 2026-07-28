@@ -9,6 +9,38 @@ function effectiveUiLanguage() {
 }
 window.effectiveUiLanguage = effectiveUiLanguage;
 
+function detectConversationLanguage(text) {
+    const value = String(text || '').trim();
+    if (!value) return null;
+    return /[\u3400-\u9fff]/.test(value) ? 'zh' : 'en';
+}
+window.detectConversationLanguage = detectConversationLanguage;
+
+function conversationLanguageForSession(sessionId = activeSessionId) {
+    const id = String(sessionId || '');
+    const session = (typeof sessions === 'object' && sessions) ? sessions[id] : null;
+    if (session && (session.conversationLanguage === 'zh' || session.conversationLanguage === 'en')) {
+        return session.conversationLanguage;
+    }
+    const messages = Array.isArray(session?.messages) ? session.messages : [];
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+        const message = messages[index];
+        if (message?.type !== 'user') continue;
+        const detected = detectConversationLanguage(message.content);
+        if (detected) return detected;
+    }
+    const liveDetected = detectConversationLanguage(
+        id === String(activeSessionId || '') ? window._lastUserMessage : ''
+    );
+    return liveDetected || effectiveUiLanguage();
+}
+window.conversationLanguageForSession = conversationLanguageForSession;
+
+function chatTranslate(zh, en, sessionId = activeSessionId) {
+    return conversationLanguageForSession(sessionId) === 'zh' ? zh : en;
+}
+window.chatTranslate = chatTranslate;
+
 function escHtml(str) {
     if (!str) return '';
     return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
@@ -496,6 +528,10 @@ function saveSessionMessage(type, content, steps, timestamp, sessionId = activeS
     session.messages.push(msg);
     if (type === 'user' && typeof _rememberChatCommand === 'function') {
         _rememberChatCommand(content);
+    }
+    if (type === 'user') {
+        const detectedLanguage = detectConversationLanguage(content);
+        if (detectedLanguage) session.conversationLanguage = detectedLanguage;
     }
     if (session.messages.length === 1 && type === 'user' && !session._titleManuallySet) {
         session.title = content.slice(0, 40) + (content.length > 40 ? '...' : '');
