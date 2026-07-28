@@ -96,6 +96,18 @@ class ChatTask:
         if not text:
             return
         event_name, data = _event_parts(text)
+        # Workspace persistence is an internal durability concern, not a
+        # workflow step.  Older agents and recovery paths may still emit the
+        # legacy ``workspace_checkpoint`` event; suppress it at the task
+        # journal boundary so the UI cannot show a false, indefinitely
+        # pending operation after the clinical response is already complete.
+        if (
+            event_name == "step"
+            and isinstance(data, dict)
+            and str(data.get("tool") or "") == "workspace_checkpoint"
+        ):
+            logger.debug("Suppressing internal workspace checkpoint step for task %s", self.task_id)
+            return
         if event_name == "step" and isinstance(data, dict):
             self.steps.append(dict(data))
         elif event_name == "response" and isinstance(data, dict):

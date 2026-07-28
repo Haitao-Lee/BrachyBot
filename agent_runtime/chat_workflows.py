@@ -2088,6 +2088,11 @@ class ChatWorkflowMixin:
         if result.success:
             self.memory.store("last_segmentation_success", True)
             self.memory.store("oar_array", result.metadata.get("oar_array"))
+            # Keep the same durable provenance contract as the web upload
+            # route.  Chat-triggered re-segmentation must hydrate the Data
+            # Tree and label volume after a reload instead of leaving only a
+            # transient tool message in AgentMemory.
+            self.memory.store("oar_label_data", result.metadata.get("oar_label_data") or result.metadata.get("oar_array"))
             if "organ_names" in result.metadata:
                 self.memory.store("organ_names", result.metadata["organ_names"])
             if "organ_counts" in result.metadata:
@@ -2105,6 +2110,8 @@ class ChatWorkflowMixin:
                 ),
             )
             self.memory.store("label_grid_orientation", result.metadata.get("label_grid_orientation") or "LPI")
+            self.memory.store("oar_segmented", True)
+            self.memory.store("oar_is_full", True)
             return result.message
         self.memory.store("last_segmentation_success", False)
         return f"OAR segmentation failed: {result.error}"

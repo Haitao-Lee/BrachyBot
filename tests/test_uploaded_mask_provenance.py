@@ -56,6 +56,9 @@ def test_uploaded_oar_uses_numbered_names_and_provenance(tmp_path):
     result = OARSegmentationTool()._execute(image_path=ct_path, label_path=oar_path)
 
     assert result.success
+    # The metadata mask must be the aligned uploaded OAR image, not the CT
+    # reference image used during physical-grid alignment.
+    assert sitk.GetArrayFromImage(result.metadata["oar_mask"]).max() == 7
     assert result.metadata["oar_source"] == "uploaded_unknown"
     assert result.metadata["oar_mask_provenance"] == "uploaded_unknown"
     assert result.metadata["organ_names"] == {1: "OAR 1", 7: "OAR 2"}
@@ -94,6 +97,47 @@ def test_unknown_oar_source_never_falls_back_to_anatomy_mapping(tmp_path):
     assert _oar_display_name_map(agent) == {1: "OAR 1", 7: "OAR 2"}
 
 
+def test_uploaded_oar_ignores_stale_anatomy_names(tmp_path):
+    """A replaced opaque mask must not inherit names from the old case/run."""
+    _, _, oar_path = _write_case(tmp_path)
+    result = OARSegmentationTool()._execute(label_path=oar_path)
+    agent = _Agent({
+        "oar_source": "uploaded_unknown",
+        "organ_names": {1: "stomach", 7: "vertebrae_L1"},
+        "oar_array": result.metadata["oar_array"],
+    })
+    assert _oar_display_name_map(agent) == {1: "OAR 1", 7: "OAR 2"}
+
+
+def test_uploaded_oar_control_plane_uses_numeric_labels(tmp_path):
+    """The upload response must expose stable Data Tree rows for each label."""
+    ct_path, _, oar_path = _write_case(tmp_path)
+    result = OARSegmentationTool()._execute(image_path=ct_path, label_path=oar_path)
+    names = {str(key): value for key, value in result.metadata["organ_names"].items()}
+    counts = {str(key): value for key, value in result.metadata["organ_counts"].items()}
+
+    rows = {
+        label_id: {
+            "name": names[label_id],
+            "voxel_count": int(counts[label_id]),
+        }
+        for label_id in names
+    }
+    assert set(rows) == {"1", "7"}
+    assert rows["1"]["name"] == "OAR 1"
+    assert rows["7"]["name"] == "OAR 2"
+    assert all(row["voxel_count"] > 0 for row in rows.values())
+
+
+def test_oar_module_star_import_only_exports_registered_symbols():
+    """The public OAR namespace must not expose removed legacy VoCo classes."""
+    namespace = {}
+    exec("from tool_factory.OAR_seg import *", namespace)
+    assert "OARSegmentationTool" in namespace
+    assert "VoCoTotalSegmentatorTool" not in namespace
+    assert "VoCoAortaVesselTool" not in namespace
+
+
 def test_all_oar_3d_request_routes_to_group_reconstruction():
     from AgenticSys import BrachyAgent
 
@@ -119,3 +163,32 @@ def test_all_oar_3d_request_routes_to_group_reconstruction():
             }]
         },
     }]
+
+
+def test_ctv_auxiliary_labels_are_read_from_the_separate_snapshot_collection():
+    """A user-selected CTV hard label remains part of the obstacle whitelist."""
+    from tool_factory.seed_plan.planning_pipeline import _resolve_data_tree_obstacle_labels
+
+    class Memory:
+        def retrieve(self, key, default=None):
+            return default
+
+        def get_ui_state(self):
+            return {
+                "data_tree": {
+                    "organs": [],
+                    "ctv_labels": [{
+                        "id": "ctv_9",
+                        "label_id": 9,
+                        "source": "ctv",
+                        "category": "non_traversable",
+                    }],
+                }
+            }
+
+    agent = object.__new__(_Agent)
+    agent.memory = Memory()
+    labels, source = _resolve_data_tree_obstacle_labels(agent)
+
+    assert 9 in labels
+    assert source == "data_tree_plus_default"

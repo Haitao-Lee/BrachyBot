@@ -4,6 +4,7 @@ import json
 import copy
 import logging
 import os
+import re
 import threading
 import time
 from datetime import datetime
@@ -61,6 +62,39 @@ _ui_session_id = _server_support._ui_session_id
 _valid_screenshot_request = _server_support._valid_screenshot_request
 _validate_path = _server_support._validate_path
 _oar_display_name_map = _server_support._oar_display_name_map
+
+# UI events can arrive in bursts while a viewer is being dragged or a
+# training monitor is active.  Persisting every event synchronously used to
+# serialize a snapshot and scan large case artifacts on the request thread.
+# Keep only the latest bridge state per owned case and flush it in a daemon
+# timer; the in-memory bridge remains available immediately.
+_UI_BRIDGE_CHECKPOINT_LOCK = threading.Lock()
+_UI_BRIDGE_CHECKPOINT_PENDING: Dict[tuple, tuple] = {}
+_UI_BRIDGE_CHECKPOINT_TIMERS: Dict[tuple, threading.Timer] = {}
+
+
+def _flush_ui_bridge_checkpoint(key: tuple) -> None:
+    with _UI_BRIDGE_CHECKPOINT_LOCK:
+        item = _UI_BRIDGE_CHECKPOINT_PENDING.pop(key, None)
+        _UI_BRIDGE_CHECKPOINT_TIMERS.pop(key, None)
+    if item is None:
+        return
+    store, user_id, selected, bridge, reason = item
+    try:
+        store.save_snapshot_patch(
+            user_id,
+            selected,
+            {"ui": {"bridge": bridge}},
+            expected_revision=None,
+            reason=reason,
+        )
+    except WorkspaceNotFound:
+        # A delayed browser event can arrive after explicit case deletion.
+        logger.debug("Ignoring UI bridge checkpoint for deleted case %s", selected)
+    except WorkspaceError:
+        # This is a background durability retry point, not a user-facing
+        # workflow failure; avoid emitting a misleading traceback per event.
+        logger.warning("Unable to persist UI bridge state for case %s", selected, exc_info=False)
 
 
 def _validate_label_geometry(ct_path: str, label_path: str) -> Optional[str]:
@@ -141,6 +175,34 @@ def _current_planning_snapshot(agent):
     )
 
 
+_FULL_WORKSPACE_CHAT_TERMS = (
+    "ct", "ctv", "oar", "mask", "segmentation", "segment", "分割", "掩膜",
+    "planning", "plan", "规划", "剂量", "dose", "dvh", "needle", "seed",
+    "trajectory", "穿刺", "粒子", "针道", "导板", "surgical guide", "手术导板",
+    "replan", "重新规划", "重建", "reconstruct", "viewer", "查看器",
+)
+
+
+def _chat_requires_full_workspace(message: str, image_path: str = "") -> bool:
+    """Return whether a chat turn needs decoded CT/label/planning arrays.
+
+    Metadata-only status and knowledge questions must be able to answer while
+    a large case is warming in the background.  Clinical actions remain bound
+    to the fully hydrated Agent so a fast response can never overwrite a case
+    with incomplete arrays.
+    """
+    if image_path:
+        return True
+    text = str(message or "").strip().lower()
+    for term in _FULL_WORKSPACE_CHAT_TERMS:
+        if term.isascii():
+            if re.search(r"\b" + re.escape(term) + r"\b", text):
+                return True
+        elif term in text:
+            return True
+    return False
+
+
 def register_planning_routes(
     app,
     get_agent,
@@ -170,6 +232,33 @@ def register_planning_routes(
             raise WorkspaceError("Authentication required")
         entry = store.get_session(user["id"], session_id)
         return store, user, entry.id
+
+    def workspace_data_pending(agent):
+        """Return a fast retry response while cold-case arrays are decoding."""
+        if agent is None:
+            return jsonify({
+                "success": False,
+                "pending": True,
+                "code": "workspace_agent_initializing",
+                "message": "Case resources are being initialized.",
+                "retry_after_ms": 250,
+            }), 202
+        if agent is not None and not getattr(agent, "_workspace_data_ready", True):
+            return jsonify({
+                "success": False,
+                "pending": True,
+                "code": "workspace_hydration_pending",
+                "message": "Case resources are still loading.",
+                "retry_after_ms": 250,
+            }), 202
+        if agent is not None and getattr(agent, "_workspace_hydration_error", ""):
+            return jsonify({
+                "success": False,
+                "pending": False,
+                "code": "workspace_hydration_failed",
+                "error": agent._workspace_hydration_error,
+            }), 409
+        return None
 
     def workspace_output_dir(category: str) -> str:
         """Return an owned artifact directory; client paths are never trusted."""
@@ -304,7 +393,14 @@ def register_planning_routes(
             # original request without that server detail.
             display_message = task.message.split("\n\n[Uploaded image path:", 1)[0]
             append_message("user", display_message, timestamp_ms=int(task.created_at * 1000))
-            persisted_steps = list(task.steps)
+            # ``workspace_checkpoint`` is an internal save operation, never a
+            # user-facing workflow step.  Filter legacy journals as well as
+            # live events so an older interrupted turn cannot resurrect a
+            # fake pending step on the next session restore.
+            persisted_steps = [
+                step for step in list(task.steps)
+                if str(step.get("tool") or "") != "workspace_checkpoint"
+            ]
             if persisted_steps:
                 append_message(
                     "thinking",
@@ -492,21 +588,20 @@ def register_planning_routes(
                 "training": dict(bucket.get("training") or {}),
                 "updated_at": bucket.get("updated_at"),
             }
-        try:
-            store.save_snapshot_patch(
+        key = (str(user["id"]), str(selected))
+        with _UI_BRIDGE_CHECKPOINT_LOCK:
+            _UI_BRIDGE_CHECKPOINT_PENDING[key] = (
+                store,
                 user["id"],
                 selected,
-                {"ui": {"bridge": bridge}},
-                expected_revision=None,
-                reason=reason,
+                bridge,
+                reason,
             )
-        except WorkspaceNotFound:
-            # A delayed browser event can arrive after the user explicitly
-            # deletes the case.  There is no state left to persist; treating
-            # this as an error only creates misleading traceback noise.
-            logger.debug("Ignoring UI bridge checkpoint for deleted case %s", selected)
-        except WorkspaceError:
-            logger.warning("Unable to persist UI bridge state", exc_info=True)
+            if key not in _UI_BRIDGE_CHECKPOINT_TIMERS:
+                timer = threading.Timer(0.25, _flush_ui_bridge_checkpoint, args=(key,))
+                timer.daemon = True
+                _UI_BRIDGE_CHECKPOINT_TIMERS[key] = timer
+                timer.start()
 
     @app.route("/api/planning/clear", methods=["POST"])
     @require_api_key
@@ -562,6 +657,9 @@ def register_planning_routes(
         agent = get_agent()
         if agent is None:
             return jsonify({"error": "Agent not available"}), 500
+        pending = workspace_data_pending(agent)
+        if pending is not None:
+            return pending
 
         try:
             import numpy as np
@@ -748,9 +846,16 @@ def register_planning_routes(
         Request: { kind: 'ctv' | 'oar', image_path: '...', tumor_type?: 'nnunet_pancreatic' | ..., label_path?: '...' }
         Returns: { success, kind, label_counts, total_labels, ... }
         """
-        agent = get_agent()
+        agent = get_agent(_lightweight=True)
         if agent is None:
             return jsonify({"error": "Agent not available"}), 500
+        # Do not mutate a lightweight shell while its case-owned arrays are
+        # being restored.  A background hydration finishing after this write
+        # would otherwise overwrite the newly imported mask and remove its
+        # Data Tree nodes.  The browser retries this 202 response.
+        pending = workspace_data_pending(agent)
+        if pending is not None:
+            return pending
 
         data = request.get_json() or {}
         kind = data.get("kind", "ctv")
@@ -885,12 +990,57 @@ def register_planning_routes(
                             "oar_mask_provenance",
                             meta.get("oar_mask_provenance") or ("uploaded_unknown" if label_path else "model"),
                         )
+                        # A user-provided multi-label mask is a complete OAR
+                        # volume even when its labels have no anatomical
+                        # ontology.  Keeping this flag explicit prevents the
+                        # next chat turn or workspace restore from treating
+                        # the import as an incomplete result and silently
+                        # replacing it with a model/CTV fallback.
+                        agent.memory.store("oar_is_full", True)
                         agent.memory.store("label_grid_orientation", meta.get("label_grid_orientation") or "LPI")
                     except Exception as e:
                         logger.warning(f"store oar data failed: {e}")
 
             meta = getattr(result, "metadata", {}) or {}
             label_counts = meta.get("organ_counts", {}) or meta.get("label_counts", {}) or meta.get("labels_found", {}) or {}
+            organ_names = {
+                str(key): str(value)
+                for key, value in (meta.get("organ_names") or {}).items()
+            } if kind == "oar" else {}
+            organ_counts = {
+                str(key): int(value)
+                for key, value in (meta.get("organ_counts") or {}).items()
+                if isinstance(value, (int, float))
+            } if kind == "oar" else {}
+            # Return the same normalized object consumed by /viewer/organs.
+            # This makes the upload response a complete control-plane update;
+            # the browser does not have to wait for a binary volume request or
+            # a later 3D reconstruction just to create Data Tree nodes.
+            if kind == "oar":
+                # Model tools historically keyed ``organ_counts`` by the
+                # anatomical name while ``organ_names`` is keyed by numeric
+                # label.  Uploaded masks use numeric keys for both.  Build
+                # this response from the label map and resolve either count
+                # convention so both paths expose the same contract.
+                label_ids = list(organ_names) or [
+                    key for key in organ_counts
+                    if str(key).lstrip("-").isdigit()
+                ]
+                organs = {}
+                for index, raw_label_id in enumerate(label_ids):
+                    label_id = str(raw_label_id)
+                    name = organ_names.get(label_id, f"OAR {index + 1}")
+                    count = organ_counts.get(label_id)
+                    if count is None:
+                        count = organ_counts.get(raw_label_id)
+                    if count is None:
+                        count = organ_counts.get(name, 0)
+                    organs[label_id] = {
+                        "name": name,
+                        "voxel_count": int(count or 0),
+                    }
+            else:
+                organs = {}
             checkpoint_operation(
                 agent,
                 "ready",
@@ -903,6 +1053,14 @@ def register_planning_routes(
                 "tumor_type": tumor_type,
                 "label_counts": label_counts,
                 "total_labels": len(label_counts),
+                # The browser can populate the Data Tree immediately from the
+                # authoritative import result while the binary label volume is
+                # fetched and cached in the background.
+                "organs": organs,
+                "organ_names": organ_names,
+                "organ_counts": organ_counts,
+                "oar_source": str(meta.get("oar_source") or "") if kind == "oar" else "",
+                "oar_mask_provenance": str(meta.get("oar_mask_provenance") or "") if kind == "oar" else "",
             })
         except Exception as e:
             logger.error(f"Manual segmentation ({kind}) failed: {e}")
@@ -923,7 +1081,15 @@ def register_planning_routes(
 
             site = request.args.get("site") or None
             include_experimental = request.args.get("include_experimental", "1").lower() not in ("0", "false", "no")
-            models = filter_catalog(site=site, include_experimental=include_experimental)
+            # Keep the complete research catalog available to the agent/tool,
+            # while the human selector receives only explicitly UI-visible
+            # entries.  This prevents the unvalidated pancreatic VoCo alias
+            # from looking like a second production model.
+            models = filter_catalog(
+                site=site,
+                include_experimental=include_experimental,
+                for_ui=True,
+            )
             return jsonify({"success": True, "models": models, "count": len(models)})
         except Exception as e:
             logger.error(f"CTV model catalog failed: {e}")
@@ -1017,6 +1183,35 @@ def register_planning_routes(
                     if isinstance(_v, (_np.ndarray, list, tuple)):
                         continue  # skip heavy / non-serializable
                     _meta[_k] = _v
+                # Return a small, durable UI projection as part of every
+                # manual-step response.  The large arrays stay in the
+                # workspace sidecars, but the client can immediately rebuild
+                # its Data Tree without guessing whether the tool wrote OAR or
+                # planning data.
+                try:
+                    _organ_names = agent.memory.retrieve("organ_names") or {}
+                    _organ_counts = agent.memory.retrieve("organ_counts") or {}
+                    _planning = {
+                        "trajectories": agent.memory.retrieve("trajectories") or [],
+                        "seeds": agent.memory.retrieve("seeds") or agent.memory.retrieve("seed_plan") or [],
+                        "needles": agent.memory.retrieve("needles") or [],
+                        "has_dose": agent.memory.retrieve("dose_distribution") is not None
+                        or agent.memory.retrieve("dose_distribution_gy") is not None,
+                    }
+                    _meta.update({
+                        "oar_loaded": bool(agent.memory.retrieve("oar_array") is not None),
+                        "organ_names": _organ_names if isinstance(_organ_names, dict) else {},
+                        "organ_counts": _organ_counts if isinstance(_organ_counts, dict) else {},
+                        "oar_source": agent.memory.retrieve("oar_source"),
+                        "planning_projection": {
+                            "trajectory_count": len(_planning["trajectories"]) if isinstance(_planning["trajectories"], list) else 0,
+                            "seed_count": len(_planning["seeds"]) if isinstance(_planning["seeds"], list) else 0,
+                            "needle_count": len(_planning["needles"]) if isinstance(_planning["needles"], list) else 0,
+                            "has_dose": bool(_planning["has_dose"]),
+                        },
+                    })
+                except Exception as _projection_error:
+                    logger.debug("Manual planning UI projection unavailable: %s", _projection_error)
                 checkpoint_operation(
                     agent,
                     "ready",
@@ -1116,6 +1311,9 @@ def register_planning_routes(
         agent = get_agent()
         if agent is None:
             return jsonify({"error": "Agent not available"}), 500
+        pending = workspace_data_pending(agent)
+        if pending is not None:
+            return pending
 
         data = request.get_json() or {}
         threshold = data.get("threshold", 1.0)
@@ -1231,6 +1429,9 @@ def register_planning_routes(
         agent = get_agent()
         if agent is None:
             return jsonify({"error": "Agent not available"}), 500
+        pending = workspace_data_pending(agent)
+        if pending is not None:
+            return pending
 
         try:
             import numpy as np
@@ -1314,6 +1515,9 @@ def register_planning_routes(
         agent = get_agent()
         if agent is None:
             return jsonify({"error": "Agent not available"}), 500
+        pending = workspace_data_pending(agent)
+        if pending is not None:
+            return pending
 
         data = request.get_json() or {}
         axis = data.get("axis", "axial")
@@ -1386,6 +1590,9 @@ def register_planning_routes(
         agent = get_agent()
         if agent is None:
             return jsonify({"error": "Agent not available"}), 500
+        pending = workspace_data_pending(agent)
+        if pending is not None:
+            return pending
 
         data = request.get_json() or {}
         axis = data.get("axis", "axial")
@@ -1599,8 +1806,76 @@ def register_planning_routes(
         """Store or read frontend UI state used by agent UI control."""
         data = request.get_json(silent=True) or {}
         session_id = request_ui_session_id(data)
-        agent = get_agent(session_id)
+        # UI bridge reads and writes are control-plane operations.  A cold case
+        # must not be hydrated just because the browser is restoring a slider,
+        # layout, or monitor state; doing that made a reset/session switch wait
+        # on CT and planning arrays.  A cached agent is still updated when one
+        # already exists, while durable state remains the source of truth.
+        agent = get_cached_agent(session_id) if callable(get_cached_agent) else None
         bucket = _ui_bucket(session_id)
+
+        def _restore_durable_bridge_if_needed() -> Dict[str, Any]:
+            """Return the newest bridge without letting a reset lose it.
+
+            Bridge writes are deliberately debounced.  A user can therefore
+            POST a UI state and immediately reset or switch cases before the
+            250 ms writer runs.  Prefer the live bucket, then the pending
+            writer payload, then the durable snapshot.  This preserves the
+            fast asynchronous write path without making a small control-plane
+            state disappear at an agent-cache boundary.
+            """
+            with _UI_BRIDGE_LOCK:
+                live = {
+                    "state": dict(bucket.get("state") or {}),
+                    "events": list(bucket.get("events") or []),
+                    "training": dict(bucket.get("training") or {}),
+                    "updated_at": bucket.get("updated_at"),
+                }
+            if live["state"] or live["events"] or live["training"].get("active"):
+                return live
+
+            key = None
+            try:
+                store, user, selected = request_case_context()
+                key = (str(user["id"]), str(selected))
+            except WorkspaceError:
+                store = user = selected = None
+
+            if key is not None:
+                with _UI_BRIDGE_CHECKPOINT_LOCK:
+                    pending = _UI_BRIDGE_CHECKPOINT_PENDING.get(key)
+                if pending is not None:
+                    bridge = pending[3]
+                    if isinstance(bridge, dict):
+                        return {
+                            "state": dict(bridge.get("state") or {}),
+                            "events": list(bridge.get("events") or []),
+                            "training": dict(bridge.get("training") or {}),
+                            "updated_at": bridge.get("updated_at"),
+                        }
+
+            if store is not None and user is not None and selected:
+                try:
+                    snapshot = store.load_snapshot(user["id"], selected)
+                    bridge = ((snapshot.get("ui") or {}).get("bridge") or {})
+                    if isinstance(bridge, dict):
+                        return {
+                            "state": dict(bridge.get("state") or {}),
+                            "events": list(bridge.get("events") or []),
+                            "training": dict(bridge.get("training") or {}),
+                            "updated_at": bridge.get("updated_at"),
+                        }
+                except WorkspaceError:
+                    pass
+            return live
+
+        durable_bridge = _restore_durable_bridge_if_needed()
+        if durable_bridge["state"] or durable_bridge["events"] or durable_bridge["training"].get("active"):
+            with _UI_BRIDGE_LOCK:
+                # Only fill an empty live bucket.  A newer browser event must
+                # never be overwritten by an older disk snapshot.
+                if not bucket.get("state") and not bucket.get("events") and not bucket.get("training", {}).get("active"):
+                    bucket.update(durable_bridge)
 
         if request.method == "POST":
             state_payload = data.get("state") or data.get("ui_state") or {}
@@ -2815,6 +3090,13 @@ def register_planning_routes(
                 return jsonify({"error": "Authentication required"}), 401
             if callable(get_cached_agent):
                 agent = get_cached_agent(session_id)
+                # A lightweight cache hit is only a control-plane shell.  It
+                # must not enter the worker before the case-owned hydration
+                # thread restores arrays, planning results, and CT metadata.
+                # Otherwise a fast chat turn can observe an empty workspace
+                # and overwrite the durable response with an incomplete one.
+                if agent is not None and not getattr(agent, "_workspace_data_ready", True):
+                    agent = None
         else:
             agent = get_agent()
             if agent is None:
@@ -2849,10 +3131,33 @@ def register_planning_routes(
         if stream:
             def agent_supplier():
                 resolved = (
-                    get_agent_for_owner(owner, session_id)
+                    get_agent_for_owner(owner, session_id, _lightweight=True)
                     if callable(get_agent_for_owner)
-                    else get_agent(session_id)
+                    else get_agent(session_id, _lightweight=True)
                 )
+                # A chat task already exposes a visible hydration step. Wait
+                # on the case-owned readiness event here rather than blocking
+                # the HTTP/SSE handshake in get_agent while large arrays load.
+                ready_event = getattr(resolved, "_workspace_ready_event", None) if resolved is not None else None
+                if resolved is not None and not getattr(resolved, "_workspace_data_ready", True):
+                    # Low-risk knowledge/status turns can use the JSON
+                    # metadata shell immediately.  Only clinical actions wait
+                    # for arrays, and the wait is bounded so a damaged CT or
+                    # stalled decoder cannot leave a chat spinner forever.
+                    if not _chat_requires_full_workspace(message, image_path):
+                        logger.info(
+                            "Using metadata-only case shell for lightweight chat session=%s",
+                            session_id,
+                        )
+                    else:
+                        if ready_event is not None:
+                            ready_event.wait(timeout=120)
+                        if not getattr(resolved, "_workspace_data_ready", False):
+                            logger.warning(
+                                "Full case hydration did not finish within 120s session=%s",
+                                session_id,
+                            )
+                            return None
                 if resolved is not None and clear_context:
                     resolved.memory.clear_conversation()
                 return resolved

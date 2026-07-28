@@ -202,7 +202,17 @@ class OARSegmentationTool(BaseTool):
             data=oar_array,
             message=f"OAR segmentation completed. {len(organ_counts)} organs segmented.",
             metadata={
-                "oar_mask": image if image is not None else (label_img if label_img is not None else label_path),
+                # For an uploaded mask, ``image`` is the CT reference used for
+                # physical alignment, not the OAR mask itself. Returning the
+                # CT here made downstream mesh reconstruction and snapshot
+                # hydration receive the wrong SimpleITK image even though the
+                # derived NumPy labels looked correct. Keep the aligned label
+                # image as the canonical mask object.
+                "oar_mask": (
+                    label_img
+                    if from_label_path and label_img is not None
+                    else generated_metadata.get("oar_mask", label_path)
+                ),
                 "oar_array": oar_array,
                 "organ_counts": organ_counts,
                 "organ_names": organ_names,
@@ -223,8 +233,6 @@ __all__ = [
     "ToolResult",
     "TotalSegmentatorOARTool",
     "PancreaticOARTool",
-    "VoCoTotalSegmentatorTool",
-    "VoCoAortaVesselTool",
     "OARSegmentationTool",
     "get_tool",
     "list_tools",

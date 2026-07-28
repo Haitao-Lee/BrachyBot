@@ -654,7 +654,7 @@
                 copyDisplayProperties(mesh, savedMeshes.get(String(mesh?.id || '')));
             });
         }
-        const savedLabels = savedTree.ctvLabels || {};
+        const savedLabels = savedTree.ctvLabels || savedTree.ctv_labels || {};
         if (!dataTreeState.ctvLabels) dataTreeState.ctvLabels = {};
         Object.entries(savedLabels).forEach(([id, saved]) => {
             const current = dataTreeState.ctvLabels[id] || {};
@@ -662,11 +662,78 @@
             copyDisplayProperties(current, saved);
         });
         const byId = new Map((savedTree.organs || []).map(item => [String(item?.id || ''), item]));
-        const byLabel = new Map((savedTree.organs || []).map(item => [String(item?.labelId ?? ''), item]));
+        const byLabel = new Map((savedTree.organs || []).map(item => [String(item?.labelId ?? item?.label_id ?? ''), item]));
+        // OAR metadata may arrive after the fast control-plane snapshot. Keep
+        // these presentation-only values until updateOrganList() materializes
+        // the current case's authoritative rows; never restore old geometry or
+        // ontology from this deferred map.
+        window.__pendingOarPresentation = {
+            byId: Object.fromEntries(byId),
+            byLabel: Object.fromEntries(byLabel),
+        };
         (dataTreeState.organs || []).forEach(organ => {
             const saved = byId.get(String(organ.id)) || byLabel.get(String(organ.labelId));
             copyDisplayProperties(organ, saved);
         });
+    }
+
+    function hasTreeClinicalData(tree) {
+        if (!tree || typeof tree !== 'object') return false;
+        const hasRows = Array.isArray(tree.organs) && tree.organs.length > 0;
+        const hasCtvLabels = tree.ctvLabels && typeof tree.ctvLabels === 'object'
+            && Object.keys(tree.ctvLabels).length > 0;
+        const planning = tree.planning && typeof tree.planning === 'object' ? tree.planning : {};
+        const hasPlanningRows = [
+            planning.trajectories,
+            planning.seeds,
+            planning.needles,
+            planning.doseLevels,
+            planning.meshes,
+        ].some(value => Array.isArray(value) && value.length > 0);
+        // Loaded flags are only control-plane hints. They are intentionally
+        // excluded here because a compact snapshot can say "loaded" while
+        // carrying no rows; treating that marker as clinical data would let
+        // an empty snapshot erase live OAR or planning rows during hydration.
+        return hasRows || hasCtvLabels || hasPlanningRows;
+    }
+
+    function applyDataTreeSnapshot(savedTree) {
+        if (!savedTree || typeof savedTree !== 'object' || typeof dataTreeState === 'undefined') return;
+        const currentHasClinicalData = hasTreeClinicalData(dataTreeState);
+        const savedHasClinicalData = hasTreeClinicalData(savedTree);
+
+        // Clinical arrays and mesh records are data-plane state. A compact
+        // browser snapshot may legitimately contain an older empty projection
+        // while the authoritative label/plan loader has already populated the
+        // current session. Never let that empty projection erase live data.
+        // A genuinely empty/new case still receives the saved empty state,
+        // because clearClientWorkspace() has fenced the previous case first.
+        if (savedHasClinicalData || !currentHasClinicalData) {
+            ['organs', 'ctvLabels', 'oarSource'].forEach(key => {
+                if (!Object.prototype.hasOwnProperty.call(savedTree, key)) return;
+                const value = savedTree[key];
+                dataTreeState[key] = value && typeof value === 'object'
+                    ? jsonClone(value)
+                    : value;
+            });
+            ['ct', 'ctv', 'oar', 'dose', 'seeds', 'needles'].forEach(key => {
+                if (!Object.prototype.hasOwnProperty.call(savedTree, key)) return;
+                const savedGroup = savedTree[key];
+                if (!savedGroup || typeof savedGroup !== 'object') return;
+                dataTreeState[key] = Object.assign(dataTreeState[key] || {}, jsonClone(savedGroup));
+            });
+            if (savedTree.planning && typeof savedTree.planning === 'object') {
+                dataTreeState.planning = Object.assign(
+                    dataTreeState.planning || {},
+                    jsonClone(savedTree.planning),
+                );
+            }
+        }
+
+        // Presentation is always restored separately. This keeps visibility,
+        // opacity, colors, and camera-facing choices without reintroducing old
+        // geometry or overwriting a newer session's clinical arrays.
+        applyDataTreePresentation(savedTree);
     }
 
     function restoreSceneView(scene, dvh, generation) {
@@ -758,15 +825,19 @@
             }
             if (uiState.data_tree && typeof dataTreeState !== 'undefined') {
                 if (options.preserveClinicalData) applyDataTreePresentation(uiState.data_tree);
-                else Object.assign(dataTreeState, uiState.data_tree);
+                else applyDataTreeSnapshot(uiState.data_tree);
             }
             if (!options.preserveClinicalData && uiState.manual && typeof _saveManualState === 'function') {
                 _saveManualState(uiState.manual);
+            }
+            if (typeof window.restoreManualWorkflowProgress === 'function') {
+                window.restoreManualWorkflowProgress();
             }
             if (typeof trainingMonitorState !== 'undefined') {
                 // The browser snapshot keeps presentation details while the
                 // server bridge keeps feedback/events emitted by tools.
                 Object.assign(trainingMonitorState, ui.bridge?.training || {}, uiState.training || {});
+                document.body.classList.toggle('monitor-active', !!trainingMonitorState.active);
             }
             const report = snapshot.report && snapshot.report.form;
             if (report && typeof report === 'object') {
@@ -814,7 +885,7 @@
                 // the snapshot the browser is more up-to-date; otherwise the
                 // snapshot is authoritative (page refresh, stale cache).
                 const localMsgs = sessions[sessionId].messages || [];
-                if (chatMessages.length >= localMsgs.length) {
+                if (options.authoritativeChat || chatMessages.length >= localMsgs.length) {
                     sessions[sessionId].messages = chatMessages;
                 }
                 sessions[sessionId].pending = false;
@@ -1107,8 +1178,18 @@
         // The latter may load CT, labels, meshes, dose arrays, and an agent;
         // none of that should make a restored conversation look missing.
         applyChatSnapshotFast(workspace);
+        // A browser refresh has no trustworthy live in-memory transcript.
+        // Apply the server snapshot authoritatively before starting the heavy
+        // CT/mesh restore; otherwise a stale local shell can hide the last
+        // assistant answer while the task/status spinner is already visible.
+        await applyWorkspaceSnapshot(workspace, {
+            authoritativeChat: true,
+            preserveClinicalData: false,
+        });
         if (!workspaceSnapshotHasClinicalResources(workspace)) {
             cancelBackgroundWorkspaceRestore();
+        } else {
+            scheduleBackgroundWorkspaceRestore(workspace, activeSessionId);
         }
         return data;
     };

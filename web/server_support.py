@@ -142,11 +142,18 @@ def _oar_display_name_map(agent: Any, oar_array: Any = None) -> Dict[int, str]:
     result: Dict[int, str] = {}
     for ordinal, label_id in enumerate(sorted(label_ids), start=1):
         raw = _raw_name(label_id)
+        # An uploaded OAR label file has no trusted ontology. Even if an old
+        # model run left names such as ``stomach`` in the checkpoint, never
+        # expose those names as facts for the new opaque mask. The Data Tree
+        # can later carry an explicit user rename/reclassification.
+        if source in _UPLOADED_OAR_SOURCES:
+            result[label_id] = f"OAR {ordinal}"
+            continue
         # Explicit names are preserved so a user's rename survives refreshes.
         if raw and not _is_generic(raw):
             result[label_id] = raw
             continue
-        if source in _UPLOADED_OAR_SOURCES or not source:
+        if not source:
             result[label_id] = f"OAR {ordinal}"
             continue
         # Numeric fallback is allowed only for the known TotalSegmentator
@@ -444,6 +451,63 @@ def _latest_plan_snapshot(agent) -> Dict[str, Any]:
         metrics = metrics["metrics"]
     total_seeds = agent.memory.retrieve("total_seeds") or 0
     num_trajectories = agent.memory.retrieve("num_trajectories") or 0
+
+    def _points(value: Any) -> list:
+        if isinstance(value, dict):
+            value = value.get("position") or value.get("pos") or value.get("point")
+        if not isinstance(value, (list, tuple)) or len(value) < 3:
+            return []
+        try:
+            return [float(value[0]), float(value[1]), float(value[2])]
+        except (TypeError, ValueError):
+            return []
+
+    # Prefer the explicit manual/baseline snapshot. It is the same world-mm
+    # representation used by the viewer, so monitor QA never compares voxel
+    # indices with physical coordinates by accident.
+    seeds = list(agent.memory.retrieve("manual_seeds") or [])
+    needles = list(agent.memory.retrieve("manual_needles") or [])
+    if not seeds and not needles:
+        baseline = agent.memory.retrieve("algorithm_plan_snapshot")
+        if isinstance(baseline, dict):
+            seeds = list(baseline.get("seeds") or [])
+            needles = list(baseline.get("needles") or [])
+    if not seeds:
+        serialized = agent.memory.retrieve("seed_plan_serialized") or []
+        for entry in serialized:
+            if not isinstance(entry, dict):
+                continue
+            seeds.extend(entry.get("seeds") or [])
+
+    seed_positions = [point for point in (_points(seed) for seed in seeds) if point]
+    close_pairs = []
+    interference_threshold_mm = 0.8
+    for left in range(len(seed_positions)):
+        for right in range(left + 1, len(seed_positions)):
+            distance = math.sqrt(sum(
+                (seed_positions[left][axis] - seed_positions[right][axis]) ** 2
+                for axis in range(3)
+            ))
+            if distance < interference_threshold_mm:
+                close_pairs.append({
+                    "first": left,
+                    "second": right,
+                    "distance_mm": round(distance, 3),
+                })
+    if seed_positions:
+        seed_interference = {
+            "status": "attention" if close_pairs else "clear",
+            "threshold_mm": interference_threshold_mm,
+            "seed_count": len(seed_positions),
+            "close_pairs": close_pairs[:50],
+        }
+    else:
+        seed_interference = {
+            "status": "unavailable",
+            "threshold_mm": interference_threshold_mm,
+            "seed_count": 0,
+            "close_pairs": [],
+        }
     return {
         "metrics": metrics if isinstance(metrics, dict) else {},
         "total_seeds": int(total_seeds or 0),
@@ -451,6 +515,8 @@ def _latest_plan_snapshot(agent) -> Dict[str, Any]:
         "has_dose": agent.memory.retrieve("dose_distribution") is not None
             or agent.memory.retrieve("dose_distribution_gy") is not None,
         "manual_preview": bool(agent.memory.retrieve("manual_planning_preview")),
+        "seed_positions": seed_positions,
+        "seed_interference": seed_interference,
     }
 
 
@@ -550,6 +616,20 @@ def _build_plan_advice(agent, session_id: Optional[str] = None) -> Dict[str, Any
     recent_manual = [e for e in events if str(e.get("type", "")).startswith("manual.")]
     if recent_manual:
         advice.append("Recent manual edits were detected; recompute dose after each seed or needle adjustment to keep DVH current.")
+
+    interference = snapshot.get("seed_interference") or {}
+    if interference.get("status") == "attention":
+        issues.append(
+            f"{len(interference.get('close_pairs') or [])} seed pair(s) are closer than "
+            f"{float(interference.get('threshold_mm') or 0.8):.1f} mm in the current world-coordinate preview."
+        )
+        advice.append("Inspect the flagged seed pairs in the 3D viewer and confirm source spacing before clinical review.")
+    elif interference.get("status") == "clear":
+        strengths.append(
+            f"No seed-center pair is closer than {float(interference.get('threshold_mm') or 0.8):.1f} mm in the current preview."
+        )
+    elif snapshot.get("total_seeds", 0) > 1:
+        advice.append("Seed geometry was not available for the monitor; verify seed spacing directly in the 3D viewer.")
 
     if plan_score is not None:
         strengths.append(f"Plan score is {plan_score:.0f}/100; use it as an advisory ranking signal, not approval.")
@@ -679,13 +759,19 @@ def _training_feedback_for_event(agent, session_id: Optional[str], event: Dict[s
     v100_min = _metric_as_fraction(_extract_metric_value(target_criteria, "v100_min"))
 
     if etype.startswith("manual.seed"):
+        interference = snapshot.get("seed_interference") or {}
+        if interference.get("status") == "attention":
+            return (
+                f"Seed edit recorded. {len(interference.get('close_pairs') or [])} close seed pair(s) "
+                f"are below {float(interference.get('threshold_mm') or 0.8):.1f} mm; inspect them before continuing."
+            )
         if v100 is not None and v100_min is not None and v100 < v100_min:
             return f"Seed edit recorded. Current V100 is {v100 * 100:.1f}%; inspect cold CTV regions after recompute."
         return "Seed edit recorded. Recompute dose and verify DVH before placing the next seed."
     if etype.startswith("manual.needle"):
         return "Needle edit recorded. Check that the path traverses safe tissue and keeps distance from non-traversable OARs."
     if etype in {"planning.step", "segmentation.step"}:
-        return f"{label or etype} recorded. Continue with the next prerequisite step and verify outputs in the data tree."
+        return f"{label or etype} recorded. Verify its output in the Data Tree before continuing to the next prerequisite step."
     if etype == "manual.dose":
         if v100 is not None and d90 is not None:
             return f"Dose preview updated: V100={v100 * 100:.1f}%, D90={d90:.1f} Gy. Review hot spots and OAR dose before adding seeds."
@@ -723,6 +809,12 @@ def _training_screenshot_for_event(agent, session_id: Optional[str], event: Dict
             "question": "Training monitor snapshot: show the updated DVH after manual dose recomputation.",
         }
 
+    if etype.startswith("segmentation."):
+        return {
+            "target": "viewer-3d",
+            "question": "Training monitor snapshot: show the newly loaded CTV/OAR structures in the 3D viewer and Data Tree.",
+        }
+
     if etype == "planning.step" and ("completed" in label.lower() or "full pipeline completed" in label.lower()):
         return {
             "target": "dose-overview",
@@ -733,6 +825,12 @@ def _training_screenshot_for_event(agent, session_id: Optional[str], event: Dict
         return {
             "target": "viewer-3d",
             "question": "Training monitor snapshot: show the current 3D needle path and nearby anatomy.",
+        }
+
+    if etype.startswith("manual.seed"):
+        return {
+            "target": "viewer-3d",
+            "question": "Training monitor snapshot: show the edited seed and nearby seeds so spacing can be checked.",
         }
 
     return None

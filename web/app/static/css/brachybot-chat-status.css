@@ -1535,3 +1535,87 @@
     from { opacity: 0; transform: translateY(16px) scale(0.97); }
     to { opacity: 1; transform: translateY(0) scale(1); }
 }
+
+/* Monitoring is a presentation state, not a separate overlay window. Keep
+   the signal subtle so it remains visible during long manual workflows
+   without stealing focus from the chat or viewer. */
+body.monitor-active::after {
+    content: '';
+    position: fixed;
+    inset: 4px;
+    z-index: 9990;
+    pointer-events: none;
+    border: 1px solid rgba(79, 124, 255, 0.24);
+    box-shadow: 0 0 18px rgba(79, 124, 255, 0.12) inset;
+    animation: monitor-edge-breathe 2.8s ease-in-out infinite;
+}
+body.monitor-active .chat-header-icon,
+body.monitor-active .chat-avatar.bot-avatar {
+    animation: monitor-avatar-breathe 1.8s ease-in-out infinite;
+}
+@keyframes monitor-edge-breathe {
+    0%, 100% { opacity: 0.42; box-shadow: 0 0 14px rgba(79, 124, 255, 0.08) inset; }
+    50% { opacity: 0.9; box-shadow: 0 0 24px rgba(79, 124, 255, 0.22) inset; }
+}
+@keyframes monitor-avatar-breathe {
+    0%, 100% { box-shadow: var(--inset-top), 0 0 0 0 rgba(79, 124, 255, 0.18); }
+    50% { box-shadow: var(--inset-top), 0 0 0 5px rgba(79, 124, 255, 0.08); }
+}
+
+/* Manual pipeline stages do not emit chat SSE steps. Keep their progress
+   visible with the same restrained breathing language as the main trace. */
+.manual-workflow-progress {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 8px 18px;
+    padding: 9px 12px;
+    border: 1px solid rgba(86, 169, 255, .28);
+    border-radius: 10px;
+    background: rgba(22, 36, 58, .78);
+    color: var(--text, #d8e5f4);
+    transition: border-color .2s ease, opacity .2s ease;
+}
+.manual-workflow-progress.is-running {
+    animation: manual-workflow-breathe 1.9s ease-in-out infinite;
+}
+.manual-workflow-progress.is-done { border-color: rgba(61, 211, 126, .42); }
+.manual-workflow-progress.is-error { border-color: rgba(255, 91, 91, .58); }
+.manual-workflow-progress .chat-event-content {
+    min-width: 0;
+    display: grid;
+    gap: 2px;
+}
+.manual-workflow-progress-heading { font-weight: 650; font-size: .84rem; }
+.manual-workflow-progress .chat-event-text {
+    color: var(--text-dim, #9fb1c5);
+    font-size: .76rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.manual-workflow-progress-elapsed,
+.manual-workflow-progress .chat-event-timestamp {
+    color: var(--text-dim, #8da1b7);
+    font-size: .7rem;
+    white-space: nowrap;
+}
+.manual-workflow-progress-track {
+    width: 64px;
+    height: 3px;
+    overflow: hidden;
+    border-radius: 999px;
+    background: rgba(119, 170, 224, .18);
+}
+.manual-workflow-progress-track > span {
+    display: block;
+    width: 42%;
+    height: 100%;
+    border-radius: inherit;
+    background: var(--accent, #63a9ff);
+    transition: transform .2s linear;
+}
+@keyframes manual-workflow-breathe {
+    0%, 100% { box-shadow: 0 0 0 rgba(74, 161, 255, 0); }
+    50% { box-shadow: 0 0 16px rgba(74, 161, 255, .16); }
+}

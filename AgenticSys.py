@@ -1517,21 +1517,54 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
                 organ_names = metadata.get("organ_names")
                 organ_counts = metadata.get("organ_counts")
                 if oar_array is not None:
-                    # BUG FIX 2026-06-16: route helper through self.memory
-                    try:
-                        oar_array, organ_names, organ_counts = self.memory._strip_oar_labels_in_ctv(
-                            oar_array, organ_names, organ_counts
+                    # Keep uploaded/opaque labels verbatim.  A user-provided
+                    # OAR mask has no anatomical ontology, so interpreting its
+                    # integer labels as TotalSegmentator structures can move
+                    # them into the wrong Data Tree nodes or silently discard
+                    # labels that overlap the CTV map.  Only model-generated
+                    # anatomical labels are eligible for the CTV de-duplication
+                    # helper.
+                    oar_source = str(
+                        metadata.get("oar_source")
+                        or metadata.get("oar_mask_provenance")
+                        or ""
+                    ).strip().lower()
+                    uploaded_sources = {
+                        "uploaded_unknown",
+                        "uploaded",
+                        "manual_upload",
+                        "manual_label",
+                    }
+                    if oar_source not in uploaded_sources:
+                        # BUG FIX 2026-06-16: route helper through self.memory
+                        try:
+                            oar_array, organ_names, organ_counts = self.memory._strip_oar_labels_in_ctv(
+                                oar_array, organ_names, organ_counts
+                            )
+                        except AttributeError as exc:
+                            logger.debug("Memory OAR label strip helper unavailable: %s", exc)
+                    else:
+                        logger.info(
+                            "Preserving uploaded OAR labels without anatomical remapping (source=%s)",
+                            oar_source,
                         )
-                    except AttributeError as exc:
-                        logger.debug("Memory OAR label strip helper unavailable: %s", exc)
                 if oar_array is not None:
                     self.memory.store("oar_array", oar_array)
+                    self.memory.store("oar_label_data", oar_array)
                 if organ_names is not None:
                     self.memory.store("organ_names", organ_names)
                     logger.info(f"Stored organ_names: {organ_names}")
                 if organ_counts is not None:
                     self.memory.store("organ_counts", organ_counts)
-                self.memory.store("oar_source", "totalsegmentator")
+                self.memory.store("oar_segmented", True)
+                self.memory.store(
+                    "oar_source",
+                    metadata.get("oar_source")
+                    or metadata.get("oar_mask_provenance")
+                    or "totalsegmentator",
+                )
+                if metadata.get("oar_mask_provenance") is not None:
+                    self.memory.store("oar_mask_provenance", metadata["oar_mask_provenance"])
                 self.memory.store("oar_is_full", True)
 
             if tool_name == "trajectory_planning" and "trajectories" in metadata:
@@ -1940,10 +1973,26 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
                 # ct_direction for the world transform, and DICOMOrient('LPI') in
                 # _get_label_array would reorient the array, causing a mismatch.
                 self.memory.store("oar_array", meta["oar_array"])
+                # Keep the label payload and provenance together.  The viewer
+                # may receive the binary volume before its metadata endpoint
+                # is queried; retaining these fields lets it rebuild the
+                # Data Tree without rerunning segmentation or inventing
+                # anatomical names for an uploaded unknown mask.
+                self.memory.store("oar_label_data", meta["oar_array"])
             if "organ_names" in meta:
                 self.memory.store("organ_names", meta["organ_names"])
             if "organ_counts" in meta:
                 self.memory.store("organ_counts", meta["organ_counts"])
+            self.memory.store("oar_segmented", True)
+            self.memory.store(
+                "oar_source",
+                meta.get("oar_source") or meta.get("oar_mask_provenance") or "totalsegmentator",
+            )
+            if meta.get("oar_mask_provenance") is not None:
+                self.memory.store("oar_mask_provenance", meta["oar_mask_provenance"])
+            for _path_key in ("oar_path", "oar_mask_path"):
+                if meta.get(_path_key):
+                    self.memory.store(_path_key, meta[_path_key])
             self.memory.store("label_grid_orientation", meta.get("label_grid_orientation") or "LPI")
         elif tool_name == "dose_engine" and result.data is not None:
             self.memory.store("dose_distribution", result.data)

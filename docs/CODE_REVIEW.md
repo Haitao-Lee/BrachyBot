@@ -9264,3 +9264,99 @@ user explicitly presses Stop.
 These changes affect persistence scheduling, stream liveness, restore gating, and
 user-facing wording only. They do not change the clinical planning algorithm, dose
 model, coordinate conversion, obstacle filtering, or review thresholds.
+
+## 2026-07-28 - Full workspace and manual-mask follow-up audit
+
+### Scope
+
+This pass rechecked the current implementation against the long-running
+workspace, viewer, manual-planning, monitoring, and segmentation requirements.
+The review included the authenticated session boundary, background hydration,
+checkpoint scheduling, uploaded-mask provenance, Data Tree construction,
+label-volume loading, planning refreshes, manual workflow controls, surgical
+guide controls, and the BiomedParse fallback catalog.
+
+### Confirmed fixes and contracts
+
+1. **Session performance and isolation**: new/selected cases paint their shell
+   before snapshot and clinical-artifact work. CT, label volumes, planning
+   products, report figures, and mesh requests carry a case generation fence.
+   Switching or creating a case detaches the browser stream but does not cancel
+   another case's server task. Empty cases skip clinical hydration entirely.
+2. **Durability and restart recovery**: transcript/control-plane state is
+   committed before the final response; large arrays and mesh artifacts are
+   checkpointed in a daemon worker. Checkpoint logs identify snapshot read,
+   array encoding/reuse, quota work, write, commit, and failure phases. Running
+   work is restored as interrupted after restart, never as falsely completed.
+3. **Manual uploaded CTV/OAR masks**: the server aligns a supplied label to the
+   CT physical grid, stores the aligned label image as the canonical mask, and
+   records `manual_label`/`uploaded_unknown` provenance. An opaque OAR mask is
+   exposed as numbered `OAR 1`, `OAR 2`, ... nodes under Traversable; it is not
+   guessed to be stomach, liver, bone, or another anatomical structure. The
+   response immediately contains normalized `organs`, `organ_names`, and
+   `organ_counts`, so Data Tree creation does not depend on 3D reconstruction.
+4. **OAR Data Tree and viewer reconciliation**: the upload response, binary
+   `/api/viewer/label_volume`, and `/api/viewer/organs` are reconciled in the
+   same session. Metadata is painted first, label pixels are derived as a
+   fallback, and the organs endpoint remains the authoritative final metadata
+   source. Empty metadata snapshots cannot overwrite non-empty live OAR rows.
+   New-case reset clears `oarSource`, paths, labels, meshes, dose overlays,
+   report content, and file selections, preventing cross-case inheritance.
+5. **Data Tree presentation**: parent visibility/opacity changes propagate to
+   descendants; child edits remain local. Labels, colors, opacity, categories,
+   and visibility survive a refresh when the source is unchanged. Uploaded
+   source changes intentionally reset ontology-derived names/categories while
+   preserving only presentation state that is still meaningful.
+6. **Planning and dose UI**: planning refreshes are session-fenced and update
+   trajectories, seeds, needles, dose, DVH, color bars, and report-facing
+   metrics without requiring a manual 3D reconstruction. Dose visibility follows
+   the Planning parent, and slice changes invalidate/repaint dose contours in
+   the same coordinate frame. UI dose fields remain absolute Gy while model
+   inputs remain normalized through the shared scale.
+7. **Manual workflow and monitoring**: manual stages expose running/done/error
+   progress states, refresh the result view, reconcile OAR metadata, and save a
+   compact checkpoint. Monitor feedback is emitted as a structured assistant
+   message instead of a bare system bubble; screenshots are case-scoped and
+   throttled. Surgical-guide generation, parameter editing, version selection,
+   STL validation, and guide mesh restoration are available from the Input
+   panel and the chat UI.
+8. **CTV model availability**: the validated pancreatic nnU-Net path remains
+   the only pancreatic production choice. Non-pancreatic supported UI entries
+   use the BiomedParse v2 route and are marked according to local weight
+   availability; unverified legacy VoCo aliases are excluded from the human
+   selector and public OAR tool registry.
+9. **Public Python API correctness**: `tool_factory.OAR_seg.__all__` no longer
+   exports removed VoCo classes. Star-import now succeeds and exposes only
+   symbols that actually exist and are registered.
+
+### Deliberate safety and product boundaries
+
+- An uploaded opaque OAR label is not assigned an anatomical name or an
+  automatic non-traversable classification. The clinician can rename it or
+  move it under the Data Tree's non-traversable parent; planning reads that
+  current whitelist. Verified default bone/cartilage/vessel policy remains in
+  force for model-derived structures.
+- Background hydration is allowed to continue after a case switch, refresh, or
+  browser disconnect, but every completion is fenced before it can paint the
+  active case. Explicit Stop is the only normal UI cancellation path.
+- A failed optional web source, screenshot, or checkpoint is reported as a
+  scoped warning and does not erase a valid clinical result. Unsupported
+  medical conclusions remain subject to source-backed review and clinician
+  sign-off.
+
+### Verification
+
+- Full regression suite: **328 passed, 2 skipped, 3 warnings**.
+- Uploaded-mask and workspace frontend regressions: **75 passed, 3 warnings**.
+- `compileall` passed for `AgenticSys.py`, `agent_runtime`, `tool_factory`, and
+  `web`.
+- JavaScript syntax checks passed for all modified browser modules, including
+  workspace, viewer-volume, UI API, manual planning, and surgical-guide code.
+- `git diff --check` passed. The remaining warnings are third-party SimpleITK
+  SWIG deprecation warnings.
+
+The reviewed changes preserve the established CT physical-coordinate chain,
+obstacle filtering, dose model, and clinical review thresholds. The remaining
+clinical requirement is external: a qualified radiation oncologist and medical
+physicist must verify contours, source strength, dose, constraints, and the
+manufactured guide before clinical use.

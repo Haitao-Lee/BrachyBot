@@ -26,6 +26,7 @@ CTV_MODEL_CATALOG: List[Dict[str, object]] = [
         "status": "integrated_requires_local_weights",
         "tool": "ctv_segmentation",
         "tumor_type": "nnunet_pancreatic",
+        "ui_visible": True,
         "local_expected_path": "VoCo/pancreatic_tumor/Dataset005_Pancreas/nnUNetTrainer__nnUNetPlans__3d_fullres",
         "notes": "Native BrachyBot nnU-Net v2 path. It is the only CTV model treated as production-path when weights are installed.",
         "sources": [
@@ -41,6 +42,10 @@ CTV_MODEL_CATALOG: List[Dict[str, object]] = [
         "status": "integrated_optional_requires_local_weights_and_validation",
         "tool": "ctv_segmentation",
         "tumor_type": "voco_pancreatic",
+        # Kept in the machine-readable research catalog for backwards
+        # compatibility, but hidden from the user selector: the validated
+        # pancreatic nnU-Net path is the only production pancreas option.
+        "ui_visible": False,
         "local_expected_path": "VoCo/PANORAMA/model_voco.pt",
         "notes": "Optional VoCo path using PANORAMA's published six-class label legend; validate locally before clinical research use.",
         "sources": [
@@ -354,14 +359,27 @@ def catalog_with_local_status(repo_root: Optional[str] = None) -> List[Dict[str,
     return items
 
 
-def filter_catalog(site: Optional[str] = None, include_experimental: bool = True) -> List[Dict[str, object]]:
-    """Filter catalog entries by tumor site and experimental visibility."""
+def filter_catalog(
+    site: Optional[str] = None,
+    include_experimental: bool = True,
+    *,
+    for_ui: bool = False,
+) -> List[Dict[str, object]]:
+    """Filter catalog entries by site, visibility, and research status.
+
+    ``ctv_model_catalog`` intentionally exposes the complete audit catalog so
+    an operator can inspect research resources.  The web selector uses
+    ``for_ui=True`` and must not expose the unvalidated pancreatic VoCo
+    alternative as a second production choice.
+    """
     site_norm = (site or "").strip().lower()
     items = catalog_with_local_status()
     if site_norm:
         items = [m for m in items if str(m.get("site", "")).lower() == site_norm]
     if not include_experimental:
         items = [m for m in items if not str(m.get("status", "")).startswith("external_")]
+    if for_ui:
+        items = [m for m in items if bool(m.get("ui_visible", True))]
     return items
 
 

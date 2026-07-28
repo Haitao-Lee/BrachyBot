@@ -132,12 +132,41 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
             return False
         return bool(store.owns_path(user["id"], session_id, path))
 
+    def workspace_data_pending(agent):
+        """Return a non-blocking restore response while arrays are decoding."""
+        if agent is None:
+            return jsonify({
+                "success": False,
+                "pending": True,
+                "code": "workspace_agent_initializing",
+                "message": "Case resources are being initialized.",
+                "retry_after_ms": 250,
+            }), 202
+        if agent is not None and not getattr(agent, "_workspace_data_ready", True):
+            return jsonify({
+                "success": False,
+                "pending": True,
+                "code": "workspace_hydration_pending",
+                "message": "Case resources are still loading.",
+                "retry_after_ms": 250,
+            }), 202
+        if agent is not None and getattr(agent, "_workspace_hydration_error", ""):
+            return jsonify({
+                "success": False,
+                "pending": False,
+                "code": "workspace_hydration_failed",
+                "error": agent._workspace_hydration_error,
+            }), 409
+        return None
+
     @app.route("/api/viewer/load", methods=["POST"])
     @require_api_key
     @rate_limit
     def api_viewer_load():
         """Load CT image and return slice metadata (no pixel data)."""
-        agent = get_agent()
+        # Install a lightweight agent immediately; large case artifacts are
+        # decoded by the server's background hydration worker.
+        agent = get_agent(_lightweight=True)
         if agent is None:
             return jsonify({"error": "Agent not available"}), 500
 
@@ -290,9 +319,12 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
     @rate_limit
     def api_viewer_slice():
         """Get a specific slice from loaded CT as PNG image."""
-        agent = get_agent()
+        agent = get_agent(_lightweight=True)
         if agent is None:
             return jsonify({"error": "Agent not available"}), 500
+        pending = workspace_data_pending(agent)
+        if pending is not None:
+            return pending
 
         data = request.get_json() or {}
         axis_name = data.get("axis", "axial")
@@ -394,9 +426,12 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
     @rate_limit
     def api_viewer_volume():
         """Return entire CT volume as binary blob for client-side rendering."""
-        agent = get_agent()
+        agent = get_agent(_lightweight=True)
         if agent is None:
             return jsonify({"error": "Agent not available"}), 500
+        pending = workspace_data_pending(agent)
+        if pending is not None:
+            return pending
 
         ct_data = agent.memory.retrieve("ct_data")
         spacing = agent.memory.retrieve("ct_spacing")
@@ -439,9 +474,12 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
     @rate_limit
     def api_viewer_label_volume():
         """Return full CTV/OAR label volumes as binary uint8 for client-side rendering."""
-        agent = get_agent()
+        agent = get_agent(_lightweight=True)
         if agent is None:
             return jsonify({"error": "Agent not available"}), 500
+        pending = workspace_data_pending(agent)
+        if pending is not None:
+            return pending
 
         ct_data = agent.memory.retrieve("ct_data")
         if ct_data is None:
@@ -458,6 +496,13 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
             oar_source = str(agent.memory.retrieve("oar_source", "") or "").strip().lower()
             ct_ref = agent.memory.retrieve("ct_image")
 
+            uploaded_sources = {
+                "manual_label",
+                "uploaded_unknown",
+                "uploaded",
+                "manual_upload",
+            }
+
             def _uploaded_label_array(source, array_key, path_key):
                 """Reload uploaded labels on the current LPI CT grid.
 
@@ -466,7 +511,16 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
                 metadata instead of trusting the legacy array orientation.
                 """
                 path = agent.memory.retrieve(path_key)
-                if source in {"manual_label", "uploaded_unknown"} and path and ct_ref is not None:
+                # Older checkpoints used the explicit ``*_mask_path`` key.
+                # Prefer the canonical key, but keep the fallback so a mask
+                # uploaded before the workspace schema migration is still
+                # aligned from its physical metadata rather than a stale raw
+                # NumPy array.
+                if not path:
+                    path = agent.memory.retrieve(
+                        "ctv_mask_path" if array_key == "ctv_array" else "oar_mask_path"
+                    )
+                if source in uploaded_sources and path and ct_ref is not None:
                     try:
                         return sitk.GetArrayFromImage(
                             align_label_to_reference(str(path), ct_ref, "LPI")
@@ -493,17 +547,23 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
                 # CTV = only tumor
                 ctv_array = (ctv_full == 1).astype(np.uint8) if np.any(ctv_full == 1) else None
 
-                # Merge nnUNet vessel/organ labels into OAR array
+                # Merge embedded nnUNet vessel/organ labels only when no
+                # user-supplied OAR mask exists.  An uploaded unknown mask is
+                # an opaque, complete label volume: adding anatomy-derived
+                # labels would manufacture structures the user did not
+                # provide and would make the Data Tree disagree with the
+                # imported image.
                 nnunet_oar_labels = {
                     2: 201,   # artery -> OAR label 201
                     3: 202,   # vein -> OAR label 202
                     4: 203,   # pancreas -> OAR label 203
                 }
                 has_nnunet_oar = False
-                for src_label, dst_label in nnunet_oar_labels.items():
-                    if np.any(ctv_full == src_label):
-                        has_nnunet_oar = True
-                        break
+                if oar_source not in uploaded_sources:
+                    for src_label, dst_label in nnunet_oar_labels.items():
+                        if np.any(ctv_full == src_label):
+                            has_nnunet_oar = True
+                            break
 
                 if has_nnunet_oar:
                     if oar_array is None:
@@ -639,9 +699,12 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
     @rate_limit
     def api_viewer_overlay():
         """Get segmentation overlay for a specific slice."""
-        agent = get_agent()
+        agent = get_agent(_lightweight=True)
         if agent is None:
             return jsonify({"error": "Agent not available"}), 500
+        pending = workspace_data_pending(agent)
+        if pending is not None:
+            return pending
 
         data = request.get_json() or {}
         axis_name = data.get("axis", "axial")
@@ -764,32 +827,122 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
     @rate_limit
     def api_viewer_organs():
         """Return organ data (names and voxel counts) from OAR segmentation."""
-        agent = get_agent()
+        agent = get_agent(_lightweight=True)
         if agent is None:
             return jsonify({"error": "Agent not available"}), 500
 
-        oar_array = agent._get_label_array("oar_array")
-        organ_names = _server_support._oar_display_name_map(agent, oar_array)
-        organ_counts = agent.memory.retrieve("organ_counts", {})
+        # Organ metadata is deliberately restored in the lightweight pass.
+        # It is enough to paint the Data Tree immediately and must not be
+        # blocked by a large NPY/CT decode.  A brand-new case has neither
+        # metadata nor an OAR artifact and should return an empty success,
+        # rather than making the browser poll forever for a resource that
+        # does not exist.  Only an existing OAR artifact without metadata
+        # remains pending until the full hydration pass reconstructs it.
+        stored_names = agent.memory.retrieve("organ_names", {}) or {}
+        stored_counts = agent.memory.retrieve("organ_counts", {}) or {}
+        stored_oar_path = agent.memory.retrieve("oar_path")
+        stored_oar_source = agent.memory.retrieve("oar_source", "")
+        stored_oar_segmented = bool(agent.memory.retrieve("oar_segmented", False))
+        has_oar_metadata = bool(stored_names or stored_counts)
+        has_oar_artifact = bool(
+            stored_oar_path or stored_oar_source or stored_oar_segmented
+        )
+        if not getattr(agent, "_workspace_data_ready", True) and not has_oar_metadata:
+            if has_oar_artifact:
+                pending = workspace_data_pending(agent)
+                if pending is not None:
+                    return pending
+            else:
+                return jsonify({
+                    "success": True,
+                    "organs": {},
+                    "organ_names": {},
+                    "organ_counts": {},
+                    "total_labels": 0,
+                    "oar_source": "",
+                    "oar_mask_provenance": "",
+                })
 
-        # If organ_names is empty but oar_array exists, generate from array
-        if not organ_names:
-            if oar_array is not None:
-                import numpy as np
-                organ_counts_generated = {}
-                organ_names_generated = {}
-                unique_labels = np.unique(oar_array)
-                for label in unique_labels:
-                    if label > 0:
-                        label_int = int(label)
-                        organ_counts_generated[label_int] = int(np.sum(oar_array == label))
-                        organ_names_generated[label_int] = organ_names.get(
-                            label_int, f"OAR {len(organ_names_generated) + 1}"
-                        )
-                organ_names = organ_names_generated
-                organ_counts = organ_counts_generated
-                # Store for future use
+        # Metadata is the authoritative control-plane during lightweight
+        # hydration.  The binary OAR array may still be decoding in the
+        # background; asking the ontology helper for that missing array used
+        # to replace valid persisted names/counts with an empty map.  Only
+        # consult the array when metadata is genuinely absent, and use it to
+        # fill missing labels rather than overwrite the saved ontology.
+        def _label_map(value):
+            if not isinstance(value, dict):
+                return {}
+            normalized = {}
+            for raw_key, raw_value in value.items():
+                try:
+                    key = int(raw_key)
+                except (TypeError, ValueError):
+                    continue
+                if key <= 0:
+                    continue
+                normalized[key] = raw_value
+            return normalized
+
+        organ_names = _label_map(stored_names)
+        organ_counts = _label_map(stored_counts)
+        uploaded_sources = {
+            "uploaded_unknown",
+            "manual_label",
+            "uploaded",
+            "manual_upload",
+        }
+        if str(stored_oar_source or "").strip().lower() in uploaded_sources:
+            # The uploaded file is an opaque label map, not a TotalSegmentator
+            # ontology. Rebuild stable numbered names from its label IDs even
+            # when a stale checkpoint contains names from a previous model.
+            upload_ids = sorted(set(organ_names) | set(organ_counts))
+            organ_names = {
+                int(label_id): f"OAR {ordinal}"
+                for ordinal, label_id in enumerate(upload_ids, start=1)
+            }
+        oar_array = None
+        if not organ_names and not organ_counts:
+            oar_array = agent._get_label_array("oar_array")
+            # Older durable cases may retain only the uploaded mask path. In
+            # that case derive the small control-plane map from the path once,
+            # aligned to the current CT grid, instead of waiting for a manual
+            # 3D reconstruction to make the Data Tree visible.
+            if oar_array is None and stored_oar_path:
+                try:
+                    import os
+                    import SimpleITK as sitk
+                    if os.path.exists(str(stored_oar_path)):
+                        ct_path = agent.memory.retrieve("ct_path")
+                        if ct_path and os.path.exists(str(ct_path)):
+                            from tool_factory.segmentation_alignment import align_label_to_reference
+                            aligned = align_label_to_reference(str(stored_oar_path), sitk.ReadImage(str(ct_path)), "LPI")
+                            oar_array = sitk.GetArrayFromImage(aligned)
+                            stored_oar_source = stored_oar_source or "uploaded_unknown"
+                            agent.memory.store("oar_source", stored_oar_source)
+                            agent.memory.store("oar_mask_provenance", "uploaded_unknown")
+                except Exception as exc:
+                    logger.warning("Unable to derive OAR metadata from stored path: %s", exc)
+            organ_names = _label_map(
+                _server_support._oar_display_name_map(agent, oar_array)
+            )
+            organ_counts = _label_map(agent.memory.retrieve("organ_counts", {}))
+
+        if oar_array is not None:
+            import numpy as np
+            unique_labels = np.unique(oar_array)
+            next_ordinal = len(organ_names) + 1
+            for label in unique_labels:
+                label_int = int(label)
+                if label_int <= 0:
+                    continue
+                organ_counts.setdefault(label_int, int(np.sum(oar_array == label)))
+                organ_names.setdefault(label_int, f"OAR {next_ordinal}")
+                next_ordinal += 1
+            # Cache only the completed metadata.  This is a small control
+            # plane write and avoids repeating label scans on every refresh.
+            if organ_names:
                 agent.memory.store("organ_names", organ_names)
+            if organ_counts:
                 agent.memory.store("organ_counts", organ_counts)
 
         organs = {}
@@ -800,12 +953,27 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
                 "voxel_count": organ_counts.get(label_int, organ_counts.get(str(label_int), 0))
             }
 
+        # Return the normalized maps as first-class fields as well as the
+        # legacy ``organs`` object.  A large label-volume response can arrive
+        # before optional headers are available; the browser can therefore
+        # rebuild the same numbered Data Tree nodes from these small maps.
+        normalized_names = {str(k): str(v) for k, v in (organ_names or {}).items()}
+        normalized_counts = {
+            str(k): int(v or 0) for k, v in (organ_counts or {}).items()
+        }
+
         return jsonify({
             "success": True,
             "organs": organs,
+            "organ_names": normalized_names,
+            "organ_counts": normalized_counts,
+            "total_labels": len(organs),
             # The client uses provenance to decide whether an incoming mask
             # may inherit previous Data Tree ontology/category state.
             "oar_source": str(agent.memory.retrieve("oar_source", "") or ""),
+            "oar_mask_provenance": str(
+                agent.memory.retrieve("oar_mask_provenance", "") or ""
+            ),
         })
 
     @app.route("/api/viewer/threshold", methods=["POST"])
@@ -911,9 +1079,12 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
     @rate_limit
     def api_viewer_3d():
         """Generate 3D mesh from CTV or OAR mask."""
-        agent = get_agent()
+        agent = get_agent(_lightweight=True)
         if agent is None:
             return jsonify({"error": "Agent not available"}), 500
+        pending = workspace_data_pending(agent)
+        if pending is not None:
+            return pending
 
         data = request.get_json() or {}
         source = data.get("source", "ctv")  # "ctv" or "oar"
@@ -1000,9 +1171,12 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
     @rate_limit
     def api_viewer_3d_mask():
         """Generate 3D mesh from a specific organ mask label."""
-        agent = get_agent()
+        agent = get_agent(_lightweight=True)
         if agent is None:
             return jsonify({"error": "Agent not available"}), 500
+        pending = workspace_data_pending(agent)
+        if pending is not None:
+            return pending
 
         data = request.get_json() or {}
         label_id = data.get("label_id")

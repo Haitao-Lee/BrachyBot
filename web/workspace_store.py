@@ -220,6 +220,29 @@ def _decode_artifacts(value: Any, root: Path) -> Any:
     return _restore_json({key: _decode_artifacts(item, root) for key, item in value.items()})
 
 
+def _restore_hydration_metadata(value: Any) -> Any:
+    """Restore only JSON/scalar checkpoint metadata during a fast cold start.
+
+    Array and image references deliberately become ``None`` until the
+    background hydration pass has decoded the case artifacts. This prevents a
+    lightweight agent from exposing a fake, partially decoded clinical result.
+    """
+    if isinstance(value, list):
+        return [_restore_hydration_metadata(item) for item in value]
+    if not isinstance(value, dict):
+        return _restore_json(value)
+    if "$array" in value or "$image" in value:
+        return None
+    if "$tuple" in value:
+        return tuple(_restore_hydration_metadata(item) for item in value["$tuple"])
+    if "$unsupported" in value:
+        return None
+    return {
+        str(key): _restore_hydration_metadata(item)
+        for key, item in value.items()
+    }
+
+
 def _array_references(value: Any) -> set[str]:
     """Collect sidecar paths referenced by an encoded workspace payload."""
     if isinstance(value, list):
@@ -348,6 +371,10 @@ class WorkspaceStore:
         self._lock = threading.RLock()
         self._checkpoint_timers: Dict[Tuple[str, str], threading.Timer] = {}
         self._checkpoint_generations: Dict[Tuple[str, str], int] = {}
+        # Heavy snapshot preparation is serialized per case. Multiple UI
+        # events may request a checkpoint at once, but they must not each scan
+        # and fsync the same CT-sized artifact set concurrently.
+        self._checkpoint_work_locks: Dict[Tuple[str, str], threading.Lock] = {}
         self._case_locks: Dict[Tuple[str, str], threading.RLock] = {}
         # Array references are process-local acceleration metadata. The durable
         # snapshot remains authoritative; after restart the encoder rebuilds a
@@ -656,7 +683,37 @@ class WorkspaceStore:
         self._audit(user_id, session_id, reason, {"keys": sorted(patch.keys())})
         return self.load_snapshot(user_id, session_id)
 
+    def _checkpoint_work_lock(self, user_id: str, session_id: str) -> threading.Lock:
+        key = (str(user_id), str(session_id))
+        with self._lock:
+            lock = self._checkpoint_work_locks.get(key)
+            if lock is None:
+                lock = threading.Lock()
+                self._checkpoint_work_locks[key] = lock
+            return lock
+
     def snapshot_agent(
+        self,
+        user_id: str,
+        session_id: str,
+        agent: Any,
+        *,
+        reason: str = "agent.checkpoint",
+        operation: Optional[Mapping[str, Any]] = None,
+        checkpoint_generation: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """Serialize heavy checkpoint preparation one case at a time."""
+        with self._checkpoint_work_lock(user_id, session_id):
+            return self._snapshot_agent_locked(
+                user_id,
+                session_id,
+                agent,
+                reason=reason,
+                operation=operation,
+                checkpoint_generation=checkpoint_generation,
+            )
+
+    def _snapshot_agent_locked(
         self,
         user_id: str,
         session_id: str,
@@ -840,16 +897,31 @@ class WorkspaceStore:
             self._array_refs[cache_key] = (int(planning_versions.get(source_key, 0)), relative)
             created_array_paths.append(relative)
 
-        capacity_started = time.perf_counter()
         user = self.get_user_by_id(user_id)
         quota = int(user["storage_quota_bytes"]) if user else DEFAULT_USER_QUOTA_BYTES
-        capacity_remaining = quota - self.user_storage_bytes(user_id)
-        logger.info(
-            "workspace checkpoint capacity scanned session=%s duration_ms=%.1f remaining_bytes=%d",
-            session_id,
-            (time.perf_counter() - capacity_started) * 1000.0,
-            capacity_remaining,
+        # If no planning result/version changed, every array can be reused and
+        # a full account-wide recursive size scan adds latency without adding
+        # safety. A changed/new result still performs the exact quota check.
+        arrays_may_change = (
+            planning_versions != durable_versions
+            or set(str(key) for key in planning_results)
+            != set(str(key) for key in durable_results)
         )
+        if arrays_may_change:
+            capacity_started = time.perf_counter()
+            capacity_remaining = quota - self.user_storage_bytes(user_id)
+            logger.info(
+                "workspace checkpoint capacity scanned session=%s duration_ms=%.1f remaining_bytes=%d",
+                session_id,
+                (time.perf_counter() - capacity_started) * 1000.0,
+                capacity_remaining,
+            )
+        else:
+            capacity_remaining = quota
+            logger.info(
+                "workspace checkpoint capacity scan skipped session=%s reason=unchanged_arrays",
+                session_id,
+            )
 
         def ensure_snapshot_capacity(path: Path, new_size: int) -> None:
             nonlocal capacity_remaining
@@ -993,10 +1065,28 @@ class WorkspaceStore:
             user_id, session_id, payload, reason=reason, operation=operation,
         )
 
-    def hydrate_agent(self, user_id: str, session_id: str, agent: Any) -> Dict[str, Any]:
-        """Load a checkpoint into a fresh agent without evaluating any code."""
+    def hydrate_agent(
+        self,
+        user_id: str,
+        session_id: str,
+        agent: Any,
+        *,
+        include_planning_results: bool = True,
+        load_ct: bool = True,
+        mark_interrupted: bool = True,
+        cancel_event: Any = None,
+    ) -> Dict[str, Any]:
+        """Load a checkpoint into a fresh agent without evaluating any code.
+
+        A lightweight pass restores only JSON metadata and UI/chat state. Large
+        NPY sidecars and the CT volume can then be restored by a detached
+        worker, keeping case selection and the first browser paint responsive.
+        """
         started = time.perf_counter()
-        logger.info("workspace hydration started session=%s", session_id)
+        logger.info(
+            "workspace hydration started session=%s planning_results=%s ct=%s",
+            session_id, include_planning_results, load_ct,
+        )
         snapshot_started = time.perf_counter()
         snapshot = self.load_snapshot(user_id, session_id)
         logger.info(
@@ -1008,10 +1098,21 @@ class WorkspaceStore:
         state = snapshot.get("agent") or {}
         memory = agent.memory
         decode_started = time.perf_counter()
+        if cancel_event is not None and cancel_event.is_set():
+            logger.info("workspace hydration cancelled before decode session=%s", session_id)
+            return snapshot
         with memory._lock:
+            if cancel_event is not None and cancel_event.is_set():
+                logger.info("workspace hydration cancelled before memory restore session=%s", session_id)
+                return snapshot
             memory.planning_results.clear()
             for key, value in (state.get("planning_results") or {}).items():
-                decoded = _decode_artifacts(value, root)
+                if include_planning_results:
+                    decoded = _decode_artifacts(value, root)
+                else:
+                    # Keep scalar/path metadata available for status panels,
+                    # but never pretend a large array is already in memory.
+                    decoded = _restore_hydration_metadata(value)
                 if decoded is not None:
                     memory.planning_results[key] = decoded
             if hasattr(memory, "_planning_versions"):
@@ -1043,7 +1144,11 @@ class WorkspaceStore:
         if hasattr(agent, "run_ledger") and isinstance(state.get("runtime_state"), Mapping):
             agent.run_ledger.restore_state(_restore_json(state["runtime_state"]))
         ct_started = time.perf_counter()
-        self._hydrate_ct_image(root, memory)
+        if load_ct:
+            if cancel_event is not None and cancel_event.is_set():
+                logger.info("workspace hydration cancelled before CT restore session=%s", session_id)
+                return snapshot
+            self._hydrate_ct_image(root, memory)
         logger.info(
             "workspace hydration CT phase finished session=%s duration_ms=%.1f ct_loaded=%s",
             session_id,
@@ -1051,7 +1156,7 @@ class WorkspaceStore:
             memory.retrieve("ct_data") is not None,
         )
         operation = snapshot.get("operation") or {}
-        if operation.get("state") == "running":
+        if mark_interrupted and operation.get("state") == "running":
             snapshot = self.mark_session_interrupted(user_id, session_id, "Server restarted before the task completed")
         logger.info(
             "workspace hydration completed session=%s duration_ms=%.1f",
@@ -1062,6 +1167,8 @@ class WorkspaceStore:
 
     @staticmethod
     def _hydrate_ct_image(root: Path, memory: Any) -> None:
+        if memory.retrieve("ct_data") is not None:
+            return
         ct_path = memory.retrieve("ct_path")
         if not ct_path:
             return
