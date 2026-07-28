@@ -848,6 +848,45 @@ body.workspace-transitioning #sessionList {
     width: 100%;
     min-width: 0;
     height: 28px;
+    appearance: none;
+    -webkit-appearance: none;
+    color-scheme: dark;
+    background: var(--bg-3);
+    color: var(--text);
+    border: 1px solid var(--border-default);
+    border-radius: var(--control-r);
+    padding: 0 var(--control-pad-x);
+    font: inherit;
+    line-height: 1.25;
+    box-shadow: var(--inset-top), var(--shadow-xs);
+}
+
+.guide-parameter-grid select:not([multiple]) {
+    padding-right: 26px;
+    background-image:
+        linear-gradient(45deg, transparent 50%, var(--text-secondary) 50%),
+        linear-gradient(135deg, var(--text-secondary) 50%, transparent 50%);
+    background-position: calc(100% - 14px) 50%, calc(100% - 10px) 50%;
+    background-size: 4px 4px, 4px 4px;
+    background-repeat: no-repeat;
+}
+
+.guide-parameter-grid select:focus {
+    outline: none;
+    border-color: var(--primary);
+    box-shadow: var(--control-focus-ring), var(--inset-top);
+}
+
+.guide-parameter-grid select option {
+    background: var(--bg-2);
+    color: var(--text);
+    font: inherit;
+    padding: 4px 8px;
+}
+
+.guide-parameter-grid select option:checked {
+    background: color-mix(in srgb, var(--primary) 24%, var(--bg-2));
+    color: var(--text);
 }
 
 .guide-select-grid label {
@@ -857,6 +896,12 @@ body.workspace-transitioning #sessionList {
 .guide-select-grid select {
     height: auto;
     min-height: 74px;
+    padding: 6px 8px;
+}
+
+.guide-select-grid select[multiple] {
+    min-height: 88px;
+    resize: vertical;
 }
 
 .guide-inline-button,

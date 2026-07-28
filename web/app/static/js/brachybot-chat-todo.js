@@ -1767,8 +1767,15 @@ async function sendChat(prefill, options) {
                                         sessionId: turnSessionId,
                                         forceFresh: true,
                                         preserveViewerState: true,
+                                        resetPresentation: true,
                                     }).then(() => {
                                         if (String(activeSessionId || '') !== turnSessionId) return;
+                                        if (typeof window.reconcileSegmentationViewerState === 'function') {
+                                            window.reconcileSegmentationViewerState({
+                                                sessionId: turnSessionId,
+                                                reason: 'chat-segmentation-complete',
+                                            });
+                                        }
                                         if (typeof renderDataTree === 'function') renderDataTree();
                                         if (typeof startSegmentationMeshPrewarm === 'function') {
                                             startSegmentationMeshPrewarm(data.tool === 'ctv_segmentation' ? 'ctv' : 'oar');

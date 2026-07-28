@@ -1014,6 +1014,16 @@
             }
             if (typeof setViewerLayout === 'function' && state?.viewerSettings?.layout) setViewerLayout(state.viewerSettings.layout);
             if (typeof renderDataTree === 'function') renderDataTree();
+            // Label/planning hydration may finish before this presentation
+            // snapshot is applied. Reconcile once more after the snapshot so
+            // valid current-case masks cannot remain in CT-only mode or be
+            // painted only in an old canvas generation.
+            if (typeof window.reconcileSegmentationViewerState === 'function') {
+                window.reconcileSegmentationViewerState({
+                    sessionId,
+                    reason: 'workspace-presentation-restored',
+                });
+            }
             // Sync viewer DOM controls from restored state so checkboxes,
             // select, and sliders match what was saved. applyControls()
             // restores raw DOM values, but onchange handlers can desync

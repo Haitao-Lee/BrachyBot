@@ -711,11 +711,18 @@ async function runSegmentationStep(kind) {
                 await loadLabelVolumes({
                     forceFresh: true,
                     preserveViewerState: true,
+                    resetPresentation: true,
                     sessionId: ownerSessionId,
                 });
             } catch (e) { console.warn('[manual segmentation] loadLabelVolumes failed:', e); }
         }
         if (!isCurrentOwner()) return { success: true, kind, labels: n, detached: true };
+        if (typeof window.reconcileSegmentationViewerState === 'function') {
+            window.reconcileSegmentationViewerState({
+                sessionId: ownerSessionId,
+                reason: 'manual-segmentation-complete',
+            });
+        }
         if (typeof renderDataTree === 'function') {
             try { renderDataTree(); } catch (_) {}
         }

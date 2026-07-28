@@ -2305,3 +2305,33 @@ installed. Its technical status is reported separately from clinical
 validation. The validated pancreatic nnU-Net path remains the only verified
 pancreatic entry; the legacy unverified pancreatic alternative is hidden from
 the UI and mapped for old snapshots.
+
+The active Monitor edge is rendered by a top-level, non-interactive viewport
+layer, so it remains visible around the whole application even when the body
+uses clipped scrolling. Puncture Guide selects use the same dark control
+tokens as the surrounding inputs, and Tumor Type options intentionally use a
+binary visual rule: callable segmentation routes are green and unavailable
+routes are red.
+
+## Segmentation and Data Tree Consistency
+
+Segmentation results are registered from the decoded, session-scoped label
+volume rather than from a timing-sensitive metadata callback. CTV and OAR
+nodes therefore appear as soon as real non-zero voxels are available, including
+opaque user-uploaded masks (which remain numbered until the user renames or
+reclassifies them). Fresh segmentation/import operations enable the standard
+CTV/OAR overlay presentation; reopening a case preserves explicit viewer
+choices.
+
+The 2D label-volume and per-slice fallback routes share one physical-grid
+resolver. Uploaded masks are aligned to the current CT geometry before either
+route renders them, preventing mirrored or displaced overlays. Data Tree nodes
+carry stable object/session/planning identifiers plus loading, error, version,
+visibility, color, opacity, and status fields. Dose, dose contours, DVH, meshes,
+annotations, needles, seeds, and surgical guides are registered when their real
+payloads arrive, and completion triggers an immediate tree and viewer refresh.
+
+The current verification baseline is **354 passed, 2 skipped, 3 warnings** in
+the full Python suite; the warnings are third-party SimpleITK SWIG deprecations.
+See [`docs/CODE_REVIEW.md`](docs/CODE_REVIEW.md) for the root-cause analysis and
+the targeted segmentation/viewer checks.
