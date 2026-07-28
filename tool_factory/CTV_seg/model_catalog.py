@@ -9,6 +9,7 @@ which public datasets should be used for new nnU-Net training.
 from __future__ import annotations
 
 import os
+import shutil
 from typing import Dict, Iterable, List, Optional
 
 from tool_factory import BaseTool, ToolResult
@@ -332,10 +333,17 @@ def catalog_with_local_status(repo_root: Optional[str] = None) -> List[Dict[str,
     # This import is lightweight because the BiomedParse adapter imports its
     # official torch/Hydra stack only inside the first inference call.
     try:
-        from .biomedparse_v2 import _availability as _biomedparse_availability
-        biomedparse_available = bool(_biomedparse_availability().get("available"))
+        from .biomedparse_v2 import (
+            _availability as _biomedparse_availability,
+            _validation_records as _biomedparse_validation_records,
+        )
+        biomedparse_probe = _biomedparse_availability()
+        biomedparse_available = bool(biomedparse_probe.get("available"))
+        biomedparse_validation = _biomedparse_validation_records()
     except Exception:
+        biomedparse_probe = {"available": False, "missing": ["BiomedParse runtime probe failed"]}
         biomedparse_available = False
+        biomedparse_validation = {}
     fallback_for = {
         "voco_liver": "biomedparse_liver_tumor",
         "voco_kidney": "biomedparse_kidney_lesion",
@@ -355,6 +363,85 @@ def catalog_with_local_status(repo_root: Optional[str] = None) -> List[Dict[str,
             entry["fallback_available"] = biomedparse_available
         if entry.get("runtime_root_env") == "BIOMEDPARSE_ROOT":
             entry["runtime_available"] = biomedparse_available
+        tumor_type = str(entry.get("tumor_type", ""))
+        entry["technical_call_chain_passed"] = False
+        entry["space_alignment_passed"] = False
+        entry["result_save_path_passed"] = False
+        entry["data_tree_viewer_passed"] = False
+        entry["clinical_case_validation"] = False
+
+        if tumor_type == "nnunet_pancreatic":
+            if entry["local_present"]:
+                entry.update({
+                    "capability_state": "verified",
+                    "capability_color": "green",
+                    "capability_reason": "Validated pancreatic nnU-Net runtime is installed.",
+                    "callable": True,
+                    "technical_call_chain_passed": True,
+                    "space_alignment_passed": True,
+                    "result_save_path_passed": True,
+                    "data_tree_viewer_passed": True,
+                    "clinical_case_validation": True,
+                })
+            else:
+                entry.update({
+                    "capability_state": "unavailable",
+                    "capability_color": "red",
+                    "capability_reason": "Validated pancreatic nnU-Net weights are missing in this runtime.",
+                    "callable": False,
+                })
+        elif tumor_type.startswith("biomedparse_"):
+            validation = biomedparse_validation.get(tumor_type, {})
+            entry.update({
+                "technical_call_chain_passed": bool(validation.get("technical_call_chain_passed")),
+                "space_alignment_passed": bool(validation.get("space_alignment_passed")),
+                "result_save_path_passed": bool(validation.get("result_save_path_passed")),
+                "data_tree_viewer_passed": bool(validation.get("data_tree_viewer_passed")),
+                "clinical_case_validation": False,
+                "last_validation": validation.get("checked_at"),
+            })
+            if biomedparse_available:
+                entry.update({
+                    "capability_state": "experimental",
+                    "capability_color": "orange",
+                    "capability_reason": (
+                        "BiomedParse v2 is installed and wired for research use; "
+                        "clinical contour quality is not validated."
+                    ),
+                    "callable": True,
+                })
+            else:
+                missing = ", ".join(str(value) for value in biomedparse_probe.get("missing", []))
+                entry.update({
+                    "capability_state": "unavailable",
+                    "capability_color": "red",
+                    "capability_reason": f"BiomedParse v2 runtime is unavailable: {missing}.",
+                    "callable": False,
+                })
+        elif tumor_type == "prostate_tumor":
+            runtime_present = bool(shutil.which("TotalSegmentator"))
+            entry.update({
+                "capability_state": "experimental" if runtime_present else "unavailable",
+                "capability_color": "orange" if runtime_present else "red",
+                "capability_reason": (
+                    "Whole-prostate target segmentation is available; this is not lesion-level tumor CTV."
+                    if runtime_present
+                    else "TotalSegmentator is missing; only an uploaded clinician-approved target is available."
+                ),
+                "callable": runtime_present,
+                "target_semantics": "whole_prostate_target_not_lesion",
+            })
+        else:
+            entry.update({
+                "capability_state": "experimental" if entry["local_present"] else "disabled",
+                "capability_color": "orange" if entry["local_present"] else "gray",
+                "capability_reason": (
+                    "Optional local research model is installed but not clinically validated."
+                    if entry["local_present"]
+                    else "Research entry is not installed or not exposed in the clinical selector."
+                ),
+                "callable": bool(entry["local_present"]),
+            })
         items.append(entry)
     return items
 

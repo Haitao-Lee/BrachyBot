@@ -165,7 +165,7 @@ def _current_planning_snapshot(agent):
     memory = agent.memory
     manual_seeds = memory.retrieve("manual_seeds") or []
     manual_needles = memory.retrieve("manual_needles") or []
-    if manual_seeds or manual_needles:
+    if memory.retrieve("manual_plan_active") or manual_seeds or manual_needles:
         return {"seeds": list(manual_seeds), "needles": list(manual_needles)}
     baseline = memory.retrieve("algorithm_plan_snapshot")
     if isinstance(baseline, dict):
@@ -177,6 +177,125 @@ def _current_planning_snapshot(agent):
         memory.retrieve("seed_plan_serialized") or [],
         memory.retrieve("verified_needle_geometry") or {},
     )
+
+
+def _manual_seed_geometry_settings(memory) -> Dict[str, float]:
+    """Return the physical seed constraints used by planning and interaction."""
+    plan_config = memory.retrieve("plan_config") or {}
+    seed_info = plan_config.get("seed_info") if isinstance(plan_config, dict) else {}
+    if not isinstance(seed_info, dict):
+        seed_info = {}
+
+    def positive(name: str, default: float) -> float:
+        try:
+            value = float(seed_info.get(name, default) or default)
+        except (TypeError, ValueError):
+            value = default
+        return value if np.isfinite(value) and value > 0.0 else default
+
+    length_mm = positive("length", 4.5)
+    radius_mm = positive("radius", 0.4)
+    step_mm = 0.0
+    for key in ("implant_step_mm", "seed_step_mm", "center_spacing_mm"):
+        if key not in seed_info:
+            continue
+        try:
+            candidate = float(seed_info[key])
+        except (TypeError, ValueError):
+            continue
+        if np.isfinite(candidate) and candidate > 0.0:
+            step_mm = candidate
+            break
+    return {
+        "length_mm": length_mm,
+        "radius_mm": radius_mm,
+        "implant_step_mm": step_mm,
+        "minimum_center_distance_mm": max(length_mm, positive("minimum_center_distance_mm", length_mm)),
+    }
+
+
+def _normalize_manual_seed_records(
+    memory,
+    raw_seeds: list,
+    needles: list,
+) -> list:
+    """Project submitted seeds onto their owning needle's valid implant span."""
+    settings = _manual_seed_geometry_settings(memory)
+    needle_by_trajectory = {}
+    for needle in needles or []:
+        if not isinstance(needle, dict):
+            continue
+        points = needle.get("points")
+        if not isinstance(points, list) or len(points) < 2:
+            continue
+        trajectory_id = str(needle.get("trajectory_id") or needle.get("id") or "").strip()
+        if not trajectory_id:
+            continue
+        start = np.asarray(points[0], dtype=np.float64).reshape(-1)[:3]
+        end = np.asarray(points[-1], dtype=np.float64).reshape(-1)[:3]
+        if start.size != 3 or end.size != 3 or not np.all(np.isfinite([*start, *end])):
+            continue
+        axis = end - start
+        length = float(np.linalg.norm(axis))
+        if length <= settings["length_mm"] + 1e-6:
+            continue
+        needle_by_trajectory[trajectory_id] = (start, end, axis, length)
+
+    normalized = []
+    seen_ids = set()
+    for index, seed in enumerate(raw_seeds or []):
+        if not isinstance(seed, dict):
+            raise ValueError(f"Invalid seed at index {index}")
+        seed_id = str(seed.get("id") or "").strip()
+        if not seed_id:
+            raise ValueError(f"Seed at index {index} is missing an id")
+        if seed_id in seen_ids:
+            raise ValueError(f"Duplicate seed id: {seed_id}")
+        seen_ids.add(seed_id)
+        trajectory_id = str(seed.get("trajectory_id") or "").strip()
+        needle_geometry = needle_by_trajectory.get(trajectory_id)
+        if needle_geometry is None:
+            raise ValueError(f"Seed {seed_id} has no valid owning needle")
+        position = np.asarray(seed.get("position") or seed.get("pos"), dtype=np.float64).reshape(-1)[:3]
+        if position.size != 3 or not np.all(np.isfinite(position)):
+            raise ValueError(f"Seed {seed_id} has an invalid position")
+
+        start, _end, axis, length = needle_geometry
+        unit = axis / length
+        distance_mm = float(np.dot(position - start, unit))
+        half_length = settings["length_mm"] * 0.5
+        distance_mm = float(np.clip(distance_mm, half_length, length - half_length))
+        implant_step = settings["implant_step_mm"]
+        if implant_step > 0.0:
+            distance_mm = half_length + round((distance_mm - half_length) / implant_step) * implant_step
+            distance_mm = float(np.clip(distance_mm, half_length, length - half_length))
+        projected = start + unit * distance_mm
+        normalized.append({
+            "id": seed_id,
+            "position": projected.tolist(),
+            "direction": unit.tolist(),
+            "trajectory_id": trajectory_id,
+            "visible": seed.get("visible", True) is not False,
+            "opacity": float(seed.get("opacity", 1.0) or 1.0),
+            "color": str(seed.get("color") or "#ffcc00"),
+            "axial_position_mm": distance_mm,
+        })
+    return normalized
+
+
+def _mark_manual_dependents_stale(memory, *, reason: str, planning_version: int) -> Dict[str, Any]:
+    status = {
+        "dose": "stale",
+        "dvh": "stale",
+        "report": "stale",
+        "quality_check": "stale",
+        "surgical_guide": "stale",
+        "reason": str(reason),
+        "planning_version": int(planning_version),
+        "updated_at": datetime.utcnow().isoformat(timespec="seconds") + "Z",
+    }
+    memory.store("manual_artifact_status", status)
+    return status
 
 
 _FULL_WORKSPACE_CHAT_TERMS = (
@@ -1053,6 +1172,12 @@ def register_planning_routes(
                 f"Manual {kind.upper()} segmentation completed",
                 checkpoint={"kind": "segmentation", "segmentation_kind": kind, "completed": True},
             )
+            if kind == "ctv" and str(tumor_type or "").startswith("biomedparse_"):
+                from tool_factory.CTV_seg.biomedparse_v2 import record_pipeline_validation
+                record_pipeline_validation(
+                    str(tumor_type),
+                    result_save_path_passed=True,
+                )
             return jsonify({
                 "success": True,
                 "kind": kind,
@@ -1100,6 +1225,27 @@ def register_planning_routes(
         except Exception as e:
             logger.error(f"CTV model catalog failed: {e}")
             return jsonify({"success": False, "error": str(e)}), 500
+
+    @app.route("/api/ctv/models/validation", methods=["POST"])
+    @require_api_key
+    def api_ctv_model_validation():
+        """Record a browser-observed Data Tree/viewer integration success."""
+        agent = get_agent(_lightweight=True)
+        if agent is None:
+            return jsonify({"success": False, "error": "Agent not available"}), 500
+        payload = request.get_json(silent=True) or {}
+        tumor_type = str(payload.get("tumor_type") or "").strip()
+        current_type = str(agent.memory.retrieve("tumor_type_used", "") or "").strip()
+        if not tumor_type.startswith("biomedparse_") or tumor_type != current_type:
+            return jsonify({"success": False, "error": "Tumor type does not match the active case"}), 409
+        if not bool(agent.memory.retrieve("ctv_segmented", False)):
+            return jsonify({"success": False, "error": "No active CTV result"}), 409
+        from tool_factory.CTV_seg.biomedparse_v2 import record_pipeline_validation
+        record_pipeline_validation(
+            tumor_type,
+            data_tree_viewer_passed=bool(payload.get("data_tree_viewer_passed")),
+        )
+        return jsonify({"success": True, "tumor_type": tumor_type})
 
     @app.route("/api/planning/run_step", methods=["POST"])
     @require_api_key
@@ -2312,6 +2458,7 @@ def register_planning_routes(
             # restore, reload, and session switching.
             memory.store("manual_seeds", current_seeds)
             memory.store("manual_needles", normalized_needles)
+            memory.store("manual_plan_active", True)
             memory.store("manual_geometry_only", True)
             reason = str(data.get("reason") or "needle_position_only")
             try:
@@ -2355,6 +2502,127 @@ def register_planning_routes(
             }), 422
         except Exception as exc:
             logger.exception("Position-only needle update failed")
+            return jsonify({"success": False, "error": str(exc)}), 422
+
+    @app.route("/api/manual_planning/update_seeds", methods=["POST"])
+    @require_api_key
+    @rate_limit
+    def api_manual_planning_update_seeds():
+        """Commit seed geometry without using dose recomputation as persistence.
+
+        The full submitted seed list is the mutation boundary. Every seed is
+        projected onto its owning needle, clamped so the physical cylinder
+        remains inside the implant span, and saved under a monotonic planning
+        version. A stale browser callback therefore cannot overwrite a newer
+        edit, including the valid empty-list state after deleting the last seed.
+        """
+        data = request.get_json(silent=True) or {}
+        session_id = request_ui_session_id(data)
+        agent = get_agent(session_id)
+        if agent is None:
+            return jsonify({"success": False, "error": "Agent not available"}), 500
+        raw_seeds = data.get("seeds")
+        if not isinstance(raw_seeds, list):
+            return jsonify({"success": False, "error": "seeds must be a list"}), 400
+
+        memory = agent.memory
+        current = _current_planning_snapshot(agent)
+        needles = data.get("needles")
+        if not isinstance(needles, list) or not needles:
+            needles = list(current.get("needles") or [])
+        if not needles and raw_seeds:
+            return jsonify({"success": False, "error": "A seed requires an owning needle"}), 400
+
+        current_version = int(memory.retrieve("manual_plan_version") or 0)
+        expected_version = data.get("expected_version")
+        if expected_version is not None:
+            try:
+                expected_version = int(expected_version)
+            except (TypeError, ValueError):
+                return jsonify({"success": False, "error": "expected_version must be an integer"}), 400
+            if expected_version != current_version:
+                return jsonify({
+                    "success": False,
+                    "error": "The planning data changed before this seed edit was committed.",
+                    "code": "stale_manual_plan",
+                    "planning_version": current_version,
+                    "seeds": list(current.get("seeds") or []),
+                    "needles": list(current.get("needles") or []),
+                }), 409
+
+        reason = str(data.get("reason") or "seed_geometry")
+        try:
+            normalized_seeds = _normalize_manual_seed_records(memory, raw_seeds, needles)
+            planning_id = str(memory.retrieve("manual_planning_id") or uuid4().hex)
+            next_version = current_version + 1
+            memory.store("manual_planning_id", planning_id)
+            memory.store("manual_plan_active", True)
+            memory.store("manual_plan_version", next_version)
+            memory.store("manual_seeds", normalized_seeds)
+            memory.store("manual_needles", needles)
+            grouped_seeds: Dict[str, list] = {}
+            for seed in normalized_seeds:
+                grouped_seeds.setdefault(str(seed["trajectory_id"]), []).append(seed)
+            serialized_plan = []
+            for needle in needles:
+                trajectory_id = str(needle.get("trajectory_id") or needle.get("id") or "")
+                seed_items = grouped_seeds.get(trajectory_id, [])
+                serialized_plan.append({
+                    "trajectory_id": trajectory_id,
+                    "needle_id": str(needle.get("id") or trajectory_id),
+                    "trajectory": {
+                        "id": trajectory_id,
+                        "points": needle.get("points") or [],
+                    },
+                    "seeds": [
+                        {
+                            "id": seed["id"],
+                            "position": seed["position"],
+                            "direction": seed["direction"],
+                            "trajectory_id": trajectory_id,
+                        }
+                        for seed in seed_items
+                    ],
+                    "num_seeds": len(seed_items),
+                })
+            memory.store("seed_plan", serialized_plan)
+            memory.store("seed_plan_serialized", serialized_plan)
+            memory.store("total_seeds", len(normalized_seeds))
+            memory.store("manual_geometry_only", True)
+            artifact_status = _mark_manual_dependents_stale(
+                memory,
+                reason=reason,
+                planning_version=next_version,
+            )
+            try:
+                from web.surgical_guide import invalidate_surgical_guides
+                invalidate_surgical_guides(agent, f"seed geometry updated: {reason}")
+            except ImportError:
+                pass
+            event = _append_ui_event(session_id, {
+                "type": f"manual.seed.{reason}",
+                "label": reason,
+                "detail": {
+                    "seed_count": len(normalized_seeds),
+                    "planning_id": planning_id,
+                    "planning_version": next_version,
+                    "artifacts_stale": True,
+                },
+            })
+            return jsonify({
+                "success": True,
+                "session_id": session_id,
+                "case_id": session_id,
+                "planning_id": planning_id,
+                "planning_version": next_version,
+                "seeds": normalized_seeds,
+                "needles": needles,
+                "seed_geometry": _manual_seed_geometry_settings(memory),
+                "artifact_status": artifact_status,
+                "event": event,
+            })
+        except Exception as exc:
+            logger.warning("Manual seed geometry update rejected: %s", exc)
             return jsonify({"success": False, "error": str(exc)}), 422
 
     @app.route("/api/manual_planning/restore_needle", methods=["POST"])

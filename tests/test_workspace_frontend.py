@@ -693,10 +693,12 @@ def test_tumor_type_selector_hides_model_implementation_from_the_user():
     selector = index.split('id="ctvModelSelect"', 1)[1].split("</select>", 1)[0]
     assert "nnU-Net" not in selector
     assert "VoCo" not in selector
-    assert 'data-availability="available"' in selector
-    assert 'data-availability="unavailable"' in selector
+    assert 'data-capability-state="loading"' in selector
+    assert "Whole-prostate target" in selector
     assert "refreshTumorTypeAvailability" in ui_api
-    assert "Green tumor types can be segmented automatically." in ui_api
+    assert "capability_state" in ui_api
+    assert "`tumor-type-${capability}`" in ui_api
+    assert "Integrated; further validation required" in ui_api
 
 
 def test_dynamic_clinical_evaluation_uses_global_language_switch():

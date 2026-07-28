@@ -60,6 +60,10 @@ def test_training_monitor_frontend_handles_high_value_checkpoints_and_report_lif
     assert "monitorConversationLanguage" in ui_api
     assert "monitor_run_id" in ui_api
     assert "monitor_run_id" in routes
+    assert "pendingFeedback" in ui_api
+    assert "_queueMonitorFeedback" in ui_api
+    assert "_flushMonitorFeedback" in ui_api
+    assert "}, 2500);" in ui_api
     assert "monitorStatus" in (root / "web/app/index.html").read_text(encoding="utf-8")
     assert 'id="monitorStartButton"' in (root / "web/app/index.html").read_text(encoding="utf-8")
     assert 'id="monitorStopButton"' in (root / "web/app/index.html").read_text(encoding="utf-8")
@@ -69,6 +73,30 @@ def test_training_monitor_frontend_handles_high_value_checkpoints_and_report_lif
     assert "#monitorStartButton," in css
     assert "monitor-edge-breathe" in css
     assert "monitor-avatar-breathe" in css
+
+
+def test_monitor_seed_focus_restores_camera_and_mesh_state_after_capture():
+    root = Path(__file__).resolve().parents[1]
+    manual = (root / "web/app/static/js/brachybot-3d-manual.js").read_text(encoding="utf-8")
+    ui_api = (root / "web/app/static/js/brachybot-ui-api.js").read_text(encoding="utf-8")
+
+    assert "function focusPlanningSeedsForScreenshot" in manual
+    assert "meshStates" in manual
+    assert "saved.meshStates.forEach" in manual
+    assert "box.isEmpty()" in manual
+    assert "focusPlanningSeedsForScreenshot(options.focusSeedIds)" in ui_api
+
+
+def test_manual_workflow_exposes_real_surgical_guide_actions():
+    root = Path(__file__).resolve().parents[1]
+    html = (root / "web/app/index.html").read_text(encoding="utf-8")
+    guide = (root / "web/app/static/js/brachybot-surgical-guide.js").read_text(encoding="utf-8")
+
+    assert 'id="generateSurgicalGuideButton"' in html
+    assert "generateSurgicalGuide()" in html
+    assert "exportSurgicalGuideSTL()" in html
+    assert "guideNeedleSelection" in html
+    assert "/api/surgical-guides/generate" in guide
 
 
 def test_monitor_uses_per_conversation_language_instead_of_global_ui_language():
@@ -123,10 +151,27 @@ def test_monitor_maps_manual_stages_to_their_own_viewer_checkpoint():
         def __init__(self):
             self.values = {
                 "manual_seeds": [
-                    {"id": "seed_a", "position": [0.0, 0.0, 0.0]},
-                    {"id": "seed_b", "position": [0.5, 0.0, 0.0]},
+                    {
+                        "id": "seed_a",
+                        "needle_id": "needle_1",
+                        "position": [0.0, 0.0, 0.0],
+                        "direction": [0.0, 0.0, 1.0],
+                    },
+                    {
+                        "id": "seed_b",
+                        "needle_id": "needle_2",
+                        "position": [0.5, 0.0, 0.0],
+                        "direction": [0.0, 0.0, 1.0],
+                    },
                 ],
                 "manual_needles": [],
+                "plan_config": {
+                    "seed_info": {
+                        "length": 4.5,
+                        "radius": 0.4,
+                        "minimum_clearance_mm": 0.5,
+                    }
+                },
             }
 
         def retrieve(self, key):
@@ -146,6 +191,19 @@ def test_monitor_maps_manual_stages_to_their_own_viewer_checkpoint():
     )
     assert close_seed_screenshot["target"] == "viewer-3d"
     assert close_seed_screenshot["focus_seed_ids"] == ["seed_a", "seed_b"]
+
+    from web.server_support import _build_plan_advice
+    from web.server_support import _localize_plan_advice
+
+    geometry_advice = _build_plan_advice(Agent(), None)
+    pair_issue = next(
+        item for item in geometry_advice["issues"]
+        if "seed_a (needle_1)" in item
+    )
+    assert "seed_b (needle_2)" in pair_issue
+    assert "surface clearance" in pair_issue
+    localized = _localize_plan_advice(geometry_advice, "zh")
+    assert any("表面间隙" in item for item in localized["issues"])
 
     zh_summary = _format_training_summary(
         [trajectory_event],

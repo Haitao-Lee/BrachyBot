@@ -921,7 +921,7 @@ function _scheduleCasePlanningRefresh(sessionId, delay = 250) {
         delete window._sessionPlanningRefreshTimers[key];
         if (String(activeSessionId || '') !== key) return;
         try {
-            await refreshPlanningUI({ sessionId: key });
+            await refreshPlanningUI({ sessionId: key, autoGenerateGuide: true });
         } catch (error) {
             console.error('[SSE] refreshPlanningUI failed:', error);
         }

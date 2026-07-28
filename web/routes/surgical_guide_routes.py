@@ -20,6 +20,7 @@ from web.surgical_guide import (
     mesh_to_ascii_stl,
     normalize_guide_parameters,
     parse_stl,
+    planning_signature,
     save_guide_version,
     stl_stream,
     validate_exported_stl,
@@ -54,9 +55,26 @@ def register_surgical_guide_routes(app, get_agent):
         return guide_state_for_version(agent, version)
 
     def guide_metadata(agent: Any) -> Dict[str, Any]:
+        from web.surgical_guide import _current_planning_snapshot
+
+        needles = available_guide_needles(agent)
+        current = current_guide(agent)
+        signature = planning_signature(_current_planning_snapshot(agent))
+        current_signature = (
+            str(current.get("source_plan_signature") or "")
+            if isinstance(current, dict) else ""
+        )
         return {
             "versions": guide_version_summaries(agent),
-            "needle_options": available_guide_needles(agent),
+            "needle_options": needles,
+            "can_generate": bool(needles),
+            "current_plan_signature": signature,
+            "guide_matches_current_plan": bool(
+                current
+                and current.get("status") == "ready"
+                and current_signature
+                and current_signature == signature
+            ),
         }
 
     def snapshot(agent: Any, reason: str, operation: Dict[str, Any] | None = None) -> None:

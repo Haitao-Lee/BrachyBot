@@ -9506,3 +9506,62 @@ presentation restoration. It does not change dose normalization, trajectory
 geometry, obstacle filtering, source strength, clinical thresholds, or the
 validated pancreatic segmentation model. Login-page changes remain deferred
 until this Session acceptance is complete.
+## 2026-07-28 Manual Planning and Capability Follow-up
+
+### Seed transactions and viewer interaction
+
+- Added a versioned `update_seeds` transaction that validates stable Seed IDs,
+  owning Needle IDs, physical projection, implant-span clamping, optional
+  spacing snap, session ownership, and optimistic version conflicts.
+- 2D Seed editing now uses the projected physical Needle segment rather than a
+  free screen-space move. Hold-to-drag prevents accidental edits, and the
+  themed context menu exposes Seed ID, owning Needle, coordinates, and delete.
+- 3D and 2D edits use the same persisted planning record. Dose, DVH, report,
+  and Surgical Guide artifacts are marked stale or recomputed through the
+  existing transaction path; failed writes roll back the visual edit.
+- Monitor Seed evidence temporarily highlights the actual Seed meshes and
+  restores camera, scale, materials, and emissive state after capture,
+  including the empty-bounding-box failure path.
+
+### Monitor and Surgical Guide
+
+- Monitor is case/run scoped and has a global edge effect only while active;
+  the Monitor buttons have no idle animation. Stage and dose checkpoints are
+  aggregated, localized, and posted in the BrachyBot chat stream.
+- Geometry advice uses real Seed dimensions/clearance, Needle collision and
+  non-traversable-mask checks, stale dose/DVH/report state, and guide-version
+  consistency. Seed interference evidence identifies the pair and requests a
+  focused 3D capture rather than an unrelated panel screenshot.
+- Manual Fine Planning exposes real guide generation, update/preview/export,
+  saved versions, Needle selection, validation, and patient-specific
+  parameter controls. The guide is versioned and invalidated when its source
+  plan changes.
+
+### Data Tree and BiomedParse
+
+- Planning, Dose, Seed, Needle, guide, and segmentation visual objects retain
+  stable node/object/session/planning identifiers. Parent visibility/opacity
+  changes propagate downward; child changes remain local and do not mutate
+  parents, siblings, or unrelated branches.
+- BiomedParse v2 uses explicit site prompts, official runtime/checkpoint
+  discovery, physical-space restoration, technical validation records, and
+  Data Tree/2D/3D save checks. Capability colors are runtime-driven: verified
+  pancreatic nnU-Net is green, installed but research-only routes are orange,
+  unavailable routes are red/gray with a reason. This does not claim clinical
+  accuracy without real-case validation.
+- Pancreatic tumor selection no longer exposes the unverified legacy VoCo
+  alternative; old persisted values are compatibility-mapped to the validated
+  pancreatic path.
+
+### New verification evidence
+
+- Targeted regression suite after the final interaction fixes: **100 passed,
+  3 warnings**.
+- Modified JavaScript modules passed `node --check`.
+- Modified Python modules passed `py_compile`.
+- Added regression coverage for 2D Seed projection/transaction hooks, Monitor
+  focused-capture restoration, and real Surgical Guide manual workflow
+  actions.
+- Remaining warnings are third-party SimpleITK SWIG deprecations. Medical
+  segmentation quality and BiomedParse clinical validity remain separate from
+  the verified software/data-path checks and require clinical validation.

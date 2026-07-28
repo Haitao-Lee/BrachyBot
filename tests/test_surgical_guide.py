@@ -168,4 +168,29 @@ def test_surgical_guide_has_manual_and_chat_entry_points():
     prompt = open("config/prompts/system_prompt.md", encoding="utf-8").read()
     assert "generateSurgicalGuideButton" in index
     assert "function generateSurgicalGuide" in script
+    assert "ensureSurgicalGuideForCurrentPlan" in script
+    assert "autoGenerateGuide: true" in open(
+        "web/app/static/js/brachybot-chat-todo.js", encoding="utf-8"
+    ).read()
     assert "surgical_guide" in prompt
+
+
+def test_guide_artifact_is_bound_to_the_current_planning_version():
+    agent = _synthetic_agent()
+    agent.memory.store("manual_planning_id", "plan-test")
+    agent.memory.store("manual_plan_version", 7)
+    guide = generate_surgical_guide(agent, {"geometry_resolution_mm": 1.0})
+    assert guide["object_id"] == "patient_specific_puncture_guide"
+    assert guide["data_tree_node_id"] == guide["object_id"]
+    assert guide["planning_id"] == "plan-test"
+    assert guide["planning_version"] == 7
+    assert guide["data_version"] == guide["version"]
+
+
+def test_surgical_guide_is_rendered_as_an_independent_planning_artifact():
+    tree_script = open(
+        "web/app/static/js/brachybot-viewer-volume.js", encoding="utf-8"
+    ).read()
+    assert "independentPlanningMeshes" in tree_script
+    assert "'surgical_guide'" in tree_script
+    assert "data-group=\"planning_meshes\"" in tree_script

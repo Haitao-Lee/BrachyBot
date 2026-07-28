@@ -309,11 +309,65 @@ var trainingMonitorState = {
     sessionId: 'web',
     lastFeedbackAt: 0,
     lastScreenshotAt: 0,
+    pendingFeedback: [],
+    feedbackTimer: null,
     // One monitor turn can produce several evidence targets.  Keep one
     // gallery context for the whole run so each checkpoint becomes a tile in
     // one chronological chat message instead of a separate floating gallery.
     screenshotGalleryContext: null,
 };
+
+function _clearMonitorFeedbackTimer() {
+    if (trainingMonitorState.feedbackTimer) {
+        clearTimeout(trainingMonitorState.feedbackTimer);
+        trainingMonitorState.feedbackTimer = null;
+    }
+}
+
+function _flushMonitorFeedback(ownerSessionId, ownerRunId) {
+    _clearMonitorFeedbackTimer();
+    if (!trainingMonitorState.active
+        || trainingMonitorState.sessionId !== ownerSessionId
+        || trainingMonitorState.runId !== ownerRunId
+        || ownerSessionId !== _activeApiSessionId()) {
+        trainingMonitorState.pendingFeedback = [];
+        return;
+    }
+    const pending = Array.isArray(trainingMonitorState.pendingFeedback)
+        ? trainingMonitorState.pendingFeedback.splice(0)
+        : [];
+    if (!pending.length) return;
+    const unique = [...new Map(pending.map(item => [item.message, item])).values()];
+    const title = monitorChatText('阶段监测', 'Stage monitor', ownerSessionId);
+    const body = unique.length === 1
+        ? unique[0].message
+        : unique.map(item => `- ${item.message}`).join('\n');
+    addChat('bot-response', `**${title}**\n\n${body}`, true, Date.now(), false, ownerSessionId);
+}
+
+function _queueMonitorFeedback(message, type, label, ownerSessionId, ownerRunId) {
+    if (!message || !trainingMonitorState.active) return false;
+    const immediate = type === 'manual.dose'
+        || (/^(planning|segmentation)\.step$/i.test(type)
+            && /completed|complete|done|failed|error/i.test(label || ''));
+    const aggregate = /^manual\.(seed|needle)/i.test(type);
+    if (immediate) {
+        _flushMonitorFeedback(ownerSessionId, ownerRunId);
+        const title = monitorChatText('监测建议', 'Monitor feedback', ownerSessionId);
+        addChat('bot-response', `**${title}**\n\n${message}`, true, Date.now(), false, ownerSessionId);
+        return true;
+    }
+    if (!aggregate) return false;
+    if (!Array.isArray(trainingMonitorState.pendingFeedback)) {
+        trainingMonitorState.pendingFeedback = [];
+    }
+    trainingMonitorState.pendingFeedback.push({ message, type, label, at: Date.now() });
+    _clearMonitorFeedbackTimer();
+    trainingMonitorState.feedbackTimer = setTimeout(() => {
+        _flushMonitorFeedback(ownerSessionId, ownerRunId);
+    }, 2500);
+    return true;
+}
 
 function monitorConversationLanguage(sessionId = trainingMonitorState.sessionId) {
     if (typeof window.conversationLanguageForSession === 'function') {
@@ -392,6 +446,9 @@ var manualPlanningState = {
     activeNeedleId: null,
     seedCounter: 0,
     needleCounter: 0,
+    planningId: null,
+    planningVersion: 0,
+    artifactStatus: {},
     doseEngine: 'dose_unet_spacing1mm',
     // Keep the last accepted geometry separate from the live drag preview.
     lastDoseNeedles: [],
@@ -405,9 +462,9 @@ function _activeApiSessionId() {
 function _shouldLogTrainingFeedback(message, type = '', label = '') {
     if (!message || !trainingMonitorState.active) return false;
     const now = Date.now();
-    // Stage completion and manual planning events are teaching checkpoints;
-    // they must not be hidden by the generic chatter throttle.
-    const highValueEvent = /^(planning|segmentation)\.step$|^manual\.(dose|seed|needle)/i.test(type);
+    // Manual geometry events are aggregated by _queueMonitorFeedback. Keep
+    // this throttle for lower-value UI chatter and non-manual checkpoints.
+    const highValueEvent = /^(planning|segmentation)\.step$|^manual\.dose$/i.test(type);
     const important = highValueEvent || /dose|V100|D90|Seed|Needle|step|剂量|粒子|针道|分割|步骤/i.test(`${message} ${label}`);
     if (highValueEvent) {
         trainingMonitorState.lastFeedbackAt = now;
@@ -457,7 +514,14 @@ async function reportUIEvent(type, label, detail = {}, options = {}) {
         if (ownerSessionId !== _activeApiSessionId()) return null;
         if (ownerRunId && data?.monitor_run_id && ownerRunId !== data.monitor_run_id) return null;
         const feedbackText = data && (data.feedback_localized || data.feedback);
-        if (feedbackText && _shouldLogTrainingFeedback(feedbackText, type, label)) {
+        const queued = _queueMonitorFeedback(
+            feedbackText,
+            type,
+            label,
+            ownerSessionId,
+            ownerRunId,
+        );
+        if (!queued && feedbackText && _shouldLogTrainingFeedback(feedbackText, type, label)) {
             const monitorPrefix = monitorChatText('监测建议', 'Monitor feedback', ownerSessionId);
             addChat('bot-response', `**${monitorPrefix}**\n\n${feedbackText}`, true, Date.now(), false, ownerSessionId);
         }
@@ -996,7 +1060,7 @@ window.addEventListener('i18nchange', () => {
 // Keep the manual selector synchronized with a tumor site identified by the
 // agent. Unsupported sites intentionally do not get mapped to a model: the
 // user must provide a CTV mask before planning can proceed.
-function _syncTumorTypeSelectorAppearance() {
+function _syncTumorTypeSelectorAppearanceLegacy() {
     const select = document.getElementById('ctvModelSelect');
     if (!select) return;
     const selected = select.options[select.selectedIndex];
@@ -1026,6 +1090,55 @@ function _syncTumorTypeSelectorAppearance() {
     }
 }
 
+function _syncTumorTypeSelectorAppearance() {
+    const select = document.getElementById('ctvModelSelect');
+    if (!select) return;
+    const selected = select.options[select.selectedIndex];
+    const capability = selected?.dataset?.capabilityState || 'disabled';
+    const callable = selected?.dataset?.callable === 'true';
+    ['available', 'unavailable', 'verified', 'experimental', 'disabled'].forEach(name => {
+        select.classList.remove(`tumor-type-${name}`);
+    });
+    select.classList.add(`tumor-type-${capability}`);
+    Array.from(select.options).forEach(option => {
+        const stateName = option.dataset.capabilityState || 'disabled';
+        option.style.color = {
+            verified: '#4ade80',
+            experimental: '#fbbf24',
+            unavailable: '#fb7185',
+            disabled: '#94a3b8',
+        }[stateName] || '#94a3b8';
+        option.style.fontWeight = stateName === 'verified' ? '600' : '500';
+        option.title = option.dataset.capabilityReason || '';
+    });
+
+    const help = document.getElementById('ctvModelHelp');
+    if (help) {
+        const labels = {
+            verified: ['已验证可用', 'Verified and available'],
+            experimental: ['已接入，待进一步验证', 'Integrated; further validation required'],
+            unavailable: ['当前环境不可用', 'Unavailable in this runtime'],
+            disabled: ['尚未接入或暂未开放', 'Not integrated or not enabled'],
+        };
+        const pair = labels[capability] || labels.disabled;
+        const reason = selected?.dataset?.capabilityReason || '';
+        const zh = `${pair[0]}。${reason}`;
+        const en = `${pair[1]}. ${reason}`;
+        help.dataset.state = capability;
+        help.dataset.i18nZh = zh;
+        help.dataset.i18nEn = en;
+        help.textContent = typeof window._t === 'function' ? window._t(zh, en) : en;
+    }
+    const ctvPath = document.getElementById('ctvPath')?.value?.trim();
+    const stepButton = document.getElementById('stepBtn_ctv_segmentation');
+    if (stepButton) {
+        stepButton.dataset.modelCallable = callable ? 'true' : 'false';
+        if (!callable && !ctvPath) {
+            stepButton.title = selected?.dataset?.capabilityReason || 'Upload a matching CTV mask.';
+        }
+    }
+}
+
 async function refreshTumorTypeAvailability() {
     const select = document.getElementById('ctvModelSelect');
     if (!select) return;
@@ -1036,7 +1149,7 @@ async function refreshTumorTypeAvailability() {
         const response = await fetch(API + '/ctv/models?include_experimental=1');
         const payload = await response.json();
         if (!response.ok || !payload?.success) throw new Error(payload?.error || `HTTP ${response.status}`);
-        const availability = new Map();
+        const capabilities = new Map();
         (payload.models || []).forEach(model => {
             const type = String(model.tumor_type || '');
             if (!type) return;
@@ -1047,12 +1160,23 @@ async function refreshTumorTypeAvailability() {
             // model exists or its explicitly configured BiomedParse research
             // fallback is available. The server still preserves provenance
             // and blocks empty/failed candidates.
-            availability.set(type, !!model.local_present || !!model.fallback_available || !!model.runtime_available);
+            capabilities.set(type, {
+                state: String(model.capability_state || 'disabled'),
+                callable: !!model.callable,
+                reason: String(model.capability_reason || ''),
+                technical: !!model.technical_call_chain_passed,
+                spatial: !!model.space_alignment_passed,
+                clinical: !!model.clinical_case_validation,
+            });
         });
         Array.from(select.options).forEach(option => {
-            if (availability.has(option.value)) {
-                option.dataset.availability = availability.get(option.value) ? 'available' : 'unavailable';
-            }
+            const capability = capabilities.get(option.value);
+            option.dataset.capabilityState = capability?.state || 'disabled';
+            option.dataset.callable = capability?.callable ? 'true' : 'false';
+            option.dataset.capabilityReason = capability?.reason || 'No registered runtime capability.';
+            option.dataset.technicalValidation = capability?.technical ? 'passed' : 'not-run';
+            option.dataset.spatialValidation = capability?.spatial ? 'passed' : 'not-run';
+            option.dataset.clinicalValidation = capability?.clinical ? 'passed' : 'not-established';
         });
     } catch (error) {
         // Keep the server-rendered fallback rather than disabling the manual

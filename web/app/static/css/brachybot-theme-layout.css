@@ -788,3 +788,114 @@ body.workspace-transitioning #sessionList {
 @media (prefers-reduced-motion: reduce) {
     .app-notice { transition: none; }
 }
+/* Manual planning controls keep manufactured dimensions aligned without
+   turning the clinical workspace into a form-heavy settings page. */
+.manual-planning-title {
+    margin-top: 8px;
+}
+
+.manual-planning-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 4px;
+}
+
+.manual-planning-actions .btn {
+    min-width: 0;
+    padding: 5px 6px;
+    font-size: 0.6rem;
+}
+
+.guide-parameters {
+    margin-top: 6px;
+    padding: 7px;
+    border: 1px solid var(--border);
+    border-radius: 5px;
+}
+
+.guide-parameters > summary {
+    cursor: pointer;
+    color: var(--text-secondary);
+    font-size: 0.63rem;
+}
+
+.guide-parameter-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 7px 9px;
+    margin-top: 8px;
+}
+
+.guide-parameter-grid label {
+    display: grid;
+    grid-template-rows: auto 28px;
+    gap: 3px;
+    min-width: 0;
+    color: var(--text-secondary);
+    font-size: 0.57rem;
+}
+
+.guide-input-unit {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 24px;
+    align-items: center;
+    gap: 4px;
+}
+
+.guide-input-unit input,
+.guide-parameter-grid select {
+    box-sizing: border-box;
+    width: 100%;
+    min-width: 0;
+    height: 28px;
+}
+
+.guide-select-grid label {
+    grid-template-rows: auto auto;
+}
+
+.guide-select-grid select {
+    height: auto;
+    min-height: 74px;
+}
+
+.guide-inline-button,
+.guide-reset-button,
+.guide-validation-row .btn {
+    padding: 4px 6px;
+    font-size: 0.56rem;
+}
+
+.guide-inline-button {
+    margin-top: 4px;
+}
+
+.guide-validation-row {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    margin-top: 8px;
+}
+
+.guide-validation-row [role="status"],
+.guide-parameter-help {
+    color: var(--text-dim);
+    font-size: 0.54rem;
+    line-height: 1.35;
+}
+
+.guide-reset-button,
+.guide-parameter-help {
+    margin-top: 7px;
+}
+
+@media (max-width: 720px) {
+    .guide-parameter-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .guide-validation-row {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+}
