@@ -185,6 +185,15 @@ function collectUIState() {
             seeds: dataTreeState.planning?.seeds?.length || 0,
             needles: dataTreeState.planning?.needles?.length || 0,
             dose_levels: dataTreeState.planning?.doseLevels?.length || 0,
+            // The compact counts above are useful for status responses, but
+            // the durable UI snapshot also needs the canonical visual-node
+            // contract so colors, opacity, visibility and artifact status can
+            // be restored without reconstructing a second tree model.
+            nodes: typeof window.getDataTreeNodeSnapshot === 'function'
+                ? window.getDataTreeNodeSnapshot()
+                : [],
+            dose_overlay_visible: dataTreeState.planning?.doseOverlay?.visible !== false,
+            dvh_ready: !!dataTreeState.planning?.dvh?.loaded,
         } : {},
         manual: (typeof manualPlanningState !== 'undefined') ? {
             active_needle_id: manualPlanningState.activeNeedleId,
@@ -256,6 +265,10 @@ const state = {
         showCTV: false,
         showOAR: false,
         displayMode: 'ct',
+        // False means the controls are still at their case defaults.  A
+        // freshly generated/imported mask may therefore enable its normal
+        // overlay presentation without overriding an explicit user choice.
+        userConfigured: false,
         zoom: 1.0,
         panX: 0,
         panY: 0,
@@ -395,6 +408,12 @@ function setMonitorPresentation(phaseOrActive) {
     document.body.classList.toggle('monitor-starting', phase === 'starting');
     document.body.classList.toggle('monitor-stopping', phase === 'stopping');
     document.body.dataset.monitorPhase = phase;
+    const edge = document.getElementById('monitorEdgeOverlay');
+    if (edge) {
+        edge.hidden = !enabled;
+        edge.setAttribute('aria-hidden', enabled ? 'false' : 'true');
+        edge.dataset.phase = phase;
+    }
     const icon = document.querySelector('.chat-header-icon');
     if (icon) {
         icon.setAttribute('data-monitoring', enabled ? 'true' : 'false');
@@ -904,6 +923,7 @@ async function importUploadedMask(kind, labelPath, options = {}) {
             await loadLabelVolumes({
                 forceFresh: true,
                 preserveViewerState: true,
+                resetPresentation: true,
                 sessionId: ownerSessionId,
             });
         }
@@ -1095,20 +1115,19 @@ function _syncTumorTypeSelectorAppearance() {
     if (!select) return;
     const selected = select.options[select.selectedIndex];
     const capability = selected?.dataset?.capabilityState || 'disabled';
-    const callable = selected?.dataset?.callable === 'true';
+    // The user-facing distinction is operational availability, not the
+    // research/verified maturity label. Experimental BiomedParse routes are
+    // green when callable; missing runtimes and disabled routes are red.
+    const callable = selected?.dataset?.callable === 'true' || capability === 'verified';
     ['available', 'unavailable', 'verified', 'experimental', 'disabled'].forEach(name => {
         select.classList.remove(`tumor-type-${name}`);
     });
-    select.classList.add(`tumor-type-${capability}`);
+    select.classList.add(callable ? 'tumor-type-available' : 'tumor-type-unavailable');
     Array.from(select.options).forEach(option => {
         const stateName = option.dataset.capabilityState || 'disabled';
-        option.style.color = {
-            verified: '#4ade80',
-            experimental: '#fbbf24',
-            unavailable: '#fb7185',
-            disabled: '#94a3b8',
-        }[stateName] || '#94a3b8';
-        option.style.fontWeight = stateName === 'verified' ? '600' : '500';
+        const optionCallable = option.dataset.callable === 'true' || stateName === 'verified';
+        option.style.color = optionCallable ? '#4ade80' : '#fb7185';
+        option.style.fontWeight = optionCallable ? '600' : '500';
         option.title = option.dataset.capabilityReason || '';
     });
 
@@ -1310,6 +1329,11 @@ function resetAllState(options = {}) {
 
     // Prevent cross-session seed/needle contamination in 2D viewer
     state.seedsOverlay = null;
+
+    // Reset the presentation preference marker with the case.  Without this
+    // reset a previous case's explicit CT-only choice can suppress overlays
+    // in a newly created case even though its masks are valid and loaded.
+    if (state.viewerSettings) state.viewerSettings.userConfigured = false;
 
     // Clear 3D meshes
     if (typeof scene3D !== 'undefined' && scene3D.meshes) {

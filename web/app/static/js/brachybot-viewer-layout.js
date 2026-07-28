@@ -383,6 +383,7 @@ function resetViewer() {
     state.viewerSettings = {
         window: 400, level: 40, threshold: null,
         showCTV: false, showOAR: false, zoom: 1.0,
+        userConfigured: false,
         activeTool: null, panX: 0, panY: 0,
         flipH: false, flipV: false, rotation: 0,
         displayMode: 'ct',

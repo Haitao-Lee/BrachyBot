@@ -789,6 +789,13 @@ async function refreshPlanningUI(options = {}) {
                 uiDebugLog('[refreshPlanningUI] DVH check:', !!data.dvh, 'keys:', data.dvh ? Object.keys(data.dvh).length : 0);
                 if (data.dvh && Object.keys(data.dvh).length > 0) {
                     state.dvhData = data.dvh;
+                    // DVH is a real, session-owned visual product. Register
+                    // it before/after Plotly rendering so the Data Tree never
+                    // lags behind a successful backend response.
+                    if (typeof reconcileDataTreeVisualNodes === 'function') {
+                        reconcileDataTreeVisualNodes();
+                    }
+                    if (typeof renderDataTree === 'function') renderDataTree();
                     uiDebugLog('[refreshPlanningUI] Calling drawDVH()');
                     try {
                         const _dvhPromise = drawDVH();
@@ -797,6 +804,10 @@ async function refreshPlanningUI(options = {}) {
                             if (!isCurrentCase()) return resolve();
                         }
                     } catch (e) { console.warn('[refreshPlanningUI] drawDVH failed:', e); }
+                    if (typeof reconcileDataTreeVisualNodes === 'function') {
+                        reconcileDataTreeVisualNodes();
+                    }
+                    if (typeof renderDataTree === 'function') renderDataTree();
                 } else {
                     console.warn('[refreshPlanningUI] NO DVH data received');
                 }
@@ -830,6 +841,12 @@ async function refreshPlanningUI(options = {}) {
                     preserveViewerState: options.preserveViewerState === true,
                 });
                 if (!isCurrentCase()) return resolve();
+                if (typeof window.reconcileSegmentationViewerState === 'function') {
+                    window.reconcileSegmentationViewerState({
+                        sessionId: expectedSessionId,
+                        reason: 'planning-refresh-labels',
+                    });
+                }
             } catch (e) { console.warn('loadLabelVolumes failed:', e); }
         }
         // Make sure the data tree reflects whatever labels we

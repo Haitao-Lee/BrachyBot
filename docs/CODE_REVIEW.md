@@ -9506,6 +9506,57 @@ presentation restoration. It does not change dose normalization, trajectory
 geometry, obstacle filtering, source strength, clinical thresholds, or the
 validated pancreatic segmentation model. Login-page changes remain deferred
 until this Session acceptance is complete.
+
+## 2026-07-28 Segmentation-to-Viewer and Data Tree Reconciliation
+
+### Root causes found
+
+- Segmentation completion updated agent memory, binary label transport, OAR
+  metadata, and viewer presentation through separate asynchronous paths. A
+  successful mask could therefore exist on the server while the Data Tree still
+  showed an empty OAR branch and the 2D canvases remained in CT-only mode.
+- The per-slice fallback endpoint could read a raw legacy NumPy array while the
+  label-volume endpoint aligned an uploaded mask from its physical image
+  metadata. The two paths could consequently disagree in direction or origin.
+- A saved initial CT-only presentation was indistinguishable from an explicit
+  user choice, so a fresh segmentation could be loaded correctly and then
+  hidden again by an old snapshot.
+- Dose and DVH were real asynchronous products, but their Data Tree control
+  nodes were not always reconciled at the moment the payload became available.
+
+### Changes made
+
+- `loadLabelVolumes()` now derives CTV/OAR readiness from non-zero decoded
+  voxels, unions OAR labels present in the binary volume with server metadata,
+  preserves numbered names for opaque uploaded masks, and always re-renders the
+  tree and all three current slices through the session-scoped
+  `reconcileSegmentationViewerState()` path.
+- New segmentation and mask-import completion paths explicitly reset the fresh
+  presentation default; ordinary session restoration preserves an explicit
+  user's saved display choices. This keeps newly generated CTV/OAR overlays
+  visible without overwriting deliberate later hide/opacity changes.
+- `/api/viewer/overlay` now uses the same physical-grid resolver as
+  `/api/viewer/label_volume`, including uploaded-mask alignment and guarded
+  legacy resampling. A viewer cannot silently paint an unaligned second copy of
+  a mask.
+- Every visible tree object receives stable node/object/session/case/planning
+  identifiers, version, status, loading/error state, appearance, and context
+  actions. The reconcile path covers CT, CTV/OAR masks, needles, seeds, dose,
+  dose contours/iso-surfaces, DVH, meshes, annotations, and surgical guides.
+- Dose overlay and DVH completion now reconcile and render their Data Tree nodes
+  immediately after real payloads arrive. No empty geometry object is created;
+  unavailable products remain represented only by the existing status-aware
+  control tree.
+
+### Verification
+
+- Targeted spatial-alignment and workspace-front-end suite: **77 passed**.
+- Full suite: **354 passed, 2 skipped, 3 warnings**.
+- Modified JavaScript passed `node --check`; modified Python routes passed
+  `py_compile`; `git diff --check` passed.
+- The warnings are existing SimpleITK SWIG deprecation warnings. This change
+  verifies the software/data path and does not claim clinical segmentation
+  accuracy beyond the already validated pancreatic route.
 ## 2026-07-28 Manual Planning and Capability Follow-up
 
 ### Seed transactions and viewer interaction
@@ -9565,3 +9616,17 @@ until this Session acceptance is complete.
 - Remaining warnings are third-party SimpleITK SWIG deprecations. Medical
   segmentation quality and BiomedParse clinical validity remain separate from
   the verified software/data-path checks and require clinical validation.
+
+### UI follow-up: Monitor edge, guide controls, and Tumor Type colors
+
+- Replaced the clipped `body::after`-only Monitor halo with a real fixed
+  `monitorEdgeOverlay` at the document root. It is hidden outside Monitor,
+  has no pointer interception or layout footprint, and is the only active edge
+  layer while the legacy selector is suppressed to prevent double glow.
+- Guide parameter `select` and `option` controls now use the same background,
+  border, text, focus ring, padding, and radius tokens as the numeric inputs;
+  the multiple Needle selector has a readable minimum height and resize affordance.
+- Tumor Type colors now encode callable availability only: green when the
+  registered route is callable (including experimental BiomedParse), red when
+  it is unavailable. Maturity and clinical-validation details remain in the
+  explanatory status text, not as a third dropdown color.

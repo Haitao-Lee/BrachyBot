@@ -1549,6 +1549,28 @@ body.monitor-active::after {
     box-shadow: 0 0 18px color-mix(in srgb, var(--accent, #4f7cff) 12%, transparent) inset;
     animation: monitor-edge-breathe 2.8s ease-in-out infinite;
 }
+/* A real top-level layer avoids body overflow clipping fixed pseudo-elements
+   on browsers that establish the viewport from the body box. */
+.monitor-edge-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 2147483000;
+    pointer-events: none;
+    box-sizing: border-box;
+    border: 2px solid color-mix(in srgb, var(--accent, #4f7cff) 36%, transparent);
+    box-shadow:
+        0 0 20px color-mix(in srgb, var(--accent, #4f7cff) 16%, transparent) inset,
+        0 0 34px color-mix(in srgb, var(--accent, #4f7cff) 12%, transparent) inset;
+    animation: monitor-edge-breathe 2.8s ease-in-out infinite;
+}
+.monitor-edge-overlay[hidden] {
+    display: none !important;
+    animation: none !important;
+}
+/* The overlay above is the single authoritative edge layer. Keep the old
+   pseudo-element selector as a compatibility hook for existing themes, but
+   suppress it when the real layer is present to avoid a doubled halo. */
+body.monitor-active::after { display: none; }
 body.monitor-starting::after { animation-duration: 1.8s; }
 body.monitor-stopping::after { animation-duration: 3.4s; }
 body.monitor-active .chat-header-icon,
@@ -1609,6 +1631,7 @@ body.monitor-active .chat-avatar.bot-avatar {
 }
 @media (prefers-reduced-motion: reduce) {
     body.monitor-active::after,
+    .monitor-edge-overlay,
     body.monitor-active .chat-header-icon,
     body.monitor-active .chat-avatar.bot-avatar,
     .monitor-status,

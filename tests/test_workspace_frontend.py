@@ -697,7 +697,11 @@ def test_tumor_type_selector_hides_model_implementation_from_the_user():
     assert "Whole-prostate target" in selector
     assert "refreshTumorTypeAvailability" in ui_api
     assert "capability_state" in ui_api
-    assert "`tumor-type-${capability}`" in ui_api
+    # The selector exposes only the user-facing operational distinction:
+    # callable routes are green and unavailable routes are red. Validation
+    # maturity remains in the explanatory help text, not a third option color.
+    assert "callable ? 'tumor-type-available' : 'tumor-type-unavailable'" in ui_api
+    assert "optionCallable ? '#4ade80' : '#fb7185'" in ui_api
     assert "Integrated; further validation required" in ui_api
 
 
@@ -888,14 +892,14 @@ def test_background_case_restore_shows_a_corner_indicator_and_restores_case_prod
 def test_label_completion_repaints_every_2d_viewer_while_preserving_controls():
     """A restored or newly imported mask must paint without moving a slice."""
     viewer = read("web/app/static/js/brachybot-viewer-volume.js")
-    block = viewer.split(
-        "// Preserving viewer state means preserving controls and visibility", 1
-    )[1].split("return true;", 1)[0]
+    block = viewer.split("function reconcileSegmentationViewerState", 1)[1].split(
+        "window.reconcileSegmentationViewerState", 1
+    )[0]
 
-    assert "if (_viewerDataScopeIsCurrent(scope) && volumeData && volumeShape)" in block
+    assert "_viewerDataScopeIsCurrent" in block
     assert "['axial', 'sagittal', 'coronal'].forEach" in block
     assert "renderSliceFromVolume(axis, state.slices[axis])" in block
-    assert "!preserveViewerState" not in block
+    assert "requestViewerVisualRefresh(reason)" in block
 
 
 def test_planning_parent_visibility_clears_independent_dose_projection_layers():
@@ -967,3 +971,18 @@ def test_deployment_api_key_has_a_session_scoped_login_path():
     assert "revealDeploymentKeyHelp" in auth
     assert "sessionStorage.setItem('BRACHYBOT_API_KEY'" in ui_api
     assert "localStorage.setItem('BRACHYBOT_API_KEY'" not in ui_api
+
+
+def test_monitor_edge_is_a_top_level_non_interactive_layer_and_tumor_colors_are_binary():
+    index = read("web/app/index.html")
+    ui_api = read("web/app/static/js/brachybot-ui-api.js")
+    status_css = read("web/app/static/css/brachybot-chat-status.css")
+    panel_css = read("web/app/static/css/brachybot-panels-viewers.css")
+
+    assert 'id="monitorEdgeOverlay"' in index
+    assert "edge.hidden = !enabled" in ui_api
+    assert ".monitor-edge-overlay" in status_css
+    assert "pointer-events: none" in status_css
+    assert "optionCallable ? '#4ade80' : '#fb7185'" in ui_api
+    assert 'option[data-callable="true"]' in panel_css
+    assert 'option[data-callable="false"]' in panel_css

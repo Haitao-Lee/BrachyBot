@@ -33,6 +33,47 @@ _MESH_CACHE_ORDER = _server_support._MESH_CACHE_ORDER
 _label_color = _server_support._label_color
 _validate_path = _server_support._validate_path
 
+_UPLOADED_LABEL_SOURCES = {
+    "manual_label",
+    "uploaded_unknown",
+    "uploaded",
+    "manual_upload",
+}
+
+
+def _viewer_label_array(agent, array_key, path_key, source, reference_image, target_shape):
+    """Return one label volume on the current CT grid for every viewer path.
+
+    The label-volume endpoint and the per-slice fallback used to read different
+    representations: the former aligned uploaded masks from their NIfTI
+    geometry while the latter read the raw in-memory NumPy array.  That made a
+    mask disappear or appear mirrored whenever the uploaded image used a
+    different direction/spacing.  Keep one physical-grid resolver for both
+    paths and only use the legacy shape fit when no physical source is left.
+    """
+    source_name = str(source or "").strip().lower()
+    path = agent.memory.retrieve(path_key)
+    if not path:
+        path = agent.memory.retrieve(
+            "ctv_mask_path" if array_key == "ctv_array" else "oar_mask_path"
+        )
+    if source_name in _UPLOADED_LABEL_SOURCES and path and reference_image is not None:
+        try:
+            from tool_factory.segmentation_alignment import align_label_to_reference
+
+            aligned = align_label_to_reference(str(path), reference_image, "LPI")
+            return sitk.GetArrayFromImage(aligned)
+        except Exception as exc:
+            logger.warning("[viewer] uploaded %s alignment failed: %s", array_key, exc)
+
+    value = agent._get_label_array(array_key)
+    if value is None:
+        return None
+    array = np.asarray(value)
+    if tuple(array.shape) != tuple(target_shape):
+        array = _resample_legacy_label_array(array, reference_image, target_shape)
+    return array
+
 
 def _resample_legacy_label_array(array, reference, target_shape):
     """Fit a legacy array onto the CT grid without ``CopyInformation``.
@@ -828,10 +869,18 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
             axis = axis_map.get(axis_name, 0)
 
             # Get the segmentation mask
+            ct_ref = agent.memory.retrieve("ct_image")
+            ct_shape = np.asarray(ct_data).shape
+            ctv_source = str(agent.memory.retrieve("ctv_source", "") or "").strip().lower()
+            oar_source = str(agent.memory.retrieve("oar_source", "") or "").strip().lower()
             if overlay_type == "ctv":
-                mask_data = agent._get_label_array("ctv_array")
+                mask_data = _viewer_label_array(
+                    agent, "ctv_array", "ctv_path", ctv_source, ct_ref, ct_shape,
+                )
             else:
-                mask_data = agent._get_label_array("oar_array")
+                mask_data = _viewer_label_array(
+                    agent, "oar_array", "oar_path", oar_source, ct_ref, ct_shape,
+                )
 
             if mask_data is None:
                 img = Image.new('RGBA', (1, 1), (0, 0, 0, 0))
