@@ -343,11 +343,25 @@ def register_session_routes(
             return error
         try:
             session_id = request_case_id(user)
-            agent = get_agent(session_id)
-            snapshot = store.flush_agent_checkpoint(user["id"], session_id, agent, "workspace.explicit_checkpoint")
+            # Explicit checkpoint requests are control-plane acknowledgements;
+            # serializing a CT-sized workspace here made the UI appear frozen.
+            # Do not cold-hydrate an Agent just to acknowledge this request.
+            # The normal mutation hook and detached task finalizer already
+            # schedule checkpoints for a cached Agent.  A cold case is already
+            # durable in SQLite/JSON and has nothing in memory to flush.
+            agent = get_cached_agent(session_id) if callable(get_cached_agent) else None
+            if agent is not None:
+                store.schedule_agent_checkpoint(
+                    user["id"], session_id, agent, "workspace.explicit_checkpoint",
+                )
+            snapshot = store.load_snapshot(user["id"], session_id)
         except WorkspaceError as exc:
             return jsonify({"error": str(exc)}), 400
-        return jsonify({"success": True, "revision": snapshot["session"]["revision"]})
+        return jsonify({
+            "success": True,
+            "pending": True,
+            "revision": snapshot["session"]["revision"],
+        }), 202
 
     @app.route("/api/workspace/lease", methods=["POST", "DELETE"])
     def workspace_lease():

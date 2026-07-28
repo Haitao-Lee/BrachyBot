@@ -175,14 +175,14 @@ class CTVSegmentationTool(BaseTool):
             "pancreas": "nnunet_pancreatic",
             "pancreatic": "nnunet_pancreatic",
             "\u80f0\u817a": "nnunet_pancreatic",
-            "liver": "voco_liver",
-            "\u809d\u810f": "voco_liver",
-            "kidney": "voco_kidney",
-            "\u80be": "voco_kidney",
-            "lung": "voco_lung",
-            "\u80ba": "voco_lung",
-            "colon": "voco_colon",
-            "\u7ed3\u80a0": "voco_colon",
+            "liver": "biomedparse_liver_tumor",
+            "\u809d\u810f": "biomedparse_liver_tumor",
+            "kidney": "biomedparse_kidney_lesion",
+            "\u80be": "biomedparse_kidney_lesion",
+            "lung": "biomedparse_lung_lesion",
+            "\u80ba": "biomedparse_lung_lesion",
+            "colon": "biomedparse_colon_primary",
+            "\u7ed3\u80a0": "biomedparse_colon_primary",
             "head_neck": "biomedparse_head_neck_cancer",
             "head and neck": "biomedparse_head_neck_cancer",
             "\u5934\u9888": "biomedparse_head_neck_cancer",
@@ -255,6 +255,13 @@ class CTVSegmentationTool(BaseTool):
             tool_kwargs = {"image": image, "target_value": target_value, "fast_mode": fast_mode}
             if isinstance(tool, NNUNetPancreaticTumorTool):
                 tool_kwargs["return_all_labels"] = True
+            if isinstance(tool, BiomedParseV2CTVTool):
+                # The research adapter selects its text prompt from the
+                # explicit tumor_type.  The unified wrapper historically
+                # dropped that argument, so every non-pancreatic request
+                # reached BiomedParse as an empty/unsupported type and lost
+                # its useful missing-runtime diagnostics.
+                tool_kwargs["tumor_type"] = tumor_type
             fallback_type = BIOMEDPARSE_FALLBACKS.get(tumor_type)
             model_path = getattr(tool, "MODEL_PATH", None)
             if (
@@ -319,10 +326,35 @@ class CTVSegmentationTool(BaseTool):
                 result_meta["ctv_array"] = ctv_array
                 result_meta["ctv_mask"] = ctv_mask
             else:
-                return result
+                # Preserve the adapter's diagnostic metadata on failure.  In
+                # particular, the BiomedParse adapter reports the missing
+                # runtime/checkpoint and marks the result research-only.  A
+                # generic wrapper must not replace that evidence with a
+                # vague empty-mask error, otherwise callers cannot explain
+                # why a non-pancreatic model was unavailable.
+                failure_meta = dict(result.metadata or {})
+                failure_meta.setdefault("tumor_type_used", tumor_type)
+                failure_meta.setdefault("model_catalog", catalog_with_local_status())
+                return ToolResult(
+                    success=False,
+                    data=result.data,
+                    error=result.error,
+                    message=result.message,
+                    metadata=failure_meta,
+                )
 
+        # Keep the model's metadata available for both successful output and
+        # empty-mask diagnostics.  Some research adapters intentionally
+        # return a structured failure rather than raising an exception.
+        res_meta = (result.metadata or {}) if result is not None else {}
         voxel_count = int(np.sum(ctv_array > 0))
         if voxel_count <= 0 and not allow_empty:
+            failure_meta = dict(res_meta)
+            failure_meta.setdefault(
+                "tumor_type_used",
+                tumor_type or ("manual_label" if from_label_path else "unknown"),
+            )
+            failure_meta.setdefault("model_catalog", catalog_with_local_status())
             return ToolResult(
                 success=False,
                 error=(
@@ -331,17 +363,13 @@ class CTVSegmentationTool(BaseTool):
                     "inference, or the selected site is unsupported. Use label_path for a manual "
                     "CTV or run ctv_model_catalog to see verified models and datasets."
                 ),
-                metadata={
-                    "tumor_type_used": tumor_type or ("manual_label" if from_label_path else "unknown"),
-                    "model_catalog": catalog_with_local_status(),
-                },
+                metadata=failure_meta,
             )
         spacing = ctv_mask.GetSpacing() if hasattr(ctv_mask, 'GetSpacing') else (1, 1, 1)
         voxel_size = spacing[0] * spacing[1] * spacing[2]
         volume_mm3 = voxel_count * voxel_size
 
         # Keep CTV display names source-aware.
-        res_meta = (result.metadata or {}) if result is not None else {}
         label_map = dict(res_meta.get("label_map", {}))
         positive_labels = [int(v) for v in np.unique(ctv_array) if int(v) > 0]
         if not label_map:

@@ -303,6 +303,11 @@
                     <div class="form-row">
                         <input type="text" class="form-input" id="ctvPath" placeholder="/path/to/ctv.nii.gz (optional)">
                         <button class="file-btn" onclick="document.getElementById('fileCTV').click()">&#128193; Browse</button>
+                        <div class="upload-progress-overlay" id="uploadProgressOverlay_ctv" aria-live="polite">
+                            <div class="spinner-ring"></div>
+                            <div class="upload-progress-text">Uploading...</div>
+                            <div class="upload-progress-filename"></div>
+                        </div>
                     </div>
                     <input type="file" id="fileCTV" accept=".nii,.nii.gz,.mha,.nrrd,.mhd,image/*" onchange="handleFileSelect(this, 'ctvPath')">
                 </div>
@@ -314,11 +319,10 @@
                     <select class="form-input" id="ctvModelSelect" aria-describedby="ctvModelHelp">
                         <!-- Values retain the implementation key for the API; users choose a tumor type, not a model brand. -->
                         <option value="nnunet_pancreatic" data-availability="available" data-i18n-zh="胰腺肿瘤" data-i18n-en="Pancreatic tumor">Pancreatic tumor</option>
-                        <option value="voco_pancreatic" data-availability="unavailable" data-i18n-zh="胰腺肿瘤（备用）" data-i18n-en="Pancreatic tumor (alternative)">Pancreatic tumor (alternative)</option>
-                        <option value="voco_liver" data-availability="unavailable" data-i18n-zh="肝脏肿瘤" data-i18n-en="Liver tumor">Liver tumor</option>
-                        <option value="voco_kidney" data-availability="unavailable" data-i18n-zh="肾脏肿瘤" data-i18n-en="Kidney tumor">Kidney tumor</option>
-                        <option value="voco_lung" data-availability="unavailable" data-i18n-zh="肺部肿瘤" data-i18n-en="Lung tumor">Lung tumor</option>
-                        <option value="voco_colon" data-availability="unavailable" data-i18n-zh="结肠肿瘤" data-i18n-en="Colon tumor">Colon tumor</option>
+                        <option value="biomedparse_liver_tumor" data-availability="unavailable" data-i18n-zh="肝脏肿瘤" data-i18n-en="Liver tumor">Liver tumor</option>
+                        <option value="biomedparse_kidney_lesion" data-availability="unavailable" data-i18n-zh="肾脏肿瘤" data-i18n-en="Kidney tumor">Kidney tumor</option>
+                        <option value="biomedparse_lung_lesion" data-availability="unavailable" data-i18n-zh="肺部肿瘤" data-i18n-en="Lung tumor">Lung tumor</option>
+                        <option value="biomedparse_colon_primary" data-availability="unavailable" data-i18n-zh="结肠肿瘤" data-i18n-en="Colon tumor">Colon tumor</option>
                         <option value="prostate_tumor" data-availability="unavailable" data-i18n-zh="前列腺肿瘤" data-i18n-en="Prostate tumor">Prostate tumor</option>
                         <option value="biomedparse_head_neck_cancer" data-availability="unavailable" data-i18n-zh="头颈部肿瘤" data-i18n-en="Head and neck tumor">Head and neck tumor</option>
                     </select>
@@ -331,6 +335,11 @@
                     <div class="form-row">
                         <input type="text" class="form-input" id="oarPath" placeholder="/path/to/oar.nii.gz (optional)">
                         <button class="file-btn" onclick="document.getElementById('fileOAR').click()">&#128193; Browse</button>
+                        <div class="upload-progress-overlay" id="uploadProgressOverlay_oar" aria-live="polite">
+                            <div class="spinner-ring"></div>
+                            <div class="upload-progress-text">Uploading...</div>
+                            <div class="upload-progress-filename"></div>
+                        </div>
                     </div>
                     <input type="file" id="fileOAR" accept=".nii,.nii.gz,.mha,.nrrd,.mhd,image/*" onchange="handleFileSelect(this, 'oarPath')">
                 </div>

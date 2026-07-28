@@ -123,6 +123,94 @@ function _saveManualState(patch) {
     }
 }
 
+// Manual controls do not travel through the chat SSE stream, so they need a
+// small case-owned progress surface of their own.  Keep this state in the
+// workspace snapshot and use an indeterminate animation: the server does not
+// expose a trustworthy percentage for every planning stage.
+const _manualWorkflowProgressRows = new Map();
+
+function _manualWorkflowLabel(zh, en) {
+    return typeof window._t === 'function' ? window._t(zh, en) : en;
+}
+
+function _manualWorkflowProgress(key, status, zhLabel, enLabel, detail = '') {
+    const container = document.getElementById('chatMessages');
+    if (!container) return;
+    const sessionId = String(typeof activeSessionId !== 'undefined' ? activeSessionId : '');
+    const rowId = `manualWorkflowProgress-${String(key).replace(/[^a-zA-Z0-9_-]/g, '_')}`;
+    let row = document.getElementById(rowId);
+    if (!row) {
+        row = document.createElement('div');
+        row.id = rowId;
+        row.className = 'chat-event-row manual-workflow-progress';
+        row.dataset.sessionId = sessionId;
+        row.innerHTML = `
+            <span class="chat-event-icon">AI</span>
+            <div class="chat-event-content">
+                <div class="manual-workflow-progress-heading"></div>
+                <div class="chat-event-text"></div>
+                <time class="chat-event-timestamp"></time>
+            </div>
+            <span class="manual-workflow-progress-elapsed"></span>
+            <span class="manual-workflow-progress-track"><span></span></span>`;
+        container.appendChild(row);
+    }
+    const now = Date.now();
+    if (!row.dataset.startedAt || status === 'running' && row.classList.contains('is-done')) {
+        row.dataset.startedAt = String(now);
+    }
+    row.dataset.sessionId = sessionId;
+    const heading = row.querySelector('.manual-workflow-progress-heading');
+    const message = row.querySelector('.chat-event-text');
+    const timestamp = row.querySelector('.chat-event-timestamp');
+    const elapsed = row.querySelector('.manual-workflow-progress-elapsed');
+    if (heading) heading.textContent = _manualWorkflowLabel(zhLabel, enLabel);
+    if (message) message.textContent = detail || _manualWorkflowLabel('正在执行', 'Running');
+    if (timestamp) timestamp.textContent = new Date(now).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    const updateElapsed = () => {
+        const started = Number(row.dataset.startedAt) || Date.now();
+        if (elapsed) elapsed.textContent = `${Math.max(0, (Date.now() - started) / 1000).toFixed(1)}s`;
+        const fill = row.querySelector('.manual-workflow-progress-track > span');
+        if (fill && (status === 'running' || status === 'queued')) {
+            fill.style.transform = `translateX(${((Date.now() - started) / 1000 * 16 % 120) - 20}%)`;
+        }
+    };
+    if (row._manualTimer) clearInterval(row._manualTimer);
+    if (status === 'running' || status === 'queued') {
+        updateElapsed();
+        row._manualTimer = setInterval(updateElapsed, 250);
+    } else {
+        updateElapsed();
+    }
+    row.classList.toggle('is-running', status === 'running' || status === 'queued');
+    row.classList.toggle('is-queued', status === 'queued');
+    row.classList.toggle('is-done', status === 'done');
+    row.classList.toggle('is-error', status === 'error');
+    if (status === 'done' || status === 'error') {
+        if (row._manualTimer) clearInterval(row._manualTimer);
+        row._manualTimer = null;
+    }
+    _manualWorkflowProgressRows.set(String(key), row);
+    container.scrollTop = container.scrollHeight;
+}
+
+window.clearManualWorkflowProgressPresentation = function clearManualWorkflowProgressPresentation() {
+    _manualWorkflowProgressRows.forEach(row => {
+        if (row?._manualTimer) clearInterval(row._manualTimer);
+        try { row?.remove(); } catch (_) {}
+    });
+    _manualWorkflowProgressRows.clear();
+};
+
+window.restoreManualWorkflowProgress = function restoreManualWorkflowProgress() {
+    const state = _manualState();
+    const active = state.active_step;
+    if (!active || !state.active_step_started_at) return;
+    _manualWorkflowProgress(active, 'running', active, active, _manualWorkflowLabel('正在恢复执行', 'Restoring in-progress step'));
+    const row = _manualWorkflowProgressRows.get(String(active));
+    if (row) row.dataset.startedAt = String(state.active_step_started_at);
+};
+
 function toggleStepButtons() {
     const sec = document.getElementById('stepButtonsSection');
     const tog = document.getElementById('stepToggle');
@@ -351,6 +439,7 @@ async function runPlanningStep(step) {
         dose_eval:        { num: 5, label: 'Dose evaluation',  i18n_zh: '剂量评估' },
     };
     const info = stepLabels[step];
+    const localizedInfoLabel = info?.i18n_zh || info?.label || step;
     if (!info) {
         if (typeof addChat === 'function') addChat('error', `Unknown planning step: ${step}`);
         return { success: false, error: `Unknown planning step: ${step}` };
@@ -382,6 +471,8 @@ async function runPlanningStep(step) {
     if (typeof addChat === 'function') {
         addChat('system', `▶ Step ${info.num}/5: ${info.label} (${info.i18n_zh})...`);
     }
+    _saveManualState({ active_step: step, active_step_started_at: Date.now() });
+    _manualWorkflowProgress(step, 'running', localizedInfoLabel, info.label);
     // Show a small loading badge next to the clicked button.
     const btn = document.querySelector(`button[onclick="runPlanningStep('${step}')"]`);
     const oldText = btn ? btn.innerHTML : null;
@@ -399,22 +490,45 @@ async function runPlanningStep(step) {
         }
         const data = await res.json();
         if (data.success) {
-            _saveManualState({ [step]: true, last_step: step });
+            _saveManualState({ [step]: true, last_step: step, active_step: null, active_step_started_at: null });
+            _manualWorkflowProgress(step, 'done', localizedInfoLabel, info.label, _manualWorkflowLabel('已完成', 'Completed'));
             reportUIEvent('planning.step', `${info.label} completed`, { step });
             if (typeof addChat === 'function') {
-                addChat('system', `✅ Step ${info.num}/5: ${info.label} done.`);
+                addChat('system', `${_manualWorkflowLabel('已完成', 'Completed')} ${info.num}/5: ${_manualWorkflowLabel(localizedInfoLabel, info.label)}.`);
             }
             // Update step button badges (digit → checkmark).
             if (typeof _refreshManualStepUI === 'function') _refreshManualStepUI();
-            // Refresh the analysis panel / 3D viewer if available.
+            // A manual planning step can create or replace OAR, trajectories,
+            // seeds, dose, and meshes in one server-side transaction.  Refresh
+            // the result view and the OAR metadata in parallel, then render
+            // once more.  Without this merge the backend had valid masks while
+            // the Data Tree stayed empty until the user manually reconstructed
+            // a structure.
+            const refreshSessionId = typeof _activeApiSessionId === 'function'
+                ? _activeApiSessionId() : '';
+            const refreshJobs = [];
             if (typeof refreshPlanningUI === 'function') {
-                try { await refreshPlanningUI(); } catch (_) {}
+                refreshJobs.push(refreshPlanningUI({
+                    sessionId: refreshSessionId,
+                    preserveViewerState: true,
+                    switchToViewers: false,
+                    backgroundRestore: true,
+                }));
             }
+            if (typeof hydrateOarDataTreeFromServer === 'function') {
+                refreshJobs.push(hydrateOarDataTreeFromServer(undefined, refreshSessionId));
+            }
+            if (refreshJobs.length) await Promise.allSettled(refreshJobs);
+            if (typeof renderDataTree === 'function') renderDataTree();
+            if (typeof scheduleWorkspaceSave === 'function') scheduleWorkspaceSave('manual.planning.step.completed');
             return { success: true, step };
         } else {
             throw new Error(data.error || 'Unknown error');
         }
     } catch (e) {
+        if (!isCurrentOwner()) return { success: false, error: e.message, detached: true };
+        _saveManualState({ active_step: null, active_step_started_at: null });
+        _manualWorkflowProgress(step, 'error', localizedInfoLabel, info.label, e.message || _manualWorkflowLabel('执行失败', 'Failed'));
         reportUIEvent('planning.error', `${info.label} failed`, { step, error: e.message });
         if (typeof addChat === 'function') {
             addChat('error', `Step ${info.num} (${info.label}) failed: ${e.message}`);
@@ -498,6 +612,17 @@ async function runSegmentationStep(kind) {
     }
     const label = kind === 'ctv_segmentation' ? 'CTV segmentation' : 'OAR segmentation';
     const apiKind = kind === 'ctv_segmentation' ? 'ctv' : 'oar';
+    // Capture the initiating case before asynchronous model work. Late
+    // results may finish for a hidden case, but must never paint the active
+    // case's Data Tree or viewer after a session switch.
+    const ownerSessionId = typeof _activeApiSessionId === 'function'
+        ? String(_activeApiSessionId() || '')
+        : String(typeof activeSessionId !== 'undefined' ? activeSessionId || '' : '');
+    const isCurrentOwner = () => ownerSessionId === String(
+        typeof _activeApiSessionId === 'function'
+            ? _activeApiSessionId() || ''
+            : (typeof activeSessionId !== 'undefined' ? activeSessionId || '' : ''),
+    );
     const ctPath = (document.getElementById('ctPath') || {}).value || '';
     if (!ctPath.trim()) {
         if (typeof addChat === 'function') {
@@ -514,25 +639,43 @@ async function runSegmentationStep(kind) {
     if (typeof addChat === 'function') {
         addChat('system', `▶ ${label} (${apiKind.toUpperCase()}) — running...`);
     }
+    _saveManualState({ active_step: kind, active_step_started_at: Date.now() });
+    _manualWorkflowProgress(kind, 'running', label, label);
     try {
         reportUIEvent('segmentation.step', `${label} started`, { kind });
-        const res = await fetch(API + '/segmentation', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                kind: apiKind,
-                image_path: ctPath.trim(),
-                ...(apiKind === 'ctv' && document.getElementById('ctvPath')?.value?.trim() ? {
-                    label_path: document.getElementById('ctvPath').value.trim(),
-                } : {}),
-                ...(apiKind === 'oar' && document.getElementById('oarPath')?.value?.trim() ? {
-                    label_path: document.getElementById('oarPath').value.trim(),
-                } : {}),
-                ...(apiKind === 'ctv' ? {
-                    tumor_type: document.getElementById('ctvModelSelect')?.value || 'nnunet_pancreatic',
-                } : {}),
-            }),
-        });
+        const body = {
+            kind: apiKind,
+            image_path: ctPath.trim(),
+            ...(apiKind === 'ctv' && document.getElementById('ctvPath')?.value?.trim() ? {
+                label_path: document.getElementById('ctvPath').value.trim(),
+            } : {}),
+            ...(apiKind === 'oar' && document.getElementById('oarPath')?.value?.trim() ? {
+                label_path: document.getElementById('oarPath').value.trim(),
+            } : {}),
+            ...(apiKind === 'ctv' ? {
+                tumor_type: document.getElementById('ctvModelSelect')?.value || 'nnunet_pancreatic',
+            } : {}),
+        };
+        // A manual step may be started while the selected case is still
+        // restoring its durable arrays.  Keep the operation attached to the
+        // initiating case and wait for the server's explicit 202 state rather
+        // than failing or accidentally writing into a newly selected case.
+        const sessionHeaders = { 'Content-Type': 'application/json' };
+        if (ownerSessionId) sessionHeaders['X-BrachyBot-Session'] = ownerSessionId;
+        let res;
+        for (let attempt = 0; attempt <= 60; attempt += 1) {
+            res = await fetch(API + '/segmentation', {
+                method: 'POST',
+                headers: sessionHeaders,
+                body: JSON.stringify(body),
+            });
+            if (res.status !== 202 || attempt >= 60) break;
+            const retryAfter = Number(res.headers.get('Retry-After-Ms') || 250);
+            await new Promise(resolve => setTimeout(
+                resolve,
+                Math.max(100, Math.min(1000, Number.isFinite(retryAfter) ? retryAfter : 250)),
+            ));
+        }
         if (!res.ok) {
             const t = await res.text();
             throw new Error(`HTTP ${res.status}: ${t.slice(0, 200)}`);
@@ -540,14 +683,28 @@ async function runSegmentationStep(kind) {
         const data = await res.json();
         if (!data.success) throw new Error(data.error || 'Segmentation failed');
         const n = data.total_labels || Object.keys(data.label_counts || {}).length || 0;
-        _saveManualState({ [kind]: true });
+        _saveManualState({ [kind]: true, active_step: null, active_step_started_at: null });
+        _manualWorkflowProgress(kind, 'done', label, label, _manualWorkflowLabel('已完成', 'Completed'));
         reportUIEvent('segmentation.step', `${label} completed`, { kind, labels: n });
         if (typeof addChat === 'function') {
             addChat('system', `✅ ${label} done — ${n} label(s) found.`);
         }
-        if (typeof loadLabelVolumes === 'function') {
-            try { await loadLabelVolumes(); } catch (e) { console.warn('[manual segmentation] loadLabelVolumes failed:', e); }
+        // The segmentation response already contains authoritative organ
+        // names/counts. Paint those nodes before the binary volume fetch so a
+        // successful tool call can never leave an empty OAR branch.
+        if (apiKind === 'oar' && typeof window.hydrateOarDataTreeFromPayload === 'function') {
+            window.hydrateOarDataTreeFromPayload(data, ownerSessionId);
         }
+        if (typeof loadLabelVolumes === 'function') {
+            try {
+                await loadLabelVolumes({
+                    forceFresh: true,
+                    preserveViewerState: true,
+                    sessionId: ownerSessionId,
+                });
+            } catch (e) { console.warn('[manual segmentation] loadLabelVolumes failed:', e); }
+        }
+        if (!isCurrentOwner()) return { success: true, kind, labels: n, detached: true };
         if (typeof renderDataTree === 'function') {
             try { renderDataTree(); } catch (_) {}
         }
@@ -556,13 +713,15 @@ async function runSegmentationStep(kind) {
         }
         return { success: true, kind, labels: n };
     } catch (e) {
+        _saveManualState({ active_step: null, active_step_started_at: null });
+        _manualWorkflowProgress(kind, 'error', label, label, e.message || _manualWorkflowLabel('执行失败', 'Failed'));
         reportUIEvent('segmentation.error', `${label} failed`, { kind, error: e.message });
         if (typeof addChat === 'function') {
             addChat('error', `${label} failed: ${e.message}`);
         }
         return { success: false, error: e.message };
     } finally {
-        if (btn) {
+        if (btn && isCurrentOwner()) {
             btn.disabled = false;
             // The step number reflects state — re-render via _refreshManualStepUI.
             if (typeof _refreshManualStepUI === 'function') _refreshManualStepUI();
@@ -840,16 +999,10 @@ function renderDoseForCurrentSlice(axis, sliceIndex) {
         // Cache miss — show nearest cached slice as placeholder, then
         // fetch the actual data from the server.
         _doseLastRendered[axis] = -1; // mark canvas as stale
-        const slices = state.doseOverlay.slices;
-        let nearestKey = null, nearestDist = Infinity;
-        for (const k in slices) {
-            if (!k.startsWith(axis + '_')) continue;
-            const dist = Math.abs(parseInt(k.split('_')[1]) - sliceIndex);
-            if (dist < nearestDist) { nearestDist = dist; nearestKey = k; }
-        }
-        if (nearestKey && nearestDist <= 5) {
-            try { renderDoseOverlayOnLayer(doseCanvas, axis, sliceIndex, slices[nearestKey]); } catch (_) {}
-        }
+        try {
+            const ctx = doseCanvas.getContext('2d');
+            ctx.clearRect(0, 0, doseCanvas.width, doseCanvas.height);
+        } catch (_) {}
         const renderEpoch = _doseOverlayRenderEpoch;
         fetchDoseOverlaySlice(axis, sliceIndex).then(sliceData => {
             if (sliceData && state.slices[axis] === sliceIndex && renderEpoch === _doseOverlayRenderEpoch) {

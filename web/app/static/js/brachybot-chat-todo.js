@@ -1765,6 +1765,7 @@ async function sendChat(prefill, options) {
                                     // result cannot paint the wrong Data Tree.
                                     loadLabelVolumes({
                                         sessionId: turnSessionId,
+                                        forceFresh: true,
                                         preserveViewerState: true,
                                     }).then(() => {
                                         if (String(activeSessionId || '') !== turnSessionId) return;

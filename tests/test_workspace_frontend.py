@@ -262,6 +262,30 @@ def test_workspace_hydration_has_visible_nonblocking_progress_state():
     assert "workspaceHydrationNotice" in index
 
 
+def test_uploaded_oar_mask_is_a_numbered_traversable_data_tree_source():
+    """Uploaded opaque labels must not be reinterpreted as named anatomy."""
+    viewer = read("web/app/static/js/brachybot-viewer-volume.js")
+    routes = read("web/routes/viewer_routes.py")
+    manual = read("web/app/static/js/brachybot-manual-annotation.js")
+    for source in ("uploaded_unknown", "uploaded", "manual_upload"):
+        assert source in viewer
+        assert source in routes
+    assert "const uploadedUnknownSource = new Set" in viewer
+    assert "`OAR ${i + 1}`" in viewer
+    assert "'X-BrachyBot-Session': ownerSessionId" in manual or "sessionHeaders['X-BrachyBot-Session']" in manual
+    assert "res.status !== 202" in manual
+    assert "const ownerSessionId" in manual
+    assert "const isCurrentOwner = () => ownerSessionId" in manual
+    assert "sessionId: ownerSessionId" in manual
+    assert "hydrateOarDataTreeFromPayload(data, ownerSessionId)" in manual
+    ui_api = read("web/app/static/js/brachybot-ui-api.js")
+    assert "hydrateOarDataTreeFromPayload(payload, ownerSessionId)" in ui_api
+    assert "loadLabelVolumes({\n                forceFresh: true" in ui_api
+    assert "window.hydrateOarDataTreeFromPayload = function hydrateOarDataTreeFromPayload(payload, expectedSessionId" in viewer
+    assert "dataTreeState.oar.loaded = true" in viewer
+    assert "if (typeof renderDataTree === 'function') renderDataTree();" in viewer
+
+
 def test_session_restore_uses_lightweight_status_and_background_assets():
     """The control plane must not hydrate the full Agent or await report blobs."""
     cache = read("web/app/static/js/brachybot-session-cache.js")
@@ -377,9 +401,45 @@ def test_oar_tree_hydrates_when_binary_labels_arrive_without_metadata_header():
     viewer = read("web/app/static/js/brachybot-viewer-volume.js")
     assert "async function hydrateOarDataTreeFromServer" in viewer
     assert "fetch(API + '/viewer/organs', {" in viewer
-    assert "headers: _viewerDataHeaders(expectedSessionId)" in viewer
+    assert "headers: _viewerDataHeaders(sessionId)" in viewer
     assert "void hydrateOarDataTreeFromServer(scope.dataGeneration, scope.sessionId);" in viewer
     assert "Invalid OAR metadata header" in viewer
+    assert "const generation = Number.isFinite(generationValue)" in viewer
+    assert "const sessionId = String(expectedSessionId || _viewerDataSessionId() || '')" in viewer
+
+
+def test_mask_upload_progress_is_scoped_to_the_selected_input_row():
+    """CTV/OAR uploads must not reuse the CT progress overlay DOM node."""
+    index = read("web/app/index.html")
+    ui_api = read("web/app/static/js/brachybot-ui-api.js")
+    assert 'id="uploadProgressOverlay_ctv"' in index
+    assert 'id="uploadProgressOverlay_oar"' in index
+    assert "function _uploadProgressElements(targetId)" in ui_api
+    assert "_uploadProgressElements(targetId)" in ui_api
+    assert "_uploadProgressElements('ctPath')" in ui_api
+    assert "hydrateOarDataTreeFromServer(undefined, ownerSessionId)" in ui_api
+
+
+def test_oar_tree_accepts_server_organs_and_ignores_empty_race_updates():
+    """A successful OAR import must survive metadata/cache hydration races."""
+    viewer = read("web/app/static/js/brachybot-viewer-volume.js")
+    assert "data.organs && typeof data.organs === 'object'" in viewer
+    assert "if (!entries.length) return false;" in viewer
+    assert "data.oar_mask_provenance" in viewer
+    # The server object uses voxel_count; the upload fallback uses counts.
+    assert "info.voxel_count ?? info.voxels ?? info.count" in viewer
+
+
+def test_oar_snapshot_restore_preserves_live_rows_and_resets_case_provenance():
+    """Empty compact snapshots must not erase OAR rows from the active case."""
+    workspace = read("web/app/static/js/brachybot-workspace.js")
+    viewer = read("web/app/static/js/brachybot-viewer-volume.js")
+    ui_api = read("web/app/static/js/brachybot-ui-api.js")
+    assert "const hasPlanningRows" in workspace
+    assert "Loaded flags are only control-plane hints" in workspace
+    assert "dataTreeState.oarSource = '';" in ui_api
+    assert "label: o.label" in viewer
+    assert "const renamed = !sourceChanged && existing?.label" in viewer
 
 
 def test_llm_case_rename_uses_the_durable_session_api():
@@ -486,6 +546,19 @@ def test_data_plane_requests_and_lease_transitions_are_case_bound():
     assert "async function acquireLease(sessionId = currentLeaseSessionId())" in auth
     assert "releaseLease(previousSessionId)" in switch_block
     assert "acquireLease(activeSessionId)" in switch_block
+
+
+def test_oar_restore_keeps_late_metadata_and_ctv_labels_out_of_oar_rows():
+    """Late OAR metadata gets saved presentation while CTV labels stay separate."""
+    volume = read("web/app/static/js/brachybot-viewer-volume.js")
+    workspace = read("web/app/static/js/brachybot-workspace.js")
+    ui_api = read("web/app/static/js/brachybot-ui-api.js")
+    planning = read("tool_factory/seed_plan/planning_pipeline.py")
+
+    assert "window.__pendingOarPresentation" in volume
+    assert "savedTree.ctvLabels || savedTree.ctv_labels" in workspace
+    assert "ctv_labels: Object.entries(dataTreeState.ctvLabels || {})" in ui_api
+    assert 'data_tree.get("ctv_labels", data_tree.get("ctvLabels", []))' in planning
 
 
 def test_chat_callbacks_are_persisted_to_the_turn_owner_case():

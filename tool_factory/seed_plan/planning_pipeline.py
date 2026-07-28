@@ -186,12 +186,18 @@ def _resolve_data_tree_obstacle_labels(agent):
 
     data_tree = ui_state.get("data_tree") if isinstance(ui_state, dict) else None
     organs = data_tree.get("organs") if isinstance(data_tree, dict) else None
-    if not isinstance(organs, list):
+    ctv_labels = data_tree.get("ctv_labels", data_tree.get("ctvLabels", [])) if isinstance(data_tree, dict) else []
+    entries = []
+    if isinstance(organs, list):
+        entries.extend(organs)
+    if isinstance(ctv_labels, list):
+        entries.extend(ctv_labels)
+    if not entries:
         return defaults, "default"
 
     selected = set()
     usable_oar_entries = 0
-    for item in organs:
+    for item in entries:
         if not isinstance(item, dict):
             continue
         source = str(item.get("source") or "oar").strip().lower()
@@ -254,9 +260,16 @@ def _merge_embedded_hard_obstacles(oar_mask, agent):
         ui_state = agent.memory.get_ui_state() or {}
     except Exception:
         ui_state = {}
-    organs = ((ui_state.get("data_tree") or {}).get("organs") or {}) if isinstance(ui_state, dict) else {}
+    data_tree = (ui_state.get("data_tree") or {}) if isinstance(ui_state, dict) else {}
+    organs = data_tree.get("organs") or [] if isinstance(data_tree, dict) else []
+    ctv_labels = data_tree.get("ctv_labels", data_tree.get("ctvLabels", [])) if isinstance(data_tree, dict) else []
+    entries = []
     if isinstance(organs, list):
-        for item in organs:
+        entries.extend(organs)
+    if isinstance(ctv_labels, list):
+        entries.extend(ctv_labels)
+    if entries:
+        for item in entries:
             if not isinstance(item, dict):
                 continue
             source = str(item.get("source") or "").strip().lower()

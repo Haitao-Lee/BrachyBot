@@ -457,11 +457,54 @@ async function recomputeManualDose(reason = 'manual_update', options = {}) {
     return manualPlanningState._doseRecomputePromise;
 }
 
+function _projectPointOntoNeedle(position, needle) {
+    const points = (needle?.points || []).map(point => _vec3Array(point));
+    if (points.length < 2) return _vec3Array(position);
+    const raw = new THREE.Vector3(..._vec3Array(position));
+    let best = null;
+    let bestDistance = Infinity;
+    for (let index = 0; index < points.length - 1; index += 1) {
+        const start = new THREE.Vector3(...points[index]);
+        const end = new THREE.Vector3(...points[index + 1]);
+        const segment = new THREE.Vector3().subVectors(end, start);
+        const lengthSquared = segment.lengthSq();
+        const parameter = lengthSquared > 1e-8
+            ? Math.max(0, Math.min(1, raw.clone().sub(start).dot(segment) / lengthSquared))
+            : 0;
+        const projected = start.clone().add(segment.multiplyScalar(parameter));
+        const distance = projected.distanceToSquared(raw);
+        if (distance < bestDistance) {
+            bestDistance = distance;
+            best = projected;
+        }
+    }
+    return best ? [best.x, best.y, best.z] : _vec3Array(position);
+}
+
 async function onManualSeedEdited(seedId, position) {
     const seed = dataTreeState.planning.seeds.find(s => s.id === seedId);
-    if (seed) seed.position = _vec3Array(position);
+    const needle = seed
+        ? dataTreeState.planning.needles.find(n => _normalizeTrajectoryId(n.trajectory_id) === _normalizeTrajectoryId(seed.trajectory_id))
+        : null;
+    const projected = needle ? _projectPointOntoNeedle(position, needle) : _vec3Array(position);
+    if (seed) {
+        seed.position = projected;
+        seed.pos = projected;
+        if (needle && needle.points.length >= 2) {
+            const direction = new THREE.Vector3(..._vec3Array(needle.points[0]))
+                .sub(new THREE.Vector3(..._vec3Array(needle.points[1])))
+                .normalize();
+            seed.direction = [direction.x, direction.y, direction.z];
+        }
+        _upsertSceneMesh(seed.id, _makeSeedMesh(seed));
+    }
     _syncSeedsOverlayFromDataTree();
-    reportUIEvent('manual.seed.drag', seedId, { position: _vec3Array(position) });
+    renderDataTree();
+    if (typeof scheduleWorkspaceSave === 'function') scheduleWorkspaceSave('manual.seed.position');
+    reportUIEvent('manual.seed.drag', seedId, {
+        position: projected,
+        projected_to_needle: !!needle,
+    });
     await recomputeManualDose('seed_drag');
 }
 
@@ -608,7 +651,10 @@ async function startTrainingMode(goal = 'Monitor planning workflow') {
         const data = await res.json().catch(() => null);
         if (!res.ok || !data || !data.success) throw new Error((data && data.error) || `HTTP ${res.status}`);
         trainingMonitorState.active = true;
-        addChat('system', 'Monitor mode started. I will track planning actions and provide live feedback. Use Detailed Advice or Finish Monitor for a full report.');
+        document.body.classList.add('monitor-active');
+        addChat('bot-response', typeof window._t === 'function'
+            ? window._t('監測模式已启动。我会跟踪规划操作并提供阶段性反馈。', 'Monitor mode started. I will track planning actions and provide stage feedback.')
+            : 'Monitor mode started. I will track planning actions and provide stage feedback.');
         await syncUIBridgeState('training_start');
         return data;
     } catch (e) {
@@ -627,10 +673,19 @@ async function stopTrainingMode() {
         const data = await res.json().catch(() => null);
         if (!res.ok || !data || !data.success) throw new Error((data && data.error) || `HTTP ${res.status}`);
         trainingMonitorState.active = false;
-        // The server summary already contains Strengths/Issues/
-        // Recommendations. Rendering it together with structured advice
-        // duplicated the same report in the chat.
-        addChat('bot-response', data.summary || _formatAdviceReport(data.advice));
+        document.body.classList.remove('monitor-active');
+        const prefix = typeof window._t === 'function'
+            ? window._t('规划监测已结束', 'Planning monitoring finished')
+            : 'Planning monitoring finished';
+        // The server summary is already the single reviewed report. Use the
+        // structured advice only when an older server cannot provide it;
+        // otherwise the chat would show the same monitor findings twice.
+        const report = data.summary || _formatAdviceReport(data.advice);
+        const activity = data.event_counts && Object.keys(data.event_counts).length
+            ? `\n\n**${typeof window._t === 'function' ? window._t('事件概览', 'Activity') : 'Activity'}**\n`
+                + Object.entries(data.event_counts).map(([key, value]) => `- ${key}: ${value}`).join('\n')
+            : '';
+        addChat('bot-response', report + activity);
         trainingMonitorState.lastFeedbackAt = 0;
         trainingMonitorState.lastScreenshotAt = 0;
         return data;
@@ -641,7 +696,9 @@ async function stopTrainingMode() {
 }
 
 function _formatAdviceReport(advice, prefix = '') {
-    if (!advice) return prefix || 'No advice available yet.';
+    if (!advice) return prefix || (typeof window._t === 'function'
+        ? window._t('暂无监测建议。', 'No advice available yet.')
+        : 'No advice available yet.');
     const lines = [];
     if (prefix) lines.push(prefix);
     if (advice.strengths && advice.strengths.length) {
@@ -1213,7 +1270,43 @@ function init3DScene() {
         const intersection = new THREE.Vector3();
         if (!raycaster.ray.intersectPlane(dragPlane, intersection)) return;
 
-        selectedObject.position.copy(intersection.add(dragOffset));
+        let nextPosition = intersection.clone().add(dragOffset);
+        // A seed is constrained to its owning needle during the drag, not
+        // only after mouse-up.  This keeps the 3D preview, 2D projection, and
+        // the eventual dose recomputation on the same physical geometry.
+        if (selectedObject.userData.type === 'seed') {
+            const seed = dataTreeState.planning.seeds.find(
+                item => item.id === selectedObject.userData.id,
+            );
+            const needle = seed
+                ? dataTreeState.planning.needles.find(
+                    item => _normalizeTrajectoryId(item.trajectory_id)
+                        === _normalizeTrajectoryId(seed.trajectory_id),
+                )
+                : null;
+            if (needle && needle.points?.length >= 2) {
+                const projected = _projectPointOntoNeedle(nextPosition, needle);
+                nextPosition.set(projected[0], projected[1], projected[2]);
+            }
+            if (seed) {
+                const coordinates = [nextPosition.x, nextPosition.y, nextPosition.z];
+                seed.position = coordinates;
+                seed.pos = coordinates;
+                const overlaySeed = state.seedsOverlay?.seeds?.find(
+                    item => item.id === seed.id,
+                );
+                if (overlaySeed) {
+                    overlaySeed.position = coordinates;
+                    overlaySeed.pos = coordinates;
+                }
+                const stateSeed = state.seeds?.find(item => item.id === seed.id);
+                if (stateSeed) {
+                    stateSeed.position = coordinates;
+                    stateSeed.pos = coordinates;
+                }
+            }
+        }
+        selectedObject.position.copy(nextPosition);
         needleDragMoved = true;
         if (selectedObject.userData.type === 'needle_handle') {
             const needle = dataTreeState.planning.needles.find(n => n.id === selectedObject.userData.needleId);
@@ -2979,13 +3072,20 @@ async function loadDoseOverlay() {
     }
 }
 
-async function _loadDoseOverlayImpl() {
+async function _loadDoseOverlayImpl(retryAttempt = 0) {
     const requestGeneration = _doseOverlayLoadGeneration;
     const requestSessionId = _doseOverlaySessionId();
     try {
         const res = await fetch(API + '/planning/dose_overlay', {
             headers: { 'X-BrachyBot-Session': requestSessionId },
         });
+        if (res.status === 202 && retryAttempt < 60) {
+            // Cold-case hydration is deliberately non-blocking. Keep the
+            // dose request alive with a bounded retry instead of showing a
+            // false "no dose" error while the background restore finishes.
+            await new Promise(resolve => setTimeout(resolve, Math.min(1000, 150 + retryAttempt * 25)));
+            return _loadDoseOverlayImpl(retryAttempt + 1);
+        }
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
         if (!data.success) throw new Error(data.error || 'Failed to load dose overlay');
@@ -3089,15 +3189,20 @@ async function fetchDoseOverlaySlice(axis, sliceIndex) {
         const requestSliceIndex = axis === 'axial' && Number.isFinite(axialMax)
             ? Math.max(0, Math.min(axialMax, axialMax - sliceIndex))
             : sliceIndex;
-        const res = await fetch(API + '/planning/dose_overlay_slice', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-BrachyBot-Session': ownerSessionId,
-            },
-            body: JSON.stringify({ axis, slice_index: requestSliceIndex }),
-            signal: controller.signal,
-        });
+        let res;
+        for (let attempt = 0; attempt <= 60; attempt += 1) {
+            res = await fetch(API + '/planning/dose_overlay_slice', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-BrachyBot-Session': ownerSessionId,
+                },
+                body: JSON.stringify({ axis, slice_index: requestSliceIndex }),
+                signal: controller.signal,
+            });
+            if (res.status !== 202 || attempt >= 60) break;
+            await new Promise(resolve => setTimeout(resolve, Math.min(1000, 150 + attempt * 25)));
+        }
         if (controller.signal.aborted) return null;
         if (!res.ok) { uiDebugLog(`[dose] fetch HTTP ${res.status} for ${cacheKey}`); return null; }
         const data = await res.json();
@@ -3565,6 +3670,7 @@ function deleteSeed3D(seedId) {
     addChat('system', `Deleted seed ${seedId}`);
     _syncSeedsOverlayFromDataTree();
     reportUIEvent('manual.seed.delete', seedId, {});
+    if (typeof scheduleWorkspaceSave === 'function') scheduleWorkspaceSave('manual.seed.delete');
     if (dataTreeState.planning.seeds.length > 0) recomputeManualDose('seed_delete');
 }
 
@@ -3593,6 +3699,7 @@ function deleteNeedle3D(needleId) {
     addChat('system', `Deleted needle ${needleId}`);
     _syncSeedsOverlayFromDataTree();
     reportUIEvent('manual.needle.delete', needleId, {});
+    if (typeof scheduleWorkspaceSave === 'function') scheduleWorkspaceSave('manual.needle.delete');
     if (dataTreeState.planning.seeds.length > 0) recomputeManualDose('needle_delete');
 }
 

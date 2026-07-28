@@ -168,6 +168,20 @@ function collectUIState() {
                 category: organ.category === 'non_traversable' ? 'non_traversable' : 'traversable',
                 source: organ.source || (String(organ.id || '').startsWith('ctv_') ? 'ctv' : 'oar'),
             })).filter((organ) => organ.id || organ.label_id !== null),
+            // CTV auxiliary labels are persisted separately from OAR rows.
+            // This preserves user-selected hard-obstacle classifications
+            // without polluting the OAR whitelist or inventing anatomy.
+            ctv_labels: Object.entries(dataTreeState.ctvLabels || {}).map(([id, label]) => ({
+                id,
+                label_id: Number.isFinite(Number(label?.labelId ?? label?.label_id))
+                    ? Number(label.labelId ?? label.label_id) : null,
+                label: label?.label || null,
+                category: label?.category === 'non_traversable' ? 'non_traversable' : 'traversable',
+                source: 'ctv',
+                visible: label?.visible !== false,
+                opacity: Number.isFinite(Number(label?.opacity)) ? Number(label.opacity) : 0.7,
+                color: label?.color || null,
+            })).filter(item => item.id || item.label_id !== null),
             seeds: dataTreeState.planning?.seeds?.length || 0,
             needles: dataTreeState.planning?.needles?.length || 0,
             dose_levels: dataTreeState.planning?.doseLevels?.length || 0,
@@ -348,7 +362,10 @@ async function reportUIEvent(type, label, detail = {}, options = {}) {
         const data = await res.json().catch(() => null);
         if (ownerSessionId !== _activeApiSessionId()) return null;
         if (data && data.feedback && _shouldLogTrainingFeedback(data.feedback)) {
-            addChat('system', `Monitor: ${data.feedback}`);
+            const monitorPrefix = typeof window._t === 'function'
+                ? window._t('监测建议', 'Monitor feedback')
+                : 'Monitor feedback';
+            addChat('bot-response', `**${monitorPrefix}**\n\n${data.feedback}`);
         }
         if (data && data.suggested_screenshot && trainingMonitorState.active) {
             const now = Date.now();
@@ -548,6 +565,22 @@ async function api(endpoint, body) {
 }
 
 /******** FILE PICKER ********/
+function _uploadProgressElements(targetId) {
+    const suffix = targetId === 'ctvPath'
+        ? 'CTV'
+        : (targetId === 'oarPath' ? 'OAR' : 'CT');
+    const prefix = suffix === 'CT' ? 'uploadProgressOverlay' : `uploadProgressOverlay_${suffix.toLowerCase()}`;
+    const overlay = document.getElementById(prefix)
+        || document.getElementById('uploadProgressOverlay');
+    return {
+        overlay,
+        progressText: overlay?.querySelector('.upload-progress-text')
+            || document.getElementById('uploadProgressText'),
+        progressFilename: overlay?.querySelector('.upload-progress-filename')
+            || document.getElementById('uploadProgressFilename'),
+    };
+}
+
 async function handleFileSelect(input, targetId) {
     const files = input.files ? Array.from(input.files) : [];
     if (files.length === 0) return;
@@ -557,21 +590,15 @@ async function handleFileSelect(input, targetId) {
     const isCurrentOwner = () => ownerSessionId === String(_activeApiSessionId());
 
     const pathInput = document.getElementById(targetId);
-    const overlay = document.getElementById('uploadProgressOverlay');
-    const progressText = document.getElementById('uploadProgressText');
-    const progressFilename = document.getElementById('uploadProgressFilename');
-
-    // Anchor the shared progress indicator to the input row that owns this
-    // upload. CTV/OAR uploads must never look like CT uploads in the UI.
-    const activeRow = pathInput?.closest('.form-row');
-    if (activeRow && overlay && overlay.parentElement !== activeRow) {
-        activeRow.appendChild(overlay);
-    }
+    const { overlay, progressText, progressFilename } = _uploadProgressElements(targetId);
     const uploadLabel = targetId === 'ctvPath'
         ? 'CTV mask'
         : (targetId === 'oarPath' ? 'OAR mask' : 'CT image');
 
     // Show upload progress overlay
+    if (!overlay || !progressText || !progressFilename) {
+        throw new Error(`Upload progress UI is missing for ${targetId}`);
+    }
     progressText.textContent = files.length === 1
         ? `Uploading ${uploadLabel}...`
         : `Uploading ${uploadLabel} (${files.length} files)...`;
@@ -669,14 +696,24 @@ async function importUploadedMask(kind, labelPath, options = {}) {
                 || (isCurrentOwner() ? document.getElementById('ctvModelSelect')?.value : null)
                 || null;
         }
-        const res = await fetch(API + '/segmentation', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-BrachyBot-Session': ownerSessionId,
-            },
-            body: JSON.stringify(body),
-        });
+        // A session may still be decoding its durable arrays after the shell
+        // has switched.  Retry the server's explicit 202 response instead of
+        // treating it as a failed upload; this keeps the Browse workflow
+        // non-blocking while preserving the authoritative mask write.
+        let res;
+        for (let attempt = 0; attempt <= 60; attempt += 1) {
+            res = await fetch(API + '/segmentation', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-BrachyBot-Session': ownerSessionId,
+                },
+                body: JSON.stringify(body),
+            });
+            if (res.status !== 202 || attempt >= 60) break;
+            const retryAfter = Number(res.headers.get('Retry-After-Ms') || 250);
+            await new Promise(resolve => setTimeout(resolve, Math.max(100, Math.min(1000, retryAfter))));
+        }
         const payload = await res.json().catch(() => ({}));
         if (!res.ok || !payload.success) throw new Error(payload.error || `HTTP ${res.status}`);
         if (!isCurrentOwner()) return payload;
@@ -684,7 +721,31 @@ async function importUploadedMask(kind, labelPath, options = {}) {
         if (typeof _saveManualState === 'function') {
             _saveManualState({ [kind === 'ctv' ? 'ctv_segmentation' : 'oar_segmentation']: true });
         }
-        if (typeof loadLabelVolumes === 'function') await loadLabelVolumes();
+        if (kind === 'oar' && typeof window.hydrateOarDataTreeFromPayload === 'function') {
+            // Paint server-confirmed numbered OAR nodes before the binary
+            // volume fetch. This is the immediate control-plane update; the
+            // label volume and organs endpoint below reconcile the voxels and
+            // metadata without inventing anatomical names for an opaque mask.
+            window.hydrateOarDataTreeFromPayload(payload, ownerSessionId);
+        }
+        if (typeof loadLabelVolumes === 'function') {
+            await loadLabelVolumes({
+                forceFresh: true,
+                preserveViewerState: true,
+                sessionId: ownerSessionId,
+            });
+        }
+        if (!isCurrentOwner()) return payload;
+        if (kind === 'oar' && typeof window.hydrateOarDataTreeFromPayload === 'function') {
+            // A background label refresh may replace the tree while it is
+            // decoding. Re-apply the small authoritative response last so a
+            // successful upload can never finish with an empty OAR branch.
+            window.hydrateOarDataTreeFromPayload(payload, ownerSessionId);
+        }
+        if (kind === 'oar' && typeof hydrateOarDataTreeFromServer === 'function') {
+            await hydrateOarDataTreeFromServer(undefined, ownerSessionId);
+        }
+        if (!isCurrentOwner()) return payload;
         if (typeof renderDataTree === 'function') renderDataTree();
         if (typeof startSegmentationMeshPrewarm === 'function') startSegmentationMeshPrewarm(kind);
         if (typeof _refreshManualStepUI === 'function') _refreshManualStepUI();
@@ -898,11 +959,13 @@ function updateTumorTypeSelector(value) {
     if (!raw) return false;
     const aliases = {
         pancreas: 'nnunet_pancreatic', pancreatic: 'nnunet_pancreatic',
-        liver: 'voco_liver', kidney: 'voco_kidney', lung: 'voco_lung',
-        colon: 'voco_colon', prostate: 'prostate_tumor',
+        liver: 'biomedparse_liver_tumor', kidney: 'biomedparse_kidney_lesion',
+        lung: 'biomedparse_lung_lesion', colon: 'biomedparse_colon_primary',
+        prostate: 'prostate_tumor',
         'head and neck': 'biomedparse_head_neck_cancer', head_neck: 'biomedparse_head_neck_cancer',
-        '胰腺': 'nnunet_pancreatic', '肝脏': 'voco_liver', '肾': 'voco_kidney',
-        '肺': 'voco_lung', '结肠': 'voco_colon', '前列腺': 'prostate_tumor',
+        '胰腺': 'nnunet_pancreatic', '肝脏': 'biomedparse_liver_tumor',
+        '肾': 'biomedparse_kidney_lesion', '肺': 'biomedparse_lung_lesion',
+        '结肠': 'biomedparse_colon_primary', '前列腺': 'prostate_tumor',
     };
     const key = aliases[raw.toLowerCase()] || raw.toLowerCase();
     const select = document.getElementById('ctvModelSelect');
@@ -994,6 +1057,9 @@ function resetAllState(options = {}) {
     dataTreeState.ctv.visible = true;
     dataTreeState.oar.loaded = false;
     dataTreeState.oar.visible = true;
+    // The source belongs to the current case. Keeping it during a case reset
+    // can make a fresh uploaded mask inherit the previous case's ontology.
+    dataTreeState.oarSource = '';
     dataTreeState.organs = [];
     dataTreeState.ctvLabels = {};
     dataTreeState.dose.loaded = false;
@@ -1085,6 +1151,7 @@ function clearClientWorkspace(options = {}) {
     // every server-side task so an old case cannot animate inside a new one.
     try { window.clearCaseScopedProgressPresentation?.(); } catch (_) {}
     try { window.clearManualDoseProgressPresentation?.(); } catch (_) {}
+    try { window.clearManualWorkflowProgressPresentation?.(); } catch (_) {}
     // Invalidate asynchronous 3D mesh fetches before removing current-case
     // objects. A late response from the previous session may still complete,
     // but it is no longer allowed to add geometry to the new case.
@@ -1460,8 +1527,7 @@ async function loadCTToViewers(ctPath, options = {}) {
 
     const isCurrentOwner = () => ownerSessionId === String(_activeApiSessionId());
     const announce = options.announce !== false;
-    const overlay = document.getElementById('uploadProgressOverlay');
-    const progressText = document.getElementById('uploadProgressText');
+    const { overlay, progressText } = _uploadProgressElements('ctPath');
     const windowCenter = Number.isFinite(Number(options.windowCenter))
         ? Number(options.windowCenter)
         : Number(state.viewerSettings.level);
@@ -1515,25 +1581,39 @@ async function loadCTToViewers(ctPath, options = {}) {
     }
 
     const loadCtrl = new AbortController();
-    const loadTimer = setTimeout(() => loadCtrl.abort(), Number(options.timeoutMs || 60000));
+    // A cold workspace may still be decoding its persisted CT in the server
+    // worker.  Poll the lightweight gate instead of turning that normal state
+    // into a misleading "Failed to load CT" error.
+    const loadTimer = setTimeout(() => loadCtrl.abort(), Math.max(180000, Number(options.timeoutMs || 60000)));
     try {
-        const res = await fetch(API + '/viewer/load', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-BrachyBot-Session': ownerSessionId,
-            },
-            body: JSON.stringify({
-                ct_path: ctPath,
-                window_center: windowCenter,
-                window_width: windowWidth,
-            }),
-            signal: loadCtrl.signal,
-        });
-
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-
-        const data = await res.json();
+        let data = null;
+        for (let attempt = 0; attempt < 360; attempt += 1) {
+            const res = await fetch(API + '/viewer/load', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-BrachyBot-Session': ownerSessionId,
+                },
+                body: JSON.stringify({
+                    ct_path: ctPath,
+                    window_center: windowCenter,
+                    window_width: windowWidth,
+                }),
+                signal: loadCtrl.signal,
+            });
+            if (res.status === 202) {
+                const pending = await res.json().catch(() => ({}));
+                const waitMs = Math.max(100, Math.min(1000, Number(
+                    pending.retry_after_ms || res.headers.get('Retry-After-Ms') || 250,
+                )));
+                await new Promise(resolve => setTimeout(resolve, waitMs));
+                continue;
+            }
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            data = await res.json();
+            break;
+        }
+        if (!data) throw new Error('Case resources did not become ready before the restore timeout.');
         if (!isCurrentOwner()) return { ...data, background: true };
         if (renderGeneration !== window.__viewerRenderGeneration) return { ...data, stale: true };
         if (data.success) {
@@ -2107,6 +2187,7 @@ async function init() {
     dataTreeState.ctv.visible = true;
     dataTreeState.oar.loaded = false;
     dataTreeState.oar.visible = true;
+    dataTreeState.oarSource = '';
     dataTreeState.organs = [];
     state.ctLoaded = false;
     state.doseOverlay = null;

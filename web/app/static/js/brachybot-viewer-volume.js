@@ -265,6 +265,7 @@ function _volumeZToDisplayY(z, resampleRatio) {
 
 async function loadVolumeData(options = {}) {
     const scope = _captureViewerDataScope(options.sessionId);
+    const volumeRetryAttempt = Number(options._volumeRetryAttempt || 0);
     const sid = scope.sessionId || (typeof activeSessionId !== 'undefined' ? String(activeSessionId) : '');
     if (_viewerDataScopeIsCurrent(scope)) {
         state.viewerSettings.threshold = null;
@@ -305,6 +306,12 @@ async function loadVolumeData(options = {}) {
                 signal: ctrl.signal,
             });
         } finally { clearTimeout(timer); }
+        if (res.status === 202) {
+            if (volumeRetryAttempt >= 60) throw new Error('Case resources are still loading');
+            const retryAfter = Number(res.headers.get('Retry-After-Ms') || 250);
+            await new Promise(resolve => setTimeout(resolve, Math.max(100, Math.min(1000, retryAfter))));
+            return loadVolumeData({ ...options, _volumeRetryAttempt: volumeRetryAttempt + 1 });
+        }
         if (!res.ok) throw new Error('Failed to load volume');
         if (!_viewerDataScopeIsCurrent(scope)) return false;
 
@@ -364,22 +371,53 @@ async function hydrateOarDataTreeFromServer(expectedGeneration, expectedSessionI
     // which used to leave the OAR pixels visible while the Data Tree appeared
     // empty after a session restore. The lightweight organs endpoint is the
     // authoritative metadata fallback for the same selected workspace.
+    // Callers outside the label-volume loader (manual segmentation, a
+    // planning-step refresh, and workspace restore) often do not have a
+    // generation captured at the call site.  Treat omitted values as the
+    // current scope instead of comparing ``undefined`` with the numeric
+    // generation and discarding valid metadata as stale.
+    const generationValue = Number(expectedGeneration);
+    const generation = Number.isFinite(generationValue)
+        ? generationValue
+        : viewerDataLoadGeneration;
+    const sessionId = String(expectedSessionId || _viewerDataSessionId() || '');
     try {
-        const response = await fetch(API + '/viewer/organs', {
-            headers: _viewerDataHeaders(expectedSessionId),
-        });
+        let response;
+        for (let attempt = 0; attempt <= 60; attempt += 1) {
+            response = await fetch(API + '/viewer/organs', {
+                headers: _viewerDataHeaders(sessionId),
+            });
+            if (response.status !== 202 || attempt >= 60) break;
+            await new Promise(resolve => setTimeout(resolve, Math.min(1000, 150 + attempt * 25)));
+        }
         if (!response.ok) return false;
         const payload = await response.json();
-        if (expectedGeneration !== viewerDataLoadGeneration
-            || (expectedSessionId && expectedSessionId !== _viewerDataSessionId())) return false;
-        const organs = payload?.organs || {};
+        if (generation !== viewerDataLoadGeneration
+            || (sessionId && sessionId !== _viewerDataSessionId())) return false;
+        let organs = payload?.organs || {};
+        if (!Object.keys(organs).length) {
+            const counts = payload?.organ_counts || payload?.label_counts || {};
+            const names = payload?.organ_names || {};
+            const derived = {};
+            Object.entries(counts).forEach(([labelId, count], index) => {
+                const key = String(labelId);
+                derived[key] = {
+                    name: names[key] || names[labelId] || `OAR ${index + 1}`,
+                    voxel_count: Number(count) || 0,
+                };
+            });
+            organs = derived;
+        }
         if (!Object.keys(organs).length) return false;
-        updateOrganList(organs, payload.oar_source || '');
+        updateOrganList(organs, payload.oar_source || payload.oar_mask_provenance || '');
         if (typeof dataTreeState !== 'undefined' && dataTreeState.oar) {
             dataTreeState.oar.loaded = true;
             dataTreeState.oar.visible = true;
         }
         try { if (typeof renderDataTree === 'function') renderDataTree(); } catch (_) {}
+        if (typeof window.scheduleWorkspaceSave === 'function') {
+            window.scheduleWorkspaceSave('viewer.oar_metadata_loaded');
+        }
         return true;
     } catch (error) {
         console.debug('[viewer] OAR Data Tree metadata fallback unavailable:', error);
@@ -391,13 +429,21 @@ async function loadLabelVolumes(options = {}) {
     const scope = _captureViewerDataScope(options.sessionId);
     const sid = scope.sessionId || (typeof activeSessionId !== 'undefined' ? String(activeSessionId) : '');
     const preserveViewerState = options.preserveViewerState === true;
+    // A new load belongs to one session scope.  Reset transient metadata
+    // before consulting IndexedDB so an empty/new case cannot inherit OAR
+    // names from the previously visible case while its own payload loads.
+    organMetaFromServer = {};
+    // A completed segmentation/upload replaces the authoritative server label
+    // volume. Do not let an older IndexedDB entry hide that new Data Tree state.
+    const forceFresh = options.forceFresh === true;
+    const retryAttempt = Number(options._labelVolumeRetryAttempt || 0);
 
     let allBytes = null, fromCache = false;
     let shapeZ, shapeY, shapeX, hasCTV, hasOAR, ctvSize, oarSize, oarSource = '';
     let cachedColorLUT = null, cachedCtvLabelMap = null, cachedOrganMeta = null;
 
     // --- IndexedDB cache ---
-    if (sid && window.SessionCache) {
+    if (!forceFresh && sid && window.SessionCache) {
         const cached = await window.SessionCache.get(sid, 'labels', 'volume');
         if (cached && cached.byteLength > 512) {
             try {
@@ -433,7 +479,18 @@ async function loadLabelVolumes(options = {}) {
                     signal: ctrl.signal,
                 });
             } finally { clearTimeout(timer); }
-            if (!res.ok) { uiDebugLog('No label volumes available'); return; }
+            if (res.status === 202) {
+                uiDebugLog('Label volumes are still restoring; retrying shortly');
+                if (retryAttempt >= 60) {
+                    uiDebugLog('Label volume restore timed out; keeping the current viewer state');
+                    return false;
+                }
+                return _retryLabelVolumeLoad(
+                    { ...options, _labelVolumeRetryAttempt: retryAttempt + 1 },
+                    retryAttempt + 1,
+                );
+            }
+            if (!res.ok) { uiDebugLog('No label volumes available'); return false; }
             if (!_viewerDataScopeIsCurrent(scope)) return false;
 
             shapeZ = parseInt(res.headers.get('X-Shape-Z'));
@@ -529,7 +586,11 @@ async function loadLabelVolumes(options = {}) {
 
     uiDebugLog(`Label volumes loaded: CTV=${hasCTV}, OAR=${hasOAR}, ${Object.keys(labelColorLUT).length} labels`);
 
-    // Update data tree with organ metadata
+    // Update data tree with organ metadata.  Uploaded OAR masks intentionally
+    // have no anatomical ontology, so the server may return the binary volume
+    // before its optional metadata endpoint is ready.  Derive stable numbered
+    // nodes from the already received labels instead of leaving the OAR tree
+    // empty until a second refresh (or inventing anatomy names).
     if (Object.keys(organMetaFromServer).length > 0) {
             // Convert to {label_id: {name, voxel_count, color}} format for updateOrganList
             const organData = {};
@@ -542,9 +603,34 @@ async function loadLabelVolumes(options = {}) {
             }
             updateOrganList(organData, oarSource);
         } else if (hasOAR) {
-            // Do not block slice rendering on metadata. The Data Tree is
-            // repaired asynchronously once the browser has painted the
-            // restored 2D labels.
+            if (oarLabelData && oarLabelData.length > 0) {
+                const counts = new Map();
+                for (let i = 0; i < oarLabelData.length; i += 1) {
+                    const labelId = Number(oarLabelData[i]);
+                    if (labelId > 0) counts.set(labelId, (counts.get(labelId) || 0) + 1);
+                }
+                const organData = {};
+                let ordinal = 1;
+                for (const [labelId, voxelCount] of [...counts.entries()].sort((a, b) => a[0] - b[0])) {
+                    organData[String(labelId)] = {
+                        name: oarSource === 'uploaded_unknown' ? `OAR ${ordinal}` : `OAR ${labelId}`,
+                        voxel_count: voxelCount,
+                        color: labelColorLUT[labelId]
+                            ? `rgb(${labelColorLUT[labelId].join(',')})`
+                            : undefined,
+                    };
+                    ordinal += 1;
+                }
+                if (Object.keys(organData).length > 0) updateOrganList(organData, oarSource);
+            }
+        }
+        // Do not block slice rendering on metadata. Always reconcile the
+        // lightweight organs endpoint after the binary payload, even when the
+        // payload included a non-empty X-Organ-Meta header. The header can be
+        // a partial projection (for example while a restored TotalSegmentator
+        // map is still being merged with embedded CTV structures); the
+        // session-scoped organs endpoint is the authoritative Data Tree view.
+        if (hasOAR) {
             void hydrateOarDataTreeFromServer(scope.dataGeneration, scope.sessionId);
         }
         // Always flip the data tree flags based on what we got, then
@@ -570,6 +656,13 @@ async function loadLabelVolumes(options = {}) {
         // A newly computed segmentation may use the normal overlay defaults.
         // During session restore, however, this function must not overwrite
         // the saved display mode, overlay checkboxes, or Data Tree choices.
+        if (_viewerDataScopeIsCurrent(scope)
+            && typeof window.scheduleWorkspaceSave === 'function') {
+            // Persist the derived Data Tree immediately. The large label
+            // array remains in the session-scoped cache and is checkpointed
+            // separately, so this does not block the first viewer paint.
+            window.scheduleWorkspaceSave('viewer.labels_loaded');
+        }
         if ((hasCTV || hasOAR) && state && state.viewerSettings && !preserveViewerState) {
             state.viewerSettings.displayMode = 'overlay';
             state.viewerSettings.showCTV = true;
@@ -583,13 +676,14 @@ async function loadLabelVolumes(options = {}) {
             const ctvCb = document.getElementById('overlayCTV');
             if (ctvCb) ctvCb.checked = true;
             const oarCb = document.getElementById('overlayOAR');
-            if (oarCb) oarCb.checked = false;
+            if (oarCb) oarCb.checked = true;
             if (volumeData && volumeShape) {
                 ['axial', 'sagittal', 'coronal'].forEach(axis => {
                     try { renderSliceFromVolume(axis, state.slices[axis]); } catch (_) {}
                 });
             }
         }
+        return true;
 }
 
 
@@ -741,6 +835,16 @@ function renderOverlayFromVolume(axis, sliceIndex) {
         overlayCanvas.style.left = ctCanvas.style.left;
         overlayCanvas.style.top = ctCanvas.style.top;
     }
+}
+
+async function _retryLabelVolumeLoad(options, attempt) {
+    const maxAttempts = 60;
+    if (attempt > maxAttempts) {
+        uiDebugLog('Label volume restore timed out; keeping the current viewer state');
+        return false;
+    }
+    await new Promise(resolve => setTimeout(resolve, Math.min(1000, 150 + attempt * 25)));
+    return loadLabelVolumes({ ...options, _labelVolumeRetryAttempt: attempt });
 }
 
 function renderSliceFromVolume(axis, sliceIndex) {
@@ -1070,11 +1174,16 @@ async function loadOverlay(axis, sliceIndex) {
         ctx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
 
         if (ctvVisible) {
-            const resCtv = await fetch(API + '/viewer/overlay', {
-                method: 'POST',
-                headers: _viewerDataHeaders(scope.sessionId, { 'Content-Type': 'application/json' }),
-                body: JSON.stringify({ axis, slice_index: sliceIndex, overlay_type: 'ctv', ctv_opacity: dataTreeState.ctv.opacity }),
-            });
+            let resCtv;
+            for (let attempt = 0; attempt <= 60; attempt += 1) {
+                resCtv = await fetch(API + '/viewer/overlay', {
+                    method: 'POST',
+                    headers: _viewerDataHeaders(scope.sessionId, { 'Content-Type': 'application/json' }),
+                    body: JSON.stringify({ axis, slice_index: sliceIndex, overlay_type: 'ctv', ctv_opacity: dataTreeState.ctv.opacity }),
+                });
+                if (resCtv.status !== 202 || attempt >= 60) break;
+                await new Promise(resolve => setTimeout(resolve, 250));
+            }
             if (!sliceIsCurrent()) return;
             if (resCtv.ok) {
                 const d = await resCtv.json();
@@ -1093,11 +1202,16 @@ async function loadOverlay(axis, sliceIndex) {
             const visibleOrgans = dataTreeState.organs.filter(o => o.visible).map(o => o.labelId);
             const organOpacities = {};
             dataTreeState.organs.forEach(o => { organOpacities[o.labelId] = o.opacity; });
-            const resOar = await fetch(API + '/viewer/overlay', {
-                method: 'POST',
-                headers: _viewerDataHeaders(scope.sessionId, { 'Content-Type': 'application/json' }),
-                body: JSON.stringify({ axis, slice_index: sliceIndex, overlay_type: 'oar', visible_organs: visibleOrgans, organ_opacities: organOpacities, oar_opacity: dataTreeState.oar.opacity }),
-            });
+            let resOar;
+            for (let attempt = 0; attempt <= 60; attempt += 1) {
+                resOar = await fetch(API + '/viewer/overlay', {
+                    method: 'POST',
+                    headers: _viewerDataHeaders(scope.sessionId, { 'Content-Type': 'application/json' }),
+                    body: JSON.stringify({ axis, slice_index: sliceIndex, overlay_type: 'oar', visible_organs: visibleOrgans, organ_opacities: organOpacities, oar_opacity: dataTreeState.oar.opacity }),
+                });
+                if (resOar.status !== 202 || attempt >= 60) break;
+                await new Promise(resolve => setTimeout(resolve, 250));
+            }
             if (!sliceIsCurrent()) return;
             if (resOar.ok) {
                 const d = await resOar.json();
@@ -1185,17 +1299,22 @@ async function loadSlice(axis, sliceIndex) {
     }
 
     try {
-        const res = await fetch(API + '/viewer/slice', {
-            method: 'POST',
-            headers: _viewerDataHeaders(scope.sessionId, { 'Content-Type': 'application/json' }),
-            body: JSON.stringify({
-                axis: axis,
-                slice_index: sliceIndex,
-                window_center: state.viewerSettings.level,
-                window_width: state.viewerSettings.window,
-                threshold: state.viewerSettings.threshold !== null ? state.viewerSettings.threshold : undefined,
-            }),
-        });
+        let res;
+        for (let attempt = 0; attempt <= 60; attempt += 1) {
+            res = await fetch(API + '/viewer/slice', {
+                method: 'POST',
+                headers: _viewerDataHeaders(scope.sessionId, { 'Content-Type': 'application/json' }),
+                body: JSON.stringify({
+                    axis: axis,
+                    slice_index: sliceIndex,
+                    window_center: state.viewerSettings.level,
+                    window_width: state.viewerSettings.window,
+                    threshold: state.viewerSettings.threshold !== null ? state.viewerSettings.threshold : undefined,
+                }),
+            });
+            if (res.status !== 202 || attempt >= 60) break;
+            await new Promise(resolve => setTimeout(resolve, 250));
+        }
 
         if (!res.ok) return;
 
@@ -1481,6 +1600,10 @@ const dataTreeState = {
     // carried across a mask replacement. Uploaded unknown labels start as
     // numbered traversable OARs; they must not inherit an old ontology.
     oarSource: '',
+    // CTV auxiliary labels (vessels, bone, or model-specific structures)
+    // live under the CTV branch. They are deliberately separate from the OAR
+    // collection so uploaded OAR masks cannot be confused with CTV labels.
+    ctvLabels: {},
     organs:   [],  // Individual organs: [{id, label, color, visible, opacity, voxelCount, category}]
     dose:     { visible: true, opacity: 0.4, color: '#f59e0b', loaded: false, label: 'Dose Distribution' },
     seeds:    { visible: true, opacity: 1.0, color: '#ffcc00', loaded: false, label: 'Seed Positions' },
@@ -1629,39 +1752,143 @@ function updateOrganList(organData, source = '') {
     // organData: {label_id: {name, voxel_count, color?}}
     if (!organData) return;
 
+    // A 202/pending response or a lightweight snapshot can legitimately carry
+    // no organ rows while the binary label volume is still hydrating.  An
+    // empty update is not an authoritative deletion: clearing the existing
+    // array here used to make a successful upload disappear from the Data
+    // Tree after a later background refresh.
+    const entries = Object.entries(organData).filter(([labelId, info]) => {
+        const numericLabel = Number(labelId);
+        return Number.isFinite(numericLabel) && numericLabel > 0 && info && typeof info === 'object';
+    });
+    if (!entries.length) return false;
+
     // Preserve existing visibility/opacity state
     const existingState = {};
-    const sourceChanged = Boolean(source && dataTreeState.oarSource && source !== dataTreeState.oarSource);
+    // A metadata refresh can omit provenance while the binary label request
+    // is still completing. Keep the last confirmed source in that case so an
+    // uploaded mask cannot briefly inherit a model ontology.
+    const effectiveSource = String(source || dataTreeState.oarSource || '').trim().toLowerCase();
+    const sourceChanged = Boolean(
+        effectiveSource && dataTreeState.oarSource && effectiveSource !== String(dataTreeState.oarSource).toLowerCase(),
+    );
     dataTreeState.organs.forEach(o => {
         if (!sourceChanged) {
-            existingState[o.id] = { visible: o.visible, opacity: o.opacity, category: o.category, color: o.color };
+            existingState[o.id] = {
+                label: o.label,
+                visible: o.visible,
+                opacity: o.opacity,
+                category: o.category,
+                color: o.color,
+            };
         }
     });
-    if (source) dataTreeState.oarSource = source;
+    // Presentation may be restored before the asynchronous OAR metadata
+    // arrives. Apply that deferred map when the authoritative rows are built.
+    const pendingPresentation = window.__pendingOarPresentation || {};
+    const pendingById = pendingPresentation.byId || {};
+    const pendingByLabel = pendingPresentation.byLabel || {};
+    if (effectiveSource) dataTreeState.oarSource = effectiveSource;
 
     dataTreeState.organs = [];
     let i = 0;
-    for (const [labelId, info] of Object.entries(organData)) {
-        const name = info.name || `OAR ${i + 1}`;
+    const uploadedUnknownSource = new Set(['uploaded_unknown', 'uploaded', 'manual_upload']).has(effectiveSource);
+    for (const [labelId, info] of entries) {
+        // An unknown uploaded multi-label mask has no anatomical ontology.
+        // Never let a stale cache or a coincidental numeric label turn it into
+        // a falsely named artery, stomach, or vessel; users can rename or
+        // reclassify these numbered nodes explicitly in the Data Tree.
         const id = `organ_${labelId}`;
         const existing = existingState[id];
-        const cat = existing?.category || classifyOrgan(name);
+        const pending = pendingById[id] || pendingByLabel[String(labelId)] || null;
+        const renamed = !sourceChanged && existing?.label
+            && !/^OAR\s+\d+$/i.test(String(existing.label).trim())
+            ? String(existing.label).trim()
+            : '';
+        const name = renamed || (uploadedUnknownSource ? `OAR ${i + 1}` : (info.name || `OAR ${i + 1}`));
+        const cat = existing?.category || pending?.category || (uploadedUnknownSource ? 'traversable' : classifyOrgan(name));
         dataTreeState.organs.push({
             id: id,
             labelId: parseInt(labelId),
             label: name,
-            color: existing?.color || info.color || ORGAN_COLORS[i % ORGAN_COLORS.length],
+            color: existing?.color || pending?.color || info.color || ORGAN_COLORS[i % ORGAN_COLORS.length],
             // Start all OARs visible — users can toggle individual organs
             // via the data tree.
-            visible: existing?.visible ?? true,
-            opacity: existing?.opacity ?? 0.5,
+            visible: existing?.visible ?? pending?.visible ?? true,
+            opacity: existing?.opacity ?? pending?.opacity ?? 0.5,
             voxelCount: info.voxel_count || 0,
             category: cat,
             source: 'oar',
         });
         i++;
     }
+    // Metadata is a control-plane update. Do not rely on every caller to
+    // remember a second render; this was the source of successful OAR
+    // imports that remained invisible until manual 3D reconstruction.
+    dataTreeState.oar.loaded = true;
+    dataTreeState.oar.visible = true;
+    if (typeof renderDataTree === 'function') renderDataTree();
+    if (window.__pendingOarPresentation) delete window.__pendingOarPresentation;
+    return true;
 }
+
+// Apply server-confirmed OAR metadata before the binary label volume arrives.
+// This closes the race where the backend has completed segmentation but the
+// Data Tree remains empty until a later manual 3D reconstruction request.
+window.hydrateOarDataTreeFromPayload = function hydrateOarDataTreeFromPayload(payload, expectedSessionId = null) {
+    const scopedSessionId = String(expectedSessionId || '');
+    if (scopedSessionId && scopedSessionId !== _viewerDataSessionId()) {
+        // A response from a hidden case is valid server data, but it must not
+        // repopulate the currently visible case after a session switch.
+        return false;
+    }
+    const data = payload || {};
+    const organData = {};
+    // `/viewer/organs` returns this normalized object.  Treat it as the
+    // preferred source because it can preserve numbered uploaded-mask labels
+    // even when the binary volume is still unavailable.  Older manual upload
+    // responses only contain organ_counts/label_counts, so retain that
+    // compatibility path as a fallback.
+    if (data.organs && typeof data.organs === 'object' && !Array.isArray(data.organs)) {
+        Object.entries(data.organs).forEach(([labelId, info]) => {
+            if (!info || typeof info !== 'object') return;
+            const key = String(labelId);
+            organData[key] = {
+                name: info.name || `OAR ${Object.keys(organData).length + 1}`,
+                voxel_count: Number(info.voxel_count ?? info.voxels ?? info.count) || 0,
+                color: info.color,
+            };
+        });
+    }
+    if (!Object.keys(organData).length) {
+        const counts = data.organ_counts && Object.keys(data.organ_counts).length
+            ? data.organ_counts
+            : (data.label_counts || {});
+        const names = data.organ_names || {};
+        Object.entries(counts).forEach(([labelId, count], index) => {
+            const key = String(labelId);
+            organData[key] = {
+                name: names[key] || names[labelId] || `OAR ${index + 1}`,
+                voxel_count: Number(count) || 0,
+            };
+        });
+    }
+    if (!Object.keys(organData).length) return false;
+    if (!updateOrganList(organData, data.oar_source || data.oar_mask_provenance || 'unknown_model')) return false;
+    dataTreeState.oar.loaded = true;
+    dataTreeState.oar.visible = true;
+    if (typeof state !== 'undefined') {
+        state.viewerSettings = state.viewerSettings || {};
+        state.viewerSettings.showOAR = true;
+    }
+    const checkbox = document.getElementById('overlayOAR');
+    if (checkbox) checkbox.checked = true;
+    renderDataTree();
+    if (typeof window.scheduleWorkspaceSave === 'function') {
+        window.scheduleWorkspaceSave('viewer.oar_metadata_payload');
+    }
+    return true;
+};
 
 // Debounced version to prevent excessive re-renders
 let _renderDataTreeTimer = null;
@@ -1678,7 +1905,11 @@ function renderDataTree() {
     dataTreeState.ct.loaded = state.ctLoaded;
     // CTV loaded = CT loaded AND CTV segmentation data exists
     dataTreeState.ctv.loaded = !!state.ctLoaded && !!ctvLabelData && ctvLabelData.length > 0;
-    dataTreeState.oar.loaded = dataTreeState.organs.length > 0;
+    // Metadata and binary labels are loaded independently.  Keep the group
+    // available while either source proves that OAR data exists; otherwise a
+    // transient empty metadata response hides valid server-side masks.
+    dataTreeState.oar.loaded = dataTreeState.organs.length > 0
+        || !!(typeof oarLabelData !== 'undefined' && oarLabelData && oarLabelData.length > 0);
     dataTreeState.dose.loaded = !!(state.metrics && state.metrics.v100 !== undefined);
     dataTreeState.seeds.loaded = !!(state.seeds && state.seeds.length > 0);
 
@@ -1733,6 +1964,47 @@ function renderDataTree() {
         });
         const nonTravSet = new Set(nonTravLabels);
         const otherLabels = ctvLabels.filter(labelId => labelId !== 1 && !nonTravSet.has(labelId));
+        // CTV models may emit auxiliary structures (for example vessels) in
+        // the same label volume. Keep those rows inside the CTV branch. They
+        // are not OAR records and must never be appended to
+        // dataTreeState.organs, otherwise every render changes the OAR count,
+        // whitelist, and persisted snapshot.
+        const ctvSubLabels = [];
+        const addCtvSubLabel = (labelId, category, fallbackColor) => {
+            const count = ctvLabelData.filter(v => v === labelId).length;
+            const name = labelNames[labelId] || `Label ${labelId}`;
+            const color = labelColorLUT[labelId]
+                ? `rgb(${labelColorLUT[labelId].join(',')})`
+                : fallbackColor;
+            const id = `ctv_${labelId}`;
+            const current = dataTreeState.ctvLabels?.[id] || {};
+            const item = {
+                id,
+                labelId,
+                label: name,
+                color,
+                visible: current.visible !== false,
+                opacity: Number.isFinite(Number(current.opacity)) ? Number(current.opacity) : 0.5,
+                voxelCount: count,
+                category,
+                source: 'ctv',
+            };
+            if (!dataTreeState.ctvLabels) dataTreeState.ctvLabels = {};
+            dataTreeState.ctvLabels[id] = {
+                ...current,
+                label: item.label,
+                labelId: item.labelId,
+                category: item.category,
+                source: item.source,
+                voxelCount: item.voxelCount,
+                color: current.color || item.color,
+                visible: item.visible,
+                opacity: item.opacity,
+            };
+            ctvSubLabels.push(item);
+        };
+        nonTravLabels.forEach(labelId => addCtvSubLabel(labelId, 'non_traversable', '#f97316'));
+        otherLabels.forEach(labelId => addCtvSubLabel(labelId, 'traversable', '#22c55e'));
 
         // CTV group header (like OAR)
         const ctvVis = dataTreeState.ctv.visible;
@@ -1786,53 +2058,34 @@ function renderDataTree() {
             </div>`;
         }
 
-        html += `</div></div>`; // close CTV group
-
-        // Add CTV sub-labels (artery/vein/unknown) to OAR categories
-        const ctvSubLabels = [];
-
-        // Non-traversable: artery (2), vein (3)
-        nonTravLabels.forEach(labelId => {
-            const count = ctvLabelData.filter(v => v === labelId).length;
-            const name = labelNames[labelId] || `Label ${labelId}`;
-            const color = labelColorLUT[labelId] ? `rgb(${labelColorLUT[labelId].join(',')})` : '#f97316';
-            ctvSubLabels.push({
-                id: `ctv_${labelId}`,
-                labelId: labelId,
-                label: name,
-                color: color,
-                visible: true,
-                opacity: 0.5,
-                voxelCount: count,
-                category: 'non_traversable',
-                source: 'ctv',
-            });
-        });
-
-        // Traversable: unknown labels (4, 5, 6, etc.)
-        otherLabels.forEach(labelId => {
-            const count = ctvLabelData.filter(v => v === labelId).length;
-            const name = labelNames[labelId] || `Label ${labelId}`;
-            const color = labelColorLUT[labelId] ? `rgb(${labelColorLUT[labelId].join(',')})` : '#22c55e';
-            ctvSubLabels.push({
-                id: `ctv_${labelId}`,
-                labelId: labelId,
-                label: name,
-                color: color,
-                visible: true,
-                opacity: 0.5,
-                voxelCount: count,
-                category: 'traversable',
-                source: 'ctv',
-            });
-        });
-
-        // Merge CTV sub-labels into organs list (avoid duplicates)
+        // Render auxiliary CTV labels as children of CTV. This keeps their
+        // individual visibility, opacity and color controls compatible with
+        // the 3D/2D renderers without changing the OAR collection.
         ctvSubLabels.forEach(sub => {
-            if (!dataTreeState.organs.some(o => o.id === sub.id)) {
-                dataTreeState.organs.push(sub);
-            }
+            const item = dataTreeState.ctvLabels[sub.id] || sub;
+            const itemColor = item.color || sub.color;
+            const visible = item.visible !== false;
+            const opacity = Number.isFinite(Number(item.opacity)) ? Number(item.opacity) : 0.5;
+            const voxelVolume = _ctVoxelVolumeCm3();
+            const volumeText = sub.voxelCount > 0 && voxelVolume
+                ? `${(sub.voxelCount * voxelVolume).toFixed(1)} cm³`
+                : '';
+            html += `<div class="tree-item" data-item="${sub.id}" data-organ-id="${sub.id}"
+                style="display:flex;align-items:center;gap:6px;padding:2px 8px 2px 28px;font-size:0.7rem;"
+                onclick="handleTreeItemClick('${sub.id}', event)"
+                oncontextmenu="event.preventDefault();event.stopPropagation();handleTreeItemRightClick('${sub.id}', event)">
+                <button class="eye-btn ${visible ? '' : 'hidden'}" onclick="event.stopPropagation();toggleDataVisibility('${sub.id}')" style="font-size:0.65rem;">${visible ? '&#128065;' : '&#128064;'}</button>
+                <span class="color-swatch" style="background:${itemColor};width:10px;height:10px;border-radius:2px;cursor:pointer;" onclick="event.stopPropagation();openColorPicker('${sub.id}', this)"></span>
+                <span class="item-label">${escHtml(sub.label)}</span>
+                <span style="margin-left:auto;font-size:0.6rem;color:var(--text-dim);">${volumeText}</span>
+                <button class="recon3d-btn" title="3D Reconstruct" onclick="event.stopPropagation();reconstructOrgan3D('${sub.id}')">&#9638;</button>
+                <input type="range" class="opacity-slider" min="0" max="100" value="${Math.round(opacity * 100)}"
+                    onclick="event.stopPropagation()"
+                    oninput="setDataOpacity('${sub.id}', this.value)">
+            </div>`;
         });
+
+        html += `</div></div>`; // close CTV group
     }
 
     // OAR with sub-categories
@@ -2073,6 +2326,12 @@ function renderDataTree() {
     requestViewerVisualRefresh('data-tree-render');
 }
 
+function _scheduleDataTreeSave(reason) {
+    if (typeof window.scheduleWorkspaceSave === 'function') {
+        window.scheduleWorkspaceSave(reason || 'viewer.data_tree_changed');
+    }
+}
+
 function renderTreeItem(id, itemState, info) {
     const eyeIcon = itemState.visible ? '&#128065;' : '&#128064;';
     const eyeClass = itemState.visible ? '' : 'hidden';
@@ -2301,6 +2560,7 @@ function openColorPicker(id, swatchEl) {
                 }
             });
             renderDataTreeDebounced();
+            _scheduleDataTreeSave(`viewer.color:${id}`);
         }, 100);
         closeDialog();
     }
@@ -2983,6 +3243,7 @@ function setGroupVisibility(category, visible) {
     if (state.ctLoaded) reloadOverlays();
     redrawSeedNeedleOverlays();
     requestViewerVisualRefresh('group-visibility');
+    _scheduleDataTreeSave(`viewer.group_visibility:${category}`);
 }
 
 let _groupOpacityTimer = null;
@@ -3069,6 +3330,7 @@ function setGroupOpacity(category, value) {
         if (state.ctLoaded) loadAllSlices();
         redrawSeedNeedleOverlays();
         requestViewerVisualRefresh('group-opacity');
+        _scheduleDataTreeSave(`viewer.group_opacity:${category}`);
     }, 150);
 }
 
@@ -3101,6 +3363,7 @@ function toggleDataVisibility(id) {
             if (mesh) applyMeshVisibility(mesh, organ.visible, organ.opacity ?? 0.5);
             renderDataTree();
             if (state.ctLoaded) reloadOverlays();
+            _scheduleDataTreeSave(`viewer.visibility:${id}`);
         }
         return;
     }
@@ -3117,6 +3380,7 @@ function toggleDataVisibility(id) {
             if (mesh) applyMeshVisibility(mesh, dataTreeState.ctvLabels[id].visible, dataTreeState.ctvLabels[id].opacity ?? dataTreeState.ctv.opacity ?? 0.7);
         renderDataTree();
         if (state.ctLoaded) reloadOverlays();
+        _scheduleDataTreeSave(`viewer.visibility:${id}`);
         return;
     }
 
@@ -3137,6 +3401,7 @@ function toggleDataVisibility(id) {
         });
         renderDataTree();
         redrawSeedNeedleOverlays();
+        _scheduleDataTreeSave(`viewer.visibility:${id}`);
         return;
     }
 
@@ -3149,6 +3414,7 @@ function toggleDataVisibility(id) {
             if (mesh) applyMeshVisibility(mesh, seed.visible, seed.opacity ?? 1.0);
             renderDataTree();
             redrawSeedNeedleOverlays();
+            _scheduleDataTreeSave(`viewer.visibility:${id}`);
         }
         return;
     }
@@ -3165,6 +3431,7 @@ function toggleDataVisibility(id) {
             }
             renderDataTree();
             redrawSeedNeedleOverlays();
+            _scheduleDataTreeSave(`viewer.visibility:${id}`);
         }
         return;
     }
@@ -3178,6 +3445,7 @@ function toggleDataVisibility(id) {
             const mesh = scene3D.meshes[id];
             if (mesh) applyMeshVisibility(mesh, level.visible, level.opacity ?? 0.3);
             renderDataTree();
+            _scheduleDataTreeSave(`viewer.visibility:${id}`);
         }
         return;
     }
@@ -3190,6 +3458,7 @@ function toggleDataVisibility(id) {
         const mesh = scene3D.meshes[id];
         if (mesh) applyMeshVisibility(mesh, meshEntry.visible, meshEntry.opacity ?? 0.7);
         renderDataTree();
+        _scheduleDataTreeSave(`viewer.visibility:${id}`);
         return;
     }
 
@@ -3248,6 +3517,7 @@ function toggleDataVisibility(id) {
 
     renderDataTree();
     if (state.ctLoaded) reloadOverlays();
+    _scheduleDataTreeSave(`viewer.visibility:${id}`);
 }
 
 function setDataItemVisibility(id, visible) {
@@ -3282,6 +3552,7 @@ function setDataOpacity(id, value) {
         _opacityTimer = setTimeout(() => {
             if (state.ctLoaded) reloadOverlays();
             requestViewerVisualRefresh('organ-opacity');
+            _scheduleDataTreeSave(`viewer.opacity:${id}`);
         }, 150);
         return;
     }
@@ -3301,6 +3572,7 @@ function setDataOpacity(id, value) {
         _opacityTimer = setTimeout(() => {
             if (state.ctLoaded) reloadOverlays();
             requestViewerVisualRefresh('ctv-opacity');
+            _scheduleDataTreeSave(`viewer.opacity:${id}`);
         }, 150);
         return;
     }
@@ -3319,6 +3591,7 @@ function setDataOpacity(id, value) {
             if (typeof _setNeedleHandlesVisibility === 'function') _setNeedleHandlesVisibility(needle.id, needle.visible !== false, opacity);
         });
         renderDataTreeDebounced();
+        _scheduleDataTreeSave(`viewer.opacity:${id}`);
         return;
     }
 
@@ -3330,6 +3603,7 @@ function setDataOpacity(id, value) {
             applyMeshOpacity(scene3D.meshes[id], opacity, seed.visible !== false);
             redrawSeedNeedleOverlays();
             requestViewerVisualRefresh('seed-opacity');
+            _scheduleDataTreeSave(`viewer.opacity:${id}`);
         }
         return;
     }
@@ -3345,6 +3619,7 @@ function setDataOpacity(id, value) {
             }
             redrawSeedNeedleOverlays();
             requestViewerVisualRefresh('needle-opacity');
+            _scheduleDataTreeSave(`viewer.opacity:${id}`);
         }
         return;
     }
@@ -3357,6 +3632,7 @@ function setDataOpacity(id, value) {
             level.opacity = opacity;
             applyMeshOpacity(scene3D.meshes[id], opacity, level.visible !== false);
             requestViewerVisualRefresh('dose-isosurface-opacity');
+            _scheduleDataTreeSave(`viewer.opacity:${id}`);
         }
         return;
     }
@@ -3366,6 +3642,7 @@ function setDataOpacity(id, value) {
         meshEntry.opacity = opacity;
         applyMeshOpacity(scene3D.meshes[id], opacity, meshEntry.visible !== false);
         requestViewerVisualRefresh('planning-mesh-opacity');
+        _scheduleDataTreeSave(`viewer.opacity:${id}`);
         return;
     }
 
@@ -3378,6 +3655,7 @@ function setDataOpacity(id, value) {
 
     if (state.ctLoaded) reloadOverlays();
     requestViewerVisualRefresh('data-opacity');
+    _scheduleDataTreeSave(`viewer.opacity:${id}`);
 }
 
 function selectDataItem(id) {

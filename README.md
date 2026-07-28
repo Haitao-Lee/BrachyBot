@@ -2134,6 +2134,19 @@ Audit reports:
 - [`docs/CODE_REVIEW.md`](docs/CODE_REVIEW.md) - consolidated 95-item
   re-verification, Round 6 fixes, intentional boundaries, and validation evidence.
 
+### Workspace and mask persistence notes
+
+- Case switching paints the selected case shell immediately and restores large
+  CT, label, planning, mesh, DVH, report, and screenshot artifacts in the
+  background with session-generation fencing. Switching the browser view does
+  not cancel a task owned by another case; only the explicit Stop action does.
+- Uploaded CTV/OAR masks are aligned to the active CT physical grid and stored
+  with provenance. Opaque uploaded OAR labels appear as numbered `OAR 1`,
+  `OAR 2`, ... Data Tree nodes until the user renames or reclassifies them;
+  they are never guessed to be anatomical organs.
+- The consolidated implementation review and the current validation evidence
+  are maintained in [`docs/CODE_REVIEW.md`](docs/CODE_REVIEW.md).
+
 ---
 ## 📊 Research & Citations
 

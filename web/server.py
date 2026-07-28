@@ -88,6 +88,28 @@ def _case_has_running_chat_task(task_manager: Any, user_id: str, session_id: str
         return True
 
 
+def _persist_agent_change(
+    workspace_store: Any,
+    owner_id: str,
+    session_id: str,
+    agent: Any,
+    reason: str,
+) -> None:
+    """Schedule a checkpoint and cancel a stale cold-start restore if needed.
+
+    A case can be opened and edited before its large sidecars finish loading.
+    The first user mutation then becomes newer than the restore snapshot.  A
+    cancellation flag prevents the background restore from overwriting that
+    mutation with stale arrays; the normal debounced checkpoint still records
+    it asynchronously.
+    """
+    if getattr(agent, "_workspace_hydration_in_progress", False):
+        cancel_event = getattr(agent, "_workspace_hydration_cancel", None)
+        if cancel_event is not None:
+            cancel_event.set()
+    workspace_store.schedule_agent_checkpoint(owner_id, session_id, agent, reason)
+
+
 def _dicom_rt_import_summary(record: Dict[str, Any]) -> Dict[str, Any]:
     """Return the compact, browser-safe view of a stored DICOM-RT import.
 
@@ -278,8 +300,19 @@ def create_app(config: Optional[Dict] = None):
         workspace_store.get_session(user["id"], session_id)
         return user, session_id
 
-    def get_agent(session_id: str = None, *, _owner: Optional[Dict[str, Any]] = None):
-        """Get a hydrated agent for the authenticated user's selected case."""
+    def get_agent(
+        session_id: str = None,
+        *,
+        _owner: Optional[Dict[str, Any]] = None,
+        _lightweight: bool = False,
+    ):
+        """Get a case agent, optionally installing it before heavy hydration.
+
+        ``_lightweight`` is used by the viewer bootstrap. It restores chat/UI
+        metadata immediately and lets a background worker decode clinical
+        arrays and CT data. Data routes return a bounded ``202`` while that
+        worker runs instead of blocking the request thread for minutes.
+        """
         nonlocal _sessions, _session_timestamps
 
         try:
@@ -312,11 +345,14 @@ def create_app(config: Optional[Dict] = None):
                 hydration_generation = _session_generations.get(cache_key, 0)
 
         # A label and a planning request can arrive together after a case
-        # switch.  Wait for the single authoritative hydration rather than
-        # constructing a second Agent or taking the global cache lock.
+        # switch.  Lightweight requests must not wait behind a large CT/NPY
+        # decode.  The initializer installs a metadata-only agent first, so
+        # this path is normally only a very short construction race.
         if not is_initializer:
             wait_started = time.perf_counter()
-            if not initializer.wait(timeout=300):
+            if _lightweight:
+                initializer.wait(timeout=0.5)
+            elif not initializer.wait(timeout=300):
                 logger.error(
                     "Timed out hydrating case %s wait_ms=%.1f",
                     resolved_session_id,
@@ -351,13 +387,12 @@ def create_app(config: Optional[Dict] = None):
                         oldest_session = min(evictable, key=_session_timestamps.get)
                         evicted = _sessions.pop(oldest_session, None)
                         if evicted is not None:
-                            try:
-                                workspace_store.flush_agent_checkpoint(
-                                    oldest_session[0], oldest_session[1], evicted,
-                                    "agent.cache_evicted",
-                                )
-                            except WorkspaceError:
-                                logger.warning("Failed to persist evicted case workspace", exc_info=True)
+                            # Cache maintenance must never serialize CT-sized
+                            # arrays while holding the global session lock.
+                            workspace_store.schedule_agent_checkpoint(
+                                oldest_session[0], oldest_session[1], evicted,
+                                "agent.cache_evicted",
+                            )
                         _session_timestamps.pop(oldest_session, None)
                         _server_support._drop_ui_bucket(oldest_session[1])
                         logger.info("Removed oldest inactive session: %s", oldest_session)
@@ -382,10 +417,18 @@ def create_app(config: Optional[Dict] = None):
                 resolved_session_id,
                 (time.perf_counter() - construct_started) * 1000.0,
             )
-            # This may read large sidecar arrays; it intentionally runs
-            # outside _sessions_lock so other cases remain responsive.
+            # Only JSON metadata is read on the request path.  Large sidecar
+            # arrays and the CT volume are restored by the background worker
+            # below, so opening a case is not coupled to image decode time.
             hydrate_started = time.perf_counter()
-            hydrated_snapshot = workspace_store.hydrate_agent(user["id"], resolved_session_id, agent)
+            hydrated_snapshot = workspace_store.hydrate_agent(
+                user["id"],
+                resolved_session_id,
+                agent,
+                include_planning_results=False,
+                load_ct=False,
+                mark_interrupted=False,
+            )
             logger.info(
                 "Case agent hydrated session=%s duration_ms=%.1f",
                 resolved_session_id,
@@ -417,8 +460,13 @@ def create_app(config: Optional[Dict] = None):
                     bucket["updated_at"] = bridge.get("updated_at") or time.time()
             agent.memory.set_persistence_callback(
                 lambda reason, owner=user["id"], case_id=resolved_session_id, current=agent:
-                workspace_store.schedule_agent_checkpoint(owner, case_id, current, reason)
+                _persist_agent_change(workspace_store, owner, case_id, current, reason)
             )
+            agent._workspace_hydration_cancel = threading.Event()
+            agent._workspace_hydration_in_progress = True
+            agent._workspace_data_ready = False
+            agent._workspace_hydration_error = ""
+            agent._workspace_ready_event = threading.Event()
             with _sessions_lock:
                 # The removal can race the active-row check above.  Recheck
                 # the generation while holding the same lock used by delete.
@@ -427,6 +475,91 @@ def create_app(config: Optional[Dict] = None):
                     return None
                 _sessions[cache_key] = agent
                 _session_timestamps[cache_key] = time.time()
+            def _complete_workspace_hydration(
+                    current_agent=agent,
+                    owner_id=user["id"],
+                    case_id=resolved_session_id,
+                    key=cache_key,
+                    generation=hydration_generation,
+                    retry_attempt=0,
+                ):
+                    started = time.perf_counter()
+                    retry_scheduled = False
+                    cancel_event = getattr(current_agent, "_workspace_hydration_cancel", None)
+                    try:
+                        if retry_attempt and cancel_event is not None:
+                            cancel_event.clear()
+                        workspace_store.hydrate_agent(
+                            owner_id,
+                            case_id,
+                            current_agent,
+                            include_planning_results=True,
+                            load_ct=True,
+                            # A browser refresh or a second case view is not
+                            # an explicit cancellation.  Startup recovery is
+                            # handled by the task manager, not by every viewer
+                            # request that happens to hydrate this case.
+                            mark_interrupted=False,
+                            cancel_event=getattr(current_agent, "_workspace_hydration_cancel", None),
+                        )
+                        with _sessions_lock:
+                            still_current = (
+                                _sessions.get(key) is current_agent
+                                and _session_generations.get(key, 0) == generation
+                            )
+                        if still_current and cancel_event is not None and cancel_event.is_set() and retry_attempt < 3:
+                            # A user mutation raced the restore.  Give its
+                            # debounced checkpoint a moment to land, then
+                            # restore the newest snapshot instead of declaring
+                            # the stale restore complete.
+                            retry_scheduled = True
+                            current_agent._workspace_data_ready = False
+                            retry_thread = threading.Thread(
+                                target=lambda: (
+                                    time.sleep(0.5),
+                                    _complete_workspace_hydration(
+                                        current_agent=current_agent,
+                                        owner_id=owner_id,
+                                        case_id=case_id,
+                                        key=key,
+                                        generation=generation,
+                                        retry_attempt=retry_attempt + 1,
+                                    ),
+                                ),
+                                name=f"brachy-hydrate-retry-{case_id[:8]}",
+                                daemon=True,
+                            )
+                            retry_thread.start()
+                            logger.info(
+                                "Background case hydration deferred after concurrent mutation session=%s attempt=%d",
+                                case_id, retry_attempt + 1,
+                            )
+                        elif still_current:
+                            current_agent._workspace_data_ready = True
+                            current_agent._workspace_hydration_in_progress = False
+                            logger.info(
+                                "Background case hydration completed session=%s duration_ms=%.1f",
+                                case_id, (time.perf_counter() - started) * 1000.0,
+                            )
+                    except Exception as exc:
+                        current_agent._workspace_hydration_in_progress = False
+                        current_agent._workspace_hydration_error = str(exc)
+                        logger.warning(
+                            "Background case hydration failed session=%s duration_ms=%.1f",
+                            case_id, (time.perf_counter() - started) * 1000.0,
+                            exc_info=True,
+                        )
+                    finally:
+                        if not retry_scheduled:
+                            current_agent._workspace_hydration_in_progress = False
+                            current_agent._workspace_ready_event.set()
+
+            thread = threading.Thread(
+                    target=_complete_workspace_hydration,
+                    name=f"brachy-hydrate-{resolved_session_id[:8]}",
+                    daemon=True,
+            )
+            thread.start()
             if has_request_context():
                 g.brachybot_agent = agent
                 g.brachybot_workspace = (user["id"], resolved_session_id)
@@ -471,10 +604,11 @@ def create_app(config: Optional[Dict] = None):
                     continue
                 expired = _sessions.pop(sid, None)
                 if expired is not None:
-                    try:
-                        workspace_store.flush_agent_checkpoint(sid[0], sid[1], expired, "agent.cache_expired")
-                    except WorkspaceError:
-                        logger.warning("Failed to persist expired case workspace", exc_info=True)
+                    # The timer is deliberately detached from this cleanup
+                    # pass; expiration must not block another case's request.
+                    workspace_store.schedule_agent_checkpoint(
+                        sid[0], sid[1], expired, "agent.cache_expired",
+                    )
                 _session_timestamps.pop(sid, None)
                 _server_support._drop_ui_bucket(sid[1])
                 logger.info(f"Removed expired session: {sid}")
@@ -495,9 +629,11 @@ def create_app(config: Optional[Dict] = None):
                     g.brachybot_workspace = (user["id"], resolved_session_id)
             return agent
 
-    def get_agent_for_owner(user: Dict[str, Any], session_id: str):
+    def get_agent_for_owner(
+        user: Dict[str, Any], session_id: str, *, _lightweight: bool = False,
+    ):
         """Hydrate a case from a detached worker without a browser cookie."""
-        return get_agent(session_id, _owner=user)
+        return get_agent(session_id, _owner=user, _lightweight=_lightweight)
 
     def drop_agent(session_id: str, *, flush: bool = True) -> None:
         """Drop only the current user's cached agent; durable data remains intact."""
@@ -517,10 +653,12 @@ def create_app(config: Optional[Dict] = None):
             if agent is not None and not flush:
                 workspace_store.discard_agent_checkpoint(user["id"], resolved_session_id)
             if agent is not None and flush:
-                try:
-                    workspace_store.flush_agent_checkpoint(user["id"], resolved_session_id, agent, "agent.cache_dropped")
-                except WorkspaceError:
-                    logger.warning("Failed to persist dropped case workspace", exc_info=True)
+                # Dropping the in-memory cache is a control-plane operation;
+                # persist the detached agent asynchronously so switching or
+                # deleting another case stays responsive.
+                workspace_store.schedule_agent_checkpoint(
+                    user["id"], resolved_session_id, agent, "agent.cache_dropped",
+                )
             _server_support._drop_ui_bucket(resolved_session_id)
 
     def drop_agent_fast(session_id: str) -> None:
