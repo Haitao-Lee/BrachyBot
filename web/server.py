@@ -465,6 +465,9 @@ def create_app(config: Optional[Dict] = None):
             agent._workspace_hydration_cancel = threading.Event()
             agent._workspace_hydration_in_progress = True
             agent._workspace_data_ready = False
+            agent._workspace_ct_ready = False
+            agent._workspace_hydration_phase = "metadata"
+            agent._workspace_hydration_superseded = False
             agent._workspace_hydration_error = ""
             agent._workspace_ready_event = threading.Event()
             with _sessions_lock:
@@ -486,28 +489,59 @@ def create_app(config: Optional[Dict] = None):
                     started = time.perf_counter()
                     retry_scheduled = False
                     cancel_event = getattr(current_agent, "_workspace_hydration_cancel", None)
+                    def _set_phase(phase: str) -> None:
+                        with _sessions_lock:
+                            if (
+                                _sessions.get(key) is current_agent
+                                and _session_generations.get(key, 0) == generation
+                            ):
+                                current_agent._workspace_hydration_phase = str(phase)
                     try:
                         if retry_attempt and cancel_event is not None:
                             cancel_event.clear()
+                        # Restore CT first. The browser can paint slices and
+                        # remain interactive while masks, plans, dose and
+                        # reports decode in the second phase.
                         workspace_store.hydrate_agent(
                             owner_id,
                             case_id,
                             current_agent,
-                            include_planning_results=True,
+                            include_planning_results=False,
                             load_ct=True,
-                            # A browser refresh or a second case view is not
-                            # an explicit cancellation.  Startup recovery is
-                            # handled by the task manager, not by every viewer
-                            # request that happens to hydrate this case.
                             mark_interrupted=False,
-                            cancel_event=getattr(current_agent, "_workspace_hydration_cancel", None),
+                            cancel_event=cancel_event,
+                            phase_callback=_set_phase,
                         )
                         with _sessions_lock:
                             still_current = (
                                 _sessions.get(key) is current_agent
                                 and _session_generations.get(key, 0) == generation
                             )
-                        if still_current and cancel_event is not None and cancel_event.is_set() and retry_attempt < 3:
+                            if still_current and not (cancel_event and cancel_event.is_set()):
+                                current_agent._workspace_ct_ready = (
+                                    current_agent.memory.retrieve("ct_data") is not None
+                                )
+                        if still_current and not (cancel_event and cancel_event.is_set()):
+                            workspace_store.hydrate_agent(
+                                owner_id,
+                                case_id,
+                                current_agent,
+                                include_planning_results=True,
+                                load_ct=False,
+                                mark_interrupted=False,
+                                cancel_event=cancel_event,
+                                phase_callback=_set_phase,
+                            )
+                        superseded = bool(
+                            getattr(current_agent, "_workspace_hydration_superseded", False)
+                        )
+                        if (
+                            still_current
+                            and cancel_event is not None
+                            and cancel_event.is_set()
+                            and not superseded
+                            and retry_attempt < 3
+                        ):
                             # A user mutation raced the restore.  Give its
                             # debounced checkpoint a moment to land, then
                             # restore the newest snapshot instead of declaring
@@ -537,12 +571,14 @@ def create_app(config: Optional[Dict] = None):
                         elif still_current:
                             current_agent._workspace_data_ready = True
                             current_agent._workspace_hydration_in_progress = False
+                            current_agent._workspace_hydration_phase = "ready"
                             logger.info(
                                 "Background case hydration completed session=%s duration_ms=%.1f",
                                 case_id, (time.perf_counter() - started) * 1000.0,
                             )
                     except Exception as exc:
                         current_agent._workspace_hydration_in_progress = False
+                        current_agent._workspace_hydration_phase = "failed"
                         current_agent._workspace_hydration_error = str(exc)
                         logger.warning(
                             "Background case hydration failed session=%s duration_ms=%.1f",

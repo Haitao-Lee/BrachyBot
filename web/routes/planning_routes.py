@@ -9,6 +9,7 @@ import threading
 import time
 from datetime import datetime
 from typing import Any, Dict, Optional
+from uuid import uuid4
 
 import numpy as np
 import SimpleITK as sitk
@@ -246,21 +247,23 @@ def register_planning_routes(
                 "message": "Case resources are being initialized.",
                 "retry_after_ms": 250,
             }), 202
+        if agent is not None and getattr(agent, "_workspace_hydration_error", ""):
+            return jsonify({
+                "success": False,
+                "pending": False,
+                "code": "workspace_hydration_failed",
+                "phase": getattr(agent, "_workspace_hydration_phase", "failed"),
+                "error": agent._workspace_hydration_error,
+            }), 409
         if agent is not None and not getattr(agent, "_workspace_data_ready", True):
             return jsonify({
                 "success": False,
                 "pending": True,
                 "code": "workspace_hydration_pending",
                 "message": "Case resources are still loading.",
+                "phase": getattr(agent, "_workspace_hydration_phase", "artifacts"),
                 "retry_after_ms": 250,
             }), 202
-        if agent is not None and getattr(agent, "_workspace_hydration_error", ""):
-            return jsonify({
-                "success": False,
-                "pending": False,
-                "code": "workspace_hydration_failed",
-                "error": agent._workspace_hydration_error,
-            }), 409
         return None
 
     def workspace_output_dir(category: str) -> str:
@@ -1982,6 +1985,9 @@ def register_planning_routes(
         state_payload = data.get("ui_state") or data.get("state")
         bucket = _ui_bucket(session_id)
         training_state = bucket.get("training") or {}
+        request_run_id = str(data.get("monitor_run_id") or "").strip()
+        active_run_id = str(training_state.get("run_id") or "").strip()
+        monitor_run_matches = not request_run_id or not active_run_id or request_run_id == active_run_id
         language = _monitor_language(
             data.get("language")
             or (state_payload.get("language") if isinstance(state_payload, dict) else None)
@@ -2004,8 +2010,14 @@ def register_planning_routes(
             "detail": data.get("detail", {}),
             "language": language,
         })
-        feedback = _training_feedback_for_event(agent, session_id, event)
-        suggested_screenshot = _training_screenshot_for_event(agent, session_id, event, feedback)
+        feedback = (
+            _training_feedback_for_event(agent, session_id, event)
+            if monitor_run_matches else None
+        )
+        suggested_screenshot = (
+            _training_screenshot_for_event(agent, session_id, event, feedback)
+            if monitor_run_matches else None
+        )
         if feedback:
             with _UI_BRIDGE_LOCK:
                 training = bucket.setdefault("training", {})
@@ -2022,6 +2034,7 @@ def register_planning_routes(
             "feedback_localized": feedback if bucket.get("training", {}).get("active") else None,
             "suggested_screenshot": suggested_screenshot if bucket.get("training", {}).get("active") else None,
             "language": language,
+            "monitor_run_id": active_run_id or None,
         })
 
     @app.route("/api/training/start", methods=["POST"])
@@ -2033,6 +2046,7 @@ def register_planning_routes(
         session_id = request_ui_session_id(data)
         goal = str(data.get("goal") or "Monitor my planning workflow").strip()
         bucket = _ui_bucket(session_id)
+        run_id = str(data.get("monitor_run_id") or uuid4().hex).strip()
         language = _monitor_language(
             data.get("language")
             or (data.get("ui_state") or {}).get("language")
@@ -2041,6 +2055,7 @@ def register_planning_routes(
         with _UI_BRIDGE_LOCK:
             bucket["training"] = {
                 "active": True,
+                "run_id": run_id,
                 "goal": goal,
                 "language": language,
                 "started_at": time.time(),
@@ -2050,13 +2065,19 @@ def register_planning_routes(
             }
         _append_ui_event(
             session_id,
-            {"type": "training.start", "label": "Training started", "detail": {"goal": goal, "language": language}, "language": language},
+            {
+                "type": "training.start",
+                "label": "监测已启动" if language == "zh" else "Monitor started",
+                "detail": {"goal": goal, "language": language, "run_id": run_id},
+                "language": language,
+            },
             include_in_training=False,
         )
         checkpoint_ui_bridge(session_id, "training.started")
         return jsonify({
             "success": True,
             "session_id": session_id,
+            "monitor_run_id": run_id,
             "training": bucket["training"],
             "message": (
                 "实时规划监测已启动。" if language == "zh"
@@ -2076,6 +2097,14 @@ def register_planning_routes(
         bucket = _ui_bucket(session_id)
         with _UI_BRIDGE_LOCK:
             training = bucket.setdefault("training", {})
+            request_run_id = str(data.get("monitor_run_id") or "").strip()
+            active_run_id = str(training.get("run_id") or "").strip()
+            if request_run_id and active_run_id and request_run_id != active_run_id:
+                return jsonify({
+                    "success": False,
+                    "error": "This monitor run is no longer active.",
+                    "monitor_run_id": active_run_id,
+                }), 409
             training["active"] = False
             training["stopped_at"] = time.time()
             # ``events`` is initialized for every training run. Do not use a
@@ -2106,6 +2135,7 @@ def register_planning_routes(
         return jsonify({
             "success": True,
             "session_id": session_id,
+            "monitor_run_id": active_run_id or None,
             "summary": summary,
             "event_counts": counts,
             "feedback": feedback,

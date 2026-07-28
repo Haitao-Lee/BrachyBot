@@ -67,6 +67,8 @@ class ChatTask:
         self._terminal_event_seen = False
         self._condition = threading.Condition()
         self._commit_step_id = f"workspace-commit-{self.task_id}"
+        self._worker_done = threading.Event()
+        self._skip_finalization = False
 
     def commit_step(self, status: str, result: str = "") -> Dict[str, Any]:
         """Return the stable progress step used while durable results commit."""
@@ -169,6 +171,10 @@ class ChatTask:
             self.persistence_status = str(status or "not_started")
             self.persistence_error = str(error or "")
             self._condition.notify_all()
+
+    def wait_for_worker(self, timeout: Optional[float] = None) -> bool:
+        """Wait until the task thread has stopped touching its workspace."""
+        return self._worker_done.wait(timeout=timeout)
 
     def iter_events(self, after_seq: int = 0) -> Iterable[str]:
         """Replay from a sequence and then follow live events until terminal."""
@@ -380,7 +386,7 @@ class ChatTaskManager:
                         # state through task metadata rather than the trace.
                         task.publish(terminal_event or "event: done\ndata: {}\n\n")
                         task.finish("completed")
-                    if on_finish is not None:
+                    if on_finish is not None and not task._skip_finalization:
                         if not finalized:
                             on_finish(task)
                             finalized = True
@@ -390,7 +396,11 @@ class ChatTaskManager:
                 task.publish(
                     "event: error\ndata: " + json.dumps({"message": str(exc)}) + "\n\n"
                 )
-                if on_finish is not None and task.agent is not None:
+                if (
+                    on_finish is not None
+                    and task.agent is not None
+                    and not task._skip_finalization
+                ):
                     try:
                         with app.app_context():
                             on_finish(task)
@@ -399,12 +409,21 @@ class ChatTaskManager:
                         logger.exception("Chat task %s finalization failed", task.task_id)
                 task.finish("failed", str(exc))
             finally:
-                if on_finish is not None and not finalized and task.agent is not None:
+                # A deleted case must not be checkpointed after its workspace
+                # has moved to trash. Explicit cancellation owns that terminal
+                # state and intentionally skips the normal persistence hook.
+                if (
+                    on_finish is not None
+                    and not finalized
+                    and task.agent is not None
+                    and not task._skip_finalization
+                ):
                     try:
                         with app.app_context():
                             on_finish(task)
                     except Exception:
                         logger.exception("Chat task %s finalization failed", task.task_id)
+                task._worker_done.set()
 
         thread = threading.Thread(target=worker, name=f"brachy-chat-{task.task_id[:8]}", daemon=True)
         thread.start()
@@ -422,6 +441,27 @@ class ChatTaskManager:
         except Exception:
             logger.exception("Unable to cancel chat task %s", task.task_id)
         return True
+
+    def cancel_session(
+        self,
+        user_id: str,
+        session_id: str,
+        *,
+        wait_timeout: float = 10.0,
+    ) -> bool:
+        """Cancel one case-owned task and wait for workspace access to cease.
+
+        Session navigation never calls this method. It is reserved for an
+        explicit delete/purge operation, where moving files while a worker is
+        still reading them would create retries, missing CT errors, and stale
+        checkpoints against a non-existent workspace.
+        """
+        task = self.active(user_id, session_id)
+        if task is None:
+            return True
+        task._skip_finalization = True
+        self.cancel(task)
+        return task.wait_for_worker(timeout=max(0.0, float(wait_timeout)))
 
     def _purge_locked(self) -> None:
         cutoff = time.time() - self.retention_seconds

@@ -7,6 +7,7 @@ Integrates with BrachyAgent's existing architecture.
 
 import asyncio
 import copy
+import dataclasses
 import json
 import logging
 import pickle
@@ -77,16 +78,50 @@ class MultiAgentOrchestrator:
 
         logger.info("MultiAgentOrchestrator initialized")
 
-    def _safe_deepish(self, value):
-        """Deep-copy without choking on thread-locks and other internals."""
+    def _safe_deepish(self, value, _seen=None):
+        """Return an isolated review value without carrying runtime objects.
+
+        Review context is a data boundary.  Locks, Agents, callbacks and
+        framework objects must never cross it: apart from being irrelevant to
+        a reviewer, they make ``deepcopy`` fail (notably for ``RLock``) and can
+        stall the clinical response after all tools have completed.
+        """
+        if _seen is None:
+            _seen = set()
+        if value is None or isinstance(value, (str, int, float, bool)):
+            return value
+
+        value_id = id(value)
+        if value_id in _seen:
+            return "<cycle omitted>"
+        _seen.add(value_id)
+
         try:
             return copy.deepcopy(value)
-        except (TypeError, AttributeError, pickle.PicklingError) as exc:
+        except (TypeError, AttributeError, pickle.PicklingError):
             if isinstance(value, dict):
-                return {k: self._safe_deepish(v) for k, v in value.items()}
-            if isinstance(value, list):
-                return [self._safe_deepish(v) for v in value]
-            return value
+                return {
+                    str(k): self._safe_deepish(v, _seen)
+                    for k, v in value.items()
+                }
+            if isinstance(value, (list, tuple, set)):
+                return [self._safe_deepish(v, _seen) for v in value]
+            if dataclasses.is_dataclass(value):
+                return self._safe_deepish(dataclasses.asdict(value), _seen)
+            # NumPy scalars and arrays are useful review inputs, but copying a
+            # complete dose volume into each reviewer is wasteful.  Preserve
+            # scalars and expose only bounded array metadata.
+            if hasattr(value, "item") and not hasattr(value, "shape"):
+                try:
+                    return value.item()
+                except Exception:
+                    pass
+            if hasattr(value, "shape") and hasattr(value, "dtype"):
+                return {
+                    "shape": [int(v) for v in getattr(value, "shape", ())],
+                    "dtype": str(getattr(value, "dtype", "")),
+                }
+            return f"<{type(value).__name__} omitted>"
 
     def update_global_context(self, context: Dict[str, Any]):
         """Update the shared context that all sub-agents can access.
@@ -121,7 +156,7 @@ class MultiAgentOrchestrator:
         overlap = set(global_context).intersection(role_specific)
         if overlap:
             logger.debug("Role-specific context overrides global keys: %s", sorted(overlap))
-        return {**global_context, **copy.deepcopy(role_specific)}
+        return {**global_context, **self._safe_deepish(role_specific or {})}
 
     async def _distill_context(self, role: str, role_specific: Dict,
                                base_context: Dict = None) -> Dict:

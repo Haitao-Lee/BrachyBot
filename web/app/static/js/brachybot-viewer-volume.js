@@ -440,6 +440,7 @@ async function loadLabelVolumes(options = {}) {
 
     let allBytes = null, fromCache = false;
     let shapeZ, shapeY, shapeX, hasCTV, hasOAR, ctvSize, oarSize, oarSource = '';
+    let ctvBytesPerVoxel = 1, oarBytesPerVoxel = 1;
     let cachedColorLUT = null, cachedCtvLabelMap = null, cachedOrganMeta = null;
 
     // --- IndexedDB cache ---
@@ -455,11 +456,21 @@ async function loadLabelVolumes(options = {}) {
                     shapeZ = hdr.z; shapeY = hdr.y; shapeX = hdr.x;
                     hasCTV = hdr.hasCTV; hasOAR = hdr.hasOAR;
                     ctvSize = hdr.ctvSize; oarSize = hdr.oarSize;
+                    ctvBytesPerVoxel = Number(hdr.ctvBytesPerVoxel || 1);
+                    oarBytesPerVoxel = Number(hdr.oarBytesPerVoxel || 1);
                     oarSource = hdr.oarSource || '';
                     cachedColorLUT = hdr.colorLUT || null;
                     cachedCtvLabelMap = hdr.ctvLabelMap || null;
                     cachedOrganMeta = hdr.organMeta || null;
-                    if (shapeZ > 0 && shapeY > 0 && shapeX > 0) {
+                    // Cache format v1 stored OAR labels as uint8. Labels from
+                    // nnUNet and uploaded volumes can be 201-203 or 10000, so
+                    // reusing that entry would silently wrap IDs and make the
+                    // Data Tree disagree with the 2D overlay. Only the
+                    // explicitly versioned uint16 format is safe to restore.
+                    const cacheFormatCurrent = Number(hdr.formatVersion || 0) >= 2;
+                    const oarEncodingCurrent = !hasOAR || oarBytesPerVoxel === 2;
+                    if (shapeZ > 0 && shapeY > 0 && shapeX > 0
+                            && cacheFormatCurrent && oarEncodingCurrent) {
                         allBytes = new Uint8Array(cached, 4 + hdrLen);
                         fromCache = true;
                     }
@@ -500,6 +511,8 @@ async function loadLabelVolumes(options = {}) {
             hasOAR = res.headers.get('X-Has-OAR') === 'true';
             ctvSize = parseInt(res.headers.get('X-CTV-Size') || '0');
             oarSize = parseInt(res.headers.get('X-OAR-Size') || '0');
+            ctvBytesPerVoxel = parseInt(res.headers.get('X-CTV-Bytes-Per-Voxel') || '1');
+            oarBytesPerVoxel = parseInt(res.headers.get('X-OAR-Bytes-Per-Voxel') || '1');
             // Keep provenance in the outer variable so the metadata update
             // below receives it for fresh loads as well as cached loads.
             oarSource = res.headers.get('X-OAR-Source') || '';
@@ -523,9 +536,12 @@ async function loadLabelVolumes(options = {}) {
             // Async cache write
             if (sid && window.SessionCache) {
                 const hdr = JSON.stringify({
+                    formatVersion: 2,
                     z: shapeZ, y: shapeY, x: shapeX,
                     hasCTV: hasCTV, hasOAR: hasOAR,
                     ctvSize: ctvSize, oarSize: oarSize,
+                    ctvBytesPerVoxel: ctvBytesPerVoxel,
+                    oarBytesPerVoxel: oarBytesPerVoxel,
                     oarSource: oarSource || '',
                     colorLUT: labelColorLUT,
                     ctvLabelMap: window._ctvLabelMap || {},
@@ -569,7 +585,9 @@ async function loadLabelVolumes(options = {}) {
 
     const baseOff = allBytes.byteOffset || 0;
     if (hasCTV && ctvSize > 0) {
-        ctvLabelData = new Uint8Array(allBytes.buffer, baseOff, ctvSize / 1);
+        ctvLabelData = ctvBytesPerVoxel === 2
+            ? new Uint16Array(allBytes.buffer, baseOff, ctvSize / 2)
+            : new Uint8Array(allBytes.buffer, baseOff, ctvSize);
         const expected = shapeZ * sliceSize;
         if (ctvLabelData.length !== expected) {
             console.warn(`CTV label size mismatch: ${ctvLabelData.length} vs expected ${expected}`);
@@ -577,7 +595,19 @@ async function loadLabelVolumes(options = {}) {
     }
 
     if (hasOAR && oarSize > 0) {
-        oarLabelData = new Uint8Array(allBytes.buffer, baseOff + ctvSize, oarSize / 1);
+        const oarByteOffset = baseOff + ctvSize;
+        if (oarBytesPerVoxel === 2) {
+            // Typed-array offsets must be aligned.  Most CT voxel counts are
+            // even, but odd-sized research volumes are valid; copy only in
+            // that uncommon case instead of throwing and losing all labels.
+            oarLabelData = (oarByteOffset % 2 === 0)
+                ? new Uint16Array(allBytes.buffer, oarByteOffset, oarSize / 2)
+                : new Uint16Array(
+                    allBytes.slice(ctvSize, ctvSize + oarSize).buffer,
+                );
+        } else {
+            oarLabelData = new Uint8Array(allBytes.buffer, oarByteOffset, oarSize);
+        }
         const expected = shapeZ * sliceSize;
         if (oarLabelData.length !== expected) {
             console.warn(`OAR label size mismatch: ${oarLabelData.length} vs expected ${expected}`);
@@ -677,11 +707,16 @@ async function loadLabelVolumes(options = {}) {
             if (ctvCb) ctvCb.checked = true;
             const oarCb = document.getElementById('overlayOAR');
             if (oarCb) oarCb.checked = true;
-            if (volumeData && volumeShape) {
-                ['axial', 'sagittal', 'coronal'].forEach(axis => {
-                    try { renderSliceFromVolume(axis, state.slices[axis]); } catch (_) {}
-                });
-            }
+        }
+        // Preserving viewer state means preserving controls and visibility,
+        // not leaving the canvases stale. Segmentation completion and manual
+        // mask import both use preserveViewerState=true; without this
+        // unconditional repaint the new labels only appeared after the user
+        // moved each slice.
+        if (_viewerDataScopeIsCurrent(scope) && volumeData && volumeShape) {
+            ['axial', 'sagittal', 'coronal'].forEach(axis => {
+                try { renderSliceFromVolume(axis, state.slices[axis]); } catch (_) {}
+            });
         }
         return true;
 }

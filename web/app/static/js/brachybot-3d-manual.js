@@ -645,7 +645,12 @@ async function moveManualSeedFromUi(value) {
 
 async function startTrainingMode(goal = 'Monitor planning workflow') {
     const startSessionId = _activeApiSessionId();
+    if (['starting', 'active', 'stopping'].includes(trainingMonitorState.phase)) return null;
+    const runId = (globalThis.crypto && typeof globalThis.crypto.randomUUID === 'function')
+        ? globalThis.crypto.randomUUID()
+        : `monitor-${Date.now()}-${Math.random().toString(16).slice(2)}`;
     trainingMonitorState.sessionId = startSessionId;
+    trainingMonitorState.runId = runId;
     // A new monitoring run starts a fresh feedback/screenshot budget. These
     // timers are UX throttles, not case data, so they must not leak across
     // stop/start cycles.
@@ -653,105 +658,152 @@ async function startTrainingMode(goal = 'Monitor planning workflow') {
     trainingMonitorState.lastScreenshotAt = 0;
     trainingMonitorState.goal = goal;
     trainingMonitorState.screenshotGalleryContext = { keys: new Set() };
-    const language = typeof effectiveUiLanguage === 'function'
-        ? effectiveUiLanguage()
+    const language = typeof window.monitorConversationLanguage === 'function'
+        ? window.monitorConversationLanguage(startSessionId)
         : (window._i18nLang || 'en');
+    trainingMonitorState.language = language;
     // Show the monitor affordance immediately; waiting for the POST response
     // made a healthy monitor look idle during the network round trip.
-    trainingMonitorState.active = true;
-    if (typeof window.setMonitorPresentation === 'function') {
-        window.setMonitorPresentation(true);
+    if (typeof window.setTrainingMonitorPhase === 'function') {
+        window.setTrainingMonitorPhase('starting');
+    } else if (typeof window.setMonitorPresentation === 'function') {
+        trainingMonitorState.active = true;
+        window.setMonitorPresentation('starting');
     } else {
+        trainingMonitorState.active = true;
         document.body.classList.add('monitor-active');
     }
     try {
         const res = await fetch(API + '/training/start', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ session_id: trainingMonitorState.sessionId, goal, language }),
+            body: JSON.stringify({
+                session_id: trainingMonitorState.sessionId,
+                goal,
+                language,
+                monitor_run_id: runId,
+            }),
         });
         const data = await res.json().catch(() => null);
         if (!res.ok || !data || !data.success) throw new Error((data && data.error) || `HTTP ${res.status}`);
-        addChat('bot-response', typeof window._t === 'function'
-            ? window._t('监测模式已启动。我会跟踪规划操作并提供阶段性反馈。', 'Monitor mode started. I will track planning actions and provide stage feedback.')
-            : 'Monitor mode started. I will track planning actions and provide stage feedback.');
+        if (trainingMonitorState.runId !== runId || trainingMonitorState.sessionId !== startSessionId) return null;
+        trainingMonitorState.runId = data.monitor_run_id || runId;
+        if (typeof window.setTrainingMonitorPhase === 'function') {
+            window.setTrainingMonitorPhase('active');
+        } else {
+            trainingMonitorState.active = true;
+            window.setMonitorPresentation?.('active');
+        }
+        const startedMessage = language === 'zh'
+            ? '监测模式已启动。我会持续跟踪当前病例的规划操作，并在关键阶段给出建议和可视化证据。'
+            : 'Monitor mode started. I will continuously track this case and provide advice and visual evidence at meaningful checkpoints.';
+        addChat('bot-response', startedMessage, true, Date.now(), false, startSessionId);
         await syncUIBridgeState('training_start');
         return data;
     } catch (e) {
-        if (trainingMonitorState.sessionId === startSessionId) {
-            trainingMonitorState.active = false;
-            if (typeof window.setMonitorPresentation === 'function') {
-                window.setMonitorPresentation(false);
+        if (trainingMonitorState.sessionId === startSessionId && trainingMonitorState.runId === runId) {
+            if (typeof window.setTrainingMonitorPhase === 'function') {
+                window.setTrainingMonitorPhase('error');
+                window.setTrainingMonitorPhase('inactive');
+            } else if (typeof window.setMonitorPresentation === 'function') {
+                trainingMonitorState.active = false;
+                window.setMonitorPresentation('inactive');
             } else {
+                trainingMonitorState.active = false;
                 document.body.classList.remove('monitor-active');
             }
+            trainingMonitorState.runId = null;
             trainingMonitorState.screenshotGalleryContext = null;
         }
-        const failed = typeof window._t === 'function'
-            ? window._t(`监测模式启动失败：${e.message}`, `Monitor mode failed to start: ${e.message}`)
+        const failed = language === 'zh'
+            ? `监测模式启动失败：${e.message}`
             : `Monitor mode failed to start: ${e.message}`;
-        addChat('error', failed);
+        addChat('error', failed, true, Date.now(), false, startSessionId);
         return null;
     }
 }
 
 async function stopTrainingMode() {
-    const language = typeof effectiveUiLanguage === 'function'
-        ? effectiveUiLanguage()
-        : (window._i18nLang || 'en');
-    trainingMonitorState.active = false;
-    if (typeof window.setMonitorPresentation === 'function') {
-        window.setMonitorPresentation(false);
-    } else {
-        document.body.classList.remove('monitor-active');
+    if (!['starting', 'active'].includes(trainingMonitorState.phase)) return null;
+    const stopSessionId = trainingMonitorState.sessionId || _activeApiSessionId();
+    const stopRunId = trainingMonitorState.runId;
+    const language = trainingMonitorState.language
+        || (typeof window.monitorConversationLanguage === 'function'
+            ? window.monitorConversationLanguage(stopSessionId)
+            : (window._i18nLang || 'en'));
+    if (typeof window.setTrainingMonitorPhase === 'function') {
+        window.setTrainingMonitorPhase('stopping');
     }
     // In-flight checkpoint callbacks see the inactive flag and stop before
     // appending a late screenshot. Release the context so the next run starts
     // cleanly.
-    trainingMonitorState.screenshotGalleryContext = null;
     try {
         const res = await fetch(API + '/training/stop', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ session_id: _activeApiSessionId(), language }),
+            body: JSON.stringify({
+                session_id: stopSessionId,
+                language,
+                monitor_run_id: stopRunId,
+            }),
         });
         const data = await res.json().catch(() => null);
         if (!res.ok || !data || !data.success) throw new Error((data && data.error) || `HTTP ${res.status}`);
-        trainingMonitorState.active = false;
-        if (typeof window.setMonitorPresentation === 'function') {
-            window.setMonitorPresentation(false);
+        if (trainingMonitorState.runId !== stopRunId) return null;
+        if (typeof window.setTrainingMonitorPhase === 'function') {
+            window.setTrainingMonitorPhase('inactive');
+        } else if (typeof window.setMonitorPresentation === 'function') {
+            trainingMonitorState.active = false;
+            window.setMonitorPresentation('inactive');
         } else {
+            trainingMonitorState.active = false;
             document.body.classList.remove('monitor-active');
         }
         const localizedAdvice = data.localized_advice || data.advice;
-        const fallbackPrefix = typeof window._t === 'function'
-            ? window._t('规划监测已结束', 'Planning monitoring finished')
-            : 'Planning monitoring finished';
-        addChat('bot-response', data.summary || _formatAdviceReport(localizedAdvice, fallbackPrefix));
+        const fallbackPrefix = language === 'zh' ? '规划监测总结' : 'Planning monitoring summary';
+        addChat(
+            'bot-response',
+            data.summary || _formatAdviceReport(localizedAdvice, fallbackPrefix, language),
+            true,
+            Date.now(),
+            false,
+            stopSessionId
+        );
+        trainingMonitorState.runId = null;
+        trainingMonitorState.screenshotGalleryContext = null;
         trainingMonitorState.lastFeedbackAt = 0;
         trainingMonitorState.lastScreenshotAt = 0;
         return data;
     } catch (e) {
-        const failed = typeof window._t === 'function'
-            ? window._t(`监测模式停止失败：${e.message}`, `Monitor mode failed to stop: ${e.message}`)
+        // The stop request was not acknowledged. Keep the monitor visibly
+        // active because the backend may still be collecting this run.
+        if (trainingMonitorState.runId === stopRunId) {
+            if (typeof window.setTrainingMonitorPhase === 'function') {
+                window.setTrainingMonitorPhase('active');
+            } else {
+                trainingMonitorState.active = true;
+                window.setMonitorPresentation?.('active');
+            }
+        }
+        const failed = language === 'zh'
+            ? `监测模式停止失败：${e.message}`
             : `Monitor mode failed to stop: ${e.message}`;
-        addChat('error', failed);
+        addChat('error', failed, true, Date.now(), false, stopSessionId);
         return null;
     }
 }
 
-function _formatAdviceReport(advice, prefix = '') {
-    if (!advice) return prefix || (typeof window._t === 'function'
-        ? window._t('暂无监测建议。', 'No advice available yet.')
-        : 'No advice available yet.');
+function _formatAdviceReport(advice, prefix = '', language = null) {
+    const lang = language
+        || trainingMonitorState.language
+        || (typeof window.monitorConversationLanguage === 'function'
+            ? window.monitorConversationLanguage()
+            : (window._i18nLang || 'en'));
+    if (!advice) return prefix || (lang === 'zh' ? '暂无监测建议。' : 'No advice available yet.');
     const lines = [];
     if (prefix) lines.push(prefix);
-    const headings = typeof window._t === 'function'
-        ? {
-            strengths: window._t('当前优势', 'Strengths'),
-            issues: window._t('需要关注', 'Issues'),
-            recommendations: window._t('建议', 'Recommendations'),
-        }
+    const headings = lang === 'zh'
+        ? { strengths: '当前优势', issues: '需要关注', recommendations: '建议' }
         : { strengths: 'Strengths', issues: 'Issues', recommendations: 'Recommendations' };
     if (advice.strengths && advice.strengths.length) {
         lines.push(`**${headings.strengths}**`);
@@ -769,8 +821,8 @@ function _formatAdviceReport(advice, prefix = '') {
 }
 
 async function requestPlanningAdvice() {
-    const language = typeof effectiveUiLanguage === 'function'
-        ? effectiveUiLanguage()
+    const language = typeof window.monitorConversationLanguage === 'function'
+        ? window.monitorConversationLanguage(_activeApiSessionId())
         : (window._i18nLang || 'en');
     try {
         const res = await fetch(API + '/training/advice', {

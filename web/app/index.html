@@ -605,8 +605,8 @@
                     <!-- Manual fine planning and training monitor -->
                     <div class="form-section-title" style="font-size:0.65rem;margin-top:8px;">Manual Fine Planning</div>
                     <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px;">
-                        <button class="btn btn-outline" onclick="startTrainingMode('Monitor manual/automatic planning')" style="font-size:0.6rem;padding:5px 6px;">Monitor</button>
-                        <button class="btn btn-outline" onclick="stopTrainingMode()" style="font-size:0.6rem;padding:5px 6px;">Finish Monitor</button>
+                        <button class="btn btn-outline" id="monitorStartButton" onclick="startTrainingMode('Monitor manual/automatic planning')" style="font-size:0.6rem;padding:5px 6px;" data-i18n-zh="开始监测" data-i18n-en="Monitor">Monitor</button>
+                        <button class="btn btn-outline" id="monitorStopButton" onclick="stopTrainingMode()" style="font-size:0.6rem;padding:5px 6px;" data-i18n-zh="结束监测" data-i18n-en="Finish Monitor" disabled>Finish Monitor</button>
                         <button class="btn btn-outline" onclick="addManualNeedle()" style="font-size:0.6rem;padding:5px 6px;">Add Needle</button>
                         <button class="btn btn-outline" onclick="addManualSeed()" style="font-size:0.6rem;padding:5px 6px;">Add Seed</button>
                         <button class="btn btn-outline" onclick="recomputeManualDose('manual_button')" style="font-size:0.6rem;padding:5px 6px;">Recompute AI Dose</button>
@@ -1230,7 +1230,7 @@
 -->
 <script src="static/js/brachybot-chat-core.js?v=12"></script>
 <script src="static/js/brachybot-chat-todo.js?v=11"></script>
-<script src="static/js/brachybot-ui-api.js?v=22"></script>
+<script src="static/js/brachybot-ui-api.js?v=24"></script>
 <script src="static/js/brachybot-auth.js?v=7"></script>
 <script src="static/js/brachybot-viewer-volume.js?v=12"></script>
 <script src="static/js/brachybot-viewer-layout.js?v=10"></script>
@@ -1240,7 +1240,7 @@
     <script src="static/js/brachybot-dvh-planning.js?v=12"></script>
 <script src="static/js/brachybot-report-shell.js?v=13"></script>
 <script src="static/js/brachybot-report-editor.js?v=12"></script>
-<script src="static/js/brachybot-workspace.js?v=13"></script>
+<script src="static/js/brachybot-workspace.js?v=16"></script>
 <script src="static/js/brachybot-session-cache.js?v=1"></script>
 <script src="static/js/brachybot-report-export.js?v=12"></script>
 </body>

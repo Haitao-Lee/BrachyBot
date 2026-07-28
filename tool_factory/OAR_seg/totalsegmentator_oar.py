@@ -12,6 +12,7 @@ import shutil
 import subprocess
 import json
 import signal
+import threading
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
@@ -22,6 +23,13 @@ from typing import Dict
 
 
 logger = logging.getLogger(__name__)
+
+# TotalSegmentator launches its own worker processes and can consume most of a
+# GPU. Running several copies concurrently on one workstation caused each copy
+# to make little progress until all of them reached the five-minute timeout.
+# Keep the expensive subprocess single-flight; unrelated UI, chat, viewer and
+# session operations remain concurrent.
+_TOTALSEG_EXECUTION_LOCK = threading.Lock()
 
 
 def _align_segmentation_to_reference(segmentation_path: str, reference_image: sitk.Image) -> np.ndarray:
@@ -317,6 +325,35 @@ class TotalSegmentatorOARTool(BaseTool):
     def _totalsegmentator_segmentation(
         self, image: sitk.Image, organ_filter: list, fast_mode: bool
     ):
+        wait_timeout_s = int(os.getenv("BRACHYBOT_TOTALSEG_QUEUE_TIMEOUT_SEC", "900"))
+        acquired = _TOTALSEG_EXECUTION_LOCK.acquire(timeout=max(1, wait_timeout_s))
+        if not acquired:
+            raise RuntimeError(
+                "OAR segmentation could not acquire the GPU worker before "
+                f"the {wait_timeout_s}s queue timeout."
+            )
+        try:
+            from plans.device_manager import device_session
+
+            # Hold and release the lease for the complete subprocess lifetime.
+            # The previous get_device() call leaked active lease counters.
+            with device_session(caller=__name__) as lease:
+                return self._totalsegmentator_segmentation_locked(
+                    image,
+                    organ_filter,
+                    fast_mode,
+                    str(lease.device_str),
+                )
+        finally:
+            _TOTALSEG_EXECUTION_LOCK.release()
+
+    def _totalsegmentator_segmentation_locked(
+        self,
+        image: sitk.Image,
+        organ_filter: list,
+        fast_mode: bool,
+        managed_device: str,
+    ):
         # --- Preflight: verify TotalSegmentator is available ---
         ts_exe = shutil.which("TotalSegmentator")
         if ts_exe is None:
@@ -333,9 +370,7 @@ class TotalSegmentatorOARTool(BaseTool):
 
             sitk.WriteImage(image, input_file)
 
-            from plans.device_manager import get_device as _get_device
-
-            _dev = str(_get_device(caller=__name__))
+            _dev = managed_device
             logger.info(f"OAR segmentation using device: {_dev}")
 
             # Build device flags for TotalSegmentator.
@@ -367,7 +402,10 @@ class TotalSegmentatorOARTool(BaseTool):
 
             logger.info(f"Running TotalSegmentator OAR: {' '.join(cmd)}")
 
-            timeout_s = int(os.getenv("BRACHYBOT_TOTALSEG_TIMEOUT_SEC", "300"))
+            # Five minutes was shorter than legitimate cold-start inference on
+            # the deployment GPU. Concurrency is controlled above, so a longer
+            # bounded timeout no longer permits several jobs to pile up.
+            timeout_s = int(os.getenv("BRACHYBOT_TOTALSEG_TIMEOUT_SEC", "900"))
 
             # Capture stdout+stderr with communicate(timeout=...).  Do not
             # iterate over proc.stdout directly: TotalSegmentator can spawn
