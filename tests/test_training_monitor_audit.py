@@ -44,7 +44,92 @@ def test_training_monitor_frontend_handles_high_value_checkpoints_and_report_lif
 
     assert "const isDoseCheckpoint = type === 'manual.dose'" in ui_api
     assert "trainingMonitorState.lastFeedbackAt = 0;" in manual
-    assert "data.summary || _formatAdviceReport(data.advice)" in manual
+    assert "const localizedAdvice = data.localized_advice || data.advice;" in manual
+    assert "_formatAdviceReport(localizedAdvice, fallbackPrefix)" in manual
     assert "description`` is kept as a compatibility fallback" in ui_api
     assert "training_events = training.get(\"events\")" in routes
     assert "events from before monitoring began" in routes
+    assert "feedback_localized" in routes
+    assert "localized_advice" in routes
+    assert "language" in ui_api
+    assert "screenshotGalleryContext" in ui_api
+    assert "preservePanel: true" in ui_api
+    assert "focusPlanningSeedsForScreenshot" in ui_api or "focusPlanningSeedsForScreenshot" in manual
+    assert "setMonitorPresentation" in ui_api
+    assert "monitorStatus" in (root / "web/app/index.html").read_text(encoding="utf-8")
+    css = (root / "web/app/static/css/brachybot-chat-status.css").read_text(encoding="utf-8")
+    assert "body.monitor-active::after" in css
+    assert "monitor-edge-breathe" in css
+    assert "monitor-avatar-breathe" in css
+
+
+def test_monitor_maps_manual_stages_to_their_own_viewer_checkpoint():
+    from web.server_support import (
+        _format_training_summary,
+        _training_feedback_for_event,
+        _training_screenshot_for_event,
+    )
+
+    trajectory_event = {
+        "type": "planning.step",
+        "label": "Trajectory refinement completed",
+        "detail": {"step": "trajectory_refine"},
+        "language": "en",
+    }
+    dose_event = {
+        "type": "planning.step",
+        "label": "Dose evaluation completed",
+        "detail": {"step": "dose_eval"},
+        "language": "en",
+    }
+    running_event = {
+        "type": "planning.step",
+        "label": "Seed planning started",
+        "detail": {"step": "seed_planning"},
+        "language": "en",
+    }
+
+    assert _training_screenshot_for_event(None, None, trajectory_event, "stage") == {
+        "target": "viewer-3d",
+        "question": "Training monitor snapshot: show the 3D viewer, needle/seed output, and Data Tree after Trajectory refinement.",
+    }
+    assert _training_screenshot_for_event(None, None, dose_event, "stage")["target"] == "dose-overview"
+    assert _training_screenshot_for_event(None, None, running_event, "stage") is None
+    assert "Trajectory refinement completed" in _training_feedback_for_event(None, None, trajectory_event)
+
+    class Memory:
+        def __init__(self):
+            self.values = {
+                "manual_seeds": [
+                    {"id": "seed_a", "position": [0.0, 0.0, 0.0]},
+                    {"id": "seed_b", "position": [0.5, 0.0, 0.0]},
+                ],
+                "manual_needles": [],
+            }
+
+        def retrieve(self, key):
+            return self.values.get(key)
+
+    class Agent:
+        memory = Memory()
+
+    close_seed_event = {
+        "type": "manual.seed.drag",
+        "label": "Seed moved",
+        "detail": {},
+        "language": "en",
+    }
+    close_seed_screenshot = _training_screenshot_for_event(
+        Agent(), None, close_seed_event, "seed spacing requires review"
+    )
+    assert close_seed_screenshot["target"] == "viewer-3d"
+    assert close_seed_screenshot["focus_seed_ids"] == ["seed_a", "seed_b"]
+
+    zh_summary = _format_training_summary(
+        [trajectory_event],
+        {"planning.step": 1},
+        {"strengths": ["CTV V100 is 91.0%; compare it with the applicable site-specific guidance or confirmed case protocol target."], "issues": [], "advice": []},
+        "zh",
+    )
+    assert "\u89c4\u5212\u76d1\u6d4b\u603b\u7ed3" in zh_summary
+    assert "CTV V100 \u4e3a 91.0%" in zh_summary

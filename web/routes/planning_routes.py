@@ -57,6 +57,9 @@ _resolve_output_path = _server_support._resolve_output_path
 _safe_screenshot_path = _server_support._safe_screenshot_path
 _training_feedback_for_event = _server_support._training_feedback_for_event
 _training_screenshot_for_event = _server_support._training_screenshot_for_event
+_format_training_summary = _server_support._format_training_summary
+_localize_plan_advice = _server_support._localize_plan_advice
+_monitor_language = _server_support._monitor_language
 _ui_bucket = _server_support._ui_bucket
 _ui_session_id = _server_support._ui_session_id
 _valid_screenshot_request = _server_support._valid_screenshot_request
@@ -1951,11 +1954,13 @@ def register_planning_routes(
                 "seed_planning",
                 "dose_calc",
                 "dose_eval",
+                "surgical_guide",
             ],
             "manual_3d_planning": {
                 "needles": ["create", "drag_endpoints", "restore_algorithm_position", "toggle_visibility", "set_opacity"],
                 "seeds": ["add", "drag", "toggle_visibility", "set_opacity"],
                 "dose_recompute": "dose_unet_spacing1mm",
+                "surgical_guide": ["generate", "set_parameters", "load_version", "export_stl", "validate_stl"],
             },
             "training_monitor": {
                 "live_monitoring": True,
@@ -1976,6 +1981,13 @@ def register_planning_routes(
         agent = get_agent(session_id)
         state_payload = data.get("ui_state") or data.get("state")
         bucket = _ui_bucket(session_id)
+        training_state = bucket.get("training") or {}
+        language = _monitor_language(
+            data.get("language")
+            or (state_payload.get("language") if isinstance(state_payload, dict) else None)
+            or training_state.get("language")
+            or (bucket.get("state") or {}).get("language")
+        )
         if isinstance(state_payload, dict):
             with _UI_BRIDGE_LOCK:
                 bucket["state"] = state_payload
@@ -1990,6 +2002,7 @@ def register_planning_routes(
             "type": data.get("type", "ui.event"),
             "label": data.get("label", ""),
             "detail": data.get("detail", {}),
+            "language": language,
         })
         feedback = _training_feedback_for_event(agent, session_id, event)
         suggested_screenshot = _training_screenshot_for_event(agent, session_id, event, feedback)
@@ -2005,7 +2018,10 @@ def register_planning_routes(
             "event": event,
             "training": bucket.get("training", {}),
             "feedback": feedback if bucket.get("training", {}).get("active") else None,
+            "feedback_raw": feedback if bucket.get("training", {}).get("active") else None,
+            "feedback_localized": feedback if bucket.get("training", {}).get("active") else None,
             "suggested_screenshot": suggested_screenshot if bucket.get("training", {}).get("active") else None,
+            "language": language,
         })
 
     @app.route("/api/training/start", methods=["POST"])
@@ -2017,10 +2033,16 @@ def register_planning_routes(
         session_id = request_ui_session_id(data)
         goal = str(data.get("goal") or "Monitor my planning workflow").strip()
         bucket = _ui_bucket(session_id)
+        language = _monitor_language(
+            data.get("language")
+            or (data.get("ui_state") or {}).get("language")
+            or (bucket.get("state") or {}).get("language")
+        )
         with _UI_BRIDGE_LOCK:
             bucket["training"] = {
                 "active": True,
                 "goal": goal,
+                "language": language,
                 "started_at": time.time(),
                 "stopped_at": None,
                 "events": [],
@@ -2028,7 +2050,7 @@ def register_planning_routes(
             }
         _append_ui_event(
             session_id,
-            {"type": "training.start", "label": "Training started", "detail": {"goal": goal}},
+            {"type": "training.start", "label": "Training started", "detail": {"goal": goal, "language": language}, "language": language},
             include_in_training=False,
         )
         checkpoint_ui_bridge(session_id, "training.started")
@@ -2036,7 +2058,11 @@ def register_planning_routes(
             "success": True,
             "session_id": session_id,
             "training": bucket["training"],
-            "message": "Live planning monitoring started.",
+            "message": (
+                "实时规划监测已启动。" if language == "zh"
+                else "Live planning monitoring started."
+            ),
+            "language": language,
         })
 
     @app.route("/api/training/stop", methods=["POST"])
@@ -2063,33 +2089,30 @@ def register_planning_routes(
                 else (bucket.get("events") or [])
             )
             feedback = list(training.get("feedback") or [])
+            language = _monitor_language(
+                data.get("language")
+                or (data.get("ui_state") or {}).get("language")
+                or training.get("language")
+                or (bucket.get("state") or {}).get("language")
+            )
         counts: Dict[str, int] = {}
         for event in events:
             etype = str(event.get("type", "ui.event"))
             counts[etype] = counts.get(etype, 0) + 1
         advice = _build_plan_advice(agent, session_id)
-        report_lines = [
-            "Planning monitoring stopped.",
-            f"Recorded {len(events)} UI/planning events.",
-        ]
-        if counts:
-            top = sorted(counts.items(), key=lambda kv: kv[1], reverse=True)[:8]
-            report_lines.append("Main activity: " + ", ".join(f"{k}={v}" for k, v in top))
-        if advice.get("strengths"):
-            report_lines.append("Strengths: " + " ".join(advice["strengths"][:3]))
-        if advice.get("issues"):
-            report_lines.append("Issues: " + " ".join(advice["issues"][:5]))
-        if advice.get("advice"):
-            report_lines.append("Recommendations: " + " ".join(advice["advice"][:6]))
+        localized_advice = _localize_plan_advice(advice, language)
+        summary = _format_training_summary(events, counts, advice, language)
         checkpoint_ui_bridge(session_id, "training.stopped")
         return jsonify({
             "success": True,
             "session_id": session_id,
-            "summary": "\n".join(report_lines),
+            "summary": summary,
             "event_counts": counts,
             "feedback": feedback,
             "advice": advice,
+            "localized_advice": localized_advice,
             "training": training,
+            "language": language,
         })
 
     @app.route("/api/training/advice", methods=["GET", "POST"])
@@ -2102,7 +2125,13 @@ def register_planning_routes(
         agent = get_agent(session_id)
         if agent is None:
             return jsonify({"error": "Agent not available"}), 500
-        return jsonify(_build_plan_advice(agent, session_id))
+        language = _monitor_language(
+            data.get("language")
+            or (data.get("ui_state") or {}).get("language")
+            or ((_ui_bucket(session_id).get("state") or {}).get("language"))
+        )
+        advice = _build_plan_advice(agent, session_id)
+        return jsonify({**advice, "localized_advice": _localize_plan_advice(advice, language), "language": language})
 
     @app.route("/api/readiness", methods=["GET", "POST"])
     @require_api_key

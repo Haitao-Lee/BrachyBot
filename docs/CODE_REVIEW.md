@@ -9316,10 +9316,14 @@ guide controls, and the BiomedParse fallback catalog.
 7. **Manual workflow and monitoring**: manual stages expose running/done/error
    progress states, refresh the result view, reconcile OAR metadata, and save a
    compact checkpoint. Monitor feedback is emitted as a structured assistant
-   message instead of a bare system bubble; screenshots are case-scoped and
-   throttled. Surgical-guide generation, parameter editing, version selection,
-   STL validation, and guide mesh restoration are available from the Input
-   panel and the chat UI.
+   message instead of a bare system bubble; screenshots are case-scoped,
+   stage-aware, throttled, grouped into one gallery, and temporarily focus the
+   relevant viewer/seed pair before restoring the user's panel and camera.
+   Monitoring also has an explicit case-owned presentation state: the page
+   edge, chat header avatar, status badge, and accessibility labels breathe
+   continuously until monitoring is finished or the case is changed. Surgical-
+   guide generation, parameter editing, version selection, STL validation, and
+   guide mesh restoration are available from the Input panel and the chat UI.
 8. **CTV model availability**: the validated pancreatic nnU-Net path remains
    the only pancreatic production choice. Non-pancreatic supported UI entries
    use the BiomedParse v2 route and are marked according to local weight
@@ -9328,6 +9332,12 @@ guide controls, and the BiomedParse fallback catalog.
 9. **Public Python API correctness**: `tool_factory.OAR_seg.__all__` no longer
    exports removed VoCo classes. Star-import now succeeds and exposes only
    symbols that actually exist and are registered.
+10. **Monitoring language and lifecycle**: stage feedback, interference
+    warnings, screenshot questions, and the final monitoring summary now use
+    the active UI language. A running stage does not create a screenshot, a
+    completed stage does not reuse a stale target, and a failed optional
+    screenshot remains a scoped warning rather than replacing the assistant's
+    structured advice.
 
 ### Deliberate safety and product boundaries
 
@@ -9346,8 +9356,10 @@ guide controls, and the BiomedParse fallback catalog.
 
 ### Verification
 
-- Full regression suite: **328 passed, 2 skipped, 3 warnings**.
+- Full regression suite: **330 passed, 2 skipped, 3 warnings**.
 - Uploaded-mask and workspace frontend regressions: **75 passed, 3 warnings**.
+- Training-monitor lifecycle and presentation regressions: **4 passed, 3
+  warnings**.
 - `compileall` passed for `AgenticSys.py`, `agent_runtime`, `tool_factory`, and
   `web`.
 - JavaScript syntax checks passed for all modified browser modules, including

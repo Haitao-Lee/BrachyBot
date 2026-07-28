@@ -1553,6 +1553,37 @@ body.monitor-active .chat-header-icon,
 body.monitor-active .chat-avatar.bot-avatar {
     animation: monitor-avatar-breathe 1.8s ease-in-out infinite;
 }
+.monitor-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.32rem;
+    min-height: 1.25rem;
+    padding: 0.16rem 0.42rem;
+    border: 1px solid rgba(92, 178, 255, 0.34);
+    border-radius: 999px;
+    color: var(--accent, #79bbff);
+    background: rgba(36, 98, 156, 0.16);
+    font-size: 0.62rem;
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+    animation: monitor-status-breathe 2.2s ease-in-out infinite;
+}
+.monitor-status-dot {
+    width: 0.38rem;
+    height: 0.38rem;
+    border-radius: 50%;
+    background: #78c9ff;
+    box-shadow: 0 0 0.45rem rgba(120, 201, 255, 0.9);
+    animation: monitor-dot-breathe 1.6s ease-in-out infinite;
+}
+@keyframes monitor-status-breathe {
+    0%, 100% { opacity: 0.72; transform: translateZ(0); }
+    50% { opacity: 1; transform: translateZ(0) scale(1.025); }
+}
+@keyframes monitor-dot-breathe {
+    0%, 100% { opacity: 0.55; }
+    50% { opacity: 1; }
+}
 @keyframes monitor-edge-breathe {
     0%, 100% { opacity: 0.42; box-shadow: 0 0 14px rgba(79, 124, 255, 0.08) inset; }
     50% { opacity: 0.9; box-shadow: 0 0 24px rgba(79, 124, 255, 0.22) inset; }
