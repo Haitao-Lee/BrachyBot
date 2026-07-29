@@ -33,6 +33,7 @@ VoCo/
 *.bin
 *.safetensors
 models/ctv/biomedparse_v2/.cache/
+models/ctv/biomedparse_v2/clip-vit-base-patch32/
 dose_pre/*.pth
 dose_pre/*.ckpt
 
