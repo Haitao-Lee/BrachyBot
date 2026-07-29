@@ -1,4 +1,5 @@
 import os
+import os
 import sys
 import time
 import logging
@@ -8,11 +9,26 @@ from . import core
 from . import utilizations
 import numpy as np
 from . import visualizer
+from .dose_pre.model_loader import planning_dose_value_to_model
 import SimpleITK as sitk
 try:
     import slicer
 except ImportError:
     from . import slicer_mock as slicer
+
+
+def _optimizer_dose_thresholds(args):
+    value_unit = getattr(args, "dose_value_unit", None)
+    return (
+        planning_dose_value_to_model(
+            args.in_lowest_energy,
+            value_unit=value_unit,
+        ),
+        planning_dose_value_to_model(
+            args.out_highest_energy,
+            value_unit=value_unit,
+        ),
+    )
 
 
 def brachy_plan(ctimage, ctvimage, oarimage, dose_model, args, progressDialog):
@@ -113,7 +129,7 @@ def brachy_plan(ctimage, ctvimage, oarimage, dose_model, args, progressDialog):
     utilizations.throttled_process_events()
 
     try:
-        
+        in_lowest_model, out_highest_model = _optimizer_dose_thresholds(args)
         plan_res = core.optimal_plan(
             init_tracjectories,
             radiation_volume,
@@ -127,8 +143,8 @@ def brachy_plan(ctimage, ctvimage, oarimage, dose_model, args, progressDialog):
             args.radiation_array_params['background_value'],
             args.radiation_array_params['obstacle_value'],
             args.radiation_array_params['infer_img_size'],
-            args.in_lowest_energy,
-            args.out_highest_energy,
+            in_lowest_model,
+            out_highest_model,
             args.DVH_rate,
             args.seed_info,
             args.iter_rate,
@@ -262,7 +278,7 @@ def brachy_plan_rf(ctimage, ctvimage, oarimage, dose_model, args, progressDialog
     utilizations.throttled_process_events()
 
     try:
-        
+        in_lowest_model, out_highest_model = _optimizer_dose_thresholds(args)
         plan_res = core.optimal_plan_rf(
             init_tracjectories,
             radiation_volume,
@@ -273,8 +289,8 @@ def brachy_plan_rf(ctimage, ctvimage, oarimage, dose_model, args, progressDialog
             args.distance_filtter['interval_rate'],
             args.radiation_array_params['target_value'],
             args.radiation_array_params['infer_img_size'],
-            args.in_lowest_energy,
-            args.out_highest_energy,
+            in_lowest_model,
+            out_highest_model,
             args.DVH_rate,
             args.seed_info,
             args.image_normalize[0],
@@ -343,7 +359,7 @@ def replan_single_needle(new_trajectory, other_needles_data, radiation_volume,
     obstacle_value = args.radiation_array_params['obstacle_value']
     background_value = args.radiation_array_params['background_value']
     infer_img_size = args.radiation_array_params['infer_img_size']
-    in_lowest_dose = args.in_lowest_energy
+    in_lowest_dose, _ = _optimizer_dose_thresholds(args)
     DVH_rate = args.DVH_rate
     seed_info = args.seed_info
     image_normalize_min = args.image_normalize[0]

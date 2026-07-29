@@ -84,13 +84,15 @@ class Round9RegressionTests(unittest.TestCase):
         self.assertIn("\\u8d28\\u91cf\\u5ba1\\u67e5", source)
         self.assertIn('"title": "\\u8d28\\u91cf\\u5ba1\\u67e5"', orchestrator)
 
-    def test_screenshot_dose_requests_use_report_overview(self):
+    def test_chat_dose_screenshots_do_not_reuse_report_compositor(self):
         tool = self.read("tool_factory/ui_screenshot/__init__.py")
-        chat = self.read("web/app/static/js/brachybot-chat-todo.js")
-        self.assertIn("use target `dose-overview`", tool)
-        self.assertIn("three 2D planes and the DVH", tool)
-        self.assertIn("_normalizeScreenshotRequestTarget", chat)
-        self.assertIn("return genericDose ? 'dose-overview' : rawTarget", chat)
+        ui_api = self.read("web/app/static/js/brachybot-ui-api.js")
+        self.assertIn("do not reuse the fixed Report Figure compositor", tool)
+        self.assertIn('"viewer-axial"', tool)
+        self.assertIn('"viewer-sagittal"', tool)
+        self.assertIn('"viewer-coronal"', tool)
+        self.assertIn("if (normalizedTarget === 'dose-overview' && mode !== 'report')", ui_api)
+        self.assertIn("_captureDoseOverviewDataUrl", ui_api)
 
     def test_visual_screenshot_followup_is_multimodal_and_reviewed(self):
         chat = self.read("web/app/static/js/brachybot-chat-todo.js")

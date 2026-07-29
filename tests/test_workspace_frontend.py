@@ -627,7 +627,10 @@ def test_chat_callbacks_are_persisted_to_the_turn_owner_case():
     assert "sessionId = activeSessionId" in chat
     assert "const ownerSessionId = String(sessionId || activeSessionId || '')" in chat
     assert "ownerSessionId === String(activeSessionId || '')" in chat
-    assert "saveSessionMessage(safeType, c, null, Date.now(), ownerSessionId)" in chat
+    assert (
+        "saveSessionMessage(safeType, c, null, Date.now(), ownerSessionId, safeMeta)"
+        in chat
+    )
     assert "headers: { 'X-BrachyBot-Session': turnSessionId }" in todo
     assert "addChat('bot-response', finalText, true, Date.now(), false, turnSessionId)" in todo
 

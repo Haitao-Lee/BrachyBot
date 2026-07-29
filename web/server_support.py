@@ -28,7 +28,11 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."
 
 from flask import request, jsonify, send_from_directory, Response
 from flask_cors import CORS
-from plans.dose_pre.model_loader import DOSE_MODEL_SCALE_GY
+from plans.dose_pre.model_loader import (
+    DOSE_MODEL_SCALE_GY,
+    dose_gy_to_model,
+    resolve_prescription_gy,
+)
 
 WEB_DIR = os.path.dirname(os.path.abspath(__file__))
 APP_DIR = os.path.join(WEB_DIR, "app")
@@ -833,12 +837,15 @@ def _build_plan_advice(agent, session_id: Optional[str] = None) -> Dict[str, Any
     issues: list = []
     strengths: list = []
 
-    rx_gy = None
-    prescribed = _extract_metric_value(metrics, "prescribed_dose", "prescription")
-    if prescribed and prescribed < 10:
-        rx_gy = prescribed * DOSE_MODEL_SCALE_GY
-    elif prescribed:
-        rx_gy = prescribed
+    rx_gy = resolve_prescription_gy(
+        agent.memory.retrieve("plan_config") or getattr(agent, "config", {}) or {},
+        metrics,
+        dose_scale_gy=(
+            metrics.get("dose_scale_gy")
+            or agent.memory.retrieve("dose_scale_gy")
+            or DOSE_MODEL_SCALE_GY
+        ),
+    )
 
     v100 = _volume_metric_as_fraction(metrics, "v100")
     d90 = _extract_metric_value(metrics, "d90")
@@ -2076,9 +2083,29 @@ def _compute_manual_ai_dose(
     spacing = np.asarray(ct_image.GetSpacing(), dtype=np.float32)
     voxel_vol_cm3 = float(np.prod(spacing) / 1000.0)
     dose_gy = dose_original * DOSE_MODEL_SCALE_GY
+    plan_config = agent.memory.retrieve("plan_config") or getattr(agent, "config", {}) or {}
+    previous_metrics = agent.memory.retrieve("dose_metrics") or {}
+    saved_scale = (
+        previous_metrics.get("dose_scale_gy")
+        or agent.memory.retrieve("dose_scale_gy")
+        or DOSE_MODEL_SCALE_GY
+    )
+    prescription_gy = resolve_prescription_gy(
+        plan_config,
+        previous_metrics,
+        dose_scale_gy=saved_scale,
+    )
+    prescribed_dose = prescription_gy
 
     metrics: Dict[str, Any] = {
-        "prescribed_dose": 1.0,
+        "prescribed_dose": prescribed_dose,
+        "prescription_gy": prescription_gy,
+        "dose_value_unit": "gy",
+        "prescription_model_threshold": dose_gy_to_model(
+            prescription_gy,
+            DOSE_MODEL_SCALE_GY,
+        ),
+        "dose_scale_gy": DOSE_MODEL_SCALE_GY,
         "volume_metric_units": "fraction",
         "manual_preview": True,
         "dose_engine": "dose_unet_spacing1mm",
@@ -2108,10 +2135,10 @@ def _compute_manual_ai_dose(
                 "d90": dose_at_pct(90),
                 "d50": dose_at_pct(50),
                 "d2": dose_at_pct(2),
-                "v100": vol_at_dose(DOSE_MODEL_SCALE_GY),
-                "v150": vol_at_dose(DOSE_MODEL_SCALE_GY * 1.5),
-                "v200": vol_at_dose(DOSE_MODEL_SCALE_GY * 2.0),
-                "v50": vol_at_dose(DOSE_MODEL_SCALE_GY * 0.5),
+                "v100": vol_at_dose(prescription_gy),
+                "v150": vol_at_dose(prescription_gy * 1.5),
+                "v200": vol_at_dose(prescription_gy * 2.0),
+                "v50": vol_at_dose(prescription_gy * 0.5),
                 "ctv_voxels": int(np.sum(ctv_mask > 0)),
                 "ctv_volume_cm3": float(np.sum(ctv_mask > 0) * voxel_vol_cm3),
             })
@@ -2153,8 +2180,8 @@ def _compute_manual_ai_dose(
                 # Volume metrics use the same fraction contract as CTV
                 # metrics. Report/UI boundaries convert to percent exactly
                 # once, preventing impossible values such as 350.3%.
-                "v100": float(np.sum(od >= DOSE_MODEL_SCALE_GY) / len(od)),
-                "v150": float(np.sum(od >= DOSE_MODEL_SCALE_GY * 1.5) / len(od)),
+                "v100": float(np.sum(od >= prescription_gy) / len(od)),
+                "v150": float(np.sum(od >= prescription_gy * 1.5) / len(od)),
                 "volume_cm3": float(np.sum(mask) * voxel_vol_cm3),
                 "volume_voxels": int(np.sum(mask)),
             }
@@ -2193,7 +2220,7 @@ def _compute_manual_ai_dose(
                 "V200": metrics.get("v200", 0.0),
                 "D90": metrics.get("d90", 0.0),
             },
-            DOSE_MODEL_SCALE_GY,
+            prescription_gy,
             violations,
             target_context["tumor_type"],
         )
@@ -2215,6 +2242,7 @@ def _compute_manual_ai_dose(
     agent.memory.store("num_trajectories", len(grouped))
     agent.memory.store("dose_distribution", dose)
     agent.memory.store("dose_distribution_gy", dose_original)
+    agent.memory.store("dose_distribution_physical_gy", dose_gy)
     agent.memory.store("dose_units", DOSE_MODEL_UNITS)
     agent.memory.store("dose_scale_gy", DOSE_MODEL_SCALE_GY)
     agent.memory.store("dose_metrics", metrics)

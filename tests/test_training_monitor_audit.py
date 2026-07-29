@@ -53,7 +53,8 @@ def test_training_monitor_frontend_handles_high_value_checkpoints_and_report_lif
     assert "localized_advice" in routes
     assert "language" in ui_api
     assert "screenshotGalleryContext" in ui_api
-    assert "preservePanel: true" in ui_api
+    assert "_snapshotScreenshotViewerState" in ui_api
+    assert "_restoreScreenshotViewerState(snapshot, restoreFocus)" in ui_api
     assert "focusPlanningSeedsForScreenshot" in ui_api or "focusPlanningSeedsForScreenshot" in manual
     assert "setMonitorPresentation" in ui_api
     assert "setTrainingMonitorPhase" in ui_api
@@ -99,7 +100,7 @@ def test_manual_workflow_exposes_real_surgical_guide_actions():
     assert "/api/surgical-guides/generate" in guide
 
 
-def test_monitor_uses_per_conversation_language_instead_of_global_ui_language():
+def test_monitor_and_screenshots_prefer_global_ui_language():
     root = Path(__file__).resolve().parents[1]
     chat_core = (root / "web/app/static/js/brachybot-chat-core.js").read_text(encoding="utf-8")
     ui_api = (root / "web/app/static/js/brachybot-ui-api.js").read_text(encoding="utf-8")
@@ -108,6 +109,8 @@ def test_monitor_uses_per_conversation_language_instead_of_global_ui_language():
     assert "function detectConversationLanguage(text)" in chat_core
     assert "function conversationLanguageForSession" in chat_core
     assert "session.conversationLanguage = detectedLanguage" in chat_core
+    assert "if (window._i18nLang) return window._i18nLang;" in ui_api
+    assert "const raw = window._i18nLang || (" in ui_api
     assert "const language = monitorConversationLanguage(ownerSessionId);" in ui_api
     assert "window.monitorConversationLanguage(startSessionId)" in manual
     assert "window.monitorConversationLanguage(stopSessionId)" in manual

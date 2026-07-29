@@ -11,7 +11,7 @@ from typing import Dict, List, Optional
 
 
 from agent_runtime.core import ToolResultPipeline
-from plans.dose_pre.model_loader import DOSE_MODEL_SCALE_GY
+from plans.dose_pre.model_loader import resolve_prescription_gy
 
 logger = logging.getLogger(__name__)
 
@@ -424,27 +424,10 @@ print(json.dumps(result))
                     vol_mm3 = ctv_voxels * sx * sy * sz
                     ctv_vol_cm3 = vol_mm3 / 1000.0
 
-        # Extract prescription dose in Gy.
-        #
-        # DOSE_SCALE (120.0): the deployed dose_unet_spacing1mm model uses
-        # trained with labels where model output 1.0 = 120 Gy.  All
-        # internal dose values are in "normalized" units (0~1.0 for
-        # prescription, 0~255 for raw CNN output).  To convert to Gy:
-        #   dose_gy = dose_normalized * DOSE_SCALE
-        # This factor is the same as in planning_pipeline.py and
-        # The web planning routes use the same display scale for dose summaries.
-        DOSE_SCALE = DOSE_MODEL_SCALE_GY
-        rx_gy = DOSE_SCALE  # default: 1.0 * 120 = 120 Gy
+        # Current plan configuration stores physical Gy. The resolver also
+        # migrates unit-less legacy Rx multipliers.
         plan_config = self.memory.retrieve("plan_config") or {}
-        try:
-            _plan_cfg = plan_config
-            # "in_lowest_energy" is the normalized prescription (typically 1.0).
-            # "prescription_dose" is a legacy key — both map to the same value.
-            _rx_norm = _plan_cfg.get("in_lowest_energy",
-                         _plan_cfg.get("prescription_dose", 1.0))
-            rx_gy = float(_rx_norm) * DOSE_SCALE
-        except Exception as exc:
-            logger.debug("Could not parse prescription dose from plan_config; using default 120 Gy: %s", exc)
+        rx_gy = resolve_prescription_gy(plan_config, metrics)
 
         # BUG FIX 2026-06-17 (None format): wrap metric reads with
         # `or 0` so None values don't crash :.1f / :.0f format specs.
@@ -1348,11 +1331,18 @@ Output (JSON array of strings):"""
             elif tn == "ui_screenshot":
                 # A malformed screenshot call can otherwise enter the retry
                 # loop and waste several model calls before failing with a
-                # low-level missing-parameter error.  Do not guess a target.
+                # low-level missing-parameter error. A structured multi-view
+                # plan may legitimately omit the legacy single `target`.
                 target = str(p.get("target") or "").strip()
+                views = p.get("views")
+                has_views = isinstance(views, list) and any(
+                    str(view or "").strip() for view in views
+                )
                 question = str(p.get("question") or "").strip()
-                if not target or not question:
-                    logger.warning("Dropping ui_screenshot call without target and question")
+                if (not target and not has_views) or not question:
+                    logger.warning(
+                        "Dropping ui_screenshot call without a target/views and question"
+                    )
                     continue
             valid.append(tc)
         return valid

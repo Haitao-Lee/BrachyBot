@@ -17,9 +17,8 @@
     let backgroundRestoreTimer = null;
     let backgroundRestoreNoticeTimer = null;
     let hydrationHideTimer = null;
-    // Control ids whose .value is persisted in model space but displayed
-    // in physical Gy to the operator.  applyControls() must convert them
-    // back via doseModelToGy() during workspace restoration.
+    // Dose controls are persisted in physical Gy. Legacy snapshots that
+    // explicitly used model units are converted with their saved calibration.
     const GY_VALUE_IDS = new Set(['inLowestEnergy', 'outHighestEnergy']);
     const WORKSPACE_REQUEST_TIMEOUT_MS = 15000;
     const WORKSPACE_RECOVERY_TIMEOUT_MS = 5000;
@@ -497,6 +496,11 @@
 
     function workspaceUiState() {
         return {
+            dose_value_unit: 'gy',
+            prescription_base_gy: 120,
+            dose_model_scale_gy: (
+                typeof doseModelScaleGy === 'function' ? doseModelScaleGy() : 190.8
+            ),
             controls: controlState(),
             viewer: {
                 sessionId: typeof state !== 'undefined' ? state.sessionId : null,
@@ -733,13 +737,15 @@
             }
             if (Object.prototype.hasOwnProperty.call(saved, 'value')) {
                 const v = Number(saved.value);
-                // Saved values ≤ 100 for dose fields are assumed to be in
-                // model space (1 = 120 Gy) and converted to physical Gy
-                // before display.  Already-converted values > 100 pass
-                // through unchanged.
-                if (id && Number.isFinite(v) && v <= 100 && GY_VALUE_IDS.has(id)
-                    && typeof doseModelToGy === 'function') {
-                    element.value = doseModelToGy(v);
+                // Legacy controls stored Rx multipliers (1 = 120 Gy), not raw
+                // DoseUNet output. Keep that conversion independent from the
+                // model's 190.8 Gy/output-unit calibration.
+                const unit = String(options.doseValueUnit || '').toLowerCase();
+                const legacyModelValue = !unit && Number.isFinite(v) && v > 0 && v <= 5;
+                if (id && GY_VALUE_IDS.has(id) && (unit === 'model' || legacyModelValue)) {
+                    const savedBase = Number(options.prescriptionBaseGy);
+                    const base = Number.isFinite(savedBase) && savedBase > 0 ? savedBase : 120;
+                    element.value = v * base;
                 } else {
                     element.value = saved.value;
                 }
@@ -972,7 +978,11 @@
         const restoreGeneration = invalidateDeferredWorkspaceRestore();
         restoring = true;
         try {
-            applyControls(uiState.controls || {}, options);
+            applyControls(uiState.controls || {}, Object.assign({}, options, {
+                doseValueUnit: uiState.dose_value_unit,
+                prescriptionBaseGy: uiState.prescription_base_gy,
+                doseScaleGy: uiState.dose_model_scale_gy,
+            }));
             if (uiState.viewer && typeof state !== 'undefined') {
                 state.slices = Object.assign(state.slices || {}, uiState.viewer.slices || {});
                 state.viewerSettings = Object.assign(state.viewerSettings || {}, uiState.viewer.settings || {});

@@ -396,7 +396,7 @@ def test_dose_evaluation_uses_actual_prescription_and_descending_dx():
     result = PlanningPipelineTool()._step_dose_eval(ctv, oar, agent)
 
     assert result.success is True
-    assert result.metadata["prescribed_dose"] == pytest.approx(1.1)
+    assert result.metadata["prescribed_dose"] == pytest.approx(132.0)
     assert result.metadata["prescription_gy"] == pytest.approx(132.0)
     assert result.metadata["v100"] == 0.0
     assert result.metadata["oar_metrics"]["test_oar"]["d90"] == pytest.approx(36.0)
@@ -431,7 +431,7 @@ def test_dose_evaluation_prescription_does_not_depend_on_oar_presence():
     result = PlanningPipelineTool()._step_dose_eval(ctv, None, agent)
 
     assert result.success is True
-    assert result.metadata["prescribed_dose"] == pytest.approx(0.8)
+    assert result.metadata["prescribed_dose"] == pytest.approx(96.0)
     assert result.metadata["prescription_gy"] == pytest.approx(96.0)
     assert result.metadata["v100"] == pytest.approx(1.0)
 
@@ -1175,12 +1175,16 @@ def test_unified_seed_planning_dispatches_exactly_one_mode(monkeypatch):
     assert rule_result.success is True
     assert [name for name, _ in calls] == ["rule_based"]
     assert calls[0][1]["dose_cal_model"] is model
+    assert calls[0][1]["in_lowest_dose"] == pytest.approx(120.0 / 190.8)
+    assert calls[0][1]["out_highest_dose"] == pytest.approx(120.0 / 190.8)
 
     calls.clear()
     rl_result = SeedPlanningTool()._execute(**common, mode="rl")
     assert rl_result.success is True
     assert [name for name, _ in calls] == ["rl"]
     assert calls[0][1]["dose_cal_model"] is model
+    assert calls[0][1]["in_lowest_dose"] == pytest.approx(120.0 / 190.8)
+    assert calls[0][1]["out_highest_dose"] == pytest.approx(120.0 / 190.8)
 
 
 def test_trajectory_planning_forwards_geometry_limits(monkeypatch):
@@ -1309,8 +1313,8 @@ def test_preoperative_pipeline_forwards_declared_parameters(monkeypatch, tmp_pat
             "min_depth": 3,
         },
         reference_direc=[0, -1, 0],
-        in_lowest_energy=1.25,
-        out_highest_energy=0.9,
+        in_lowest_energy=150.0,
+        out_highest_energy=108.0,
         DVH_rate=0.92,
         max_iter=5,
         output_dir=str(tmp_path),
@@ -1326,11 +1330,11 @@ def test_preoperative_pipeline_forwards_declared_parameters(monkeypatch, tmp_pat
     assert trajectory_kwargs["ref_direc"] == [0, -1, 0]
     assert trajectory_kwargs["extract_angle"] == pytest.approx(0.8)
     assert trajectory_kwargs["maximum_candidate_trajectories"] == 88
-    assert seed_kwargs["in_lowest_dose"] == pytest.approx(1.25)
+    assert seed_kwargs["in_lowest_dose"] == pytest.approx(150.0)
     assert seed_kwargs["DVH_rate"] == pytest.approx(0.92)
     assert seed_kwargs["iter_rate"] == 5
     assert seed_kwargs["lower_bound"] == pytest.approx(1.2)
-    assert evaluation_kwargs["prescribed_dose"] == pytest.approx(1.25)
+    assert evaluation_kwargs["prescribed_dose"] == pytest.approx(150.0)
     assert evaluation_kwargs["tumor_type"] == "nnunet_pancreatic"
 
 

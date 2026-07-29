@@ -262,27 +262,89 @@ def _chat_record_key(record: Any) -> str:
     """Return a stable identity for one durable chat record.
 
     Chat writes can arrive from the live browser and the detached task
-    finalizer in either order.  Hashing the complete JSON record makes the
-    merge append-only without treating two legitimate repeated questions as
-    duplicates merely because their text is equal.
+    finalizer in either order. New records carry a stable message/step ID and
+    must merge under that identity as text, Trace steps, and screenshot
+    attachments arrive. Legacy records without an ID use a complete-content
+    hash so two legitimate repeated questions remain distinct.
     """
+    if isinstance(record, Mapping):
+        stable_id = str(record.get("id") or "").strip()
+        if stable_id:
+            return f"id:{stable_id}"
     try:
         payload = json.dumps(_safe_json(record), ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     except Exception:
         payload = str(record)
-    return hashlib.sha256(payload.encode("utf-8", "replace")).hexdigest()
+    return "hash:" + hashlib.sha256(payload.encode("utf-8", "replace")).hexdigest()
+
+
+def _merge_record_list(existing: Any, incoming: Any) -> List[Any]:
+    """Merge ID-addressed nested records such as Trace steps or attachments."""
+    merged: List[Any] = []
+    positions: Dict[str, int] = {}
+    for record in list(existing or []) + list(incoming or []):
+        key = _chat_record_key(record)
+        if key not in positions:
+            positions[key] = len(merged)
+            merged.append(copy.deepcopy(record))
+            continue
+        position = positions[key]
+        current = merged[position]
+        if isinstance(current, Mapping) and isinstance(record, Mapping):
+            merged[position] = _merge_chat_record(current, record)
+    return merged
+
+
+def _merge_chat_record(existing: Mapping[str, Any], incoming: Mapping[str, Any]) -> Dict[str, Any]:
+    """Merge later fields into one stable chat/Trace/attachment record."""
+    result = copy.deepcopy(dict(existing or {}))
+    incoming_safe = _safe_json(incoming)
+
+    for key, value in incoming_safe.items():
+        if key in {"steps", "attachments"} and isinstance(value, list):
+            result[key] = _merge_record_list(result.get(key), value)
+            continue
+        if key == "meta" and isinstance(value, Mapping):
+            current_meta = result.get("meta") if isinstance(result.get("meta"), Mapping) else {}
+            result["meta"] = {**copy.deepcopy(dict(current_meta)), **copy.deepcopy(dict(value))}
+            continue
+        if key == "timestamp":
+            candidates = []
+            for candidate in (result.get("timestamp"), value):
+                try:
+                    parsed = float(candidate)
+                except (TypeError, ValueError):
+                    continue
+                if parsed > 0:
+                    candidates.append(parsed)
+            if candidates:
+                earliest = min(candidates)
+                result[key] = int(earliest) if earliest.is_integer() else earliest
+            continue
+        # Screenshot capture first creates an empty assistant shell; the
+        # detached finalizer later supplies final text. Never let an empty
+        # stale patch erase already durable content or metadata.
+        if value not in (None, "", [], {}):
+            result[key] = copy.deepcopy(value)
+        elif key not in result:
+            result[key] = copy.deepcopy(value)
+    return result
 
 
 def _merge_chat_records(existing: Any, incoming: Any) -> List[Any]:
-    """Union append-only chat records while preserving their display order."""
+    """Merge durable chat records while preserving stable display order."""
     merged: List[Any] = []
-    seen: set[str] = set()
+    positions: Dict[str, int] = {}
     for record in list(existing or []) + list(incoming or []):
         key = _chat_record_key(record)
-        if key in seen:
+        if key not in positions:
+            positions[key] = len(merged)
+            merged.append(copy.deepcopy(record))
             continue
-        seen.add(key)
-        merged.append(record)
+        position = positions[key]
+        current = merged[position]
+        if isinstance(current, Mapping) and isinstance(record, Mapping):
+            merged[position] = _merge_chat_record(current, record)
 
     def sort_key(item: Any) -> Tuple[float, int]:
         if isinstance(item, Mapping):

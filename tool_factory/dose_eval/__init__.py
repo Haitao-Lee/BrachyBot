@@ -11,6 +11,7 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from tool_factory import BaseTool, ToolResult
+from plans.dose_pre.model_loader import DEFAULT_PRESCRIPTION_GY
 
 from .vx_metrics import VxMetricsTool
 from .dx_metrics import DxMetricsTool
@@ -71,7 +72,11 @@ class DoseEvaluationTool(BaseTool):
                 "dose_array": {"type": "array", "description": "3D NumPy array of dose distribution in Gy"},
                 "ctv_mask": {"type": "array", "description": "CTV binary mask array"},
                 "oar_mask": {"type": "array", "description": "OAR multi-label mask array (optional)"},
-                "prescribed_dose": {"type": "number", "default": 1.0, "description": "Prescribed dose in Gy"},
+                "prescribed_dose": {
+                    "type": "number",
+                    "default": DEFAULT_PRESCRIPTION_GY,
+                    "description": "Prescribed physical dose in Gy",
+                },
                 "target_value": {"type": "number", "default": 1, "description": "CTV label value"},
                 "oar_constraints": {"type": "object", "description": "OAR dose constraints dict"},
                 "organ_names": {"type": "object", "description": "Mapping of OAR label IDs to anatomical names"},
@@ -106,7 +111,7 @@ class DoseEvaluationTool(BaseTool):
             return ToolResult(success=False, error="dose_array is required")
         ctv_mask = kwargs.get("ctv_mask")
         oar_mask = kwargs.get("oar_mask")
-        prescribed_dose = kwargs.get("prescribed_dose", 1.0)
+        prescribed_dose = kwargs.get("prescribed_dose", DEFAULT_PRESCRIPTION_GY)
         target_value = kwargs.get("target_value", 1)
         oar_constraints = kwargs.get("oar_constraints", {})
         organ_names = kwargs.get("organ_names", {}) or {}

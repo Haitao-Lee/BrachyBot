@@ -1,49 +1,81 @@
 """
-UI Screenshot Tool
-==================
-Enables BrachyBot's LLM to capture screenshots of any UI component.
-The LLM calls this tool → frontend captures the target → uploads to server → returns URL.
+Structured UI screenshot tool.
 
-Flow:
-    1. LLM calls ui_screenshot(target="viewer-axial", question="Analyze segmentation overlay")
-    2. Tool returns {command: "screenshot", target: "...", question: "..."}
-    3. Frontend intercepts this result in the SSE step handler
-    4. Frontend captures the target element using html2canvas
-    5. Frontend uploads to /api/screenshot
-    6. Frontend displays image in chat
-    7. Frontend sends follow-up message with image URL to LLM
-    8. LLM receives multimodal content and responds with analysis
+Report figures are produced by the report subsystem. This tool is the common
+capture planner for chat and Monitor turns. It returns a frontend command;
+the browser applies temporary viewer state, captures the requested views,
+restores the state, and attaches the images to the owning assistant message.
 """
 
-import json
+from __future__ import annotations
+
 import logging
-from typing import Dict, Any
+from typing import Any, Dict, List
+
 from tool_factory import BaseTool, ToolResult
 
 logger = logging.getLogger(__name__)
 
-# Valid screenshot targets — must match frontend _SCREENSHOT_TARGET_MAP
+
 SCREENSHOT_TARGETS = {
-    "viewer-axial": "Axial viewer panel (2D slice view)",
-    "viewer-sagittal": "Sagittal viewer panel",
-    "viewer-coronal": "Coronal viewer panel",
-    "dose-overview": "Dose report overview (axial, sagittal, coronal CT with dose overlay, colorbar, and DVH chart)",
-    "viewer-3d": "3D reconstruction view",
-    "data-tree": "Data tree panel (organ list, visibility controls)",
-    "chat": "Chat panel (conversation history)",
-    "metrics": "Metrics panel (dose evaluation, DVH)",
-    "dvh": "DVH chart only (dose-volume histogram)",
-    "input": "Input panel (file loading, configuration)",
-    "seeds": "Seeds panel (seed planning results)",
-    "planning": "Planning panel (step-by-step planning tools)",
-    "report": "Report panel (report editor and preview)",
-    "full": "Full page screenshot",
-    "overlay-controls": "Overlay control area (opacity sliders, toggles)",
+    "viewer-axial": "Axial 2D viewer",
+    "viewer-sagittal": "Sagittal 2D viewer",
+    "viewer-coronal": "Coronal 2D viewer",
+    "viewer-3d": "3D reconstruction viewer",
+    "dvh": "Dose-volume histogram",
+    "data-tree": "Data Tree",
+    "chat": "Chat transcript",
+    "metrics": "Planning metrics",
+    "input": "Input and planning controls",
+    "seeds": "Seed planning view",
+    "planning": "Planning controls",
+    "report": "Report panel",
+    "overlay-controls": "Viewer overlay controls",
+    "full": "Full application",
+    # Compatibility alias. In chat/Monitor mode this expands to independent
+    # three-plane and DVH captures; it never invokes the report compositor.
+    "dose-overview": "Three-plane dose views and DVH",
+}
+
+SCREENSHOT_MODES = ("chat", "monitor", "report")
+SCREENSHOT_LAYOUTS = ("auto", "single", "grid", "side-by-side", "vertical")
+
+_ALIASES = {
+    "axial": "viewer-axial",
+    "sagittal": "viewer-sagittal",
+    "coronal": "viewer-coronal",
+    "3d": "viewer-3d",
+    "dose": "dose-overview",
+    "dose_distribution": "dose-overview",
+    "dose-distribution": "dose-overview",
+    "dose_overview": "dose-overview",
+    "dvh-chart": "dvh",
+    "dose-volume-histogram": "dvh",
 }
 
 
+def _unique_targets(values: Any) -> List[str]:
+    result: List[str] = []
+    raw_values = values if isinstance(values, list) else [values]
+    for value in raw_values:
+        target = _ALIASES.get(str(value or "").strip(), str(value or "").strip())
+        if target == "dose-overview":
+            expanded = [
+                "viewer-axial",
+                "viewer-sagittal",
+                "viewer-coronal",
+                "dvh",
+            ]
+        else:
+            expanded = [target]
+        for item in expanded:
+            if item in SCREENSHOT_TARGETS and item not in result:
+                result.append(item)
+    return result
+
+
 class UIScreenshotTool(BaseTool):
-    """Capture screenshots of any BrachyBot UI component for visual analysis."""
+    """Plan one or more state-safe screenshots for chat or Monitor."""
 
     @property
     def name(self) -> str:
@@ -51,116 +83,201 @@ class UIScreenshotTool(BaseTool):
 
     @property
     def description(self) -> str:
-        targets = ", ".join(SCREENSHOT_TARGETS.keys())
         return (
-            "Take a screenshot of the UI. ONLY use this when the user EXPLICITLY asks "
-            "for a screenshot, image, or picture ('截图', '拍个照', 'show me the image'). "
-            "Do NOT call this automatically after planning or other tasks. "
-            "For a request to see the current dose distribution without a specified plane, "
-            "use target `dose-overview`; it captures the three 2D planes and the DVH together, "
-            "like the report figure. For a request to explain, analyze, or describe a chart, "
-            "request the relevant screenshot once and then answer from the returned image; "
-            "never issue a second screenshot call for the same request. "
-            "Available targets: " + targets + ". "
-            "The screenshot will be displayed in chat for the user to view."
+            "Capture UI evidence for an explicit user screenshot request or a "
+            "Monitor finding. Build a screenshot plan that matches the question: "
+            "choose one or more 2D planes, a 3D overview/close-up, DVH, metrics, "
+            "or another UI target. Use stable object_ids/data_tree_node_ids when "
+            "focusing or highlighting planning objects. A generic dose request "
+            "should normally use independent axial, sagittal, coronal, and DVH "
+            "views; do not reuse the fixed Report Figure compositor. Set mode to "
+            "`monitor` only for Monitor evidence. Report figures are generated by "
+            "the report subsystem and are not the default for chat. Call this tool "
+            "once per screenshot request; the browser captures and attaches all "
+            "planned views to the same assistant response."
         )
 
     @property
     def input_schema(self) -> dict:
+        target_enum = list(SCREENSHOT_TARGETS.keys())
         return {
             "type": "object",
             "properties": {
+                "mode": {
+                    "type": "string",
+                    "enum": list(SCREENSHOT_MODES),
+                    "description": "Capture mode. Use chat for normal conversation and monitor for Monitor evidence.",
+                    "default": "chat",
+                },
                 "target": {
                     "type": "string",
-                    "description": f"UI component to capture. Options: {', '.join(SCREENSHOT_TARGETS.keys())}",
-                    "enum": list(SCREENSHOT_TARGETS.keys()),
+                    "enum": target_enum,
+                    "description": "Legacy single target. Prefer views for a multi-view plan.",
+                },
+                "views": {
+                    "type": "array",
+                    "items": {"type": "string", "enum": target_enum},
+                    "maxItems": 6,
+                    "description": "Ordered viewer/UI targets to capture.",
+                },
+                "layout": {
+                    "type": "string",
+                    "enum": list(SCREENSHOT_LAYOUTS),
+                    "default": "auto",
+                    "description": "How multiple attachments should be arranged in chat.",
                 },
                 "question": {
                     "type": "string",
-                    "description": "What you want to analyze in the screenshot. This will be sent along with the image for multimodal analysis.",
+                    "description": "The user's visual question or the Monitor finding to explain.",
                 },
-                "slice_index": {
-                    "type": "integer",
-                    "description": "Optional: navigate to this slice index before capturing (for viewer targets).",
-                },
-                "axis": {
+                "title": {
                     "type": "string",
-                    "description": "Optional: which axis to navigate (axial, sagittal, coronal).",
-                    "enum": ["axial", "sagittal", "coronal"],
+                    "description": "Short user-facing attachment title in the request language.",
+                },
+                "object_ids": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "maxItems": 32,
+                    "description": "Stable viewer object IDs to frame or highlight.",
+                },
+                "data_tree_node_ids": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "maxItems": 32,
+                    "description": "Stable Data Tree node IDs corresponding to the target objects.",
+                },
+                "highlight_object_ids": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "maxItems": 32,
+                    "description": "Stable object IDs to highlight temporarily.",
+                },
+                "hide_unrelated": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": "Temporarily hide unrelated 3D objects when a local close-up is required.",
+                },
+                "focus": {
+                    "type": "object",
+                    "properties": {
+                        "kind": {
+                            "type": "string",
+                            "enum": ["auto", "overview", "close-up", "current-view"],
+                        },
+                        "center_voxel": {
+                            "type": "array",
+                            "items": {"type": "number"},
+                            "minItems": 3,
+                            "maxItems": 3,
+                        },
+                        "center_world": {
+                            "type": "array",
+                            "items": {"type": "number"},
+                            "minItems": 3,
+                            "maxItems": 3,
+                        },
+                        "padding": {"type": "number", "minimum": 0, "maximum": 5},
+                        "zoom": {"type": "number", "minimum": 0.1, "maximum": 20},
+                    },
+                },
+                "slice_indices": {
+                    "type": "object",
+                    "properties": {
+                        "axial": {"type": "integer"},
+                        "sagittal": {"type": "integer"},
+                        "coronal": {"type": "integer"},
+                    },
+                },
+                "overlays": {
+                    "type": "object",
+                    "properties": {
+                        "ctv": {"type": "boolean"},
+                        "oar": {"type": "boolean"},
+                        "dose": {"type": "boolean"},
+                        "dose_isosurface": {"type": "boolean"},
+                        "dose_contours": {"type": "boolean"},
+                        "needles": {"type": "boolean"},
+                        "seeds": {"type": "boolean"},
+                        "surgical_guide": {"type": "boolean"},
+                    },
                 },
                 "description": {
                     "type": "string",
-                    "description": "Optional: brief description of what the screenshot shows (for display in chat).",
+                    "description": "Short description of the intended evidence.",
                 },
             },
-            "required": ["target", "question"],
+            "required": ["question"],
         }
 
-    def _execute(self, **kwargs) -> ToolResult:
-        target = kwargs.get("target", "full")
-        target = {
-            "dose": "dose-overview",
-            "dose_distribution": "dose-overview",
-            "dose-distribution": "dose-overview",
-            "dose_overview": "dose-overview",
-            "dvh-chart": "dvh",
-            "dose-volume-histogram": "dvh",
-        }.get(target, target)
-        question = kwargs.get("question", "Analyze this screenshot")
-        slice_index = kwargs.get("slice_index")
-        axis = kwargs.get("axis")
-        description = kwargs.get("description", "")
-
-        # A common model error is to collapse an unspecified dose overview
-        # into the axial viewer. Preserve an explicit axial-only request,
-        # but promote generic dose-distribution questions to the report-like
-        # overview so the user receives all three planes and the DVH.
-        question_text = str(question or "")
-        generic_dose = (
-            target == "viewer-axial"
-            and any(token in question_text.lower() for token in (
-                "dose distribution", "dose map", "dose cloud", "剂量分布", "剂量云图",
-            ))
-            and not any(token in question_text.lower() for token in (
-                "axial only", "only axial", "仅轴向", "只看轴向", "轴向视图",
-            ))
-        )
-        if generic_dose:
-            target = "dose-overview"
-
-        if target not in SCREENSHOT_TARGETS:
+    def _execute(self, **kwargs: Any) -> ToolResult:
+        mode = str(kwargs.get("mode") or "chat").strip().lower()
+        if mode not in SCREENSHOT_MODES:
             return ToolResult(
                 success=False,
-                error=f"Unknown target '{target}'. Valid: {', '.join(SCREENSHOT_TARGETS.keys())}"
+                error=f"Unknown screenshot mode '{mode}'.",
             )
 
-        # Build the command for the frontend to execute
-        command = {
-            "command": "screenshot",
-            "target": target,
+        requested_views = kwargs.get("views")
+        if not requested_views:
+            requested_views = [kwargs.get("target") or "full"]
+        views = _unique_targets(requested_views)
+        if not views:
+            return ToolResult(
+                success=False,
+                error="The screenshot plan does not contain a supported view.",
+            )
+
+        layout = str(kwargs.get("layout") or "auto").strip().lower()
+        if layout not in SCREENSHOT_LAYOUTS:
+            layout = "auto"
+
+        question = str(kwargs.get("question") or "").strip()
+        plan: Dict[str, Any] = {
+            "version": 2,
+            "mode": mode,
+            "views": views,
+            "layout": layout,
             "question": question,
-            "description": description or SCREENSHOT_TARGETS[target],
+            "title": str(kwargs.get("title") or "").strip(),
+            "description": str(kwargs.get("description") or "").strip(),
+            "object_ids": [str(v) for v in (kwargs.get("object_ids") or []) if str(v)],
+            "data_tree_node_ids": [
+                str(v) for v in (kwargs.get("data_tree_node_ids") or []) if str(v)
+            ],
+            "highlight_object_ids": [
+                str(v) for v in (kwargs.get("highlight_object_ids") or []) if str(v)
+            ],
+            "hide_unrelated": bool(kwargs.get("hide_unrelated", False)),
+            "focus": dict(kwargs.get("focus") or {}),
+            "slice_indices": dict(kwargs.get("slice_indices") or {}),
+            "overlays": dict(kwargs.get("overlays") or {}),
         }
 
-        if slice_index is not None:
-            command["slice_index"] = int(slice_index)
-        if axis:
-            command["axis"] = axis
-
+        # The text is consumed by the model only. Frontend trace rendering uses
+        # trace_summary_i18n and never exposes this instruction as chat content.
+        model_instruction = (
+            "The screenshot plan was accepted and will be executed by the browser. "
+            "Do not call ui_screenshot again for this request. Wait for the image "
+            "attachments, then analyze only visible evidence and current planning data."
+        )
         return ToolResult(
             success=True,
-            message=(
-                f"Screenshot of '{target}' has been requested and is being captured. "
-                f"The image will appear in the chat shortly. "
-                f"DO NOT call ui_screenshot again. "
-                f"Wait for the image to arrive, then analyze it and respond to the user."
-            ),
+            message=model_instruction,
             metadata={
-                "screenshot_command": command,
-                "target": target,
-                "question": question,
-                "description": description or SCREENSHOT_TARGETS[target],
-                # This flag tells the frontend to intercept and execute
-                "frontend_action": "screenshot",
+                "frontend_action": "screenshot_plan",
+                "screenshot_command": {
+                    "command": "screenshot_plan",
+                    "target": views[0],
+                    "question": question,
+                    "plan": plan,
+                },
+                "screenshot_plan": plan,
+                "internal_only": True,
+                "user_visible": False,
+                "trace_summary_i18n": {
+                    "zh": "\u5df2\u521b\u5efa\u622a\u56fe\u8ba1\u5212\uff0c\u6b63\u5728\u6355\u83b7\u76ee\u6807\u89c6\u56fe\u3002",
+                    "en": "Screenshot plan created; capturing the selected views.",
+                },
+                "model_instruction": model_instruction,
             },
         )

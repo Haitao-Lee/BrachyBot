@@ -14,7 +14,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import numpy as np
 
-from plans.dose_pre.model_loader import DOSE_MODEL_SCALE_GY
+from plans.dose_pre.model_loader import DOSE_MODEL_SCALE_GY, resolve_prescription_gy
 
 
 # Keep report links human-readable while retaining the original verified URL.
@@ -276,25 +276,29 @@ def build_tumor_imaging_assessment(memory: Any) -> Dict[str, Any]:
 def _prescription_gy(memory: Any) -> Tuple[float, str]:
     plan_config = _retrieve(memory, "plan_config", {}) or {}
     dose_metrics = _retrieve(memory, "dose_metrics", {}) or _retrieve(memory, "metrics", {}) or {}
-
-    for key in ("prescription_dose_gy", "rx_gy", "prescribed_dose_gy"):
-        value = plan_config.get(key)
-        if value is not None:
-            return float(value), f"plan_config.{key}"
-
-    source = "plan_config.in_lowest_energy"
-    raw = plan_config.get("in_lowest_energy")
-    for key in ("prescription_dose", "prescribed_dose"):
-        if raw is None and plan_config.get(key) is not None:
-            raw = plan_config.get(key)
-            source = f"plan_config.{key}"
-    if raw is None:
-        raw = dose_metrics.get("prescribed_dose", 1.0)
-        source = "dose_metrics.prescribed_dose"
-    raw = float(raw)
-    if raw <= 10.0:
-        return raw * DOSE_MODEL_SCALE_GY, f"{source} normalized to {DOSE_MODEL_SCALE_GY:.0f} Gy"
-    return raw, source
+    saved_scale = (
+        dose_metrics.get("dose_scale_gy")
+        or _retrieve(memory, "dose_scale_gy")
+        or plan_config.get("dose_scale_gy")
+        or DOSE_MODEL_SCALE_GY
+    )
+    value = resolve_prescription_gy(
+        plan_config,
+        dose_metrics,
+        dose_scale_gy=saved_scale,
+    )
+    if any(
+        plan_config.get(key) is not None
+        for key in ("in_lowest_dose_gy", "prescription_dose_gy", "rx_gy", "prescribed_dose_gy")
+    ):
+        source = "plan_config physical Gy"
+    elif dose_metrics.get("prescription_gy") is not None:
+        source = "dose_metrics.prescription_gy"
+    elif str(plan_config.get("dose_value_unit") or "").lower() == "gy":
+        source = "plan_config.in_lowest_energy (Gy)"
+    else:
+        source = "legacy plan_config prescription multiplier converted with 120 Gy/Rx"
+    return value, source
 
 
 def build_prescription_rationale(memory: Any) -> Dict[str, Any]:

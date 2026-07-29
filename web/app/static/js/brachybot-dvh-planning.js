@@ -531,8 +531,8 @@ function drawDVH() {
     // is your prescription, 97.6% of the CTV is covered".
     //
     // Source: reportForm.planning.prescriptionGy (user-editable in
-    // the Report panel) or state.metrics.prescribed_dose * 120 (the
-    // DOSE_SCALE constant from planning_pipeline.py). The fallback
+    // the Report panel) or the physical-Gy planning metrics. Legacy
+    // multiplier metrics are migrated by _getCurrentPrescriptionGy. The fallback
     // order is: explicit report form > metrics > 120 Gy default.
     // Compute CTV coverage at Rx on the same displayed curve used by
     // the tooltip, so the fixed Rx marker and hover values agree.

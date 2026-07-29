@@ -1081,6 +1081,18 @@ class ToolResultPipeline:
     @staticmethod
     def _format_ui(tool_name: str, result, meta: dict, lang: str) -> str:
         """Format UI controller results."""
+        if tool_name == "ui_screenshot":
+            summaries = meta.get("trace_summary_i18n") or {}
+            if isinstance(summaries, dict):
+                return str(
+                    summaries.get("zh" if lang == "zh" else "en")
+                    or summaries.get("en")
+                    or ""
+                ).strip() or (
+                    "截图计划已创建。"
+                    if lang == "zh"
+                    else "Screenshot plan created."
+                )
         display_msg = meta.get("display_message")
         if display_msg:
             return display_msg

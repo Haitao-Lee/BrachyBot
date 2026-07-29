@@ -47,7 +47,7 @@ class PreferenceStore:
         "planning": {
             "default_mode": {"value": "rule_based", "confidence": 1.0, "source": "default"},
             "default_seed_avr_dose": {"value": 50.0, "confidence": 1.0, "source": "default"},
-            "default_prescribed_dose": {"value": 1.0, "confidence": 1.0, "source": "default"},
+            "default_prescribed_dose": {"value": 120.0, "confidence": 1.0, "source": "default"},
         },
         "segmentation": {
             "default_tumor_type": {"value": "pancreatic", "confidence": 1.0, "source": "default"},

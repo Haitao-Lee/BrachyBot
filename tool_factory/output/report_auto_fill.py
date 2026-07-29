@@ -21,7 +21,10 @@ import math
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from tool_factory import BaseTool, ToolResult
-from plans.dose_pre.model_loader import DOSE_MODEL_SCALE_GY
+from plans.dose_pre.model_loader import (
+    DEFAULT_PRESCRIPTION_GY,
+    prescription_multiplier_to_gy,
+)
 from typing import Dict
 
 
@@ -144,16 +147,20 @@ class ReportAutoFillTool(BaseTool):
             return default
         return default if value is None else value
 
-    def _coerce_prescription_gy(self, value):
+    def _coerce_prescription_gy(self, value, dose_scale_gy=None):
         try:
             rx = float(value)
         except Exception:
             return None
         if not (rx > 0):
             return None
-        # Some planning metrics store the normalized dose level (1.0),
-        # while the report form expects Gy.
-        return rx * DOSE_MODEL_SCALE_GY if rx <= 5.0 else rx
+        # Current metrics store physical Gy. Values <= 5 are unit-less legacy
+        # Rx multipliers (1.0 == 120 Gy), never raw DoseUNet output units.
+        return (
+            prescription_multiplier_to_gy(rx, DEFAULT_PRESCRIPTION_GY)
+            if rx <= 5.0
+            else rx
+        )
 
     def _append_patch(self, patch, provenance, source, key, value, ndigits=None):
         if value is None:
@@ -290,7 +297,10 @@ class ReportAutoFillTool(BaseTool):
             ):
                 self._append_patch(patch, provenance, "planning", patch_key, dose.get(source_key), ndigits)
 
-            rx_gy = self._coerce_prescription_gy(dose.get("prescribed_dose"))
+            rx_gy = self._coerce_prescription_gy(
+                dose.get("prescription_gy", dose.get("prescribed_dose")),
+                dose.get("dose_scale_gy") or self._retrieve(agent, "dose_scale_gy"),
+            )
             self._append_patch(patch, provenance, "planning", "planning.prescriptionGy", rx_gy, 1)
             if total_seeds:
                 self._append_patch(patch, provenance, "planning", "planning.totalSeeds", int(total_seeds))

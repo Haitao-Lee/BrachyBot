@@ -760,7 +760,15 @@ async function startTrainingMode(goal = 'Monitor planning workflow') {
     if (typeof _clearMonitorFeedbackTimer === 'function') _clearMonitorFeedbackTimer();
     trainingMonitorState.pendingFeedback = [];
     trainingMonitorState.goal = goal;
-    trainingMonitorState.screenshotGalleryContext = { keys: new Set() };
+    trainingMonitorState.screenshotGalleryContext = {
+        keys: new Set(),
+        items: [],
+        sessionId: startSessionId,
+        requestId: `monitor-${runId}`,
+        messageId: `assistant-monitor-${runId}`,
+        mode: 'monitor',
+        layout: 'auto',
+    };
     const language = typeof window.monitorConversationLanguage === 'function'
         ? window.monitorConversationLanguage(startSessionId)
         : (window._i18nLang || 'en');
@@ -800,7 +808,20 @@ async function startTrainingMode(goal = 'Monitor planning workflow') {
         const startedMessage = language === 'zh'
             ? '监测模式已启动。我会持续跟踪当前病例的规划操作，并在关键阶段给出建议和可视化证据。'
             : 'Monitor mode started. I will continuously track this case and provide advice and visual evidence at meaningful checkpoints.';
-        addChat('bot-response', startedMessage, true, Date.now(), false, startSessionId);
+        addChat(
+            'bot-response',
+            startedMessage,
+            true,
+            Date.now(),
+            false,
+            startSessionId,
+            {
+                requestId: `monitor-${runId}`,
+                messageId: `assistant-monitor-${runId}-started`,
+                messageKind: 'monitor_status',
+                responseLanguage: language,
+            },
+        );
         await syncUIBridgeState('training_start');
         return data;
     } catch (e) {
@@ -867,13 +888,22 @@ async function stopTrainingMode() {
         }
         const localizedAdvice = data.localized_advice || data.advice;
         const fallbackPrefix = language === 'zh' ? '规划监测总结' : 'Planning monitoring summary';
+        const screenshotContext = trainingMonitorState.screenshotGalleryContext;
         addChat(
             'bot-response',
             data.summary || _formatAdviceReport(localizedAdvice, fallbackPrefix, language),
             true,
             Date.now(),
             false,
-            stopSessionId
+            stopSessionId,
+            {
+                requestId: `monitor-${stopRunId}`,
+                messageId: `assistant-monitor-${stopRunId}-summary`,
+                messageKind: 'monitor_summary',
+                responseLanguage: language,
+                attachments: screenshotContext?.items || [],
+                layout: screenshotContext?.layout || 'auto',
+            },
         );
         trainingMonitorState.runId = null;
         trainingMonitorState.screenshotGalleryContext = null;
@@ -2044,6 +2074,126 @@ function focusPlanningSeedsForScreenshot(seedIds) {
 }
 window.focusPlanningSeedsForScreenshot = focusPlanningSeedsForScreenshot;
 
+function focusPlanningObjectsForScreenshot(objectIds, options = {}) {
+    if (!scene3D?.camera || !scene3D?.controls || !Array.isArray(objectIds) || !objectIds.length) {
+        return null;
+    }
+    const wanted = new Set(objectIds.map(String));
+    const highlighted = new Set(
+        (Array.isArray(options.highlightObjectIds) && options.highlightObjectIds.length
+            ? options.highlightObjectIds
+            : objectIds
+        ).map(String)
+    );
+    const entries = Object.entries(scene3D.meshes || {});
+    const identityFor = (id, mesh) => [
+        String(id || ''),
+        String(mesh?.userData?.id || ''),
+        String(mesh?.userData?.objectId || ''),
+        String(mesh?.userData?.nodeId || ''),
+        String(mesh?.userData?.seedId || ''),
+        String(mesh?.userData?.needleId || ''),
+    ].filter(Boolean);
+    const targets = entries.filter(([id, mesh]) =>
+        mesh && identityFor(id, mesh).some(identity => wanted.has(identity))
+    );
+    if (!targets.length) return null;
+
+    const saved = {
+        position: scene3D.camera.position.clone(),
+        quaternion: scene3D.camera.quaternion.clone(),
+        target: scene3D.controls.target.clone(),
+        near: scene3D.camera.near,
+        far: scene3D.camera.far,
+        zoom: scene3D.camera.zoom,
+        meshes: entries.map(([id, mesh]) => ({
+            id,
+            mesh,
+            visible: mesh?.visible,
+            scale: mesh?.scale?.clone?.() || null,
+            materials: [],
+        })),
+    };
+    saved.meshes.forEach(meshState => {
+        const { id, mesh } = meshState;
+        if (!mesh) return;
+        const identities = identityFor(id, mesh);
+        const isTarget = identities.some(identity => wanted.has(identity));
+        const isHighlighted = identities.some(identity => highlighted.has(identity));
+        if (options.hideUnrelated) mesh.visible = isTarget;
+        if (isTarget) mesh.visible = true;
+        if (!isHighlighted) return;
+        mesh.traverse?.(child => {
+            const materials = Array.isArray(child.material) ? child.material : [child.material];
+            materials.filter(Boolean).forEach(material => {
+                meshState.materials.push({
+                    material,
+                    color: material.color?.clone?.() || null,
+                    emissive: material.emissive?.clone?.() || null,
+                    emissiveIntensity: material.emissiveIntensity,
+                });
+                material.color?.set?.('#fff176');
+                material.emissive?.set?.('#ffb300');
+                if ('emissiveIntensity' in material) material.emissiveIntensity = 0.75;
+                material.needsUpdate = true;
+            });
+        });
+        mesh.scale?.multiplyScalar?.(1.2);
+    });
+
+    const box = new THREE.Box3();
+    targets.forEach(([, mesh]) => box.expandByObject(mesh));
+    if (box.isEmpty()) {
+        saved.meshes.forEach(meshState => {
+            if (meshState.mesh) meshState.mesh.visible = meshState.visible;
+        });
+        return null;
+    }
+    const center = box.getCenter(new THREE.Vector3());
+    const size = box.getSize(new THREE.Vector3());
+    const maxDim = Math.max(size.x, size.y, size.z, 1);
+    const viewDirection = scene3D.camera.position.clone().sub(scene3D.controls.target);
+    if (viewDirection.lengthSq() < 1e-8) viewDirection.set(0, 0, 1);
+    viewDirection.normalize();
+    const padding = Math.max(0.1, Number(options.padding || 0.35));
+    const distance = maxDim * (2.8 + padding * 2.5);
+    scene3D.camera.position.copy(center).add(viewDirection.multiplyScalar(distance));
+    scene3D.camera.near = Math.max(0.05, distance / 1000);
+    scene3D.camera.far = Math.max(saved.far, distance * 20);
+    scene3D.camera.lookAt(center);
+    scene3D.controls.target.copy(center);
+    scene3D.camera.updateProjectionMatrix();
+    scene3D.controls.update();
+    scene3D.requestRender?.(8);
+
+    return () => {
+        scene3D.camera.position.copy(saved.position);
+        scene3D.camera.quaternion.copy(saved.quaternion);
+        scene3D.camera.near = saved.near;
+        scene3D.camera.far = saved.far;
+        if (typeof saved.zoom === 'number') scene3D.camera.zoom = saved.zoom;
+        scene3D.controls.target.copy(saved.target);
+        saved.meshes.forEach(meshState => {
+            const mesh = meshState.mesh;
+            if (!mesh) return;
+            mesh.visible = meshState.visible;
+            if (meshState.scale) mesh.scale.copy(meshState.scale);
+            meshState.materials.forEach(savedMaterial => {
+                if (savedMaterial.color) savedMaterial.material.color?.copy?.(savedMaterial.color);
+                if (savedMaterial.emissive) savedMaterial.material.emissive?.copy?.(savedMaterial.emissive);
+                if (savedMaterial.emissiveIntensity !== undefined) {
+                    savedMaterial.material.emissiveIntensity = savedMaterial.emissiveIntensity;
+                }
+                savedMaterial.material.needsUpdate = true;
+            });
+        });
+        scene3D.camera.updateProjectionMatrix();
+        scene3D.controls.update();
+        scene3D.requestRender?.(8);
+    };
+}
+window.focusPlanningObjectsForScreenshot = focusPlanningObjectsForScreenshot;
+
 function render3DMesh(meshData) {
     addMeshToScene(meshData);
     window.dose3D = true;
@@ -3039,7 +3189,8 @@ function clearDoseOverlayRuntime() {
 // The backend returns the checkpoint calibration with each dose payload. Keep a
 // documented fallback for older servers, but never scatter literal conversion
 // factors through the viewer code.
-const DEFAULT_DOSE_SCALE_GY = 120.0;
+const DEFAULT_DOSE_SCALE_GY = 190.8;
+const DEFAULT_PRESCRIPTION_GY = 120.0;
 
 function _getDoseScaleGy() {
     const candidates = [
@@ -3064,13 +3215,18 @@ function _getCurrentPrescriptionGy() {
     const configuredGy = Number(window._display3dConfig?._prescriptionGy);
     if (Number.isFinite(configuredGy) && configuredGy > 0) return configuredGy;
 
-    const scale = _getDoseScaleGy();
-    const normalizedMetric = Number(state?.metrics?.prescribed_dose);
-    if (Number.isFinite(normalizedMetric) && normalizedMetric > 0) return normalizedMetric * scale;
+    const storedPrescription = Number(state?.metrics?.prescribed_dose);
+    if (Number.isFinite(storedPrescription) && storedPrescription > 0) {
+        // Current metrics store physical Gy. Historical metrics stored an Rx
+        // multiplier without a unit marker.
+        return storedPrescription <= 5
+            ? storedPrescription * DEFAULT_PRESCRIPTION_GY
+            : storedPrescription;
+    }
 
-    const normalizedInput = Number(document.getElementById('inLowestEnergy')?.value);
-    if (Number.isFinite(normalizedInput) && normalizedInput > 0) return normalizedInput * scale;
-    return scale;
+    const physicalInput = Number(document.getElementById('inLowestEnergy')?.value);
+    if (Number.isFinite(physicalInput) && physicalInput > 0) return physicalInput;
+    return DEFAULT_PRESCRIPTION_GY;
 }
 
 // Colorbar display range for the 2D dose overlay. The 3D surface keeps its

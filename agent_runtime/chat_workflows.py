@@ -20,6 +20,12 @@ import SimpleITK as sitk
 from agent_runtime.core import PlanningPhase, resolve_reference_direction_input
 from agent_runtime.contracts import RunStatus
 from agent_runtime.turn_policy import classify_local_turn
+from plans.dose_pre.model_loader import (
+    DEFAULT_PRESCRIPTION_GY,
+    DOSE_MODEL_SCALE_GY,
+    planning_dose_value_to_gy,
+    planning_dose_value_to_model,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -2202,8 +2208,9 @@ class ChatWorkflowMixin:
         seed_info: Optional[Dict] = None,
         radiation_array_params: Optional[Dict] = None,
         reference_direc: Optional[List] = None,
-        in_lowest_energy: Optional[int] = None,
-        out_highest_energy: Optional[int] = None,
+        in_lowest_energy: Optional[float] = None,
+        out_highest_energy: Optional[float] = None,
+        dose_value_unit: Optional[str] = "gy",
         DVH_rate: Optional[float] = None,
         max_iter: Optional[int] = None,
         rf_params: Optional[Dict] = None,
@@ -2249,8 +2256,31 @@ class ChatWorkflowMixin:
                 self.config,
                 default="auto",
             )
-        in_lowest_energy = in_lowest_energy if in_lowest_energy is not None else self.config.get("in_lowest_energy", 1)
-        out_highest_energy = out_highest_energy if out_highest_energy is not None else self.config.get("out_highest_energy", 1)
+        in_lowest_from_argument = in_lowest_energy is not None
+        out_highest_from_argument = out_highest_energy is not None
+        in_lowest_energy = (
+            in_lowest_energy
+            if in_lowest_energy is not None
+            else self.config.get("in_lowest_energy", DEFAULT_PRESCRIPTION_GY)
+        )
+        out_highest_energy = (
+            out_highest_energy
+            if out_highest_energy is not None
+            else self.config.get("out_highest_energy", DEFAULT_PRESCRIPTION_GY)
+        )
+        resolved_value_unit = (
+            dose_value_unit
+            if in_lowest_from_argument or out_highest_from_argument
+            else self.config.get("dose_value_unit")
+        )
+        in_lowest_gy = planning_dose_value_to_gy(
+            in_lowest_energy,
+            value_unit=resolved_value_unit,
+        )
+        out_highest_gy = planning_dose_value_to_gy(
+            out_highest_energy,
+            value_unit=resolved_value_unit,
+        )
         DVH_rate = DVH_rate if DVH_rate is not None else self.config.get("DVH_rate", 0.9)
         iter_rate = max_iter if max_iter is not None else self.config.get("iter_rate", self.config.get("max_iter", 2))
 
@@ -2359,8 +2389,9 @@ class ChatWorkflowMixin:
                 "dose_image": ct_image, "mode": mode,
                 "seed_info": seed_info, "target_value": target_value, "background_value": background_value, "obstacle_value": obstacle_value,
                 "dl_params": dl_params,
-                "in_lowest_dose": in_lowest_energy,
-                "out_highest_dose": out_highest_energy,
+                "in_lowest_dose": in_lowest_gy,
+                "out_highest_dose": out_highest_gy,
+                "dose_value_unit": "gy",
                 "DVH_rate": DVH_rate,
                 "infer_img_size": infer_img_size,
                 "image_normalize": image_normalize,
@@ -2384,20 +2415,41 @@ class ChatWorkflowMixin:
 
             self.memory.store("optimal_plan", optimal_plan)
             self.memory.store("dose_distribution", dose_distribution)
+            # Keep the historical workspace key in normalized model units so
+            # viewer APIs and restored sessions have one stable array contract.
+            # Store the physical-Gy representation separately.
+            self.memory.store("dose_distribution_gy", dose_distribution)
+            self.memory.store(
+                "dose_distribution_physical_gy",
+                dose_distribution * DOSE_MODEL_SCALE_GY,
+            )
+            self.memory.store("dose_scale_gy", DOSE_MODEL_SCALE_GY)
+            self.memory.store("plan_config", {
+                "dose_value_unit": "gy",
+                "in_lowest_energy": float(in_lowest_gy),
+                "out_highest_energy": float(out_highest_gy),
+                "in_lowest_dose_gy": float(in_lowest_gy),
+                "out_highest_dose_gy": float(out_highest_gy),
+                "dose_scale_gy": DOSE_MODEL_SCALE_GY,
+            })
             self.memory.store("total_seeds", total_seeds)
             logger.info(f"  Planned {total_seeds} seeds")
 
             logger.info("Step 7: Dose Evaluation")
             dose_spacing = ct_image.GetSpacing() if hasattr(ct_image, "GetSpacing") else [1.0, 1.0, 1.0]
             eval_result = self.registry.execute(
-                "dose_evaluation", dose_array=dose_distribution, ctv_mask=ctv_array,
-                oar_mask=oar_array, prescribed_dose=float(in_lowest_energy), target_value=target_value,
+                "dose_evaluation", dose_array=dose_distribution * DOSE_MODEL_SCALE_GY, ctv_mask=ctv_array,
+                oar_mask=oar_array, prescribed_dose=in_lowest_gy, target_value=target_value,
                 oar_constraints=dose_constraints,
                 organ_names=oar_metadata.get("organ_names", {}),
                 spacing=dose_spacing,
                 tumor_type=self.memory.retrieve("tumor_type_used") or "",
             )
-            self.memory.log_tool_call("dose_evaluation", {"prescribed_dose": float(in_lowest_energy)}, eval_result)
+            self.memory.log_tool_call(
+                "dose_evaluation",
+                {"prescribed_dose": in_lowest_gy},
+                eval_result,
+            )
             if not eval_result.success:
                 raise RuntimeError(f"Dose evaluation failed: {eval_result.error}")
 
@@ -2723,7 +2775,19 @@ class ChatWorkflowMixin:
                 "error": "One or more detected seeds fall outside the registered planning grid",
             }
 
-        prescription = float(self.config.get("in_lowest_energy", 1.0))
+        dose_value_unit = self.config.get("dose_value_unit")
+        prescription_gy = planning_dose_value_to_gy(
+            self.config.get("in_lowest_energy", DEFAULT_PRESCRIPTION_GY),
+            value_unit=dose_value_unit,
+        )
+        prescription = planning_dose_value_to_model(
+            prescription_gy,
+            value_unit="gy",
+        )
+        out_highest_gy = planning_dose_value_to_gy(
+            self.config.get("out_highest_energy", DEFAULT_PRESCRIPTION_GY),
+            value_unit=dose_value_unit,
+        )
         adjusted_volume = radiation_volume.copy()
         covered_target = active_target_mask & (delivered_dose >= prescription)
         adjusted_volume[covered_target] = background_value
@@ -2772,8 +2836,9 @@ class ChatWorkflowMixin:
                 target_value=target_value,
                 background_value=background_value,
                 obstacle_value=obstacle_value,
-                in_lowest_dose=prescription,
-                out_highest_dose=float(self.config.get("out_highest_energy", 1.0)),
+                in_lowest_dose=prescription_gy,
+                out_highest_dose=out_highest_gy,
+                dose_value_unit="gy",
                 DVH_rate=float(self.config.get("DVH_rate", 0.9)),
                 iter_rate=int(self.config.get("iter_rate", self.config.get("max_iter", 2))),
                 lower_bound=distance_filter.get("lower_bound", 0.8),
@@ -2793,13 +2858,13 @@ class ChatWorkflowMixin:
         cumulative_dose = delivered_dose + supplemental_dose
         eval_result = self.registry.execute(
             "dose_evaluation",
-            dose_array=cumulative_dose,
+            dose_array=cumulative_dose * DOSE_MODEL_SCALE_GY,
             ctv_mask=ctv_grid,
             target_value=target_value,
             oar_mask=oar_grid,
             organ_names=self.memory.retrieve("organ_names", {}) or {},
             oar_constraints=self.config.get("oar_constraints", {}) or {},
-            prescribed_dose=prescription,
+            prescribed_dose=prescription_gy,
             spacing=resampled_ct.GetSpacing(),
             tumor_type=self.memory.retrieve("tumor_type_used", "") or "",
         )
@@ -2827,6 +2892,12 @@ class ChatWorkflowMixin:
         self.memory.store("seed_plan", combined_plan)
         self.memory.store("seed_plan_serialized", combined_plan)
         self.memory.store("dose_distribution", cumulative_dose)
+        self.memory.store("dose_distribution_gy", cumulative_dose)
+        self.memory.store(
+            "dose_distribution_physical_gy",
+            cumulative_dose * DOSE_MODEL_SCALE_GY,
+        )
+        self.memory.store("dose_scale_gy", DOSE_MODEL_SCALE_GY)
         self.memory.store("dose_metrics", eval_result.metadata or {})
         self.memory.store("metrics", eval_result.metadata or {})
         self.memory.store("total_seeds", total_seeds)

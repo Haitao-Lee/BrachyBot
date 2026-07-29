@@ -713,6 +713,20 @@
     gap: 0.45rem;
     max-width: min(720px, 72vw);
 }
+.chat-image-gallery[data-layout="single"],
+.chat-image-gallery[data-layout="vertical"] {
+    grid-template-columns: minmax(0, 1fr);
+}
+.chat-image-gallery[data-layout="single"] {
+    max-width: min(620px, 72vw);
+}
+.chat-image-gallery[data-layout="side-by-side"] {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.chat-image-gallery[data-layout="vertical"] .chat-gallery-item img {
+    height: auto;
+    max-height: 360px;
+}
 .chat-gallery-item {
     width: 100%;
     min-width: 0;
@@ -1700,6 +1714,13 @@ body.monitor-active .chat-avatar.bot-avatar {
     color: var(--text-dim, #8da1b7);
     font-size: .7rem;
     white-space: nowrap;
+}
+@media (max-width: 720px) {
+    .chat-image-gallery,
+    .chat-image-gallery[data-layout="side-by-side"] {
+        grid-template-columns: minmax(0, 1fr);
+        max-width: 82vw;
+    }
 }
 .manual-workflow-progress-track {
     width: 64px;

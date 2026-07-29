@@ -47,6 +47,11 @@ class ChatTask:
     session_id: str
     agent: Any
     message: str
+    request_id: str = ""
+    user_message_id: str = ""
+    assistant_message_id: str = ""
+    internal_followup: bool = False
+    response_language: str = ""
     created_at: float = field(default_factory=time.time)
     status: str = "running"
     finished_at: Optional[float] = None
@@ -63,6 +68,13 @@ class ChatTask:
     persistence_error: str = ""
 
     def __post_init__(self) -> None:
+        self.request_id = str(self.request_id or self.task_id)
+        self.user_message_id = str(
+            self.user_message_id or f"user-{self.request_id}"
+        )
+        self.assistant_message_id = str(
+            self.assistant_message_id or f"assistant-{self.request_id}"
+        )
         self._events: List[str] = []
         self._terminal_event_seen = False
         self._condition = threading.Condition()
@@ -205,6 +217,10 @@ class ChatTask:
         with self._condition:
             return {
                 "task_id": self.task_id,
+                "request_id": self.request_id,
+                "user_message_id": self.user_message_id,
+                "assistant_message_id": self.assistant_message_id,
+                "internal_followup": bool(self.internal_followup),
                 "session_id": self.session_id,
                 "status": self.status,
                 "phase": (
@@ -274,6 +290,11 @@ class ChatTaskManager:
         on_finish: Optional[Callable[[ChatTask], Optional[bool]]] = None,
         start_gate: Optional[threading.Event] = None,
         agent_supplier: Optional[Callable[[], Any]] = None,
+        request_id: str = "",
+        user_message_id: str = "",
+        assistant_message_id: str = "",
+        internal_followup: bool = False,
+        response_language: str = "",
     ) -> ChatTask:
         """Start one worker, rejecting concurrent turns in the same case.
 
@@ -291,6 +312,11 @@ class ChatTaskManager:
                 session_id=str(session_id),
                 agent=agent,
                 message=str(message),
+                request_id=str(request_id or ""),
+                user_message_id=str(user_message_id or ""),
+                assistant_message_id=str(assistant_message_id or ""),
+                internal_followup=bool(internal_followup),
+                response_language=str(response_language or ""),
             )
             self._tasks[task.task_id] = task
 

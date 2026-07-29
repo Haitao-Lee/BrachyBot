@@ -30,7 +30,137 @@ def test_biomedparse_missing_runtime_fails_closed(monkeypatch):
     )
     assert result.success is False
     assert result.metadata["research_only"] is True
-    assert "BIOMEDPARSE_ROOT" in result.metadata["missing"]
+    assert any("BIOMEDPARSE_ROOT" in item for item in result.metadata["missing"])
+
+
+def test_biomedparse_default_checkpoint_uses_repository_deployment_path(monkeypatch):
+    import tool_factory.CTV_seg.biomedparse_v2 as adapter
+
+    monkeypatch.delenv("BIOMEDPARSE_ROOT", raising=False)
+    monkeypatch.delenv("BIOMEDPARSE_V2_ROOT", raising=False)
+    monkeypatch.delenv("BIOMEDPARSE_V2_CHECKPOINT", raising=False)
+    expected = adapter._default_checkpoint_path()
+    assert expected.name == "biomedparse_v2.ckpt"
+    assert expected.parts[-3:] == ("ctv", "biomedparse_v2", "biomedparse_v2.ckpt")
+    assert adapter._checkpoint_path(None) == expected
+
+
+def test_biomedparse_availability_requires_checkout_python_and_imports(
+    monkeypatch,
+    tmp_path,
+):
+    import tool_factory.CTV_seg.biomedparse_v2 as adapter
+
+    root = tmp_path / "BiomedParse"
+    (root / "configs" / "model").mkdir(parents=True)
+    (root / "inference.py").write_text("", encoding="utf-8")
+    (root / "utils.py").write_text("", encoding="utf-8")
+    checkpoint = tmp_path / "biomedparse_v2.ckpt"
+    checkpoint.write_bytes(b"weights")
+    runtime_python = tmp_path / "python"
+    runtime_python.write_bytes(b"runtime")
+    text_assets = tmp_path / "clip-vit-base-patch32"
+    text_assets.mkdir()
+    for filename in adapter._TEXT_ASSET_FILES:
+        (text_assets / filename).write_text("{}", encoding="utf-8")
+
+    monkeypatch.setattr(adapter, "_repo_root", lambda: root)
+    monkeypatch.setattr(adapter, "_checkpoint_path", lambda _root: checkpoint)
+    monkeypatch.setattr(adapter, "_text_assets_path", lambda _root: text_assets)
+    monkeypatch.setattr(adapter, "_runtime_python", lambda _root: runtime_python)
+    monkeypatch.setattr(
+        adapter,
+        "_probe_runtime",
+        lambda *_args: {
+            "ready": False,
+            "missing_modules": ["hydra", "detectron2"],
+            "python": str(runtime_python),
+            "probe_error": "",
+        },
+    )
+
+    availability = adapter._availability()
+
+    assert availability["available"] is False
+    assert availability["checkpoint"] == str(checkpoint)
+    assert availability["runtime_python"] == str(runtime_python)
+    assert any("hydra, detectron2" in item for item in availability["missing"])
+
+
+def test_biomedparse_availability_requires_local_text_assets(monkeypatch, tmp_path):
+    import tool_factory.CTV_seg.biomedparse_v2 as adapter
+
+    root = tmp_path / "BiomedParse"
+    (root / "configs" / "model").mkdir(parents=True)
+    (root / "inference.py").write_text("", encoding="utf-8")
+    (root / "utils.py").write_text("", encoding="utf-8")
+    checkpoint = tmp_path / "biomedparse_v2.ckpt"
+    checkpoint.write_bytes(b"weights")
+    runtime_python = tmp_path / "python"
+    runtime_python.write_bytes(b"runtime")
+    text_assets = tmp_path / "missing-clip-tokenizer"
+
+    monkeypatch.setattr(adapter, "_repo_root", lambda: root)
+    monkeypatch.setattr(adapter, "_checkpoint_path", lambda _root: checkpoint)
+    monkeypatch.setattr(adapter, "_text_assets_path", lambda _root: text_assets)
+    monkeypatch.setattr(adapter, "_runtime_python", lambda _root: runtime_python)
+    monkeypatch.setattr(
+        adapter,
+        "_probe_runtime",
+        lambda *_args: (_ for _ in ()).throw(
+            AssertionError("runtime probe must not run without local text assets")
+        ),
+    )
+
+    availability = adapter._availability()
+
+    assert availability["available"] is False
+    assert availability["text_assets"] == str(text_assets)
+    assert any("CLIP tokenizer assets" in item for item in availability["missing"])
+
+
+def test_external_biomedparse_worker_result_is_loaded(monkeypatch, tmp_path):
+    import tool_factory.CTV_seg.biomedparse_v2 as adapter
+
+    root = tmp_path / "BiomedParse"
+    root.mkdir()
+    checkpoint = tmp_path / "biomedparse_v2.ckpt"
+    checkpoint.write_bytes(b"weights")
+    runtime_python = tmp_path / "python"
+    runtime_python.write_bytes(b"runtime")
+    text_assets = tmp_path / "clip-vit-base-patch32"
+    text_assets.mkdir()
+
+    def fake_run(command, **_kwargs):
+        output_path = adapter.Path(command[command.index("--output") + 1])
+        metadata_path = adapter.Path(command[command.index("--metadata") + 1])
+        np.save(output_path, np.ones((2, 3, 4), dtype=np.uint8), allow_pickle=False)
+        metadata_path.write_text(
+            '{"object_existence_confidence": 0.91}',
+            encoding="utf-8",
+        )
+
+        class Completed:
+            returncode = 0
+            stdout = ""
+            stderr = ""
+
+        return Completed()
+
+    monkeypatch.setattr(adapter.subprocess, "run", fake_run)
+    mask, confidence = adapter._run_external_inference(
+        normalised=np.zeros((2, 3, 4), dtype=np.float32),
+        root=root,
+        checkpoint=checkpoint,
+        text_assets=text_assets,
+        runtime_python=runtime_python,
+        prompt="liver tumors",
+        slice_batch_size=2,
+    )
+
+    assert mask.shape == (2, 3, 4)
+    assert np.all(mask == 1)
+    assert confidence == 0.91
 
 
 def test_biomedparse_ct_window_maps_to_official_byte_range():
@@ -51,7 +181,7 @@ def test_unavailable_non_pancreatic_site_reports_research_fallback_state(monkeyp
     result = CTVSegmentationTool().execute(image=image, tumor_type="liver")
     assert result.success is False
     assert result.metadata["research_only"] is True
-    assert "BIOMEDPARSE_ROOT" in result.metadata["missing"]
+    assert any("BIOMEDPARSE_ROOT" in item for item in result.metadata["missing"])
 
 
 def test_mocked_biomedparse_runtime_preserves_lpi_geometry_and_records_chain(
@@ -103,7 +233,7 @@ def test_mocked_biomedparse_runtime_preserves_lpi_geometry_and_records_chain(
         lambda masks, ids: masks,
         torch,
     )
-    monkeypatch.setattr(adapter, "_load_runtime", lambda root, checkpoint: fake_runtime)
+    monkeypatch.setattr(adapter, "_load_runtime", lambda *args: fake_runtime)
 
     image = sitk.GetImageFromArray(np.zeros(source_shape, dtype=np.int16))
     image.SetSpacing((0.8, 0.9, 2.5))

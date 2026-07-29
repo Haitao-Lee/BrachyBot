@@ -15,6 +15,13 @@ import numpy as np
 import SimpleITK as sitk
 from flask import Response, current_app, jsonify, request, send_file, session as flask_session, stream_with_context
 
+from plans.dose_pre.model_loader import (
+    DEFAULT_PRESCRIPTION_GY,
+    dose_gy_to_model,
+    planning_dose_value_to_gy,
+    resolve_dose_scale_gy,
+    resolve_prescription_gy,
+)
 from web.auth import current_user
 from web.chat_tasks import ChatTask, ChatTaskManager
 from web.workspace_store import WorkspaceError, WorkspaceQuotaExceeded, WorkspaceNotFound
@@ -46,6 +53,27 @@ except ImportError:  # pragma: no cover - supports `python web/server.py`.
     import server_support as _server_support  # type: ignore
 
 logger = logging.getLogger(__name__)
+
+
+def _saved_dose_scale_gy(agent) -> float:
+    """Return the calibration owned by the current plan/session."""
+    if agent is None:
+        return DOSE_MODEL_SCALE_GY
+    memory = getattr(agent, "memory", None)
+    try:
+        plan_config = memory.retrieve("plan_config") or {}
+        dose_metrics = memory.retrieve("dose_metrics") or {}
+        stored_scale = memory.retrieve("dose_scale_gy")
+    except Exception:
+        plan_config = {}
+        dose_metrics = {}
+        stored_scale = None
+    return resolve_dose_scale_gy(
+        plan_config,
+        dose_metrics,
+        dose_scale_gy=stored_scale,
+    )
+
 
 _UI_BRIDGE_LOCK = _server_support._UI_BRIDGE_LOCK
 _append_ui_event = _server_support._append_ui_event
@@ -544,10 +572,14 @@ def register_planning_routes(
                 content: str,
                 steps: Any = None,
                 timestamp_ms: Optional[int] = None,
+                message_id: str = "",
+                request_id: str = "",
+                attachments: Any = None,
             ) -> None:
                 content = str(content or "")
                 if not content and message_type != "thinking":
-                    return
+                    if not attachments:
+                        return
                 candidate = {
                     "type": message_type,
                     "content": content,
@@ -562,9 +594,84 @@ def register_planning_routes(
                         if timestamp_ms is not None
                         else (task.finished_at or time.time()) * 1000
                     ),
+                    "id": str(message_id or uuid4().hex),
+                    "request_id": str(request_id or task.request_id),
+                    "message_kind": (
+                        "execution_trace"
+                        if message_type == "thinking"
+                        else "assistant_final"
+                        if message_type == "bot-response"
+                        else message_type
+                    ),
                 }
+                if attachments:
+                    candidate["attachments"] = list(attachments)
+
+                existing = None
+                for record in messages:
+                    if not isinstance(record, dict):
+                        continue
+                    if message_id and str(record.get("id") or "") == str(message_id):
+                        existing = record
+                        break
+                    if (
+                        request_id
+                        and str(record.get("request_id") or "") == str(request_id)
+                        and record.get("type") == message_type
+                    ):
+                        existing = record
+                        break
+                if existing is not None:
+                    if content:
+                        existing["content"] = content
+                    if steps:
+                        merged = {}
+                        order = []
+                        for index, step in enumerate(
+                            list(existing.get("steps") or []) + list(steps or [])
+                        ):
+                            if not isinstance(step, dict):
+                                continue
+                            key = str(
+                                step.get("id")
+                                or (
+                                    f"{step.get('type', '')}:"
+                                    f"{step.get('tool', '')}:"
+                                    f"{step.get('parent_tool', '')}:"
+                                    f"{step.get('title', '')}:{index}"
+                                )
+                            )
+                            if key not in merged:
+                                order.append(key)
+                            merged[key] = step
+                        existing["steps"] = [merged[key] for key in order]
+                    if attachments:
+                        known = {
+                            str(item.get("id") or item.get("url") or "")
+                            for item in (existing.get("attachments") or [])
+                            if isinstance(item, dict)
+                        }
+                        combined = list(existing.get("attachments") or [])
+                        for item in attachments:
+                            if not isinstance(item, dict):
+                                continue
+                            key = str(item.get("id") or item.get("url") or "")
+                            if key and key not in known:
+                                combined.append(item)
+                                known.add(key)
+                        existing["attachments"] = combined
+                    existing["timestamp"] = candidate["timestamp"]
+                    existing["request_id"] = candidate["request_id"]
+                    existing["message_kind"] = candidate["message_kind"]
+                    return
+
                 previous = messages[-1] if messages else None
-                if previous and previous.get("type") == candidate["type"] and str(previous.get("content") or "") == content:
+                if (
+                    previous
+                    and previous.get("type") == candidate["type"]
+                    and str(previous.get("content") or "") == content
+                    and not request_id
+                ):
                     return
                 messages.append(candidate)
 
@@ -586,6 +693,28 @@ def register_planning_routes(
                 questions remain separate when they were sent at another time.
                 """
                 for index, record in enumerate(messages):
+                    if (
+                        isinstance(record, dict)
+                        and str(record.get("request_id") or "") == task.request_id
+                    ):
+                        matching = [
+                            row
+                            for row in messages
+                            if isinstance(row, dict)
+                            and str(row.get("request_id") or "") == task.request_id
+                        ]
+                        return (
+                            any(
+                                row.get("type") == "bot-response"
+                                and str(row.get("content") or "").strip()
+                                for row in matching
+                            ),
+                            any(row.get("type") == "user" for row in matching),
+                            any(
+                                row.get("type") == "thinking" and row.get("steps")
+                                for row in matching
+                            ),
+                        )
                     if not isinstance(record, dict) or record.get("type") != "user":
                         continue
                     if str(record.get("content") or "") != display_message:
@@ -614,48 +743,116 @@ def register_planning_routes(
                 return False, False, False
 
             turn_already_committed, turn_has_user, turn_has_trace = existing_same_turn_state()
-            if not turn_has_user:
+            if not turn_has_user and not task.internal_followup:
                 # Keep the task creation timestamp explicit in the durable
                 # transcript. This is the source of truth when a browser
                 # reconnects after the live SSE stream has disappeared.
-                append_message("user", display_message, timestamp_ms=int(task.created_at * 1000))
+                append_message(
+                    "user",
+                    display_message,
+                    timestamp_ms=int(task.created_at * 1000),
+                    message_id=task.user_message_id,
+                    request_id=task.request_id,
+                )
             # ``workspace_checkpoint`` is an internal save operation, never a
             # user-facing workflow step.  Filter legacy journals as well as
             # live events so an older interrupted turn cannot resurrect a
             # fake pending step on the next session restore.
-            persisted_steps = [
-                step for step in list(task.steps)
-                if str(step.get("tool") or "") != "workspace_checkpoint"
-            ]
-            if persisted_steps and not turn_already_committed and not turn_has_trace:
+            persisted_steps = []
+            for raw_step in list(task.steps):
+                if str(raw_step.get("tool") or "") == "workspace_checkpoint":
+                    continue
+                step = dict(raw_step)
+                if str(step.get("tool") or "") == "ui_screenshot":
+                    metadata = (
+                        dict(step.get("metadata") or {})
+                        if isinstance(step.get("metadata"), dict)
+                        else {}
+                    )
+                    plan = (
+                        dict(metadata.get("screenshot_plan") or {})
+                        if isinstance(metadata.get("screenshot_plan"), dict)
+                        else {}
+                    )
+                    views = list(plan.get("views") or [])
+                    step["params"] = {
+                        "mode": str(plan.get("mode") or "chat"),
+                        "views": views[:8],
+                        "layout": str(plan.get("layout") or "auto"),
+                    }
+                    step["content"] = ""
+                    step["result"] = ""
+                    step["metadata"] = {
+                        "screenshot_plan": plan,
+                        "trace_summary_i18n": metadata.get(
+                            "trace_summary_i18n", {}
+                        ),
+                        "internal_only": True,
+                        "user_visible": False,
+                    }
+                persisted_steps.append(step)
+            if persisted_steps and (not turn_already_committed or task.internal_followup):
                 append_message(
                     "thinking",
                     "",
                     persisted_steps,
                     timestamp_ms=int((task.finished_at or time.time()) * 1000),
+                    message_id=f"trace-{task.request_id}",
+                    request_id=task.request_id,
                 )
             # A user-cancelled turn must never resurrect buffered draft text
             # when the case is reopened. Preserve the request and trace for
             # audit, then record one explicit terminal status instead.
-            if turn_already_committed:
+            if turn_already_committed and not task.internal_followup:
                 # The browser already persisted the complete visible turn.
                 # Do not append a second trace just because the detached
                 # finalizer is also doing its durability fallback.
                 pass
             elif final_status == "cancelled":
-                append_message("system", "Stopped.")
+                append_message(
+                    "system",
+                    "Stopped.",
+                    message_id=f"status-{task.request_id}",
+                    request_id=task.request_id,
+                )
             else:
                 final_response = task.response or task.streamed_response
+                screenshot_steps = [
+                    step for step in persisted_steps
+                    if str(step.get("tool") or "") == "ui_screenshot"
+                ]
+                non_screenshot_tools = [
+                    step for step in persisted_steps
+                    if step.get("type") == "tool"
+                    and str(step.get("tool") or "") not in {
+                        "ui_screenshot",
+                        "fact_checker",
+                        "completeness_checker",
+                    }
+                ]
+                screenshot_capture_phase = bool(screenshot_steps) and not non_screenshot_tools
                 if not final_response or re.match(
                     r"^Tools executed\. Check the execution trace above for results\.?$",
                     str(final_response).strip(),
                     re.I,
                 ):
                     final_response = fallback_task_response(task) or final_response
+                if screenshot_capture_phase and not task.internal_followup:
+                    final_response = ""
                 if final_response:
-                    append_message("bot-response", final_response)
+                    append_message(
+                        "bot-response",
+                        final_response,
+                        message_id=task.assistant_message_id,
+                        request_id=task.request_id,
+                    )
                 elif task.error:
-                    append_message("error", "AI error: " + task.error)
+                    append_message(
+                        "error",
+                        "AI error: " + task.error,
+                        message_id=f"error-{task.request_id}",
+                        request_id=task.request_id,
+                    )
 
             store.save_snapshot_patch(
                 task.user_id,
@@ -1014,7 +1211,7 @@ def register_planning_routes(
                 "dose_min": dose_min,
                 "dose_max": dose_max,
                 "dose_units": DOSE_MODEL_UNITS,
-                "dose_scale_gy": DOSE_MODEL_SCALE_GY,
+                "dose_scale_gy": _saved_dose_scale_gy(agent),
             })
         except Exception as e:
             logger.error(f"Get planning results failed: {e}")
@@ -1427,6 +1624,7 @@ def register_planning_routes(
                 mode=_cfg("mode", "rule_based"),
                 seed_info=_cfg("seed_info"),
                 planning_params={
+                    "dose_value_unit": _cfg("dose_value_unit", "gy"),
                     "in_lowest_energy": _cfg("in_lowest_energy"),
                     "out_highest_energy": _cfg("out_highest_energy"),
                     "DVH_rate": _cfg("DVH_rate"),
@@ -1540,14 +1738,19 @@ def register_planning_routes(
             # Include the prescription dose so the frontend can compute
             # absolute Gy from relative multipliers.
             #
-            # DOSE_MODEL_SCALE_GY: the dose_unet_spacing1mm model is rendered
-            # trained with labels where output 1.0 = 120 Gy.  All internal
-            # dose values are normalized; multiply by this constant to get Gy.
-            # This constant is shared with planning_pipeline.py and
-            # AgenticSys.py — keep them in sync if the model changes.
-            _ile = config.get("in_lowest_energy", 1.0)
-            display_3d["_prescriptionGy"] = float(_ile) * DOSE_MODEL_SCALE_GY
-            display_3d["_doseScaleGy"] = DOSE_MODEL_SCALE_GY
+            # DoseUNet output calibration is independent from prescription:
+            # current model output 1.0 is 190.8 Gy, while the default
+            # prescription remains 120 Gy.
+            dose_metrics = agent.memory.retrieve("dose_metrics") or {}
+            plan_config = agent.memory.retrieve("plan_config") or config
+            saved_scale = _saved_dose_scale_gy(agent)
+            prescription_gy = resolve_prescription_gy(
+                plan_config,
+                dose_metrics,
+                dose_scale_gy=saved_scale,
+            )
+            display_3d["_prescriptionGy"] = prescription_gy
+            display_3d["_doseScaleGy"] = saved_scale
 
             return jsonify({
                 "success": True,
@@ -1557,7 +1760,8 @@ def register_planning_routes(
                     "iso_opacities": [0.3, 0.2, 0.1, 0.05],
                 },
                 "display_3d": display_3d,
-                "in_lowest_energy": config.get("in_lowest_energy", 1.0),
+                "dose_value_unit": "gy",
+                "in_lowest_energy": prescription_gy,
             })
         except Exception as e:
             logger.error(f"Get config failed: {e}")
@@ -1637,17 +1841,23 @@ def register_planning_routes(
                         f"dose_shape={dose_np.shape}, spacing={spacing}, origin={origin}")
 
             level = float(threshold)
-            # The frontend sends threshold in Gy (e.g. 50, 100, 145).
-            # The dose array is in NORMALIZED units (0-94 range), and
-            # dose_eval multiplies by DOSE_MODEL_SCALE_GY to get Gy. So we
-            # must divide by 120 to match the dose array's range.
-            level_normalized = level / DOSE_MODEL_SCALE_GY
+            dose_metrics = agent.memory.retrieve("dose_metrics") or {}
+            plan_config = agent.memory.retrieve("plan_config") or {}
+            dose_scale_gy = resolve_dose_scale_gy(
+                plan_config,
+                dose_metrics,
+                dose_scale_gy=agent.memory.retrieve("dose_scale_gy"),
+            )
+            # The frontend sends a physical-Gy threshold. Convert it with the
+            # calibration persisted by this plan (190.8 for new plans, 120
+            # for historical sessions without calibration metadata).
+            level_normalized = dose_gy_to_model(level, dose_scale_gy)
             logger.info(f"[dose_isosurface] {level} Gy -> {level_normalized:.4f} normalized (data range: {data_min:.4f}-{data_max:.4f})")
             level = level_normalized
             if level <= data_min or level > data_max:
                 return jsonify({"success": True, "vertices": [], "faces": [], "vertex_count": 0,
                                 "face_count": 0, "threshold": threshold, "dose_range": [data_min, data_max],
-                                "dose_units": DOSE_MODEL_UNITS, "dose_scale_gy": DOSE_MODEL_SCALE_GY})
+                                "dose_units": DOSE_MODEL_UNITS, "dose_scale_gy": dose_scale_gy})
 
             # Use resampled_ct spacing (z,y,x -> x,y,z for marching cubes)
             spacing_zyx = tuple(float(s) for s in spacing[::-1])
@@ -1675,7 +1885,7 @@ def register_planning_routes(
                 "threshold": threshold,
                 "dose_range": [data_min, data_max],
                 "dose_units": DOSE_MODEL_UNITS,
-                "dose_scale_gy": DOSE_MODEL_SCALE_GY,
+                "dose_scale_gy": dose_scale_gy,
             })
         except Exception as e:
             logger.error(f"Dose isosurface failed: {e}")
@@ -1757,7 +1967,7 @@ def register_planning_routes(
                 "ct_origin": ct_origin,
                 "ct_size": ct_size,
                 "dose_units": DOSE_MODEL_UNITS,
-                "dose_scale_gy": DOSE_MODEL_SCALE_GY,
+                "dose_scale_gy": _saved_dose_scale_gy(agent),
                 "peak_voxel": {
                     "x": int(peak_x),
                     "y": int(peak_y),
@@ -1844,7 +2054,7 @@ def register_planning_routes(
                 "dose_min": float(dose_np.min()),
                 "dose_max": float(dose_np.max()),
                 "dose_units": DOSE_MODEL_UNITS,
-                "dose_scale_gy": DOSE_MODEL_SCALE_GY,
+                "dose_scale_gy": _saved_dose_scale_gy(agent),
             })
         except Exception as e:
             logger.error(f"Dose overlay slice failed: {e}")
@@ -1903,30 +2113,38 @@ def register_planning_routes(
             # 1.0×Rx = green, 1.5×Rx = yellow-green, 2.0×Rx = yellow, 4.0×Rx = orange.
             iso_colors_raw = iso_params.get("iso_colors", [[0,1,0], [0.53,1,0], [1,1,0], [1,0.53,0], [1,0,0]])
             iso_opacities = iso_params.get("iso_opacities", [0.7, 0.6, 0.5, 0.4])  # Increased opacity for better visibility
-            # Read prescription in Gy: prefer memory dose_metrics
-            # (already in normalized units * DOSE_MODEL_SCALE_GY) then fall
-            # back to reportForm, then default 120 Gy.
-            # DOSE_MODEL_SCALE_GY: normalized DoseUNet output is rendered as 120 Gy.
-            prescription_gy = DOSE_MODEL_SCALE_GY  # I-125 pancreatic default
+            # Read the physical prescription independently from the saved
+            # DoseUNet calibration, then build Rx-relative isodose levels.
+            dose_metrics = {}
             try:
-                dm = agent.memory.retrieve("dose_metrics") or {}
-                pnorm = dm.get("prescribed_dose")
-                if isinstance(pnorm, (int, float)) and pnorm > 0:
-                    prescription_gy = float(pnorm) * DOSE_MODEL_SCALE_GY
+                dose_metrics = agent.memory.retrieve("dose_metrics") or {}
             except Exception:
                 pass
+            plan_config = agent.memory.retrieve("plan_config") or config
+            dose_scale_gy = resolve_dose_scale_gy(
+                plan_config,
+                dose_metrics,
+                dose_scale_gy=agent.memory.retrieve("dose_scale_gy"),
+            )
+            prescription_gy = resolve_prescription_gy(
+                plan_config,
+                dose_metrics,
+                dose_scale_gy=dose_scale_gy,
+            )
             try:
                 rf = agent.memory.retrieve("report_form") or {}
                 if rf.get("planning", {}).get("prescriptionGy"):
                     prescription_gy = float(rf["planning"]["prescriptionGy"])
             except Exception:
                 pass
-            # The dose array is in NORMALIZED units (model output, where 1.0 ≈ prescription dose).
-            # iso_values_rel are relative multipliers (e.g. 1.0, 1.5, 2.0 × Rx).
-            # Since the dose array is already in the same normalized space, use iso_values_rel directly.
-            # DOSE_MODEL_SCALE_GY converts normalized values to Gy for display labels only.
+            # The stored dose array remains raw model output. Isodose
+            # multipliers are relative to the physical prescription, so first
+            # calculate Gy labels and then convert each level to model units.
             iso_values_gy = [float(v) * prescription_gy for v in iso_values_rel]  # Gy for labels
-            iso_values_contour = [float(v) for v in iso_values_rel]  # normalized for find_contours
+            iso_values_contour = [
+                dose_gy_to_model(value, dose_scale_gy)
+                for value in iso_values_gy
+            ]
 
             # Extract 2D slice from 3D dose array
             if axis == 'axial' or axis == 'z':
@@ -1960,7 +2178,7 @@ def register_planning_routes(
                     "dose_range": [d_min, d_max],
                     "slice_range": [s_min, s_max],
                     "dose_units": DOSE_MODEL_UNITS,
-                    "dose_scale_gy": DOSE_MODEL_SCALE_GY,
+                    "dose_scale_gy": dose_scale_gy,
                 })
 
             # Generate contour lines using marching squares
@@ -1999,7 +2217,7 @@ def register_planning_routes(
                 "slice_range": [s_min, s_max],
                 "slice_shape": [int(slice_2d.shape[0]), int(slice_2d.shape[1])],
                 "dose_units": DOSE_MODEL_UNITS,
-                "dose_scale_gy": DOSE_MODEL_SCALE_GY,
+                "dose_scale_gy": dose_scale_gy,
             })
         except Exception as e:
             logger.error(f"Dose contour slice failed: {e}")
@@ -2018,9 +2236,10 @@ def register_planning_routes(
             return jsonify({
                 "success": True,
                 "defaults": defaults,
-                # The JSON defaults stay normalized for backward-compatible
-                # planning code; the UI uses this scale to show physical Gy.
+                # Planning defaults are physical Gy. This separate scale
+                # describes the raw DoseUNet output calibration.
                 "dose_scale_gy": DOSE_MODEL_SCALE_GY,
+                "default_prescription_gy": DEFAULT_PRESCRIPTION_GY,
             })
         except Exception as e:
             logger.error(f"Get config failed: {e}")
@@ -2061,7 +2280,9 @@ def register_planning_routes(
                 "seed_info", "radiation_array_params", "reference_direc",
                 "ref_direc_auto", "reference_direc_mode",
                 "tumor_type",
-                "in_lowest_energy", "out_highest_energy", "DVH_rate",
+                "dose_value_unit",
+                "in_lowest_energy", "out_highest_energy",
+                "in_lowest_dose_gy", "out_highest_dose_gy", "DVH_rate",
                 "max_iter", "rf_params", "distance_filter",
                 "direc_resolution", "dl_params", "iter_rate", "replan_rate",
                 "mode",
@@ -2069,6 +2290,30 @@ def register_planning_routes(
             for key in param_keys:
                 if key in data:
                     agent.config[key] = data[key]
+            # API updates use the current physical-Gy contract. Legacy
+            # multiplier migration happens while restoring old saved plans,
+            # not while accepting a new configuration request.
+            value_unit = data.get("dose_value_unit") or "gy"
+            if "in_lowest_energy" in data and "in_lowest_dose_gy" not in data:
+                in_lowest_gy = planning_dose_value_to_gy(
+                    data["in_lowest_energy"],
+                    value_unit=value_unit,
+                )
+                agent.config["in_lowest_energy"] = in_lowest_gy
+                agent.config["in_lowest_dose_gy"] = in_lowest_gy
+            if "out_highest_energy" in data and "out_highest_dose_gy" not in data:
+                out_highest_gy = planning_dose_value_to_gy(
+                    data["out_highest_energy"],
+                    value_unit=value_unit,
+                )
+                agent.config["out_highest_energy"] = out_highest_gy
+                agent.config["out_highest_dose_gy"] = out_highest_gy
+            if "in_lowest_dose_gy" in data:
+                agent.config["in_lowest_energy"] = float(data["in_lowest_dose_gy"])
+            if "out_highest_dose_gy" in data:
+                agent.config["out_highest_energy"] = float(data["out_highest_dose_gy"])
+            agent.config["dose_value_unit"] = "gy"
+            agent.config["dose_scale_gy"] = DOSE_MODEL_SCALE_GY
 
             return jsonify({"success": True, "config": agent.config})
         except Exception as e:
@@ -3074,6 +3319,7 @@ def register_planning_routes(
             radiation_array_params = planning_state.get("radiation_params") or config.get('radiation_array_params')
             in_lowest_energy = planning_state.get("in_lowest_energy") if planning_state.get("in_lowest_energy") is not None else config.get('in_lowest_energy')
             out_highest_energy = planning_state.get("out_highest_energy") if planning_state.get("out_highest_energy") is not None else config.get('out_highest_energy')
+            dose_value_unit = planning_state.get("dose_value_unit") or config.get("dose_value_unit")
             DVH_rate = planning_state.get("dvh_rate") if planning_state.get("dvh_rate") is not None else config.get('DVH_rate')
             max_iter = planning_state.get("max_iter") if planning_state.get("max_iter") is not None else config.get('max_iter')
             rf_params = config.get('rf_params')
@@ -3088,6 +3334,7 @@ def register_planning_routes(
                 reference_direc=reference_direc,
                 in_lowest_energy=in_lowest_energy,
                 out_highest_energy=out_highest_energy,
+                dose_value_unit=dose_value_unit,
                 DVH_rate=DVH_rate,
                 max_iter=max_iter,
                 rf_params=rf_params,
@@ -3352,13 +3599,12 @@ def register_planning_routes(
             dose_scale_gy = float(
                 agent.memory.retrieve("dose_scale_gy") or DOSE_MODEL_SCALE_GY
             )
-            prescription_gy = dose_metrics.get("prescription_gy")
-            if not prescription_gy:
-                prescription_norm = dose_metrics.get("prescribed_dose")
-                if isinstance(prescription_norm, (int, float)) and prescription_norm > 0:
-                    prescription_gy = float(prescription_norm) * dose_scale_gy
-
             plan_config = agent.memory.retrieve("plan_config") or {}
+            prescription_gy = resolve_prescription_gy(
+                plan_config,
+                dose_metrics,
+                dose_scale_gy=dose_scale_gy,
+            )
             seed_info = plan_config.get("seed_info") or getattr(agent, "config", {}).get("seed_info", {})
             from tool_factory.output.dicom_rt_exporter import DicomRTExporterTool
 
@@ -3523,6 +3769,23 @@ def register_planning_routes(
         stream = data.get("stream", True)  # Default to streaming
         image_path = data.get("image_path", None)  # Optional image path
         clear_context = data.get("clear_context", False)  # Optional: clear conversation history
+        request_id = re.sub(
+            r"[^A-Za-z0-9_.:-]",
+            "",
+            str(data.get("request_id") or ""),
+        )[:128] or uuid4().hex
+        user_message_id = re.sub(
+            r"[^A-Za-z0-9_.:-]",
+            "",
+            str(data.get("user_message_id") or ""),
+        )[:160] or f"user-{request_id}"
+        assistant_message_id = re.sub(
+            r"[^A-Za-z0-9_.:-]",
+            "",
+            str(data.get("assistant_message_id") or ""),
+        )[:160] or f"assistant-{request_id}"
+        internal_followup = bool(data.get("internal_followup", False))
+        response_language = str(data.get("response_language") or "")[:8]
         if not message and not image_path:
             return jsonify({"error": "message or image is required"}), 400
 
@@ -3625,6 +3888,11 @@ def register_planning_routes(
                     on_finish=finalize_chat_task,
                     start_gate=start_gate,
                     agent_supplier=agent_supplier if agent is None else None,
+                    request_id=request_id,
+                    user_message_id=user_message_id,
+                    assistant_message_id=assistant_message_id,
+                    internal_followup=internal_followup,
+                    response_language=response_language,
                 )
             except RuntimeError as exc:
                 return jsonify({
@@ -3636,6 +3904,7 @@ def register_planning_routes(
                 checkpoint = {
                     "kind": "chat",
                     "task_id": task.task_id,
+                    "request_id": task.request_id,
                     "user_message": message[:500],
                 }
                 if agent is not None:
@@ -3667,15 +3936,21 @@ def register_planning_routes(
                     messages = list(chat.get("messages") or [])
                     display_message = full_message.split("\n\n[Uploaded image path:", 1)[0]
                     previous = messages[-1] if messages else None
-                    if not (
+                    if not internal_followup and not (
                         previous
                         and previous.get("type") == "user"
-                        and str(previous.get("content") or "") == display_message
+                        and (
+                            str(previous.get("id") or "") == task.user_message_id
+                            or str(previous.get("content") or "") == display_message
+                        )
                     ):
                         messages.append({
                             "type": "user",
                             "content": display_message,
                             "timestamp": int(time.time() * 1000),
+                            "id": task.user_message_id,
+                            "request_id": task.request_id,
+                            "message_kind": "user",
                         })
                     store.save_snapshot_patch(
                         owner["id"],
@@ -4092,20 +4367,40 @@ def register_planning_routes(
     @require_api_key
     @rate_limit
     def api_screenshot():
-        """Receive a screenshot from the frontend and save it."""
+        """Save one screenshot attachment under its owning chat request."""
         data = request.get_json() or {}
         image_data = data.get("image", "")  # base64 data URL
         description = data.get("description", "screenshot")
+        title = str(data.get("title") or "")[:240]
         target = data.get("target", "unknown")
+        mode = str(data.get("mode") or "chat").lower()
+        if mode not in {"chat", "monitor", "report"}:
+            return jsonify({"error": "Invalid screenshot mode"}), 400
+        request_id = re.sub(
+            r"[^A-Za-z0-9_.:-]", "", str(data.get("request_id") or "")
+        )[:128]
+        message_id = re.sub(
+            r"[^A-Za-z0-9_.:-]", "", str(data.get("message_id") or "")
+        )[:160]
+        attachment_id = re.sub(
+            r"[^A-Za-z0-9_.:-]", "", str(data.get("attachment_id") or "")
+        )[:160] or f"screenshot-{uuid4().hex}"
+        planning_id = str(data.get("planning_id") or "")[:160]
+        case_id = str(data.get("case_id") or "")[:160]
+        data_version = str(data.get("data_version") or "")[:160]
+        question = str(data.get("question") or "")[:2000]
+        layout = str(data.get("layout") or "auto")[:32]
+        view_metadata = data.get("view_metadata")
+        if not isinstance(view_metadata, dict):
+            view_metadata = {}
 
         if not image_data:
             return jsonify({"error": "No image data provided"}), 400
 
         try:
-            import uuid
             img_bytes = _decode_png_data_url(image_data)
 
-            filename = f"screenshot_{uuid.uuid4().hex[:12]}.png"
+            filename = f"{mode}_screenshot_{uuid4().hex[:12]}.png"
             try:
                 store, user, session_id = request_case_context()
             except WorkspaceError:
@@ -4113,6 +4408,76 @@ def register_planning_routes(
             filepath = store.write_screenshot(user["id"], session_id, filename, img_bytes)
             url = f"/api/sessions/{session_id}/screenshots/{filename}"
             logger.info(f"Screenshot saved: {filepath} ({len(img_bytes)} bytes)")
+
+            attachment = {
+                "id": attachment_id,
+                "type": "screenshot",
+                "url": url,
+                "target": target,
+                "mode": mode,
+                "description": description,
+                "title": title,
+                "question": question,
+                "layout": layout,
+                "session_id": session_id,
+                "case_id": case_id or session_id,
+                "planning_id": planning_id or None,
+                "message_id": message_id or None,
+                "request_id": request_id or None,
+                "data_version": data_version or None,
+                "created_at": time.time(),
+                "view_metadata": view_metadata,
+            }
+
+            # Persist the attachment independently from the long-running chat
+            # task. The final response later updates this same stable message
+            # record instead of replacing it, so refresh/session switches keep
+            # both the image and its execution trace.
+            if request_id or message_id:
+                snapshot = store.load_snapshot(user["id"], session_id)
+                chat = snapshot.get("chat") if isinstance(snapshot.get("chat"), dict) else {}
+                messages = list(chat.get("messages") or [])
+                owner_message = None
+                for record in messages:
+                    if not isinstance(record, dict):
+                        continue
+                    if message_id and str(record.get("id") or "") == message_id:
+                        owner_message = record
+                        break
+                    if (
+                        request_id
+                        and str(record.get("request_id") or "") == request_id
+                        and record.get("type") == "bot-response"
+                    ):
+                        owner_message = record
+                        break
+                if owner_message is None:
+                    owner_message = {
+                        "type": "bot-response",
+                        "content": "",
+                        "steps": None,
+                        "timestamp": int(time.time() * 1000),
+                        "id": message_id or f"assistant-{request_id}",
+                        "request_id": request_id,
+                        "message_kind": "assistant_final",
+                        "attachments": [],
+                    }
+                    messages.append(owner_message)
+                attachments = list(owner_message.get("attachments") or [])
+                if not any(
+                    isinstance(item, dict)
+                    and str(item.get("id") or "") == attachment_id
+                    for item in attachments
+                ):
+                    attachments.append(attachment)
+                owner_message["attachments"] = attachments[-16:]
+                store.save_snapshot_patch(
+                    user["id"],
+                    session_id,
+                    {"chat": {"messages": messages}},
+                    expected_revision=None,
+                    reason="chat.screenshot.attached",
+                )
 
             return jsonify({
                 "success": True,
@@ -4123,6 +4488,7 @@ def register_planning_routes(
                 "filename": filename,
                 "description": description,
                 "target": target,
+                "attachment": attachment,
             })
         except Exception as e:
             logger.error(f"Screenshot save failed: {e}")
