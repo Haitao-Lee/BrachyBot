@@ -2335,3 +2335,9 @@ The current verification baseline is **354 passed, 2 skipped, 3 warnings** in
 the full Python suite; the warnings are third-party SimpleITK SWIG deprecations.
 See [`docs/CODE_REVIEW.md`](docs/CODE_REVIEW.md) for the root-cause analysis and
 the targeted segmentation/viewer checks.
+
+The current interaction polish also has explicit runtime fallbacks: Monitor's
+viewport edge uses a theme-colored fixed layer with a plain-color fallback,
+Puncture Guide empty/native controls remain on the dark workspace surface, and
+Tumor Type colors are painted before and after the server capability probe so
+the dropdown has only the callable-green/unavailable-red distinction.

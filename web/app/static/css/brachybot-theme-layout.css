@@ -811,6 +811,8 @@ body.workspace-transitioning #sessionList {
     padding: 7px;
     border: 1px solid var(--border);
     border-radius: 5px;
+    background: var(--bg-2);
+    color-scheme: dark;
 }
 
 .guide-parameters > summary {
@@ -833,6 +835,12 @@ body.workspace-transitioning #sessionList {
     min-width: 0;
     color: var(--text-secondary);
     font-size: 0.57rem;
+}
+
+.guide-parameter-grid label > span:first-child {
+    min-height: 1.15em;
+    line-height: 1.15;
+    color: var(--text-secondary);
 }
 
 .guide-input-unit {
@@ -889,8 +897,33 @@ body.workspace-transitioning #sessionList {
     color: var(--text);
 }
 
+/* Native empty/multiple selects otherwise fall back to a flat grey OS
+   surface. Keep all guide controls on the same dark workspace surface. */
+.guide-parameter-grid select,
+.guide-parameter-grid select[multiple],
+.guide-parameter-grid select:disabled {
+    background-color: var(--bg-3) !important;
+    color: var(--text) !important;
+    opacity: 1 !important;
+    color-scheme: dark;
+}
+
+.guide-parameter-grid select.is-empty {
+    border-style: dashed;
+    color: var(--text-dim) !important;
+}
+
+.guide-parameter-grid select option,
+.guide-parameter-grid select option:disabled {
+    background-color: var(--bg-2) !important;
+    color: var(--text-secondary) !important;
+    opacity: 1;
+}
+
 .guide-select-grid label {
-    grid-template-rows: auto auto;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
 }
 
 .guide-select-grid select {

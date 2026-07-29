@@ -160,7 +160,19 @@
         if (!control) return;
         const previouslySelected = new Set(selectedNeedleIds());
         control.replaceChildren();
-        (Array.isArray(needles) ? needles : []).forEach(needle => {
+        const items = Array.isArray(needles) ? needles : [];
+        if (!items.length) {
+            const empty = document.createElement('option');
+            empty.value = '';
+            empty.disabled = true;
+            empty.selected = true;
+            empty.textContent = t('鏆傛棤鍙敤鐨勭┛鍒洪拡', 'No planned needles available');
+            control.classList.add('is-empty');
+            control.append(empty);
+            return;
+        }
+        control.classList.remove('is-empty');
+        items.forEach(needle => {
             const id = String(needle?.id || '');
             if (!id) return;
             const option = document.createElement('option');

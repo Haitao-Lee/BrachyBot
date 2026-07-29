@@ -1553,14 +1553,21 @@ body.monitor-active::after {
    on browsers that establish the viewport from the body box. */
 .monitor-edge-overlay {
     position: fixed;
-    inset: 0;
+    inset: 6px;
     z-index: 2147483000;
     pointer-events: none;
     box-sizing: border-box;
-    border: 2px solid color-mix(in srgb, var(--accent, #4f7cff) 36%, transparent);
+    /* Keep a plain-color fallback for embedded clinical browsers that do not
+       implement color-mix yet. */
+    border: 2px solid rgba(79, 124, 255, 0.30);
+    border-color: color-mix(in srgb, var(--primary, #4f7cff) 36%, transparent);
     box-shadow:
-        0 0 20px color-mix(in srgb, var(--accent, #4f7cff) 16%, transparent) inset,
-        0 0 34px color-mix(in srgb, var(--accent, #4f7cff) 12%, transparent) inset;
+        0 0 20px rgba(79, 124, 255, 0.12) inset,
+        0 0 34px rgba(79, 124, 255, 0.08) inset;
+    box-shadow:
+        0 0 20px color-mix(in srgb, var(--primary, #4f7cff) 16%, transparent) inset,
+        0 0 34px color-mix(in srgb, var(--primary, #4f7cff) 12%, transparent) inset;
+    will-change: opacity, box-shadow;
     animation: monitor-edge-breathe 2.8s ease-in-out infinite;
 }
 .monitor-edge-overlay[hidden] {
