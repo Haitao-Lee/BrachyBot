@@ -40,6 +40,21 @@ DEFAULT_USER_QUOTA_BYTES = int(
 TRASH_RETENTION_SECONDS = int(
     os.environ.get("BRACHYBOT_TRASH_RETENTION_DAYS", "7")
 ) * 24 * 60 * 60
+# Candidate trajectories are an in-process planning workspace, not durable
+# clinical results. Persisting thousands of nested NumPy objects on every
+# memory.store checkpoint made a chat turn spend minutes encoding data that can
+# be regenerated from the final seed plan and needle geometry. Small fixtures
+# and manual plans remain persisted for compatibility.
+TRANSIENT_PLANNING_RESULT_KEYS = frozenset({
+    "refined_trajectories",
+    "radiation_volume",
+    "resampled_ct",
+    "resampled_ctv",
+    "resampled_oar",
+})
+TRANSIENT_COLLECTION_LIMIT = int(
+    os.environ.get("BRACHYBOT_TRANSIENT_COLLECTION_LIMIT", "256")
+)
 
 logger = logging.getLogger(__name__)
 
@@ -838,6 +853,17 @@ class WorkspaceStore:
         checkpoint_generation: Optional[int] = None,
     ) -> Dict[str, Any]:
         """Persist one coherent agent checkpoint for an account-owned case."""
+        if checkpoint_generation is not None:
+            with self._lock:
+                current_generation = self._checkpoint_generations.get((user_id, session_id), 0)
+            if int(checkpoint_generation) != int(current_generation):
+                # A newer memory mutation is already scheduled. Do not take a
+                # snapshot lock or walk the agent just to discard stale work.
+                logger.debug(
+                    "workspace checkpoint skipped stale session=%s reason=%s generation=%s current_generation=%s",
+                    session_id, reason, checkpoint_generation, current_generation,
+                )
+                return {}
         started = time.perf_counter()
         logger.info(
             "workspace checkpoint started session=%s reason=%s",
@@ -1071,7 +1097,18 @@ class WorkspaceStore:
                 ct_can_be_reloaded = ct_candidate.is_file()
             except (OSError, WorkspaceError, ValueError):
                 ct_can_be_reloaded = False
+        skipped_transient_results: List[str] = []
         for key, value in planning_results.items():
+            if key in TRANSIENT_PLANNING_RESULT_KEYS:
+                skipped_transient_results.append(str(key))
+                continue
+            if key == "trajectories":
+                try:
+                    if len(value) > TRANSIENT_COLLECTION_LIMIT:
+                        skipped_transient_results.append(str(key))
+                        continue
+                except (TypeError, ValueError):
+                    pass
             if key in {"ct_image", "ct_sitk", "ct_image_raw"}:
                 # CT is already durably owned by the case input directory and
                 # is reconstructed on hydration. Persisting the same voxel
@@ -1086,11 +1123,12 @@ class WorkspaceStore:
                 continue
             encoded_results[str(key)] = encoded
         logger.info(
-            "workspace checkpoint artifacts encoded session=%s duration_ms=%.1f arrays_created=%d arrays_reused=%d",
+            "workspace checkpoint artifacts encoded session=%s duration_ms=%.1f arrays_created=%d arrays_reused=%d transient_skipped=%s",
             session_id,
             (time.perf_counter() - encode_started) * 1000.0,
             len(created_array_paths),
             reused_array_count,
+            ",".join(skipped_transient_results) or "none",
         )
         return {
             "agent_state": agent_state,
@@ -1432,14 +1470,34 @@ class WorkspaceStore:
         generation: Optional[int] = None,
     ) -> None:
         key = (user_id, session_id)
+        # Never queue a second full snapshot behind an active one. The old
+        # implementation blocked on the per-case lock, then encoded and
+        # discarded each stale generation in turn. A non-blocking retry lets
+        # the newest generation win without serially replaying obsolete work.
+        with self._lock:
+            current_generation = self._checkpoint_generations.get(key, 0)
+            if generation is not None and int(generation) != int(current_generation):
+                self._checkpoint_timers.pop(key, None)
+                return
+            self._checkpoint_timers.pop(key, None)
+        work_lock = self._checkpoint_work_lock(user_id, session_id)
+        if not work_lock.acquire(blocking=False):
+            with self._lock:
+                latest_generation = self._checkpoint_generations.get(key, 0)
+                if generation is None or int(generation) == int(latest_generation):
+                    retry = threading.Timer(
+                        0.25,
+                        self._checkpoint_timer,
+                        args=(user_id, session_id, agent, reason, operation, latest_generation),
+                    )
+                    retry.daemon = True
+                    self._checkpoint_timers[key] = retry
+                    retry.start()
+            return
         try:
-            self.snapshot_agent(
-                user_id,
-                session_id,
-                agent,
-                reason=reason,
-                operation=operation,
-                checkpoint_generation=generation,
+            self._snapshot_agent_locked(
+                user_id, session_id, agent, reason=reason,
+                operation=operation, checkpoint_generation=generation,
             )
         except WorkspaceNotFound:
             pass
@@ -1449,9 +1507,7 @@ class WorkspaceStore:
                 session_id, reason, exc_info=True,
             )
         finally:
-            with self._lock:
-                if generation is None or self._checkpoint_generations.get(key, 0) == int(generation):
-                    self._checkpoint_timers.pop(key, None)
+            work_lock.release()
 
     def flush_agent_checkpoint(
         self,

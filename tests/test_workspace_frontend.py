@@ -57,7 +57,10 @@ def test_session_restore_uses_corner_non_blocking_hydration_and_fresh_snapshot()
     assert "authoritativeWorkspace" in workspace
     assert "'/api/workspace/snapshot'" in workspace
     assert "X-BrachyBot-Session" in workspace
-    assert "position: fixed; right: 18px; bottom: 18px" in css
+    assert ".workspace-hydration-notice" in css
+    assert "position: fixed" in css
+    assert "right: 18px" in css
+    assert "bottom: 18px" in css
     assert "body.workspace-hydrating::after { display: none; }" in css
     assert "pointer-events: none" in css
     assert "workspaceSnapshotHasClinicalResources" in workspace
@@ -81,6 +84,20 @@ def test_surgical_guide_empty_tool_call_uses_generate_default():
     assert '"default": "generate"' in tool
     assert '"required": []' in tool
     assert 'or "generate"' in tool
+
+
+def test_planning_completion_refresh_is_not_tied_to_one_trace_shape():
+    """Every real planning event must converge on one case-owned UI refresh."""
+    chat = read("web/app/static/js/brachybot-chat-todo.js")
+    planning = read("web/app/static/js/brachybot-dvh-planning.js")
+    assert "const PLANNING_EVENT_TOOLS = new Set" in chat
+    assert "parentTool" in chat
+    assert "turnSawPlanningWork" in chat
+    assert "if (_planningToolsInSteps.length > 0 || turnSawPlanningWork)" in chat
+    assert "retryPending: true" in chat
+    assert "autoGenerateGuide: true" in chat
+    assert "await guideRestorePromise" in planning
+    assert "reconcileDataTreeVisualNodes" in planning
 
 
 def test_final_chat_commit_separates_transcript_from_heavy_checkpoint():
@@ -881,7 +898,11 @@ def test_background_case_restore_shows_a_corner_indicator_and_restores_case_prod
     index = read("web/app/index.html")
 
     assert 'id="workspaceHydrationNotice"' in index
-    assert "position: fixed; right: 18px; bottom: 18px" in read("web/app/static/css/brachybot-auth.css")
+    hydration_css = read("web/app/static/css/brachybot-auth.css")
+    assert ".workspace-hydration-notice" in hydration_css
+    assert "position: fixed" in hydration_css
+    assert "right: 18px" in hydration_css
+    assert "bottom: 18px" in hydration_css
     assert "Restoring case resources..." in workspace
     assert "X-BrachyBot-Session" in workspace
     assert "applyChatSnapshotFast(workspace)" in workspace

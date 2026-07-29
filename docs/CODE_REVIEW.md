@@ -9825,6 +9825,55 @@ pancreatic nnU-Net route remains unchanged and does not use this fallback.
 - Model binaries and tokenizer assets remain ignored deployment artifacts and
   are not committed to Git.
 
+## 2026-07-30 - Planning completion convergence
+
+The planning-completion path was hardened after a completed planning trace
+produced metrics and arrays on the server but left the Data Tree, 3D viewer,
+clinical evaluation, report, and surgical-guide node empty. The root cause was
+a client-side completion detector that required one exact rendered trace shape
+(`type: "tool"`) and a narrow top-level tool list. Pipeline sub-steps and
+provider-specific compact events could therefore complete without scheduling
+the case refresh.
+
+`web/app/static/js/brachybot-chat-todo.js` now records planning work from the
+raw `tool` and `parent_tool` fields for the full planning family. Completion
+is recognized at the terminal step, final response, or stream `done` boundary,
+and all of those paths schedule the same session-fenced `refreshPlanningUI()`
+call. The refresh uses the case-owned results endpoint with bounded
+pending-result polling, so a short persistence race is not mistaken for an
+empty plan.
+
+`web/app/static/js/brachybot-dvh-planning.js` now treats surgical-guide
+restoration/generation as part of the planning refresh contract. Once the
+authoritative planning data is available, the guide promise is reconciled with
+the Data Tree and 3D scene before the normal report repaint; background restore
+keeps the shell responsive while still repainting when the guide is ready.
+This single convergence path updates seeds, needles, dose overlay, DVH,
+clinical evaluation, report data/figures, and the surgical guide without
+creating a second source of truth.
+
+Regression coverage was added in `tests/test_workspace_frontend.py` for compact
+and parent-tool planning events, pending-result retry, and guide/Data Tree
+reconciliation. JavaScript syntax checks and the focused Python frontend tests
+must pass before this change is pushed.
+
+The accompanying runtime log also exposed a persistence bottleneck: candidate
+trajectory arrays were being serialized as thousands of nested NumPy sidecars
+on every debounced memory checkpoint. Several stale generations then waited on
+the same case lock and performed the same expensive work before being discarded;
+one background checkpoint took about 700 seconds. `web/workspace_store.py` now
+skips regenerated planning-grid workspaces and large candidate collections,
+keeps the authoritative seed/needle/dose/metric snapshots, checks generation
+freshness before walking the agent, and retries a checkpoint without blocking
+behind an active older generation. This preserves restartable clinical results
+while keeping transient optimizer state out of the session save path.
+
+The same log showed a flattened CTV array reaching physical needle validation
+against a `(48, 512, 512)` CT. `tool_factory/seed_plan/planning_pipeline.py` now
+normalizes a legacy one-dimensional mask only when its voxel count exactly
+matches the current CT grid and rejects other-grid masks instead of bypassing
+the safety check. Regression tests cover both cases.
+
 ## 2026-07-29 - Data Tree transactions and three-level Scene export
 
 This change replaces presentation-only Data Tree mutations and ad hoc

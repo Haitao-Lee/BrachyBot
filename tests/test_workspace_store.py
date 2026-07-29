@@ -383,6 +383,23 @@ def test_checkpoint_reuses_nested_arrays_after_restart_and_logs_stages(tmp_path,
     assert "arrays_reused=5" in messages
 
 
+def test_checkpoint_drops_large_candidate_trajectory_workspace(tmp_path):
+    """Thousands of optimizer candidates are regenerated, not session state."""
+    store = WorkspaceStore(tmp_path / "runtime")
+    user = store.create_user("candidate_owner", "hash")
+    case = store.create_session(user["id"], "Candidate case")
+    agent = _Agent()
+    agent.memory.planning_results["trajectories"] = [
+        {"point": np.zeros(3, dtype=np.float32), "direction": np.ones(3, dtype=np.float32)}
+        for _ in range(300)
+    ]
+    agent.memory._planning_versions["trajectories"] = 1
+
+    snapshot = store.snapshot_agent(user["id"], case.id, agent, reason="candidate.workspace")
+    assert "trajectories" not in snapshot["agent"]["planning_results"]
+    assert "seed_plan_serialized" in snapshot["agent"]["planning_results"]
+
+
 def test_generated_artifacts_apply_replacement_aware_account_quota(tmp_path):
     store = WorkspaceStore(tmp_path / "runtime")
     user = store.create_user("quota_owner", "hash")

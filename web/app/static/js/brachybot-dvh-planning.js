@@ -899,14 +899,21 @@ async function refreshPlanningUI(options = {}) {
                 // loading. Start it as soon as authoritative planning data is
                 // available so a cold restart cannot lose the guide merely
                 // because OAR meshes are still decoding in the background.
-                const guideRestorePromise = typeof window.ensureSurgicalGuideForCurrentPlan === 'function'
+                let guideRestorePromise = typeof window.ensureSurgicalGuideForCurrentPlan === 'function'
                     ? Promise.resolve().then(() => window.ensureSurgicalGuideForCurrentPlan({
                         sessionId: expectedSessionId,
                         autoGenerate: options.autoGenerateGuide === true,
                     }))
                     : null;
                 if (guideRestorePromise) {
-                    guideRestorePromise.catch(error => console.warn('[guide] background restore:', error));
+                    guideRestorePromise
+                        .then(() => {
+                            if (!isCurrentCase()) return;
+                            try { if (typeof reconcileDataTreeVisualNodes === 'function') reconcileDataTreeVisualNodes(); } catch (_) {}
+                            try { if (typeof renderDataTree === 'function') renderDataTree(); } catch (_) {}
+                            try { if (typeof forceRender3DViewer === 'function') forceRender3DViewer(); } catch (_) {}
+                        })
+                        .catch(error => console.warn('[guide] background restore:', error));
                 }
 
         // ═══════════════════════════════════════════════════════════
@@ -1033,6 +1040,13 @@ async function refreshPlanningUI(options = {}) {
                 // the already interactive workspace.
                 try { if (typeof renderDataTree === 'function') renderDataTree(); } catch (_) {}
                 try { if (typeof forceRender3DViewer === 'function') forceRender3DViewer(); } catch (_) {}
+                if (guideRestorePromise) {
+                    await guideRestorePromise.catch(error => console.warn('[guide] background restore:', error));
+                    if (!isCurrentCase()) return;
+                    try { if (typeof reconcileDataTreeVisualNodes === 'function') reconcileDataTreeVisualNodes(); } catch (_) {}
+                    try { if (typeof renderDataTree === 'function') renderDataTree(); } catch (_) {}
+                    try { if (typeof forceRender3DViewer === 'function') forceRender3DViewer(); } catch (_) {}
+                }
                 await backgroundReportPromise.catch(() => {});
                 if (!isCurrentCase()) return;
                 const hasReportFigures = Array.isArray(window.reportForm?.figures)
@@ -1054,6 +1068,18 @@ async function refreshPlanningUI(options = {}) {
         // older case must never overwrite the newly selected report.
         await Promise.all(_meshPromises);
         if (!isCurrentCase()) return resolve();
+        // Guide generation/restoration is part of the same planning refresh,
+        // rather than an unobserved side effect. Awaiting it here does not
+        // block the browser because the whole refresh is already scheduled
+        // from the background case-owned task; it guarantees that the guide
+        // node and mesh are present before the final tree/report repaint.
+        if (guideRestorePromise) {
+            await guideRestorePromise.catch(error => console.warn('[guide] restore:', error));
+            if (!isCurrentCase()) return resolve();
+            try { if (typeof reconcileDataTreeVisualNodes === 'function') reconcileDataTreeVisualNodes(); } catch (_) {}
+            try { if (typeof renderDataTree === 'function') renderDataTree(); } catch (_) {}
+            try { if (typeof forceRender3DViewer === 'function') forceRender3DViewer(); } catch (_) {}
+        }
         try {
             if (typeof reportAutoFill === 'function') {
                 await reportAutoFill({ sessionId: expectedSessionId });

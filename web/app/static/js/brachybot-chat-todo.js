@@ -921,7 +921,17 @@ function _scheduleCasePlanningRefresh(sessionId, delay = 250) {
         delete window._sessionPlanningRefreshTimers[key];
         if (String(activeSessionId || '') !== key) return;
         try {
-            await refreshPlanningUI({ sessionId: key, autoGenerateGuide: true });
+            // Planning results can become visible a few moments after the
+            // terminal tool event (especially after a cold restore). Keep the
+            // refresh on the case-owned endpoint and let it wait through a
+            // short 202/pending window instead of silently treating the plan
+            // as empty. This same pass hydrates the Data Tree, viewers,
+            // clinical evaluation, report and surgical guide.
+            await refreshPlanningUI({
+                sessionId: key,
+                autoGenerateGuide: true,
+                retryPending: true,
+            });
         } catch (error) {
             console.error('[SSE] refreshPlanningUI failed:', error);
         }
@@ -1346,6 +1356,25 @@ async function sendChat(prefill, options) {
     let progressEl = null;
     let lastToolName = '';
     const steps = [];
+    // Do not infer planning completion from the rendered trace shape. The
+    // server may emit a top-level tool event, a pipeline sub-step with
+    // parent_tool, or a compact event without type:"tool". All of those are
+    // legitimate representations of the same turn and must drive the same
+    // case-owned UI refresh.
+    const PLANNING_EVENT_TOOLS = new Set([
+        'planning_pipeline', 'dose_evaluation', 'trajectory_init',
+        'trajectory_refine', 'seed_planning', 'dose_calc', 'dose_eval',
+        'manual_planning', 'intraoperative_replan',
+    ]);
+    let turnSawPlanningWork = false;
+    const markPlanningEvent = (eventData) => {
+        if (!eventData || typeof eventData !== 'object') return false;
+        const tool = String(eventData.tool || '').trim();
+        const parentTool = String(eventData.parent_tool || '').trim();
+        const matched = PLANNING_EVENT_TOOLS.has(tool) || PLANNING_EVENT_TOOLS.has(parentTool);
+        if (matched) turnSawPlanningWork = true;
+        return matched;
+    };
     const screenshotTasks = [];
     const screenshotResults = [];
     const screenshotTaskKeys = new Set();
@@ -1519,6 +1548,12 @@ async function sendChat(prefill, options) {
                     if (!dataStr) continue;
                     let data = null;
                     try { data = JSON.parse(dataStr); } catch (_) { continue; }
+
+                    // Providers may label the same tool progress as step,
+                    // tool, or a compact response event. Record the planning
+                    // family before branching on the event name so every
+                    // representation reaches the same refresh path.
+                    if (data && typeof data === 'object') markPlanningEvent(data);
 
                     if (currentEvent === 'task_meta' && data) {
                         if (data.task_id && data.session_id) {
@@ -1916,6 +1951,17 @@ async function sendChat(prefill, options) {
                         if (data.llm_meta) {
                             window._lastLLMMeta = data.llm_meta;
                         }
+                        // Some providers close the stream immediately after
+                        // the final response and do not emit a separate
+                        // terminal step for the pipeline. The response is
+                        // already gated by the server, so it is a safe second
+                        // completion boundary. The refresh itself remains
+                        // case-owned and retries HTTP 202 while arrays are
+                        // being committed.
+                        if (turnSawPlanningWork) {
+                            uiDebugLog('[SSE-response] Planning work detected; scheduling result refresh');
+                            _scheduleCasePlanningRefresh(turnSessionId, 350);
+                        }
                     } else if (currentEvent === 'error' && data && data.message) {
                         turnFailed = true;
                         _setCaseTaskState(turnSessionId, 'failed', null);
@@ -1951,10 +1997,10 @@ async function sendChat(prefill, options) {
                         // the FINAL_PLANNING_TOOLS check didn't fire
                         // because the step event format changed),
                         // trigger a refresh now on stream completion.
-                        const _planningToolsInSteps = steps.filter(s => s.type === 'tool' && s.status === 'done'
-                            && ['planning_pipeline', 'dose_evaluation', 'seed_planning'].includes(s.tool));
-                        uiDebugLog('[SSE-done] planning tools in steps:', _planningToolsInSteps.map(s => s.tool));
-                        if (_planningToolsInSteps.length > 0) {
+                        const _planningToolsInSteps = steps.filter(s => s.status === 'done'
+                            && PLANNING_EVENT_TOOLS.has(String(s.tool || '')));
+                        uiDebugLog('[SSE-done] planning tools in steps:', _planningToolsInSteps.map(s => s.tool), 'sawPlanningWork:', turnSawPlanningWork);
+                        if (_planningToolsInSteps.length > 0 || turnSawPlanningWork) {
                             uiDebugLog('[SSE-done] Triggering fallback refreshPlanningUI');
                             _scheduleCasePlanningRefresh(turnSessionId, 500);
                         }
