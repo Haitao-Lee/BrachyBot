@@ -241,7 +241,11 @@ def _missing_text_assets(path: Path) -> list[str]:
 def _runtime_python(root: Optional[Path]) -> Optional[Path]:
     configured = os.environ.get("BIOMEDPARSE_V2_PYTHON")
     if configured:
-        return Path(configured).expanduser().resolve()
+        # Do not resolve the final symlink. POSIX virtual environments commonly
+        # expose ``.venv/bin/python`` as a symlink to the system interpreter;
+        # executing the resolved target bypasses pyvenv.cfg and loses every
+        # package installed in the isolated environment.
+        return Path(os.path.abspath(os.fspath(Path(configured).expanduser())))
     if root:
         candidates = (
             root / ".venv" / "bin" / "python",
@@ -251,7 +255,7 @@ def _runtime_python(root: Optional[Path]) -> Optional[Path]:
         )
         for candidate in candidates:
             if candidate.is_file():
-                return candidate.resolve()
+                return Path(os.path.abspath(os.fspath(candidate)))
     return Path(sys.executable).resolve() if sys.executable else None
 
 
