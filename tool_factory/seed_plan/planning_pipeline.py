@@ -1245,6 +1245,38 @@ def _plan_target_coverage(plan_res, radiation_volume, target_value, dose_thresho
         return 0.0
 
 
+def _normalize_mask_to_ct_grid(mask, ct_image, label_name, agent=None):
+    """Return a label volume in the CT array convention or reject it.
+
+    A legacy checkpoint could contain a flattened label array even though its
+    voxel count still matched the current CT. Reconstructing that exact grid
+    is lossless and prevents the final needle validator from silently bypassing
+    safety because it received a one-dimensional mask. Any other mismatch is
+    rejected instead of mixing a mask from another case or grid.
+    """
+    if mask is None or ct_image is None:
+        return mask
+    array = np.asarray(mask)
+    expected = tuple(int(value) for value in reversed(ct_image.GetSize()))
+    expected_size = int(np.prod(expected))
+    if tuple(array.shape) == expected:
+        return array
+    if array.ndim == 1 and int(array.size) == expected_size:
+        reshaped = array.reshape(expected)
+        logger.warning(
+            "[%s] reshaped legacy flattened mask %s to CT grid %s",
+            label_name, tuple(array.shape), expected,
+        )
+        if agent is not None and hasattr(agent, "memory"):
+            agent.memory.store("ctv_array" if label_name == "CTV" else "oar_array", reshaped)
+        return reshaped
+    logger.error(
+        "[%s] mask shape %s does not match current CT grid %s; refusing stale mask",
+        label_name, tuple(array.shape), expected,
+    )
+    return None
+
+
 class PlanningPipelineTool(BaseTool):
     """
     Unified brachytherapy planning pipeline orchestrator.
@@ -1605,7 +1637,7 @@ class PlanningPipelineTool(BaseTool):
                 ctv_mask = sitk.GetArrayFromImage(ctv_img)
                 if agent:
                     agent.memory.store("ctv_array", ctv_mask)
-                return ctv_mask
+                return _normalize_mask_to_ct_grid(ctv_mask, ct_image, "CTV", agent)
             except Exception as e:
                 logger.warning(f"Failed to load CTV mask from path '{ctv_mask_path}': {e}. Falling back to memory.")
 
@@ -1636,7 +1668,7 @@ class PlanningPipelineTool(BaseTool):
                         ctv_mask.shape,
                         int(np.count_nonzero(ctv_mask)),
                     )
-                return ctv_mask
+                return _normalize_mask_to_ct_grid(ctv_mask, ct_image, "CTV", agent)
             else:
                 logger.debug("[LOAD_CTV] CTV mask not found in agent memory")
                 # Debug: check what's in planning_results
@@ -1661,7 +1693,7 @@ class PlanningPipelineTool(BaseTool):
                 oar_mask = sitk.GetArrayFromImage(oar_img)
                 if agent:
                     agent.memory.store("oar_array", oar_mask)
-                return oar_mask
+                return _normalize_mask_to_ct_grid(oar_mask, ct_image, "OAR", agent)
             except Exception as e:
                 logger.warning(f"Failed to load OAR mask from path '{oar_mask_path}': {e}. Falling back to memory.")
 
@@ -1673,7 +1705,7 @@ class PlanningPipelineTool(BaseTool):
             if oar_mask is not None:
                 if hasattr(oar_mask, 'GetArrayFromImage'):
                     oar_mask = sitk.GetArrayFromImage(oar_mask)
-                return oar_mask
+                return _normalize_mask_to_ct_grid(oar_mask, ct_image, "OAR", agent)
 
         return None
 

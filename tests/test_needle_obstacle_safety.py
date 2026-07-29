@@ -24,6 +24,7 @@ from tool_factory.seed_plan.planning_pipeline import (
     _seed_plan_entry_needle_points,
     _world_segment_hits_obstacle,
     _resolve_data_tree_obstacle_labels,
+    _normalize_mask_to_ct_grid,
 )
 from web.server_support import ManualNeedleSafetyError, _validate_manual_needle_safety
 from AgenticSys import BrachyAgent
@@ -37,6 +38,20 @@ def _image_and_masks():
     oar = np.zeros((20, 20, 20), dtype=np.uint8)
     oar[10, 10, 5:15] = 77
     return image, ctv, oar
+
+
+def test_legacy_flattened_mask_is_restored_to_current_ct_grid():
+    image, _, _ = _image_and_masks()
+    flat = np.zeros(20 * 20 * 20, dtype=np.uint8)
+    flat[10 * 20 * 20 + 10 * 20 + 5] = 1
+    restored = _normalize_mask_to_ct_grid(flat, image, "CTV")
+    assert restored.shape == (20, 20, 20)
+    assert int(restored[10, 10, 5]) == 1
+
+
+def test_mask_from_another_grid_is_rejected_before_needle_validation():
+    image, _, _ = _image_and_masks()
+    assert _normalize_mask_to_ct_grid(np.zeros((8, 8, 8), dtype=np.uint8), image, "CTV") is None
 
 
 class _Memory:
