@@ -17,14 +17,20 @@ def test_biomedparse_catalog_is_explicit_and_excludes_pancreatic_production():
     assert set(SITE_SPECS) <= set(CTVSegmentationTool().input_schema["properties"]["tumor_type"]["enum"])
 
 
-def test_biomedparse_missing_runtime_fails_closed(monkeypatch):
-    from tool_factory.CTV_seg.biomedparse_v2 import BiomedParseV2CTVTool
+def test_biomedparse_missing_runtime_fails_closed(monkeypatch, tmp_path):
+    import tool_factory.CTV_seg.biomedparse_v2 as adapter
 
     monkeypatch.delenv("BIOMEDPARSE_ROOT", raising=False)
     monkeypatch.delenv("BIOMEDPARSE_V2_ROOT", raising=False)
     monkeypatch.delenv("BIOMEDPARSE_V2_CHECKPOINT", raising=False)
+    monkeypatch.setattr(adapter, "_repo_root", lambda: None)
+    monkeypatch.setattr(
+        adapter,
+        "_checkpoint_path",
+        lambda _root: tmp_path / "missing-biomedparse-v2.ckpt",
+    )
     image = sitk.GetImageFromArray(np.zeros((4, 4, 4), dtype=np.int16))
-    result = BiomedParseV2CTVTool().execute(
+    result = adapter.BiomedParseV2CTVTool().execute(
         image=image,
         tumor_type="biomedparse_liver_tumor",
     )
@@ -171,12 +177,22 @@ def test_biomedparse_ct_window_maps_to_official_byte_range():
     assert np.allclose(result, [0.0, 127.5, 255.0])
 
 
-def test_unavailable_non_pancreatic_site_reports_research_fallback_state(monkeypatch):
+def test_unavailable_non_pancreatic_site_reports_research_fallback_state(
+    monkeypatch,
+    tmp_path,
+):
+    import tool_factory.CTV_seg.biomedparse_v2 as adapter
     from tool_factory.CTV_seg import CTVSegmentationTool
 
     monkeypatch.delenv("BIOMEDPARSE_ROOT", raising=False)
     monkeypatch.delenv("BIOMEDPARSE_V2_ROOT", raising=False)
     monkeypatch.delenv("BIOMEDPARSE_V2_CHECKPOINT", raising=False)
+    monkeypatch.setattr(adapter, "_repo_root", lambda: None)
+    monkeypatch.setattr(
+        adapter,
+        "_checkpoint_path",
+        lambda _root: tmp_path / "missing-biomedparse-v2.ckpt",
+    )
     image = sitk.GetImageFromArray(np.zeros((4, 4, 4), dtype=np.int16))
     result = CTVSegmentationTool().execute(image=image, tumor_type="liver")
     assert result.success is False
