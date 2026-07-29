@@ -9649,4 +9649,5 @@ until this Session acceptance is complete.
   all other routes remain red until the server reports a callable route.
   Cache-busting versions were incremented for the modified CSS and JS assets.
 - Regression evidence: `tests/test_workspace_frontend.py` **74 passed**;
+  Full suite: **355 passed, 2 skipped, 3 warnings**;
   modified JS passed `node --check`; `git diff --check` passed.

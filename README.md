@@ -2331,7 +2331,7 @@ visibility, color, opacity, and status fields. Dose, dose contours, DVH, meshes,
 annotations, needles, seeds, and surgical guides are registered when their real
 payloads arrive, and completion triggers an immediate tree and viewer refresh.
 
-The current verification baseline is **354 passed, 2 skipped, 3 warnings** in
+The current verification baseline is **355 passed, 2 skipped, 3 warnings** in
 the full Python suite; the warnings are third-party SimpleITK SWIG deprecations.
 See [`docs/CODE_REVIEW.md`](docs/CODE_REVIEW.md) for the root-cause analysis and
 the targeted segmentation/viewer checks.
