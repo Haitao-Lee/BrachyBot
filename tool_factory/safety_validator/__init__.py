@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Dict, Any, Optional, List
 from tool_factory import BaseTool, ToolResult
 from agents.clinical_metrics import match_constraint_name, normalized_fraction
+from plans.dose_pre.model_loader import resolve_prescription_gy
 
 logger = logging.getLogger(__name__)
 
@@ -463,7 +464,10 @@ Capabilities:
 
         v100 = normalized_fraction(v100)
         d90_ratio = d90
-        prescribed = metrics.get("prescribed_dose", plan.get("prescribed_dose"))
+        prescribed = resolve_prescription_gy(
+            plan.get("plan_config") if isinstance(plan.get("plan_config"), dict) else {},
+            metrics,
+        )
         if d90 is not None and d90 > 5:
             d90_ratio = d90 / prescribed if prescribed and prescribed > 0 else None
 

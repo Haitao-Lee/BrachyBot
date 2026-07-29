@@ -12,7 +12,7 @@ tool_sequence:
   - oar_constraint_checker
   - plan_quality_scorer
 parameters:
-  prescribed_dose: 1.0
+  prescribed_dose: 120.0
   eval_type: standard
 success_threshold: 0.7
 version: "1.0.0"

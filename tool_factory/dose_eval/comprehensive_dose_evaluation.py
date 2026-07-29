@@ -13,6 +13,7 @@ import json
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from tool_factory import BaseTool, ToolResult
+from plans.dose_pre.model_loader import DEFAULT_PRESCRIPTION_GY
 import numpy as np
 from typing import Dict, List
 from tool_factory.plan_quality.clinical_standards import get_oar_standard, get_target_standard
@@ -113,7 +114,7 @@ class ComprehensiveDoseEvaluationTool(BaseTool):
     def _execute(self, **kwargs) -> ToolResult:
         dose_array = kwargs["dose_array"]
         masks = kwargs["masks"]
-        prescribed_dose = kwargs.get("prescribed_dose", 1.0)
+        prescribed_dose = kwargs.get("prescribed_dose", DEFAULT_PRESCRIPTION_GY)
         vx_values = kwargs.get("vx_values", [100, 150, 200, 90])
         dx_values = kwargs.get("dx_values", [90, 95, 99, 50])
         cc_values = kwargs.get("cc_values", [2, 1, 0.5])
@@ -368,7 +369,12 @@ def main():
     parser = argparse.ArgumentParser(description="Comprehensive dose evaluation")
     parser.add_argument("--dose_array", required=True, help="Path to dose numpy array .npy file")
     parser.add_argument("--masks", required=True, help="JSON dict: structure_name -> mask numpy .npy path")
-    parser.add_argument("--prescribed_dose", type=float, default=1.0, help="Prescribed dose in Gy")
+    parser.add_argument(
+        "--prescribed_dose",
+        type=float,
+        default=DEFAULT_PRESCRIPTION_GY,
+        help="Prescribed physical dose in Gy",
+    )
     parser.add_argument("--vx_values", nargs="+", type=float, default=[100, 150, 200, 90])
     parser.add_argument("--dx_values", nargs="+", type=float, default=[90, 95, 99, 50])
     parser.add_argument("--cc_values", nargs="+", type=float, default=[2, 1, 0.5])

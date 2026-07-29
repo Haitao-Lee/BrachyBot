@@ -118,6 +118,72 @@ def test_chat_snapshot_patches_are_append_only(tmp_path):
     assert [message["content"] for message in messages] == ["first", "answer"]
 
 
+def test_chat_snapshot_updates_merge_by_stable_message_identity(tmp_path):
+    """Screenshot, Trace, and final text updates must remain one reply."""
+    store = WorkspaceStore(tmp_path / "runtime")
+    user = store.create_user("stable_chat_owner", "hash")
+    case = store.create_session(user["id"], "Screenshot case")
+    initial = {
+        "id": "assistant-request-1",
+        "request_id": "request-1",
+        "type": "bot-response",
+        "content": "",
+        "timestamp": 2000,
+        "attachments": [{
+            "id": "shot-1",
+            "url": "/api/sessions/case/screenshots/one.png",
+        }],
+    }
+    completed = {
+        "id": "assistant-request-1",
+        "request_id": "request-1",
+        "type": "bot-response",
+        "content": "剂量截图分析完成。",
+        "timestamp": 3000,
+        "attachments": [{
+            "id": "shot-1",
+            "url": "/api/sessions/case/screenshots/one.png",
+        }],
+    }
+    trace_initial = {
+        "id": "trace-request-1",
+        "request_id": "request-1",
+        "type": "thinking",
+        "content": "",
+        "timestamp": 2000,
+        "steps": [{"id": "screenshot-plan", "status": "pending"}],
+    }
+    trace_completed = {
+        "id": "trace-request-1",
+        "request_id": "request-1",
+        "type": "thinking",
+        "content": "",
+        "timestamp": 3000,
+        "steps": [{"id": "screenshot-plan", "status": "done"}],
+    }
+
+    store.save_snapshot_patch(
+        user["id"],
+        case.id,
+        {"chat": {"messages": [initial, trace_initial]}},
+    )
+    store.save_snapshot_patch(
+        user["id"],
+        case.id,
+        {"chat": {"messages": [completed, trace_completed]}},
+    )
+
+    messages = store.load_snapshot(user["id"], case.id)["chat"]["messages"]
+    assert len(messages) == 2
+    assistant = next(message for message in messages if message["type"] == "bot-response")
+    trace = next(message for message in messages if message["type"] == "thinking")
+    assert assistant["content"] == "剂量截图分析完成。"
+    assert [item["id"] for item in assistant["attachments"]] == ["shot-1"]
+    assert trace["steps"] == [{"id": "screenshot-plan", "status": "done"}]
+    assert assistant["timestamp"] == 2000
+    assert trace["timestamp"] == 2000
+
+
 def test_two_case_workspaces_round_trip_without_cross_case_contamination(tmp_path):
     store = WorkspaceStore(tmp_path / "runtime")
     user = store.create_user("multi_case_planner", "hash")

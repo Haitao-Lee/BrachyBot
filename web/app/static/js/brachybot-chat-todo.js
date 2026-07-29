@@ -968,7 +968,7 @@ async function _flushQueuedChatTurns() {
 }
 window.flushQueuedChatTurns = _flushQueuedChatTurns;
 
-function _buildTurnMeta() {
+function _buildTurnMeta(identity = {}) {
     const llmMeta = window._lastLLMMeta || null;
     const toolCount = (window._todoTurnToolCount !== undefined)
         ? window._todoTurnToolCount
@@ -988,6 +988,12 @@ function _buildTurnMeta() {
         toolCount,
         elapsedSec,
         savedAt: Date.now(),
+        requestId: String(identity.requestId || identity.request_id || ''),
+        messageId: String(identity.messageId || identity.message_id || ''),
+        messageKind: String(identity.messageKind || identity.message_kind || 'assistant_final'),
+        attachments: Array.isArray(identity.attachments) ? identity.attachments : [],
+        screenshotLayout: identity.screenshotLayout || identity.layout || 'auto',
+        responseLanguage: identity.responseLanguage || window._responseLanguage || '',
     };
 }
 
@@ -1031,19 +1037,13 @@ function _isAdviceRequest(text) {
 window._pendingHiddenChats = window._pendingHiddenChats || [];
 window._hiddenChatFlushRunning = false;
 
-function _buildScreenshotFollowUpMessage(question, screenshotUrl) {
-    const prompt = (question || 'Please analyze this screenshot and answer the user directly.').trim();
-    return `[Screenshot captured: ${screenshotUrl}]\n${prompt}\n\nUse the screenshot as the visual context. Do not call ui_screenshot again unless this image is unusable.`;
-}
-
 function _isScreenshotAckResponse(text, steps) {
-    const safeText = String(text || '').trim();
-    if (!safeText || !Array.isArray(steps) || !steps.length) return false;
+    if (!Array.isArray(steps) || !steps.length) return false;
     const toolSteps = steps.filter(step => step && step.type === 'tool' && step.tool);
     if (!toolSteps.length) return false;
     if (toolSteps.some(step => step.tool !== 'ui_screenshot')) return false;
     if (toolSteps.some(step => step.status === 'error')) return false;
-    return /^(Requested screenshot:|The requested screenshot is the )/i.test(safeText);
+    return true;
 }
 
 function _isVisualAnalysisRequest(text) {
@@ -1228,12 +1228,6 @@ async function sendChat(prefill, options) {
         : (prefill != null ? prefill : (input ? input.value : '')).trim();
     if (!text && !isResumingTask) return;
     if (input && !opts.hiddenUserMessage && !isResumingTask) input.value = '';
-    if (!opts.hiddenUserMessage && !isResumingTask && typeof addChat === 'function') {
-        addChat('user', text, true, Date.now(), false, activeSessionId);
-    }
-    if (!opts.preserveLastUserMessage) {
-        window._lastUserMessage = text;
-    }
 
     // EPHEMERAL START: lazily create a "New chat" session on the
     // first message send. Until the user actually sends something,
@@ -1242,6 +1236,39 @@ async function sendChat(prefill, options) {
     // fresh page load.
     try { if (!isResumingTask && typeof ensurePendingSession === 'function') ensurePendingSession(); } catch (_) {}
     const turnSessionId = String(activeSessionId || '');
+    const turnRequestId = String(
+        opts.requestId
+        || opts.request_id
+        || (isResumingTask ? opts.resumeRequestId : '')
+        || (typeof createChatIdentity === 'function' ? createChatIdentity('request') : `request-${Date.now()}`)
+    );
+    const turnUserMessageId = String(
+        opts.userMessageId || opts.user_message_id || `user-${turnRequestId}`
+    );
+    const turnAssistantMessageId = String(
+        opts.assistantMessageId || opts.assistant_message_id || `assistant-${turnRequestId}`
+    );
+    const turnIdentity = {
+        requestId: turnRequestId,
+        userMessageId: turnUserMessageId,
+        messageId: turnAssistantMessageId,
+        responseLanguage: window._i18nLang
+            || (typeof conversationLanguageForSession === 'function'
+                ? conversationLanguageForSession(turnSessionId)
+                : '')
+            || window._responseLanguage
+            || '',
+    };
+    if (!opts.hiddenUserMessage && !isResumingTask && typeof addChat === 'function') {
+        addChat('user', text, true, Date.now(), false, turnSessionId, {
+            requestId: turnRequestId,
+            messageId: turnUserMessageId,
+            messageKind: 'user_message',
+        });
+    }
+    if (!opts.preserveLastUserMessage) {
+        window._lastUserMessage = text;
+    }
     let turnTaskId = isResumingTask ? String(opts.resumeTaskId || '') : '';
     if (!isResumingTask) window._activeChatTaskId = null;
     if (isResumingTask && window._chatDetachRequestedFor === turnSessionId) {
@@ -1324,7 +1351,13 @@ async function sendChat(prefill, options) {
     const screenshotTaskKeys = new Set();
     const uiActionTasks = [];
     // Group screenshots emitted during one assistant turn into one gallery.
-    const screenshotGallery = {};
+    const screenshotGallery = {
+        sessionId: turnSessionId,
+        requestId: turnRequestId,
+        messageId: turnAssistantMessageId,
+        mode: opts.screenshotMode || (trainingMonitorState.active ? 'monitor' : 'chat'),
+        layout: 'auto',
+    };
     const uiState = (typeof collectUIState === 'function') ? collectUIState() : {};
     const cancelTurnUi = (reason) => {
         if (thinkingEl && typeof removeThinkingIndicator === 'function') {
@@ -1384,7 +1417,21 @@ async function sendChat(prefill, options) {
                         'Content-Type': 'application/json',
                         'X-BrachyBot-Session': turnSessionId,
                     },
-                    body: JSON.stringify({ message: text, ui_state: uiState, stream: true, clear_context: false }),
+                    body: JSON.stringify({
+                        message: text,
+                        ui_state: uiState,
+                        stream: true,
+                        clear_context: false,
+                        request_id: turnRequestId,
+                        user_message_id: turnUserMessageId,
+                        assistant_message_id: turnAssistantMessageId,
+                        internal_followup: !!opts.internalFollowup,
+                        response_language: window._i18nLang || (
+                            typeof conversationLanguageForSession === 'function'
+                                ? conversationLanguageForSession(turnSessionId)
+                                : window._responseLanguage || ''
+                        ),
+                    }),
                     signal: turnAbortController ? turnAbortController.signal : undefined,
                 });
             }
@@ -1410,7 +1457,9 @@ async function sendChat(prefill, options) {
             if (thinkingEl && typeof removeThinkingIndicator === 'function') removeThinkingIndicator(thinkingEl);
             const data = await resp.json().catch(() => null);
             const reply = (data && (data.response || data.reply || data.message || data.content)) || '(no reply)';
-            if (typeof addChat === 'function') addChat('bot-response', reply, true, Date.now(), false, turnSessionId);
+            if (typeof addChat === 'function') {
+                addChat('bot-response', reply, true, Date.now(), false, turnSessionId, turnIdentity);
+            }
             setStreamingState(false);
             return;
         }
@@ -1419,7 +1468,9 @@ async function sendChat(prefill, options) {
         if (!resp.body || !resp.body.getReader) {
             if (thinkingEl && typeof removeThinkingIndicator === 'function') removeThinkingIndicator(thinkingEl);
             const txt = await resp.text();
-            if (typeof addChat === 'function') addChat('bot-response', txt, true, Date.now(), false, turnSessionId);
+            if (typeof addChat === 'function') {
+                addChat('bot-response', txt, true, Date.now(), false, turnSessionId, turnIdentity);
+            }
             setStreamingState(false);
             return;
         }
@@ -1504,7 +1555,8 @@ async function sendChat(prefill, options) {
                         window._todoTurnToolCount = 0;
                     }
                     if (currentEvent === 'step' && data) {
-                        steps.push(data);
+                        const displayStep = _traceStepForDisplay(data, turnSessionId);
+                        steps.push(displayStep);
                         if (data.tool === 'ctv_segmentation' && typeof updateTumorTypeSelector === 'function') {
                             const candidate = data.params?.tumor_type
                                 || data.arguments?.tumor_type
@@ -1516,7 +1568,7 @@ async function sendChat(prefill, options) {
                             if (thinkingEl && typeof removeThinkingIndicator === 'function') removeThinkingIndicator(thinkingEl);
                             const resumeStart = isResumingTask
                                 ? (window._caseChainStartedAt || {})[turnSessionId] : null;
-                            const r = createLiveThinkingChain(resumeStart);
+                            const r = createLiveThinkingChain(resumeStart, turnRequestId);
                             chainEl = r.chainEl; stepsDiv = r.stepsDiv; headerEl = r.headerEl;
                             // Save the chain start time so a session-resume
                             // rebuild uses the original clock, not Date.now().
@@ -1530,7 +1582,7 @@ async function sendChat(prefill, options) {
                             };
                         }
                         if (typeof appendStepToChain === 'function') {
-                            appendStepToChain(stepsDiv, data, steps.length - 1);
+                            appendStepToChain(stepsDiv, displayStep, steps.length - 1);
                         }
                         if (typeof updateChainHeader === 'function') {
                             updateChainHeader(headerEl, steps);
@@ -1677,9 +1729,22 @@ async function sendChat(prefill, options) {
                             // upload to server, and display in chat.
                             if (data.status === 'done' && data.tool === 'ui_screenshot' && data.metadata) {
                                 const _ssCmd = data.metadata.screenshot_command || data.metadata;
-                                const _ssTarget = _normalizeScreenshotRequestTarget(_ssCmd.target || 'full', _ssCmd.question || '');
-                                const _ssQuestion = _ssCmd.question || '';
-                                const _ssKey = String(data.id || `${_ssTarget}|${_ssQuestion}`);
+                                const _ssPlan = data.metadata.screenshot_plan
+                                    || _ssCmd.plan
+                                    || {
+                                        mode: 'chat',
+                                        views: [{
+                                            target: _normalizeScreenshotRequestTarget(
+                                                _ssCmd.target || 'full',
+                                                _ssCmd.question || '',
+                                            ),
+                                        }],
+                                        question: _ssCmd.question || '',
+                                    };
+                                const _ssQuestion = _ssPlan.question || _ssCmd.question || '';
+                                const _ssTarget = _ssPlan.views?.[0]?.target
+                                    || _normalizeScreenshotRequestTarget(_ssCmd.target || 'full', _ssQuestion);
+                                const _ssKey = String(data.id || JSON.stringify(_ssPlan));
                                 if (screenshotTaskKeys.has(_ssKey)) {
                                     uiDebugLog('[SSE-STEP] Ignoring duplicate screenshot completion:', _ssKey);
                                 } else {
@@ -1689,9 +1754,19 @@ async function sendChat(prefill, options) {
                                     screenshotTasks.push(Promise.resolve(
                                         _interceptScreenshot(_ssTarget, _ssQuestion, screenshotGallery, {
                                             sessionId: turnSessionId,
+                                            requestId: turnRequestId,
+                                            messageId: turnAssistantMessageId,
+                                            mode: _ssPlan.mode || screenshotGallery.mode || 'chat',
+                                            plan: _ssPlan,
                                         })
                                     ).then(result => {
-                                        if (result && result.success && result.url) screenshotResults.push(result);
+                                        if (result && result.success) {
+                                            if (Array.isArray(result.attachments)) {
+                                                screenshotResults.push(...result.attachments);
+                                            } else if (result.url) {
+                                                screenshotResults.push(result);
+                                            }
+                                        }
                                         return result;
                                     }));
                                 } catch (e) {
@@ -1800,7 +1875,7 @@ async function sendChat(prefill, options) {
                             responseText = '';
                             if (!responseEl && typeof createStreamingResponse === 'function') {
                                 if (thinkingEl && typeof removeThinkingIndicator === 'function') removeThinkingIndicator(thinkingEl);
-                                responseEl = createStreamingResponse();
+                                responseEl = createStreamingResponse(turnRequestId, turnAssistantMessageId);
                                 if (todo && responseEl.parentElement) responseEl.parentElement.appendChild(todo.root);
                             }
                         }
@@ -1823,7 +1898,7 @@ async function sendChat(prefill, options) {
                         responseText = data.response;
                         if (!responseEl && typeof createStreamingResponse === 'function') {
                             if (thinkingEl && typeof removeThinkingIndicator === 'function') removeThinkingIndicator(thinkingEl);
-                            responseEl = createStreamingResponse();
+                            responseEl = createStreamingResponse(turnRequestId, turnAssistantMessageId);
                             if (todo && responseEl.parentElement) responseEl.parentElement.appendChild(todo.root);
                         }
                         if (responseEl && typeof updateStreamingResponse === 'function') {
@@ -1900,9 +1975,15 @@ async function sendChat(prefill, options) {
             const detachedResponse = responseText
                 || (finalResponseReceived ? '(no reply)' : null);
             if (detachedResponse && typeof saveSessionMessage === 'function') {
-                saveSessionMessage('bot-response', detachedResponse, null, Date.now(), turnSessionId, _buildTurnMeta());
+                saveSessionMessage('bot-response', detachedResponse, null, Date.now(), turnSessionId, _buildTurnMeta(turnIdentity));
             }
-            try { saveSessionMessage('thinking', '', steps, Date.now(), turnSessionId); } catch (_) {}
+            try {
+                saveSessionMessage('thinking', '', steps, Date.now(), turnSessionId, {
+                    requestId: turnRequestId,
+                    messageId: `trace-${turnRequestId}`,
+                    messageKind: 'execution_trace',
+                });
+            } catch (_) {}
             return;
         }
 
@@ -1929,8 +2010,19 @@ async function sendChat(prefill, options) {
             if (uniqueUrls.length) {
                 const visualContext = uniqueUrls.map(url => `[Screenshot captured: ${url}]`).join('\n');
                 _enqueueHiddenChat(
-                    `${visualContext}\n\nUser request: ${text}\nAnalyze the supplied screenshot(s) and answer the user's request directly. Do not request another screenshot. Mention uncertainty instead of inventing details.`,
-                    { visualFollowUp: true }
+                    `${visualContext}\n\nUser request: ${text}\nAnalyze the supplied screenshot(s) and answer the user's request directly. `
+                    + `Use ${String(turnIdentity.responseLanguage || '').toLowerCase().startsWith('zh') ? 'Chinese' : 'English'} for every user-visible sentence. `
+                    + 'Do not request another screenshot. Mention uncertainty instead of inventing details.',
+                    {
+                        visualFollowUp: true,
+                        internalFollowup: true,
+                        hiddenUserMessage: true,
+                        preserveLastUserMessage: true,
+                        requestId: turnRequestId,
+                        userMessageId: turnUserMessageId,
+                        assistantMessageId: turnAssistantMessageId,
+                        screenshotMode: screenshotGallery.mode || 'chat',
+                    }
                 );
             }
         }
@@ -2003,13 +2095,18 @@ async function sendChat(prefill, options) {
         const suppressScreenshotAck = _isScreenshotAckResponse(renderedFinalText, steps);
         if (suppressScreenshotAck && responseEl) {
             try {
-                const staleRow = responseEl.closest('.chat-row');
-                if (staleRow) staleRow.remove();
+                responseEl.textContent = '';
+                responseEl.hidden = true;
+                responseEl.classList.remove('is-streaming');
+                responseEl.removeAttribute('aria-busy');
             } catch (_) {}
             responseEl = null;
         }
         if (!suppressScreenshotAck && responseEl && typeof finalizeStreamingResponse === 'function') {
-            const meta = _buildTurnMeta();
+            const meta = _buildTurnMeta(Object.assign({}, turnIdentity, {
+                attachments: screenshotResults,
+                screenshotLayout: screenshotGallery.layout || 'auto',
+            }));
             finalizeStreamingResponse(responseEl, renderedFinalText, turnSessionId, meta);
         } else if (!suppressScreenshotAck && !responseEl && !window._chatFallbackUsed) {
             window._chatFallbackUsed = true;
@@ -2018,7 +2115,14 @@ async function sendChat(prefill, options) {
                 // finalText path; renderedFinalText only adds a real metrics
                 // answer for tool-only turns.
                 // addChat('bot-response', finalText, true, Date.now(), false, turnSessionId)
-                addChat('bot-response', renderedFinalText, true, Date.now(), false, turnSessionId);
+                addChat('bot-response', renderedFinalText, true, Date.now(), false, turnSessionId, Object.assign(
+                    {},
+                    turnIdentity,
+                    {
+                        attachments: screenshotResults,
+                        screenshotLayout: screenshotGallery.layout || 'auto',
+                    },
+                ));
             }
         }
 
@@ -2050,9 +2154,15 @@ async function sendChat(prefill, options) {
             const detachedResponse = responseText
                 || (finalResponseReceived ? '(no reply)' : null);
             if (detachedResponse && typeof saveSessionMessage === 'function') {
-                saveSessionMessage('bot-response', detachedResponse, null, Date.now(), turnSessionId, _buildTurnMeta());
+                saveSessionMessage('bot-response', detachedResponse, null, Date.now(), turnSessionId, _buildTurnMeta(turnIdentity));
             }
-            try { saveSessionMessage('thinking', '', steps, Date.now(), turnSessionId); } catch (_) {}
+            try {
+                saveSessionMessage('thinking', '', steps, Date.now(), turnSessionId, {
+                    requestId: turnRequestId,
+                    messageId: `trace-${turnRequestId}`,
+                    messageKind: 'execution_trace',
+                });
+            } catch (_) {}
             return;
         }
 
@@ -2119,7 +2229,13 @@ async function sendChat(prefill, options) {
             if (chainEl && typeof finalizeThinkingChain === 'function') {
                 finalizeThinkingChain(chainEl, headerEl, steps);
             }
-            try { saveSessionMessage('thinking', '', steps, Date.now(), turnSessionId); } catch (_) {}
+            try {
+                saveSessionMessage('thinking', '', steps, Date.now(), turnSessionId, {
+                    requestId: turnRequestId,
+                    messageId: `trace-${turnRequestId}`,
+                    messageKind: 'execution_trace',
+                });
+            } catch (_) {}
             window._chatStreaming = false;
             setStreamingState(false);
             setTimeout(() => { try { _flushHiddenChatQueue(); } catch (_) {} }, 0);
@@ -2134,6 +2250,42 @@ async function sendChat(prefill, options) {
         }
     }
 }
+
+function _traceStepForDisplay(step, sessionId) {
+    if (!step || typeof step !== 'object') return step;
+    if (step.tool !== 'ui_screenshot') return step;
+    const language = (
+        window._i18nLang
+        || (typeof conversationLanguageForSession === 'function'
+            ? conversationLanguageForSession(sessionId)
+            : '')
+        || window._responseLanguage
+        || 'en'
+    ).toLowerCase().startsWith('zh') ? 'zh' : 'en';
+    const metadata = step.metadata || {};
+    const summaryMap = metadata.trace_summary_i18n
+        || metadata.screenshot_plan?.trace_summary_i18n
+        || {};
+    const plan = metadata.screenshot_plan
+        || metadata.screenshot_command?.plan
+        || {};
+    const views = Array.isArray(plan.views) ? plan.views : [];
+    const fallback = language === 'zh'
+        ? `已准备${views.length || 1}个截图视图。`
+        : `Prepared ${views.length || 1} screenshot view(s).`;
+    return Object.assign({}, step, {
+        title: language === 'zh' ? '\u751f\u6210\u622a\u56fe' : 'Capture screenshot',
+        params: {
+            mode: plan.mode || 'chat',
+            views: views.map(view => view.target || view.viewer || view),
+            layout: plan.layout || 'auto',
+        },
+        content: '',
+        result: String(summaryMap[language] || fallback),
+        metadata,
+    });
+}
+window._traceStepForDisplay = _traceStepForDisplay;
 
 async function _buildDoseResultsFallback(userText, sessionId) {
     const text = String(userText || '').trim();
@@ -2248,6 +2400,10 @@ window.resumeSessionChatTask = async function resumeSessionChatTask() {
         if (window._chatTurnActive || window._chatStreaming || activeSessionId !== sessionId) return false;
         await sendChat(null, {
             resumeTaskId: taskId,
+            resumeRequestId: task.request_id || taskId,
+            requestId: task.request_id || taskId,
+            userMessageId: task.user_message_id || `user-${task.request_id || taskId}`,
+            assistantMessageId: task.assistant_message_id || `assistant-${task.request_id || taskId}`,
             resumeMessage: task.message || '',
             skipIntentShortcuts: true,
             preserveLastUserMessage: true,

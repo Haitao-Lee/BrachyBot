@@ -27,7 +27,14 @@ from typing import Dict, List, Optional, Any
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from tool_factory import BaseTool, ToolResult
-from plans.dose_pre.model_loader import DOSE_MODEL_SCALE_GY
+from plans.dose_pre.model_loader import (
+    DEFAULT_PRESCRIPTION_GY,
+    DOSE_MODEL_SCALE_GY,
+    planning_dose_value_to_gy,
+    planning_dose_value_to_model,
+    resolve_dose_scale_gy,
+    resolve_prescription_gy,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -36,9 +43,9 @@ PLANS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path
 CONFIG_PATH = os.path.join(PLANS_DIR, "config.json")
 
 # Default planning parameters (from Zhiyuan config.json)
-# Dose is in normalized units (matching Zhiyuan convention).
-# in_lowest_energy=1.0 is the prescription dose threshold.
-# No Gy conversion needed - all metrics use normalized units.
+# ``in_lowest_energy`` and ``out_highest_energy`` are physical Gy values.
+# DoseUNet output uses a separate physical calibration and is converted only
+# at the optimizer/model boundary.
 NEW_SLICES_ROUNDED = 64
 
 # The Data tree and the planning backend must use the same default policy.
@@ -371,7 +378,8 @@ _RF_PARAM_KEYS = {
     "max_actions_per_episode", "max_wall_seconds", "fallback_to_rule_based",
 }
 _PLANNING_PARAM_KEYS = {
-    "in_lowest_energy", "out_highest_energy", "DVH_rate", "iter_rate",
+    "dose_value_unit", "in_lowest_energy", "out_highest_energy",
+    "in_lowest_dose_gy", "out_highest_dose_gy", "DVH_rate", "iter_rate",
     "max_iter", "replan_rate", "distance_filtter", "distance_filter",
     "radiation_array_params", "rf_params",
 }
@@ -403,9 +411,22 @@ def _apply_planning_overrides(args, overrides):
     if not isinstance(overrides, dict):
         return args
 
-    for key in ("in_lowest_energy", "out_highest_energy"):
-        if key in overrides:
+    dose_overridden = False
+    for key, gy_key in (
+        ("in_lowest_energy", "in_lowest_dose_gy"),
+        ("out_highest_energy", "out_highest_dose_gy"),
+    ):
+        if gy_key in overrides:
+            setattr(args, key, _finite_number(overrides[gy_key], gy_key, minimum=0.0))
+            dose_overridden = True
+        elif key in overrides:
             setattr(args, key, _finite_number(overrides[key], key, minimum=0.0))
+            dose_overridden = True
+    if dose_overridden:
+        # Invocation-level values use the current physical-Gy contract.
+        # Legacy multiplier migration is only applied when restoring saved
+        # plans that have no unit metadata.
+        args.dose_value_unit = overrides.get("dose_value_unit") or "gy"
     if "DVH_rate" in overrides:
         args.DVH_rate = _finite_number(overrides["DVH_rate"], "DVH_rate", minimum=0.0, maximum=1.0)
     for key in ("iter_rate", "max_iter"):
@@ -1288,7 +1309,8 @@ class PlanningPipelineTool(BaseTool):
                 "planning_params": {
                     "type": "object",
                     "description": (
-                        "Invocation-only overrides: {in_lowest_energy, out_highest_energy, DVH_rate, "
+                        "Invocation-only overrides: {dose_value_unit='gy', in_lowest_energy (Gy), "
+                        "out_highest_energy (Gy), DVH_rate, "
                         "iter_rate, max_iter, replan_rate, distance_filter, radiation_array_params, rf_params}. "
                         "Only trajectory-generation and optimization settings are accepted; target/OAR label semantics remain fixed."
                     ),
@@ -2056,6 +2078,25 @@ class PlanningPipelineTool(BaseTool):
         # Get config
         from plans.config import setting
         args = _apply_planning_overrides(setting(), agent_config)
+        dose_value_unit = getattr(args, "dose_value_unit", None)
+        in_lowest_gy = planning_dose_value_to_gy(
+            args.in_lowest_energy,
+            value_unit=dose_value_unit,
+        )
+        out_highest_gy = planning_dose_value_to_gy(
+            args.out_highest_energy,
+            value_unit=dose_value_unit,
+        )
+        in_lowest_model = planning_dose_value_to_model(
+            in_lowest_gy,
+            value_unit="gy",
+            dose_scale_gy=DOSE_MODEL_SCALE_GY,
+        )
+        out_highest_model = planning_dose_value_to_model(
+            out_highest_gy,
+            value_unit="gy",
+            dose_scale_gy=DOSE_MODEL_SCALE_GY,
+        )
 
         # Run planning using core.init_plan + core.optimal_plan directly.
         # We CANNOT use brachy_plan because it rebuilds the radiation volume
@@ -2108,8 +2149,8 @@ class PlanningPipelineTool(BaseTool):
                     getattr(args, 'distance_filter', getattr(args, 'distance_filtter', {})).get('interval_rate', 2),
                     args.radiation_array_params['target_value'],
                     args.radiation_array_params['infer_img_size'],
-                    args.in_lowest_energy,
-                    args.out_highest_energy,
+                    in_lowest_model,
+                    out_highest_model,
                     args.DVH_rate,
                     args.seed_info,
                     args.image_normalize[0],
@@ -2131,8 +2172,8 @@ class PlanningPipelineTool(BaseTool):
                     args.radiation_array_params['background_value'],
                     args.radiation_array_params['obstacle_value'],
                     args.radiation_array_params['infer_img_size'],
-                    args.in_lowest_energy,
-                    args.out_highest_energy,
+                    in_lowest_model,
+                    out_highest_model,
                     args.DVH_rate,
                     args.seed_info,
                     args.iter_rate,
@@ -2149,7 +2190,7 @@ class PlanningPipelineTool(BaseTool):
                     plan_res,
                     radiation_volume,
                     args.radiation_array_params['target_value'],
-                    args.in_lowest_energy,
+                    in_lowest_model,
                 )
                 rf_params = getattr(args, "rf_params", {}) or {}
                 fallback_enabled = rf_params.get("fallback_to_rule_based", True)
@@ -2174,8 +2215,8 @@ class PlanningPipelineTool(BaseTool):
                         args.radiation_array_params['background_value'],
                         args.radiation_array_params['obstacle_value'],
                         args.radiation_array_params['infer_img_size'],
-                        args.in_lowest_energy,
-                        args.out_highest_energy,
+                        in_lowest_model,
+                        out_highest_model,
                         args.DVH_rate,
                         args.seed_info,
                         args.iter_rate,
@@ -2188,7 +2229,7 @@ class PlanningPipelineTool(BaseTool):
                         fallback_plan,
                         radiation_volume,
                         args.radiation_array_params['target_value'],
-                        args.in_lowest_energy,
+                        in_lowest_model,
                     )
                     if fallback_coverage >= rl_target_coverage:
                         plan_res = fallback_plan
@@ -2283,8 +2324,13 @@ class PlanningPipelineTool(BaseTool):
                 "effective_mode": effective_mode,
                 "rl_fallback_used": bool(rl_fallback_used),
                 "rl_target_coverage": rl_target_coverage,
-                "in_lowest_energy": float(args.in_lowest_energy),
-                "out_highest_energy": float(args.out_highest_energy),
+                "dose_value_unit": "gy",
+                "in_lowest_energy": float(in_lowest_gy),
+                "out_highest_energy": float(out_highest_gy),
+                "in_lowest_dose_gy": float(in_lowest_gy),
+                "out_highest_dose_gy": float(out_highest_gy),
+                "prescription_model_threshold": float(in_lowest_model),
+                "dose_scale_gy": DOSE_MODEL_SCALE_GY,
                 "DVH_rate": float(args.DVH_rate),
                 "seed_info": {
                     "radius": float(args.seed_info.get("radius", 0.4)),
@@ -2298,7 +2344,7 @@ class PlanningPipelineTool(BaseTool):
             plan_res,
             radiation_volume,
             args.radiation_array_params['target_value'],
-            args.in_lowest_energy,
+            in_lowest_model,
         )
         summary = (
             f"Step 3/5: Seed planning completed. "
@@ -2364,7 +2410,13 @@ class PlanningPipelineTool(BaseTool):
         resampled_ct = agent.memory.retrieve("resampled_ct") if agent else None
 
         # Dose is in normalized units (no Gy conversion)
-        DOSE_SCALE = DOSE_MODEL_SCALE_GY
+        plan_config = agent.memory.retrieve("plan_config") or {} if agent else {}
+        previous_metrics = agent.memory.retrieve("dose_metrics") or {} if agent else {}
+        DOSE_SCALE = resolve_dose_scale_gy(
+            plan_config,
+            previous_metrics,
+            dose_scale_gy=(agent.memory.retrieve("dose_scale_gy") if agent else None),
+        )
         dose_array = dose_distribution.copy()
 
         if resampled_ct is not None and ct_image is not None:
@@ -2523,15 +2575,16 @@ class PlanningPipelineTool(BaseTool):
 
         # Compute DVH metrics (reference: Zhiyuan BrachyPlan.calculate_dvh)
         #
-        # DOSE_SCALE (120.0): dose_unet_spacing1mm output is rendered using
-        # trained with ground-truth labels where model output 1.0 = 120 Gy.
-        # All internal dose values live in "normalized" space:
-        #   - CNN raw output: 0 ~ 255 (uint8 image_normalize_scale)
-        #   - After normalization: 0 ~ 1.0 (prescription = 1.0)
-        #   - To convert to Gy: dose_normalized × 120.0
-        # This constant also appears in the web planning routes and agent runtime.
-        # Keep the display scale in sync if the dose model calibration changes.
-        DOSE_SCALE = DOSE_MODEL_SCALE_GY
+        # DoseUNet output remains raw model data. The calibration saved with
+        # the plan converts it to Gy; prescription is a separate physical-Gy
+        # value (120 Gy by default). Current model output 1.0 is 190.8 Gy.
+        plan_config = agent.memory.retrieve("plan_config") or {} if agent else {}
+        previous_metrics = agent.memory.retrieve("dose_metrics") or {} if agent else {}
+        DOSE_SCALE = resolve_dose_scale_gy(
+            plan_config,
+            previous_metrics,
+            dose_scale_gy=(agent.memory.retrieve("dose_scale_gy") if agent else None),
+        )
         target_mask = ctv_mask > 0
         target_doses = dose_distribution[target_mask]
 
@@ -2551,24 +2604,12 @@ class PlanningPipelineTool(BaseTool):
         def volume_at_dose(dose_threshold):
             return float(np.sum(target_doses_gy >= dose_threshold) / n * 100.0)
 
-        prescribed_dose = 1.0
-        candidate = 1.0
-        if agent:
-            plan_config = agent.memory.retrieve("plan_config") or {}
-            candidate = plan_config.get(
-                "in_lowest_energy",
-                getattr(agent, "config", {}).get("in_lowest_energy", 1.0),
-            )
-        try:
-            candidate = float(candidate)
-            if candidate > 0:
-                prescribed_dose = candidate
-        except (TypeError, ValueError):
-            logger.warning(
-                "Invalid in_lowest_energy=%r; using normalized prescription 1.0",
-                candidate,
-            )
-        prescription_gy = prescribed_dose * DOSE_SCALE
+        prescription_gy = resolve_prescription_gy(
+            plan_config,
+            previous_metrics,
+            default_gy=DEFAULT_PRESCRIPTION_GY,
+        )
+        prescribed_dose = prescription_gy
 
         # D metrics in Gy (reference: dose_at_volume)
         max_dose = float(np.max(target_doses_gy))
@@ -2595,7 +2636,6 @@ class PlanningPipelineTool(BaseTool):
 
         # OAR metrics in Gy (use organ names if available)
         # Include Dxcc, Dx%, Vx metrics like Zhiyuan
-        DOSE_SCALE = DOSE_MODEL_SCALE_GY
         oar_metrics = {}
         if oar_mask is not None:
             # dose_distribution and oar_mask are both on the planning grid.
@@ -2679,8 +2719,6 @@ class PlanningPipelineTool(BaseTool):
         # Compute DVH curve data (cumulative dose-volume histogram)
         # Reference: Zhiyuan BrachyPlan.calculate_dvh
         # DVH range: max(prescription*3, 250, dose_max*1.1) — ensures meaningful display
-        DOSE_SCALE = DOSE_MODEL_SCALE_GY
-        prescription_gy = prescribed_dose * DOSE_SCALE  # e.g. 1.0 * 120 = 120 Gy
         dvh_data = {}
         if len(target_doses) > 0:
             dose_max_full = float(np.max(target_doses)) * DOSE_SCALE * 1.1
@@ -2756,6 +2794,8 @@ class PlanningPipelineTool(BaseTool):
             "mean_dose": mean_dose,
             "prescribed_dose": prescribed_dose,
             "prescription_gy": prescription_gy,
+            "dose_value_unit": "gy",
+            "prescription_model_threshold": prescription_gy / DOSE_SCALE,
             "dose_scale_gy": DOSE_SCALE,
             "plan_score": plan_score,
             "plan_score_breakdown": {

@@ -10,6 +10,10 @@ import os
 
 from tool_factory import BaseTool, ToolResult
 from .model_support import resolve_dose_model
+from plans.dose_pre.model_loader import (
+    DEFAULT_PRESCRIPTION_GY,
+    planning_dose_value_to_model,
+)
 import numpy as np
 from typing import Dict, Optional
 
@@ -95,13 +99,13 @@ class SeedPlanningTool(BaseTool):
                 },
                 "in_lowest_dose": {
                     "type": "number",
-                    "description": "Minimum target dose in Gy (default: 1)",
-                    "default": 1,
+                    "description": "Minimum target physical dose in Gy (default: 120)",
+                    "default": DEFAULT_PRESCRIPTION_GY,
                 },
                 "out_highest_dose": {
                     "type": "number",
-                    "description": "Maximum healthy tissue dose in Gy (default: 1)",
-                    "default": 1,
+                    "description": "Maximum healthy-tissue physical dose in Gy (default: 120)",
+                    "default": DEFAULT_PRESCRIPTION_GY,
                 },
                 "DVH_rate": {
                     "type": "number",
@@ -161,8 +165,14 @@ class SeedPlanningTool(BaseTool):
         target_value = kwargs.get("target_value", 1)
         background_value = kwargs.get("background_value", 0)
         obstacle_value = kwargs.get("obstacle_value", 3)
-        in_lowest_dose = kwargs.get("in_lowest_dose", 1)
-        out_highest_dose = kwargs.get("out_highest_dose", 1)
+        in_lowest_dose = planning_dose_value_to_model(
+            kwargs.get("in_lowest_dose", DEFAULT_PRESCRIPTION_GY),
+            value_unit=kwargs.get("dose_value_unit") or "gy",
+        )
+        out_highest_dose = planning_dose_value_to_model(
+            kwargs.get("out_highest_dose", DEFAULT_PRESCRIPTION_GY),
+            value_unit=kwargs.get("dose_value_unit") or "gy",
+        )
         DVH_rate = kwargs.get("DVH_rate", 0.9)
         infer_img_size = tuple(kwargs.get("infer_img_size", (64, 64, 64)))
         image_normalize = kwargs.get("image_normalize", [-1000, 3000, 255])

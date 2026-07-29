@@ -15,6 +15,7 @@ from typing import Any, Dict, Optional
 WEB_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(WEB_DIR, ".."))
 
+from plans.dose_pre.model_loader import DEFAULT_PRESCRIPTION_GY, resolve_prescription_gy
 from utils.operation_tracker import get_active_operations as _tracked_operations
 
 try:
@@ -1186,9 +1187,19 @@ def create_app(config: Optional[Dict] = None):
         """Generate source-aware report interpretation without local clinical verdicts."""
         zh = str(language or "").lower().startswith("zh")
         dose = (agent.memory.retrieve("dose_metrics") or {}) if agent else {}
-        prescribed = dose.get("prescription_gy")
-        if prescribed is None:
-            prescribed = float(dose.get("prescribed_dose", 1.0)) * DOSE_MODEL_SCALE_GY
+        prescribed = (
+            resolve_prescription_gy(
+                agent.memory.retrieve("plan_config") or getattr(agent, "config", {}) or {},
+                dose,
+                dose_scale_gy=(
+                    dose.get("dose_scale_gy")
+                    or agent.memory.retrieve("dose_scale_gy")
+                    or DOSE_MODEL_SCALE_GY
+                ),
+            )
+            if agent
+            else DEFAULT_PRESCRIPTION_GY
+        )
         try:
             from tool_factory.report_context import (
                 build_report_context,
@@ -1465,9 +1476,15 @@ def create_app(config: Optional[Dict] = None):
                 if dose.get("plan_score") is not None:
                     patch["metrics.score"] = round(float(dose["plan_score"]), 1)
                     provenance["planning"].append("metrics.score")
-                prescription_gy = dose.get("prescription_gy")
-                if prescription_gy is None and dose.get("prescribed_dose") is not None:
-                    prescription_gy = float(dose["prescribed_dose"]) * DOSE_MODEL_SCALE_GY
+                prescription_gy = resolve_prescription_gy(
+                    agent.memory.retrieve("plan_config") or getattr(agent, "config", {}) or {},
+                    dose,
+                    dose_scale_gy=(
+                        dose.get("dose_scale_gy")
+                        or agent.memory.retrieve("dose_scale_gy")
+                        or DOSE_MODEL_SCALE_GY
+                    ),
+                )
                 if prescription_gy is not None:
                     patch["planning.prescriptionGy"] = round(float(prescription_gy), 1)
                     provenance["planning"].append("planning.prescriptionGy")

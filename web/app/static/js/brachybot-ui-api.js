@@ -143,9 +143,9 @@ function collectUIState() {
                 backlit_angle: Number(document.getElementById('backlitAngle')?.value || 0.5),
                 maximum_candidate_trajectories: Math.round(Number(document.getElementById('maxCandiTraj')?.value || 500)),
             },
-            // Persist normalized model values even though the controls show Gy.
-            in_lowest_energy: doseGyToModel(document.getElementById('inLowestEnergy')?.value, doseModelScaleGy()),
-            out_highest_energy: doseGyToModel(document.getElementById('outHighestEnergy')?.value, doseModelScaleGy()),
+            dose_value_unit: 'gy',
+            in_lowest_energy: Number(document.getElementById('inLowestEnergy')?.value || 120),
+            out_highest_energy: Number(document.getElementById('outHighestEnergy')?.value || 120),
             dvh_rate: Number(document.getElementById('dvhRate')?.value || 0.9),
             max_iter: Math.round(Number(document.getElementById('maxIter')?.value || 4)),
             iter_rate: Number(document.getElementById('iterRate')?.value || 2),
@@ -295,10 +295,10 @@ const state = {
 /******** API ********/
 const API = '/api';
 
-// The dose engine stores model-space multipliers internally while the UI
-// exposes physical Gy. Keep the conversion at this boundary so workspace
-// snapshots and planning requests never confuse the two representations.
-const DEFAULT_DOSE_MODEL_SCALE_GY = 120;
+// Planning controls and workspace snapshots use physical Gy. Raw DoseUNet
+// conversion is reserved for viewer/model boundaries.
+const DEFAULT_DOSE_MODEL_SCALE_GY = 190.8;
+const DEFAULT_PRESCRIPTION_GY = 120;
 window.__doseModelScaleGy = Number(window.__doseModelScaleGy || DEFAULT_DOSE_MODEL_SCALE_GY);
 function doseModelScaleGy() {
     const value = Number(window.__doseModelScaleGy);
@@ -311,6 +311,20 @@ function doseGyToModel(value, fallback = 1) {
 function doseModelToGy(value, fallback = doseModelScaleGy()) {
     const modelValue = Number(value);
     return Number.isFinite(modelValue) && modelValue >= 0 ? modelValue * doseModelScaleGy() : fallback;
+}
+function prescriptionMultiplierToGy(value, fallback = DEFAULT_PRESCRIPTION_GY) {
+    const multiplier = Number(value);
+    return Number.isFinite(multiplier) && multiplier >= 0
+        ? multiplier * DEFAULT_PRESCRIPTION_GY
+        : fallback;
+}
+function planningDoseValueToGy(value, valueUnit = '', fallback = DEFAULT_PRESCRIPTION_GY) {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
+    const unit = String(valueUnit || '').trim().toLowerCase();
+    if (unit === 'gy' || unit === 'physical_gy' || unit === 'dose_gy') return parsed;
+    // Unit-less values <= 5 are legacy Rx multipliers from old sessions.
+    return parsed <= 5 ? prescriptionMultiplierToGy(parsed, fallback) : parsed;
 }
 
 var trainingMonitorState = {
@@ -355,7 +369,21 @@ function _flushMonitorFeedback(ownerSessionId, ownerRunId) {
     const body = unique.length === 1
         ? unique[0].message
         : unique.map(item => `- ${item.message}`).join('\n');
-    addChat('bot-response', `**${title}**\n\n${body}`, true, Date.now(), false, ownerSessionId);
+    const requestId = `monitor-${ownerRunId}`;
+    addChat(
+        'bot-response',
+        `**${title}**\n\n${body}`,
+        true,
+        Date.now(),
+        false,
+        ownerSessionId,
+        {
+            requestId,
+            messageId: `assistant-${requestId}-feedback-${Date.now()}`,
+            messageKind: 'monitor_feedback',
+            responseLanguage: monitorConversationLanguage(ownerSessionId),
+        },
+    );
 }
 
 function _queueMonitorFeedback(message, type, label, ownerSessionId, ownerRunId) {
@@ -367,7 +395,21 @@ function _queueMonitorFeedback(message, type, label, ownerSessionId, ownerRunId)
     if (immediate) {
         _flushMonitorFeedback(ownerSessionId, ownerRunId);
         const title = monitorChatText('监测建议', 'Monitor feedback', ownerSessionId);
-        addChat('bot-response', `**${title}**\n\n${message}`, true, Date.now(), false, ownerSessionId);
+        const requestId = `monitor-${ownerRunId}`;
+        addChat(
+            'bot-response',
+            `**${title}**\n\n${message}`,
+            true,
+            Date.now(),
+            false,
+            ownerSessionId,
+            {
+                requestId,
+                messageId: `assistant-${requestId}-feedback-${Date.now()}`,
+                messageKind: 'monitor_feedback',
+                responseLanguage: monitorConversationLanguage(ownerSessionId),
+            },
+        );
         return true;
     }
     if (!aggregate) return false;
@@ -383,10 +425,11 @@ function _queueMonitorFeedback(message, type, label, ownerSessionId, ownerRunId)
 }
 
 function monitorConversationLanguage(sessionId = trainingMonitorState.sessionId) {
+    if (window._i18nLang) return window._i18nLang;
     if (typeof window.conversationLanguageForSession === 'function') {
         return window.conversationLanguageForSession(sessionId);
     }
-    return window._i18nLang || 'en';
+    return window._responseLanguage || 'en';
 }
 window.monitorConversationLanguage = monitorConversationLanguage;
 
@@ -542,7 +585,21 @@ async function reportUIEvent(type, label, detail = {}, options = {}) {
         );
         if (!queued && feedbackText && _shouldLogTrainingFeedback(feedbackText, type, label)) {
             const monitorPrefix = monitorChatText('监测建议', 'Monitor feedback', ownerSessionId);
-            addChat('bot-response', `**${monitorPrefix}**\n\n${feedbackText}`, true, Date.now(), false, ownerSessionId);
+            const requestId = `monitor-${ownerRunId}`;
+            addChat(
+                'bot-response',
+                `**${monitorPrefix}**\n\n${feedbackText}`,
+                true,
+                Date.now(),
+                false,
+                ownerSessionId,
+                {
+                    requestId,
+                    messageId: `assistant-${requestId}-feedback-${Date.now()}`,
+                    messageKind: 'monitor_feedback',
+                    responseLanguage: language,
+                },
+            );
         }
         if (data && data.suggested_screenshot && trainingMonitorState.active) {
             const now = Date.now();
@@ -568,19 +625,77 @@ async function reportUIEvent(type, label, detail = {}, options = {}) {
                         || ownerRunId !== trainingMonitorState.runId
                         || ownerSessionId !== _activeApiSessionId()) return;
                     if (!trainingMonitorState.screenshotGalleryContext) {
-                        trainingMonitorState.screenshotGalleryContext = { keys: new Set() };
+                        trainingMonitorState.screenshotGalleryContext = {
+                            keys: new Set(),
+                            items: [],
+                            sessionId: ownerSessionId,
+                            requestId: `monitor-${ownerRunId || Date.now()}`,
+                            messageId: `assistant-monitor-${ownerRunId || Date.now()}`,
+                            mode: 'monitor',
+                            layout: 'auto',
+                        };
                     }
+                    const monitorScreenshotContext = trainingMonitorState.screenshotGalleryContext;
+                    const focusObjectIds = [
+                        ...(Array.isArray(ss.focus_seed_ids) ? ss.focus_seed_ids : []),
+                        ...(Array.isArray(ss.object_ids) ? ss.object_ids : []),
+                    ].map(String);
                     _interceptScreenshot(
                         ss.target || 'dose-overview',
-                        ss.question || ss.description || 'Monitor screenshot',
-                        trainingMonitorState.screenshotGalleryContext,
+                        ss.question || ss.description || monitorChatText('监测截图', 'Monitor screenshot', ownerSessionId),
+                        monitorScreenshotContext,
                         {
                             sessionId: ownerSessionId,
-                            preservePanel: true,
+                            requestId: monitorScreenshotContext.requestId,
+                            messageId: monitorScreenshotContext.messageId,
+                            mode: 'monitor',
                             monitorOnly: true,
-                            focusSeedIds: ss.focus_seed_ids || [],
+                            plan: {
+                                version: 2,
+                                mode: 'monitor',
+                                question: ss.question || ss.description || '',
+                                description: ss.description || '',
+                                layout: ss.layout || 'auto',
+                                views: Array.isArray(ss.views) && ss.views.length
+                                    ? ss.views
+                                    : [ss.target || 'dose-overview'],
+                                object_ids: focusObjectIds,
+                                highlight_object_ids: focusObjectIds,
+                                hide_unrelated: !!ss.hide_unrelated || focusObjectIds.length > 0,
+                                focus: {
+                                    kind: focusObjectIds.length ? 'close-up' : 'auto',
+                                    padding: Number(ss.padding || 0.35),
+                                },
+                                overlays: ss.overlays || {},
+                                data_version: ss.data_version || '',
+                                planning_id: ss.planning_id || '',
+                                case_id: ownerSessionId,
+                            },
                         },
-                    );
+                    ).then(result => {
+                        if (!result?.success
+                            || !trainingMonitorState.active
+                            || ownerRunId !== trainingMonitorState.runId
+                            || ownerSessionId !== _activeApiSessionId()) return;
+                        const title = monitorChatText('监测证据', 'Monitor evidence', ownerSessionId);
+                        addChat(
+                            'bot-response',
+                            `**${title}**${feedbackText ? `\n\n${feedbackText}` : ''}`,
+                            true,
+                            Date.now(),
+                            false,
+                            ownerSessionId,
+                            {
+                                requestId: monitorScreenshotContext.requestId,
+                                messageId: monitorScreenshotContext.messageId,
+                                messageKind: 'monitor_evidence',
+                                responseLanguage: language,
+                                attachments: result.attachments || monitorScreenshotContext.items || [],
+                            },
+                        );
+                    }).catch(error => {
+                        console.debug('[monitor] screenshot evidence skipped:', error);
+                    });
                 }, 500);
             }
         }
@@ -2728,8 +2843,26 @@ async function loadDefaultParams() {
         // Planning params
         if (d.planning) {
             const p = d.planning;
-            setVal('inLowestEnergy', doseModelToGy(p.in_lowest_energy));
-            setVal('outHighestEnergy', doseModelToGy(p.out_highest_energy));
+            setVal(
+                'inLowestEnergy',
+                Number.isFinite(Number(p.in_lowest_dose_gy))
+                    ? Number(p.in_lowest_dose_gy)
+                    : planningDoseValueToGy(
+                        p.in_lowest_energy,
+                        p.dose_value_unit,
+                        DEFAULT_PRESCRIPTION_GY
+                    )
+            );
+            setVal(
+                'outHighestEnergy',
+                Number.isFinite(Number(p.out_highest_dose_gy))
+                    ? Number(p.out_highest_dose_gy)
+                    : planningDoseValueToGy(
+                        p.out_highest_energy,
+                        p.dose_value_unit,
+                        DEFAULT_PRESCRIPTION_GY
+                    )
+            );
             setVal('dvhRate', p.DVH_rate);
             setVal('maxIter', p.max_iter);
             setVal('iterRate', p.iter_rate);
@@ -4253,7 +4386,7 @@ function _openScreenshotModal(url, label, index = 0, total = 1) {
     document.addEventListener('keydown', onKey);
 }
 
-function _localizedScreenshotTargetLabel(target) {
+function _localizedScreenshotTargetLabelLegacy(target) {
     const labels = {
         'viewer-axial': ['轴位', 'Axial'],
         'viewer-sagittal': ['矢状位', 'Sagittal'],
@@ -4270,11 +4403,11 @@ function _localizedScreenshotTargetLabel(target) {
     return language === 'zh' ? pair[0] : pair[1];
 }
 
-function _appendScreenshotToGallery(url, target, question, galleryContext) {
+function _appendScreenshotToGalleryLegacy(url, target, question, galleryContext) {
     const context = galleryContext || {};
     const messages = document.getElementById('chatMessages');
     if (!messages || !url) return;
-    const label = _localizedScreenshotTargetLabel(target);
+    const label = _localizedScreenshotTargetLabelLegacy(target);
     const requestKey = `${label}|${String(question || '').trim()}`;
     // The same SSE completion can arrive through both the step and final
     // event paths. Keep one tile per logical target/question, while still
@@ -4354,7 +4487,7 @@ function _restoreScreenshotPanel(panelName) {
 // Intercept ui_screenshot: capture the target element, upload to server,
 // and display the image in the chat. This bridges the gap between the
 // LLM's ui_screenshot tool call and the frontend's actual capture.
-async function _interceptScreenshot(target, question, galleryContext, options = {}) {
+async function _interceptScreenshotLegacy(target, question, galleryContext, options = {}) {
     const ownerSessionId = String(options.sessionId || _activeApiSessionId());
     const isCurrentOwner = () => ownerSessionId === String(_activeApiSessionId());
     const isAllowed = () => isCurrentOwner()
@@ -4430,7 +4563,7 @@ async function _interceptScreenshot(target, question, galleryContext, options = 
         const screenshotUrl = data.url || data.screenshot_url || data.image_url || data.path
             || (data.data && (data.data.url || data.data.path));
         if (!screenshotUrl) throw new Error(data.error || data.message || 'server did not return a screenshot URL');
-        _appendScreenshotToGallery(screenshotUrl, normalizedTarget, question, galleryContext);
+        _appendScreenshotToGalleryLegacy(screenshotUrl, normalizedTarget, question, galleryContext);
         uiDebugLog('[screenshot] Captured and uploaded:', screenshotUrl);
         return { success: true, url: screenshotUrl, target: normalizedTarget };
     } catch (e) {
@@ -4459,5 +4592,473 @@ async function _interceptScreenshot(target, question, galleryContext, options = 
         }
     }
 }
+
+// Structured chat/Monitor screenshot executor. The earlier single-target
+// implementation remains above for compatibility with old bundles, but this
+// declaration intentionally supersedes it. Report figures continue to use the
+// report subsystem and its fixed composition.
+function _openScreenshotModal(url, label, index = 0, total = 1) {
+    document.querySelector('.image-modal-overlay')?.remove();
+    const language = _screenshotLanguage(_activeApiSessionId());
+    const overlay = document.createElement('div');
+    overlay.className = 'image-modal-overlay';
+    overlay.addEventListener('click', event => {
+        if (event.target === overlay) overlay.remove();
+    });
+    const close = document.createElement('button');
+    close.className = 'image-modal-close';
+    close.type = 'button';
+    close.textContent = '\u00d7';
+    close.title = language === 'zh' ? '\u5173\u95ed\u56fe\u7247' : 'Close image';
+    close.addEventListener('click', () => overlay.remove());
+    const image = document.createElement('img');
+    image.src = url;
+    image.alt = label || (language === 'zh' ? '\u622a\u56fe' : 'Screenshot');
+    image.addEventListener('click', event => event.stopPropagation());
+    const info = document.createElement('div');
+    info.className = 'image-modal-info';
+    const fallback = language === 'zh' ? '\u622a\u56fe' : 'Screenshot';
+    info.textContent = total > 1
+        ? `${label || fallback} \u00b7 ${index + 1}/${total}`
+        : (label || fallback);
+    overlay.append(close, image, info);
+    document.body.appendChild(overlay);
+    const onKey = event => {
+        if (event.key !== 'Escape') return;
+        overlay.remove();
+        document.removeEventListener('keydown', onKey);
+    };
+    document.addEventListener('keydown', onKey);
+}
+
+function _screenshotLanguage(sessionId) {
+    const raw = window._i18nLang || (
+        typeof window.conversationLanguageForSession === 'function'
+            ? window.conversationLanguageForSession(sessionId || _activeApiSessionId())
+            : window._responseLanguage || 'en'
+    );
+    return String(raw || 'en').toLowerCase().startsWith('zh') ? 'zh' : 'en';
+}
+
+function _localizedScreenshotText(candidate, fallback, sessionId) {
+    const value = String(candidate || '').trim();
+    if (!value) return fallback;
+    const language = _screenshotLanguage(sessionId);
+    const hasChinese = /[\u3400-\u9fff]/.test(value);
+    if ((language === 'zh' && !hasChinese) || (language === 'en' && hasChinese)) {
+        return fallback;
+    }
+    return value;
+}
+
+function _localizedScreenshotTargetLabel(target) {
+    const labels = {
+        'viewer-axial': ['\u8f74\u4f4d', 'Axial'],
+        'viewer-sagittal': ['\u77e2\u72b6\u4f4d', 'Sagittal'],
+        'viewer-coronal': ['\u51a0\u72b6\u4f4d', 'Coronal'],
+        'viewer-3d': ['\u4e09\u7ef4\u67e5\u770b\u5668', '3D viewer'],
+        'dvh': ['DVH \u66f2\u7ebf', 'DVH'],
+        'data-tree': ['\u6570\u636e\u6811', 'Data Tree'],
+        'metrics': ['\u89c4\u5212\u6307\u6807', 'Planning metrics'],
+        'full': ['\u5b8c\u6574\u754c\u9762', 'Full application'],
+    };
+    const language = _screenshotLanguage(_activeApiSessionId());
+    const pair = labels[target] || [target || '\u622a\u56fe', target || 'Screenshot'];
+    return language === 'zh' ? pair[0] : pair[1];
+}
+
+function _appendScreenshotToGallery(url, target, question, galleryContext, attachmentMeta = {}) {
+    const context = galleryContext || {};
+    if (!url) return null;
+    if (!Array.isArray(context.items)) context.items = [];
+    if (!context.keys) context.keys = new Set();
+    const label = _localizedScreenshotTargetLabel(target);
+    const attachment = Object.assign({}, attachmentMeta || {}, {
+        id: String(
+            attachmentMeta?.id
+            || `${context.requestId || 'request'}-${target}-${context.items.length}`
+        ),
+        url,
+        target,
+        title: attachmentMeta?.title || label,
+        description: attachmentMeta?.description || question || '',
+        mode: attachmentMeta?.mode || context.mode || 'chat',
+        request_id: attachmentMeta?.request_id || context.requestId || '',
+        message_id: attachmentMeta?.message_id || context.messageId || '',
+        session_id: attachmentMeta?.session_id || context.sessionId || _activeApiSessionId(),
+    });
+    const key = String(attachment.id || attachment.url);
+    if (context.keys.has(key)) return null;
+    context.keys.add(key);
+    const messageKind = String(
+        context.messageKind
+        || (attachment.mode === 'monitor' ? 'monitor_evidence' : 'assistant_final')
+    );
+
+    const shell = typeof window.ensureAssistantReplyContainer === 'function'
+        ? window.ensureAssistantReplyContainer(
+            context.requestId || attachment.request_id,
+            context.messageId || attachment.message_id,
+            Date.now(),
+            messageKind,
+        )
+        : null;
+    if (!shell) return null;
+    if (typeof window.renderAssistantAttachments === 'function') {
+        window.renderAssistantAttachments(shell, [attachment], context.layout || 'auto');
+    }
+    context.items.push(attachment);
+    if (typeof saveSessionMessage === 'function') {
+        saveSessionMessage(
+            'bot-response',
+            '',
+            null,
+            Date.now(),
+            context.sessionId || attachment.session_id || _activeApiSessionId(),
+            {
+                requestId: context.requestId || attachment.request_id,
+                messageId: context.messageId || attachment.message_id,
+                messageKind,
+                attachments: [attachment],
+                screenshotLayout: context.layout || 'auto',
+            },
+        );
+    }
+    scrollToBottom();
+    return attachment;
+}
+
+function _normalizeStructuredScreenshotPlan(target, question, options = {}) {
+    const supplied = options.plan && typeof options.plan === 'object' ? options.plan : {};
+    const mode = ['chat', 'monitor', 'report'].includes(supplied.mode || options.mode)
+        ? String(supplied.mode || options.mode)
+        : 'chat';
+    let views = Array.isArray(supplied.views) && supplied.views.length
+        ? supplied.views
+        : [{ target: target || 'full' }];
+    views = views.map(view => typeof view === 'string' ? { target: view } : Object.assign({}, view));
+    const expanded = [];
+    views.forEach(view => {
+        const normalizedTarget = ({
+            dose: 'dose-overview',
+            dose_distribution: 'dose-overview',
+            'dvh-chart': 'dvh',
+        })[view.target] || view.target || 'full';
+        if (normalizedTarget === 'dose-overview' && mode !== 'report') {
+            ['viewer-axial', 'viewer-sagittal', 'viewer-coronal', 'dvh'].forEach(item => {
+                expanded.push(Object.assign({}, view, { target: item }));
+            });
+        } else {
+            expanded.push(Object.assign({}, view, { target: normalizedTarget }));
+        }
+    });
+    return Object.assign({}, supplied, {
+        version: Number(supplied.version || 2),
+        mode,
+        question: supplied.question || question || '',
+        layout: supplied.layout || options.layout || 'auto',
+        views: expanded.slice(0, 8),
+        object_ids: Array.isArray(supplied.object_ids) ? supplied.object_ids : [],
+        data_tree_node_ids: Array.isArray(supplied.data_tree_node_ids) ? supplied.data_tree_node_ids : [],
+        highlight_object_ids: Array.isArray(supplied.highlight_object_ids)
+            ? supplied.highlight_object_ids
+            : [],
+        focus: supplied.focus && typeof supplied.focus === 'object' ? supplied.focus : {},
+        slice_indices: supplied.slice_indices && typeof supplied.slice_indices === 'object'
+            ? supplied.slice_indices
+            : {},
+        overlays: supplied.overlays && typeof supplied.overlays === 'object' ? supplied.overlays : {},
+    });
+}
+
+function _snapshotScreenshotViewerState() {
+    const viewerState = typeof state !== 'undefined' && state ? state : {};
+    const checkboxValue = id => {
+        const element = document.getElementById(id);
+        return element ? !!element.checked : null;
+    };
+    return {
+        panel: _activeScreenshotPanel(),
+        slices: {
+            axial: Number(viewerState.slices?.axial || 0),
+            sagittal: Number(viewerState.slices?.sagittal || 0),
+            coronal: Number(viewerState.slices?.coronal || 0),
+        },
+        overlays: {
+            ctv: checkboxValue('overlayCTV'),
+            oar: checkboxValue('overlayOAR'),
+        },
+        dose: viewerState.doseOverlay ? {
+            visible: !!viewerState.doseOverlay.visible,
+            opacity: viewerState.doseOverlay.opacity,
+        } : null,
+    };
+}
+
+async function _restoreScreenshotViewerState(snapshot, restoreFocus) {
+    const viewerState = typeof state !== 'undefined' && state ? state : {};
+    try {
+        if (typeof restoreFocus === 'function') restoreFocus();
+    } catch (error) {
+        console.debug('[screenshot] object focus restore skipped:', error);
+    }
+    if (!snapshot) return;
+    Object.entries(snapshot.slices || {}).forEach(([axis, value]) => {
+        if (typeof updateSlice === 'function') updateSlice(axis, value);
+    });
+    [['overlayCTV', snapshot.overlays?.ctv], ['overlayOAR', snapshot.overlays?.oar]].forEach(([id, value]) => {
+        const element = document.getElementById(id);
+        if (!element || value === null || value === undefined || element.checked === value) return;
+        element.checked = value;
+        element.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    if (snapshot.dose && viewerState.doseOverlay) {
+        viewerState.doseOverlay.visible = snapshot.dose.visible;
+        viewerState.doseOverlay.opacity = snapshot.dose.opacity;
+        if (typeof updateDoseColorbars === 'function') {
+            updateDoseColorbars(
+                viewerState.doseOverlay.visible,
+                viewerState.doseOverlay.doseMin,
+                viewerState.doseOverlay.doseMax,
+            );
+        }
+    }
+    if (snapshot.panel && _activeScreenshotPanel() !== snapshot.panel) {
+        _restoreScreenshotPanel(snapshot.panel);
+    }
+    await _waitScreenshotFrames(3);
+}
+
+async function _applyStructuredScreenshotPlan(plan) {
+    const viewerState = typeof state !== 'undefined' && state ? state : {};
+    Object.entries(plan.slice_indices || {}).forEach(([axis, value]) => {
+        if (['axial', 'sagittal', 'coronal'].includes(axis)
+            && Number.isFinite(Number(value))
+            && typeof updateSlice === 'function') {
+            updateSlice(axis, Math.round(Number(value)));
+        }
+    });
+    const centerVoxel = plan.focus?.center_voxel;
+    if (Array.isArray(centerVoxel) && centerVoxel.length === 3 && typeof updateSlice === 'function') {
+        updateSlice('sagittal', Math.round(Number(centerVoxel[0])));
+        updateSlice('coronal', Math.round(Number(centerVoxel[1])));
+        updateSlice('axial', Math.round(Number(centerVoxel[2])));
+    }
+    [['overlayCTV', plan.overlays?.ctv], ['overlayOAR', plan.overlays?.oar]].forEach(([id, value]) => {
+        const element = document.getElementById(id);
+        if (!element || typeof value !== 'boolean' || element.checked === value) return;
+        element.checked = value;
+        element.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    if (typeof plan.overlays?.dose === 'boolean' && viewerState.doseOverlay) {
+        viewerState.doseOverlay.visible = plan.overlays.dose;
+        if (typeof updateDoseColorbars === 'function') {
+            updateDoseColorbars(
+                plan.overlays.dose,
+                viewerState.doseOverlay.doseMin,
+                viewerState.doseOverlay.doseMax,
+            );
+        }
+    }
+    const focusIds = [...new Set([
+        ...(plan.object_ids || []),
+        ...(plan.highlight_object_ids || []),
+    ].map(String).filter(Boolean))];
+    if (focusIds.length && typeof window.focusPlanningObjectsForScreenshot === 'function') {
+        return window.focusPlanningObjectsForScreenshot(focusIds, {
+            hideUnrelated: !!plan.hide_unrelated,
+            highlightObjectIds: plan.highlight_object_ids || [],
+            padding: Number(plan.focus?.padding || 0.35),
+        });
+    }
+    if (focusIds.length && typeof window.focusPlanningSeedsForScreenshot === 'function') {
+        return window.focusPlanningSeedsForScreenshot(focusIds);
+    }
+    return null;
+}
+
+function _validateScreenshotDataUrl(dataUrl) {
+    return new Promise(resolve => {
+        if (!String(dataUrl || '').startsWith('data:image/') || dataUrl.length < 1800) {
+            resolve(false);
+            return;
+        }
+        const image = new Image();
+        image.onload = () => {
+            try {
+                const canvas = document.createElement('canvas');
+                canvas.width = 24;
+                canvas.height = 24;
+                const ctx = canvas.getContext('2d', { willReadFrequently: true });
+                ctx.drawImage(image, 0, 0, 24, 24);
+                const pixels = ctx.getImageData(0, 0, 24, 24).data;
+                let min = 255;
+                let max = 0;
+                let alphaPixels = 0;
+                for (let index = 0; index < pixels.length; index += 4) {
+                    const value = Math.round((pixels[index] + pixels[index + 1] + pixels[index + 2]) / 3);
+                    min = Math.min(min, value);
+                    max = Math.max(max, value);
+                    if (pixels[index + 3] > 8) alphaPixels += 1;
+                }
+                resolve(alphaPixels > 32 && max - min > 2);
+            } catch (_) {
+                resolve(dataUrl.length > 4000);
+            }
+        };
+        image.onerror = () => resolve(false);
+        image.src = dataUrl;
+    });
+}
+
+function _renderScreenshotFailure(galleryContext, errorCode) {
+    const context = galleryContext || {};
+    const language = _screenshotLanguage(context.sessionId);
+    const message = language === 'zh'
+        ? '\u672a\u80fd\u751f\u6210\u6709\u6548\u622a\u56fe\u3002\u8bf7\u786e\u8ba4\u76ee\u6807\u6570\u636e\u5df2\u52a0\u8f7d\u540e\u91cd\u8bd5\u3002'
+        : 'A valid screenshot could not be generated. Confirm that the target data is loaded, then retry.';
+    const shell = typeof window.ensureAssistantReplyContainer === 'function'
+        ? window.ensureAssistantReplyContainer(
+            context.requestId,
+            context.messageId,
+            Date.now(),
+            context.messageKind || (context.mode === 'monitor' ? 'monitor_evidence' : 'assistant_final'),
+        )
+        : null;
+    if (shell?.response && !String(shell.response.textContent || '').trim()) {
+        shell.response.hidden = false;
+        shell.response.textContent = message;
+    }
+    if (typeof saveSessionMessage === 'function') {
+        saveSessionMessage(
+            'bot-response',
+            message,
+            null,
+            Date.now(),
+            context.sessionId || _activeApiSessionId(),
+            {
+                requestId: context.requestId || '',
+                messageId: context.messageId || '',
+                messageKind: context.messageKind
+                    || (context.mode === 'monitor' ? 'monitor_evidence' : 'assistant_final'),
+                screenshotLayout: context.layout || 'auto',
+            },
+        );
+    }
+    console.warn('[screenshot] user-visible capture failure:', errorCode);
+}
+
+async function _interceptScreenshot(target, question, galleryContext, options = {}) {
+    const context = galleryContext || {};
+    const ownerSessionId = String(options.sessionId || context.sessionId || _activeApiSessionId());
+    context.sessionId = ownerSessionId;
+    context.requestId = String(options.requestId || context.requestId || '');
+    context.messageId = String(options.messageId || context.messageId || '');
+    const plan = _normalizeStructuredScreenshotPlan(target, question, options);
+    context.mode = plan.mode;
+    context.layout = plan.layout;
+    const ownerStillActive = () => ownerSessionId === String(_activeApiSessionId())
+        && (!options.monitorOnly || trainingMonitorState.active);
+    if (!ownerStillActive()) return { success: false, stale: true, error: 'case_changed' };
+
+    const snapshot = _snapshotScreenshotViewerState();
+    let restoreFocus = null;
+    const attachments = [];
+    try {
+        restoreFocus = await _applyStructuredScreenshotPlan(plan);
+        for (let index = 0; index < plan.views.length; index += 1) {
+            if (!ownerStillActive()) return { success: false, stale: true, error: 'case_changed' };
+            const view = plan.views[index];
+            const viewTarget = String(view.target || 'full');
+            const element = viewTarget === 'dose-overview'
+                ? document.body
+                : await _prepareScreenshotTarget(viewTarget);
+            if (!element) throw new Error(`target_not_found:${viewTarget}`);
+            const dataUrl = await _captureScreenshotDataUrl(viewTarget, element);
+            if (!await _validateScreenshotDataUrl(dataUrl)) {
+                throw new Error(`blank_or_invalid:${viewTarget}`);
+            }
+            const attachmentId = String(
+                view.attachment_id
+                || `${context.requestId || 'request'}-${viewTarget}-${index}`
+            );
+            const fallbackTitle = _localizedScreenshotTargetLabel(viewTarget);
+            const localizedTitle = _localizedScreenshotText(
+                view.title || plan.title,
+                fallbackTitle,
+                ownerSessionId,
+            );
+            const response = await fetch(API + '/screenshot', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-BrachyBot-Session': ownerSessionId,
+                },
+                body: JSON.stringify({
+                    image: dataUrl,
+                    target: viewTarget,
+                    description: view.description || plan.description || plan.question || '',
+                    title: localizedTitle,
+                    mode: plan.mode,
+                    layout: plan.layout,
+                    request_id: context.requestId,
+                    message_id: context.messageId,
+                    attachment_id: attachmentId,
+                    planning_id: plan.planning_id || '',
+                    case_id: plan.case_id || ownerSessionId,
+                    data_version: plan.data_version || '',
+                    question: plan.question || '',
+                    view_metadata: {
+                        index,
+                        focus: plan.focus || {},
+                        object_ids: plan.object_ids || [],
+                        data_tree_node_ids: plan.data_tree_node_ids || [],
+                        overlays: plan.overlays || {},
+                    },
+                }),
+            });
+            const bodyText = await response.text();
+            let payload = {};
+            try { payload = bodyText ? JSON.parse(bodyText) : {}; } catch (_) {}
+            if (!response.ok) throw new Error(payload.error || `upload_failed:${response.status}`);
+            const screenshotUrl = payload.url || payload.screenshot_url || payload.path;
+            if (!screenshotUrl) throw new Error('missing_screenshot_url');
+            const attachment = _appendScreenshotToGallery(
+                screenshotUrl,
+                viewTarget,
+                plan.question,
+                context,
+                payload.attachment || {
+                    id: attachmentId,
+                    mode: plan.mode,
+                    request_id: context.requestId,
+                    message_id: context.messageId,
+                    session_id: ownerSessionId,
+                },
+            );
+            if (attachment) attachments.push(attachment);
+        }
+        return {
+            success: attachments.length > 0,
+            attachments,
+            url: attachments[0]?.url || '',
+            target: attachments[0]?.target || target,
+            plan,
+        };
+    } catch (error) {
+        if (!ownerStillActive()) return { success: false, stale: true, error: 'case_changed' };
+        _renderScreenshotFailure(context, error?.message || String(error));
+        return { success: false, error: error?.message || String(error), attachments, plan };
+    } finally {
+        await _restoreScreenshotViewerState(snapshot, restoreFocus);
+    }
+}
+
+window.executeStructuredScreenshotPlan = (plan, context = {}) => _interceptScreenshot(
+    plan?.views?.[0]?.target || 'full',
+    plan?.question || '',
+    context,
+    { plan, mode: plan?.mode || 'chat', sessionId: context.sessionId },
+);
 
 /******** PANEL SWITCHING ********/

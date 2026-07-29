@@ -65,6 +65,12 @@ def _collect_tool_fallback_text(steps: List[Dict], messages: List[Dict]) -> Tupl
     for step in steps or []:
         if step.get("type") != "tool":
             continue
+        # Frontend-action tools can carry model-only transport instructions.
+        # They belong in the execution trace metadata, never in a fallback
+        # assistant answer such as "Based on the available results".
+        metadata = step.get("metadata") if isinstance(step.get("metadata"), dict) else {}
+        if metadata.get("internal_only") or metadata.get("user_visible") is False:
+            continue
         result = str(step.get("result") or "").strip()
         if not result:
             continue
@@ -1246,6 +1252,13 @@ class LLMRuntimeMixin:
             return self._is_turn_cancelled(_turn_token)
 
         def _ui_screenshot_turn_response() -> Optional[str]:
+            """Suppress model-only screenshot acknowledgements.
+
+            The browser attaches the capture to this turn and, when analysis
+            was requested, starts one hidden visual follow-up under the same
+            request/message IDs. Returning any transport text here would leak
+            an internal acknowledgement into the normal chat stream.
+            """
             tool_steps = [s for s in steps if s.get("type") == "tool"]
             if not tool_steps:
                 return None
@@ -1254,33 +1267,7 @@ class LLMRuntimeMixin:
             ss_steps = [s for s in tool_steps if s.get("tool") == "ui_screenshot"]
             if not ss_steps:
                 return None
-            last = ss_steps[-1]
-            params = last.get("params") or {}
-            target = params.get("target") or (last.get("metadata") or {}).get("target") or ""
-            if target == "dose-overview":
-                target_label = "three-plane dose overview (Axial/Sagittal/Coronal)"
-            elif target == "dvh":
-                target_label = "DVH chart"
-            elif target == "viewer-axial":
-                target_label = "Axial view"
-            elif target == "viewer-sagittal":
-                target_label = "Sagittal view"
-            elif target == "viewer-coronal":
-                target_label = "Coronal view"
-            elif target == "metrics":
-                target_label = "Analysis/Metrics panel with DVH"
-            else:
-                target_label = target or "current UI"
-            if last.get("status") == "error":
-                result = last.get("result") or last.get("content") or "Screenshot request failed."
-                if "Unknown target" in str(result) and "dvh" in str(result).lower():
-                    return "DVH screenshot target is now `dvh`. Please request the DVH screenshot again."
-                return f"Screenshot request failed: {result}"
-            lowered = message.lower()
-            asked_direction = any(k in lowered for k in ["哪个方向", "方向", "axial", "sagittal", "coronal"])
-            if asked_direction and target in ("viewer-axial", "viewer-sagittal", "viewer-coronal"):
-                return f"The requested screenshot is the {target_label}. It will appear directly in the chat."
-            return f"Requested screenshot: {target_label}. The image will appear directly in the chat."
+            return ""
 
         # Auto-compact conversation history if too long
         if self.memory.needs_compaction():
@@ -2486,7 +2473,7 @@ class LLMRuntimeMixin:
                 final_response = "Tools executed. Check the execution trace above for results."
 
         ui_screenshot_response = _ui_screenshot_turn_response()
-        if ui_screenshot_response:
+        if ui_screenshot_response is not None:
             final_response = ui_screenshot_response
 
         # Verify response against search results to detect fabrication

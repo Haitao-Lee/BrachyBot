@@ -429,9 +429,79 @@ function renderSessionList() {
     }).join('');
 }
 
+function createChatIdentity(prefix = 'msg') {
+    let value = '';
+    try {
+        if (window.crypto && typeof window.crypto.randomUUID === 'function') {
+            value = window.crypto.randomUUID();
+        }
+    } catch (_) {}
+    if (!value) {
+        value = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
+    }
+    return `${String(prefix || 'msg')}-${value}`;
+}
+window.createChatIdentity = createChatIdentity;
+
+function normalizeSessionMessageIdentities(sessionId, messages) {
+    const owner = String(sessionId || 'session');
+    let activeRequestId = '';
+    return (Array.isArray(messages) ? messages : []).map((message, index) => {
+        if (!message || typeof message !== 'object') return message;
+        const record = message;
+        if (record.type === 'user') {
+            activeRequestId = String(
+                record.request_id
+                || `legacy-${owner}-${Number(record.timestamp || 0)}-${index}`
+            );
+        } else if (!activeRequestId) {
+            activeRequestId = String(
+                record.request_id
+                || `legacy-${owner}-${Number(record.timestamp || 0)}-${index}`
+            );
+        }
+        record.request_id = String(record.request_id || activeRequestId);
+        const prefix = record.type === 'thinking'
+            ? 'trace'
+            : record.type === 'bot-response' || record.type === 'bot'
+                ? 'assistant'
+                : record.type === 'user'
+                    ? 'user'
+                    : 'event';
+        record.id = String(record.id || `${prefix}-${record.request_id}`);
+        record.message_kind = String(record.message_kind || (
+            record.type === 'thinking'
+                ? 'execution_trace'
+                : record.type === 'bot-response' || record.type === 'bot'
+                    ? 'assistant_final'
+                    : record.type
+        ));
+        if (!Array.isArray(record.attachments)) {
+            record.attachments = Array.isArray(record.meta?.attachments)
+                ? record.meta.attachments.slice()
+                : [];
+        }
+        return record;
+    });
+}
+window.normalizeSessionMessageIdentities = normalizeSessionMessageIdentities;
+
+function findSessionMessageByIdentity(sessionId, messageId, requestId, type = null) {
+    const session = sessions[String(sessionId || '')];
+    if (!session || !Array.isArray(session.messages)) return null;
+    return session.messages.find(message => {
+        if (!message || typeof message !== 'object') return false;
+        if (type && message.type !== type) return false;
+        if (messageId && String(message.id || '') === String(messageId)) return true;
+        return !!requestId && String(message.request_id || '') === String(requestId);
+    }) || null;
+}
+window.findSessionMessageByIdentity = findSessionMessageByIdentity;
+
 function loadSessionChat(id) {
     const session = sessions[id];
     if (!session) return;
+    session.messages = normalizeSessionMessageIdentities(id, session.messages);
     // Rebuild terminal-style command history from this case before drawing
     // the transcript.  This prevents stale input from another session from
     // surviving a fast case switch or server reconnect.
@@ -543,18 +613,34 @@ function loadSessionChat(id) {
             const previous = deduped[deduped.length - 1];
             const sameAdjacentMessage = previous
                 && canonicalType(previous) === canonicalType(m)
-                && String(previous.content || '') === String(m.content || '');
+                && String(previous.content || '') === String(m.content || '')
+                && (
+                    (!previous.id && !m.id)
+                    || String(previous.id || '') === String(m.id || '')
+                );
             if (sameAdjacentMessage) continue;
             deduped.push(m);
         }
         deduped.forEach(msg => {
             if (msg.type === 'thinking') {
-                renderThinkingChain(msg.steps);
+                const restoredSteps = typeof window._traceStepForDisplay === 'function'
+                    ? (msg.steps || []).map(step => window._traceStepForDisplay(step, id))
+                    : msg.steps;
+                renderThinkingChain(restoredSteps, {
+                    requestId: msg.request_id,
+                    messageId: msg.id,
+                });
             } else {
                 // fromSession=true tells addChat NOT to call
                 // saveSessionMessage again — the message is already
                 // in the session, we are just re-rendering it.
-                addChat(msg.type, msg.content, false, msg.timestamp || null, true);
+                addChat(msg.type, msg.content, false, msg.timestamp || null, true, id, {
+                    requestId: msg.request_id,
+                    messageId: msg.id,
+                    attachments: msg.attachments || [],
+                    messageKind: msg.message_kind,
+                    layout: msg.meta?.screenshotLayout || 'auto',
+                });
             }
             // Restore the usage-bar footer (Time / Tokens / Tools) for
             // bot-response messages that carry persisted turn metadata.
@@ -572,14 +658,85 @@ function saveSessionMessage(type, content, steps, timestamp, sessionId = activeS
     const ownerSessionId = String(sessionId || '');
     const session = sessions[ownerSessionId];
     if (!session) return;
+    const safeMeta = (meta && typeof meta === 'object') ? meta : {};
+    const requestId = String(safeMeta.requestId || safeMeta.request_id || '');
+    const defaultPrefix = type === 'thinking'
+        ? 'trace'
+        : type === 'bot-response' || type === 'bot'
+            ? 'assistant'
+            : type === 'user'
+                ? 'user'
+                : 'event';
+    const messageId = String(
+        safeMeta.messageId
+        || safeMeta.message_id
+        || (requestId ? `${defaultPrefix}-${requestId}` : createChatIdentity(defaultPrefix))
+    );
+    const attachments = Array.isArray(safeMeta.attachments)
+        ? safeMeta.attachments.filter(item => item && typeof item === 'object')
+        : [];
+    const messageKind = String(safeMeta.messageKind || safeMeta.message_kind || (
+        type === 'thinking' ? 'execution_trace' : type === 'bot-response' ? 'assistant_final' : type
+    ));
+    const existing = session.messages.find(message => {
+        if (!message || typeof message !== 'object') return false;
+        if (String(message.id || '') === messageId) return true;
+        return !!requestId
+            && message.type === type
+            && String(message.request_id || '') === requestId
+            && String(message.message_kind || '') === messageKind
+            && ['assistant_final', 'execution_trace'].includes(messageKind);
+    });
+    if (existing) {
+        if (content || type !== 'bot-response') existing.content = content;
+        if (steps) {
+            const byId = new Map();
+            [...(existing.steps || []), ...steps].forEach((step, index) => {
+                if (!step || typeof step !== 'object') return;
+                const key = String(step.id || `${step.type || ''}|${step.tool || ''}|${step.parent_tool || ''}|${step.title || ''}|${index}`);
+                byId.set(key, step);
+            });
+            existing.steps = Array.from(byId.values());
+        }
+        if (attachments.length) {
+            const known = new Set((existing.attachments || []).map(item => String(item?.id || item?.url || '')));
+            existing.attachments = [...(existing.attachments || [])];
+            attachments.forEach(item => {
+                const key = String(item.id || item.url || '');
+                if (!key || known.has(key)) return;
+                known.add(key);
+                existing.attachments.push(item);
+            });
+        }
+        existing.timestamp = (typeof timestamp === 'number' && timestamp > 0) ? timestamp : Date.now();
+        existing.request_id = requestId || existing.request_id || '';
+        existing.message_kind = messageKind || existing.message_kind;
+        if (Object.keys(safeMeta).length) existing.meta = Object.assign({}, existing.meta || {}, safeMeta);
+        saveSessions();
+        if (ownerSessionId === String(activeSessionId || '')
+            && window.__serverWorkspaceReady
+            && typeof window.scheduleWorkspaceSave === 'function') {
+            window.scheduleWorkspaceSave('chat.message.updated');
+        }
+        return existing;
+    }
     const _last = session.messages[session.messages.length - 1];
-    if (_last && _last.type === type && _last.content === content) {
+    if (!requestId && _last && _last.type === type && _last.content === content) {
         if (meta && _last.type === 'bot-response') _last.meta = meta;
-        return;
+        return _last;
     }
     const _ts = (typeof timestamp === 'number' && timestamp > 0) ? timestamp : Date.now();
-    const msg = { type, content, steps: steps || null, timestamp: _ts };
-    if (meta) msg.meta = meta;
+    const msg = {
+        type,
+        content,
+        steps: steps || null,
+        timestamp: _ts,
+        id: messageId,
+        request_id: requestId || createChatIdentity('request'),
+        message_kind: messageKind,
+        attachments,
+    };
+    if (meta) msg.meta = safeMeta;
     session.messages.push(msg);
     if (type === 'user' && typeof _rememberChatCommand === 'function') {
         _rememberChatCommand(content);
@@ -603,6 +760,7 @@ function saveSessionMessage(type, content, steps, timestamp, sessionId = activeS
         && typeof window.scheduleWorkspaceSave === 'function') {
         window.scheduleWorkspaceSave('chat.message');
     }
+    return msg;
 }
 
 // ----- Chat message rendering -----
@@ -821,9 +979,121 @@ function _appendRestoredFooter(meta) {
     }
 }
 
-function addChat(type, content, scroll, timestamp, fromSession, sessionId = activeSessionId) {
+function _chatDomKey(value) {
+    return String(value || '').replace(/[^A-Za-z0-9_.:-]/g, '_');
+}
+
+function ensureAssistantReplyContainer(requestId, messageId, timestamp = null, messageKind = 'assistant_final') {
+    const container = document.getElementById('chatMessages');
+    if (!container) return null;
+    const requestKey = String(requestId || '');
+    const messageKey = String(messageId || (requestKey ? `assistant-${requestKey}` : createChatIdentity('assistant')));
+    const kindKey = String(messageKind || 'assistant_final');
+    let row = Array.from(container.querySelectorAll('.chat-row.bot')).find(candidate =>
+        String(candidate.dataset.messageId || '') === messageKey
+        || (kindKey === 'assistant_final'
+            && requestKey
+            && messageKey === `assistant-${requestKey}`
+            && String(candidate.dataset.requestId || '') === requestKey
+            && candidate.dataset.messageKind === kindKey)
+    );
+    if (row) {
+        row.dataset.messageKind = kindKey;
+        return {
+            row,
+            wrapper: row.querySelector('.chat-msg-wrapper.bot'),
+            response: row.querySelector('.chat-msg.bot-response, .chat-msg.bot'),
+            attachments: row.querySelector('.chat-image-gallery'),
+        };
+    }
+
+    row = document.createElement('div');
+    row.className = 'chat-row bot';
+    row.dataset.requestId = requestKey;
+    row.dataset.messageId = messageKey;
+    row.dataset.messageKind = kindKey;
+
+    const avatar = document.createElement('div');
+    avatar.className = 'chat-avatar bot-avatar';
+    avatar.innerHTML = CHAT_AVATAR_SVGS.bot || '';
+
+    const wrapper = document.createElement('div');
+    wrapper.className = 'chat-msg-wrapper bot';
+    const actions = document.createElement('div');
+    actions.className = 'chat-msg-actions';
+    const copyBtn = document.createElement('button');
+    copyBtn.className = 'chat-msg-action-btn';
+    copyBtn.innerHTML = '&#128203;';
+    copyBtn.title = effectiveUiLanguage() === 'zh' ? '\u590d\u5236' : 'Copy';
+    copyBtn.onclick = () => {
+        const text = wrapper.querySelector('.chat-msg.bot-response, .chat-msg.bot')?.textContent || '';
+        if (navigator.clipboard?.writeText) void navigator.clipboard.writeText(text);
+    };
+    actions.appendChild(copyBtn);
+
+    const response = document.createElement('div');
+    response.className = 'chat-msg bot-response';
+    response.style.userSelect = 'text';
+
+    const attachments = document.createElement('div');
+    attachments.className = 'chat-image-gallery';
+    attachments.dataset.layout = 'auto';
+    attachments.hidden = true;
+
+    const ts = document.createElement('div');
+    ts.className = 'chat-timestamp';
+    const tsSource = typeof timestamp === 'number' && timestamp > 0 ? new Date(timestamp) : new Date();
+    ts.textContent = tsSource.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+    wrapper.append(actions, response, attachments, ts);
+    row.append(avatar, wrapper);
+    container.appendChild(row);
+    return { row, wrapper, response, attachments };
+}
+window.ensureAssistantReplyContainer = ensureAssistantReplyContainer;
+
+function renderAssistantAttachments(shell, attachments, layout = 'auto') {
+    if (!shell || !shell.attachments || !Array.isArray(attachments)) return;
+    const gallery = shell.attachments;
+    gallery.dataset.layout = String(layout || 'auto');
+    attachments.forEach((attachment, index) => {
+        if (!attachment || !attachment.url) return;
+        const attachmentId = String(attachment.id || attachment.url);
+        if (Array.from(gallery.children).some(item => String(item.dataset.attachmentId || '') === attachmentId)) return;
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'chat-image-container chat-gallery-item';
+        button.dataset.attachmentId = attachmentId;
+        const image = document.createElement('img');
+        image.className = 'chat-screenshot';
+        image.src = attachment.url;
+        image.alt = attachment.title || attachment.description || attachment.target || 'Screenshot';
+        const caption = document.createElement('span');
+        caption.className = 'chat-image-caption';
+        caption.textContent = attachment.title || attachment.label || attachment.target || (
+            effectiveUiLanguage() === 'zh' ? '\u622a\u56fe' : 'Screenshot'
+        );
+        button.append(image, caption);
+        button.addEventListener('click', () => {
+            if (typeof _openScreenshotModal === 'function') {
+                _openScreenshotModal(
+                    attachment.url,
+                    caption.textContent,
+                    index,
+                    attachments.length,
+                );
+            }
+        });
+        gallery.appendChild(button);
+    });
+    gallery.hidden = gallery.children.length === 0;
+}
+window.renderAssistantAttachments = renderAssistantAttachments;
+
+function addChat(type, content, scroll, timestamp, fromSession, sessionId = activeSessionId, meta = null) {
     try {
         const ownerSessionId = String(sessionId || activeSessionId || '');
+        const safeMeta = (meta && typeof meta === 'object') ? meta : {};
         // Delayed task callbacks belong to the case that started the task. If
         // that case is no longer visible, persist the event there without
         // painting it into the newly selected case.
@@ -831,7 +1101,7 @@ function addChat(type, content, scroll, timestamp, fromSession, sessionId = acti
             && ownerSessionId
             && ownerSessionId !== String(activeSessionId || '')) {
             if (typeof saveSessionMessage === 'function') {
-                saveSessionMessage(type, String(content == null ? '' : content), null, timestamp || Date.now(), ownerSessionId);
+                saveSessionMessage(type, String(content == null ? '' : content), null, timestamp || Date.now(), ownerSessionId, safeMeta);
             }
             return;
         }
@@ -853,9 +1123,34 @@ function addChat(type, content, scroll, timestamp, fromSession, sessionId = acti
         if (safeType === 'thinking') safeType = 'bot';
 
         if (safeType === 'user' || safeType === 'bot') {
+            if (safeType === 'bot' && (safeMeta.requestId || safeMeta.request_id || safeMeta.messageId || safeMeta.message_id)) {
+                const requestId = safeMeta.requestId || safeMeta.request_id || '';
+                const messageId = safeMeta.messageId || safeMeta.message_id || `assistant-${requestId}`;
+                const messageKind = safeMeta.messageKind || safeMeta.message_kind || 'assistant_final';
+                const shell = ensureAssistantReplyContainer(requestId, messageId, timestamp, messageKind);
+                if (shell?.response) {
+                    shell.response.innerHTML = typeof renderMarkdown === 'function'
+                        ? renderMarkdown(c)
+                        : escHtml(c).replace(/\n/g, '<br>');
+                    shell.response.hidden = !c.trim();
+                    renderAssistantAttachments(
+                        shell,
+                        safeMeta.attachments || [],
+                        safeMeta.layout || safeMeta.screenshotLayout || 'auto',
+                    );
+                    if (scroll !== false) container.scrollTop = container.scrollHeight;
+                    if (fromSession !== true && typeof saveSessionMessage === 'function') {
+                        saveSessionMessage(type, c, null, timestamp || Date.now(), ownerSessionId, safeMeta);
+                    }
+                    return shell.response;
+                }
+            }
             // Wrapped layout: .chat-row > [.chat-avatar, .chat-msg-wrapper > .chat-msg, .chat-timestamp]
             const row = document.createElement('div');
             row.className = 'chat-row ' + safeType;
+            row.dataset.requestId = String(safeMeta.requestId || safeMeta.request_id || '');
+            row.dataset.messageId = String(safeMeta.messageId || safeMeta.message_id || createChatIdentity(safeType));
+            row.dataset.messageKind = String(safeMeta.messageKind || safeMeta.message_kind || safeType);
             if (safeType === 'bot' && !fromSession && _hasBotMessageSinceLastUser(container)) {
                 row.classList.add('bot-continuation');
             }
@@ -966,7 +1261,7 @@ function addChat(type, content, scroll, timestamp, fromSession, sessionId = acti
         // 2026-06-16 — each refresh would re-persist the same
         // message and the array would grow by 2 with every reload).
         if (fromSession !== true && typeof saveSessionMessage === 'function') {
-            try { saveSessionMessage(safeType, c, null, Date.now(), ownerSessionId); } catch (_) { /* sessions may not be ready yet */ }
+            try { saveSessionMessage(safeType, c, null, Date.now(), ownerSessionId, safeMeta); } catch (_) { /* sessions may not be ready yet */ }
         }
     } catch (e) {
         // Never let chat rendering break the caller (CT load, plan, etc.)
@@ -1668,7 +1963,7 @@ function cancelVisibleChatProgress(reason) {
         });
     } catch (_) {}
     try {
-        document.querySelectorAll('#liveThinkingChain').forEach(chain => {
+        document.querySelectorAll('.thinking-chain[data-live="1"]').forEach(chain => {
             const header = chain.querySelector('.thinking-header');
             cancelThinkingChain(chain, header);
         });
@@ -1706,14 +2001,20 @@ function toggleStep(bodyId) {
 }
 
 // Static renderer used by loadSessionChat() to redraw a saved chain.
-function renderThinkingChain(steps) {
+function renderThinkingChain(steps, identity = {}) {
     const container = document.getElementById('chatMessages');
     if (!container) return;
+    const requestId = String(identity.requestId || identity.request_id || createChatIdentity('request'));
+    const messageId = String(identity.messageId || identity.message_id || `trace-${requestId}`);
+    const domPrefix = `trace_${_chatDomKey(messageId)}`;
     const totalSteps = steps ? steps.length : 0;
     const doneSteps = steps ? steps.filter(s => s.status === 'done').length : 0;
 
     const row = document.createElement('div');
     row.className = 'chat-row bot';
+    row.dataset.requestId = requestId;
+    row.dataset.messageId = messageId;
+    row.dataset.messageKind = 'execution_trace';
 
     const avatar = document.createElement('div');
     avatar.className = 'chat-avatar bot-avatar';
@@ -1721,12 +2022,16 @@ function renderThinkingChain(steps) {
 
     const wrapper = document.createElement('div');
     wrapper.className = 'thinking-chain';
+    wrapper.id = domPrefix;
+    wrapper.dataset.requestId = requestId;
+    wrapper.dataset.messageId = messageId;
+    wrapper.dataset.live = '0';
 
     const header = document.createElement('div');
     header.className = 'thinking-header';
     header.onclick = () => toggleThinkingChain(wrapper, steps);
     header.innerHTML = `
-        <span class="thinking-toggle" id="tt_${Date.now()}">&#9654;</span>
+        <span class="thinking-toggle" id="${domPrefix}_toggle">&#9654;</span>
         <span class="thinking-label">${escHtml(_chainI18n('header'))}</span>
         <span class="thinking-count">${doneSteps}/${totalSteps}${escHtml(_chainI18n('steps_suffix'))}</span>
     `;
@@ -1754,19 +2059,21 @@ function renderThinkingChain(steps) {
         _uniqueSteps.forEach((step, idx) => {
             const block = document.createElement('div');
             block.className = 'step-block';
-            block.id = 'step_' + idx;
+            const stepDomId = `${domPrefix}_step_${idx}`;
+            const bodyDomId = `${stepDomId}_body`;
+            block.id = stepDomId;
             const icon = STEP_ICONS[step.type] || '&#9679;';
             const toolName = step.tool ? '<div class="step-tool-name">' + escHtml(step.tool) + '</div>' : '';
             const params = step.params ? '<div class="step-params">' + Object.entries(step.params).map(([k, v]) => escHtml(k) + ': ' + escHtml(JSON.stringify(v))).join(', ') + '</div>' : '';
             const resultHtml = step.result ? '<div class="step-result">&#8594; ' + escHtml(step.result) + '</div>' : '';
             const contentHtml = step.content ? '<div class="step-content">' + escHtml(step.content) + '</div>' : '';
             block.innerHTML =
-                '<div class="step-header" onclick="toggleStep(\'step_body_' + idx + '\')">' +
+                '<div class="step-header" onclick="toggleStep(\'' + bodyDomId + '\')">' +
                     '<span class="step-icon ' + escHtml(step.type || '') + '">' + icon + '</span>' +
                     '<span class="step-title">' + escHtml(_localizeStepTitle(step.title || '')) + '</span>' +
                     '<span class="step-status ' + escHtml(step.status || '') + '">' + escHtml(_localizeStepStatus(step.status || '')) + '</span>' +
                 '</div>' +
-                '<div class="step-body" id="step_body_' + idx + '">' +
+                '<div class="step-body" id="' + bodyDomId + '">' +
                     toolName + params + contentHtml + resultHtml +
                 '</div>';
             stepsDiv.appendChild(block);
@@ -1782,34 +2089,30 @@ function renderThinkingChain(steps) {
     scrollToBottom();
 }
 
-function createLiveThinkingChain(resumeStartTime) {
+function createLiveThinkingChain(resumeStartTime, requestId = '') {
     const container = document.getElementById('chatMessages');
     if (!container) return { chainEl: null, stepsDiv: null, headerEl: null };
-
-    // Remove any previous live or restored thinking chain before building a
-    // new one.  A detached task (session switch mid-planning) leaves a live
-    // chain (id='liveThinkingChain'), and loadSessionChat renders a restored
-    // chain (no id, class='thinking-chain').  Both must be removed.
-    const oldLive = document.getElementById('liveThinkingChain');
+    const stableRequestId = String(requestId || createChatIdentity('request'));
+    const messageId = `trace-${stableRequestId}`;
+    const liveDomId = `liveThinkingChain-${_chatDomKey(stableRequestId)}`;
+    // Reuse only the live trace for this exact request. Historical and
+    // restored traces belong to their own stable request IDs and must remain.
+    const oldLive = document.getElementById(liveDomId);
     if (oldLive) {
-        try {
-            const oldHeader = oldLive.querySelector('.thinking-header');
-            if (oldHeader && oldHeader._timer) {
-                clearInterval(oldHeader._timer);
-                oldHeader._timer = null;
-            }
-        } catch (_) {}
+        const existingSteps = oldLive.querySelector('.thinking-steps');
+        const existingHeader = oldLive.querySelector('.thinking-header');
+        if (existingSteps && existingHeader) {
+            return { chainEl: oldLive, stepsDiv: existingSteps, headerEl: existingHeader };
+        }
         oldLive.remove();
     }
     // Also clean up any thinking-chain rendered by loadSessionChat during
     // task resume — these have no id so the getElementById above misses them.
-    const restoredChains = container.querySelectorAll('.thinking-chain:not([id])');
-    for (const c of restoredChains) {
-        try { c.remove(); } catch (_) {}
-    }
-
     const row = document.createElement('div');
     row.className = 'chat-row bot';
+    row.dataset.requestId = stableRequestId;
+    row.dataset.messageId = messageId;
+    row.dataset.messageKind = 'execution_trace';
 
     const avatar = document.createElement('div');
     avatar.className = 'chat-avatar bot-avatar';
@@ -1817,7 +2120,10 @@ function createLiveThinkingChain(resumeStartTime) {
 
     const wrapper = document.createElement('div');
     wrapper.className = 'thinking-chain';
-    wrapper.id = 'liveThinkingChain';
+    wrapper.id = liveDomId;
+    wrapper.dataset.requestId = stableRequestId;
+    wrapper.dataset.messageId = messageId;
+    wrapper.dataset.live = '1';
 
     const startTime = Number(resumeStartTime) || Date.now();
 
@@ -1943,13 +2249,17 @@ function appendStepToChain(stepsDiv, step, idx) {
     // see the chain re-expand with late-arriving steps.
     const chainFinalized = stepsDiv.closest('[data-finalized]');
     const bodyExpanded = chainFinalized ? '' : ' expanded';
+    const chainEl = stepsDiv.closest('.thinking-chain');
+    const chainPrefix = chainEl?.id || `trace_${_chatDomKey(chainEl?.dataset?.requestId || 'live')}`;
+    const stepDomId = `${chainPrefix}_step_${idx}`;
+    const bodyDomId = `${stepDomId}_body`;
     const bodyHtml =
-        '<div class="step-header" onclick="toggleStep(\'step_body_' + idx + '\')">' +
+        '<div class="step-header" onclick="toggleStep(\'' + bodyDomId + '\')">' +
             '<span class="step-icon ' + escHtml(step.type || '') + '">' + icon + '</span>' +
             '<span class="step-title">' + escHtml(_localizeStepTitle(step.title || '')) + '</span>' +
             '<span class="step-status ' + escHtml(step.status || '') + '">' + escHtml(_localizeStepStatus(step.status || '')) + '</span>' +
         '</div>' +
-        '<div class="step-body' + bodyExpanded + '" id="step_body_' + idx + '">' +
+        '<div class="step-body' + bodyExpanded + '" id="' + bodyDomId + '">' +
             toolName + params + contentHtml + resultHtml +
         '</div>';
 
@@ -1967,7 +2277,7 @@ function appendStepToChain(stepsDiv, step, idx) {
 
     const block = document.createElement('div');
     block.className = 'step-block';
-    block.id = 'step_' + idx;
+    block.id = stepDomId;
     block.dataset.stepId = step.id;
     block.dataset.stepTool = step.tool || '';
     block.dataset.stepParent = step.parent_tool || '';
@@ -2004,7 +2314,7 @@ function finalizeThinkingChain(chainEl, headerEl, steps) {
     // adds .expanded back and the user sees the tool history covering
     // the final response.
     chainEl.dataset.finalized = '1';
-    chainEl.removeAttribute('id');
+    chainEl.dataset.live = '0';
     const labelEl = headerEl && headerEl.querySelector('.thinking-label');
     if (labelEl) labelEl.textContent = _chainI18n('header');
     updateChainHeader(headerEl, steps);
@@ -2076,33 +2386,18 @@ function cancelThinkingChain(chainEl, headerEl) {
     if (timeEl) timeEl.style.display = 'none';
 }
 
-function createStreamingResponse() {
-    const container = document.getElementById('chatMessages');
-    const row = document.createElement('div');
-    row.className = 'chat-row bot';
-    if (_hasBotMessageSinceLastUser(container)) {
-        row.classList.add('bot-continuation');
-    }
-
-    const avatar = document.createElement('div');
-    avatar.className = 'chat-avatar bot-avatar';
-    avatar.innerHTML = CHAT_AVATAR_SVGS.bot;
-
-    const wrapper = document.createElement('div');
-    wrapper.className = 'chat-msg-wrapper bot';
-
-    const div = document.createElement('div');
-    div.className = 'chat-msg bot-response';
-    div.id = 'streamingResponse';
-    div.style.userSelect = 'text';
-    div.style.webkitUserSelect = 'text';
-    div.style.mozUserSelect = 'text';
-    div.style.msUserSelect = 'text';
-
-    wrapper.appendChild(div);
-    row.appendChild(avatar);
-    row.appendChild(wrapper);
-    container.appendChild(row);
+function createStreamingResponse(requestId = '', messageId = '') {
+    const stableRequestId = String(requestId || createChatIdentity('request'));
+    const stableMessageId = String(messageId || `assistant-${stableRequestId}`);
+    const shell = ensureAssistantReplyContainer(stableRequestId, stableMessageId, Date.now());
+    if (!shell || !shell.response) return null;
+    const div = shell.response;
+    div.hidden = false;
+    div.id = `streamingResponse-${_chatDomKey(stableRequestId)}`;
+    div.dataset.requestId = stableRequestId;
+    div.dataset.messageId = stableMessageId;
+    div.classList.add('is-streaming');
+    div.setAttribute('aria-busy', 'true');
     return div;
 }
 
@@ -2123,7 +2418,12 @@ function finalizeStreamingResponse(el, text, sessionId = activeSessionId, meta =
     el.innerHTML = renderMarkdown(text);
     try {
         const ownerSessionId = String(sessionId || '');
-        saveSessionMessage('bot-response', text, null, Date.now(), ownerSessionId, meta);
+        const stableMeta = Object.assign({}, meta || {}, {
+            requestId: meta?.requestId || meta?.request_id || el.dataset.requestId || '',
+            messageId: meta?.messageId || meta?.message_id || el.dataset.messageId || '',
+            messageKind: 'assistant_final',
+        });
+        saveSessionMessage('bot-response', text, null, Date.now(), ownerSessionId, stableMeta);
         // A final assistant response is a durable case event, not merely a
         // browser rendering update. Flush this boundary explicitly so closing
         // the tab immediately after a long planning turn cannot lose the

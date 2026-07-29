@@ -8,7 +8,7 @@
   "plan_summary": {
     "total_seeds": 0,
     "total_trajectories": 0,
-    "prescribed_dose_gy": 1.0,
+    "prescribed_dose_gy": 120.0,
     "plan_score": 0
   },
   "ctv_metrics": {

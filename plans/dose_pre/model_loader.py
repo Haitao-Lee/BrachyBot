@@ -10,16 +10,191 @@ from typing import Any, Optional, Tuple
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 DOSE_MODEL_NAME = "dose_unet_spacing1mm"
 DOSE_MODEL_RELATIVE_PATH = Path("models") / DOSE_MODEL_NAME / "best_model.pth"
+LEGACY_DOSE_MODEL_SCALE_GY = 120.0
 
-# The planning pipeline keeps this display calibration for legacy report fields.
-# The DoseUNet checkpoint itself stores its physical-output multiplier in the
-# checkpoint metadata and the inference adapter applies that value.
+# Physical calibration of the deployed DoseUNet output. This is deliberately
+# separate from the clinical prescription: one model unit is 190.8 Gy, while
+# the default case prescription remains 120 Gy.
 try:
-    DOSE_MODEL_SCALE_GY = float(os.environ.get("BRACHYBOT_DOSE_MODEL_SCALE_GY", "120.0"))
+    DOSE_MODEL_SCALE_GY = float(os.environ.get("BRACHYBOT_DOSE_MODEL_SCALE_GY", "190.8"))
 except ValueError as exc:  # Fail during startup instead of displaying wrong Gy.
     raise ValueError("BRACHYBOT_DOSE_MODEL_SCALE_GY must be numeric") from exc
 if not DOSE_MODEL_SCALE_GY > 0:
     raise ValueError("BRACHYBOT_DOSE_MODEL_SCALE_GY must be greater than zero")
+
+try:
+    DEFAULT_PRESCRIPTION_GY = float(
+        os.environ.get("BRACHYBOT_DEFAULT_PRESCRIPTION_GY", "120.0")
+    )
+except ValueError as exc:
+    raise ValueError("BRACHYBOT_DEFAULT_PRESCRIPTION_GY must be numeric") from exc
+if not DEFAULT_PRESCRIPTION_GY > 0:
+    raise ValueError("BRACHYBOT_DEFAULT_PRESCRIPTION_GY must be greater than zero")
+
+
+def dose_model_to_gy(value: Any, dose_scale_gy: Optional[float] = None) -> float:
+    """Convert normalized DoseUNet output to physical Gy."""
+    scale = float(dose_scale_gy or DOSE_MODEL_SCALE_GY)
+    return float(value) * scale
+
+
+def dose_gy_to_model(value: Any, dose_scale_gy: Optional[float] = None) -> float:
+    """Convert physical Gy to the normalized threshold used by DoseUNet."""
+    scale = float(dose_scale_gy or DOSE_MODEL_SCALE_GY)
+    if scale <= 0:
+        raise ValueError("dose_scale_gy must be greater than zero")
+    return float(value) / scale
+
+
+def prescription_multiplier_to_gy(
+    value: Any,
+    prescription_base_gy: Optional[float] = None,
+) -> float:
+    """Convert ``in_lowest_energy``-style Rx multiples to physical Gy."""
+    base = float(prescription_base_gy or DEFAULT_PRESCRIPTION_GY)
+    return float(value) * base
+
+
+def prescription_multiplier_to_model(
+    value: Any,
+    *,
+    prescription_base_gy: Optional[float] = None,
+    dose_scale_gy: Optional[float] = None,
+) -> float:
+    """Convert an Rx multiple to the raw DoseUNet array threshold."""
+    return dose_gy_to_model(
+        prescription_multiplier_to_gy(value, prescription_base_gy),
+        dose_scale_gy,
+    )
+
+
+def planning_dose_value_to_gy(
+    value: Any,
+    *,
+    value_unit: Optional[str] = None,
+    prescription_base_gy: Optional[float] = None,
+) -> float:
+    """Resolve a planning threshold to physical Gy.
+
+    Current plans store ``in_lowest_energy`` and ``out_highest_energy`` in Gy.
+    Historical plans stored Rx multipliers (1.0 == 120 Gy) without a unit
+    marker. The bounded legacy heuristic is intentionally centralized here.
+    """
+    parsed = float(value)
+    unit = str(value_unit or "").strip().lower()
+    if unit in {"gy", "physical_gy", "dose_gy"}:
+        return parsed
+    if unit in {"rx", "multiplier", "prescription_multiplier", "normalized"}:
+        return prescription_multiplier_to_gy(parsed, prescription_base_gy)
+    if 0 < parsed <= 5.0:
+        return prescription_multiplier_to_gy(parsed, prescription_base_gy)
+    return parsed
+
+
+def planning_dose_value_to_model(
+    value: Any,
+    *,
+    value_unit: Optional[str] = None,
+    prescription_base_gy: Optional[float] = None,
+    dose_scale_gy: Optional[float] = None,
+) -> float:
+    """Convert a current or legacy planning threshold to model units."""
+    return dose_gy_to_model(
+        planning_dose_value_to_gy(
+            value,
+            value_unit=value_unit,
+            prescription_base_gy=prescription_base_gy,
+        ),
+        dose_scale_gy,
+    )
+
+
+def resolve_dose_scale_gy(
+    plan_config: Optional[dict] = None,
+    dose_metrics: Optional[dict] = None,
+    *,
+    dose_scale_gy: Optional[float] = None,
+) -> float:
+    """Resolve the calibration saved with a plan.
+
+    New plans persist 190.8 Gy/model-unit. Historical workspaces did not
+    persist a calibration and used 120 Gy/model-unit, so missing metadata
+    must retain the legacy interpretation rather than changing old results.
+    """
+    config = plan_config if isinstance(plan_config, dict) else {}
+    metrics = dose_metrics if isinstance(dose_metrics, dict) else {}
+    for source in (metrics, config):
+        for key in ("dose_scale_gy", "dose_model_scale_gy"):
+            try:
+                value = float(source.get(key))
+            except (TypeError, ValueError):
+                continue
+            if value > 0:
+                return value
+    try:
+        explicit = float(dose_scale_gy)
+    except (TypeError, ValueError):
+        explicit = 0.0
+    if explicit > 0:
+        return explicit
+    return LEGACY_DOSE_MODEL_SCALE_GY
+
+
+def resolve_prescription_gy(
+    plan_config: Optional[dict] = None,
+    dose_metrics: Optional[dict] = None,
+    *,
+    dose_scale_gy: Optional[float] = None,
+    default_gy: Optional[float] = None,
+) -> float:
+    """Resolve case prescription without confusing it with model calibration.
+
+    Current ``in_lowest_energy`` values are physical Gy. Historical plans
+    stored an Rx multiplier (1.0 == 120 Gy), which is migrated here.
+    """
+    config = plan_config if isinstance(plan_config, dict) else {}
+    metrics = dose_metrics if isinstance(dose_metrics, dict) else {}
+    fallback = float(default_gy or DEFAULT_PRESCRIPTION_GY)
+
+    for source in (config, metrics):
+        for key in (
+            "in_lowest_dose_gy",
+            "prescription_dose_gy",
+            "prescribed_dose_gy",
+            "prescription_gy",
+            "rx_gy",
+        ):
+            try:
+                value = float(source.get(key))
+            except (TypeError, ValueError):
+                continue
+            if value > 0:
+                return value
+
+    stored = config.get("in_lowest_energy")
+    value_unit = config.get("dose_value_unit") or config.get("planning_dose_unit")
+    if stored is None:
+        stored = metrics.get("prescribed_dose")
+        value_unit = (
+            metrics.get("dose_value_unit")
+            or metrics.get("planning_dose_unit")
+            or value_unit
+        )
+    try:
+        stored = float(stored)
+    except (TypeError, ValueError):
+        return fallback
+    if stored <= 0:
+        return fallback
+    return planning_dose_value_to_gy(
+        stored,
+        value_unit=value_unit,
+        prescription_base_gy=fallback,
+    )
+
+
+DEFAULT_PRESCRIPTION_MODEL_UNITS = dose_gy_to_model(DEFAULT_PRESCRIPTION_GY)
+DEFAULT_PRESCRIPTION_MULTIPLIER = 1.0
 
 
 def resolve_dose_model_path(explicit_path: Optional[str] = None) -> Optional[Path]:
@@ -147,6 +322,18 @@ __all__ = [
     "DOSE_MODEL_NAME",
     "DOSE_MODEL_RELATIVE_PATH",
     "DOSE_MODEL_SCALE_GY",
+    "LEGACY_DOSE_MODEL_SCALE_GY",
+    "DEFAULT_PRESCRIPTION_GY",
+    "DEFAULT_PRESCRIPTION_MULTIPLIER",
+    "DEFAULT_PRESCRIPTION_MODEL_UNITS",
+    "dose_gy_to_model",
+    "dose_model_to_gy",
+    "planning_dose_value_to_gy",
+    "planning_dose_value_to_model",
+    "prescription_multiplier_to_gy",
+    "prescription_multiplier_to_model",
+    "resolve_dose_scale_gy",
+    "resolve_prescription_gy",
     "load_dose_model",
     "resolve_dose_model_path",
 ]

@@ -32,6 +32,7 @@ VoCo/
 *.onnx
 *.bin
 *.safetensors
+models/ctv/biomedparse_v2/.cache/
 dose_pre/*.pth
 dose_pre/*.ckpt
 

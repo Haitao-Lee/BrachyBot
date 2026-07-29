@@ -26,8 +26,12 @@
         "dose_img_dimention": [128, 128, 64],
         "infer_img_size": [64, 64, 64]
     },
-    "in_lowest_energy": 1,
-    "out_highest_energy": 1,
+    "dose_value_unit": "gy",
+    "dose_scale_gy": 190.8,
+    "in_lowest_dose_gy": 120,
+    "out_highest_dose_gy": 120,
+    "in_lowest_energy": 120,
+    "out_highest_energy": 120,
     "distance_filtter": {
         "lower_bound": 0.8,
         "upper_bound": 10,
@@ -65,13 +69,14 @@
         "device": "cuda"
     },
     "iso_dose_params": {
-        "iso_dose_values": [0.5, 0.75, 1.0],
+        "iso_dose_values": [1.0, 1.5, 2.0, 4.0],
         "iso_colors": [
-            [0, 0.5, 1],
             [0, 1, 0],
-            [1, 0.5, 0]
+            [0.53, 1, 0],
+            [1, 1, 0],
+            [1, 0.53, 0]
         ],
-        "iso_opacities": [0.15, 0.25, 0.35],
+        "iso_opacities": [0.15, 0.25, 0.35, 0.45],
         "num_iterations": 50,
         "rela_factor": 0.1,
         "iso_opacity": 0.3

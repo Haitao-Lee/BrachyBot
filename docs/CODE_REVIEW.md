@@ -9755,3 +9755,63 @@ a claim that BiomedParse has no theoretical capability.
 - The three warnings are third-party SimpleITK SWIG deprecations.
 - Clinical segmentation quality for BiomedParse remains unverified without
   the official runtime, checkpoint, and representative test cases.
+
+## 2026-07-29 - Physical-Gy planning contract and BiomedParse deployment validation
+
+### 1. Dose values and model calibration are separate contracts
+
+`in_lowest_energy` and `out_highest_energy` now store physical dose values in
+Gy. Their defaults are both `120`, and new planning records explicitly store
+`dose_value_unit="gy"`. The names remain for backward API compatibility, but a
+value of `120` now unambiguously means 120 Gy.
+
+The DoseUNet output remains a normalized model value. The current model
+calibration is independent of the prescription fields:
+
+- model output `1.0` = `120 x 1.59` = `190.8 Gy`;
+- 120 Gy therefore maps to a model-space threshold of
+  `120 / 190.8 = 0.6289308176`;
+- physical isodose levels are prescription multiples, so the default levels
+  are 120, 180, 240, and 480 Gy.
+
+The conversion helpers are centralized in `plans/dose_pre/model_loader.py` and
+are used by planning, evaluation, safety checks, reporting, server routes, and
+the Web UI. Historical sessions that lack unit metadata and store
+`in_lowest_energy=1` are migrated using the old prescription-multiplier
+contract, so an old value of `1` remains 120 Gy instead of being reinterpreted
+as 1 Gy or 190.8 Gy.
+
+### 2. BiomedParse v2 is technically callable on the remote deployment
+
+The prior report described a deployment that lacked the optional runtime and
+checkpoint. The current RTX 3090 deployment now has:
+
+- the upstream BiomedParse v2 checkout at commit
+  `e02096c03af0d79c6994ffc2d60a49eeb0361e1f`;
+- the official `biomedparse_v2.ckpt`;
+- an isolated Python 3.10 runtime with the required inference modules;
+- Detectron2 compiled for the RTX 3090 (compute capability 8.6);
+- local `openai/clip-vit-base-patch32` tokenizer assets.
+
+The adapter now fails closed if the checkout, checkpoint, runtime modules, or
+local tokenizer assets are incomplete. It overrides the upstream tokenizer
+path before Hydra model construction, avoiding a hidden network request during
+the first inference. A remote isolated-worker smoke test completed model
+construction, checkpoint loading, CUDA transfer, and inference on a synthetic
+3D volume, returning the expected output shape and confidence metadata.
+
+This establishes the technical call chain, not clinical contour quality.
+Non-pancreatic BiomedParse routes remain experimental/research-only until
+representative cases are reviewed by qualified clinicians. The validated
+pancreatic nnU-Net route remains unchanged and does not use this fallback.
+
+### 3. Verification
+
+- Full local Python suite: **372 passed, 2 skipped, 3 warnings**.
+- Targeted BiomedParse tests covered capability probing, worker handoff,
+  spatial metadata restoration, and four-state catalog behavior.
+- Remote smoke validation exercised the real official checkpoint and CUDA
+  runtime; the empty synthetic mask was expected because the input contained
+  no tumor anatomy.
+- Model binaries and tokenizer assets remain ignored deployment artifacts and
+  are not committed to Git.

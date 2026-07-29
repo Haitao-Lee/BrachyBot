@@ -256,10 +256,13 @@ async function applyHyperparams() {
         reference_direc: refAuto
             ? 'auto'
             : [_num('refDirecX', 0), _num('refDirecY', 1), _num('refDirecZ', 0)],
-        // The UI fields are physical Gy; planning tools continue to receive
-        // normalized model-space multipliers at this API boundary.
-        in_lowest_energy: doseGyToModel(_num('inLowestEnergy', doseModelScaleGy()), doseModelScaleGy()),
-        out_highest_energy: doseGyToModel(_num('outHighestEnergy', doseModelScaleGy()), doseModelScaleGy()),
+        // Planning configuration is stored in physical Gy. Conversion to raw
+        // DoseUNet units happens only at the model/optimizer boundary.
+        dose_value_unit: 'gy',
+        in_lowest_energy: _num('inLowestEnergy', 120),
+        out_highest_energy: _num('outHighestEnergy', 120),
+        in_lowest_dose_gy: _num('inLowestEnergy', 120),
+        out_highest_dose_gy: _num('outHighestEnergy', 120),
         DVH_rate: _num('dvhRate', 0.9),
         max_iter: Math.round(_num('maxIter', 4)),
         iter_rate: _num('iterRate', 2),
