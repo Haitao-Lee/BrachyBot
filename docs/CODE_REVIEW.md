@@ -10010,11 +10010,17 @@ Verification:
 - focused Data Tree/Export tests: **6 passed**;
 - related Workspace/Viewer/Manual/Report regressions: **134 passed**;
 - full local suite: **379 passed, 2 skipped, 3 warnings**;
+- full remote suite on `rtx3090_external`: **378 passed, 3 skipped, 4 warnings**;
 - modified Python modules passed `py_compile`;
 - modified JavaScript modules passed `node --check`;
 - `git diff --check` passed.
 
-The three warnings are third-party SimpleITK SWIG deprecations.
+The remote skips are the three browser-bridge runtime tests in
+`tests/test_workspace_transition_runtime.py`; the remote host does not provide
+Node.js. Those JavaScript modules and runtime contracts were checked locally,
+where Node.js is available. The local warnings are third-party SimpleITK SWIG
+deprecations; the remote run adds one existing `datetime.utcnow()` deprecation
+warning from the monitor audit path.
 
 ### 7. Current boundaries
 
