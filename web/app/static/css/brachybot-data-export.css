@@ -1,0 +1,291 @@
+.scene-export-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 12000;
+    display: grid;
+    place-items: center;
+    padding: 20px;
+    background: rgba(2, 6, 23, 0.68);
+    backdrop-filter: blur(5px);
+}
+
+.scene-export-dialog {
+    width: min(980px, 96vw);
+    max-height: min(820px, 92vh);
+    display: grid;
+    grid-template-rows: auto auto minmax(220px, 1fr) auto;
+    overflow: hidden;
+    border: 1px solid color-mix(in srgb, var(--primary) 34%, var(--border));
+    border-radius: 8px;
+    background: var(--bg-2);
+    box-shadow: var(--shadow-xl);
+    color: var(--text);
+}
+
+.scene-export-header,
+.scene-export-location,
+.scene-export-footer {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--border-soft);
+}
+
+.scene-export-header h2 {
+    min-width: 0;
+    flex: 1;
+    margin: 0;
+    font-size: 0.95rem;
+    letter-spacing: 0;
+}
+
+.scene-export-header p,
+.scene-export-location small,
+.scene-export-summary {
+    color: var(--text-secondary);
+    font-size: 0.72rem;
+}
+
+.scene-export-close,
+.scene-export-button {
+    min-height: 32px;
+    padding: 6px 12px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--bg-3);
+    color: var(--text);
+    cursor: pointer;
+}
+
+.scene-export-close {
+    width: 32px;
+    padding: 0;
+    font-size: 1rem;
+}
+
+.scene-export-button.primary {
+    border-color: var(--primary);
+    background: var(--primary);
+    color: #fff;
+}
+
+.scene-export-button:disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
+}
+
+.scene-export-location {
+    flex-wrap: wrap;
+}
+
+.scene-export-location strong {
+    font-size: 0.74rem;
+}
+
+.scene-export-path {
+    min-width: 180px;
+    flex: 1;
+    overflow: hidden;
+    color: var(--text-secondary);
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.scene-export-toolbar {
+    display: flex;
+    gap: 8px;
+    padding: 10px 16px 0;
+}
+
+.scene-export-table-wrap {
+    min-height: 0;
+    overflow: auto;
+    padding: 10px 16px 16px;
+}
+
+.scene-export-table {
+    width: 100%;
+    table-layout: fixed;
+    border-collapse: collapse;
+    font-size: 0.74rem;
+}
+
+.scene-export-table th,
+.scene-export-table td {
+    height: 38px;
+    padding: 6px 8px;
+    border-bottom: 1px solid var(--border-soft);
+    text-align: left;
+    vertical-align: middle;
+}
+
+.scene-export-table th:first-child,
+.scene-export-table td:first-child {
+    width: 58px;
+    text-align: center;
+}
+
+.scene-export-table th:nth-child(3),
+.scene-export-table td:nth-child(3) {
+    width: 150px;
+}
+
+.scene-export-table th:nth-child(4),
+.scene-export-table td:nth-child(4) {
+    width: 210px;
+}
+
+.scene-export-group-row td {
+    background: color-mix(in srgb, var(--bg-3) 90%, var(--primary) 10%);
+    font-weight: 600;
+}
+
+.scene-export-row-hidden {
+    display: none;
+}
+
+.scene-export-name {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: 7px;
+}
+
+.scene-export-disclosure {
+    width: 22px;
+    height: 22px;
+    flex: 0 0 22px;
+    border: 0;
+    border-radius: 4px;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    font: inherit;
+    line-height: 1;
+    transition: color 140ms ease, background-color 140ms ease, transform 140ms ease;
+}
+
+.scene-export-disclosure:hover {
+    background: color-mix(in srgb, var(--primary) 14%, transparent);
+    color: var(--primary);
+}
+
+.scene-export-disclosure[aria-expanded="false"] {
+    transform: rotate(-90deg);
+}
+
+.scene-export-indent {
+    flex: 0 0 auto;
+}
+
+.scene-export-name span:last-child {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.scene-export-format {
+    width: 100%;
+    min-width: 0;
+    height: 28px;
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    background: var(--bg-1);
+    color: var(--text);
+}
+
+.scene-export-progress {
+    display: none;
+    min-width: 260px;
+    flex: 1;
+}
+
+.scene-export-progress.active {
+    display: block;
+}
+
+.scene-export-progress-track {
+    height: 5px;
+    overflow: hidden;
+    border-radius: 3px;
+    background: var(--bg-1);
+}
+
+.scene-export-progress-value {
+    width: 0;
+    height: 100%;
+    background: var(--primary);
+    transition: width 180ms ease;
+}
+
+.scene-export-progress-text {
+    margin-top: 5px;
+    color: var(--text-secondary);
+    font-size: 0.68rem;
+}
+
+.scene-export-footer {
+    justify-content: flex-end;
+    border-top: 1px solid var(--border-soft);
+    border-bottom: 0;
+}
+
+.scene-export-summary {
+    margin-right: auto;
+}
+
+.session-export-menu {
+    position: fixed;
+    z-index: 11900;
+    min-width: 190px;
+    padding: 5px;
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    background: var(--bg-2);
+    box-shadow: var(--shadow-xl);
+}
+
+.session-export-menu button {
+    width: 100%;
+    padding: 8px 10px;
+    border: 0;
+    border-radius: 5px;
+    background: transparent;
+    color: var(--text);
+    text-align: left;
+    cursor: pointer;
+}
+
+.session-export-menu button:hover {
+    background: var(--primary-soft);
+    color: var(--primary-ink);
+}
+
+.ctx-menu .ctx-menu-danger {
+    color: var(--danger, #f87171);
+}
+
+.ctx-menu .ctx-menu-danger:hover {
+    background: rgba(239, 68, 68, .14);
+}
+
+@media (max-width: 700px) {
+    .scene-export-overlay {
+        padding: 8px;
+    }
+    .scene-export-dialog {
+        width: 100%;
+        max-height: 96vh;
+    }
+    .scene-export-table th:nth-child(3),
+    .scene-export-table td:nth-child(3) {
+        display: none;
+    }
+    .scene-export-table th:nth-child(4),
+    .scene-export-table td:nth-child(4) {
+        width: 150px;
+    }
+}

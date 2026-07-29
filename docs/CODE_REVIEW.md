@@ -9824,3 +9824,209 @@ pancreatic nnU-Net route remains unchanged and does not use this fallback.
   **22 passed, 3 third-party warnings**.
 - Model binaries and tokenizer assets remain ignored deployment artifacts and
   are not committed to Git.
+
+## 2026-07-29 - Data Tree transactions and three-level Scene export
+
+This change replaces presentation-only Data Tree mutations and ad hoc
+downloads with one case-owned data service. The Data Tree remains the
+visualization controller, but structure classification, deletion, and export
+are now resolved from durable backend objects.
+
+### 1. Stable Structure identity and bidirectional classification
+
+CTV and OAR labels are registered as stable objects such as
+`structure:ctv:1`, `structure:oar:12`, and
+`structure:embedded:2`. `web/structure_service.py` keeps the source mask,
+spatial metadata, and stable object identity separate from its current
+clinical classification.
+
+`OAR -> CTV` and `CTV -> OAR` now execute one backend transaction:
+
+- update `structure_overrides` and rebuild effective CTV/OAR transport volumes;
+- retain the original mask, source identity, name, and Data Tree appearance;
+- update the authoritative arrays and label maps used by Viewer and Planning;
+- mark Planning, Dose, DVH, Evaluation, Report, and Surgical Guide stale;
+- persist the transaction so refresh and Session switching retain the class;
+- reload the label cache with format version 3, including stable CTV/OAR
+  object mappings.
+
+The pancreatic model's labels 2-4 (artery, vein, and pancreas) are now real
+OAR source objects instead of viewer-only labels. Imported unknown masks keep
+their source labels and can be reclassified without fabricating anatomy names.
+
+### 2. Type-aware backend deletion
+
+The existing Data Tree context menu is retained and extended with `Delete`
+for real objects and groups. A delete request first resolves and validates the
+entire selection against the current case catalog, then mutates the backend.
+The frontend updates only after a successful response.
+
+Implemented handlers cover CT, CTV/OAR structures, trajectories, needles,
+seeds, dose, iso-surfaces, DVH, Surgical Guide, Report data/PDF, screenshots,
+report figures, and annotations. Dependency handling follows the data graph:
+
+- deleting CT clears all case-owned clinical/planning memory and Report files;
+- deleting a Needle removes its owned Seeds and stales dose-dependent results;
+- deleting a Structure stales Planning, Dose, DVH, Evaluation, Report, and
+  Guide without silently discarding the user's remaining geometry;
+- deleting Dose invalidates DVH and Report;
+- deleting screenshots/figures removes their chat/report references;
+- high-risk actions use the BrachyBot confirmation dialog, not native
+  `window.confirm`.
+
+Structure batches are committed as one memory transaction. Heterogeneous
+batches are prevalidated before their first mutation so a missing later object
+does not cause the common partial-delete failure.
+
+### 3. One Export Service for node, group, and Session
+
+`web/export_service.py` provides the shared
+`Object -> Export Handler -> Serializer -> File` registry. The same catalog
+and serializers power:
+
+1. a single Data Tree node export;
+2. recursive, structured parent/group export;
+3. complete Session Scene export.
+
+All exports read the authenticated Session's persistent clinical data, not
+the currently visible Three.js mesh or current slice. Hidden and collapsed
+objects therefore remain exportable.
+
+| Data type | Formats | Default |
+| --- | --- | --- |
+| CT image | NIfTI `.nii.gz` | NIfTI |
+| CTV/OAR | NIfTI `.nii.gz`, STL `.stl` | NIfTI |
+| Trajectory/Needle/Seed | JSON `.json` | JSON |
+| Planning parameters | JSON `.json` | JSON |
+| Dose volume | NIfTI `.nii.gz` with Gy metadata | NIfTI |
+| Dose iso-surface | STL `.stl` | STL |
+| DVH data | CSV, XLSX, JSON | CSV |
+| DVH curve | PNG | PNG |
+| Surgical Guide | STL `.stl` | STL |
+| Report | current non-stale PDF; report data as JSON | PDF |
+| Chat/Trace/Tool history | linked JSON records | JSON |
+| Screenshot/Report figure | PNG | PNG |
+| Annotation | JSON | JSON |
+
+NIfTI serialization preserves voxel data, dimensions, spacing, origin, and
+direction. Dose in `dose_distribution_gy` is written directly, avoiding a
+second model-scale conversion. STL vertices are produced in the clinical
+physical LPS/mm space. Needle JSON uses start/end points; Seed JSON uses
+position, direction, and length.
+
+### 4. Scene Export UI and output structure
+
+Right-clicking a Session opens a BrachyBot-styled Scene Export dialog instead
+of immediately downloading. It provides:
+
+- a hierarchical, expandable list generated from the current real catalog;
+- all existing objects selected by default;
+- Select All, Deselect All, parent-down checkbox propagation, and independent
+  child selection;
+- a per-object format selector;
+- real completed-file progress, current item, failures, skips, and cancel;
+- File System Access API directory writing when the browser permits it;
+- one structured ZIP fallback when direct directory writing is unavailable.
+
+A successful export creates:
+
+```text
+BrachyBot_<SessionName>_<Date>/
+├── session_manifest.json
+├── Chat/
+├── Images/
+├── Structures/CTV/
+├── Structures/OAR/
+├── Planning/Trajectories/
+├── Planning/Needles/
+├── Planning/Seeds/
+├── Dose/IsoSurfaces/
+├── DVH/
+├── SurgicalGuide/
+├── Report/
+├── Figures/
+└── Annotations/
+```
+
+`session_manifest.json` records schema version, Session/Case/Planning IDs,
+export time, BrachyBot version, coordinate system, source version vector,
+object IDs, formats, relative paths, byte sizes, failures, and skipped items.
+Each export job captures a source version vector before serialization and
+rechecks it around every file. If the plan changes during export, the current
+file is discarded and later files are skipped rather than producing a mixed
+version Scene.
+
+Export is background-threaded and remains bound to its originating user and
+Session even if the user switches cases. Cancelled jobs do not trigger a
+download. Report figures uploaded after a capture are immediately registered
+back into the Data Tree artifact catalog.
+
+### 5. Frontend and backend modules
+
+New modules:
+
+- `web/structure_service.py`
+- `web/export_service.py`
+- `web/routes/data_routes.py`
+- `web/app/static/js/brachybot-data-export.js`
+- `web/app/static/css/brachybot-data-export.css`
+- `tests/test_data_tree_export_system.py`
+
+Integrated modules:
+
+- `AgenticSys.py` and `agent_runtime/chat_workflows.py` register new real
+  segmentation sources;
+- `web/routes/viewer_routes.py` serves effective structures and stable object
+  mappings;
+- `web/routes/planning_routes.py` uses the active manual plan after edits;
+- `web/workspace_store.py` supports atomic snapshot-section replacement;
+- `brachybot-viewer-volume.js` owns context actions, backend reconciliation,
+  appearance preservation, and artifact nodes;
+- Workspace/session cache modules persist annotations and invalidate only the
+  affected case-owned resources.
+
+### 6. Acceptance coverage
+
+Automated coverage verifies:
+
+- OAR-to-CTV and CTV-to-OAR transactions, mask preservation, persistent
+  overrides, and downstream stale status;
+- CT and Structure NIfTI geometry/voxel fidelity;
+- Structure and Guide STL generation;
+- Needle/Seed JSON geometry;
+- physical-Gy Dose NIfTI without double scaling;
+- DVH absolute volume and percentage columns in CSV and readable XLSX;
+- Report PDF, Figure PNG, screenshots, annotations, chat, Execution Trace,
+  and Tool history exports;
+- structured Scene directory, ZIP, and Manifest consistency;
+- backend Seed, Report PDF, screenshot, and Report Figure deletion;
+- node/group/Session UI hooks, folder picker fallback, real progress,
+  cancellation, and hierarchy collapse;
+- label-cache version 3 rejects legacy uint8 OAR caches and restores stable
+  CTV/OAR object mappings.
+
+Verification:
+
+- focused Data Tree/Export tests: **6 passed**;
+- related Workspace/Viewer/Manual/Report regressions: **134 passed**;
+- full local suite: **379 passed, 2 skipped, 3 warnings**;
+- modified Python modules passed `py_compile`;
+- modified JavaScript modules passed `node --check`;
+- `git diff --check` passed.
+
+The three warnings are third-party SimpleITK SWIG deprecations.
+
+### 7. Current boundaries
+
+- Scene Import is not part of this change; the Manifest and stable directory
+  layout are designed to support it later.
+- Export job progress is process-local. A server restart interrupts an active
+  export, while already durable case data remains intact.
+- Direct local-folder writing requires browser File System Access API support
+  in an allowed context; otherwise the UI explicitly downloads one structured
+  ZIP.
+- DVH figures are currently PNG; DVH table exports are CSV/XLSX/JSON.
+- A Structure export selects one format per row in one run. Users can export
+  the same Structure again as STL when both mask and surface are required.
+- Medical/clinical validity of a segmentation or treatment plan remains
+  outside the software serialization and state-consistency verification.

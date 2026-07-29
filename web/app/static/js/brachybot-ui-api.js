@@ -1452,6 +1452,15 @@ function resetAllState(options = {}) {
     dataTreeState.planning.needles = [];
     dataTreeState.planning.doseLevels = [];
     dataTreeState.planning.meshes = [];
+    dataTreeState.annotations = [];
+    dataTreeState.exportArtifacts = [];
+    if (typeof _dataTreeArtifactCatalogSession !== 'undefined') {
+        _dataTreeArtifactCatalogSession = '';
+    }
+    if (typeof _dataTreeArtifactCatalogPromise !== 'undefined') {
+        _dataTreeArtifactCatalogPromise = null;
+    }
+    state.annotations = [];
 
     // Prevent cross-session seed/needle contamination in 2D viewer
     state.seedsOverlay = null;

@@ -450,7 +450,8 @@ async function loadLabelVolumes(options = {}) {
     let allBytes = null, fromCache = false;
     let shapeZ, shapeY, shapeX, hasCTV, hasOAR, ctvSize, oarSize, oarSource = '';
     let ctvBytesPerVoxel = 1, oarBytesPerVoxel = 1;
-    let cachedColorLUT = null, cachedCtvLabelMap = null, cachedOrganMeta = null;
+    let cachedColorLUT = null, cachedCtvLabelMap = null, cachedCtvObjectMap = null;
+    let cachedOrganMeta = null, cachedStructureVersion = 0;
 
     // --- IndexedDB cache ---
     if (!forceFresh && sid && window.SessionCache) {
@@ -470,13 +471,15 @@ async function loadLabelVolumes(options = {}) {
                     oarSource = hdr.oarSource || '';
                     cachedColorLUT = hdr.colorLUT || null;
                     cachedCtvLabelMap = hdr.ctvLabelMap || null;
+                    cachedCtvObjectMap = hdr.ctvObjectMap || null;
                     cachedOrganMeta = hdr.organMeta || null;
+                    cachedStructureVersion = Number(hdr.structureVersion || 0);
                     // Cache format v1 stored OAR labels as uint8. Labels from
                     // nnUNet and uploaded volumes can be 201-203 or 10000, so
                     // reusing that entry would silently wrap IDs and make the
                     // Data Tree disagree with the 2D overlay. Only the
                     // explicitly versioned uint16 format is safe to restore.
-                    const cacheFormatCurrent = Number(hdr.formatVersion || 0) >= 2;
+                    const cacheFormatCurrent = Number(hdr.formatVersion || 0) >= 3;
                     const oarEncodingCurrent = !hasOAR || oarBytesPerVoxel === 2;
                     if (shapeZ > 0 && shapeY > 0 && shapeX > 0
                             && cacheFormatCurrent && oarEncodingCurrent) {
@@ -531,6 +534,12 @@ async function loadLabelVolumes(options = {}) {
             if (ctvLabelMapRaw) {
                 try { window._ctvLabelMap = JSON.parse(ctvLabelMapRaw); } catch(e) { window._ctvLabelMap = {}; }
             }
+            const ctvObjectMapRaw = res.headers.get('X-CTV-Object-Map');
+            if (ctvObjectMapRaw) {
+                try { window._ctvObjectMap = JSON.parse(ctvObjectMapRaw); } catch(e) { window._ctvObjectMap = {}; }
+            }
+            const structureVersion = Number(res.headers.get('X-Structure-Version') || 0);
+            window._structureVersion = structureVersion;
             try {
                 organMetaFromServer = JSON.parse(res.headers.get('X-Organ-Meta') || '{}');
             } catch (error) {
@@ -545,7 +554,7 @@ async function loadLabelVolumes(options = {}) {
             // Async cache write
             if (sid && window.SessionCache) {
                 const hdr = JSON.stringify({
-                    formatVersion: 2,
+                    formatVersion: 3,
                     z: shapeZ, y: shapeY, x: shapeX,
                     hasCTV: hasCTV, hasOAR: hasOAR,
                     ctvSize: ctvSize, oarSize: oarSize,
@@ -554,7 +563,9 @@ async function loadLabelVolumes(options = {}) {
                     oarSource: oarSource || '',
                     colorLUT: labelColorLUT,
                     ctvLabelMap: window._ctvLabelMap || {},
+                    ctvObjectMap: window._ctvObjectMap || {},
                     organMeta: organMetaFromServer,
+                    structureVersion,
                 });
                 const hdrBytes = new TextEncoder().encode(hdr);
                 const hdrLenBuf = new ArrayBuffer(4);
@@ -573,7 +584,9 @@ async function loadLabelVolumes(options = {}) {
         // Restore headers from cache
         labelColorLUT = cachedColorLUT || {};
         if (cachedCtvLabelMap) window._ctvLabelMap = cachedCtvLabelMap;
+        if (cachedCtvObjectMap) window._ctvObjectMap = cachedCtvObjectMap;
         if (cachedOrganMeta) organMetaFromServer = cachedOrganMeta;
+        window._structureVersion = cachedStructureVersion;
     }
 
     // --- post-processing (shared by cache and fetch paths) ---
@@ -657,6 +670,7 @@ async function loadLabelVolumes(options = {}) {
             organData[String(labelId)] = {
                 name: meta.name || (oarSource === 'uploaded_unknown' ? `OAR ${ordinal}` : `OAR ${labelId}`),
                 voxel_count: voxelCount,
+                object_id: meta.object_id || `structure:oar:${labelId}`,
                 color: metaColor || (labelColorLUT[labelId]
                     ? `rgb(${labelColorLUT[labelId].join(',')})`
                     : undefined),
@@ -1688,7 +1702,83 @@ const dataTreeState = {
         dvh: null,
     },
     annotations: [],
+    // Durable non-visual artifacts are hydrated from the backend catalog.
+    // Geometry remains in its owning stores; these rows expose the same
+    // stable Object IDs to Delete/Export without inventing UI-only records.
+    exportArtifacts: [],
 };
+
+let _dataTreeArtifactCatalogSession = '';
+let _dataTreeArtifactCatalogPromise = null;
+
+async function hydrateDataTreeArtifactCatalog({ force = false } = {}) {
+    const sessionId = _viewerDataSessionId();
+    if (!sessionId) {
+        dataTreeState.exportArtifacts = [];
+        _dataTreeArtifactCatalogSession = '';
+        return [];
+    }
+    if (!force && _dataTreeArtifactCatalogSession === sessionId) {
+        return dataTreeState.exportArtifacts;
+    }
+    if (
+        !force
+        && _dataTreeArtifactCatalogPromise
+        && _dataTreeArtifactCatalogPromise.sessionId === sessionId
+    ) {
+        return _dataTreeArtifactCatalogPromise.promise;
+    }
+    if (_dataTreeArtifactCatalogSession !== sessionId) {
+        dataTreeState.exportArtifacts = [];
+    }
+    const promise = (async () => {
+        try {
+            const response = await fetch(API + '/data/catalog', {
+                headers: _viewerDataHeaders(sessionId),
+            });
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok || payload.success === false) {
+                throw new Error(payload.error || 'Data catalog is unavailable');
+            }
+            if (sessionId !== _viewerDataSessionId()) return [];
+            const rows = (payload.objects || [])
+                .filter(item => ['report_data', 'report', 'report_figure', 'screenshot'].includes(
+                    String(item?.data_type || ''),
+                ))
+                .map((item, index) => ensureDataTreeNodeMetadata({
+                    id: `artifact_${index + 1}`,
+                    objectId: String(item.object_id),
+                    label: String(item.name || item.object_id),
+                    dataType: String(item.data_type),
+                    parentId: 'artifacts',
+                    loaded: true,
+                    visible: true,
+                    opacity: 1,
+                    color: ['screenshot', 'report_figure'].includes(item.data_type)
+                        ? '#38bdf8' : '#a78bfa',
+                    planningId: item.planning_id,
+                    dataVersion: item.data_version,
+                    status: item.status || 'ready',
+                    error: item.error || null,
+                }, String(item.data_type), 'artifacts'));
+            dataTreeState.exportArtifacts = rows;
+            _dataTreeArtifactCatalogSession = sessionId;
+            renderDataTree();
+            return rows;
+        } catch (error) {
+            if (sessionId === _viewerDataSessionId()) {
+                console.warn('[data-tree] artifact catalog hydration failed', error);
+            }
+            return [];
+        } finally {
+            if (_dataTreeArtifactCatalogPromise?.sessionId === sessionId) {
+                _dataTreeArtifactCatalogPromise = null;
+            }
+        }
+    })();
+    _dataTreeArtifactCatalogPromise = { sessionId, promise };
+    return promise;
+}
 
 /**
  * Add the stable identity/control contract shared by every Data Tree node.
@@ -1719,7 +1809,7 @@ function ensureDataTreeNodeMetadata(node, type, parentId = null) {
     const explicitStatus = String(node.status || '').toLowerCase();
     node.status = node.error ? 'error'
         : node.loading ? 'loading'
-        : explicitStatus === 'expired' ? 'expired'
+        : ['expired', 'stale'].includes(explicitStatus) ? explicitStatus
         : node.loaded ? 'ready' : 'not_generated';
     node.contextActions = Array.isArray(node.contextActions)
         ? node.contextActions
@@ -1750,6 +1840,9 @@ function reconcileDataTreeVisualNodes() {
         ensureDataTreeNodeMetadata(node, 'dose_iso_surface', 'planning');
     });
     (dataTreeState.planning?.meshes || []).forEach(node => ensureDataTreeNodeMetadata(node, node.source || 'planning_mesh', 'planning'));
+    (dataTreeState.exportArtifacts || []).forEach(node => ensureDataTreeNodeMetadata(
+        node, node.dataType || node.type || 'artifact', 'artifacts',
+    ));
 
     const overlay = state?.doseOverlay?.shape ? state.doseOverlay : null;
     dataTreeState.planning.doseOverlay = overlay
@@ -1816,7 +1909,8 @@ function getDataTreeNodeSnapshot() {
         ...(dataTreeState.planning?.needles || []),
         ...(dataTreeState.planning?.doseLevels || []),
         ...(dataTreeState.planning?.meshes || []),
-        ...(dataTreeState.annotations || [])].forEach(add);
+        ...(dataTreeState.annotations || []),
+        ...(dataTreeState.exportArtifacts || [])].forEach(add);
     return nodes;
 }
 
@@ -1996,10 +2090,24 @@ const selectedItems = new Set();  // Set of organ IDs (e.g., 'organ_1', 'ctv')
 let lastClickedId = null;  // For shift+click range selection
 
 function getSelectableIds() {
-    // Return all organ IDs + ctv in tree order
+    // Return every real leaf node in tree order. Group headers are routed to
+    // their own menu and therefore do not participate in range selection.
     const ids = [];
-    if (dataTreeState.ctv.loaded) ids.push('ctv');
+    if (dataTreeState.ct.loaded) ids.push('ct');
+    if (dataTreeState.ctv.loaded) {
+        const ctvIds = Object.keys(dataTreeState.ctvLabels || {});
+        ids.push(...(ctvIds.length ? ctvIds : ['ctv']));
+    }
     dataTreeState.organs.forEach(o => ids.push(o.id));
+    _planningItems('trajectories').forEach(item => ids.push(item.id));
+    _planningItems('seeds').forEach(item => ids.push(item.id));
+    _planningItems('needles').forEach(item => ids.push(item.id));
+    _planningItems('doseLevels').forEach(item => ids.push(`dose_iso_${item.threshold}`));
+    if (dataTreeState.planning?.doseOverlay) ids.push('dose_overlay');
+    if (dataTreeState.planning?.dvh) ids.push('dvh');
+    _planningItems('meshes').forEach(item => ids.push(item.id));
+    (dataTreeState.annotations || []).forEach(item => ids.push(item.id));
+    (dataTreeState.exportArtifacts || []).forEach(item => ids.push(item.id));
     return ids;
 }
 
@@ -2028,6 +2136,7 @@ function updateOrganList(organData, source = '') {
 
     // Preserve existing visibility/opacity state
     const existingState = {};
+    const existingByObjectId = {};
     // A metadata refresh can omit provenance while the binary label request
     // is still completing. Keep the last confirmed source in that case so an
     // uploaded mask cannot briefly inherit a model ontology.
@@ -2039,11 +2148,13 @@ function updateOrganList(organData, source = '') {
         if (!sourceChanged) {
             existingState[o.id] = {
                 label: o.label,
+                objectId: o.objectId,
                 visible: o.visible,
                 opacity: o.opacity,
                 category: o.category,
                 color: o.color,
             };
+            if (o.objectId) existingByObjectId[String(o.objectId)] = existingState[o.id];
         }
     });
     // Presentation may be restored before the asynchronous OAR metadata
@@ -2062,7 +2173,8 @@ function updateOrganList(organData, source = '') {
         // a falsely named artery, stomach, or vessel; users can rename or
         // reclassify these numbered nodes explicitly in the Data Tree.
         const id = `organ_${labelId}`;
-        const existing = existingState[id];
+        const stableObjectId = String(info.object_id || `structure:oar:${labelId}`);
+        const existing = existingByObjectId[stableObjectId] || existingState[id];
         const pending = pendingById[id] || pendingByLabel[String(labelId)] || null;
         const renamed = !sourceChanged && existing?.label
             && !/^OAR\s+\d+$/i.test(String(existing.label).trim())
@@ -2072,6 +2184,7 @@ function updateOrganList(organData, source = '') {
         const cat = existing?.category || pending?.category || (uploadedUnknownSource ? 'traversable' : classifyOrgan(name));
         dataTreeState.organs.push({
             id: id,
+            objectId: stableObjectId,
             labelId: parseInt(labelId),
             label: name,
             color: existing?.color || pending?.color || info.color || ORGAN_COLORS[i % ORGAN_COLORS.length],
@@ -2120,6 +2233,7 @@ window.hydrateOarDataTreeFromPayload = function hydrateOarDataTreeFromPayload(pa
                 name: info.name || `OAR ${Object.keys(organData).length + 1}`,
                 voxel_count: Number(info.voxel_count ?? info.voxels ?? info.count) || 0,
                 color: info.color,
+                object_id: info.object_id || data.object_map?.[key],
             };
         });
     }
@@ -2166,6 +2280,9 @@ function renderDataTree() {
     if (!body) return;
 
     reconcileDataTreeVisualNodes();
+    // Catalog hydration is deliberately non-blocking. The active Session UI
+    // renders immediately, then durable artifact rows arrive independently.
+    void hydrateDataTreeArtifactCatalog();
 
     // Check what data is loaded
     dataTreeState.ct.loaded = state.ctLoaded;
@@ -2190,7 +2307,7 @@ function renderDataTree() {
 
     // === Image group ===
     html += `<div class="tree-group">
-        <div class="tree-group-header" onclick="toggleTreeGroup(this)">
+        <div class="tree-group-header" onclick="toggleTreeGroup(this)" oncontextmenu="event.preventDefault();showGroupContextMenu(event.clientX,event.clientY,'image')">
             <span class="arrow">&#9660;</span>
             <span>Image</span>
         </div>
@@ -2211,7 +2328,7 @@ function renderDataTree() {
     const hasSeg = dataTreeState.ctv.loaded || dataTreeState.organs.length > 0;
     const segCount = hasMultiLabelCtv ? ctvLabels.length : (dataTreeState.ctv.loaded ? 1 : 0);
     html += `<div class="tree-group">
-        <div class="tree-group-header" onclick="toggleTreeGroup(this)">
+        <div class="tree-group-header" onclick="toggleTreeGroup(this)" oncontextmenu="event.preventDefault();showGroupContextMenu(event.clientX,event.clientY,'segmentation')">
             <span class="arrow">&#9660;</span>
             <span>Segmentation ${hasSeg ? `(${dataTreeState.organs.length + segCount})` : ''}</span>
         </div>
@@ -2225,6 +2342,21 @@ function renderDataTree() {
             : 'CTV';
         const labelNames = window._ctvLabelMap || {1: genericTargetName};
         const voxelVolumeCm3 = _ctVoxelVolumeCm3();
+        const previousCtvByObjectId = {};
+        Object.values(dataTreeState.ctvLabels || {}).forEach(item => {
+            if (item?.objectId) previousCtvByObjectId[String(item.objectId)] = item;
+        });
+        const ctvAppearanceFor = (labelId) => {
+            const objectId = String(
+                window._ctvObjectMap?.[labelId] || `structure:ctv:${labelId}`,
+            );
+            return {
+                objectId,
+                current: previousCtvByObjectId[objectId]
+                    || dataTreeState.ctvLabels?.[`ctv_${labelId}`]
+                    || {},
+            };
+        };
 
         // Tumor labels (label 1) → CTV group
         const tumorLabels = ctvLabels.filter(l => l === 1);
@@ -2250,9 +2382,10 @@ function renderDataTree() {
                 ? `rgb(${labelColorLUT[labelId].join(',')})`
                 : fallbackColor;
             const id = `ctv_${labelId}`;
-            const current = dataTreeState.ctvLabels?.[id] || {};
+            const { objectId, current } = ctvAppearanceFor(labelId);
             const item = {
                 id,
+                objectId,
                 labelId,
                 label: name,
                 color,
@@ -2265,6 +2398,7 @@ function renderDataTree() {
             if (!dataTreeState.ctvLabels) dataTreeState.ctvLabels = {};
             dataTreeState.ctvLabels[id] = {
                 ...current,
+                objectId: item.objectId,
                 label: item.label,
                 labelId: item.labelId,
                 category: item.category,
@@ -2305,12 +2439,14 @@ function renderDataTree() {
                 const tumorColor = labelColorLUT[labelId]
                     ? `rgb(${labelColorLUT[labelId].join(',')})`
                     : '#ff69b4';
+                const { objectId, current } = ctvAppearanceFor(labelId);
                 const tumorState = ensureDataTreeNodeMetadata({
-                    ...(dataTreeState.ctvLabels?.[`ctv_${labelId}`] || {}),
+                    ...current,
                     id: `ctv_${labelId}`, labelId, label: name, color: tumorColor,
                     visible: dataTreeState.ctv.visible !== false,
                     opacity: dataTreeState.ctv.opacity ?? 0.7,
                     loaded: true,
+                    objectId,
                 }, 'ctv_label', 'ctv');
                 dataTreeState.ctvLabels[`ctv_${labelId}`] = tumorState;
                 html += renderTreeItem(`ctv_${labelId}`, tumorState, volumeText);
@@ -2627,6 +2763,25 @@ function renderDataTree() {
 
     html += `</div></div>`; // close Planning group
 
+    const annotations = dataTreeState.annotations || [];
+    const exportArtifacts = dataTreeState.exportArtifacts || [];
+    if (annotations.length || exportArtifacts.length) {
+        html += `<div class="tree-group" data-group="artifacts">
+            <div class="tree-group-header" onclick="toggleTreeGroup(this)" oncontextmenu="event.preventDefault();showGroupContextMenu(event.clientX,event.clientY,'artifacts')">
+                <span class="arrow">&#9660;</span>
+                <span>${_dtText('工件与标注', 'Artifacts & Annotations')}</span>
+                <span>(${annotations.length + exportArtifacts.length})</span>
+            </div>
+            <div class="tree-group-items">`;
+        annotations.forEach(item => {
+            html += renderTreeItem(item.id, item, _dtText('手动标注', 'Manual annotation'));
+        });
+        exportArtifacts.forEach(item => {
+            html += renderArtifactTreeItem(item);
+        });
+        html += `</div></div>`;
+    }
+
     body.innerHTML = html;
     requestViewerVisualRefresh('data-tree-render');
 }
@@ -2667,6 +2822,21 @@ function renderTreeItem(id, itemState, info) {
             ${disabledAttr}
             onclick="event.stopPropagation()"
             oninput="setDataOpacity('${id}', this.value)">
+    </div>`;
+}
+
+function renderArtifactTreeItem(itemState) {
+    const id = String(itemState.id);
+    const selectedClass = selectedItems.has(id) ? 'selected' : '';
+    const typeLabel = itemState.dataType === 'screenshot'
+        ? _dtText('截图', 'Screenshot')
+        : _dtText('报告', 'Report');
+    return `<div class="tree-item ${selectedClass}" data-node-id="${escHtml(itemState.nodeId || id)}" data-node-type="${escHtml(itemState.type || 'artifact')}" data-status="${escHtml(itemState.status || 'ready')}"
+        onclick="handleTreeItemClick('${id}', event)"
+        oncontextmenu="event.preventDefault();event.stopPropagation();handleTreeItemRightClick('${id}', event)">
+        <span class="color-swatch" style="background:${itemState.color};pointer-events:none;"></span>
+        <span class="item-label">${escHtml(itemState.label || '')}</span>
+        <span class="item-info">${escHtml(typeLabel)}</span>
     </div>`;
 }
 
@@ -2946,7 +3116,13 @@ function showGroupContextMenu(x, y, category) {
 
     // Determine group info based on category
     let catInfo, count;
-    if (category === 'ctv') {
+    if (category === 'image') {
+        catInfo = { label: _dtText('影像', 'Image'), icon: 'I' };
+        count = state.ctLoaded ? 1 : 0;
+    } else if (category === 'segmentation') {
+        catInfo = { label: _dtText('分割结构', 'Segmentation'), icon: 'S' };
+        count = _dataTreeGroupObjectIds('segmentation').length;
+    } else if (category === 'ctv') {
         catInfo = { label: 'CTV', icon: '🎯' };
         count = dataTreeState.ctv.loaded ? 1 : 0;
     } else if (category === 'oar') {
@@ -2967,6 +3143,9 @@ function showGroupContextMenu(x, y, category) {
     } else if (category === 'planning' || category === 'planning_trajectories') {
         catInfo = { label: category === 'planning' ? 'Planning' : 'Trajectories', icon: 'P' };
         count = category === 'planning' ? _planningVisualEntries().length : dataTreeState.planning.trajectories.length;
+    } else if (category === 'artifacts') {
+        catInfo = { label: _dtText('工件与标注', 'Artifacts & Annotations'), icon: 'A' };
+        count = _dataTreeGroupObjectIds('artifacts').length;
     } else {
         catInfo = ORGAN_CATEGORIES[category] || { label: category, icon: '📁' };
         count = dataTreeState.organs.filter(o => o.category === category).length;
@@ -2994,11 +3173,33 @@ function showGroupContextMenu(x, y, category) {
         items += `<div class="ctx-menu-sep"></div>`;
     }
 
-    // Visibility
-    items += `<div class="ctx-menu-item" onclick="hideContextMenu();setGroupVisibility('${category}',true)">
-        <span class="ctx-icon">&#128065;</span> Show All</div>`;
-    items += `<div class="ctx-menu-item" onclick="hideContextMenu();setGroupVisibility('${category}',false)">
-        <span class="ctx-icon">&#128064;</span> Hide All</div>`;
+    // Structure classification changes are real backend transactions. The
+    // group action is useful for imported masks whose initial class is wrong.
+    if (category === 'oar' || category === 'ctv') {
+        const destination = category === 'oar' ? 'ctv' : 'oar';
+        const destinationLabel = destination.toUpperCase();
+        if (_dataTreeGroupObjectIds(category).length) {
+            items += `<div class="ctx-menu-item" onclick="hideContextMenu();_runDataTreeAction(moveDataTreeGroup('${category}', '${destination}'))">
+                <span class="ctx-icon">&#8644;</span> ${_dtText(`移动全部到 ${destinationLabel}`, `Move all to ${destinationLabel}`)}</div>`;
+        }
+    }
+
+    if (count > 0) {
+        items += `<div class="ctx-menu-item" onclick="hideContextMenu();_runDataTreeAction(exportDataTreeGroup('${category}'))">
+            <span class="ctx-icon">&#8681;</span> ${_dtText('导出', 'Export')}</div>`;
+        items += `<div class="ctx-menu-item ctx-menu-danger" onclick="hideContextMenu();_runDataTreeAction(deleteDataTreeGroup('${category}'))">
+            <span class="ctx-icon">&#128465;</span> ${_dtText('删除真实数据', 'Delete data')}</div>`;
+        items += `<div class="ctx-menu-sep"></div>`;
+    }
+
+    // Image and the abstract Segmentation collection do not own a separate
+    // viewer state. Their children remain the authoritative visual nodes.
+    if (!['image', 'segmentation', 'artifacts'].includes(category)) {
+        items += `<div class="ctx-menu-item" onclick="hideContextMenu();setGroupVisibility('${category}',true)">
+            <span class="ctx-icon">&#128065;</span> Show All</div>`;
+        items += `<div class="ctx-menu-item" onclick="hideContextMenu();setGroupVisibility('${category}',false)">
+            <span class="ctx-icon">&#128064;</span> Hide All</div>`;
+    }
 
     // Solo this group (only for organ groups)
     if (category === 'oar' || (ORGAN_CATEGORIES[category] && category !== 'ctv')) {
@@ -3012,21 +3213,23 @@ function showGroupContextMenu(x, y, category) {
             <span class="ctx-icon">&#128465;</span> Clear Planning</div>`;
     }
 
-    // Opacity submenu
-    items += `<div class="ctx-menu-sep"></div>`;
-    items += `<div class="ctx-menu-item" style="opacity:0.5;cursor:default;font-size:0.6rem;">
-        <span class="ctx-icon">&#127912;</span> Opacity</div>`;
-    for (const op of [100, 75, 50, 25]) {
-        items += `<div class="ctx-menu-item" onclick="hideContextMenu();setGroupOpacityValue('${category}', ${op})">
-            <span class="ctx-icon" style="opacity:${op / 100}">&#9632;</span> ${op}%</div>`;
+    // Opacity belongs to visual groups only.
+    if (!['image', 'segmentation'].includes(category)) {
+        items += `<div class="ctx-menu-sep"></div>`;
+        items += `<div class="ctx-menu-item" style="opacity:0.5;cursor:default;font-size:0.6rem;">
+            <span class="ctx-icon">&#127912;</span> Opacity</div>`;
+        for (const op of [100, 75, 50, 25]) {
+            items += `<div class="ctx-menu-item" onclick="hideContextMenu();setGroupOpacityValue('${category}', ${op})">
+                <span class="ctx-icon" style="opacity:${op / 100}">&#9632;</span> ${op}%</div>`;
+        }
+        items += `<label class="ctx-menu-item" onclick="event.stopPropagation()">
+            <span class="ctx-icon">&#127912;</span> Group color
+            <input type="color" value="${getGroupDisplayColor(category)}"
+                aria-label="Group color"
+                style="margin-left:auto;width:28px;height:20px;border:0;background:transparent;cursor:pointer"
+                onchange="setGroupColor('${category}', this.value);hideContextMenu()">
+        </label>`;
     }
-    items += `<label class="ctx-menu-item" onclick="event.stopPropagation()">
-        <span class="ctx-icon">&#127912;</span> Group color
-        <input type="color" value="${getGroupDisplayColor(category)}"
-            aria-label="Group color"
-            style="margin-left:auto;width:28px;height:20px;border:0;background:transparent;cursor:pointer"
-            onchange="setGroupColor('${category}', this.value);hideContextMenu()">
-    </label>`;
 
     items += `<div class="ctx-menu-sep"></div>`;
     items += `<div class="ctx-menu-item" onclick="hideContextMenu();showAllOrgans()">
@@ -3109,13 +3312,439 @@ async function groupReconstruct3D(category) {
 }
 
 function getSelectedOrganIds() {
-    // Return selected IDs that are organs, CTV, OAR group, planning items, or sub-labels
-    return [...selectedItems].filter(id =>
-        id === 'ctv' || id === 'oar' || id === 'needles' ||
-        id.startsWith('organ_') || id.startsWith('ctv_') ||
-        id.startsWith('seed_') || id.startsWith('needle_') || id.startsWith('dose_iso_') ||
-        id === 'planning_seeds' || id === 'planning_needles' || id === 'dose_isosurfaces'
+    return [...selectedItems].filter(id => getSelectableIds().includes(id));
+}
+
+function _dtText(zh, en) {
+    if (typeof window._t === 'function') return window._t(zh, en);
+    try {
+        if (typeof effectiveUiLanguage === 'function') {
+            return effectiveUiLanguage() === 'zh' ? zh : en;
+        }
+    } catch (_) {}
+    return document.documentElement.lang?.toLowerCase().startsWith('zh') ? zh : en;
+}
+
+function _findDataTreeNode(id) {
+    if (id === 'ct') return dataTreeState.ct;
+    if (id === 'dose' || id === 'dose_overlay') {
+        return dataTreeState.planning?.doseOverlay || dataTreeState.dose;
+    }
+    if (id === 'dvh') return dataTreeState.planning?.dvh;
+    if (id === 'ctv') return dataTreeState.ctv;
+    if (id.startsWith('ctv_')) return dataTreeState.ctvLabels?.[id] || null;
+    if (id.startsWith('organ_')) return dataTreeState.organs.find(item => item.id === id) || null;
+    for (const key of ['trajectories', 'seeds', 'needles', 'doseLevels', 'meshes']) {
+        const item = _planningItems(key).find(value => {
+            if (key === 'doseLevels') return `dose_iso_${value.threshold}` === id;
+            return String(value.id) === String(id);
+        });
+        if (item) return item;
+    }
+    return (dataTreeState.annotations || []).find(item => item.id === id)
+        || (dataTreeState.exportArtifacts || []).find(item => item.id === id)
+        || null;
+}
+
+function _dataTreeObjectId(id, purpose = 'export') {
+    const node = _findDataTreeNode(id);
+    if (id === 'ct') return 'image:ct';
+    if (id === 'dose' || id === 'dose_overlay') return 'dose:volume';
+    if (id === 'dvh') return purpose === 'delete' ? 'dvh' : 'dvh:data';
+    if (id === 'ctv') return String(
+        node?.objectId || window._ctvObjectMap?.[1] || 'structure:ctv:1',
     );
+    if (id.startsWith('ctv_') || id.startsWith('organ_')) {
+        return String(node?.objectId || id);
+    }
+    if (id.startsWith('seed_')) return `seed:${id}`;
+    if (id.startsWith('needle_')) return `needle:${id}`;
+    if (id.startsWith('traj_') || id.startsWith('trajectory_')) return `trajectory:${id}`;
+    if (id.startsWith('dose_iso_')) {
+        const level = _planningItems('doseLevels').find(
+            item => `dose_iso_${item.threshold}` === id,
+        );
+        const threshold = Number(level?.thresholdGy ?? level?.threshold ?? id.replace('dose_iso_', ''));
+        return `dose_iso:${Number.isFinite(threshold) ? threshold : id.replace('dose_iso_', '')}`;
+    }
+    if (node?.source === 'surgical_guide' || id.includes('surgical_guide')) {
+        return 'surgical_guide:active';
+    }
+    if (node?.type === 'manual_annotation' || id.startsWith('annotation_')) {
+        return `annotation:${id}`;
+    }
+    return String(node?.objectId || id);
+}
+
+function _dataTreeGroupObjectIds(category) {
+    if (category === 'image') return state.ctLoaded ? ['image:ct'] : [];
+    if (category === 'segmentation') {
+        return [
+            ..._dataTreeGroupObjectIds('ctv'),
+            ..._dataTreeGroupObjectIds('oar'),
+        ];
+    }
+    if (category === 'ctv') {
+        const labels = Object.values(dataTreeState.ctvLabels || {});
+        return (labels.length ? labels : [dataTreeState.ctv])
+            .map(item => String(
+                item?.objectId
+                || (item === dataTreeState.ctv
+                    ? window._ctvObjectMap?.[1] || 'structure:ctv:1'
+                    : ''),
+            ))
+            .filter(Boolean);
+    }
+    if (category === 'oar') {
+        return dataTreeState.organs.map(item => String(item.objectId || item.id));
+    }
+    if (category === 'non_traversable' || category === 'traversable') {
+        return dataTreeState.organs
+            .filter(item => item.category === category)
+            .map(item => String(item.objectId || item.id));
+    }
+    if (category === 'planning_trajectories') return ['group:planning:trajectories'];
+    if (category === 'planning_seeds') return ['group:planning:seeds'];
+    if (category === 'planning_needles') return ['group:planning:needles'];
+    if (category === 'dose_isosurfaces') return ['group:dose:isosurfaces'];
+    if (category === 'planning') return ['group:planning'];
+    if (category === 'planning_meshes') {
+        return _planningItems('meshes')
+            .map(item => _dataTreeObjectId(item.id))
+            .filter(Boolean);
+    }
+    if (category === 'artifacts') {
+        return [
+            ...(dataTreeState.annotations || []),
+            ...(dataTreeState.exportArtifacts || []),
+        ].map(item => _dataTreeObjectId(item.id)).filter(Boolean);
+    }
+    return [];
+}
+
+function _dataTreeExportGroups(category) {
+    const mapping = {
+        image: 'group:images',
+        segmentation: 'group:structures',
+        ctv: 'group:structures:ctv',
+        oar: 'group:structures:oar',
+        planning: 'group:planning',
+        planning_trajectories: 'group:planning:trajectories',
+        planning_seeds: 'group:planning:seeds',
+        planning_needles: 'group:planning:needles',
+        dose_isosurfaces: 'group:dose:isosurfaces',
+    };
+    return mapping[category] ? [mapping[category]] : [];
+}
+
+function _structureAppearanceMap() {
+    const result = {};
+    [
+        ...Object.values(dataTreeState.ctvLabels || {}),
+        ...(dataTreeState.organs || []),
+    ].forEach(item => {
+        if (!item?.objectId) return;
+        result[String(item.objectId)] = {
+            color: item.color,
+            opacity: item.opacity,
+            visible: item.visible,
+            category: item.category,
+        };
+    });
+    return result;
+}
+
+function _applyStructureAppearanceMap(appearance) {
+    [
+        ...Object.values(dataTreeState.ctvLabels || {}),
+        ...(dataTreeState.organs || []),
+    ].forEach(item => {
+        const saved = appearance[String(item?.objectId || '')];
+        if (!saved) return;
+        item.color = saved.color || item.color;
+        item.opacity = Number.isFinite(Number(saved.opacity)) ? Number(saved.opacity) : item.opacity;
+        item.visible = saved.visible !== false;
+        // Traversability is an OAR presentation concern. Do not leak it into
+        // the CTV business classification when an OAR is promoted.
+        if (item.source === 'oar' && saved.category) item.category = saved.category;
+    });
+}
+
+function _disposeSceneMesh(id) {
+    const mesh = scene3D?.meshes?.[id];
+    if (!mesh) return;
+    try { scene3D.scene?.remove(mesh); } catch (_) {}
+    mesh.traverse?.(child => {
+        child.geometry?.dispose?.();
+        const materials = Array.isArray(child.material) ? child.material : [child.material];
+        materials.forEach(material => material?.dispose?.());
+    });
+    mesh.geometry?.dispose?.();
+    const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+    materials.forEach(material => material?.dispose?.());
+    delete scene3D.meshes[id];
+}
+
+function _clearInvalidatedPlanningPresentation(invalidated = []) {
+    const flags = new Set(invalidated || []);
+    if (flags.has('all_case_data') || flags.has('planning')) {
+        if (typeof clearPlanningVisualization === 'function') clearPlanningVisualization();
+    }
+    if (flags.has('all_case_data') || flags.has('dose') || flags.has('dvh') || flags.has('evaluation')) {
+        if (typeof clearDoseOverlayRuntime === 'function') clearDoseOverlayRuntime();
+        state.doseOverlay = null;
+        state.dvhData = null;
+        dataTreeState.planning.doseOverlay = null;
+        dataTreeState.planning.dvh = null;
+        dataTreeState.planning.doseLevels = [];
+        Object.keys(scene3D?.meshes || {})
+            .filter(id => id.startsWith('dose_iso_'))
+            .forEach(_disposeSceneMesh);
+        const dvhNode = document.getElementById('dvhChart');
+        if (dvhNode && window.Plotly?.purge) window.Plotly.purge(dvhNode);
+    }
+    if (flags.has('surgical_guide') || flags.has('guide')) {
+        if (typeof window.invalidateSurgicalGuidePresentation === 'function') {
+            window.invalidateSurgicalGuidePresentation();
+        }
+    }
+}
+
+async function _refreshAfterDataMutation(
+    payload,
+    appearance,
+    expectedSessionId,
+    options = {},
+) {
+    if (String(expectedSessionId) !== _viewerDataSessionId()) return false;
+    const invalidated = [
+        ...(payload?.invalidated || []),
+        ...((payload?.results || []).flatMap(result => result?.invalidated || [])),
+    ];
+    const objectIds = [...new Set((options.objectIds || []).map(String))];
+    const allCaseData = invalidated.includes('all_case_data');
+    const structureMutation = Boolean(payload?.structures)
+        || objectIds.some(id => id.startsWith('structure:'));
+    const planningMutation = invalidated.includes('planning')
+        || objectIds.some(id => (
+            id === 'planning'
+            || id.startsWith('group:planning')
+            || id.startsWith('needle:')
+            || id.startsWith('needle_')
+            || id.startsWith('seed:')
+            || id.startsWith('seed_')
+            || id.startsWith('trajectory:')
+            || id.startsWith('trajectory_')
+        ));
+
+    if (allCaseData) {
+        if (typeof clearClientWorkspace === 'function') {
+            clearClientWorkspace({ clearReport: true, deferDisposal: true });
+        }
+        if (state) state.sessionId = expectedSessionId;
+        _scheduleDataTreeSave('data_tree.ct_deleted');
+        return true;
+    }
+
+    _clearInvalidatedPlanningPresentation(invalidated);
+    if (structureMutation) {
+        Object.keys(scene3D?.meshes || {})
+            .filter(id => id === 'ctv' || id.startsWith('ctv_') || id.startsWith('organ_'))
+            .forEach(_disposeSceneMesh);
+        if (window.SessionCache) {
+            await window.SessionCache.invalidate(
+                expectedSessionId, 'labels', 'volume',
+            ).catch(() => {});
+        }
+        await loadLabelVolumes({
+            sessionId: expectedSessionId,
+            forceFresh: true,
+            preserveViewerState: true,
+        });
+        if (String(expectedSessionId) !== _viewerDataSessionId()) return false;
+        _applyStructureAppearanceMap(appearance || {});
+    }
+
+    if (planningMutation && typeof refreshPlanningUI === 'function') {
+        if (typeof clearPlanningVisualization === 'function') {
+            clearPlanningVisualization();
+        }
+        await refreshPlanningUI({
+            sessionId: expectedSessionId,
+            skipLabelLoad: true,
+            preserveViewerState: true,
+            switchToViewers: false,
+            backgroundRestore: true,
+            autoGenerateGuide: false,
+        });
+        if (String(expectedSessionId) !== _viewerDataSessionId()) return false;
+    }
+
+    if (objectIds.some(id => id.startsWith('annotation:'))) {
+        const deleted = new Set(objectIds.map(id => id.split(':', 2)[1]));
+        state.annotations = (state.annotations || []).filter(
+            (row, index) => !deleted.has(String(row?.id || `annotation_${index + 1}`)),
+        );
+    }
+    if (
+        objectIds.some(id => id.startsWith('screenshot:') || id.startsWith('figure:') || id.startsWith('report'))
+        || invalidated.some(id => ['annotation', 'screenshot', 'report'].includes(id))
+    ) {
+        const removedFiles = new Set(
+            objectIds
+                .filter(id => id.startsWith('screenshot:') || id.startsWith('figure:'))
+                .map(id => id.split(':', 2)[1]),
+        );
+        if (removedFiles.size && Array.isArray(window.reportForm?.figures)) {
+            window.reportForm.figures = window.reportForm.figures.filter(figure => {
+                const url = String(figure?._serverUrl || figure?.dataUrl || '');
+                return ![...removedFiles].some(filename => url.includes(filename));
+            });
+            try { if (typeof renderReportEditor === 'function') renderReportEditor(); } catch (_) {}
+            try { if (typeof _updateReportPreview === 'function') _updateReportPreview(); } catch (_) {}
+        }
+        if (
+            objectIds.some(id => ['report', 'report:data', 'group:report'].includes(id))
+            && typeof _newEmptyReportForm === 'function'
+        ) {
+            window.reportForm = _newEmptyReportForm();
+            try { if (typeof renderReportEditor === 'function') renderReportEditor(); } catch (_) {}
+            try { if (typeof _updateReportPreview === 'function') _updateReportPreview(); } catch (_) {}
+        }
+        _dataTreeArtifactCatalogSession = '';
+        await hydrateDataTreeArtifactCatalog({ force: true });
+        if (String(expectedSessionId) !== _viewerDataSessionId()) return false;
+    }
+    if (payload?.artifact_status) {
+        dataTreeState.planning.artifactStatus = payload.artifact_status;
+    }
+    reconcileSegmentationViewerState({
+        sessionId: expectedSessionId,
+        reason: 'data-tree-mutation',
+    });
+    renderDataTree();
+    syncSceneAppearanceFromDataTree();
+    _scheduleDataTreeSave('data_tree.backend_mutation');
+    return true;
+}
+
+async function moveSelectedStructures(classification, objectIds = null) {
+    const expectedSessionId = _viewerDataSessionId();
+    const appearance = _structureAppearanceMap();
+    const selected = objectIds || getSelectedOrganIds()
+        .map(id => _dataTreeObjectId(id))
+        .filter(id => id.startsWith('structure:'));
+    if (!selected.length) return false;
+    const response = await fetch(API + '/data/structures/classification', {
+        method: 'PATCH',
+        headers: {
+            ..._viewerDataHeaders(expectedSessionId),
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            session_id: expectedSessionId,
+            object_ids: selected,
+            classification,
+        }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || payload.success === false) {
+        throw new Error(payload.error || _dtText('结构分类更新失败', 'Structure classification failed'));
+    }
+    await _refreshAfterDataMutation(payload, appearance, expectedSessionId, {
+        objectIds: selected,
+    });
+    selectedItems.clear();
+    addChat('system', _dtText(
+        `已将 ${selected.length} 个结构移动到 ${classification.toUpperCase()}；相关剂量、DVH、评估和报告已标记为需要更新。`,
+        `${selected.length} structure(s) moved to ${classification.toUpperCase()}; related dose, DVH, evaluation, and report results are now stale.`,
+    ));
+    return true;
+}
+
+async function exportSelectedDataTreeItems(objectIds = null) {
+    const ids = objectIds || getSelectedOrganIds().map(id => _dataTreeObjectId(id));
+    const clean = [...new Set(ids.filter(Boolean))];
+    if (!clean.length || typeof window.openSessionExportDialog !== 'function') return false;
+    await window.openSessionExportDialog({
+        sessionId: _viewerDataSessionId(),
+        objectIds: clean,
+    });
+    return true;
+}
+
+async function exportDataTreeGroup(category) {
+    if (typeof window.openSessionExportDialog !== 'function') return false;
+    const groupIds = _dataTreeExportGroups(category);
+    const objectIds = groupIds.length ? null : _dataTreeGroupObjectIds(category);
+    await window.openSessionExportDialog({
+        sessionId: _viewerDataSessionId(),
+        groupIds,
+        objectIds,
+    });
+    return true;
+}
+
+async function deleteSelectedDataTreeItems(objectIds = null) {
+    const expectedSessionId = _viewerDataSessionId();
+    const appearance = _structureAppearanceMap();
+    const ids = [...new Set(objectIds || getSelectedOrganIds()
+        .map(id => _dataTreeObjectId(id, 'delete')).filter(Boolean))];
+    if (!ids.length) return false;
+    const confirmed = typeof window._confirmAction === 'function'
+        ? await window._confirmAction(
+            `删除选中的 ${ids.length} 项真实数据？相关下游结果可能同时失效。`,
+            `Delete ${ids.length} selected data item(s)? Related downstream results may also become stale.`,
+            {
+                titleZh: '删除数据',
+                titleEn: 'Delete data',
+                yesZh: '删除',
+                yesEn: 'Delete',
+                noZh: '取消',
+                noEn: 'Cancel',
+            },
+        )
+        : false;
+    if (!confirmed) return false;
+    const response = await fetch(API + '/data/objects/batch-delete', {
+        method: 'POST',
+        headers: {
+            ..._viewerDataHeaders(expectedSessionId),
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ session_id: expectedSessionId, object_ids: ids }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || payload.success === false) {
+        throw new Error(payload.error || _dtText('删除失败', 'Delete failed'));
+    }
+    await _refreshAfterDataMutation(payload, appearance, expectedSessionId, {
+        objectIds: ids,
+    });
+    selectedItems.clear();
+    addChat('system', _dtText(
+        `已删除 ${ids.length} 项数据。`,
+        `${ids.length} data item(s) deleted.`,
+    ));
+    return true;
+}
+
+async function deleteDataTreeGroup(category) {
+    return deleteSelectedDataTreeItems(_dataTreeGroupObjectIds(category));
+}
+
+async function moveDataTreeGroup(category, classification) {
+    return moveSelectedStructures(classification, _dataTreeGroupObjectIds(category));
+}
+
+function _runDataTreeAction(action) {
+    Promise.resolve(action).catch(error => {
+        console.error('[data-tree] action failed', error);
+        addChat('error', _dtText(
+            `数据操作失败：${error.message}`,
+            `Data operation failed: ${error.message}`,
+        ));
+    });
 }
 
 function showContextMenu(x, y) {
@@ -3146,7 +3775,19 @@ function showContextMenu(x, y) {
     const firstId = selIds[0];
     const isCTVOnly = selIds.every(id => id === 'ctv' || id.startsWith('ctv_'));
     const hasOrgans = selIds.some(id => id.startsWith('organ_'));
-    const isPlanningItem = firstId.startsWith('seed_') || firstId.startsWith('needle_') || firstId.startsWith('dose_iso_');
+    const isStructureSelection = selIds.every(
+        id => id === 'ctv' || id.startsWith('ctv_') || id.startsWith('organ_'),
+    );
+    const isPlanningItem = selIds.every(id =>
+        id.startsWith('seed_') || id.startsWith('needle_')
+        || id.startsWith('dose_iso_') || id.startsWith('traj_')
+        || id.startsWith('trajectory_') || id === 'dose_overlay'
+        || id === 'dose' || id === 'dvh'
+        || !!_findDataTreeNode(id)?.planningId,
+    );
+    const isNonVisualArtifact = selIds.every(id => (
+        dataTreeState.exportArtifacts || []
+    ).some(item => item.id === id));
 
     const menu = document.createElement('div');
     menu.className = 'ctx-menu';
@@ -3165,7 +3806,7 @@ function showContextMenu(x, y) {
 
     // 3D Reconstruct (only for organs/CTV; dose iso reconstruction is
     // explicit because dose surfaces are intentionally not built by default)
-    if (!isPlanningItem) {
+    if (isStructureSelection) {
         if (isSingle) {
             items += `<div class="ctx-menu-item" onclick="hideContextMenu();reconstructOrgan3D('${firstId}')">
                 <span class="ctx-icon">&#9638;</span> 3D Reconstruct</div>`;
@@ -3194,13 +3835,38 @@ function showContextMenu(x, y) {
         items += `<div class="ctx-menu-sep"></div>`;
     }
 
-    // Move to category (only for organs, not CTV)
+    // OAR traversability remains a presentation classification. CTV/OAR is a
+    // clinical structure classification and therefore uses the backend
+    // transaction below instead of the legacy local category assignment.
     if (hasOrgans) {
         for (const [catKey, catInfo] of Object.entries(ORGAN_CATEGORIES)) {
+            if (catKey === 'ctv') continue;
             items += `<div class="ctx-menu-item" onclick="hideContextMenu();batchMoveToCategory('${catKey}')">
                 <span class="ctx-icon">${catInfo.icon}</span> Move to ${catInfo.label}</div>`;
         }
+        items += `<div class="ctx-menu-item" onclick="hideContextMenu();_runDataTreeAction(moveSelectedStructures('ctv'))">
+            <span class="ctx-icon">&#8644;</span> ${_dtText('移动到 CTV', 'Move to CTV')}</div>`;
         items += `<div class="ctx-menu-sep"></div>`;
+    }
+    if (isCTVOnly) {
+        items += `<div class="ctx-menu-item" onclick="hideContextMenu();_runDataTreeAction(moveSelectedStructures('oar'))">
+            <span class="ctx-icon">&#8644;</span> ${_dtText('移动到 OAR', 'Move to OAR')}</div>`;
+        items += `<div class="ctx-menu-sep"></div>`;
+    }
+
+    if (isNonVisualArtifact) {
+        items += `<div class="ctx-menu-item" onclick="hideContextMenu();_runDataTreeAction(exportSelectedDataTreeItems())">
+            <span class="ctx-icon">&#8681;</span> ${_dtText('导出', 'Export')}</div>`;
+        items += `<div class="ctx-menu-item ctx-menu-danger" onclick="hideContextMenu();_runDataTreeAction(deleteSelectedDataTreeItems())">
+            <span class="ctx-icon">&#128465;</span> ${_dtText('删除真实数据', 'Delete data')}</div>`;
+        items += `<div class="ctx-menu-sep"></div>`;
+        items += `<div class="ctx-menu-item" onclick="hideContextMenu();selectedItems.clear();renderDataTree();">
+            <span class="ctx-icon">&#10005;</span> ${_dtText('清除选择', 'Clear selection')}</div>`;
+        menu.innerHTML = items;
+        document.body.appendChild(menu);
+        activeContextMenu = menu;
+        window.__brachyContextMenuElement = menu;
+        return;
     }
 
     // Visibility
@@ -3222,6 +3888,12 @@ function showContextMenu(x, y) {
             <span class="ctx-icon" style="opacity:${op / 100}">&#9632;</span> ${op}%</div>`;
     }
 
+    items += `<div class="ctx-menu-sep"></div>`;
+
+    items += `<div class="ctx-menu-item" onclick="hideContextMenu();_runDataTreeAction(exportSelectedDataTreeItems())">
+        <span class="ctx-icon">&#8681;</span> ${_dtText('导出', 'Export')}</div>`;
+    items += `<div class="ctx-menu-item ctx-menu-danger" onclick="hideContextMenu();_runDataTreeAction(deleteSelectedDataTreeItems())">
+        <span class="ctx-icon">&#128465;</span> ${_dtText('删除真实数据', 'Delete data')}</div>`;
     items += `<div class="ctx-menu-sep"></div>`;
 
     // Show all

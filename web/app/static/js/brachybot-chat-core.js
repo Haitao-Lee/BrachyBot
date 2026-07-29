@@ -416,7 +416,8 @@ function renderSessionList() {
     list.innerHTML = sorted.map(s => {
         const time = new Date(s.created).toLocaleDateString(locale, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
         const active = s.id === activeSessionId ? ' active' : '';
-        return `<div class="session-item${active}" onclick="switchSession('${s.id}')">
+        return `<div class="session-item${active}" onclick="switchSession('${s.id}')"
+            oncontextmenu="openSessionContextMenu(event,'${s.id}')">
             <div class="session-item-info">
                 <div class="session-item-title" id="session-title-${s.id}">${escHtml(s.title)}</div>
                 <div class="session-item-time">${time}</div>

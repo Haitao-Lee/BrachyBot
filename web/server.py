@@ -35,6 +35,7 @@ try:
     from web.routes.planning_routes import register_planning_routes
     from web.routes.session_routes import register_session_routes
     from web.routes.surgical_guide_routes import register_surgical_guide_routes
+    from web.routes.data_routes import register_data_routes
     from web.workspace_store import WorkspaceError, WorkspaceLeaseConflict, WorkspaceQuotaExceeded, WorkspaceStore
 except ImportError:  # pragma: no cover - supports direct script execution.
     from server_support import (  # type: ignore
@@ -53,6 +54,7 @@ except ImportError:  # pragma: no cover - supports direct script execution.
     from routes.planning_routes import register_planning_routes
     from web.routes.session_routes import register_session_routes
     from web.routes.surgical_guide_routes import register_surgical_guide_routes
+    from web.routes.data_routes import register_data_routes
     from web.workspace_store import WorkspaceError, WorkspaceLeaseConflict, WorkspaceQuotaExceeded, WorkspaceStore
 
 _TRUST_NETWORK = _server_support._TRUST_NETWORK
@@ -1603,6 +1605,7 @@ def create_app(config: Optional[Dict] = None):
         get_agent_for_owner=get_agent_for_owner,
     )
     register_surgical_guide_routes(app, get_agent)
+    register_data_routes(app, workspace_store, get_agent_for_owner)
     register_session_routes(
         app,
         workspace_store,

@@ -511,6 +511,9 @@
                 // Persisting them would create circular JSON and cannot restore a
                 // WebGL resource after a restart; the enabled mode is sufficient.
                 doseTexture: typeof state !== 'undefined' && state.doseTexture ? { enabled: !!state.doseTexture.enabled } : null,
+                annotations: typeof state !== 'undefined' && Array.isArray(state.annotations)
+                    ? jsonClone(state.annotations)
+                    : [],
                 scene: sceneViewState(),
                 dvh: dvhViewState(),
             },
@@ -533,6 +536,7 @@
             body: JSON.stringify({
                 image: source,
                 target: 'report-figure',
+                mode: 'report',
                 description: String(figure.title || figure.axis || 'report figure'),
             }),
         }).then(response => response.ok ? response.json() : null).then(payload => {
@@ -545,6 +549,9 @@
                 delete figure._cacheKey;
                 if (typeof scheduleWorkspaceSave === 'function') {
                     scheduleWorkspaceSave('report.figure.persisted');
+                }
+                if (typeof hydrateDataTreeArtifactCatalog === 'function') {
+                    void hydrateDataTreeArtifactCatalog({ force: true });
                 }
             }
             return url;
@@ -988,6 +995,9 @@
                 state.viewerSettings = Object.assign(state.viewerSettings || {}, uiState.viewer.settings || {});
                 if (uiState.viewer.doseOpacity != null) state.doseOpacity = uiState.viewer.doseOpacity;
                 if (uiState.viewer.doseTexture) state.doseTexture = Object.assign(state.doseTexture || {}, uiState.viewer.doseTexture);
+                if (Array.isArray(uiState.viewer.annotations)) {
+                    state.annotations = jsonClone(uiState.viewer.annotations);
+                }
             }
             if (uiState.data_tree && typeof dataTreeState !== 'undefined') {
                 if (options.preserveClinicalData) applyDataTreePresentation(uiState.data_tree);
