@@ -1768,6 +1768,66 @@ function renderMarkdown(text) {
         'common.close':               { zh: '关闭',       en: 'Close' },
         'common.yes':                 { zh: '是',         en: 'Yes' },
         'common.no':                  { zh: '否',         en: 'No' },
+        // Auth / login page
+        'auth.welcome':               { zh: '欢迎使用 BrachyBot', en: 'Welcome to BrachyBot' },
+        'auth.sub':                   { zh: '请登录以加载病例数据并启动 AI 辅助的近距离治疗规划工作流。', en: 'Sign in to load case data and start the AI-assisted brachytherapy planning workflow.' },
+        'auth.brand_sub':             { zh: 'AI 辅助放射性粒子植入规划', en: 'AI-Assisted Brachytherapy Planning' },
+        'auth.label.username':        { zh: '用户名或邮箱', en: 'Username or email' },
+        'auth.placeholder.username':  { zh: '请输入用户名', en: 'Enter your username' },
+        'auth.label.password':        { zh: '密码',         en: 'Password' },
+        'auth.placeholder.password':  { zh: '请输入密码',   en: 'Enter your password' },
+        'auth.password.show':         { zh: '显示密码',     en: 'Show password' },
+        'auth.password.hide':         { zh: '隐藏密码',     en: 'Hide password' },
+        'auth.remember':              { zh: '在此设备上记住我 30 天', en: 'Keep me signed in on this device for 30 days' },
+        'auth.forgot':                { zh: '忘记密码？联系管理员', en: 'Forgot password? Contact your administrator' },
+        'auth.signin':                { zh: '登录',         en: 'Sign in' },
+        'auth.register':              { zh: '创建新账号',   en: 'Create a new account' },
+        'auth.status.signing_in':     { zh: '正在登录…',   en: 'Signing in…' },
+        'auth.status.creating':       { zh: '正在创建账号…', en: 'Creating account…' },
+        'auth.status.signed_in':      { zh: '已登录，正在初始化工作区…', en: 'Signed in. Initializing workspace…' },
+        'auth.status.updating_pw':    { zh: '正在更新密码…', en: 'Updating password…' },
+        'auth.status.network':        { zh: '无法连接到 BrachyBot 服务器。请检查网络或服务状态。', en: 'Cannot reach the BrachyBot server. Please check your network or service status.' },
+        'auth.status.timeout':        { zh: '请求超时。服务器响应过慢，请稍后重试。', en: 'Request timed out. The server is responding too slowly. Please try again.' },
+        'auth.status.service':        { zh: '登录服务暂时不可用，请稍后重试。', en: 'The authentication service is temporarily unavailable. Please try again later.' },
+        'auth.status.invalid_credentials': { zh: '用户名或密码错误，请重试。', en: 'Invalid username or password. Please try again.' },
+        'auth.status.disabled':       { zh: '该账号已被禁用，请联系系统管理员。', en: 'This account has been disabled. Please contact your administrator.' },
+        'auth.status.taken':          { zh: '该用户名已被占用。', en: 'This username is already taken.' },
+        'auth.status.weak_password':  { zh: '密码长度至少 12 个字符。', en: 'Password must be at least 12 characters long.' },
+        'auth.status.bad_username':   { zh: '用户名只能包含字母、数字、_、.、-，长度 3-64。', en: 'Username may only contain letters, digits, "_", ".", "-", and must be 3–64 characters long.' },
+        'auth.status.api_key':        { zh: '此服务器需要部署访问密钥。', en: 'This server requires a deployment access key.' },
+        'auth.status.api_key_invalid':{ zh: '部署访问密钥无效。', en: 'The deployment access key is invalid.' },
+        'auth.status.unknown':        { zh: '登录失败，请稍后重试。', en: 'Sign-in failed. Please try again later.' },
+        'auth.status.csrf':           { zh: '会话已过期，请刷新页面后重试。', en: 'Your session has expired. Please reload the page and try again.' },
+        'auth.access_key.summary':    { zh: '部署访问密钥（可选）', en: 'Deployment access key (optional)' },
+        'auth.access_key.label':      { zh: '访问密钥',     en: 'Access key' },
+        'auth.access_key.placeholder':{ zh: '仅当服务器启用了 BRACHYBOT_API_KEY 时需要', en: 'Only required when BRACHYBOT_API_KEY is enabled' },
+        'auth.access_key.help':       { zh: '仅当此服务器启用了 BRACHYBOT_API_KEY 时才需要。密钥仅保留在此浏览器会话中。', en: 'Only required when this server is protected by BRACHYBOT_API_KEY. The key is kept for this browser session only.' },
+        'auth.eyebrow':               { zh: 'AI · 近距离放疗 · 临床级', en: 'AI · Brachytherapy · Clinical-grade' },
+        'auth.product.title_tail':    { zh: ' 智能规划平台', en: ' Intelligent Planning Platform' },
+        'auth.product.tag':           { zh: '为胰腺、前列腺、肝脏、肺部、妇科等部位肿瘤的 ¹²⁵I 粒子植入与近距离放疗提供从影像分割、剂量预测到针道规划、报告生成的一体化 AI 工作流。', en: 'End-to-end AI workflow for ¹²⁵I seed implantation and brachytherapy planning: image segmentation, dose prediction, trajectory planning and report generation for pancreatic, prostate, liver, lung, and gynaecological cases.' },
+        'auth.feature.1.title':       { zh: '智能分割 (CTV / OAR)', en: 'Smart segmentation (CTV / OAR)' },
+        'auth.feature.1.body':        { zh: 'nnU-Net + TotalSegmentator，自动勾勒肿瘤与危及器官。', en: 'nnU-Net + TotalSegmentator auto-delineate the tumor and organs at risk.' },
+        'auth.feature.2.title':       { zh: '3D 剂量预测 DoseUNet', en: '3D Dose Prediction (DoseUNet)' },
+        'auth.feature.2.body':        { zh: '亚毫米级滑窗推理，单粒子剂量在数秒内完成叠加。', en: 'Sub-millimeter sliding-window inference aggregates per-seed dose in seconds.' },
+        'auth.feature.3.title':       { zh: 'AI 针道与种子规划', en: 'AI trajectory and seed planning' },
+        'auth.feature.3.body':        { zh: '规则与强化学习结合，自动生成避让 OAR 的安全针道。', en: 'Rule-based and reinforcement-learning hybrid generates OAR-aware safe trajectories.' },
+        'auth.feature.4.title':       { zh: '多 Agent 实时评审', en: 'Multi-agent live review' },
+        'auth.feature.4.body':        { zh: '剂量学、安全性、完整性、计划评分多 Agent 协同评估。', en: 'Dosimetry, safety, completeness, and plan-quality agents review in real time.' },
+        'auth.feature.5.title':       { zh: '自动报告 + 可追溯来源', en: 'Auto-report with source provenance' },
+        'auth.feature.5.body':        { zh: 'AI 自动生成中/英双语报告，标注 AUTO / YOU / BOT 来源徽章。', en: 'Bilingual auto-generated reports with AUTO / YOU / BOT source badges.' },
+        'auth.github.cta':            { zh: '在 GitHub 查看源码', en: 'View source on GitHub' },
+        'auth.affiliation.sjtu':      { zh: '上海交通大学', en: 'Shanghai Jiao Tong University' },
+        'auth.affiliation.ruijin':    { zh: '上海交通大学医学院附属瑞金医院', en: 'Ruijin Hospital, SJTU School of Medicine' },
+        'auth.foot.version':          { zh: 'v1.0 · © 2026 BrachyBot 团队 · 保留所有权利', en: 'v1.0 · © 2026 BrachyBot team · All rights reserved' },
+        'auth.foot.issue':            { zh: '报告问题',     en: 'Report an issue' },
+        'auth.foot.discuss':          { zh: '参与讨论',     en: 'Join the discussion' },
+        'auth.lang_toggle.aria':      { zh: '界面语言',     en: 'UI language' },
+        'auth.lang_toggle.tooltip':   { zh: '切换界面语言', en: 'Switch UI language' },
+        'auth.password.current':      { zh: '当前密码',     en: 'Current password' },
+        'auth.password.new':         { zh: '新密码（至少 12 个字符）', en: 'New password (12+ characters)' },
+        'auth.password.update':       { zh: '更新密码',     en: 'Update password' },
+        'auth.password.cancel':       { zh: '取消',         en: 'Cancel' },
+        'auth.password.sub':          { zh: '为保证账号安全，请使用至少 12 个字符的新密码。', en: 'Use a new password of at least 12 characters.' },
     };
 
     // Active language: 'en' (default) or 'zh'. Persisted to localStorage
@@ -1875,6 +1935,11 @@ function renderMarkdown(text) {
         if (lang !== 'zh' && lang !== 'en') return;
         window._i18nLang = lang;
         try { localStorage.setItem('brachybot_ui_lang', lang); } catch (_) {}
+        // <html lang> follows the active language so screen readers and
+        // the browser spell-checker pick the correct locale.
+        try {
+            document.documentElement.setAttribute('lang', lang === 'zh' ? 'zh-CN' : 'en');
+        } catch (_) {}
         applyI18n();
         // Update the toggle button label/active state.
         const btns = document.querySelectorAll('[data-lang-btn]');
