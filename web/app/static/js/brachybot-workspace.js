@@ -109,6 +109,8 @@
             clearTimeout(backgroundRestoreNoticeTimer);
             backgroundRestoreNoticeTimer = null;
         }
+        window.__workspaceRestoreScheduledSessionId = null;
+        window.__workspaceRestoreCompletedSessionId = null;
         document.body.classList.remove('workspace-hydrating');
         window.setWorkspaceHydrationState?.(false, '', { immediate: true });
     }
@@ -213,6 +215,11 @@
         }
         const generation = ++backgroundRestoreGeneration;
         const restoreStartedAt = workspaceNow();
+        // Startup and session switching share this scheduler. The init path
+        // must be able to see that a restore is already scheduled, otherwise
+        // a browser restart launches a second CT/plan hydration in parallel.
+        window.__workspaceRestoreScheduledSessionId = String(sessionId);
+        window.__workspaceRestoreCompletedSessionId = null;
         recordWorkspacePerformance('restore.scheduled', { sessionId });
         if (backgroundRestoreTimer) clearTimeout(backgroundRestoreTimer);
         if (backgroundRestoreNoticeTimer) clearTimeout(backgroundRestoreNoticeTimer);
@@ -241,6 +248,7 @@
         backgroundRestoreTimer = setTimeout(async () => {
             backgroundRestoreTimer = null;
             if (generation !== backgroundRestoreGeneration || sessionId !== activeSessionId) return;
+            let restoreSucceeded = false;
             try {
                 // The snapshot returned by the fast select endpoint can be
                 // one revision behind a task that finished while the case
@@ -281,6 +289,7 @@
                     sessionId,
                     startedAt: restoreStartedAt,
                 });
+                restoreSucceeded = true;
             } catch (error) {
                 console.warn('[workspace] background case restore failed:', error);
                 recordWorkspacePerformance('restore.failed', {
@@ -297,6 +306,8 @@
                 // the fallback here so a failed snapshot refresh or a missing
                 // loader cannot leave a permanent spinner in the corner.
                 if (generation === backgroundRestoreGeneration && sessionId === activeSessionId) {
+                    window.__workspaceRestoreScheduledSessionId = null;
+                    window.__workspaceRestoreCompletedSessionId = restoreSucceeded ? String(sessionId) : null;
                     window.setWorkspaceHydrationState?.(
                         false,
                         '',
@@ -505,8 +516,54 @@
         };
     }
 
+    function queueServerReportFigureUpload(figure, sessionId) {
+        if (!figure || !figure.dataUrl || figure._serverUrl || figure._serverUploadPromise) return;
+        if (!/^data:image\/png;base64,/i.test(String(figure.dataUrl))) return;
+        const source = String(figure.dataUrl);
+        figure._serverUploadPromise = fetch('/api/screenshot', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-BrachyBot-Session': String(sessionId || ''),
+            },
+            body: JSON.stringify({
+                image: source,
+                target: 'report-figure',
+                description: String(figure.title || figure.axis || 'report figure'),
+            }),
+        }).then(response => response.ok ? response.json() : null).then(payload => {
+            const url = payload?.screenshot_url || payload?.url || '';
+            // Do not overwrite a newer figure captured while the upload was
+            // in flight. The URL is an authenticated, case-owned artifact.
+            if (url && figure.dataUrl === source) {
+                figure.dataUrl = url;
+                figure._serverUrl = url;
+                delete figure._cacheKey;
+                if (typeof scheduleWorkspaceSave === 'function') {
+                    scheduleWorkspaceSave('report.figure.persisted');
+                }
+            }
+            return url;
+        }).catch(error => {
+            console.debug('[workspace] report figure server upload deferred:', error);
+            return '';
+        }).finally(() => {
+            delete figure._serverUploadPromise;
+        });
+    }
+
     function reportState() {
         if (!window.reportForm) return {};
+        // IndexedDB remains the fast local cache, but server-owned report
+        // figures make restart and another browser deterministic. Uploads are
+        // deliberately fire-and-forget and never delay chat/session changes.
+        if (Array.isArray(window.reportForm.figures) && activeSessionId) {
+            window.reportForm.figures.forEach(figure => {
+                if (figure?.dataUrl && figure.dataUrl.length > 10000) {
+                    queueServerReportFigureUpload(figure, activeSessionId);
+                }
+            });
+        }
         const form = jsonClone(window.reportForm);
         // Offload large base64 figure data URLs into IndexedDB so they
         // don't bloat every persistWorkspace payload (200 KB – 1 MB).
@@ -862,11 +919,20 @@
         }
     }
 
-    function hydrateReportFigureAssets(snapshot, sessionId, restoreGeneration) {
+    function hydrateReportFigureAssets(snapshot, sessionId, restoreGeneration, attempt = 0) {
         const report = snapshot?.report?.form;
-        if (!report || !Array.isArray(report.figures) || !window.SessionCache) return;
+        if (!report || !Array.isArray(report.figures)) return;
         const pending = report.figures.filter(f => f && f._cacheKey && !f.dataUrl);
         if (!pending.length) return;
+        // SessionCache is loaded as a separate script and IndexedDB may still
+        // be opening during the first post-restart paint.  Do not turn that
+        // harmless startup race into permanently missing report figures.
+        if (!window.SessionCache) {
+            if (attempt < 5) {
+                setTimeout(() => hydrateReportFigureAssets(snapshot, sessionId, restoreGeneration, attempt + 1), 250 * (attempt + 1));
+            }
+            return;
+        }
         // Report figures are presentation assets. Read them concurrently after
         // the control-plane snapshot has painted, so a large report never
         // delays chat/session switching or the clinical viewer restore.
@@ -886,6 +952,11 @@
                 result.figure.dataUrl = result.dataUrl;
                 delete result.figure._cacheKey;
             });
+            const recovered = results.filter(Boolean).length;
+            if (!recovered && attempt < 5) {
+                setTimeout(() => hydrateReportFigureAssets(snapshot, sessionId, restoreGeneration, attempt + 1), 350 * (attempt + 1));
+                return;
+            }
             try { renderReportEditor(); } catch (_) {}
             try { _updateReportPreview(); } catch (_) {}
         });

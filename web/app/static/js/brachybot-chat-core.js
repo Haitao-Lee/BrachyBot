@@ -474,6 +474,61 @@ function loadSessionChat(id) {
         // transcript. After transient send failures are dropped, accidental
         // retry duplicates become adjacent. Non-adjacent equal text is a
         // real part of a clinical conversation and must be preserved.
+        const stableTurnValue = value => {
+            if (Array.isArray(value)) return value.map(stableTurnValue);
+            if (!value || typeof value !== 'object') return value;
+            const result = {};
+            Object.keys(value).sort().forEach(key => {
+                // Timestamps/status counters change while an SSE task is
+                // replayed. They are not part of the user request identity.
+                if (['timestamp', 'created_at', 'updated_at', 'elapsed', 'duration', 'status'].includes(key)) return;
+                result[key] = stableTurnValue(value[key]);
+            });
+            return result;
+        };
+        const workflowFingerprint = turn => JSON.stringify(turn
+            .filter(message => message && (message.type === 'user' || message.type === 'thinking'))
+            .map(stableTurnValue));
+        const hasFinalReply = turn => turn.some(message =>
+            message && message.type === 'bot-response' && String(message.content || '').trim());
+        const dedupeRestoredTurns = messages => {
+            const result = [];
+            let previousTurn = null;
+            let index = 0;
+            while (index < messages.length) {
+                if (!messages[index] || messages[index].type !== 'user') {
+                    result.push(messages[index]);
+                    index += 1;
+                    continue;
+                }
+                let end = index + 1;
+                while (end < messages.length && messages[end]?.type !== 'user') end += 1;
+                const turn = messages.slice(index, end);
+                const fingerprint = workflowFingerprint(turn);
+                const turnHasReply = hasFinalReply(turn);
+                // A completed durable turn followed by the same request and
+                // trace without a final reply is a stale replay artifact from
+                // an older reconnect path. Drop only that incomplete copy.
+                if (previousTurn && fingerprint === previousTurn.fingerprint
+                    && previousTurn.hasReply && !turnHasReply) {
+                    index = end;
+                    continue;
+                }
+                result.push(...turn);
+                previousTurn = { fingerprint, hasReply: turnHasReply };
+                index = end;
+            }
+            return result;
+        };
+        const restoredMessages = dedupeRestoredTurns(session.messages);
+        if (restoredMessages.length !== session.messages.length) {
+            session.messages = restoredMessages;
+            if (String(id) === String(activeSessionId || '')
+                && window.__serverWorkspaceReady
+                && typeof window.scheduleWorkspaceSave === 'function') {
+                window.scheduleWorkspaceSave('chat.restore_deduplicated');
+            }
+        }
         const msgs = session.messages;
         const deduped = [];
         const canonicalType = message => message?.type === 'bot-response' ? 'bot' : message?.type;

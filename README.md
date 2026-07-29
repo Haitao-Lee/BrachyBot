@@ -2341,3 +2341,24 @@ viewport edge uses a theme-colored fixed layer with a plain-color fallback,
 Puncture Guide empty/native controls remain on the dark workspace surface, and
 Tumor Type colors are painted before and after the server capability probe so
 the dropdown has only the callable-green/unavailable-red distinction.
+
+## Restart Recovery and Capability Truth
+
+Cold browser restart and ordinary session switching now use one generation-
+guarded background hydration path. The fast snapshot restores the conversation
+and shell first; CT, labels, planning children, dose/DVH, Clinical Evaluation,
+report figures, meshes, and guide artifacts then arrive in parallel without
+allowing an older session callback to overwrite the active case. Pending
+planning sidecars are polled with bounded backoff instead of being mistaken for
+an empty plan, and report figures have an authenticated server-owned fallback
+in addition to the local cache.
+
+The chat finalizer deduplicates reconnect races and gives a real localized
+answer for dose-distribution questions when the only available result is
+structured dose metrics. Internal checkpoint steps stay out of the user-facing
+trace. Tumor Type option colors are capability-driven: green means the current
+runtime can actually call the registered segmentation route, and red means the
+route or its required runtime/weights are unavailable. BiomedParse v2 is
+technically integrated for supported non-pancreatic prompts, but it cannot be
+reported as callable until its official runtime and checkpoint are installed;
+this distinction prevents a misleading green control.

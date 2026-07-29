@@ -757,17 +757,39 @@ async function refreshPlanningUI(options = {}) {
             try {
                 const ctrl = new AbortController();
                 _refreshInflight = ctrl;
-                const timer = setTimeout(function(){ ctrl.abort(); }, 30000);
+                const timer = setTimeout(function(){ ctrl.abort(); }, options.retryPending === true ? 240000 : 30000);
                 let res;
+                const maxPendingPolls = options.retryPending === true ? 360 : 0;
+                let pendingPoll = 0;
                 try {
-                    res = await fetch(API + '/planning/results', {
-                        signal: ctrl.signal,
-                        headers: expectedSessionId
-                            ? { 'X-BrachyBot-Session': expectedSessionId }
-                            : {},
-                    });
+                    // A restarted server exposes the durable workspace before
+                    // its background Agent has decoded NPY sidecars. Keep the
+                    // restore job alive in the background and retry the same
+                    // case-owned endpoint instead of treating HTTP 202 as an
+                    // empty plan. This makes restart hydration equivalent to
+                    // a normal case switch without blocking the UI thread.
+                    do {
+                        res = await fetch(API + '/planning/results', {
+                            signal: ctrl.signal,
+                            headers: expectedSessionId
+                                ? { 'X-BrachyBot-Session': expectedSessionId }
+                                : {},
+                        });
+                        if (res.status !== 202 || pendingPoll >= maxPendingPolls) break;
+                        const pending = await res.json().catch(() => ({}));
+                        const waitMs = Math.max(100, Math.min(1000, Number(
+                            pending.retry_after_ms || res.headers.get('Retry-After-Ms') || 300,
+                        )));
+                        pendingPoll += 1;
+                        await new Promise(r => setTimeout(r, waitMs));
+                        if (!isCurrentCase()) return resolve();
+                    } while (pendingPoll <= maxPendingPolls);
                 } finally { clearTimeout(timer); }
-                if (!res.ok) { console.warn('[refreshPlanningUI] /planning/results failed:', res.status); _refreshInflight = null; return resolve(); }
+                if (!res.ok || res.status === 202) {
+                    console.warn('[refreshPlanningUI] /planning/results failed:', res.status);
+                    _refreshInflight = null;
+                    return resolve();
+                }
                 const data = await res.json();
                 _refreshInflight = null;
                 if (!isCurrentCase()) return resolve();
@@ -873,6 +895,20 @@ async function refreshPlanningUI(options = {}) {
         }
         if (!isCurrentCase()) return resolve();
 
+                // Guide restoration/generation is independent of WebGL mesh
+                // loading. Start it as soon as authoritative planning data is
+                // available so a cold restart cannot lose the guide merely
+                // because OAR meshes are still decoding in the background.
+                const guideRestorePromise = typeof window.ensureSurgicalGuideForCurrentPlan === 'function'
+                    ? Promise.resolve().then(() => window.ensureSurgicalGuideForCurrentPlan({
+                        sessionId: expectedSessionId,
+                        autoGenerate: options.autoGenerateGuide === true,
+                    }))
+                    : null;
+                if (guideRestorePromise) {
+                    guideRestorePromise.catch(error => console.warn('[guide] background restore:', error));
+                }
+
         // ═══════════════════════════════════════════════════════════
         // CRITICAL: Switch to viewers panel FIRST so canvas has
         // proper dimensions. Everything below depends on a visible
@@ -914,6 +950,12 @@ async function refreshPlanningUI(options = {}) {
                     const ctvCb = document.getElementById('overlayCTV');
                     if (ctvCb) ctvCb.checked = true;
                 }
+                // A restored dose grid must repaint the currently selected
+                // axial/sagittal/coronal slices. Loading the grid alone is
+                // insufficient when the canvases were painted during the
+                // CT-first shell phase.
+                try { if (typeof loadAllSlices === 'function') loadAllSlices(); } catch (_) {}
+                try { if (typeof renderDataTree === 'function') renderDataTree(); } catch (_) {}
             }).catch(e => console.warn('Dose overlay auto-load failed:', e));
         }
 
@@ -965,11 +1007,44 @@ async function refreshPlanningUI(options = {}) {
         // already usable; waiting for a slow mesh endpoint would make a case
         // look hung for minutes and block the next user action.
         if (options.backgroundRestore === true) {
-            Promise.all(_meshPromises).then(() => {
+            // Report interpretation is a JSON/data-plane product, not a mesh
+            // product.  Restore it as soon as planning metrics are available;
+            // tying it to the slowest STL/iso-surface request made the
+            // Clinical Evaluation section appear empty after a restart.
+            const backgroundReportPromise = typeof reportAutoFill === 'function'
+                ? Promise.resolve().then(() => reportAutoFill({ sessionId: expectedSessionId }))
+                : Promise.resolve();
+            backgroundReportPromise.catch(error =>
+                console.warn('[3D auto-load] background report restore:', error));
+
+            // The plan and label data are already authoritative at this point.
+            // Finish the cheap UI/data-plane work immediately; only meshes and
+            // report figure recapture remain in the background.
+            try { if (typeof renderDataTree === 'function') renderDataTree(); } catch (_) {}
+            try { if (typeof updateImageAnalysis === 'function') updateImageAnalysis(); } catch (_) {}
+            try { if (typeof updateClinicalEvaluation === 'function') updateClinicalEvaluation(); } catch (_) {}
+            if (state.ctLoaded && (ctvLabelData || oarLabelData)) {
+                try { loadAllSlices(); } catch (_) {}
+            }
+
+            Promise.all(_meshPromises).then(async () => {
                 if (!isCurrentCase()) return;
-                if (typeof reportAutoFill === 'function') {
-                    return reportAutoFill({ sessionId: expectedSessionId }).catch(() => {});
+                // Mesh completion only refreshes the figures; it never gates
+                // the already interactive workspace.
+                try { if (typeof renderDataTree === 'function') renderDataTree(); } catch (_) {}
+                try { if (typeof forceRender3DViewer === 'function') forceRender3DViewer(); } catch (_) {}
+                await backgroundReportPromise.catch(() => {});
+                if (!isCurrentCase()) return;
+                const hasReportFigures = Array.isArray(window.reportForm?.figures)
+                    && window.reportForm.figures.some(figure => figure && figure.type === 'screenshot');
+                if (!hasReportFigures && typeof autoCaptureReportFigures === 'function') {
+                    try { await autoCaptureReportFigures({ sessionId: expectedSessionId }); } catch (error) {
+                        console.warn('[3D auto-load] background report capture:', error);
+                    }
                 }
+                if (!isCurrentCase()) return;
+                try { if (typeof renderReportEditor === 'function') renderReportEditor(); } catch (_) {}
+                try { if (typeof _updateReportPreview === 'function') _updateReportPreview(); } catch (_) {}
             }).catch(error => console.warn('[3D auto-load] background restore:', error));
             return resolve();
         }
@@ -979,15 +1054,6 @@ async function refreshPlanningUI(options = {}) {
         // older case must never overwrite the newly selected report.
         await Promise.all(_meshPromises);
         if (!isCurrentCase()) return resolve();
-        if (typeof window.ensureSurgicalGuideForCurrentPlan === 'function') {
-            // Guide meshing is real CPU work. Start it after the plan has
-            // painted, but never hold the planning response or Viewer usable
-            // state hostage while the printable artifact is generated.
-            void window.ensureSurgicalGuideForCurrentPlan({
-                sessionId: expectedSessionId,
-                autoGenerate: options.autoGenerateGuide === true,
-            });
-        }
         try {
             if (typeof reportAutoFill === 'function') {
                 await reportAutoFill({ sessionId: expectedSessionId });

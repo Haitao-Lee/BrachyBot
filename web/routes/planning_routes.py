@@ -447,6 +447,61 @@ def register_planning_routes(
         except WorkspaceError:
             logger.warning("Unable to checkpoint workspace operation", exc_info=True)
 
+    def fallback_task_response(task: ChatTask) -> str:
+        """Build a real answer when a structured dose turn has no final prose.
+
+        This narrow recovery reads the current task agent's metrics only. It
+        is not a replacement model and cannot invent a plan for general chat.
+        """
+        message = str(getattr(task, "message", "") or "")
+        if not re.search(r"dose distribution|dose map|dose cloud|剂量分布|剂量云图|剂量结果", message, re.I):
+            return ""
+        try:
+            metrics = task.agent.memory.retrieve("dose_metrics") or {}
+        except Exception:
+            metrics = {}
+        if not isinstance(metrics, dict):
+            metrics = {}
+        try:
+            language = str(getattr(task.agent.memory, "user_lang", "en") or "en").lower()
+        except Exception:
+            language = "en"
+        language = "zh" if language.startswith("zh") or re.search(r"[\u3400-\u9fff]", message) else "en"
+
+        def percent(value):
+            try:
+                number = float(value)
+                return f"{(number * 100 if number <= 1.000001 else number):.1f}%"
+            except (TypeError, ValueError):
+                return None
+
+        def dose(value):
+            try:
+                return f"{float(value):.2f} Gy"
+            except (TypeError, ValueError):
+                return None
+
+        rows = []
+        for key in ("v100", "v150", "v200"):
+            value = percent(metrics.get(key))
+            if value is not None:
+                rows.append(f"- {key.upper()}: {value}")
+        for key in ("d90", "dmean", "d2", "d2_max", "max_dose"):
+            value = dose(metrics.get(key))
+            if value is not None:
+                rows.append(f"- {key.upper()}: {value}")
+                if key in {"d2", "d2_max", "max_dose"}:
+                    break
+        if not rows:
+            return (
+                "当前病例还没有可用的剂量分布数据。请先完成剂量计算。"
+                if language == "zh"
+                else "No dose distribution is available for this case yet. Run dose calculation first."
+            )
+        if language == "zh":
+            return "当前剂量分布结果如下：\n\n" + "\n".join(rows) + "\n\n可在 Analysis 面板查看完整 DVH 和 OAR 剂量。"
+        return "Current dose distribution results:\n\n" + "\n".join(rows) + "\n\nOpen Analysis to inspect the full DVH and OAR dose."
+
     def finalize_chat_task(task: ChatTask) -> bool:
         """Persist the detached task's result without relying on a browser.
 
@@ -517,7 +572,53 @@ def register_planning_routes(
             # transcript; the browser's visible user bubble contains the
             # original request without that server detail.
             display_message = task.message.split("\n\n[Uploaded image path:", 1)[0]
-            append_message("user", display_message, timestamp_ms=int(task.created_at * 1000))
+            task_created_ms = int(task.created_at * 1000)
+
+            def existing_same_turn_state() -> tuple[bool, bool, bool]:
+                """Avoid replaying a turn already committed by the browser.
+
+                The live SSE client and the detached task finalizer can finish
+                in either order. A complete JSON hash is intentionally not
+                sufficient because the two writers attach different timestamps
+                and terminal step details. Match the authenticated task's
+                creation time and user text, then require an assistant answer
+                before treating the turn as already durable. Legitimate repeat
+                questions remain separate when they were sent at another time.
+                """
+                for index, record in enumerate(messages):
+                    if not isinstance(record, dict) or record.get("type") != "user":
+                        continue
+                    if str(record.get("content") or "") != display_message:
+                        continue
+                    try:
+                        record_ms = int(float(record.get("timestamp") or 0))
+                    except (TypeError, ValueError):
+                        record_ms = 0
+                    if record_ms and abs(record_ms - task_created_ms) > 120000:
+                        continue
+                    has_trace = False
+                    for following in messages[index + 1:]:
+                        if not isinstance(following, dict):
+                            continue
+                        if following.get("type") == "user":
+                            break
+                        if following.get("type") == "thinking" and following.get("steps"):
+                            has_trace = True
+                        if following.get("type") == "bot-response" and str(following.get("content") or "").strip():
+                            return True, True, has_trace
+                    # A live browser may have persisted the user and trace,
+                    # but not the final answer yet. The detached finalizer
+                    # must append the answer while reusing those existing
+                    # rows; otherwise a reconnect creates a second Trace.
+                    return False, True, has_trace
+                return False, False, False
+
+            turn_already_committed, turn_has_user, turn_has_trace = existing_same_turn_state()
+            if not turn_has_user:
+                # Keep the task creation timestamp explicit in the durable
+                # transcript. This is the source of truth when a browser
+                # reconnects after the live SSE stream has disappeared.
+                append_message("user", display_message, timestamp_ms=int(task.created_at * 1000))
             # ``workspace_checkpoint`` is an internal save operation, never a
             # user-facing workflow step.  Filter legacy journals as well as
             # live events so an older interrupted turn cannot resurrect a
@@ -526,7 +627,7 @@ def register_planning_routes(
                 step for step in list(task.steps)
                 if str(step.get("tool") or "") != "workspace_checkpoint"
             ]
-            if persisted_steps:
+            if persisted_steps and not turn_already_committed and not turn_has_trace:
                 append_message(
                     "thinking",
                     "",
@@ -536,10 +637,21 @@ def register_planning_routes(
             # A user-cancelled turn must never resurrect buffered draft text
             # when the case is reopened. Preserve the request and trace for
             # audit, then record one explicit terminal status instead.
-            if final_status == "cancelled":
+            if turn_already_committed:
+                # The browser already persisted the complete visible turn.
+                # Do not append a second trace just because the detached
+                # finalizer is also doing its durability fallback.
+                pass
+            elif final_status == "cancelled":
                 append_message("system", "Stopped.")
             else:
                 final_response = task.response or task.streamed_response
+                if not final_response or re.match(
+                    r"^Tools executed\. Check the execution trace above for results\.?$",
+                    str(final_response).strip(),
+                    re.I,
+                ):
+                    final_response = fallback_task_response(task) or final_response
                 if final_response:
                     append_message("bot-response", final_response)
                 elif task.error:
@@ -1713,10 +1825,18 @@ def register_planning_routes(
                 slice_2d = dose_np[z].tolist()
             elif axis in {"coronal", "y"}:
                 y = max(0, min(int(slice_index), dose_np.shape[1] - 1))
-                slice_2d = dose_np[:, y, :].tolist()
+                # The 2D viewer displays coronal slices as (X, Z), while
+                # the dose array is stored as (Z, Y, X).  Return the same
+                # row/column orientation as viewer_routes.py; otherwise the
+                # dose layer is transposed relative to CT and appears to
+                # disappear or drift when the slice changes.
+                slice_2d = dose_np[:, y, :].T.tolist()
             else:  # sagittal
                 x = max(0, min(int(slice_index), dose_np.shape[2] - 1))
-                slice_2d = dose_np[:, :, x].tolist()
+                # Sagittal display coordinates are (Y, Z), not the storage
+                # order (Z, Y).  Keep all three dose endpoints in the same
+                # display convention as the CT renderer.
+                slice_2d = dose_np[:, :, x].T.tolist()
 
             return jsonify({
                 "success": True,
@@ -1814,10 +1934,14 @@ def register_planning_routes(
                 slice_2d = dose_np[z]
             elif axis == 'coronal' or axis == 'y':
                 y = max(0, min(int(slice_index), dose_np.shape[1] - 1))
-                slice_2d = dose_np[:, y, :]
+                # Keep contour coordinates in the same (X, Z) display space
+                # as the coronal CT and dose overlay canvas.
+                slice_2d = dose_np[:, y, :].T
             else:  # sagittal
                 x = max(0, min(int(slice_index), dose_np.shape[2] - 1))
-                slice_2d = dose_np[:, :, x]
+                # Keep contour coordinates in the same (Y, Z) display space
+                # as the sagittal CT and dose overlay canvas.
+                slice_2d = dose_np[:, :, x].T
 
             d_min = float(dose_np.min())
             d_max = float(dose_np.max())
