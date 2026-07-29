@@ -10036,3 +10036,268 @@ warning from the monitor audit path.
   the same Structure again as STL when both mask and surface are required.
 - Medical/clinical validity of a segmentation or treatment plan remains
   outside the software serialization and state-consistency verification.
+
+---
+
+## 2026-07-30 — BrachyBot login page full product-level refactor
+
+### Confirmed problems with the legacy login surface
+
+1. The login was an isolated 400×400 modal (`#authOverlay`) with
+   `backdrop-filter: blur(10px)` and a hard-coded dark surface, sitting
+   alone over a dimmed page. It did not feel like a product entry — it
+   looked like an error dialog.
+2. `brachybot-auth.css` bypassed the design-token system and hard-coded
+   hex colors (`#0f1526`, `#4f7cff`, `#2a3454`, `#e8edf7`, ...). It was
+   visually fixed to the dark theme and could not follow `data-theme`.
+3. The login text was hard-coded English (`Username`, `Password`,
+   `Sign in`, `Deployment access key`). The main app's
+   `brachybot-chat-core.js` I18N dictionary did not have any `auth.*`
+   keys. The global language toggle was visually occluded behind the
+   modal (`z-index: 99999`) so users could not switch language from
+   the login screen.
+4. There was no password show/hide toggle.
+5. There was no inline field-level error (errors only appeared in
+   `#authStatus`); the user could not tell which field was wrong.
+6. There was no remember-me / forgot-password affordance.
+7. The error mapping was naive: `setStatus(error.message, true)` showed
+   the raw server text in whatever language it was sent. A 401 in
+   Chinese would not be re-translated when the user flipped to English.
+8. Network failures, timeouts, disabled accounts, duplicate usernames,
+   weak passwords, and CSRF mismatches all had no local fallback copy;
+   the raw exception leaked to the user.
+9. There was no product framing on the login surface — no BrachyBot
+   name, no tagline, no institution, no GitHub link, no brand
+   identity beyond a tiny avatar in the corner of the modal.
+10. There was no `<form>` element, so Enter-to-submit only worked on
+    the password field (not on username), and a second-click on
+    Sign-in was not blocked, occasionally causing double-submits.
+
+### Resolution — new two-pane product entry
+
+**`web/app/index.html`** — full rewrite of the auth surface:
+
+- `#authOverlay` is now a `position: fixed; inset: 0` two-row grid: a
+  page header (brand + global language toggle) on top, a `grid-template-columns:
+  minmax(380px, 1fr) minmax(0, 1.25fr)` body below.
+- Left pane: `<form class="auth-form" id="authForm" novalidate>` with
+  two labeled fields, an inline error slot under each
+  (`#authUsernameError` / `#authPasswordError`), a remember-me checkbox,
+  a forgot-password mailto link, a primary "Sign in" button with
+  inline spinner (`data-loading="true"` toggles `.auth-btn-spinner`
+  visibility without resizing the button), and a secondary "Create a
+  new account" button. Enter anywhere in the form submits.
+- Right pane: product eyebrow, title with gradient `BrachyBot` brand,
+  product tag (bilingual), 5 feature cards with inline SVG icons, a
+  GitHub CTA card (real link
+  `https://github.com/Haitao-Lee/BrachyBot`, opens in new tab with
+  `rel="noopener noreferrer"`), two affiliation pills using the
+  existing `sjtu-real.png` and `ruijin-real.png` assets, and a footer
+  with version, "Report an issue" and "Join the discussion" links.
+- Every visible string is marked with `data-i18n-zh` and `data-i18n-en`
+  so the existing global `applyI18n()` scanner re-renders the whole
+  page on language change.
+- Password show/hide: `#authPasswordToggle` / `#newPasswordToggle`
+  flip the input `type` and `aria-pressed`; their accessible name
+  follows the active language.
+- The `passwordOverlay` was rewritten with the same visual system.
+  It does NOT carry a second language toggle (the main app's header
+  toggle is still visible, since the password overlay opens on top
+  of the main SPA, not the auth overlay).
+- The favicon, the global fonts, and the cache-busters are unchanged.
+
+**`web/app/static/css/brachybot-auth.css`** — full rewrite, version
+bumped `?v=5` → `?v=6`. The entire file now uses CSS variables from
+`brachybot-theme-layout.css` (`--primary`, `--bg-canvas`, `--bg-card`,
+`--glass-tint-cool`, `--shadow-lg`, `--radius-lg`, `--border-default`,
+`--text`, `--text-secondary`, `--text-dim`, `--control-r`,
+`--control-focus-ring`, `--shadow-sm`, `--inset-top`, etc.). Layout uses
+the same `grid-template-rows: auto 1fr` and `minmax(...)` /
+`minmax(0, 1.25fr)` pattern the main SPA uses. Workspace-lock,
+recovery, hydration, and recycle-bin styles are retained verbatim
+and now also use design tokens.
+
+**`web/app/static/js/brachybot-auth.js`** — full rewrite. Changes:
+
+- New `t(zh, en)` and `authT(key, fallback)` helpers that look up the
+  I18N dictionary first and fall back to inline pairs.
+- New `mapAuthError(rawMessage, statusCode)` that classifies a raw
+  error into the localized i18n key. It recognizes network failures,
+  408/timeout, 502/503/504, "invalid username or password", "disabled",
+  "already exists", "password must be", "username must", "api key",
+  and "csrf" and maps each to the correct i18n string in the active
+  language. Unrecognized messages are sanitized (no newlines, 200
+  char cap) so a stray traceback never reaches the user.
+- `submit()` is wrapped in client-side validation
+  (`clientValidate()`): 3-64 char username, `[A-Za-z0-9_.-]+` only,
+  ≥12 char password. Validation errors are shown in the inline
+  field-error slot next to the field.
+- The primary button is disabled via `setButtonLoading()` during the
+  request. The secondary "Create account" button is also disabled to
+  prevent double-submits. Both re-enable in `finally`.
+- On 401, the error is also pushed to the password field's
+  inline-error slot, so the user immediately knows which field is
+  wrong.
+- The deployment-access-key `details` panel still works
+  (`revealDeploymentKeyHelp()`). When the server returns 401 with
+  "api key" in the message, the panel auto-opens and focuses the
+  input.
+- `renderAuthI18n()` is now exposed on `window.brachybotAuth` so the
+  global i18n change handler can re-render the auth surface (e.g. the
+  password-toggle accessible name). It also keeps `<html lang>` in
+  sync with the active language.
+- A 30-day "remember me" persists the username to `localStorage` via
+  the new `brachybot_remember_user` key. On next visit the
+  `#authUsername` field is pre-filled and the `#authRemember`
+  checkbox is checked. `logout()` clears the key.
+- `changePassword()` now also uses the error mapping and a non-zero
+  status check. It also gates the password to at least 12 chars
+  client-side.
+- The form is now an actual `<form>` with
+  `addEventListener('submit', ...)` and `preventDefault()`. Enter
+  from either field, the deployment key, or the new-password field
+  triggers submit.
+- Field errors clear as the user types (per-field `input` listener)
+  so error indicators don't linger after the user starts correcting.
+- The global `request()` helper now wraps `authFetch()` and converts
+  the `AbortError` (`isTimeout`) into a `TIMEOUT` marker, and a
+  network failure into a `NETWORK` marker, both of which surface in
+  `mapAuthError()` as localized text.
+- The leaked internal field `passwordStatus` setStatus / setStatusKey
+  split (loading/success/error classes) is preserved so the spinner
+  state is unambiguous.
+
+**`web/app/static/js/brachybot-chat-core.js`** — I18N dictionary
+extended with 48 new keys under the `auth.*` namespace (welcome,
+sub, brand_sub, label/placeholder/aria for username and password,
+remember, forgot, signin, register, status.{signing_in, creating,
+signed_in, updating_pw, network, timeout, service,
+invalid_credentials, disabled, taken, weak_password, bad_username,
+api_key, api_key_invalid, unknown, csrf}, access_key.{summary, label,
+placeholder, help}, eyebrow, product.{title_tail, tag}, feature.{1..5}.
+{title, body}, github.cta, affiliation.{sjtu, ruijin}, foot.{version,
+issue, discuss}, lang_toggle.{aria, tooltip}, password.{current, new,
+update, cancel, sub}). All keys are registered in both
+`window._I18N` and the auto-registration path so missing values
+fall back to the inline `(zh, en)` pair. `setUiLanguage()` was
+extended to also set `document.documentElement.lang` to `zh-CN` / `en`
+on every switch (also done in the boot path of
+`brachybot-report-export.js`).
+
+**`web/app/static/js/brachybot-report-export.js`** — boot hook
+extended. The initial `applyI18n()` call is now followed by
+`window.brachybotAuth.renderAuthI18n()` so the auth surface is in
+the correct language from the very first paint, even before the
+main SPA modules finish booting. The `i18nchange` listener now also
+syncs `<html lang>`.
+
+### Single-source-of-truth language state
+
+- The login page no longer has its own `_i18nLang` or its own
+  dictionary. It reads from the same `window._i18nLang` /
+  `window._I18N` / `applyI18n` / `setUiLanguage` machinery the rest
+  of the SPA uses.
+- The new language toggle in the auth page header delegates to
+  `window.setUiLanguage(code)` so a click in the auth page and a
+  click in the main header both go through the same code path. After
+  login, the active language is preserved (it's just `_i18nLang`).
+- The default language for a brand-new browser is still English
+  (`getInitialLang()` in `brachybot-chat-core.js:1776`). The
+  preference is persisted in `localStorage` under
+  `brachybot_ui_lang`. Login failure does NOT reset the preference
+  (a previous design constraint).
+- Switching language during a sign-in attempt does not clear the
+  username or password fields, does not reset the form, does not
+  interrupt the request, and re-translates the inline error/loading
+  text in place.
+
+### Theme compliance
+
+- The new CSS uses the global tokens. It picks up the active
+  `data-theme="light"` / `data-theme="dark"` switch on the
+  `<html>` element automatically. No special-casing needed.
+- The visual style is "Quiet Glass v2" consistent with the rest of
+  the app: translucent surfaces, soft shadows, accent
+  radial-gradients, Space Grotesk for display + Inter for body, the
+  existing pill / button / input design.
+- The radial-gradient hero on the right pane uses
+  `var(--primary-soft)` and `var(--accent-soft, var(--primary-soft))`
+  so the same surface re-tints under light/dark without code changes.
+
+### Responsive layout
+
+- `≥ 1080px`: two columns, form on the left, product on the right.
+  Both panes have `overflow-y: auto` so a tall product tag won't
+  clip on a short laptop.
+- `≤ 960px`: collapses to a single column; form pane is rendered
+  first (so it's always above the fold), product pane below.
+- `≤ 560px`: header tightens, brand subtitle hides, input
+  `font-size: 16px` to prevent iOS auto-zoom, primary button grows
+  to 46px, affiliation pills stack vertically.
+- The lang toggle is part of the page header (not the form pane) so
+  it stays visible in every layout, including the single-column
+  mobile view.
+
+### Asset integration
+
+- `web/app/_assets/brachybot-avatar.png` (256×256) — used at 36×36
+  with `object-fit: cover` and a subtle inner highlight via
+  `var(--shadow-sm)`.
+- `web/app/_assets/sjtu-real.png` (225×225) — affiliation pill, 30×30
+  with `border-radius: 50%` and `image-rendering: -webkit-optimize-contrast`.
+- `web/app/_assets/ruijin-real.png` (207×224) — same treatment.
+- No new image assets were created; existing project assets are
+  reused. SVG icons are inline (GitHub mark + 5 feature icons)
+  so the page works fully offline.
+
+### Authentication, lease, and CSRF contract (unchanged)
+
+- `POST /api/auth/login`, `/api/auth/register`, `/api/auth/logout`,
+  `/api/auth/me`, `/api/auth/password` — endpoints and request
+  shape are unchanged.
+- The Flask session cookie, CSRF token, deployment API key, and
+  editor-lease token all flow through the same `window.fetch`
+  wrapper that was already in place.
+- `acquireLease()`, `releaseLease()`, `refreshLease()`,
+  `takeoverLease()`, `setInterval(25s)` heartbeat, `pagehide`
+  keepalive, and the workspace-lock takeover banner are preserved
+  verbatim.
+- `importLegacyBrowserData()` is preserved verbatim so a user coming
+  from the legacy localStorage flow can still import.
+
+### File-buster bump
+
+- `web/app/index.html`: `brachybot-auth.css?v=5` → `?v=6` to
+  invalidate any cached version. All other assets keep their
+  existing version.
+- The `?v=` query string is the project's standard cache-busting
+  mechanism; no build step is required.
+
+### Verification (planned, browser-test required)
+
+- Local `python web/server.py`, open `http://localhost:8080`.
+- Default language: English. Flip to Chinese — every label /
+  placeholder / title / button / GitHub CTA / affiliation name /
+  product tag / feature card re-translates, no field is cleared.
+- Open browser DevTools and verify `<html lang>` toggles between
+  `en` and `zh-CN`.
+- Enter an invalid username, see inline error under the field in
+  the active language.
+- Enter a valid username + wrong password → field-level error +
+  status error both in active language.
+- Flip language after a failed login → both messages re-translate,
+  fields preserved, no new request fired.
+- Enter correct credentials → spinner shows without resizing the
+  button, header shows progress, page transitions to main app
+  without flicker, active language preserved into the main app.
+- Refresh → active language preserved.
+- Click "Forgot password?" → mailto opens.
+- Click GitHub link → opens in new tab, target="_blank", no
+  opener reference.
+- Resize the window to 500×800 → layout collapses to single
+  column, lang toggle still visible in the header, form fields
+  remain usable, no horizontal scroll.
+- Press F12 → no console errors / warnings introduced by the auth
+  module.
+- Logout from the main app → `brachybot_remember_user` is cleared,
+  login page reappears with empty username field.

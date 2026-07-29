@@ -1123,6 +1123,14 @@ try {
     // dock) can refresh on language change.
     if (typeof applyI18n === 'function') {
         applyI18n();
+        // Also paint the auth overlay (which sits above the SPA and is
+        // visible before the main boot completes). The auth module
+        // registers its own i18nchange listener so subsequent switches
+        // also re-render.
+        try { if (typeof window.brachybotAuth !== 'undefined' && window.brachybotAuth && typeof window.brachybotAuth.renderAuthI18n === 'function') {
+            window.brachybotAuth.renderAuthI18n();
+            window.brachybotAuth.setAuthLangToggleState();
+        }} catch (_) {}
         // Mark the active language on the toggle button(s).
         const _activeLang = window._i18nLang || 'en';
         document.querySelectorAll('[data-lang-btn]').forEach(b => {
@@ -1130,6 +1138,15 @@ try {
             b.classList.toggle('lang-active', isActive);
             b.setAttribute('aria-pressed', isActive ? 'true' : 'false');
         });
+        // <html lang> must follow the active language so screen readers
+        // and the browser spell-checker pick the correct locale. Set on
+        // boot and on every language change.
+        const _syncHtmlLang = () => {
+            try {
+                document.documentElement.setAttribute('lang', _activeLang === 'zh' ? 'zh-CN' : 'en');
+            } catch (_) {}
+        };
+        _syncHtmlLang();
         // When language changes, re-render the Analysis panel and the
         // todo dock. The Report module has its own language flow
         // (window.Report.i18n.set) which already handles itself.
@@ -1151,6 +1168,7 @@ try {
             try { if (typeof Report !== 'undefined' && Report.i18n && Report.i18n.set) {
                 Report.i18n.set(ev.detail.lang, { userInitiated: false });
             }} catch (_) {}
+            _syncHtmlLang();
         });
     }
 } catch (e) {

@@ -52,7 +52,7 @@
     <link rel="stylesheet" href="static/css/brachybot-panels-viewers.css?v=11">
     <link rel="stylesheet" href="static/css/brachybot-report-controls.css?v=9">
     <link rel="stylesheet" href="static/css/brachybot-responsive.css?v=4">
-    <link rel="stylesheet" href="static/css/brachybot-auth.css?v=5">
+    <link rel="stylesheet" href="static/css/brachybot-auth.css?v=6">
     <link rel="stylesheet" href="static/css/brachybot-data-export.css?v=1">
 </head>
 <!--
@@ -63,28 +63,257 @@
 -->
 <body>
 <div id="monitorEdgeOverlay" class="monitor-edge-overlay" hidden aria-hidden="true"></div>
-<div id="authOverlay" hidden role="dialog" aria-modal="true" aria-labelledby="authTitle">
-    <div class="auth-card">
-        <div class="auth-brand" id="authTitle"><img src="_assets/brachybot-avatar.png" alt="">BrachyBot workspace</div>
-        <label>Username<input id="authUsername" autocomplete="username" minlength="3" maxlength="64"></label>
-        <label>Password<input id="authPassword" type="password" autocomplete="current-password" minlength="12"></label>
-        <details class="auth-access-key" id="authAccessKeyDetails">
-            <summary>Deployment access key</summary>
-            <label>Access key<input id="authDeploymentKey" type="password" autocomplete="off" spellcheck="false"></label>
-            <p>This is only needed when this server is protected by <code>BRACHYBOT_API_KEY</code>. It is kept for this browser session only.</p>
-        </details>
-        <div class="auth-actions"><button id="authLogin" type="button">Sign in</button><button id="authRegister" class="secondary" type="button">Create account</button></div>
-        <div id="authStatus" aria-live="polite"></div>
-    </div>
+<!-- ============ AUTH OVERLAY — full-page two-pane product entry ============ -->
+<div id="authOverlay" hidden role="dialog" aria-modal="true" aria-labelledby="authTitle" aria-describedby="authSub">
+    <header class="auth-page-header">
+        <a class="auth-page-brand" href="#" tabindex="-1" aria-label="BrachyBot">
+            <img src="_assets/brachybot-avatar.png" alt="BrachyBot" width="36" height="36">
+            <span>BrachyBot</span>
+            <span class="auth-page-brand-sub" data-i18n-zh="AI 辅助放射性粒子植入规划" data-i18n-en="AI-Assisted Brachytherapy Planning">AI-Assisted Brachytherapy Planning</span>
+        </a>
+        <!-- Global UI language toggle. Mirrors the header toggle so the
+             language button stays at the top-right of the page regardless
+             of which view (auth overlay or main app) is visible. -->
+        <div id="authLangToggle" class="lang-toggle status-chip" role="group"
+             data-i18n-aria-label-zh="界面语言" data-i18n-aria-label-en="UI language"
+             aria-label="UI language"
+             data-i18n-title-zh="切换界面语言" data-i18n-title-en="Switch UI language"
+             title="Switch UI language">
+            <button class="lang-btn" data-lang-btn="en" type="button" aria-pressed="true">EN</button>
+            <button class="lang-btn" data-lang-btn="zh" type="button" aria-pressed="false">中</button>
+        </div>
+    </header>
+
+    <main class="auth-page-grid">
+        <!-- ===== Left pane: login form ===== -->
+        <section class="auth-pane auth-pane-form" aria-labelledby="authTitle">
+            <div class="auth-card">
+                <h1 class="auth-welcome" id="authTitle"
+                    data-i18n-zh="欢迎使用 BrachyBot"
+                    data-i18n-en="Welcome to BrachyBot">Welcome to BrachyBot</h1>
+                <p class="auth-sub" id="authSub"
+                   data-i18n-zh="请登录以加载病例数据并启动 AI 辅助的近距离治疗规划工作流。"
+                   data-i18n-en="Sign in to load case data and start the AI-assisted brachytherapy planning workflow.">Sign in to load case data and start the AI-assisted brachytherapy planning workflow.</p>
+
+                <form class="auth-form" id="authForm" novalidate>
+                    <label class="auth-field" for="authUsername">
+                        <span data-i18n-zh="用户名或邮箱" data-i18n-en="Username or email">Username or email</span>
+                        <input id="authUsername" type="text" name="username"
+                               autocomplete="username" autocapitalize="off" autocorrect="off" spellcheck="false"
+                               minlength="3" maxlength="64" required
+                               data-i18n-placeholder-zh="请输入用户名" data-i18n-placeholder-en="Enter your username"
+                               data-i18n-aria-label-zh="用户名或邮箱" data-i18n-aria-label-en="Username or email">
+                        <span class="auth-field-error" id="authUsernameError"></span>
+                    </label>
+
+                    <label class="auth-field" for="authPassword">
+                        <span data-i18n-zh="密码" data-i18n-en="Password">Password</span>
+                        <div class="auth-password-wrap">
+                            <input id="authPassword" type="password" name="password"
+                                   autocomplete="current-password" minlength="12" required
+                                   data-i18n-placeholder-zh="请输入密码" data-i18n-placeholder-en="Enter your password"
+                                   data-i18n-aria-label-zh="密码" data-i18n-aria-label-en="Password">
+                            <button type="button" id="authPasswordToggle" class="auth-password-toggle"
+                                    aria-pressed="false"
+                                    data-i18n-aria-label-zh="显示密码" data-i18n-aria-label-en="Show password"
+                                    data-i18n-title-zh="显示密码" data-i18n-title-en="Show password"
+                                    title="Show password">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                    <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/>
+                                    <circle cx="12" cy="12" r="3"/>
+                                </svg>
+                            </button>
+                        </div>
+                        <span class="auth-field-error" id="authPasswordError"></span>
+                    </label>
+
+                    <div class="auth-row">
+                        <label class="auth-checkbox" for="authRemember">
+                            <input type="checkbox" id="authRemember">
+                            <span data-i18n-zh="在此设备上记住我 30 天" data-i18n-en="Keep me signed in on this device for 30 days">Keep me signed in on this device for 30 days</span>
+                        </label>
+                        <a class="auth-link" id="authForgot" href="mailto:brachybot-support@example.org?subject=BrachyBot%20password%20reset"
+                           data-i18n-zh="忘记密码？联系管理员"
+                           data-i18n-en="Forgot password? Contact your administrator">Forgot password? Contact your administrator</a>
+                    </div>
+
+                    <button id="authLogin" type="submit" class="auth-btn-primary" data-loading="false"
+                            data-i18n-zh="登录" data-i18n-en="Sign in">
+                        <span class="auth-btn-spinner" aria-hidden="true"></span>
+                        <span class="auth-btn-label">Sign in</span>
+                    </button>
+                    <button id="authRegister" type="button" class="auth-btn-secondary"
+                            data-i18n-zh="创建新账号" data-i18n-en="Create a new account">Create a new account</button>
+                </form>
+
+                <div id="authStatus" role="status" aria-live="polite"></div>
+
+                <details class="auth-access-key" id="authAccessKeyDetails">
+                    <summary data-i18n-zh="部署访问密钥（可选）" data-i18n-en="Deployment access key (optional)">Deployment access key (optional)</summary>
+                    <label for="authDeploymentKey" data-i18n-zh="访问密钥" data-i18n-en="Access key">Access key</label>
+                    <input id="authDeploymentKey" type="password" name="deployment_key"
+                           autocomplete="off" spellcheck="false"
+                           data-i18n-placeholder-zh="仅当服务器启用了 BRACHYBOT_API_KEY 时需要"
+                           data-i18n-placeholder-en="Only required when BRACHYBOT_API_KEY is enabled">
+                    <p data-i18n-zh="仅当此服务器启用了 BRACHYBOT_API_KEY 时才需要。密钥仅保留在此浏览器会话中。"
+                       data-i18n-en="Only required when this server is protected by BRACHYBOT_API_KEY. The key is kept for this browser session only.">Only required when this server is protected by <code>BRACHYBOT_API_KEY</code>. The key is kept for this browser session only.</p>
+                </details>
+            </div>
+        </section>
+
+        <!-- ===== Right pane: product introduction ===== -->
+        <section class="auth-pane auth-pane-product" aria-labelledby="authProductTitle" aria-describedby="authProductTag">
+            <p class="auth-product-eyebrow" data-i18n-zh="AI · 近距离放疗 · 临床级"
+               data-i18n-en="AI · Brachytherapy · Clinical-grade">AI · Brachytherapy · Clinical-grade</p>
+            <h2 class="auth-product-title" id="authProductTitle">
+                <span class="auth-product-name">BrachyBot</span>
+                <span data-i18n-zh=" 智能规划平台" data-i18n-en=" Intelligent Planning Platform"> Intelligent Planning Platform</span>
+            </h2>
+            <p class="auth-product-tag" id="authProductTag"
+               data-i18n-zh="为胰腺、前列腺、肝脏、肺部、妇科等部位肿瘤的 ¹²⁵I 粒子植入与近距离放疗提供从影像分割、剂量预测到针道规划、报告生成的一体化 AI 工作流。"
+               data-i18n-en="End-to-end AI workflow for ¹²⁵I seed implantation and brachytherapy planning: image segmentation, dose prediction, trajectory planning and report generation for pancreatic, prostate, liver, lung, and gynaecological cases.">End-to-end AI workflow for ¹²⁵I seed implantation and brachytherapy planning: image segmentation, dose prediction, trajectory planning and report generation for pancreatic, prostate, liver, lung, and gynaecological cases.</p>
+
+            <ul class="auth-feature-list">
+                <li class="auth-feature-item">
+                    <span class="auth-feature-icon" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v6H4z"/><path d="M4 14h16v6H4z"/><circle cx="8" cy="7" r="0.6" fill="currentColor"/><circle cx="8" cy="17" r="0.6" fill="currentColor"/></svg>
+                    </span>
+                    <span class="auth-feature-text">
+                        <strong data-i18n-zh="智能分割 (CTV / OAR)" data-i18n-en="Smart segmentation (CTV / OAR)">Smart segmentation (CTV / OAR)</strong>
+                        <span data-i18n-zh="nnU-Net + TotalSegmentator，自动勾勒肿瘤与危及器官。"
+                              data-i18n-en="nnU-Net + TotalSegmentator auto-delineate the tumor and organs at risk.">nnU-Net + TotalSegmentator auto-delineate the tumor and organs at risk.</span>
+                    </span>
+                </li>
+                <li class="auth-feature-item">
+                    <span class="auth-feature-icon" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l3 7 7 .6-5.4 4.6L18 22l-6-3.6L6 22l1.4-7.8L2 9.6 9 9z"/></svg>
+                    </span>
+                    <span class="auth-feature-text">
+                        <strong data-i18n-zh="3D 剂量预测 DoseUNet" data-i18n-en="3D Dose Prediction (DoseUNet)">3D Dose Prediction (DoseUNet)</strong>
+                        <span data-i18n-zh="亚毫米级滑窗推理，单粒子剂量在数秒内完成叠加。"
+                              data-i18n-en="Sub-millimeter sliding-window inference aggregates per-seed dose in seconds.">Sub-millimeter sliding-window inference aggregates per-seed dose in seconds.</span>
+                    </span>
+                </li>
+                <li class="auth-feature-item">
+                    <span class="auth-feature-icon" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12h16"/><path d="M4 6h16"/><path d="M4 18h10"/><circle cx="18" cy="18" r="2"/></svg>
+                    </span>
+                    <span class="auth-feature-text">
+                        <strong data-i18n-zh="AI 针道与种子规划" data-i18n-en="AI trajectory and seed planning">AI trajectory and seed planning</strong>
+                        <span data-i18n-zh="规则与强化学习结合，自动生成避让 OAR 的安全针道。"
+                              data-i18n-en="Rule-based and reinforcement-learning hybrid generates OAR-aware safe trajectories.">Rule-based and reinforcement-learning hybrid generates OAR-aware safe trajectories.</span>
+                    </span>
+                </li>
+                <li class="auth-feature-item">
+                    <span class="auth-feature-icon" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v4"/><path d="M12 18v4"/><path d="M4 12h4"/><path d="M16 12h4"/><circle cx="12" cy="12" r="6"/></svg>
+                    </span>
+                    <span class="auth-feature-text">
+                        <strong data-i18n-zh="多 Agent 实时评审" data-i18n-en="Multi-agent live review">Multi-agent live review</strong>
+                        <span data-i18n-zh="剂量学、安全性、完整性、计划评分多 Agent 协同评估。"
+                              data-i18n-en="Dosimetry, safety, completeness, and plan-quality agents review in real time.">Dosimetry, safety, completeness, and plan-quality agents review in real time.</span>
+                    </span>
+                </li>
+                <li class="auth-feature-item">
+                    <span class="auth-feature-icon" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2h9l5 5v15H6z"/><path d="M14 2v6h6"/><path d="M9 13h6"/><path d="M9 17h6"/></svg>
+                    </span>
+                    <span class="auth-feature-text">
+                        <strong data-i18n-zh="自动报告 + 可追溯来源" data-i18n-en="Auto-report with source provenance">Auto-report with source provenance</strong>
+                        <span data-i18n-zh="AI 自动生成中/英双语报告，标注 AUTO / YOU / BOT 来源徽章。"
+                              data-i18n-en="Bilingual auto-generated reports with AUTO / YOU / BOT source badges.">Bilingual auto-generated reports with AUTO / YOU / BOT source badges.</span>
+                    </span>
+                </li>
+            </ul>
+
+            <a class="auth-github" id="authGithubLink" href="https://github.com/Haitao-Lee/BrachyBot" target="_blank" rel="noopener noreferrer">
+                <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                    <path d="M12 .5C5.65.5.5 5.65.5 12c0 5.08 3.29 9.39 7.86 10.91.58.11.79-.25.79-.55v-2.13c-3.2.69-3.87-1.36-3.87-1.36-.52-1.33-1.28-1.68-1.28-1.68-1.04-.71.08-.7.08-.7 1.15.08 1.76 1.18 1.76 1.18 1.02 1.75 2.68 1.25 3.34.95.1-.74.4-1.25.72-1.54-2.55-.29-5.24-1.27-5.24-5.66 0-1.25.45-2.27 1.18-3.07-.12-.29-.51-1.46.11-3.04 0 0 .96-.31 3.15 1.17a10.93 10.93 0 0 1 5.74 0c2.19-1.48 3.15-1.17 3.15-1.17.62 1.58.23 2.75.11 3.04.73.8 1.18 1.82 1.18 3.07 0 4.4-2.69 5.37-5.25 5.65.41.35.78 1.05.78 2.11v3.13c0 .31.21.67.8.55C20.21 21.39 23.5 17.08 23.5 12 23.5 5.65 18.35.5 12 .5z"/>
+                </svg>
+                <span data-i18n-zh="在 GitHub 查看源码" data-i18n-en="View source on GitHub">View source on GitHub</span>
+                <span class="auth-github-arrow" aria-hidden="true">↗</span>
+            </a>
+
+            <div class="auth-affiliations">
+                <div class="auth-affiliation">
+                    <img src="_assets/sjtu-real.png" alt="Shanghai Jiao Tong University" width="30" height="30">
+                    <span data-i18n-zh="上海交通大学" data-i18n-en="Shanghai Jiao Tong University">Shanghai Jiao Tong University</span>
+                </div>
+                <div class="auth-affiliation">
+                    <img src="_assets/ruijin-real.png" alt="Ruijin Hospital" width="30" height="30">
+                    <span data-i18n-zh="上海交通大学医学院附属瑞金医院" data-i18n-en="Ruijin Hospital, SJTU School of Medicine">Ruijin Hospital, SJTU School of Medicine</span>
+                </div>
+            </div>
+
+            <footer class="auth-product-foot">
+                <span data-i18n-zh="v1.0 · © 2026 BrachyBot 团队 · 保留所有权利" data-i18n-en="v1.0 · © 2026 BrachyBot team · All rights reserved">v1.0 · © 2026 BrachyBot team · All rights reserved</span>
+                <a class="auth-foot-link" href="https://github.com/Haitao-Lee/BrachyBot/issues"
+                   target="_blank" rel="noopener noreferrer"
+                   data-i18n-zh="报告问题" data-i18n-en="Report an issue">Report an issue</a>
+                <a class="auth-foot-link" href="https://github.com/Haitao-Lee/BrachyBot/discussions"
+                   target="_blank" rel="noopener noreferrer"
+                   data-i18n-zh="参与讨论" data-i18n-en="Join the discussion">Join the discussion</a>
+            </footer>
+        </section>
+    </main>
 </div>
+
+<!-- ============ PASSWORD CHANGE OVERLAY ============
+     Reachable only after login. Inherits the main header's language
+     toggle; no second toggle here to keep the global control single. -->
 <div id="passwordOverlay" hidden role="dialog" aria-modal="true" aria-labelledby="passwordTitle">
-    <div class="auth-card">
-        <div class="auth-brand" id="passwordTitle">Change password</div>
-        <label>Current password<input id="currentPassword" type="password" autocomplete="current-password"></label>
-        <label>New password<input id="newPassword" type="password" autocomplete="new-password" minlength="12"></label>
-        <div class="auth-actions"><button id="passwordSave" type="button">Update password</button><button id="passwordCancel" class="secondary" type="button">Cancel</button></div>
-        <div id="passwordStatus" aria-live="polite"></div>
-    </div>
+    <header class="auth-page-header">
+        <a class="auth-page-brand" href="#" tabindex="-1" aria-label="BrachyBot">
+            <img src="_assets/brachybot-avatar.png" alt="BrachyBot" width="36" height="36">
+            <span>BrachyBot</span>
+            <span class="auth-page-brand-sub" data-i18n-zh="AI 辅助放射性粒子植入规划" data-i18n-en="AI-Assisted Brachytherapy Planning">AI-Assisted Brachytherapy Planning</span>
+        </a>
+        <div class="auth-page-header-spacer" aria-hidden="true"></div>
+    </header>
+    <main class="auth-page-grid" style="grid-template-columns:1fr;">
+        <section class="auth-pane auth-pane-form" aria-labelledby="passwordTitle">
+            <div class="auth-card">
+                <h1 class="auth-welcome" id="passwordTitle"
+                    data-i18n-zh="修改密码"
+                    data-i18n-en="Change password">Change password</h1>
+                <p class="auth-sub"
+                   data-i18n-zh="为保证账号安全，请使用至少 12 个字符的新密码。"
+                   data-i18n-en="Use a new password of at least 12 characters.">Use a new password of at least 12 characters.</p>
+
+                <form class="auth-form" id="passwordForm" novalidate>
+                    <label class="auth-field" for="currentPassword">
+                        <span data-i18n-zh="当前密码" data-i18n-en="Current password">Current password</span>
+                        <input id="currentPassword" type="password" name="current_password"
+                               autocomplete="current-password" required>
+                    </label>
+                    <label class="auth-field" for="newPassword">
+                        <span data-i18n-zh="新密码（至少 12 个字符）" data-i18n-en="New password (12+ characters)">New password (12+ characters)</span>
+                        <div class="auth-password-wrap">
+                            <input id="newPassword" type="password" name="new_password"
+                                   autocomplete="new-password" minlength="12" required>
+                            <button type="button" id="newPasswordToggle" class="auth-password-toggle"
+                                    aria-pressed="false"
+                                    data-i18n-aria-label-zh="显示新密码" data-i18n-aria-label-en="Show new password"
+                                    data-i18n-title-zh="显示新密码" data-i18n-title-en="Show new password"
+                                    title="Show new password">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                    <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/>
+                                    <circle cx="12" cy="12" r="3"/>
+                                </svg>
+                            </button>
+                        </div>
+                    </label>
+
+                    <button id="passwordSave" type="submit" class="auth-btn-primary"
+                            data-i18n-zh="更新密码" data-i18n-en="Update password">Update password</button>
+                    <button id="passwordCancel" type="button" class="auth-btn-secondary"
+                            data-i18n-zh="取消" data-i18n-en="Cancel">Cancel</button>
+                </form>
+
+                <div id="passwordStatus" role="status" aria-live="polite"></div>
+            </div>
+        </section>
+    </main>
 </div>
 
 <!-- ============ HEADER ============ -->
