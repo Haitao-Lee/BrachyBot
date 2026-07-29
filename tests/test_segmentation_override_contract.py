@@ -72,3 +72,27 @@ def test_failed_direct_tool_is_not_marked_done():
     )
     assert steps[0]["status"] == "error"
     assert "empty CTV" in steps[0]["result"]
+
+
+def test_ctv_followup_inherits_site_from_recent_user_message():
+    memory = _Memory({"ct_path": "/tmp/case.nii.gz"})
+    memory.conversation = [
+        {"role": "user", "content": "我上传的是胰腺肿瘤患者的CT"},
+        {"role": "assistant", "content": "已收到"},
+    ]
+    harness = _DirectHarness(memory)
+
+    routed = harness._detect_tool_request("请再执行一次CTV分割")
+
+    assert routed[0]["tool"] == "ctv_segmentation"
+    assert routed[0]["params"]["tumor_type"] == "nnunet_pancreatic"
+
+
+def test_ctv_normalization_uses_persisted_site_for_llm_tool_call():
+    memory = _Memory({
+        "ct_path": "/tmp/case.nii.gz",
+        "tumor_type_used": "nnunet_pancreatic",
+    })
+    harness = _DirectHarness(memory)
+
+    assert harness._normalize_ctv_tool_params({})["tumor_type"] == "nnunet_pancreatic"

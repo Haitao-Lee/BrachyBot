@@ -36,7 +36,13 @@ try:
     from web.routes.session_routes import register_session_routes
     from web.routes.surgical_guide_routes import register_surgical_guide_routes
     from web.routes.data_routes import register_data_routes
-    from web.workspace_store import WorkspaceError, WorkspaceLeaseConflict, WorkspaceQuotaExceeded, WorkspaceStore
+    from web.workspace_store import (
+        WorkspaceError,
+        WorkspaceLeaseConflict,
+        WorkspaceNotFound,
+        WorkspaceQuotaExceeded,
+        WorkspaceStore,
+    )
 except ImportError:  # pragma: no cover - supports direct script execution.
     from server_support import (  # type: ignore
         APP_DIR,
@@ -55,7 +61,13 @@ except ImportError:  # pragma: no cover - supports direct script execution.
     from web.routes.session_routes import register_session_routes
     from web.routes.surgical_guide_routes import register_surgical_guide_routes
     from web.routes.data_routes import register_data_routes
-    from web.workspace_store import WorkspaceError, WorkspaceLeaseConflict, WorkspaceQuotaExceeded, WorkspaceStore
+    from web.workspace_store import (
+        WorkspaceError,
+        WorkspaceLeaseConflict,
+        WorkspaceNotFound,
+        WorkspaceQuotaExceeded,
+        WorkspaceStore,
+    )
 
 _TRUST_NETWORK = _server_support._TRUST_NETWORK
 _is_loopback_host = _server_support._is_loopback_host
@@ -499,9 +511,29 @@ def create_app(config: Optional[Dict] = None):
                                 and _session_generations.get(key, 0) == generation
                             ):
                                 current_agent._workspace_hydration_phase = str(phase)
+                    def _is_current() -> bool:
+                        if cancel_event is not None and cancel_event.is_set():
+                            return False
+                        with _sessions_lock:
+                            if (
+                                _sessions.get(key) is not current_agent
+                                or _session_generations.get(key, 0) != generation
+                            ):
+                                return False
+                        try:
+                            workspace_store.get_session(owner_id, case_id)
+                        except WorkspaceNotFound:
+                            return False
+                        return True
                     try:
                         if retry_attempt and cancel_event is not None:
                             cancel_event.clear()
+                        if not _is_current():
+                            logger.info(
+                                "Background case hydration stopped for removed or stale session=%s",
+                                case_id,
+                            )
+                            return
                         # Restore CT first. The browser can paint slices and
                         # remain interactive while masks, plans, dose and
                         # reports decode in the second phase.
@@ -524,7 +556,7 @@ def create_app(config: Optional[Dict] = None):
                                 current_agent._workspace_ct_ready = (
                                     current_agent.memory.retrieve("ct_data") is not None
                                 )
-                        if still_current and not (cancel_event and cancel_event.is_set()):
+                        if still_current and _is_current():
                             workspace_store.hydrate_agent(
                                 owner_id,
                                 case_id,
@@ -579,14 +611,22 @@ def create_app(config: Optional[Dict] = None):
                                 "Background case hydration completed session=%s duration_ms=%.1f",
                                 case_id, (time.perf_counter() - started) * 1000.0,
                             )
+                    except WorkspaceNotFound:
+                        # Deletion is allowed to race this detached worker.
+                        # It is a normal cancellation path, not a hydration
+                        # failure and should never produce a traceback.
+                        logger.info(
+                            "Background case hydration skipped for removed session=%s",
+                            case_id,
+                        )
                     except Exception as exc:
                         current_agent._workspace_hydration_in_progress = False
                         current_agent._workspace_hydration_phase = "failed"
                         current_agent._workspace_hydration_error = str(exc)
                         logger.warning(
-                            "Background case hydration failed session=%s duration_ms=%.1f",
+                            "Background case hydration failed session=%s duration_ms=%.1f: %s",
                             case_id, (time.perf_counter() - started) * 1000.0,
-                            exc_info=True,
+                            exc,
                         )
                     finally:
                         if not retry_scheduled:
@@ -608,6 +648,15 @@ def create_app(config: Optional[Dict] = None):
                 (time.perf_counter() - hydration_started) * 1000.0,
             )
             return agent
+        except WorkspaceNotFound:
+            # A delete/purge can race the detached cold-start worker. The
+            # workspace is already gone by design; do not turn that expected
+            # race into an ERROR traceback or leave a failed shell behind.
+            logger.info(
+                "Case hydration skipped because the session was removed session=%s",
+                resolved_session_id,
+            )
+            return None
         except Exception as e:
             import traceback
             logger.error(
@@ -689,6 +738,17 @@ def create_app(config: Optional[Dict] = None):
             _session_generations[key] = _session_generations.get(key, 0) + 1
             agent = _sessions.pop(key, None)
             _session_timestamps.pop(key, None)
+            if agent is not None:
+                # Stop detached CT/NPY restoration before the workspace is
+                # moved or purged. The generation check remains authoritative
+                # for workers which have not installed their Agent yet.
+                agent._workspace_hydration_superseded = True
+                cancel_event = getattr(agent, "_workspace_hydration_cancel", None)
+                if cancel_event is not None:
+                    cancel_event.set()
+                ready_event = getattr(agent, "_workspace_ready_event", None)
+                if ready_event is not None:
+                    ready_event.set()
             if agent is not None and not flush:
                 workspace_store.discard_agent_checkpoint(user["id"], resolved_session_id)
             if agent is not None and flush:

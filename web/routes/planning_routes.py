@@ -4579,3 +4579,27 @@ def register_planning_routes(
         response = send_file(filepath, mimetype="image/png")
         response.headers["Cache-Control"] = "private, max-age=300"
         return response
+
+    @app.route("/api/screenshots/<filename>")
+    @rate_limit
+    def api_serve_legacy_screenshot(filename):
+        """Serve screenshots written by the pre-session attachment path.
+
+        Older persisted chat attachments intentionally keep their original
+        URL. Keep that URL readable during migration; new screenshots always
+        use the session-scoped endpoint above. Signed URLs remain valid when
+        API-key authentication is enabled.
+        """
+        if not filename.lower().endswith(".png") or "/" in filename or "\\" in filename:
+            return jsonify({"error": "Invalid screenshot filename"}), 400
+        if not _valid_screenshot_request(filename):
+            return jsonify({"error": "Invalid or missing API key"}), 401
+        try:
+            filepath = _safe_screenshot_path(filename)
+        except (ValueError, OSError) as exc:
+            return jsonify({"error": str(exc)}), 400
+        if not os.path.exists(filepath):
+            return jsonify({"error": "File not found"}), 404
+        response = send_file(filepath, mimetype="image/png")
+        response.headers["Cache-Control"] = "private, max-age=300"
+        return response

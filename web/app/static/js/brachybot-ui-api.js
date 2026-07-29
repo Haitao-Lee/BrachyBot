@@ -4552,11 +4552,18 @@ async function _interceptScreenshotLegacy(target, question, galleryContext, opti
 
         const res = await fetch(API + '/screenshot', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+                'Content-Type': 'application/json',
+                'X-BrachyBot-Session': ownerSessionId,
+            },
             body: JSON.stringify({
                 image: dataUrl,
                 target: normalizedTarget,
                 description: question || `Screenshot of ${normalizedTarget}`,
+                mode: options.mode || (options.monitorOnly ? 'monitor' : 'chat'),
+                request_id: options.requestId || galleryContext?.requestId || '',
+                message_id: options.messageId || galleryContext?.messageId || '',
+                question: question || '',
             }),
         });
         const text = await res.text();

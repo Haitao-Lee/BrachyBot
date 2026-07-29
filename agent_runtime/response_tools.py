@@ -65,6 +65,12 @@ class ResponseToolMixin:
                     normalized["tumor_type"] = mapped
             normalized.pop("tumor_site", None)
             normalized.pop("site", None)
+        if not normalized.get("tumor_type"):
+            retrieve = getattr(self.memory, "retrieve", None)
+            stored = retrieve("tumor_type_used") if callable(retrieve) else None
+            mapped = self._map_tumor_type(str(stored)) if stored else None
+            if mapped in self._SUPPORTED_AUTOMATIC_CTV_TYPES:
+                normalized["tumor_type"] = mapped
         return normalized
 
     @staticmethod
@@ -1092,9 +1098,42 @@ Output (JSON array of strings):"""
         logger.warning(f"Unknown tumor_type '{tumor_type}', leaving it unsupported")
         return tumor_type
 
+    @staticmethod
+    def _message_text(value) -> str:
+        """Extract readable text from persisted plain or multimodal messages."""
+        if isinstance(value, str):
+            return value
+        if isinstance(value, dict):
+            for key in ("content", "text", "message"):
+                if key in value:
+                    text = ResponseToolMixin._message_text(value.get(key))
+                    if text:
+                        return text
+            return ""
+        if isinstance(value, (list, tuple)):
+            return " ".join(
+                text for text in (ResponseToolMixin._message_text(item) for item in value)
+                if text
+            )
+        return str(value or "")
+
     def _detect_tumor_type_from_message(self, message: str) -> Optional[str]:
-        """Detect tumor type from user message for CTV segmentation routing."""
-        msg = message.lower()
+        """Detect a site from the current or recent user messages.
+
+        Follow-up commands often omit the site (for example, ``再分割 CTV``).
+        Only user-authored history is considered so assistant prose and tool
+        output cannot accidentally change the active tumor model.
+        """
+        messages = [self._message_text(message)]
+        for item in reversed(getattr(self.memory, "conversation", []) or []):
+            if not isinstance(item, dict) or str(item.get("role", "")).lower() != "user":
+                continue
+            text = self._message_text(item.get("content", ""))
+            if text.lstrip().startswith(("[Tool result:", "[Called ")):
+                continue
+            if text and text not in messages:
+                messages.append(text)
+        # Current input wins; the rest are newest-to-oldest user context.
         # These aliases are deliberately kept separate from the legacy
         # transcript map above: they are real Unicode user input, not the
         # mojibake spellings found in older persisted prompts.
@@ -1111,14 +1150,27 @@ Output (JSON array of strings):"""
             ("\u7ed3\u80a0\u764c", "voco_colon"),
             ("\u7ed3\u80a0", "voco_colon"),
             ("\u524d\u5217\u817a", "prostate_tumor"),
+            ("pancreatic cancer", "nnunet_pancreatic"),
+            ("pancreatic tumor", "nnunet_pancreatic"),
+            ("liver cancer", "voco_liver"),
+            ("liver tumor", "voco_liver"),
+            ("kidney cancer", "voco_kidney"),
+            ("kidney tumor", "voco_kidney"),
+            ("lung cancer", "voco_lung"),
+            ("lung tumor", "voco_lung"),
+            ("colon cancer", "voco_colon"),
+            ("colon tumor", "voco_colon"),
+            ("prostate cancer", "prostate_tumor"),
+            ("prostate tumor", "prostate_tumor"),
         )
-        for keyword, tool_name in unicode_aliases:
-            if keyword in msg:
-                return tool_name
-        # Check each keyword in the mapping
-        for keyword, tool_name in self._TUMOR_TYPE_MAP.items():
-            if keyword in msg:
-                return tool_name
+        for text in messages:
+            msg = text.lower()
+            for keyword, tool_name in unicode_aliases:
+                if keyword in msg:
+                    return tool_name
+            for keyword, tool_name in self._TUMOR_TYPE_MAP.items():
+                if keyword in msg:
+                    return tool_name
         return None
 
     def _detect_realtime_query(self, message: str) -> Optional[str]:
