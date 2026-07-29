@@ -79,6 +79,20 @@ def test_empty_manual_seed_list_remains_authoritative_after_last_delete():
     assert _current_planning_snapshot(agent) == {"seeds": [], "needles": []}
 
 
+def test_manual_snapshot_accepts_numpy_restored_records_without_truthiness():
+    memory = Memory({
+        "manual_plan_active": True,
+        "manual_seeds": np.asarray([{"id": "seed_1"}], dtype=object),
+        "manual_needles": np.asarray([{"id": "needle_1"}], dtype=object),
+    })
+    agent = SimpleNamespace(memory=memory)
+
+    assert _current_planning_snapshot(agent) == {
+        "seeds": [{"id": "seed_1"}],
+        "needles": [{"id": "needle_1"}],
+    }
+
+
 def test_seed_transaction_rejects_missing_owner_and_duplicate_ids():
     memory = Memory()
     needles = [{

@@ -337,11 +337,13 @@ def test_uploaded_oar_mask_is_a_numbered_traversable_data_tree_source():
 
 
 def test_label_volume_cache_rejects_legacy_uint8_oar_entries():
-    """Old browser caches must not wrap OAR IDs above 255."""
+    """Old caches must not wrap OAR IDs or omit stable structure IDs."""
     viewer = read("web/app/static/js/brachybot-viewer-volume.js")
-    assert "formatVersion: 2" in viewer
-    assert "Number(hdr.formatVersion || 0) >= 2" in viewer
+    assert "formatVersion: 3" in viewer
+    assert "Number(hdr.formatVersion || 0) >= 3" in viewer
     assert "oarBytesPerVoxel === 2" in viewer
+    assert "ctvObjectMap" in viewer
+    assert "organMeta" in viewer
 
 
 def test_session_restore_uses_lightweight_status_and_background_assets():

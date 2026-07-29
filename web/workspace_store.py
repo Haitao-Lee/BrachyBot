@@ -728,6 +728,38 @@ class WorkspaceStore:
                 expected_revision=expected_revision, reason=reason,
             )
 
+    def replace_snapshot_section(
+        self,
+        user_id: str,
+        session_id: str,
+        section: str,
+        value: Mapping[str, Any],
+        *,
+        reason: str = "workspace.section_replaced",
+    ) -> Dict[str, Any]:
+        """Atomically replace one top-level presentation section.
+
+        ``save_snapshot_patch`` intentionally merges report/UI/chat state to
+        protect a newer browser checkpoint. Delete operations need the opposite
+        semantic: old report or chat artifacts must not survive as hidden keys.
+        """
+        if section not in {"ui", "report", "chat", "operation"}:
+            raise WorkspaceError("Unsupported workspace section")
+        with self._case_guard(user_id, session_id):
+            root = self.workspace_root(user_id, session_id, create=True)
+            snapshot = self.load_snapshot(user_id, session_id)
+            snapshot[section] = _safe_json(dict(value or {}))
+            snapshot["saved_at"] = _now()
+            self._write_snapshot(user_id, root / "snapshot.json", snapshot)
+            with self._connection() as connection:
+                connection.execute(
+                    "UPDATE case_sessions SET updated_at = ?, revision = revision + 1 "
+                    "WHERE id = ? AND user_id = ?",
+                    (_now(), session_id, user_id),
+                )
+            self._audit(user_id, session_id, reason, {"section": section})
+            return self.load_snapshot(user_id, session_id)
+
     def _save_snapshot_patch_unlocked(
         self,
         user_id: str,

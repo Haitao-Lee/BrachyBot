@@ -191,19 +191,29 @@ def _snapshot_from_seed_plan(serialized_plan, needle_geometry):
 def _current_planning_snapshot(agent):
     """Return the current manual snapshot, or the automatic baseline."""
     memory = agent.memory
-    manual_seeds = memory.retrieve("manual_seeds") or []
-    manual_needles = memory.retrieve("manual_needles") or []
-    if memory.retrieve("manual_plan_active") or manual_seeds or manual_needles:
+    raw_manual_seeds = memory.retrieve("manual_seeds")
+    raw_manual_needles = memory.retrieve("manual_needles")
+    manual_seeds = list(raw_manual_seeds) if raw_manual_seeds is not None else []
+    manual_needles = list(raw_manual_needles) if raw_manual_needles is not None else []
+    if (
+        memory.retrieve("manual_plan_active")
+        or len(manual_seeds) > 0
+        or len(manual_needles) > 0
+    ):
         return {"seeds": list(manual_seeds), "needles": list(manual_needles)}
     baseline = memory.retrieve("algorithm_plan_snapshot")
     if isinstance(baseline, dict):
+        baseline_seeds = baseline.get("seeds")
+        baseline_needles = baseline.get("needles")
         return {
-            "seeds": list(baseline.get("seeds") or []),
-            "needles": list(baseline.get("needles") or []),
+            "seeds": list(baseline_seeds) if baseline_seeds is not None else [],
+            "needles": list(baseline_needles) if baseline_needles is not None else [],
         }
+    serialized = memory.retrieve("seed_plan_serialized")
+    geometry = memory.retrieve("verified_needle_geometry")
     return _snapshot_from_seed_plan(
-        memory.retrieve("seed_plan_serialized") or [],
-        memory.retrieve("verified_needle_geometry") or {},
+        serialized if serialized is not None else [],
+        geometry if isinstance(geometry, dict) else {},
     )
 
 
@@ -1173,6 +1183,61 @@ def register_planning_routes(
                             "trajectory_id": trajectory_id,
                         })
 
+            # Manual edits are the authoritative current plan.  Falling back
+            # to seed_plan after a seed/needle delete made the deleted objects
+            # reappear in the Data Tree and viewers on the next refresh.
+            manual_plan_active = bool(agent.memory.retrieve("manual_plan_active"))
+            current_plan = _current_planning_snapshot(agent)
+            current_needles = current_plan.get("needles") or []
+            if manual_plan_active:
+                seeds = []
+                for index, row in enumerate(current_plan.get("seeds") or []):
+                    if not isinstance(row, dict):
+                        continue
+                    position = row.get("position")
+                    if position is None:
+                        position = row.get("pos")
+                    try:
+                        position_values = (
+                            np.asarray(position, dtype=np.float64).reshape(-1)[:3]
+                        )
+                    except (TypeError, ValueError):
+                        continue
+                    if position_values.size != 3 or not np.all(np.isfinite(position_values)):
+                        continue
+                    seeds.append({
+                        **row,
+                        "id": str(row.get("id") or f"seed_{index + 1}"),
+                        "pos": position_values.tolist(),
+                        "trajectory_id": str(
+                            row.get("trajectory_id")
+                            or row.get("needle_id")
+                            or ""
+                        ),
+                    })
+                trajectories_data = []
+                for index, row in enumerate(current_needles):
+                    if not isinstance(row, dict):
+                        continue
+                    points = row.get("points") or []
+                    trajectory_id = str(
+                        row.get("trajectory_id")
+                        or row.get("id")
+                        or f"traj_{index + 1}"
+                    )
+                    trajectories_data.append({
+                        "id": trajectory_id,
+                        "index": index,
+                        "entry": points[0] if len(points) >= 1 else None,
+                        "target": points[-1] if len(points) >= 2 else None,
+                        "seed_count": sum(
+                            1 for seed in seeds
+                            if str(seed.get("trajectory_id") or "") == trajectory_id
+                        ),
+                    })
+                total_seeds = len(seeds)
+                num_trajectories = len(current_needles)
+
             # Build DVH data
             dvh_data = dose_metrics.get("dvh_data", {})
 
@@ -1201,6 +1266,7 @@ def register_planning_routes(
                 "success": True,
                 "metrics": dose_metrics,
                 "seeds": seeds,
+                "needles": current_needles,
                 "trajectories": trajectories_data,
                 "total_seeds": total_seeds,
                 "num_trajectories": num_trajectories,

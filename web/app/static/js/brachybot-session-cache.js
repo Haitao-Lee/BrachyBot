@@ -93,6 +93,22 @@
         });
     }
 
+    function dbDeleteOne(db, key) {
+        return new Promise(function (resolve) {
+            var tx = db.transaction(STORE, 'readwrite');
+            var store = tx.objectStore(STORE);
+            var removed = 0;
+            var req = store.get(key);
+            req.onsuccess = function () {
+                removed = Number(req.result && req.result.size) || 0;
+                store.delete(key);
+            };
+            req.onerror = function () { resolve(0); };
+            tx.oncomplete = function () { resolve(removed); };
+            tx.onerror = function () { resolve(0); };
+        });
+    }
+
     function dbGetAll(db) {
         return new Promise(function (resolve) {
             var tx = db.transaction(STORE, 'readonly');
@@ -198,6 +214,13 @@
             var delta = await dbPut(db, [sessionId, ns, key], data);
             adjustRunningSize(delta);
             scheduleEviction();
+        },
+        invalidate: async function (sessionId, ns, key) {
+            var db = await openDB();
+            if (!db) return;
+            beginRunningSizeInitialization(db);
+            var deleted = await dbDeleteOne(db, [sessionId, ns, key]);
+            adjustRunningSize(-deleted);
         },
         invalidateSession: async function (sessionId) {
             var db = await openDB();

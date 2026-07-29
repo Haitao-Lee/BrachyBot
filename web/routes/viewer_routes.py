@@ -15,6 +15,7 @@ import SimpleITK as sitk
 from flask import Response, current_app, jsonify, request, send_from_directory, session as flask_session
 
 from web.auth import current_user
+from web.structure_service import build_effective_structures
 from agent_runtime.core import PlanningPhase
 
 try:
@@ -722,6 +723,20 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
                 logger.warning(f"OAR shape mismatch: {oar_array.shape} vs CT {shape}, resampling...")
                 oar_array = _resample_legacy_label_array(oar_array, ct_ref, shape)
 
+            effective = None
+            ctv_object_map = {}
+            oar_object_map = {}
+            if agent.memory.retrieve("structure_registry_initialized"):
+                effective = build_effective_structures(agent.memory)
+                ctv_array = effective.ctv_array
+                oar_array = effective.oar_array
+                for item in effective.structures:
+                    target_label = int(item["target_label"])
+                    if item["classification"] == "ctv":
+                        ctv_object_map[target_label] = str(item["object_id"])
+                    else:
+                        oar_object_map[target_label] = str(item["object_id"])
+
             # Build color LUT for all labels
             color_lut = {}
             if ctv_array is not None:
@@ -770,7 +785,11 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
             response.headers['X-OAR-Bytes-Per-Voxel'] = '2'
 
             # Send CTV label names from model (not hardcoded in frontend)
-            ctv_label_map = agent.memory.retrieve("ctv_label_map", {})
+            ctv_label_map = (
+                effective.ctv_label_map
+                if effective is not None
+                else agent.memory.retrieve("ctv_label_map", {})
+            )
             logger.info(f"CTV label map from memory: {ctv_label_map}")
             if ctv_label_map:
                 response.headers['X-CTV-Label-Map'] = _json.dumps({str(k): v for k, v in ctv_label_map.items()})
@@ -781,10 +800,21 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
                     response.headers['X-CTV-Label-Map'] = _json.dumps({"1": f"{ctv_name} tumor"})
                 else:
                     response.headers['X-CTV-Label-Map'] = _json.dumps({"1": "CTV"})
+            response.headers['X-CTV-Object-Map'] = _json.dumps({
+                str(key): value for key, value in ctv_object_map.items()
+            })
 
             # Also return organ metadata for data tree
-            organ_names = _server_support._oar_display_name_map(agent, oar_array)
-            organ_counts = agent.memory.retrieve("organ_counts", {}) or {}
+            organ_names = (
+                dict(effective.organ_names)
+                if effective is not None
+                else _server_support._oar_display_name_map(agent, oar_array)
+            )
+            organ_counts = (
+                dict(effective.organ_counts)
+                if effective is not None
+                else agent.memory.retrieve("organ_counts", {}) or {}
+            )
             # Precompute voxel counts in a single array pass (O(n)) rather
             # than np.sum(oar_array == lid) per label (O(n·k)).  With 57
             # TotalSegmentator labels and 8M voxels, the old per-label
@@ -813,6 +843,7 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
                         organ_meta[lid_int] = {
                             "name": organ_names.get(lid_int, f"OAR {lid_int}"),
                             "color": color_lut.get(lid_int, [200, 200, 200]),
+                            "object_id": oar_object_map.get(lid_int, f"structure:oar:{lid_int}"),
                             "voxels": int(
                                 organ_counts.get(lid_int)
                                 or _computed_counts.get(lid_int, 0)
@@ -823,6 +854,9 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
                 agent.memory.retrieve("oar_source", "") or ""
             )
             response.headers['X-CTV-Source'] = ctv_source
+            response.headers['X-Structure-Version'] = str(
+                int(agent.memory.retrieve("planning_version", 0) or 0)
+            )
 
             return response
         except Exception as e:
@@ -975,6 +1009,43 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
         agent = get_agent(_lightweight=True)
         if agent is None:
             return jsonify({"error": "Agent not available"}), 500
+
+        if agent.memory.retrieve("structure_registry_initialized"):
+            effective = build_effective_structures(agent.memory)
+            organs = {}
+            object_map = {}
+            for item in effective.structures:
+                if item["classification"] != "oar":
+                    continue
+                label = int(item["target_label"])
+                object_id = str(item["object_id"])
+                object_map[str(label)] = object_id
+                organs[str(label)] = {
+                    "name": str(item["name"]),
+                    "voxel_count": int(item["voxel_count"]),
+                    "object_id": object_id,
+                }
+            return jsonify({
+                "success": True,
+                "organs": organs,
+                "organ_names": {
+                    str(key): str(value)
+                    for key, value in effective.organ_names.items()
+                },
+                "organ_counts": {
+                    str(key): int(value)
+                    for key, value in effective.organ_counts.items()
+                },
+                "object_map": object_map,
+                "total_labels": len(organs),
+                "oar_source": "classified",
+                "oar_mask_provenance": str(
+                    agent.memory.retrieve("oar_mask_provenance", "") or ""
+                ),
+                "structure_version": int(
+                    agent.memory.retrieve("planning_version", 0) or 0
+                ),
+            })
 
         # Organ metadata is deliberately restored in the lightweight pass.
         # It is enough to paint the Data Tree immediately and must not be

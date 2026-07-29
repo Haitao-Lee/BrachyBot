@@ -1965,6 +1965,8 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
             if meta.get("ctv_source"):
                 self.memory.store("ctv_source", meta["ctv_source"])
             self.memory.store("label_grid_orientation", meta.get("label_grid_orientation") or "LPI")
+            from web.structure_service import replace_structure_source
+            replace_structure_source(self.memory, "ctv")
             logger.info(f"[STORE] ctv_segmentation: ctv_voxels={_cv}, ctv_volume_mm3={_cvm3}, tumor_type={tumor_type_used}")
         elif tool_name == "oar_segmentation":
             if "oar_array" in meta:
@@ -1994,6 +1996,8 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
                 if meta.get(_path_key):
                     self.memory.store(_path_key, meta[_path_key])
             self.memory.store("label_grid_orientation", meta.get("label_grid_orientation") or "LPI")
+            from web.structure_service import replace_structure_source
+            replace_structure_source(self.memory, "oar")
         elif tool_name == "dose_engine" and result.data is not None:
             self.memory.store("dose_distribution", result.data)
         elif tool_name == "planning_pipeline":

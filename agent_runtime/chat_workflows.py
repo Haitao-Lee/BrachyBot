@@ -2076,6 +2076,8 @@ class ChatWorkflowMixin:
             # upload must clear any previous model multi-label/OAR payload.
             self.memory.store("ctv_full_labels", result.metadata.get("full_label_array"))
             self.memory.store("ctv_embedded_oar_array", result.metadata.get("oar_array"))
+            from web.structure_service import replace_structure_source
+            replace_structure_source(self.memory, "ctv")
             return result.message
         self.memory.store("last_segmentation_success", False)
         return f"CTV segmentation failed: {result.error}"
@@ -2118,6 +2120,8 @@ class ChatWorkflowMixin:
             self.memory.store("label_grid_orientation", result.metadata.get("label_grid_orientation") or "LPI")
             self.memory.store("oar_segmented", True)
             self.memory.store("oar_is_full", True)
+            from web.structure_service import replace_structure_source
+            replace_structure_source(self.memory, "oar")
             return result.message
         self.memory.store("last_segmentation_success", False)
         return f"OAR segmentation failed: {result.error}"
