@@ -975,6 +975,41 @@ function getSliceCanvas(axis) {
 const _doseLastRendered = { axial: -1, sagittal: -1, coronal: -1 };
 let _doseOverlayRenderEpoch = 0;
 
+// Keep the latest desired slice and bounded retry state. A cancelled or
+// delayed slice request must not leave a permanently blank dose layer.
+const _doseDesiredSlice = { axial: null, sagittal: null, coronal: null };
+const _doseSliceRetryTimers = new Map();
+const _doseSliceRetryCounts = new Map();
+
+function _doseSliceRetryKey(axis, sliceIndex) {
+    return `${axis}_${sliceIndex}`;
+}
+
+function _clearDoseSliceRetry(axis, sliceIndex) {
+    const key = _doseSliceRetryKey(axis, sliceIndex);
+    const timer = _doseSliceRetryTimers.get(key);
+    if (timer) clearTimeout(timer);
+    _doseSliceRetryTimers.delete(key);
+    _doseSliceRetryCounts.delete(key);
+}
+
+function _scheduleDoseSliceRetry(axis, sliceIndex) {
+    if (!state.doseOverlay || !state.doseOverlay.visible) return;
+    if (_doseDesiredSlice[axis] !== sliceIndex || state.slices[axis] !== sliceIndex) return;
+    const key = _doseSliceRetryKey(axis, sliceIndex);
+    const count = Number(_doseSliceRetryCounts.get(key) || 0);
+    if (count >= 3 || _doseSliceRetryTimers.has(key)) return;
+    _doseSliceRetryCounts.set(key, count + 1);
+    const delay = [80, 180, 400][count] || 400;
+    const timer = setTimeout(() => {
+        _doseSliceRetryTimers.delete(key);
+        if (!state.doseOverlay || !state.doseOverlay.visible) return;
+        if (_doseDesiredSlice[axis] !== sliceIndex || state.slices[axis] !== sliceIndex) return;
+        renderDoseForCurrentSlice(axis, sliceIndex);
+    }, delay);
+    _doseSliceRetryTimers.set(key, timer);
+}
+
 // Dose pixels are cached by slice, but the pixels' appearance also depends on
 // the color scale and the backing canvas.  Slice index alone is therefore not
 // a valid render cache key after a scale change, layout resize, or session
@@ -982,6 +1017,9 @@ let _doseOverlayRenderEpoch = 0;
 function invalidateDoseOverlayRenderCache() {
     _doseOverlayRenderEpoch += 1;
     Object.keys(_doseLastRendered).forEach(axis => { _doseLastRendered[axis] = -1; });
+    _doseSliceRetryTimers.forEach(timer => clearTimeout(timer));
+    _doseSliceRetryTimers.clear();
+    _doseSliceRetryCounts.clear();
     ['Axial', 'Sagittal', 'Coronal'].forEach(name => {
         const canvas = document.getElementById('doseOverlayCanvas' + name);
         if (canvas) canvas._doseRenderEpoch = -1;
@@ -1022,6 +1060,7 @@ function _syncLayerToSliceCanvas(axis, layerCanvas, zIndex) {
 
 function renderDoseForCurrentSlice(axis, sliceIndex) {
     if (!state.doseOverlay || !state.doseOverlay.visible) return;
+    _doseDesiredSlice[axis] = sliceIndex;
     const sliceCanvas = getSliceCanvas(axis);
     if (!sliceCanvas) return;
     const doseCanvasId = 'doseOverlayCanvas' + capitalize(axis);
@@ -1046,22 +1085,33 @@ function renderDoseForCurrentSlice(axis, sliceIndex) {
             _doseLastRendered[axis] = sliceIndex;
             doseCanvas._doseRenderEpoch = _doseOverlayRenderEpoch;
         }
+        _clearDoseSliceRetry(axis, sliceIndex);
     } else {
         // Cache miss — show nearest cached slice as placeholder, then
         // fetch the actual data from the server.
         _doseLastRendered[axis] = -1; // mark canvas as stale
-        try {
-            const ctx = doseCanvas.getContext('2d');
-            ctx.clearRect(0, 0, doseCanvas.width, doseCanvas.height);
-        } catch (_) {}
+        // Preserve the last painted layer until the requested slice arrives.
+        // Clearing on every cache miss made a cancelled/202 response look
+        // like the dose had disappeared after a normal slice drag.
+        doseCanvas.dataset.dosePending = 'true';
         const renderEpoch = _doseOverlayRenderEpoch;
         fetchDoseOverlaySlice(axis, sliceIndex).then(sliceData => {
-            if (sliceData && state.slices[axis] === sliceIndex && renderEpoch === _doseOverlayRenderEpoch) {
+            const isCurrentRequest = state.doseOverlay
+                && state.doseOverlay.visible
+                && _doseDesiredSlice[axis] === sliceIndex
+                && state.slices[axis] === sliceIndex
+                && renderEpoch === _doseOverlayRenderEpoch
+                && doseCanvas.isConnected;
+            if (sliceData && isCurrentRequest) {
                 try {
                     renderDoseOverlayOnLayer(doseCanvas, axis, sliceIndex, sliceData);
                     _doseLastRendered[axis] = sliceIndex;
                     doseCanvas._doseRenderEpoch = _doseOverlayRenderEpoch;
+                    doseCanvas.dataset.dosePending = 'false';
+                    _clearDoseSliceRetry(axis, sliceIndex);
                 } catch (e) { console.warn(`[dose] render error after fetch:`, e); }
+            } else if (!sliceData && isCurrentRequest) {
+                _scheduleDoseSliceRetry(axis, sliceIndex);
             } else {
                 uiDebugLog(`[dose] fetch callback skipped: sliceData=${!!sliceData}, axis=${axis}, requested=${sliceIndex}, current=${state.slices[axis]}`);
             }

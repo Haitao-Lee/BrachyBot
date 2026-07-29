@@ -9651,3 +9651,107 @@ until this Session acceptance is complete.
 - Regression evidence: `tests/test_workspace_frontend.py` **74 passed**;
   Full suite: **355 passed, 2 skipped, 3 warnings**;
   modified JS passed `node --check`; `git diff --check` passed.
+
+## 2026-07-29 - Restart hydration, planning artifacts, and chat finalization
+
+This follow-up addresses the seven restart/session symptoms reported after a
+completed plan. The goal was to repair the data-plane ownership and restore
+ordering, not to hide missing objects with a second viewer-only rendering path.
+
+### 1. Cold restart versus session switch
+
+The cold-start path scheduled background restoration in `loadSessions()` and
+the later `init()` path scheduled it again. Both jobs could clear and rebuild
+the same CT, labels, planning arrays, meshes, and report state. A normal
+session switch happened to have only one restore job, which explains why it
+looked much faster and more complete.
+
+The shared scheduler now records the active session and restore generation.
+Startup and switching deduplicate the same `(session, generation)` restore,
+and stale callbacks stop before publishing into a newer session. The fast
+JSON snapshot still paints chat and shell state first; CT, labels, planning
+arrays, meshes, report figures, and presentation state hydrate in the
+background. A failure clears the spinner and leaves an explicit recoverable
+state instead of an infinite `loading source` indication.
+
+### 2. Planning children, dose, and Surgical Guide
+
+The planning endpoint can legitimately return `202` while the server is
+decoding durable NPY/JSON sidecars after a restart. The frontend previously
+treated that response as an empty plan. `refreshPlanningUI()` now polls the
+case-owned endpoint with bounded backoff during background restoration. Once
+authoritative data arrives it reconciles trajectories, needles, seeds, dose,
+DVH, contours/iso-surfaces, and guide metadata into the Data Tree and repaints
+all three 2D slices. Guide restoration/generation starts independently from
+slow mesh decoding and is never allowed to overwrite a newer session.
+
+This keeps the Data Tree as the source of viewer visibility and prevents
+`Dose Surface` from reporting a false absence merely because the first cold
+restore response was still pending.
+
+### 3. Clinical Evaluation and report persistence
+
+Clinical evaluation was previously refreshed only on the slow mesh completion
+branch. It is now rebuilt as soon as planning metrics and label data are
+available, while mesh work remains background work. Report auto-fill is also
+started independently from mesh loading. Large report figures retain the fast
+IndexedDB path, but new captures are additionally queued to the authenticated,
+case-owned screenshot endpoint. Restore retries the IndexedDB startup race and
+can fall back to the server-owned URL, so a browser restart no longer makes
+the report body or figures depend on a warm browser cache.
+
+### 4. Monitor edge state
+
+The monitor halo remains a single fixed, non-interactive viewport layer. This
+follow-up strengthens the fallback and theme-token shadows substantially while
+keeping `pointer-events: none`, no layout footprint, no idle button animation,
+and no effect when the overlay has its `hidden` attribute. The glow is therefore
+visible around the whole UI only during Monitor mode and cannot block a viewer
+or session operation.
+
+### 5. Duplicate execution trace after reconnect
+
+The live SSE writer and detached task finalizer can finish in either order.
+The finalizer now checks authenticated task time, user text, existing trace,
+and an existing bot response before appending durable rows. The restore renderer
+also removes an older incomplete duplicate when a complete turn with the same
+workflow fingerprint already exists. Legitimate repeated questions at a new
+time remain separate. Internal `workspace_checkpoint` steps are filtered from
+the user-facing trace.
+
+### 6. Tool-only dose questions
+
+Some low-risk tool-only turns reached a terminal state without model prose and
+were rendered as `Tools executed. Check the execution trace above for results.`
+For dose-distribution questions only, the finalizer now reads the current
+case-owned `dose_metrics`, waits briefly for an in-progress planning result,
+normalizes fractional V100/V150/V200 values to percentages, and emits a
+localized metric summary. This is a narrow data-backed fallback; it does not
+invent answers for general questions and reports that dose data is unavailable
+when no result exists.
+
+### 7. Tumor Type capability status
+
+The BiomedParse v2 adapter, site prompts, spatial restoration, Data Tree
+registration, and viewer routes are present in the codebase. However, both the
+current local environment and the checked remote deployment lack the official
+BiomedParse runtime/checkpoint paths (`BIOMEDPARSE_ROOT` and
+`BIOMEDPARSE_V2_CHECKPOINT`). Therefore non-pancreatic BiomedParse options are
+correctly red/unavailable in this deployment; marking them green would produce
+a button that fails at inference time. The selector uses only two option
+colors: green means the registered route is callable in the current runtime,
+red means it is not. The explanatory status text gives the concrete missing
+runtime reason. The validated pancreatic nnU-Net route remains the only green
+route when its local weights are present. This is a deployment limitation, not
+a claim that BiomedParse has no theoretical capability.
+
+### Verification
+
+- Full Python suite: **355 passed, 2 skipped, 3 warnings**.
+- Modified JavaScript modules passed `node --check`.
+- `web/routes/planning_routes.py` passed `py_compile` with the incomplete
+  ambient `PYTHONHOME`/`PYTHONPATH` cleared.
+- `git diff --check` passed.
+- The three warnings are third-party SimpleITK SWIG deprecations.
+- Clinical segmentation quality for BiomedParse remains unverified without
+  the official runtime, checkpoint, and representative test cases.

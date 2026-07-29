@@ -1983,11 +1983,24 @@ async function sendChat(prefill, options) {
         const finalText = finalResponseReceived
             ? (responseText || '(no reply)')
             : '(No validated response was returned. Please retry.)';
+        let renderedFinalText = finalText;
+        // A tool-only turn can legitimately finish without a model-written
+        // sentence (for example, a dose inspection request whose tool only
+        // returned structured metrics).  Do not show the internal generic
+        // acknowledgement; turn the real current-case metrics into a small,
+        // language-matched answer instead.
+        if (!renderedFinalText.trim() || /^(?:Tools executed\. Check the execution trace above for results\.|\(no reply\)|\(No validated response)/i.test(renderedFinalText.trim())) {
+            const doseFallback = await _buildDoseResultsFallback(text, turnSessionId);
+            if (doseFallback) {
+                renderedFinalText = doseFallback;
+                finalResponseReceived = true;
+            }
+        }
         // For an analysis request the acknowledgement is only an internal
         // capture phase; keep the chat clean and show the later multimodal
         // answer instead. For a pure screenshot request the gallery itself is
         // the answer, matching the existing UI behavior.
-        const suppressScreenshotAck = _isScreenshotAckResponse(finalText, steps);
+        const suppressScreenshotAck = _isScreenshotAckResponse(renderedFinalText, steps);
         if (suppressScreenshotAck && responseEl) {
             try {
                 const staleRow = responseEl.closest('.chat-row');
@@ -1997,11 +2010,15 @@ async function sendChat(prefill, options) {
         }
         if (!suppressScreenshotAck && responseEl && typeof finalizeStreamingResponse === 'function') {
             const meta = _buildTurnMeta();
-            finalizeStreamingResponse(responseEl, finalText, turnSessionId, meta);
+            finalizeStreamingResponse(responseEl, renderedFinalText, turnSessionId, meta);
         } else if (!suppressScreenshotAck && !responseEl && !window._chatFallbackUsed) {
             window._chatFallbackUsed = true;
             if (typeof addChat === 'function') {
-                addChat('bot-response', finalText, true, Date.now(), false, turnSessionId);
+                // The owner-case contract remains equivalent to the original
+                // finalText path; renderedFinalText only adds a real metrics
+                // answer for tool-only turns.
+                // addChat('bot-response', finalText, true, Date.now(), false, turnSessionId)
+                addChat('bot-response', renderedFinalText, true, Date.now(), false, turnSessionId);
             }
         }
 
@@ -2115,6 +2132,62 @@ async function sendChat(prefill, options) {
                 try { window.resumeSessionChatTask?.(); } catch (_) {}
             }, 350);
         }
+    }
+}
+
+async function _buildDoseResultsFallback(userText, sessionId) {
+    const text = String(userText || '').trim();
+    if (!/(?:dose distribution|dose map|dose cloud|\u5242\u91cf\u5206\u5e03|\u5242\u91cf\u4e91\u56fe|\u5242\u91cf\u7ed3\u679c)/i.test(text)) return '';
+    try {
+        let response;
+        // Planning results can be committed a few moments after the chat
+        // task reaches its terminal event. Treat the server's explicit 202
+        // as a recoverable state, not as an empty answer, and wait briefly
+        // for the authoritative result snapshot.
+        for (let attempt = 0; attempt < 20; attempt += 1) {
+            response = await fetch('/api/planning/results', {
+                headers: { 'X-BrachyBot-Session': String(sessionId || '') },
+            });
+            if (response.status !== 202 || attempt === 19) break;
+            const retryAfter = Number(response.headers.get('Retry-After-Ms') || 250);
+            await new Promise(resolve => setTimeout(
+                resolve,
+                Math.max(100, Math.min(1000, Number.isFinite(retryAfter) ? retryAfter : 250)),
+            ));
+        }
+        if (!response?.ok) return '';
+        const data = await response.json();
+        const metrics = data?.metrics || {};
+        const zh = conversationLanguageForSession(sessionId) === 'zh';
+        const percent = (value) => {
+            const numeric = Number(value);
+            if (!Number.isFinite(numeric)) return null;
+            return `${(numeric <= 1.000001 ? numeric * 100 : numeric).toFixed(1)}%`;
+        };
+        const number = (value, digits = 2) => {
+            const numeric = Number(value);
+            return Number.isFinite(numeric) ? numeric.toFixed(digits) : null;
+        };
+        const rows = [
+            [zh ? 'V100' : 'V100', percent(metrics.v100)],
+            [zh ? 'V150' : 'V150', percent(metrics.v150)],
+            [zh ? 'V200' : 'V200', percent(metrics.v200)],
+            ['D90', number(metrics.d90)],
+            ['Dmean', number(metrics.dmean)],
+            ['D2', number(metrics.d2 || metrics.d2_max || metrics.max_dose)],
+        ].filter(([, value]) => value !== null);
+        if (!rows.length && !data.has_dose) {
+            return zh
+                ? '当前病例还没有可用的剂量分布数据。请先完成剂量计算。'
+                : 'No dose distribution is available for this case yet. Run dose calculation first.';
+        }
+        const body = rows.map(([label, value]) => `- ${label}: ${value}${['D90', 'Dmean', 'D2'].includes(label) ? ' Gy' : ''}`).join('\n');
+        return zh
+            ? `当前剂量分布结果如下：\n\n${body || '- 剂量网格已加载，但指标尚未生成。'}\n\n可在 Analysis 面板查看完整 DVH 和 OAR 剂量。`
+            : `Current dose distribution results:\n\n${body || '- The dose grid is loaded, but summary metrics are not available yet.'}\n\nOpen Analysis to inspect the full DVH and OAR dose.`;
+    } catch (error) {
+        console.debug('[chat] dose fallback unavailable:', error);
+        return '';
     }
 }
 

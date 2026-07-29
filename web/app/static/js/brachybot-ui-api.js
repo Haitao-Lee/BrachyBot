@@ -2255,6 +2255,13 @@ async function _restoreActiveSessionWorkspace(options = {}) {
     })();
 
     const storedKeys = new Set(Array.isArray(status.stored_keys) ? status.stored_keys : []);
+    // On a fresh server process the lightweight status endpoint can only see
+    // the metadata shell while the Agent is decoding its durable sidecars.
+    // The authenticated workspace snapshot already contains the authoritative
+    // planning-result keys, so use both sources when deciding whether the
+    // planning restore must run. Otherwise restart recovery restores CT/labels
+    // but silently skips seeds, dose, DVH, and guide reconstruction.
+    Object.keys(workspace?.agent?.planning_results || {}).forEach(key => storedKeys.add(String(key)));
     const hasPlanning = [
         'dose_metrics', 'dose_distribution', 'dose_distribution_gy',
         'seed_plan', 'seed_plan_serialized', 'manual_planning_preview',
@@ -2288,6 +2295,8 @@ async function _restoreActiveSessionWorkspace(options = {}) {
             preserveViewerState: true,
             skipLabelLoad: true,
             backgroundRestore: options.background === true,
+            retryPending: true,
+            autoGenerateGuide: true,
         })).finally(() => recordStage('restore.planning_dvh', planningStartedAt))
         : Promise.resolve();
 
@@ -2567,7 +2576,9 @@ async function init() {
     // runs in the background.  The session snapshot has already painted the
     // durable chat/control-plane state above, so waiting here only delays input.
     const authoritativeWorkspace = window._activeWorkspaceSnapshot || null;
-    if (_workspaceNeedsClinicalRestore(authoritativeWorkspace, _statusData)) {
+    const restoreAlreadyScheduled = String(window.__workspaceRestoreScheduledSessionId || '') === String(activeSessionId || '')
+        || String(window.__workspaceRestoreCompletedSessionId || '') === String(activeSessionId || '');
+    if (_workspaceNeedsClinicalRestore(authoritativeWorkspace, _statusData) && !restoreAlreadyScheduled) {
         void restoreActiveSessionWorkspace({ status: _statusData, clearReport: true, background: true })
             .catch(error => {
                 console.warn('Active session workspace restore failed:', error);

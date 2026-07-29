@@ -1559,14 +1559,17 @@ body.monitor-active::after {
     box-sizing: border-box;
     /* Keep a plain-color fallback for embedded clinical browsers that do not
        implement color-mix yet. */
-    border: 2px solid rgba(79, 124, 255, 0.30);
-    border-color: color-mix(in srgb, var(--primary, #4f7cff) 36%, transparent);
+    border: 3px solid rgba(79, 124, 255, 0.72);
+    border-color: color-mix(in srgb, var(--primary, #4f7cff) 78%, transparent);
+    box-shadow: 0 0 48px rgba(79, 124, 255, 0.30) inset;
     box-shadow:
-        0 0 20px rgba(79, 124, 255, 0.12) inset,
-        0 0 34px rgba(79, 124, 255, 0.08) inset;
+        0 0 48px rgba(79, 124, 255, 0.34) inset,
+        0 0 86px rgba(79, 124, 255, 0.20) inset,
+        0 0 28px rgba(79, 124, 255, 0.22);
     box-shadow:
-        0 0 20px color-mix(in srgb, var(--primary, #4f7cff) 16%, transparent) inset,
-        0 0 34px color-mix(in srgb, var(--primary, #4f7cff) 12%, transparent) inset;
+        0 0 48px color-mix(in srgb, var(--primary, #4f7cff) 42%, transparent) inset,
+        0 0 86px color-mix(in srgb, var(--primary, #4f7cff) 28%, transparent) inset,
+        0 0 28px color-mix(in srgb, var(--primary, #4f7cff) 26%, transparent);
     will-change: opacity, box-shadow;
     animation: monitor-edge-breathe 2.8s ease-in-out infinite;
 }
@@ -1597,7 +1600,10 @@ body.monitor-active .chat-avatar.bot-avatar {
     font-size: 0.62rem;
     letter-spacing: 0.02em;
     white-space: nowrap;
-    animation: monitor-status-breathe 2.2s ease-in-out infinite;
+    /* The global edge layer communicates the active mode. Keep this compact
+       status pill static so the Monitor control itself never appears to be
+       the source of the breathing animation. */
+    animation: none;
 }
 .monitor-status[hidden] {
     display: none !important;
@@ -1629,8 +1635,18 @@ body.monitor-active .chat-avatar.bot-avatar {
     50% { opacity: 1; }
 }
 @keyframes monitor-edge-breathe {
-    0%, 100% { opacity: 0.42; box-shadow: 0 0 14px rgba(79, 124, 255, 0.08) inset; }
-    50% { opacity: 0.9; box-shadow: 0 0 24px rgba(79, 124, 255, 0.22) inset; }
+    0%, 100% {
+        opacity: 0.84;
+        box-shadow: 0 0 48px color-mix(in srgb, var(--primary, #4f7cff) 36%, transparent) inset,
+                    0 0 86px color-mix(in srgb, var(--primary, #4f7cff) 22%, transparent) inset,
+                    0 0 26px color-mix(in srgb, var(--primary, #4f7cff) 20%, transparent);
+    }
+    50% {
+        opacity: 1;
+        box-shadow: 0 0 84px color-mix(in srgb, var(--primary, #4f7cff) 72%, transparent) inset,
+                    0 0 144px color-mix(in srgb, var(--primary, #4f7cff) 42%, transparent) inset,
+                    0 0 38px color-mix(in srgb, var(--primary, #4f7cff) 36%, transparent);
+    }
 }
 @keyframes monitor-avatar-breathe {
     0%, 100% { box-shadow: var(--inset-top), 0 0 0 0 rgba(79, 124, 255, 0.18); }
