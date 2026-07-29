@@ -9800,6 +9800,13 @@ the first inference. A remote isolated-worker smoke test completed model
 construction, checkpoint loading, CUDA transfer, and inference on a synthetic
 3D volume, returning the expected output shape and confidence metadata.
 
+Remote acceptance also exposed a virtual-environment discovery defect:
+resolving `.venv/bin/python` followed its symlink to `/usr/bin/python3.10` and
+silently bypassed the isolated environment. Runtime discovery now preserves the
+virtual-environment entrypoint path. The deployed capability probe consequently
+reports the intended `.venv/bin/python`, no missing modules, and
+`available=true`.
+
 This establishes the technical call chain, not clinical contour quality.
 Non-pancreatic BiomedParse routes remain experimental/research-only until
 representative cases are reviewed by qualified clinicians. The validated
@@ -9813,5 +9820,7 @@ pancreatic nnU-Net route remains unchanged and does not use this fallback.
 - Remote smoke validation exercised the real official checkpoint and CUDA
   runtime; the empty synthetic mask was expected because the input contained
   no tumor anatomy.
+- Remote post-sync contract, BiomedParse, and screenshot/trace tests:
+  **22 passed, 3 third-party warnings**.
 - Model binaries and tokenizer assets remain ignored deployment artifacts and
   are not committed to Git.
