@@ -136,7 +136,7 @@ def test_workspace_transitions_publish_measurable_first_paint_and_restore_stages
     assert "restore.report_and_presentation" in ui_api
     assert "restore.fully_interactive" in ui_api
     assert "brachybot-workspace.js?v=16" in index
-    assert "brachybot-ui-api.js?v=24" in index
+    assert "brachybot-ui-api.js?v=25" in index
 
 
 def test_workspace_fetch_preserves_external_transition_abort_semantics():
@@ -986,3 +986,20 @@ def test_monitor_edge_is_a_top_level_non_interactive_layer_and_tumor_colors_are_
     assert "optionCallable ? '#4ade80' : '#fb7185'" in ui_api
     assert 'option[data-callable="true"]' in panel_css
     assert 'option[data-callable="false"]' in panel_css
+
+
+def test_monitor_and_guide_controls_have_explicit_runtime_fallbacks():
+    """The visual affordances must survive stale/native browser rendering."""
+    index = read("web/app/index.html")
+    status_css = read("web/app/static/css/brachybot-chat-status.css")
+    theme_css = read("web/app/static/css/brachybot-theme-layout.css")
+    guide = read("web/app/static/js/brachybot-surgical-guide.js")
+    ui_api = read("web/app/static/js/brachybot-ui-api.js")
+
+    assert "inset: 6px" in status_css
+    assert "rgba(79, 124, 255, 0.30)" in status_css
+    assert "color-scheme: dark" in theme_css
+    assert ".guide-parameter-grid select.is-empty" in theme_css
+    assert "No planned needles available" in guide
+    assert "capability === 'loading' && selected?.value === 'nnunet_pancreatic'" in ui_api
+    assert "_syncTumorTypeSelectorAppearance();" in ui_api

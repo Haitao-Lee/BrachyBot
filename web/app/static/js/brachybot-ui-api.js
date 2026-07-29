@@ -1118,14 +1118,21 @@ function _syncTumorTypeSelectorAppearance() {
     // The user-facing distinction is operational availability, not the
     // research/verified maturity label. Experimental BiomedParse routes are
     // green when callable; missing runtimes and disabled routes are red.
-    const callable = selected?.dataset?.callable === 'true' || capability === 'verified';
+    const callable = selected?.dataset?.callable === 'true'
+        || capability === 'verified'
+        // The validated pancreatic route gets an immediate green bootstrap
+        // state; the async probe can still downgrade it if this runtime is
+        // missing the model resource.
+        || (capability === 'loading' && selected?.value === 'nnunet_pancreatic');
     ['available', 'unavailable', 'verified', 'experimental', 'disabled'].forEach(name => {
         select.classList.remove(`tumor-type-${name}`);
     });
     select.classList.add(callable ? 'tumor-type-available' : 'tumor-type-unavailable');
     Array.from(select.options).forEach(option => {
         const stateName = option.dataset.capabilityState || 'disabled';
-        const optionCallable = option.dataset.callable === 'true' || stateName === 'verified';
+        const optionCallable = option.dataset.callable === 'true'
+            || stateName === 'verified'
+            || (stateName === 'loading' && option.value === 'nnunet_pancreatic');
         option.style.color = optionCallable ? '#4ade80' : '#fb7185';
         option.style.fontWeight = optionCallable ? '600' : '500';
         option.title = option.dataset.capabilityReason || '';
@@ -1161,6 +1168,10 @@ function _syncTumorTypeSelectorAppearance() {
 async function refreshTumorTypeAvailability() {
     const select = document.getElementById('ctvModelSelect');
     if (!select) return;
+    // Paint the deterministic two-state fallback before the asynchronous
+    // capability probe resolves, so startup never exposes an unstyled third
+    // state in the native menu.
+    _syncTumorTypeSelectorAppearance();
     try {
         // Include the optional research catalog so a configured BiomedParse
         // runtime can mark the corresponding tumor type as actionable. The

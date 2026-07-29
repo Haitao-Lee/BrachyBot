@@ -9630,3 +9630,23 @@ until this Session acceptance is complete.
   registered route is callable (including experimental BiomedParse), red when
   it is unavailable. Maturity and clinical-validation details remain in the
   explanatory status text, not as a third dropdown color.
+
+### 2026-07-29 interaction polish verification
+
+- The Monitor edge now uses a plain `rgba` fallback before the theme-token
+  `color-mix` declaration, a viewport inset, and compositor hints. This keeps
+  the single top-level glow visible in embedded Chromium builds that do not
+  support `color-mix`; the hidden attribute still disables it completely when
+  Monitor is inactive.
+- The Puncture Guide parameter panel now owns its dark surface and
+  `color-scheme`, forces native empty/multiple selects to use workspace
+  tokens, and renders an explicit `No planned needles available` empty state.
+  The needle/version controls use a vertical layout so the native grey empty
+  surface is not mistaken for an unresponsive control.
+- Tumor Type applies the callable/unavailable colors before the asynchronous
+  capability probe resolves. The validated pancreatic route receives a
+  provisional green state and can still be downgraded by the runtime probe;
+  all other routes remain red until the server reports a callable route.
+  Cache-busting versions were incremented for the modified CSS and JS assets.
+- Regression evidence: `tests/test_workspace_frontend.py` **74 passed**;
+  modified JS passed `node --check`; `git diff --check` passed.
