@@ -1015,8 +1015,8 @@ function renderSliceFromVolume(axis, sliceIndex) {
     const isLabelOnly = displayMode === 'label';
     const showOverlay = (ctvLabelData || oarLabelData) &&
                         (displayMode === 'overlay' || isLabelOnly) &&
-                        ((dataTreeState.ctv.visible && state.viewerSettings.showCTV) ||
-                         (dataTreeState.oar.visible && state.viewerSettings.showOAR));
+                        ((isDataTreeNodeVisible2D(dataTreeState.ctv) && state.viewerSettings.showCTV) ||
+                         (isDataTreeNodeVisible2D(dataTreeState.oar) && state.viewerSettings.showOAR));
     const labelSliceSize = Y * X;
     const organOpacities = showOverlay ? (() => { const m = {}; dataTreeState.organs.forEach(o => { m[o.labelId] = o.opacity; }); return m; })() : {};
     const thresholdRaw = state.viewerSettings.threshold;
@@ -1057,11 +1057,11 @@ function renderSliceFromVolume(axis, sliceIndex) {
                 let oR = 0, oG = 0, oB = 0, oA = 0;
 
                 // OAR overlay
-                if (dataTreeState.oar.visible && state.viewerSettings.showOAR && oarLabelData && oarLabelData.length > flatIdx) {
+                if (isDataTreeNodeVisible2D(dataTreeState.oar) && state.viewerSettings.showOAR && oarLabelData && oarLabelData.length > flatIdx) {
                     const oarVal = oarLabelData[flatIdx];
                     if (oarVal > 0) {
                         const visible = !dataTreeState.organs.length ||
-                                        dataTreeState.organs.some(o => o.labelId === oarVal && o.visible);
+                                        dataTreeState.organs.some(o => o.labelId === oarVal && isDataTreeNodeVisible2D(o));
                         if (visible) {
                             const color = labelColorLUT[oarVal] || [200, 200, 200];
                             const opacity = organOpacities[oarVal] !== undefined ? organOpacities[oarVal] : 0.5;
@@ -1072,13 +1072,13 @@ function renderSliceFromVolume(axis, sliceIndex) {
                 }
 
                 // CTV overlay (only if no OAR at this pixel)
-                if (oA === 0 && dataTreeState.ctv.visible && state.viewerSettings.showCTV && ctvLabelData && ctvLabelData.length > flatIdx) {
+                if (oA === 0 && isDataTreeNodeVisible2D(dataTreeState.ctv) && state.viewerSettings.showCTV && ctvLabelData && ctvLabelData.length > flatIdx) {
                     const ctvVal = ctvLabelData[flatIdx];
                     if (ctvVal > 0) {
                         // Use per-label color from LUT
                         const color = labelColorLUT[ctvVal] || [220, 160, 210];
                             const labelState = dataTreeState.ctvLabels?.[`ctv_${ctvVal}`];
-                            const labelVisible = labelState ? labelState.visible !== false : true;
+                            const labelVisible = labelState ? isDataTreeNodeVisible2D(labelState) : true;
                             if (labelVisible) {
                                 const opacity = dataTreeState.ctv.labelOpacities?.[ctvVal]
                                     ?? labelState?.opacity
@@ -1817,8 +1817,24 @@ function ensureDataTreeNodeMetadata(node, type, parentId = null) {
     node.contextActions = Array.isArray(node.contextActions)
         ? node.contextActions
         : ['toggle_visibility', 'set_opacity', 'set_color', 'reconstruct3d'];
+    // `visible` remains the backward-compatible master switch.  View-specific
+    // state lets an operator keep the same real object in the 2D MPR views,
+    // the 3D scene, or both without changing its colour/opacity contract.
+    node.visible2D = node.visible2D !== false;
+    node.visible3D = node.visible3D !== false;
     return node;
 }
+
+function isDataTreeNodeVisible2D(node) {
+    return !!node && node.visible !== false && node.visible2D !== false;
+}
+
+function isDataTreeNodeVisible3D(node) {
+    return !!node && node.visible !== false && node.visible3D !== false;
+}
+
+window.isDataTreeNodeVisible2D = isDataTreeNodeVisible2D;
+window.isDataTreeNodeVisible3D = isDataTreeNodeVisible3D;
 
 function reconcileDataTreeVisualNodes() {
     const roots = [
@@ -1851,7 +1867,16 @@ function reconcileDataTreeVisualNodes() {
     dataTreeState.planning.doseOverlay = overlay
         ? ensureDataTreeNodeMetadata({
             ...(dataTreeState.planning.doseOverlay || {}), id: 'dose_overlay',
-            label: 'Dose overlay (2D)', visible: overlay.visible !== false,
+            label: 'Dose overlay (2D)',
+            // state.doseOverlay.visible is the active canvas switch. Preserve
+            // the Data Tree master switch so a 2D-only hide is not mistaken
+            // for deletion of the underlying dose result at the next refresh.
+            visible: dataTreeState.planning.doseOverlay?.visible !== false,
+            visible2D: dataTreeState.planning.doseOverlay?.visible2D
+                ?? overlay.visible2D ?? overlay.visible !== false,
+            // The dose grid has no standalone 3D mesh; dose iso-surfaces are
+            // the 3D representation and keep their own node state.
+            visible3D: false,
             opacity: Number(overlay.opacity ?? state.doseOpacity ?? 0.4),
             color: '#f59e0b', loaded: true,
         }, 'dose_contour_2d', 'planning')
@@ -1896,6 +1921,8 @@ function getDataTreeNodeSnapshot() {
             loading: !!node.loading,
             error: node.error || null,
             visible: node.visible !== false,
+            visible2D: node.visible2D !== false,
+            visible3D: node.visible3D !== false,
             color: node.color || null,
             opacity: Number.isFinite(Number(node.opacity)) ? Number(node.opacity) : 1,
             label: node.label || node.name || node.id,
@@ -1911,7 +1938,7 @@ function getDataTreeNodeSnapshot() {
         ...(dataTreeState.planning?.seeds || []),
         ...(dataTreeState.planning?.needles || []),
         ...(dataTreeState.planning?.doseLevels || []),
-        ...(dataTreeState.planning?.meshes || []),
+        ...(dataTreeState.planning?.meshes || []).filter(node => _findDataTreeNode(node.id) === node),
         ...(dataTreeState.annotations || []),
         ...(dataTreeState.exportArtifacts || [])].forEach(add);
     return nodes;
@@ -2153,6 +2180,8 @@ function updateOrganList(organData, source = '') {
                 label: o.label,
                 objectId: o.objectId,
                 visible: o.visible,
+                visible2D: o.visible2D,
+                visible3D: o.visible3D,
                 opacity: o.opacity,
                 category: o.category,
                 color: o.color,
@@ -2194,6 +2223,8 @@ function updateOrganList(organData, source = '') {
             // Start all OARs visible — users can toggle individual organs
             // via the data tree.
             visible: existing?.visible ?? pending?.visible ?? true,
+            visible2D: existing?.visible2D ?? pending?.visible2D ?? true,
+            visible3D: existing?.visible3D ?? pending?.visible3D ?? true,
             opacity: existing?.opacity ?? pending?.opacity ?? 0.5,
             voxelCount: info.voxel_count || 0,
             category: cat,
@@ -2446,7 +2477,9 @@ function renderDataTree() {
                 const tumorState = ensureDataTreeNodeMetadata({
                     ...current,
                     id: `ctv_${labelId}`, labelId, label: name, color: tumorColor,
-                    visible: dataTreeState.ctv.visible !== false,
+                    visible: current.visible !== false && dataTreeState.ctv.visible !== false,
+                    visible2D: current.visible2D !== false,
+                    visible3D: current.visible3D !== false,
                     opacity: dataTreeState.ctv.opacity ?? 0.7,
                     loaded: true,
                     objectId,
@@ -2698,10 +2731,10 @@ function renderDataTree() {
 
     // Dose overlay toggle (2D overlay on CT slices)
     if (dataTreeState.planning.doseOverlay) {
-        const ovVis = state.doseOverlay.visible;
+        const ovVis = isDataTreeNodeVisible2D(dataTreeState.planning.doseOverlay);
         const ovOp = state.doseOverlay.opacity;
         html += `<div class="tree-item" data-item="dose_overlay" data-node-id="${escHtml(dataTreeState.planning.doseOverlay.nodeId || 'dose_overlay')}" data-node-type="dose_contour_2d" data-status="${escHtml(dataTreeState.planning.doseOverlay.status || 'ready')}" onclick="handleTreeItemClick('dose_overlay', event)" oncontextmenu="event.preventDefault();event.stopPropagation();handleTreeItemRightClick('dose_overlay', event)" style="display:flex;align-items:center;gap:6px;padding:2px 8px;font-size:0.7rem;">
-            <button class="eye-btn ${ovVis ? '' : 'hidden'}" onclick="event.stopPropagation();toggleDoseOverlayVisibility()" style="font-size:0.65rem;">${ovVis ? '&#128065;' : '&#128064;'}</button>
+            <button class="eye-btn ${ovVis ? '' : 'hidden'}" onclick="event.stopPropagation();toggleDataVisibility('dose_overlay')" style="font-size:0.65rem;">${ovVis ? '&#128065;' : '&#128064;'}</button>
             <span style="color:#22d3ee;">◉</span>
             <span>Dose Overlay (2D)</span>
             <span style="margin-left:auto;font-size:0.6rem;color:var(--text-dim);">max: ${state.doseOverlay.doseMax?.toFixed(1) || '--'}</span>
@@ -3197,11 +3230,20 @@ function showGroupContextMenu(x, y, category) {
 
     // Image and the abstract Segmentation collection do not own a separate
     // viewer state. Their children remain the authoritative visual nodes.
-    if (!['image', 'segmentation', 'artifacts'].includes(category)) {
+    if (category !== 'artifacts') {
         items += `<div class="ctx-menu-item" onclick="hideContextMenu();setGroupVisibility('${category}',true)">
             <span class="ctx-icon">&#128065;</span> Show All</div>`;
         items += `<div class="ctx-menu-item" onclick="hideContextMenu();setGroupVisibility('${category}',false)">
             <span class="ctx-icon">&#128064;</span> Hide All</div>`;
+        items += `<div class="ctx-menu-sep"></div>`;
+        items += `<div class="ctx-menu-item" onclick="hideContextMenu();setGroupViewVisibility('${category}','2d',true)">
+            <span class="ctx-icon">2D</span> Show in 2D</div>`;
+        items += `<div class="ctx-menu-item" onclick="hideContextMenu();setGroupViewVisibility('${category}','2d',false)">
+            <span class="ctx-icon">2D</span> Hide in 2D</div>`;
+        items += `<div class="ctx-menu-item" onclick="hideContextMenu();setGroupViewVisibility('${category}','3d',true)">
+            <span class="ctx-icon">3D</span> Show in 3D</div>`;
+        items += `<div class="ctx-menu-item" onclick="hideContextMenu();setGroupViewVisibility('${category}','3d',false)">
+            <span class="ctx-icon">3D</span> Hide in 3D</div>`;
     }
 
     // Solo this group (only for organ groups)
@@ -3274,6 +3316,7 @@ function soloGroup(category) {
             applyMeshVisibility(mesh, d?.visible ?? false, d?.opacity ?? 0.3);
         }
     });
+    applyDataTreeViewVisibility();
     renderDataTree();
     if (state.ctLoaded) loadAllSlices();
 }
@@ -3451,6 +3494,8 @@ function _structureAppearanceMap() {
             color: item.color,
             opacity: item.opacity,
             visible: item.visible,
+            visible2D: item.visible2D,
+            visible3D: item.visible3D,
             category: item.category,
         };
     });
@@ -3467,6 +3512,8 @@ function _applyStructureAppearanceMap(appearance) {
         item.color = saved.color || item.color;
         item.opacity = Number.isFinite(Number(saved.opacity)) ? Number(saved.opacity) : item.opacity;
         item.visible = saved.visible !== false;
+        item.visible2D = saved.visible2D !== false;
+        item.visible3D = saved.visible3D !== false;
         // Traversability is an OAR presentation concern. Do not leak it into
         // the CTV business classification when an OAR is promoted.
         if (item.source === 'oar' && saved.category) item.category = saved.category;
@@ -3877,6 +3924,15 @@ function showContextMenu(x, y) {
         <span class="ctx-icon">&#128065;</span> Show Selected</div>`;
     items += `<div class="ctx-menu-item" onclick="hideContextMenu();batchToggleVisibility(false)">
         <span class="ctx-icon">&#128064;</span> Hide Selected</div>`;
+    items += `<div class="ctx-menu-sep"></div>`;
+    items += `<div class="ctx-menu-item" onclick="hideContextMenu();batchSetViewVisibility('2d',true)">
+        <span class="ctx-icon">2D</span> Show in 2D</div>`;
+    items += `<div class="ctx-menu-item" onclick="hideContextMenu();batchSetViewVisibility('2d',false)">
+        <span class="ctx-icon">2D</span> Hide in 2D</div>`;
+    items += `<div class="ctx-menu-item" onclick="hideContextMenu();batchSetViewVisibility('3d',true)">
+        <span class="ctx-icon">3D</span> Show in 3D</div>`;
+    items += `<div class="ctx-menu-item" onclick="hideContextMenu();batchSetViewVisibility('3d',false)">
+        <span class="ctx-icon">3D</span> Hide in 3D</div>`;
 
     // Solo
     items += `<div class="ctx-menu-item" onclick="hideContextMenu();batchSolo()">
@@ -4001,7 +4057,127 @@ function batchToggleVisibility(visible) {
     if (state.ctLoaded) reloadOverlays();
     redrawSeedNeedleOverlays();
     requestViewerVisualRefresh('batch-visibility');
+    applyDataTreeViewVisibility();
+    _scheduleDataTreeSave('viewer.batch_visibility');
 }
+
+function _allDataTreeVisualNodes() {
+    return [
+        dataTreeState.ct,
+        dataTreeState.ctv,
+        dataTreeState.oar,
+        ...(Object.values(dataTreeState.ctvLabels || {})),
+        ...(dataTreeState.organs || []),
+        ..._planningItems('trajectories'),
+        ..._planningItems('seeds'),
+        ..._planningItems('needles'),
+        ..._planningItems('doseLevels'),
+        ...(dataTreeState.planning?.meshes || []).filter(node => _findDataTreeNode(node.id) === node),
+    ].filter(Boolean);
+}
+
+function _setNodeViewVisibility(node, view, visible) {
+    if (!node) return;
+    node[view === '2d' ? 'visible2D' : 'visible3D'] = !!visible;
+}
+
+function _apply3DNodeVisibility(node) {
+    if (!node?.id) return;
+    const meshId = node.id.startsWith('dose_iso_')
+        ? node.id
+        : node.id;
+    const mesh = scene3D?.meshes?.[meshId];
+    const visible = isDataTreeNodeVisible3D(node);
+    if (mesh) applyMeshVisibility(mesh, visible, node.opacity ?? 1);
+    if (node.id.startsWith('needle_') && typeof _setNeedleHandlesVisibility === 'function') {
+        _setNeedleHandlesVisibility(node.id, visible, node.opacity ?? 0.8);
+    }
+}
+
+/**
+ * Reapply persisted per-view state after any tree, mesh, or session update.
+ * The master `visible` state is deliberately not changed here: it remains the
+ * existing all-view compatibility control, while 2D/3D stay independent.
+ */
+function applyDataTreeViewVisibility() {
+    _allDataTreeVisualNodes().forEach(_apply3DNodeVisibility);
+    const ct2D = isDataTreeNodeVisible2D(dataTreeState.ct);
+    ['axial', 'sagittal', 'coronal'].forEach(axis => {
+        const canvas = document.getElementById('sliceCanvas' + capitalize(axis));
+        if (canvas) canvas.style.visibility = ct2D ? 'visible' : 'hidden';
+    });
+    const doseNode = dataTreeState.planning?.doseOverlay;
+    const planning2D = isDataTreeNodeVisible2D(dataTreeState.planning);
+    const dose2D = planning2D && (!doseNode || isDataTreeNodeVisible2D(doseNode));
+    _setPlanningDoseProjectionVisibility(dose2D, { preserveMaster: false });
+    if (state.ctLoaded) reloadOverlays();
+    redrawSeedNeedleOverlays();
+    requestViewerVisualRefresh('data-tree-view-visibility');
+}
+
+function batchSetViewVisibility(view, visible) {
+    const key = view === '2d' ? 'visible2D' : 'visible3D';
+    getSelectedOrganIds().forEach(id => {
+        const node = _findDataTreeNode(id);
+        if (!node) return;
+        node[key] = !!visible;
+        // A group selection only propagates downward; it never changes a
+        // parent or a sibling selected by a different branch.
+        if (id === 'ctv') Object.values(dataTreeState.ctvLabels || {}).forEach(item => { item[key] = !!visible; });
+        if (id === 'oar') dataTreeState.organs.forEach(item => { item[key] = !!visible; });
+        const trajectory = _planningItems('trajectories').find(item => item.id === id);
+        if (trajectory) {
+            [..._planningItems('seeds'), ..._planningItems('needles')]
+                .filter(item => _trajectoryContains(item, trajectory))
+                .forEach(item => { item[key] = !!visible; });
+        }
+    });
+    applyDataTreeViewVisibility();
+    renderDataTree();
+    _scheduleDataTreeSave(`viewer.batch_${view}_visibility`);
+}
+
+function _groupViewNodes(category) {
+    if (category === 'image') return [dataTreeState.ct];
+    if (category === 'segmentation') return [
+        dataTreeState.ctv, ...Object.values(dataTreeState.ctvLabels || {}),
+        dataTreeState.oar, ...(dataTreeState.organs || []),
+    ];
+    if (category === 'ctv') return [dataTreeState.ctv, ...Object.values(dataTreeState.ctvLabels || {})];
+    if (category === 'oar') return [dataTreeState.oar, ...(dataTreeState.organs || [])];
+    if (category === 'non_traversable' || category === 'traversable') {
+        return (dataTreeState.organs || []).filter(item => item.category === category);
+    }
+    if (category === 'planning') return [
+        dataTreeState.planning,
+        ...(dataTreeState.planning?.doseOverlay ? [dataTreeState.planning.doseOverlay] : []),
+        ..._planningVisualEntries(),
+    ];
+    if (category === 'planning_trajectories') {
+        const trajectories = _planningItems('trajectories');
+        return [
+            ...trajectories,
+            ..._planningItems('seeds').filter(item => trajectories.some(t => _trajectoryContains(item, t))),
+            ..._planningItems('needles').filter(item => trajectories.some(t => _trajectoryContains(item, t))),
+        ];
+    }
+    if (category === 'planning_seeds') return [dataTreeState.seeds, ..._planningItems('seeds')];
+    if (category === 'planning_needles') return [dataTreeState.needles, ..._planningItems('needles')];
+    if (category === 'dose_isosurfaces') return [dataTreeState.dose, ..._planningItems('doseLevels')];
+    if (category === 'planning_meshes') return dataTreeState.planning?.meshes || [];
+    return [];
+}
+
+function setGroupViewVisibility(category, view, visible) {
+    _groupViewNodes(category).forEach(node => _setNodeViewVisibility(node, view, visible));
+    applyDataTreeViewVisibility();
+    renderDataTree();
+    _scheduleDataTreeSave(`viewer.group_${view}_visibility:${category}`);
+}
+
+window.batchSetViewVisibility = batchSetViewVisibility;
+window.setGroupViewVisibility = setGroupViewVisibility;
+window.applyDataTreeViewVisibility = applyDataTreeViewVisibility;
 
 function batchMoveToCategory(category) {
     getSelectedOrganIds().forEach(id => {
@@ -4021,6 +4197,7 @@ function batchSolo() {
     const selSet = new Set(getSelectedOrganIds());
     dataTreeState.organs.forEach(o => { o.visible = selSet.has(o.id); });
     dataTreeState.ctv.visible = selSet.has('ctv');
+    applyDataTreeViewVisibility();
     renderDataTree();
     if (state.ctLoaded) loadAllSlices();
     requestViewerVisualRefresh('batch-solo');
@@ -4093,6 +4270,7 @@ function soloOrgan(organId) {
     dataTreeState.organs.forEach(o => { o.visible = (o.id === organId); });
     if (organId === 'ctv') { dataTreeState.ctv.visible = true; }
     else { dataTreeState.ctv.visible = false; }
+    applyDataTreeViewVisibility();
     renderDataTree();
     if (state.ctLoaded) loadAllSlices();
 }
@@ -4117,13 +4295,14 @@ function showAllOrgans() {
         else if (id.startsWith('ctv_')) opacity = dataTreeState.ctvLabels?.[id]?.opacity ?? dataTreeState.ctv.opacity ?? 0.7;
         applyMeshVisibility(mesh, true, opacity);
     });
+    applyDataTreeViewVisibility();
     renderDataTree();
     if (state.ctLoaded) loadAllSlices();
 }
 
-function _setPlanningDoseProjectionVisibility(visible) {
+function _setPlanningDoseProjectionVisibility(visible, options = {}) {
     if (typeof state === 'undefined') return;
-    if (state.doseOverlay) state.doseOverlay.visible = !!visible;
+    if (state.doseOverlay && !options.preserveMaster) state.doseOverlay.visible = !!visible;
     // Dose projections use independent canvases instead of the CT canvas.
     // Hiding the Planning parent must clear those layers immediately; merely
     // changing doseOverlay.visible would leave the last painted slice visible.
@@ -4139,7 +4318,14 @@ function _setPlanningDoseProjectionVisibility(visible) {
 }
 
 function setGroupVisibility(category, visible) {
-    if (category === 'planning') {
+    if (category === 'image') {
+        dataTreeState.ct.visible = !!visible;
+    } else if (category === 'segmentation') {
+        dataTreeState.ctv.visible = !!visible;
+        Object.values(dataTreeState.ctvLabels || {}).forEach(label => { label.visible = !!visible; });
+        dataTreeState.oar.visible = !!visible;
+        dataTreeState.organs.forEach(organ => { organ.visible = !!visible; });
+    } else if (category === 'planning') {
         dataTreeState.planning.visible = !!visible;
         _planningVisualEntries().forEach(item => { item.visible = visible; });
         _planningItems('seeds').forEach(seed => {
@@ -4235,11 +4421,15 @@ function setGroupVisibility(category, visible) {
     if (state.ctLoaded) reloadOverlays();
     redrawSeedNeedleOverlays();
     requestViewerVisualRefresh('group-visibility');
+    applyDataTreeViewVisibility();
     _scheduleDataTreeSave(`viewer.group_visibility:${category}`);
 }
 
 let _groupOpacityTimer = null;
 function setGroupOpacity(category, value) {
+    // Existing opacity sliders remain authoritative. Reapply independent
+    // view state after their synchronous material updates complete.
+    requestAnimationFrame(() => applyDataTreeViewVisibility());
     const opacity = parseInt(value) / 100;
     if (category === 'planning' || category === 'planning_trajectories') {
         const trajectories = _planningItems('trajectories');
@@ -4322,6 +4512,7 @@ function setGroupOpacity(category, value) {
         if (state.ctLoaded) loadAllSlices();
         redrawSeedNeedleOverlays();
         requestViewerVisualRefresh('group-opacity');
+        applyDataTreeViewVisibility();
         _scheduleDataTreeSave(`viewer.group_opacity:${category}`);
     }, 150);
 }
@@ -4349,6 +4540,7 @@ function getGroupDisplayColor(category) {
 }
 
 function setGroupColor(category, color) {
+    requestAnimationFrame(() => applyDataTreeViewVisibility());
     const normalized = String(color || '').trim();
     if (!/^#[0-9a-f]{6}$/i.test(normalized)) return;
     let entries = [];
@@ -4416,15 +4608,14 @@ function toggleTreeGroup(header) {
 }
 
 function toggleDataVisibility(id) {
+    requestAnimationFrame(() => applyDataTreeViewVisibility());
     if (id === 'dose_overlay') {
-        if (typeof toggleDoseOverlayVisibility === 'function') {
-            toggleDoseOverlayVisibility();
-        } else if (state.doseOverlay) {
-            state.doseOverlay.visible = state.doseOverlay.visible === false;
-            renderDataTree();
-            if (typeof reloadOverlays === 'function') reloadOverlays();
-            _scheduleDataTreeSave('viewer.visibility:dose_overlay');
-        }
+        const node = dataTreeState.planning?.doseOverlay;
+        if (node) node.visible2D = !isDataTreeNodeVisible2D(node);
+        else if (state.doseOverlay) state.doseOverlay.visible = state.doseOverlay.visible === false;
+        applyDataTreeViewVisibility();
+        renderDataTree();
+        _scheduleDataTreeSave('viewer.visibility:dose_overlay');
         return;
     }
     // Handle individual organ toggles
@@ -4612,6 +4803,7 @@ function setDataItemVisibility(id, visible) {
 
 let _opacityTimer = null;
 function setDataOpacity(id, value) {
+    requestAnimationFrame(() => applyDataTreeViewVisibility());
     const opacity = parseInt(value) / 100;
     if (id === 'dose_overlay') {
         if (typeof setDoseOverlayOpacity === 'function') {

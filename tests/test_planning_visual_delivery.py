@@ -80,3 +80,39 @@ def test_planning_refresh_preserves_existing_tree_presentation_state():
     assert "const prior = new Map((dataTreeState.planning.seeds || []).map(seed =>" in planning
     assert "const seedPresentation = new Map((dataTreeState.planning.seeds || []).map(seed =>" in planning
     assert "visible: existing?.visible ?? true" in planning
+
+
+def test_data_tree_has_independent_2d_and_3d_presentation_controls():
+    """Visual nodes retain a master state plus independent MPR/3D controls."""
+    viewer = read("web/app/static/js/brachybot-viewer-volume.js")
+    manual = read("web/app/static/js/brachybot-3d-manual.js")
+    annotation = read("web/app/static/js/brachybot-manual-annotation.js")
+    workspace = read("web/app/static/js/brachybot-workspace.js")
+
+    for required in (
+        "node.visible2D = node.visible2D !== false",
+        "node.visible3D = node.visible3D !== false",
+        "function batchSetViewVisibility(view, visible)",
+        "function setGroupViewVisibility(category, view, visible)",
+        "Show in 2D",
+        "Hide in 2D",
+        "Show in 3D",
+        "Hide in 3D",
+        "function applyDataTreeViewVisibility()",
+    ):
+        assert required in viewer
+
+    assert "meshData.visible3D !== false" in manual
+    assert "visible2D: savedSeedAppearance" in manual
+    assert "visible2D !== false" in annotation
+    assert "['visible', 'visible2D', 'visible3D', 'opacity', 'color', 'material', 'locked']" in workspace
+
+
+def test_iso_surface_refresh_keeps_data_tree_appearance_and_view_flags():
+    """Refreshing dose geometry must not reset a user's visibility choices."""
+    manual = read("web/app/static/js/brachybot-3d-manual.js")
+
+    assert "const priorLevels = new Map" in manual
+    assert "existing.visible2D = existing.visible2D !== false" in manual
+    assert "existing.visible3D = existing.visible3D !== false" in manual
+    assert "dataTreeState.planning.doseLevels.push(existing)" in manual

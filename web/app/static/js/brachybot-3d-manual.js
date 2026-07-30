@@ -19,7 +19,7 @@ function _syncSeedsOverlayFromDataTree() {
         position: _vec3Array(s.position || s.pos),
         direction: _normalizeArray3(s.direction || [0, 0, 1]),
         trajectory_id: s.trajectory_id,
-        visible: s.visible !== false,
+        visible: s.visible !== false && s.visible2D !== false,
         opacity: s.opacity ?? 1.0,
         color: s.color || '#ffcc00',
     }));
@@ -27,7 +27,7 @@ function _syncSeedsOverlayFromDataTree() {
         id: n.id,
         points: (n.points || []).map(p => _vec3Array(p)),
         trajectory_id: n.trajectory_id,
-        visible: n.visible !== false,
+        visible: n.visible !== false && n.visible2D !== false,
         opacity: n.opacity ?? 0.8,
         color: n.color || '#ff2266',
     }));
@@ -189,6 +189,8 @@ function _applyAuthoritativeManualSeeds(data) {
             position,
             pos: position,
             visible: seed.visible !== false,
+            visible2D: seed.visible2D ?? old.visible2D ?? true,
+            visible3D: seed.visible3D ?? old.visible3D ?? true,
             opacity: Number.isFinite(Number(seed.opacity)) ? Number(seed.opacity) : (old.opacity ?? 1.0),
             color: seed.color || old.color || '#ffcc00',
         };
@@ -201,6 +203,7 @@ function _applyAuthoritativeManualSeeds(data) {
     dataTreeState.planning.version = manualPlanningState.planningVersion;
     dataTreeState.planning.artifactStatus = { ...manualPlanningState.artifactStatus };
     _syncSeedsOverlayFromDataTree();
+    if (typeof window.applyDataTreeViewVisibility === 'function') window.applyDataTreeViewVisibility();
     renderDataTree();
     if (scene3D.requestRender) scene3D.requestRender(3);
 }
@@ -1886,7 +1889,7 @@ function addMeshToScene(meshData) {
     // A mesh created during hydration/reconstruction must inherit the data
     // tree state.  Otherwise a hidden planning or structure node reappears
     // as soon as its real geometry finishes loading.
-    const visible = meshData.visible !== false;
+    const visible = meshData.visible !== false && meshData.visible3D !== false;
     mesh.visible = visible && opacity > 0.001;
     mesh.userData = { type: 'mesh', id, source: meshData.source || 'mesh', labelId: meshData.label_id, organId: id };
 
@@ -1918,13 +1921,18 @@ function addMeshToScene(meshData) {
             dataVersion: Number(meshData.data_version || dataTreeState.planning.version || 0),
             status: meshData.status || 'ready',
             color: colorHex,
-            visible,
+            visible: meshData.visible !== false,
+            visible2D: meshData.visible2D !== false,
+            visible3D: meshData.visible3D !== false,
             opacity,
             vertexCount: meshData.vertex_count || (meshData.vertices ? meshData.vertices.length / 3 : 0),
         };
         if (existing >= 0) dataTreeState.planning.meshes[existing] = entry;
         else dataTreeState.planning.meshes.push(entry);
         if (typeof renderDataTree === 'function') renderDataTree();
+        if (typeof window.applyDataTreeViewVisibility === 'function') {
+            window.applyDataTreeViewVisibility();
+        }
     }
 
     // Keep manual reconstruction consistent with the current surface mode.
@@ -2232,7 +2240,8 @@ function _3dMeshIsVisible(mesh) {
 
 function _3dDataTreeNodeForMesh(id) {
     if (typeof dataTreeState === 'undefined' || !dataTreeState) return null;
-    if (id === 'ctv' || id.startsWith('ctv_')) return dataTreeState.ctv || null;
+    if (id === 'ctv') return dataTreeState.ctv || null;
+    if (id.startsWith('ctv_')) return dataTreeState.ctvLabels?.[id] || dataTreeState.ctv || null;
     if (id.startsWith('organ_')) return (dataTreeState.organs || []).find(o => o.id === id) || dataTreeState.oar || null;
     if (id.startsWith('seed_')) return (dataTreeState.planning?.seeds || []).find(s => s.id === id) || dataTreeState.seeds || dataTreeState.planning || null;
     if (id.startsWith('needle_')) return (dataTreeState.planning?.needles || []).find(n => n.id === id) || dataTreeState.needles || dataTreeState.planning || null;
@@ -2247,7 +2256,10 @@ function _repair3DSceneVisibility() {
     if (!entries.length || typeof dataTreeState === 'undefined') return false;
     const expected = entries.filter(([id]) => {
         const node = _3dDataTreeNodeForMesh(id);
-        return !!node && node.visible !== false && Number(node.opacity ?? 1) > 0.001;
+        const visible3D = typeof window.isDataTreeNodeVisible3D === 'function'
+            ? window.isDataTreeNodeVisible3D(node)
+            : node.visible !== false && node.visible3D !== false;
+        return !!node && visible3D && Number(node.opacity ?? 1) > 0.001;
     });
     const visible = entries.filter(([, mesh]) => _3dMeshIsVisible(mesh) && _3dMeshOpacity(mesh) > 0.001);
     // Only repair the all-hidden failure mode. A partially hidden scene is a
@@ -2472,6 +2484,8 @@ async function loadSeeds3D() {
             direction: seed.direction,
             trajectory_id: _normalizeTrajectoryId(seed.trajectory_id),
             visible: savedSeedAppearance.get(String(seed.id))?.visible !== false,
+            visible2D: savedSeedAppearance.get(String(seed.id))?.visible2D !== false,
+            visible3D: savedSeedAppearance.get(String(seed.id))?.visible3D !== false,
             opacity: savedSeedAppearance.get(String(seed.id))?.opacity ?? 1.0,
             color: savedSeedAppearance.get(String(seed.id))?.color || '#ffcc00',
         }));
@@ -2481,6 +2495,8 @@ async function loadSeeds3D() {
             points: needle.points,
             trajectory_id: _normalizeTrajectoryId(needle.trajectory_id),
             visible: savedNeedleAppearance.get(String(needle.id))?.visible !== false,
+            visible2D: savedNeedleAppearance.get(String(needle.id))?.visible2D !== false,
+            visible3D: savedNeedleAppearance.get(String(needle.id))?.visible3D !== false,
             opacity: savedNeedleAppearance.get(String(needle.id))?.opacity ?? 0.9,
             color: savedNeedleAppearance.get(String(needle.id))?.color || '#ff2266',
         }));
@@ -2729,6 +2745,9 @@ async function loadDoseIsosurface(threshold = 1.0, color = 0x00ff88, requestScop
         const dMaxGy = dMax * doseScaleGy;
         const pct = dMaxGy > 0 ? Math.round((threshold / dMaxGy) * 100) : 0;
         const existingLevel = dataTreeState.planning.doseLevels.find(d => Math.abs(d.threshold - threshold) < 1e-6);
+        mesh.visible = existingLevel
+            ? existingLevel.visible !== false && existingLevel.visible3D !== false
+            : true;
         // BUG FIX 2026-06-16: detect whether `threshold` is already
         // in absolute Gy (called from loadAllIsoSurfaces with v in Gy)
         // or a relative multiplier (called directly with 1.0, 1.5, etc.).
@@ -2742,6 +2761,8 @@ async function loadDoseIsosurface(threshold = 1.0, color = 0x00ff88, requestScop
                 threshold: threshold,
                 thresholdGy: parseFloat(absGy),
                 visible: true,
+                visible2D: true,
+                visible3D: true,
                 opacity: 0.3,
                 color: '#' + color.toString(16).padStart(6, '0'),
                 pctLabel: `${absGy} Gy`,
@@ -2807,6 +2828,8 @@ async function loadAllIsoSurfaces(options = {}) {
             delete scene3D.meshes[id];
         }
     });
+    const priorLevels = new Map((dataTreeState?.planning?.doseLevels || [])
+        .map(level => [Number(level?.threshold), level]));
     if (dataTreeState && dataTreeState.planning) {
         dataTreeState.planning.doseLevels = [];
     }
@@ -2835,24 +2858,30 @@ async function loadAllIsoSurfaces(options = {}) {
             }
             // Mirror into data tree with the config opacity.
             if (dataTreeState && dataTreeState.planning) {
-                const existing = dataTreeState.planning.doseLevels
-                    .find(d => Math.abs(d.threshold - v) < 1e-6);
+                const existing = priorLevels.get(v);
                 if (!existing) {
                     dataTreeState.planning.doseLevels.push({
                         threshold: v,
                         thresholdGy: parseFloat(absGy),
                         visible: true,
+                        visible2D: true,
+                        visible3D: true,
                         opacity,
                         color: '#' + color.toString(16).padStart(6, '0'),
                         pctLabel: `${absGy} Gy`,
                     });
                 } else {
-                    // Update opacity/color on the existing entry so
-                    // re-running planning refreshes them.
-                    existing.opacity = opacity;
-                    existing.color = '#' + color.toString(16).padStart(6, '0');
+                    // Keep Data Tree-selected appearance and independent
+                    // 2D/3D visibility when a dose refresh replaces mesh
+                    // geometry for the same threshold.
+                    existing.visible = existing.visible !== false;
+                    existing.visible2D = existing.visible2D !== false;
+                    existing.visible3D = existing.visible3D !== false;
+                    existing.opacity = Number.isFinite(Number(existing.opacity)) ? existing.opacity : opacity;
+                    existing.color = existing.color || ('#' + color.toString(16).padStart(6, '0'));
                     existing.thresholdGy = parseFloat(absGy);
                     existing.pctLabel = `${absGy} Gy`;
+                    dataTreeState.planning.doseLevels.push(existing);
                 }
             }
         } catch (e) {
@@ -2860,6 +2889,7 @@ async function loadAllIsoSurfaces(options = {}) {
         }
     }
     if (!_planningSceneScopeIsCurrent(requestScope)) return { stale: true };
+    if (typeof window.applyDataTreeViewVisibility === 'function') window.applyDataTreeViewVisibility();
     try { renderDataTree(); } catch (_) {}
     return { stale: false, levels: relValues.length };
 }
@@ -2873,7 +2903,7 @@ async function reconstructDoseIsosurface3D(idOrThreshold) {
     const color = Number.parseInt(colorText, 16) || 0x22c55e;
     await loadDoseIsosurface(Number(level.threshold), color);
     const mesh = scene3D.meshes[`dose_iso_${level.threshold}`];
-    if (mesh) applyMeshOpacity(mesh, level.opacity ?? 0.3, level.visible !== false);
+    if (mesh) applyMeshOpacity(mesh, level.opacity ?? 0.3, level.visible !== false && level.visible3D !== false);
     renderDataTree();
     forceRender3DViewer();
     return { threshold: Number(level.threshold), reconstructed: !!mesh };
@@ -2973,7 +3003,7 @@ function _labelIdInMask(labelData, labelId) {
     return labelData._uniqueLabelSet.has(labelId);
 }
 
-async function _fetchAndAddOrganMesh({ labelId, source, organId, label, color, opacity, force = false, smoothing = 1, generation = _segmentationMeshPrewarm.generation, sessionId = null }) {
+async function _fetchAndAddOrganMesh({ labelId, source, organId, label, color, opacity, visible2D = true, visible3D = true, force = false, smoothing = 1, generation = _segmentationMeshPrewarm.generation, sessionId = null }) {
     if (labelId === undefined || labelId === null || !source || !organId) return { status: 'invalid' };
     if (!force && _sceneHasMesh(organId)) return { status: 'exists', id: organId };
 
@@ -3038,6 +3068,8 @@ async function _fetchAndAddOrganMesh({ labelId, source, organId, label, color, o
             data.label = label || organId;
             data.source = source;
             if (typeof opacity === 'number') data.opacity = opacity;
+            data.visible2D = visible2D !== false;
+            data.visible3D = visible3D !== false;
             addMeshToScene(data);
             return { status: data.cached ? 'cached' : 'loaded', id: organId };
         } catch (e) {
@@ -3075,12 +3107,16 @@ async function prewarmSegmentationMeshes(kind = 'all', opts = {}) {
         if (includeCTV && ctvLabelData) {
             for (const lid of ctvLabelIds) {
                 const c = labelColorLUT && labelColorLUT[lid];
+                const ctvNode = dataTreeState.ctvLabels?.[`ctv_${lid}`] || dataTreeState.ctv || {};
                 promises.push(_fetchAndAddOrganMesh({
                     labelId: lid,
                     source: 'ctv',
                     organId: `ctv_${lid}`,
                     label: (window._ctvLabelMap || {})[lid] || `CTV Label ${lid}`,
                     color: c ? ((c[0] << 16) | (c[1] << 8) | c[2]) : 0xff6b6b,
+                    opacity: ctvNode.opacity,
+                    visible2D: ctvNode.visible2D,
+                    visible3D: ctvNode.visible3D,
                     force,
                     generation,
                     sessionId,
@@ -3106,6 +3142,8 @@ async function prewarmSegmentationMeshes(kind = 'all', opts = {}) {
                         label: (organ && (organ.label || organ.name)) || `OAR ${lid}`,
                         color: _parseTreeColorValue(organ && organ.color, 0xff4444),
                         opacity: organ && typeof organ.opacity === 'number' ? organ.opacity : undefined,
+                        visible2D: organ?.visible2D,
+                        visible3D: organ?.visible3D,
                         force,
                         generation,
                         sessionId,
@@ -4018,7 +4056,7 @@ function renderDoseContourOnCanvas(canvas, axis, sliceIndex) {
         const doseLevel = doseLevels.find(d => Math.abs(d.threshold - level) < 1 || Math.abs(d.thresholdGy - level) < 1);
         // If not found in doseLevels, draw it (might be a new level)
         // Otherwise, only draw if visible
-        return !doseLevel || doseLevel.visible !== false;
+        return !doseLevel || doseLevel.visible !== false && doseLevel.visible2D !== false;
     });
 
     // Draw contour lines

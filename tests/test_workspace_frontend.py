@@ -943,7 +943,7 @@ def test_planning_parent_visibility_clears_independent_dose_projection_layers():
     """Hiding Planning must remove dose canvases as well as 3D children."""
     viewer = read("web/app/static/js/brachybot-viewer-volume.js")
 
-    assert "function _setPlanningDoseProjectionVisibility(visible)" in viewer
+    assert "function _setPlanningDoseProjectionVisibility(visible, options = {})" in viewer
     assert "dataTreeState.planning.visible = !!visible" in viewer
     assert "doseOverlayCanvas" in viewer
     assert "_setPlanningDoseProjectionVisibility(dataTreeState.planning.visible)" in viewer

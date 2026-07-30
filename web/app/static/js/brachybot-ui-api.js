@@ -179,6 +179,8 @@ function collectUIState() {
                 category: label?.category === 'non_traversable' ? 'non_traversable' : 'traversable',
                 source: 'ctv',
                 visible: label?.visible !== false,
+                visible_2d: label?.visible2D !== false,
+                visible_3d: label?.visible3D !== false,
                 opacity: Number.isFinite(Number(label?.opacity)) ? Number(label.opacity) : 0.7,
                 color: label?.color || null,
             })).filter(item => item.id || item.label_id !== null),
