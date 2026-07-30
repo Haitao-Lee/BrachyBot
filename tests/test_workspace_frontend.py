@@ -1017,7 +1017,12 @@ def test_monitor_edge_is_a_top_level_non_interactive_layer_and_tumor_colors_are_
     panel_css = read("web/app/static/css/brachybot-panels-viewers.css")
 
     assert 'id="monitorEdgeOverlay"' in index
-    assert "edge.hidden = !enabled" in ui_api
+    # Monitor exits with an opacity transition, then restores `hidden`; this
+    # avoids the old visible snap at Finish Monitoring.
+    assert "edge.hidden = false" in ui_api
+    assert "edge.classList.add('is-visible')" in ui_api
+    assert "edge.classList.remove('is-visible')" in ui_api
+    assert "document.body.dataset.monitorPhase === 'inactive'" in ui_api
     assert ".monitor-edge-overlay" in status_css
     assert "pointer-events: none" in status_css
     assert "optionCallable ? '#4ade80' : '#fb7185'" in ui_api
