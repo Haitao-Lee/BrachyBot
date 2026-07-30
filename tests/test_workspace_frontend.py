@@ -64,14 +64,33 @@ def test_deleted_case_browser_state_is_cleared_only_after_server_success():
     )
 
 
-def test_recycle_bin_is_reachable_on_desktop_and_reports_deleted_count():
+def test_session_delete_is_permanent_and_recycle_bin_is_not_exposed_in_the_ui():
     index = read("web/app/index.html")
     workspace = read("web/app/static/js/brachybot-workspace.js")
-    css = read("web/app/static/css/brachybot-responsive.css")
-    assert 'id="recycleBinCount"' in index
-    assert '"trashed_count"' in read("web/routes/session_routes.py")
-    assert "updateRecycleBinCount(data?.trashed_count)" in workspace
-    assert ".session-sidebar-close.recycle-bin-button" in css
+    delete_block = workspace.split("window.deleteSession =", 1)[1].split(
+        "window.renameServerSession", 1
+    )[0]
+    assert 'id="recycleBinCount"' not in index
+    assert 'id="recycleBinPanel"' not in index
+    assert "/purge`" in delete_block
+
+
+def test_startup_renders_server_session_directory_before_the_heavy_snapshot():
+    """A slow restored case must never keep the left session list empty."""
+    auth = read("web/app/static/js/brachybot-auth.js")
+    workspace = read("web/app/static/js/brachybot-workspace.js")
+    load_sessions = workspace.split("window.loadSessions =", 1)[1].split(
+        "window.saveSessions =", 1
+    )[0]
+
+    assert "let authenticationPromise = null;" in auth
+    assert "if (authenticationPromise) return authenticationPromise;" in auth
+    assert "void acquireLease()" in auth
+    assert "renderSessionList();" in load_sessions
+    assert load_sessions.index("renderSessionList();") < load_sessions.index(
+        "await loadActiveWorkspace()"
+    )
+    assert "startup.session_list_first_paint" in load_sessions
 
 
 def test_session_restore_uses_corner_non_blocking_hydration_and_fresh_snapshot():

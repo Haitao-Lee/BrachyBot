@@ -1419,6 +1419,16 @@
             startedAt: listStartedAt,
             details: { count: Array.isArray(data.sessions) ? data.sessions.length : 0 },
         });
+        // The session directory is control-plane data. Render it immediately
+        // after /api/sessions, before the selected case snapshot begins its
+        // potentially slow CT/label/mesh restoration. Previously the first
+        // sidebar paint was held behind loadActiveWorkspace(), so old cases
+        // appeared only after an unrelated later action such as New Case.
+        renderSessionList();
+        recordWorkspacePerformance('startup.session_list_first_paint', {
+            sessionId: String(activeSessionId || ''),
+            startedAt: listStartedAt,
+        });
         if (!activeSessionId) {
             window._activeWorkspaceSnapshot = null;
             window.setWorkspaceHydrationState?.(false);
@@ -1726,8 +1736,8 @@
         if (options.skipConfirm !== true) {
             const title = sessions[id].title || id;
             const confirmed = await confirmWorkspaceAction(
-                `确定要将病例"${title}"移入回收站吗？`,
-                `Move case "${title}" to the recycle bin?`,
+                `确定要永久删除病例“${title}”吗？此操作无法撤销。`,
+                `Permanently delete case "${title}"? This cannot be undone.`,
             );
             if (!confirmed) return { success: false, cancelled: true };
         }
@@ -1767,7 +1777,7 @@
         // Re-render BEFORE the server round-trip
         renderSessionList();
         try {
-            const response = await workspaceFetch(`/api/sessions/${encodeURIComponent(id)}`, { method: 'DELETE' });
+            const response = await workspaceFetch(`/api/sessions/${encodeURIComponent(id)}/purge`, { method: 'DELETE' });
             const data = await response.json().catch(() => ({}));
             if (!response.ok) throw new Error(data.error || 'Unable to delete case');
             // The server mutation is authoritative.  Only after it succeeds

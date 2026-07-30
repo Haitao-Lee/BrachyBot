@@ -7,6 +7,7 @@
     const rememberKey = 'brachybot_remember_user';
     const AUTH_REQUEST_TIMEOUT_MS = 12000;
     const LEASE_RELEASE_TIMEOUT_MS = 4000;
+    let authenticationPromise = null;
 
     // Keep the editor identity stable across page reloads. A sessionStorage
     // token made the same browser look like a different editor after reload.
@@ -645,6 +646,9 @@
     };
 
     async function authenticated() {
+        if (state.user && state.csrfToken) return true;
+        if (authenticationPromise) return authenticationPromise;
+        authenticationPromise = (async () => {
         try {
             const response = await authFetch('/api/auth/me', { credentials: 'same-origin' });
             if (!response.ok) {
@@ -660,10 +664,19 @@
             window.brachybotAuth = api;
             setVisible(false);
             renderAccount();
-            await acquireLease();
+            // Identity is needed before the first server-backed session list;
+            // an edit lease is not. Do not make the sidebar wait for a slow
+            // lease response, and let the workspace refresh it in parallel.
+            void acquireLease().catch(error => console.debug('[auth] initial lease refresh deferred:', error));
             return true;
         } catch (_) {
             return false;
+        }
+        })();
+        try {
+            return await authenticationPromise;
+        } finally {
+            authenticationPromise = null;
         }
     }
 
