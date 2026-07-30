@@ -678,6 +678,17 @@ def test_chat_network_failures_finish_the_turn_and_unlock_case_navigation():
     assert "signal: abortController ? abortController.signal : undefined" in chat
 
 
+def test_explicit_stop_is_a_per_session_barrier_before_the_next_chat_turn():
+    """A stopped stream must never abort or clear the next turn in its case."""
+    chat = read("web/app/static/js/brachybot-chat-todo.js")
+    assert "window._sessionChatStopPromises" in chat
+    assert "const pendingStop = pendingStopSessionId" in chat
+    assert "await stopPromise;" in chat
+    assert "stopTurnAbortController.__brachybotExplicitStop = true;" in chat
+    assert "window._activeChatTurnGeneration" in chat
+    assert "Number(window._activeChatTurnGeneration || 0) === stopTurnGeneration" in chat
+
+
 def test_dose_colorbar_and_slice_cache_force_immediate_2d_repaint():
     """A scale/session change must invalidate pixels, not only slice indices."""
     manual_annotation = read("web/app/static/js/brachybot-manual-annotation.js")
