@@ -2562,13 +2562,26 @@ def register_planning_routes(
         """Record a frontend UI event and optionally return live monitor feedback."""
         data = request.get_json() or {}
         session_id = request_ui_session_id(data)
-        agent = get_agent(session_id)
         state_payload = data.get("ui_state") or data.get("state")
         bucket = _ui_bucket(session_id)
         training_state = bucket.get("training") or {}
         request_run_id = str(data.get("monitor_run_id") or "").strip()
         active_run_id = str(training_state.get("run_id") or "").strip()
-        monitor_run_matches = not request_run_id or not active_run_id or request_run_id == active_run_id
+        # Every active Monitor event has a run id. Requiring an exact match
+        # prevents a delayed callback from an older run being evaluated or
+        # appended to the active run after a stop/start or session transition.
+        monitor_run_matches = bool(
+            training_state.get("active")
+            and request_run_id
+            and active_run_id
+            and request_run_id == active_run_id
+        )
+        # Ordinary UI telemetry must stay lightweight. Hydrating a cold agent
+        # for every click/slider move was enough to make Monitor itself feel
+        # like it blocked the planning interface. Only an active monitor may
+        # inspect the in-memory planning snapshot, and it never forces a cold
+        # session hydration on this request path.
+        agent = get_cached_agent(session_id) if monitor_run_matches and callable(get_cached_agent) else None
         language = _monitor_language(
             data.get("language")
             or (state_payload.get("language") if isinstance(state_payload, dict) else None)
@@ -2593,11 +2606,11 @@ def register_planning_routes(
         })
         feedback = (
             _training_feedback_for_event(agent, session_id, event)
-            if monitor_run_matches else None
+            if monitor_run_matches and agent is not None else None
         )
         suggested_screenshot = (
             _training_screenshot_for_event(agent, session_id, event, feedback)
-            if monitor_run_matches else None
+            if monitor_run_matches and agent is not None else None
         )
         if feedback:
             with _UI_BRIDGE_LOCK:
@@ -2634,6 +2647,23 @@ def register_planning_routes(
             or (bucket.get("state") or {}).get("language")
         )
         with _UI_BRIDGE_LOCK:
+            previous = bucket.get("training") or {}
+            if previous.get("active"):
+                previous_run_id = str(previous.get("run_id") or "").strip()
+                if previous_run_id == run_id:
+                    return jsonify({
+                        "success": True,
+                        "session_id": session_id,
+                        "monitor_run_id": run_id,
+                        "training": previous,
+                        "message": "实时规划监测已启动。" if language == "zh" else "Live planning monitoring started.",
+                        "language": language,
+                    })
+                return jsonify({
+                    "success": False,
+                    "error": "该病例已有正在运行的监测任务。" if language == "zh" else "A monitor run is already active for this case.",
+                    "monitor_run_id": previous_run_id or None,
+                }), 409
             bucket["training"] = {
                 "active": True,
                 "run_id": run_id,
@@ -2712,6 +2742,19 @@ def register_planning_routes(
         advice = _build_plan_advice(agent, session_id)
         localized_advice = _localize_plan_advice(advice, language)
         summary = _format_training_summary(events, counts, advice, language)
+        summary_message = {
+            "message_id": f"assistant-monitor-{active_run_id or 'latest'}-summary",
+            "request_id": f"monitor-{active_run_id or 'latest'}",
+            "message_kind": "monitor_summary",
+            "content": summary,
+            "language": language,
+            "completed_at": time.time(),
+        }
+        # The browser may leave this case while the final quality check is
+        # running. Store a compact, case-owned summary with the monitor state
+        # so hydration can restore it instead of losing the close-out message.
+        with _UI_BRIDGE_LOCK:
+            training["last_summary"] = summary_message
         checkpoint_ui_bridge(session_id, "training.stopped")
         return jsonify({
             "success": True,
@@ -2722,6 +2765,7 @@ def register_planning_routes(
             "feedback": feedback,
             "advice": advice,
             "localized_advice": localized_advice,
+            "summary_message": summary_message,
             "training": training,
             "language": language,
         })

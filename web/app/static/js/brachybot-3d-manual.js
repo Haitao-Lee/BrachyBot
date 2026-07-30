@@ -797,7 +797,11 @@ async function startTrainingMode(goal = 'Monitor planning workflow') {
         });
         const data = await res.json().catch(() => null);
         if (!res.ok || !data || !data.success) throw new Error((data && data.error) || `HTTP ${res.status}`);
-        if (trainingMonitorState.runId !== runId || trainingMonitorState.sessionId !== startSessionId) return null;
+        // A monitor belongs to its case. A late start response must not turn
+        // on the global monitor presentation for whichever case is now open.
+        if (trainingMonitorState.runId !== runId
+            || trainingMonitorState.sessionId !== startSessionId
+            || _activeApiSessionId() !== startSessionId) return data;
         trainingMonitorState.runId = data.monitor_run_id || runId;
         if (typeof window.setTrainingMonitorPhase === 'function') {
             window.setTrainingMonitorPhase('active');
@@ -825,7 +829,9 @@ async function startTrainingMode(goal = 'Monitor planning workflow') {
         await syncUIBridgeState('training_start');
         return data;
     } catch (e) {
-        if (trainingMonitorState.sessionId === startSessionId && trainingMonitorState.runId === runId) {
+        if (trainingMonitorState.sessionId === startSessionId
+            && trainingMonitorState.runId === runId
+            && _activeApiSessionId() === startSessionId) {
             if (typeof window.setTrainingMonitorPhase === 'function') {
                 window.setTrainingMonitorPhase('error');
                 window.setTrainingMonitorPhase('inactive');
@@ -851,15 +857,16 @@ async function stopTrainingMode() {
     if (!['starting', 'active'].includes(trainingMonitorState.phase)) return null;
     const stopSessionId = trainingMonitorState.sessionId || _activeApiSessionId();
     const stopRunId = trainingMonitorState.runId;
+    if (stopSessionId !== _activeApiSessionId()) return null;
     const language = trainingMonitorState.language
         || (typeof window.monitorConversationLanguage === 'function'
             ? window.monitorConversationLanguage(stopSessionId)
             : (window._i18nLang || 'en'));
+    if (typeof _flushMonitorFeedback === 'function') {
+        _flushMonitorFeedback(stopSessionId, stopRunId, { allowStopping: true });
+    }
     if (typeof window.setTrainingMonitorPhase === 'function') {
         window.setTrainingMonitorPhase('stopping');
-    }
-    if (typeof _flushMonitorFeedback === 'function') {
-        _flushMonitorFeedback(stopSessionId, stopRunId);
     }
     // In-flight checkpoint callbacks see the inactive flag and stop before
     // appending a late screenshot. Release the context so the next run starts
@@ -876,15 +883,18 @@ async function stopTrainingMode() {
         });
         const data = await res.json().catch(() => null);
         if (!res.ok || !data || !data.success) throw new Error((data && data.error) || `HTTP ${res.status}`);
-        if (trainingMonitorState.runId !== stopRunId) return null;
-        if (typeof window.setTrainingMonitorPhase === 'function') {
-            window.setTrainingMonitorPhase('inactive');
-        } else if (typeof window.setMonitorPresentation === 'function') {
-            trainingMonitorState.active = false;
-            window.setMonitorPresentation('inactive');
-        } else {
-            trainingMonitorState.active = false;
-            document.body.classList.remove('monitor-active');
+        const ownsRun = trainingMonitorState.runId === stopRunId
+            && trainingMonitorState.sessionId === stopSessionId;
+        if (ownsRun) {
+            if (typeof window.setTrainingMonitorPhase === 'function') {
+                window.setTrainingMonitorPhase('inactive');
+            } else if (typeof window.setMonitorPresentation === 'function') {
+                trainingMonitorState.active = false;
+                window.setMonitorPresentation('inactive');
+            } else {
+                trainingMonitorState.active = false;
+                document.body.classList.remove('monitor-active');
+            }
         }
         const localizedAdvice = data.localized_advice || data.advice;
         const fallbackPrefix = language === 'zh' ? '规划监测总结' : 'Planning monitoring summary';
@@ -905,17 +915,21 @@ async function stopTrainingMode() {
                 layout: screenshotContext?.layout || 'auto',
             },
         );
-        trainingMonitorState.runId = null;
-        trainingMonitorState.screenshotGalleryContext = null;
-        trainingMonitorState.lastFeedbackAt = 0;
-        trainingMonitorState.lastScreenshotAt = 0;
-        if (typeof _clearMonitorFeedbackTimer === 'function') _clearMonitorFeedbackTimer();
-        trainingMonitorState.pendingFeedback = [];
+        if (ownsRun) {
+            trainingMonitorState.runId = null;
+            trainingMonitorState.screenshotGalleryContext = null;
+            trainingMonitorState.lastFeedbackAt = 0;
+            trainingMonitorState.lastScreenshotAt = 0;
+            if (typeof _clearMonitorFeedbackTimer === 'function') _clearMonitorFeedbackTimer();
+            trainingMonitorState.pendingFeedback = [];
+        }
         return data;
     } catch (e) {
         // The stop request was not acknowledged. Keep the monitor visibly
         // active because the backend may still be collecting this run.
-        if (trainingMonitorState.runId === stopRunId) {
+        if (trainingMonitorState.runId === stopRunId
+            && trainingMonitorState.sessionId === stopSessionId
+            && _activeApiSessionId() === stopSessionId) {
             if (typeof window.setTrainingMonitorPhase === 'function') {
                 window.setTrainingMonitorPhase('active');
             } else {

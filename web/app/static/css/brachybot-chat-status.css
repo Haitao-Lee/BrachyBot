@@ -1573,7 +1573,8 @@ body.monitor-active::after {
     box-sizing: border-box;
     /* Keep a plain-color fallback for embedded clinical browsers that do not
        implement color-mix yet. */
-    border: 3px solid rgba(79, 124, 255, 0.72);
+    opacity: 0;
+    border: 4px solid rgba(79, 124, 255, 0.76);
     border-color: color-mix(in srgb, var(--primary, #4f7cff) 78%, transparent);
     box-shadow: 0 0 48px rgba(79, 124, 255, 0.30) inset;
     box-shadow:
@@ -1585,6 +1586,11 @@ body.monitor-active::after {
         0 0 86px color-mix(in srgb, var(--primary, #4f7cff) 28%, transparent) inset,
         0 0 28px color-mix(in srgb, var(--primary, #4f7cff) 26%, transparent);
     will-change: opacity, box-shadow;
+    transition: opacity 260ms ease-out;
+    animation: none;
+}
+.monitor-edge-overlay.is-visible {
+    opacity: 1;
     animation: monitor-edge-breathe 2.8s ease-in-out infinite;
 }
 .monitor-edge-overlay[hidden] {
