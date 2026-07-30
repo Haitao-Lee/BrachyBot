@@ -860,6 +860,34 @@ def test_volume_labels_slices_and_planning_results_pin_the_origin_case():
     assert "'X-BrachyBot-Session': ownerSessionId" in report_export
 
 
+def test_completed_segmentation_retries_publication_and_rebuilds_2d_3d_per_session():
+    """A completed segmentation must not be stranded by a short hydration race."""
+    chat = read("web/app/static/js/brachybot-chat-todo.js")
+    manual = read("web/app/static/js/brachybot-manual-annotation.js")
+    volume = read("web/app/static/js/brachybot-viewer-volume.js")
+    manual_3d = read("web/app/static/js/brachybot-3d-manual.js")
+
+    assert "window.hydrateCompletedSegmentationArtifacts" in volume
+    assert "forceFresh: true" in volume
+    assert "startSegmentationMeshPrewarm(normalizedKind" in volume
+    assert "allOAR: normalizedKind === 'oar'" in volume
+    assert "hydrateCompletedSegmentationArtifacts({" in chat
+    assert "hydrateCompletedSegmentationArtifacts({" in manual
+    assert "await prewarmSegmentationMeshes(kind" not in manual
+    assert "res.status === 202" in manual_3d
+    assert "pending_timeout" in manual_3d
+
+
+def test_task_resume_distinguishes_reconnect_from_a_server_lost_task():
+    """A server restart must not leave a false 'restoring' promise in chat."""
+    chat = read("web/app/static/js/brachybot-chat-todo.js")
+
+    assert "function _addTaskRecoveryNotice" in chat
+    assert "_addTaskRecoveryNotice(turnSessionId, effectiveTaskId, 'reconnecting')" in chat
+    assert "_addTaskRecoveryNotice(sessionId, staleTaskId, 'unavailable')" in chat
+    assert "The server is no longer running this task" in chat
+
+
 def test_ui_controller_waits_for_async_viewer_and_manual_planning_actions():
     """UI action progress must represent completion, not merely task launch."""
     ui_api = read("web/app/static/js/brachybot-ui-api.js")

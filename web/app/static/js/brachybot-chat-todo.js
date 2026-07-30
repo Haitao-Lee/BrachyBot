@@ -906,6 +906,7 @@ window._explicitChatStopSessions = window._explicitChatStopSessions || {};
 // acknowledgement per case so a new user turn cannot inherit an old aborted
 // controller while its cleanup is still in flight.
 window._sessionChatStopPromises = window._sessionChatStopPromises || {};
+window._sessionChatRecoveryNotices = window._sessionChatRecoveryNotices || {};
 window._chatTurnGeneration = Number(window._chatTurnGeneration || 0);
 window._activeChatTurnGeneration = Number(window._activeChatTurnGeneration || 0);
 window._sessionPlanningRefreshTimers = window._sessionPlanningRefreshTimers || {};
@@ -917,6 +918,30 @@ function _setCaseTaskState(sessionId, status, taskId = undefined) {
     if (taskId !== undefined) {
         if (taskId) window._sessionChatTaskIds[key] = taskId;
         else delete window._sessionChatTaskIds[key];
+    }
+}
+
+function _chatLanguageForSession(sessionId) {
+    return (typeof conversationLanguageForSession === 'function'
+        ? conversationLanguageForSession(sessionId)
+        : window._i18nLang) === 'zh' ? 'zh' : 'en';
+}
+
+function _addTaskRecoveryNotice(sessionId, taskId, state) {
+    const key = `${String(sessionId || '')}:${String(taskId || '')}:${state}`;
+    if (!key || window._sessionChatRecoveryNotices[key]) return;
+    window._sessionChatRecoveryNotices[key] = true;
+    const chinese = _chatLanguageForSession(sessionId) === 'zh';
+    const messages = {
+        reconnecting: chinese
+            ? '连接中断，正在重连并恢复这个任务的实时进度…'
+            : 'Connection interrupted. Reconnecting to restore this task\'s live progress...',
+        unavailable: chinese
+            ? '服务端不再运行该任务（可能是服务重启或任务已终止）。已保存的病例数据会保留，请重新运行未完成的步骤。'
+            : 'The server is no longer running this task, possibly after a server restart or task termination. Saved case data is retained; please rerun the unfinished step.',
+    };
+    if (typeof addChat === 'function') {
+        addChat(state === 'unavailable' ? 'error' : 'system', messages[state], true, Date.now(), false, sessionId);
     }
 }
 
@@ -1980,37 +2005,26 @@ async function sendChat(prefill, options) {
                             // Without this, masks are stored server-side but never
                             // fetched by the frontend.
                             if (data.status === 'done' && data.tool && SEG_TOOLS.includes(data.tool)) {
-                                uiDebugLog('[SSE-STEP] Segmentation done:', data.tool, '- loading label volumes');
-                                if (typeof loadLabelVolumes === 'function') {
-                                    // Tool events can finish while another
-                                    // case is visible. Bind the refresh to the
-                                    // owning session so a completed OAR/CTV
-                                    // result cannot paint the wrong Data Tree.
+                                const segmentationKind = data.tool === 'oar_segmentation' ? 'oar' : 'ctv';
+                                uiDebugLog('[SSE-STEP] Segmentation done:', data.tool, '- hydrating viewer artifacts');
+                                // The workspace may publish the tool result before the
+                                // label endpoint and 3D mesh service are ready. This
+                                // session-bound job retries the short publication race,
+                                // paints 2D/Data Tree first, then builds true meshes in
+                                // the background without extending the chat task.
+                                if (typeof window.hydrateCompletedSegmentationArtifacts === 'function') {
+                                    void window.hydrateCompletedSegmentationArtifacts({
+                                        sessionId: turnSessionId,
+                                        kind: segmentationKind,
+                                        reason: 'chat-segmentation-complete',
+                                    }).catch(error => console.warn('[SSE-STEP] segmentation artifact hydration failed:', error));
+                                } else if (typeof loadLabelVolumes === 'function') {
                                     loadLabelVolumes({
                                         sessionId: turnSessionId,
                                         forceFresh: true,
                                         preserveViewerState: true,
                                         resetPresentation: true,
-                                    }).then(() => {
-                                        if (String(activeSessionId || '') !== turnSessionId) return;
-                                        if (typeof window.reconcileSegmentationViewerState === 'function') {
-                                            window.reconcileSegmentationViewerState({
-                                                sessionId: turnSessionId,
-                                                reason: 'chat-segmentation-complete',
-                                            });
-                                        }
-                                        if (typeof renderDataTree === 'function') renderDataTree();
-                                        if (typeof startSegmentationMeshPrewarm === 'function') {
-                                            // CTV appears first so the next planning stage has a
-                                            // visible target immediately. Once OAR segmentation is
-                                            // ready, construct every real OAR mesh progressively in
-                                            // the background; do not make the chat task wait for it.
-                                            startSegmentationMeshPrewarm(
-                                                data.tool === 'ctv_segmentation' ? 'ctv' : 'oar',
-                                                data.tool === 'oar_segmentation' ? { allOAR: true } : {},
-                                            );
-                                        }
-                                    }).catch(e => console.warn('[SSE-STEP] loadLabelVolumes failed:', e));
+                                    }).catch(error => console.warn('[SSE-STEP] fallback label load failed:', error));
                                 }
                             }
                         }
@@ -2358,9 +2372,7 @@ async function sendChat(prefill, options) {
                 reconnectNeeded = true;
                 window._detachedChatTasks[turnSessionId] = effectiveTaskId;
                 _setCaseTaskState(turnSessionId, 'running', effectiveTaskId);
-                if (typeof addChat === 'function') {
-                    addChat('system', 'Connection interrupted; restoring live progress...', true, Date.now(), false, turnSessionId);
-                }
+                _addTaskRecoveryNotice(turnSessionId, effectiveTaskId, 'reconnecting');
             } else {
                 turnFailed = true;
                 _setCaseTaskState(turnSessionId, 'failed', null);
@@ -2524,7 +2536,16 @@ window.resumeSessionChatTask = async function resumeSessionChatTask() {
             cache: 'no-store',
             headers: { 'X-BrachyBot-Session': sessionId },
         });
-        if (!response.ok) return false;
+        if (!response.ok) {
+            const staleTaskId = window._sessionChatTaskIds?.[sessionId]
+                || window._detachedChatTasks?.[sessionId]
+                || null;
+            delete window._detachedChatTasks[sessionId];
+            delete window._sessionChatTaskIds[sessionId];
+            _setCaseTaskState(sessionId, 'failed', null);
+            _addTaskRecoveryNotice(sessionId, staleTaskId, 'unavailable');
+            return false;
+        }
         const payload = await response.json();
         // A newer switch can happen while the task status request is in
         // flight. Do not attach this replay to another case's chat shell.
@@ -2534,6 +2555,9 @@ window.resumeSessionChatTask = async function resumeSessionChatTask() {
         // checkpoint are only hints because either can be stale after a
         // refresh, a case switch, or a fast task finalization race.
         if (!task || task.status !== 'running') {
+            const staleTaskId = window._sessionChatTaskIds?.[sessionId]
+                || window._detachedChatTasks?.[sessionId]
+                || null;
             delete window._detachedChatTasks[sessionId];
             delete window._sessionChatTaskIds[sessionId];
             if (window._sessionChatTaskStatuses) window._sessionChatTaskStatuses[sessionId] = task?.status || 'idle';
@@ -2551,6 +2575,9 @@ window.resumeSessionChatTask = async function resumeSessionChatTask() {
                 } catch (error) {
                     console.warn('[chat] completed case refresh deferred:', error);
                 }
+            }
+            if (!task || task?.status === 'failed' || task?.status === 'cancelled') {
+                _addTaskRecoveryNotice(sessionId, staleTaskId, 'unavailable');
             }
             if (typeof window.flushQueuedChatTurns === 'function') {
                 setTimeout(() => window.flushQueuedChatTurns(), 0);
