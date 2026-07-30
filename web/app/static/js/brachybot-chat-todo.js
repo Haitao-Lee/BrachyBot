@@ -1396,6 +1396,37 @@ async function sendChat(prefill, options) {
     let progressEl = null;
     let lastToolName = '';
     const steps = [];
+    const optimisticTraceStepIds = {
+        user: `client-user-input-${turnRequestId}`,
+        router: `client-router-${turnRequestId}`,
+    };
+    const isChineseTurn = () => {
+        const requestLanguage = typeof detectConversationLanguage === 'function'
+            ? detectConversationLanguage(text)
+            : '';
+        if (requestLanguage === 'zh') return true;
+        return (typeof conversationLanguageForSession === 'function'
+            ? conversationLanguageForSession(turnSessionId)
+            : window._i18nLang) === 'zh';
+    };
+    const isRouterTraceStep = step => {
+        const value = `${step?.title || ''} ${step?.tool || ''} ${step?.type || ''}`.toLowerCase();
+        return value.includes('router') || value.includes('\u8def\u7531');
+    };
+    const reconcileOptimisticTraceStep = step => {
+        if (!step || typeof step !== 'object') return { step, index: -1 };
+        const optimisticId = step.type === 'user'
+            ? optimisticTraceStepIds.user
+            : (isRouterTraceStep(step) ? optimisticTraceStepIds.router : '');
+        const index = optimisticId ? steps.findIndex(item => item.id === optimisticId) : -1;
+        if (index < 0) return { step, index: -1 };
+        // Keep the DOM identity created on click-send. This turns the
+        // immediate pending row into the server-confirmed row in place and
+        // prevents the first SSE event from creating a duplicate trace.
+        const merged = Object.assign({}, steps[index], step, { id: optimisticId });
+        steps[index] = merged;
+        return { step: merged, index };
+    };
     // Do not infer planning completion from the rendered trace shape. The
     // server may emit a top-level tool event, a pipeline sub-step with
     // parent_tool, or a compact event without type:"tool". All of those are
@@ -1462,6 +1493,44 @@ async function sendChat(prefill, options) {
         window._caseChainStartedAt = window._caseChainStartedAt || {};
         if (!isResumingTask && turnSessionId) {
             window._caseChainStartedAt[turnSessionId] = Date.now();
+        }
+        // Do not wait for the network/SSE handshake to show that the request
+        // has entered the agent pipeline. The two entries below are local UI
+        // state only; their stable ids are reconciled with the first genuine
+        // server trace events instead of being retained as fake history.
+        if (!isResumingTask && typeof createLiveThinkingChain === 'function') {
+            if (thinkingEl && typeof removeThinkingIndicator === 'function') {
+                removeThinkingIndicator(thinkingEl);
+                thinkingEl = null;
+            }
+            const r = createLiveThinkingChain(
+                window._caseChainStartedAt[turnSessionId],
+                turnRequestId,
+            );
+            chainEl = r.chainEl; stepsDiv = r.stepsDiv; headerEl = r.headerEl;
+            const zh = isChineseTurn();
+            steps.push(
+                {
+                    id: optimisticTraceStepIds.user,
+                    type: 'user',
+                    title: zh ? '\u7528\u6237\u8bf7\u6c42' : 'User input',
+                    status: 'done',
+                    content: text,
+                },
+                {
+                    id: optimisticTraceStepIds.router,
+                    type: 'thinking',
+                    title: zh ? '\u591a\u667a\u80fd\u4f53\u8def\u7531' : 'Multi-Agent Router',
+                    status: 'pending',
+                    content: zh ? '\u6b63\u5728\u5206\u6790\u8bf7\u6c42\u2026' : 'Analyzing request...',
+                },
+            );
+            steps.forEach((step, index) => appendStepToChain?.(stepsDiv, step, index));
+            updateChainHeader?.(headerEl, steps);
+            window._brachyLiveTrace = {
+                sessionId: turnSessionId, steps, chainEl, stepsDiv, headerEl,
+                getTodo: () => todo,
+            };
         }
 
         const connectTimer = turnAbortController
@@ -1630,8 +1699,12 @@ async function sendChat(prefill, options) {
                         window._todoTurnToolCount = 0;
                     }
                     if (currentEvent === 'step' && data) {
-                        const displayStep = _traceStepForDisplay(data, turnSessionId);
-                        steps.push(displayStep);
+                        const traced = reconcileOptimisticTraceStep(
+                            _traceStepForDisplay(data, turnSessionId),
+                        );
+                        const displayStep = traced.step;
+                        const stepIndex = traced.index >= 0 ? traced.index : steps.length;
+                        if (traced.index < 0) steps.push(displayStep);
                         if (data.tool === 'ctv_segmentation' && typeof updateTumorTypeSelector === 'function') {
                             const candidate = data.params?.tumor_type
                                 || data.arguments?.tumor_type
@@ -1657,7 +1730,7 @@ async function sendChat(prefill, options) {
                             };
                         }
                         if (typeof appendStepToChain === 'function') {
-                            appendStepToChain(stepsDiv, displayStep, steps.length - 1);
+                            appendStepToChain(stepsDiv, displayStep, stepIndex);
                         }
                         if (typeof updateChainHeader === 'function') {
                             updateChainHeader(headerEl, steps);

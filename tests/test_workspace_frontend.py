@@ -726,6 +726,17 @@ def test_chat_network_failures_finish_the_turn_and_unlock_case_navigation():
     assert "signal: abortController ? abortController.signal : undefined" in chat
 
 
+def test_chat_creates_and_reconciles_router_trace_before_sse_arrives():
+    """A submitted request must show its own pending router immediately."""
+    chat = read("web/app/static/js/brachybot-chat-todo.js")
+
+    assert "client-router-${turnRequestId}" in chat
+    assert "reconcileOptimisticTraceStep" in chat
+    assert "Do not wait for the network/SSE handshake" in chat
+    assert "createLiveThinkingChain(" in chat
+    assert "status: 'pending'" in chat
+
+
 def test_explicit_stop_is_a_per_session_barrier_before_the_next_chat_turn():
     """A stopped stream must never abort or clear the next turn in its case."""
     chat = read("web/app/static/js/brachybot-chat-todo.js")
