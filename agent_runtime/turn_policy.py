@@ -153,7 +153,7 @@ def classify_local_turn(message: str, pending_tumor_site: bool = False) -> Local
         # multi-agent router first adds a second LLM round-trip of tens of
         # seconds without improving the safety gates: review and completeness
         # checks still run after the actual plan is produced.
-        return LocalTurnPolicy("clinical_planning", "high", False, True, True, CLINICAL_TOOLS)
+        return LocalTurnPolicy("clinical_planning", "high", False, False, True, CLINICAL_TOOLS)
     if segmentation:
         return LocalTurnPolicy("segmentation", "medium", True, False, True, CLINICAL_TOOLS)
     if external:
