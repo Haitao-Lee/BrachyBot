@@ -783,7 +783,7 @@
         // These are presentation preferences. Never copy label IDs, names,
         // voxel counts, categories, geometry, or planning arrays from a UI
         // snapshot: those values are reconstructed from the current case.
-        ['visible', 'opacity', 'color', 'material', 'locked'].forEach(key => {
+        ['visible', 'visible2D', 'visible3D', 'opacity', 'color', 'material', 'locked'].forEach(key => {
             if (Object.prototype.hasOwnProperty.call(saved, key)) target[key] = saved[key];
         });
     }
@@ -794,7 +794,7 @@
             copyDisplayProperties(dataTreeState[key], savedTree[key]);
         });
         if (savedTree.planning && dataTreeState.planning) {
-            ['visible', 'opacity', 'color', 'material', 'locked'].forEach(key => {
+            ['visible', 'visible2D', 'visible3D', 'opacity', 'color', 'material', 'locked'].forEach(key => {
                 if (Object.prototype.hasOwnProperty.call(savedTree.planning, key)) {
                     dataTreeState.planning[key] = savedTree.planning[key];
                 }
@@ -830,6 +830,10 @@
             const saved = byId.get(String(organ.id)) || byLabel.get(String(organ.labelId));
             copyDisplayProperties(organ, saved);
         });
+        // Mesh hydration can finish after this compact session snapshot. Apply
+        // the per-view presentation now, and the mesh loader will reapply it
+        // again when late geometry becomes available.
+        window.applyDataTreeViewVisibility?.();
     }
 
     function hasTreeClinicalData(tree) {

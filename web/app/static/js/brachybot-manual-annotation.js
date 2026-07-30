@@ -1331,7 +1331,10 @@ function _drawSurgicalGuideSliceProjection(ctx, axisIdx, sliceIndex, orientIdx, 
     const guideId = 'patient_specific_puncture_guide';
     const guideMesh = (typeof scene3D !== 'undefined') ? scene3D?.meshes?.[guideId] : null;
     const guideState = dataTreeState?.planning?.meshes?.find(item => item.id === guideId);
-    if (!guideMesh?.geometry?.attributes?.position || guideState?.visible === false) return;
+    if (!guideMesh?.geometry?.attributes?.position ||
+        (typeof window.isDataTreeNodeVisible2D === 'function'
+            ? !window.isDataTreeNodeVisible2D(guideState)
+            : guideState?.visible === false || guideState?.visible2D === false)) return;
 
     const opacity = Number(guideState?.opacity ?? guideMesh.material?.opacity ?? 0.82);
     if (!Number.isFinite(opacity) || opacity <= 0.001) return;
@@ -1400,7 +1403,10 @@ function hasSurgicalGuideProjection() {
     const guideId = 'patient_specific_puncture_guide';
     const mesh = (typeof scene3D !== 'undefined') ? scene3D?.meshes?.[guideId] : null;
     const guideState = dataTreeState?.planning?.meshes?.find(item => item.id === guideId);
-    return !!(mesh?.geometry?.attributes?.position && guideState?.visible !== false);
+    const visible2D = typeof window.isDataTreeNodeVisible2D === 'function'
+        ? window.isDataTreeNodeVisible2D(guideState)
+        : guideState?.visible !== false && guideState?.visible2D !== false;
+    return !!(mesh?.geometry?.attributes?.position && visible2D);
 }
 
 let _seed2DDrag = null;
@@ -1648,7 +1654,9 @@ function renderSeedsOverlay(axis, sliceIndex) {
     const needles = state.seedsOverlay?.needles || [];
     for (const needle of needles) {
         const needleState = dataTreeState.planning.needles.find(n => n.id === needle.id);
-        if (needleState && needleState.visible === false) continue;
+        if (needleState && (typeof window.isDataTreeNodeVisible2D === 'function'
+            ? !window.isDataTreeNodeVisible2D(needleState)
+            : needleState.visible === false || needleState.visible2D === false)) continue;
         const needleOpacity = needleState?.opacity ?? needle.opacity ?? 0.8;
         if (needleOpacity <= 0.001) continue;
         const trajectoryKey = _overlayTrajectoryKey(needle?.trajectory_id);
@@ -1694,7 +1702,9 @@ function renderSeedsOverlay(axis, sliceIndex) {
 
     for (const seed of seeds) {
         const seedState = dataTreeState.planning.seeds.find(s => s.id === seed.id);
-        if (seedState && seedState.visible === false) continue;
+        if (seedState && (typeof window.isDataTreeNodeVisible2D === 'function'
+            ? !window.isDataTreeNodeVisible2D(seedState)
+            : seedState.visible === false || seedState.visible2D === false)) continue;
         const baseOpacity = seedState?.opacity ?? seed.opacity ?? 1.0;
         if (baseOpacity <= 0.001) continue;
         const outline = _seedCylinderSliceOutline(seed, axis, sliceIndex, orientIdx, toDisplay, axisIdx);
