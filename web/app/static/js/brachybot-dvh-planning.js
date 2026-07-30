@@ -985,8 +985,12 @@ async function refreshPlanningUI(options = {}) {
         // Isodose surfaces
         if (data.has_dose) {
             _meshPromises.push(_withTimeout(
-                loadAllIsoSurfaces({ reconstruct3d: false }),
-                'Isosurface metadata'
+                // Dose levels are first-class planning objects.  Build their
+                // real 3D surfaces as well as their 2D contours so the data
+                // tree never advertises a planning result that only exists
+                // in one viewer.
+                loadAllIsoSurfaces({ reconstruct3d: true }),
+                'Isosurface reconstruction'
             ));
         }
         // CTV + OAR meshes

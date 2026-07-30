@@ -248,6 +248,9 @@
         }
         window.renderDataTree?.();
         window.requestRender?.();
+        // Remove the existing MPR contour immediately as well; otherwise the
+        // old guide can linger in 2D until a later slice interaction.
+        try { window.loadAllSlices?.(); } catch (_) {}
     }
 
     function addGuideMesh(guide) {
@@ -267,8 +270,14 @@
             planning_id: guide.planning_id || null,
             data_version: guide.data_version || guide.version || 1,
             status: guide.status || 'ready',
+            visible: previous?.visible !== false,
         });
         applyGuideParameters(guide.parameters || {});
+        // The guide mesh is the authoritative geometry. Repaint the MPR
+        // canvases after it arrives so its slice projection appears without
+        // requiring the user to move a slice slider.
+        try { window.loadAllSlices?.(); } catch (_) {}
+        try { window.requestRender?.(); } catch (_) {}
         return true;
     }
 

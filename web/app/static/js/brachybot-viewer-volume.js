@@ -1174,7 +1174,10 @@ function renderSliceFromVolume(axis, sliceIndex) {
         triggerDoseContourRender(axis, sliceIndex);
     }
 
-    if (state.seedsOverlay && ((state.seedsOverlay.seeds || []).length || (state.seedsOverlay.needles || []).length)) {
+    const hasGuideProjection = typeof hasSurgicalGuideProjection === 'function'
+        && hasSurgicalGuideProjection();
+    if ((state.seedsOverlay && ((state.seedsOverlay.seeds || []).length || (state.seedsOverlay.needles || []).length))
+        || hasGuideProjection) {
         renderSeedsOverlay(axis, sliceIndex);
     }
 
@@ -1475,7 +1478,7 @@ function updateSlice(view, val) {
         triggerDoseContourRender(view, sliceIndex);
     }
     // Seed/needle 2D overlay — render on every slice change
-    if (state.seedsOverlay) {
+    if (state.seedsOverlay || (typeof hasSurgicalGuideProjection === 'function' && hasSurgicalGuideProjection())) {
         renderSeedsOverlay(view, sliceIndex);
     }
 }

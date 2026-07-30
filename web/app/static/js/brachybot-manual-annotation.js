@@ -1324,6 +1324,85 @@ function _needleSliceSegment(needle, associatedSeeds, axisIdx, sliceIndex, orien
     return { start: toDisplay(outer), end: toDisplay(hit) };
 }
 
+function _drawSurgicalGuideSliceProjection(ctx, axisIdx, sliceIndex, orientIdx, toDisplay) {
+    // The surgical guide uses its real persisted 3D mesh.  Intersecting its
+    // triangles with the active MPR plane produces a clinically meaningful
+    // 2D contour instead of a decorative screen-space projection.
+    const guideId = 'patient_specific_puncture_guide';
+    const guideMesh = (typeof scene3D !== 'undefined') ? scene3D?.meshes?.[guideId] : null;
+    const guideState = dataTreeState?.planning?.meshes?.find(item => item.id === guideId);
+    if (!guideMesh?.geometry?.attributes?.position || guideState?.visible === false) return;
+
+    const opacity = Number(guideState?.opacity ?? guideMesh.material?.opacity ?? 0.82);
+    if (!Number.isFinite(opacity) || opacity <= 0.001) return;
+    const position = guideMesh.geometry.attributes.position;
+    const index = guideMesh.geometry.index?.array;
+    const triangleCount = Math.floor((index ? index.length : position.count) / 3);
+    if (!triangleCount) return;
+
+    // Do not allow an unusually dense imported STL to stall every slice drag.
+    // The planning guide stays visually faithful while sampling at most 12000
+    // faces for its MPR section.
+    const stride = Math.max(1, Math.ceil(triangleCount / 12000));
+    guideMesh.updateMatrixWorld?.(true);
+    const worldPoint = pointIndex => {
+        const point = new THREE.Vector3().fromBufferAttribute(position, pointIndex);
+        return point.applyMatrix4(guideMesh.matrixWorld);
+    };
+    const toPlane = pointIndex => {
+        const world = worldPoint(pointIndex);
+        const raw = _worldToIndex(world.x, world.y, world.z);
+        if (!raw) return null;
+        const oriented = orientIdx(raw);
+        return { value: oriented[axisIdx], point: toDisplay(oriented) };
+    };
+    const addUnique = (points, point) => {
+        if (!point || points.some(existing => Math.hypot(existing.x - point.x, existing.y - point.y) < 0.25)) return;
+        points.push(point);
+    };
+    const tolerance = 0.55;
+    let segmentCount = 0;
+    ctx.save();
+    ctx.beginPath();
+    for (let tri = 0; tri < triangleCount; tri += stride) {
+        const base = tri * 3;
+        const vertices = [0, 1, 2].map(offset => toPlane(index ? index[base + offset] : base + offset));
+        if (vertices.some(vertex => !vertex)) continue;
+        const crossings = [];
+        for (const [aIndex, bIndex] of [[0, 1], [1, 2], [2, 0]]) {
+            const a = vertices[aIndex], b = vertices[bIndex];
+            const da = a.value - sliceIndex, db = b.value - sliceIndex;
+            if (Math.abs(da) <= tolerance) addUnique(crossings, a.point);
+            if (da * db < 0 || Math.abs(db) <= tolerance) {
+                const t = da === db ? 0.5 : Math.max(0, Math.min(1, da / (da - db)));
+                addUnique(crossings, {
+                    x: a.point.x + t * (b.point.x - a.point.x),
+                    y: a.point.y + t * (b.point.y - a.point.y),
+                });
+            }
+        }
+        if (crossings.length < 2) continue;
+        ctx.moveTo(crossings[0].x, crossings[0].y);
+        ctx.lineTo(crossings[1].x, crossings[1].y);
+        segmentCount += 1;
+    }
+    if (segmentCount) {
+        const rgb = _hexToRgbArray(guideState?.color || '#2dd4bf', [45, 212, 191]);
+        ctx.strokeStyle = `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, ${Math.min(1, 0.88 * opacity)})`;
+        ctx.lineWidth = 1.35;
+        ctx.lineJoin = 'round';
+        ctx.stroke();
+    }
+    ctx.restore();
+}
+
+function hasSurgicalGuideProjection() {
+    const guideId = 'patient_specific_puncture_guide';
+    const mesh = (typeof scene3D !== 'undefined') ? scene3D?.meshes?.[guideId] : null;
+    const guideState = dataTreeState?.planning?.meshes?.find(item => item.id === guideId);
+    return !!(mesh?.geometry?.attributes?.position && guideState?.visible !== false);
+}
+
 let _seed2DDrag = null;
 
 function _seedNeedleRecord(seed) {
@@ -1519,7 +1598,7 @@ function _ensureSeed2DInteraction(sliceCanvas, view) {
 // Product overlay: finite needle projection + true seed-cylinder contour.
 // This is the canonical seed/needle overlay implementation.
 function renderSeedsOverlay(axis, sliceIndex) {
-    if (!state.seedsOverlay || !state.ctShape) return;
+    if ((!state.seedsOverlay && !hasSurgicalGuideProjection()) || !state.ctShape) return;
     const sliceCanvas = getSliceCanvas(axis);
     if (!sliceCanvas) return;
 
@@ -1558,7 +1637,7 @@ function renderSeedsOverlay(axis, sliceIndex) {
     const view = { axis, canvas, orientIdx, toDisplay, hitRegions: [] };
     _ensureSeed2DInteraction(sliceCanvas, view);
 
-    const seeds = state.seedsOverlay.seeds || [];
+    const seeds = state.seedsOverlay?.seeds || [];
     const seedsByTrajectory = new Map();
     seeds.forEach(seed => {
         const key = _overlayTrajectoryKey(seed?.trajectory_id);
@@ -1566,7 +1645,7 @@ function renderSeedsOverlay(axis, sliceIndex) {
         seedsByTrajectory.get(key).push(seed);
     });
 
-    const needles = state.seedsOverlay.needles || [];
+    const needles = state.seedsOverlay?.needles || [];
     for (const needle of needles) {
         const needleState = dataTreeState.planning.needles.find(n => n.id === needle.id);
         if (needleState && needleState.visible === false) continue;
@@ -1640,6 +1719,8 @@ function renderSeedsOverlay(axis, sliceIndex) {
         const radius = Math.max(...outline.map(point => Math.hypot(point.x - center.x, point.y - center.y)), 4);
         view.hitRegions.push({ seedId: seed.id, x: center.x, y: center.y, radius });
     }
+
+    _drawSurgicalGuideSliceProjection(ctx, axisIdx, sliceIndex, orientIdx, toDisplay);
 }
 
 function syncAnnotationCanvasSize(axis) {
