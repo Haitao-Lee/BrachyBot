@@ -111,6 +111,20 @@ def test_final_chat_commit_separates_transcript_from_heavy_checkpoint():
     assert 'task.commit_step("done")' not in block
 
 
+def test_viewer_render_posts_do_not_schedule_workspace_checkpoints():
+    """Slice/overlay refreshes are reads even though their transport is POST."""
+    server = read("web/server.py")
+    assert "viewer_read_posts" in server
+    for path in (
+        "/api/viewer/slice",
+        "/api/viewer/overlay",
+        "/api/viewer/3d",
+        "/api/viewer/3d_mask",
+        "/api/viewer/3d_skin",
+    ):
+        assert path in server
+
+
 def test_new_case_creation_avoids_empty_workspace_hydration_and_redundant_round_trips():
     workspace = read("web/app/static/js/brachybot-workspace.js")
     auth = read("web/app/static/js/brachybot-auth.js")

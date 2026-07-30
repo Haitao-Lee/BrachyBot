@@ -771,7 +771,25 @@ def create_app(config: Optional[Dict] = None):
 
     @app.after_request
     def _checkpoint_mutating_workspace(response):
-        if request.method in {"POST", "PUT", "PATCH", "DELETE"} and response.status_code < 400:
+        # Several viewer reads use POST only because they carry a slice index
+        # or render request body.  Treating them as writes schedules a full
+        # CT/label checkpoint for every scroll, overlay refresh, and 3D mesh
+        # fetch.  That creates stale checkpoints which contend with a newly
+        # selected CT upload and makes the Browse workflow look blocked.
+        viewer_read_posts = {
+            "/api/viewer/slice",
+            "/api/viewer/overlay",
+            "/api/viewer/hu",
+            "/api/viewer/3d",
+            "/api/viewer/3d_mask",
+            "/api/viewer/3d_skin",
+        }
+        should_checkpoint = (
+            request.method in {"POST", "PUT", "PATCH", "DELETE"}
+            and request.path not in viewer_read_posts
+            and response.status_code < 400
+        )
+        if should_checkpoint:
             agent = getattr(g, "brachybot_agent", None)
             workspace = getattr(g, "brachybot_workspace", None)
             if agent is not None and workspace is not None:

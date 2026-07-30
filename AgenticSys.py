@@ -1858,9 +1858,16 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
 
         stored = self.memory.retrieve(label_key)
         if stored is None:
-            logger.info(f"[_get_label_array] {label_key}: NOT found in memory (planning_results keys: {list(self.memory.planning_results.keys())[:10]})")
+            # A viewer can ask for both label layers while a newly uploaded CT
+            # is still awaiting segmentation.  That is a normal empty state,
+            # not an analysis failure.  Keep the diagnostic available without
+            # flooding production logs or making the browser appear broken.
+            logger.debug(
+                "[_get_label_array] %s unavailable; segmentation has not produced it yet",
+                label_key,
+            )
             return None
-        logger.info(f"[_get_label_array] {label_key}: found, type={type(stored).__name__}")
+        logger.debug("[_get_label_array] %s found, type=%s", label_key, type(stored).__name__)
 
         if isinstance(stored, sitk.Image):
             try:

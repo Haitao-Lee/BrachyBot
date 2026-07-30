@@ -465,6 +465,12 @@ class WorkspaceStore:
         self._snapshot_cache: Dict[
             Tuple[str, str], Tuple[int, int, Dict[str, Any]]
         ] = {}
+        # Account quota checks used to recursively walk every case directory
+        # for every uploaded megabyte.  Keep a process-local total instead:
+        # writes invalidate it once, while a single upload uses one stable
+        # baseline for its complete stream.  The filesystem remains the
+        # authority after a restart or an external filesystem change.
+        self._storage_usage_cache: Dict[str, int] = {}
         self._ensure_layout()
         self._initialize_database()
         self.purge_expired_trash()
@@ -1704,8 +1710,13 @@ class WorkspaceStore:
         return len(rows)
 
     def user_storage_bytes(self, user_id: str) -> int:
+        user_key = str(user_id)
+        with self._lock:
+            cached = self._storage_usage_cache.get(user_key)
+        if cached is not None:
+            return cached
         total = 0
-        for base in (self.workspaces_dir / user_id, self.trash_dir / user_id):
+        for base in (self.workspaces_dir / user_key, self.trash_dir / user_key):
             if not base.exists():
                 continue
             for path in base.rglob("*"):
@@ -1714,7 +1725,14 @@ class WorkspaceStore:
                         total += path.stat().st_size
                     except OSError:
                         continue
+        with self._lock:
+            self._storage_usage_cache[user_key] = total
         return total
+
+    def _invalidate_storage_usage(self, user_id: str) -> None:
+        """Mark one account's quota total stale after a filesystem mutation."""
+        with self._lock:
+            self._storage_usage_cache.pop(str(user_id), None)
 
     def ensure_capacity(self, user_id: str, additional_bytes: int) -> None:
         user = self.get_user_by_id(user_id)
@@ -1735,6 +1753,7 @@ class WorkspaceStore:
         payload = json.dumps(snapshot, ensure_ascii=False, indent=2, allow_nan=False).encode("utf-8")
         self._ensure_replacement_capacity(user_id, path, len(payload))
         _atomic_bytes(path, payload)
+        self._invalidate_storage_usage(user_id)
         try:
             stat = path.stat()
             session_id = str(snapshot.get("session_id") or path.parent.name)
@@ -1753,8 +1772,21 @@ class WorkspaceStore:
         root = self.workspace_root(user_id, session_id, create=True)
         path = _safe_workspace_child(root / "inputs", relative)
         path.parent.mkdir(parents=True, exist_ok=True)
-        if expected_bytes:
-            self._ensure_replacement_capacity(user_id, path, int(expected_bytes))
+        # Take one capacity snapshot before streaming.  Calling
+        # ``user_storage_bytes`` from the loop below previously performed an
+        # account-wide rglob for every 1 MiB chunk, making a small CT upload
+        # appear frozen when old sessions contained large NPY artifacts.
+        user = self.get_user_by_id(user_id)
+        if not user:
+            raise WorkspaceNotFound("Account is unavailable")
+        try:
+            previous_size = path.stat().st_size if path.exists() else 0
+        except OSError:
+            previous_size = 0
+        quota_remaining = int(user["storage_quota_bytes"]) - self.user_storage_bytes(user_id) + int(previous_size)
+        expected = max(0, int(expected_bytes or 0))
+        if expected and expected > quota_remaining:
+            raise WorkspaceQuotaExceeded("Account storage quota would be exceeded")
         temp = self.staging_dir / f"input-{secrets.token_hex(16)}.part"
         written = 0
         try:
@@ -1764,11 +1796,13 @@ class WorkspaceStore:
                     if not chunk:
                         break
                     written += len(chunk)
-                    self._ensure_replacement_capacity(user_id, path, written)
+                    if written > quota_remaining:
+                        raise WorkspaceQuotaExceeded("Account storage quota would be exceeded")
                     handle.write(chunk)
                 handle.flush()
                 os.fsync(handle.fileno())
             os.replace(temp, path)
+            self._invalidate_storage_usage(user_id)
             try:
                 os.chmod(path, 0o600)
             except OSError:
@@ -1784,6 +1818,7 @@ class WorkspaceStore:
         path = _safe_workspace_child(root / "screenshots", filename)
         self._ensure_replacement_capacity(user_id, path, len(png))
         _atomic_bytes(path, png)
+        self._invalidate_storage_usage(user_id)
         return path
 
     def write_artifact(self, user_id: str, session_id: str, category: str, filename: str, stream: Any, expected_bytes: int = 0) -> Path:
@@ -1798,8 +1833,17 @@ class WorkspaceStore:
         root = self.workspace_root(user_id, session_id, create=True)
         path = _safe_workspace_child(root / "artifacts" / safe_category, safe_name)
         path.parent.mkdir(parents=True, exist_ok=True)
-        if expected_bytes:
-            self._ensure_replacement_capacity(user_id, path, int(expected_bytes))
+        user = self.get_user_by_id(user_id)
+        if not user:
+            raise WorkspaceNotFound("Account is unavailable")
+        try:
+            previous_size = path.stat().st_size if path.exists() else 0
+        except OSError:
+            previous_size = 0
+        quota_remaining = int(user["storage_quota_bytes"]) - self.user_storage_bytes(user_id) + int(previous_size)
+        expected = max(0, int(expected_bytes or 0))
+        if expected and expected > quota_remaining:
+            raise WorkspaceQuotaExceeded("Account storage quota would be exceeded")
         temp = self.staging_dir / f"artifact-{secrets.token_hex(16)}.part"
         written = 0
         try:
@@ -1809,11 +1853,13 @@ class WorkspaceStore:
                     if not chunk:
                         break
                     written += len(chunk)
-                    self._ensure_replacement_capacity(user_id, path, written)
+                    if written > quota_remaining:
+                        raise WorkspaceQuotaExceeded("Account storage quota would be exceeded")
                     handle.write(chunk)
                 handle.flush()
                 os.fsync(handle.fileno())
             os.replace(temp, path)
+            self._invalidate_storage_usage(user_id)
             try:
                 os.chmod(path, 0o600)
             except OSError:
