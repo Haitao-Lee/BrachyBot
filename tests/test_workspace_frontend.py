@@ -49,6 +49,31 @@ def test_workspace_delete_uses_custom_confirmation_and_cancels_active_stream():
     assert "void loadServerSessions().then(() => renderSessionList())" in inactive_branch
 
 
+def test_deleted_case_browser_state_is_cleared_only_after_server_success():
+    workspace = read("web/app/static/js/brachybot-workspace.js")
+    delete_block = workspace.split("window.deleteSession =", 1)[1].split(
+        "window.renameServerSession", 1
+    )[0]
+    assert "async function clearDeletedSessionBrowserData" in workspace
+    assert "window.SessionCache.invalidateSession(id)" in workspace
+    assert "storage.removeItem(key)" in workspace
+    assert "delete legacySessions[id]" in workspace
+    assert "delete window._sessionChatTaskIds?.[id]" in workspace
+    assert delete_block.index("if (!response.ok)") < delete_block.index(
+        "await clearDeletedSessionBrowserData(id)"
+    )
+
+
+def test_recycle_bin_is_reachable_on_desktop_and_reports_deleted_count():
+    index = read("web/app/index.html")
+    workspace = read("web/app/static/js/brachybot-workspace.js")
+    css = read("web/app/static/css/brachybot-responsive.css")
+    assert 'id="recycleBinCount"' in index
+    assert '"trashed_count"' in read("web/routes/session_routes.py")
+    assert "updateRecycleBinCount(data?.trashed_count)" in workspace
+    assert ".session-sidebar-close.recycle-bin-button" in css
+
+
 def test_session_restore_uses_corner_non_blocking_hydration_and_fresh_snapshot():
     """Case switching must show progress without masking the workspace."""
     workspace = read("web/app/static/js/brachybot-workspace.js")
@@ -65,6 +90,15 @@ def test_session_restore_uses_corner_non_blocking_hydration_and_fresh_snapshot()
     assert "pointer-events: none" in css
     assert "workspaceSnapshotHasClinicalResources" in workspace
     assert "initial case has no clinical resources; hydration skipped" in ui_api
+
+
+def test_startup_and_session_switch_share_the_same_corner_resource_notice():
+    workspace = read("web/app/static/js/brachybot-workspace.js")
+    ui_api = read("web/app/static/js/brachybot-ui-api.js")
+    assert "window.showCaseResourceLoading" in workspace
+    assert "window.showCaseResourceLoading?.({ sessionId: id })" in workspace
+    assert "window.showCaseResourceLoading?.({ sessionId, runId: generation })" in workspace
+    assert "window.showCaseResourceLoading?.(hydrationScope)" in ui_api
 
 
 def test_task_stream_has_keepalive_and_workspace_restore_has_stale_notice_fallback():

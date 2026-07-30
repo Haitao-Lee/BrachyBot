@@ -78,10 +78,15 @@ def register_session_routes(
         if error:
             return error
         active = str(session.get("bb_session_id") or "")
+        all_sessions = store.list_sessions(user["id"], include_trashed=True)
         return jsonify({
             "success": True,
             "active_session_id": active,
-            "sessions": [session_payload(item) for item in store.list_sessions(user["id"])],
+            "sessions": [session_payload(item) for item in all_sessions if item.status == "active"],
+            # Deleted cases stay out of the selectable case list.  The count
+            # lets the browser make the recovery path discoverable without
+            # loading every deleted snapshot during normal startup.
+            "trashed_count": sum(1 for item in all_sessions if item.status == "trashed"),
         })
 
     def stop_deleted_case_task(user_id: str, session_id: str) -> None:

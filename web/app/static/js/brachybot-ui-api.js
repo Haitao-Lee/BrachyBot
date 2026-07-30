@@ -2592,6 +2592,10 @@ async function restoreActiveSessionWorkspace(options = {}) {
             : 'Loading case resources...',
         hydrationScope,
     );
+    // The workspace bridge owns the single loading presentation. Keep this
+    // compatibility call after its older local wording so startup and a
+    // session switch converge on the same lower-right notice.
+    window.showCaseResourceLoading?.(hydrationScope);
     const slowNoticeTimer = setTimeout(() => {
         if (String(_activeApiSessionId() || '') !== sessionAtStart
             || window.__workspaceHydrationRunId !== hydrationRunId) return;

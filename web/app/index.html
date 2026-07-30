@@ -368,8 +368,10 @@
             <span class="session-sidebar-title" data-i18n-zh="对话" data-i18n-en="Chats">Chats</span>
             <div class="session-sidebar-actions">
                 <button class="new-chat-btn" onclick="newChat()"><span data-i18n-zh="+ 新建" data-i18n-en="+ New">+ New</span></button>
-                <button class="session-sidebar-close" type="button" onclick="openRecycleBin()"
-                        aria-label="Open recycle bin" title="Recycle bin">&#8635;</button>
+                <button class="session-sidebar-close recycle-bin-button" type="button" onclick="openRecycleBin()"
+                        aria-label="Open recycle bin" title="Recycle bin">
+                    &#8635;<span id="recycleBinCount" class="recycle-bin-count" hidden></span>
+                </button>
                 <button class="session-sidebar-close" type="button" onclick="closeSessionSidebar()"
                         aria-label="Close chat history" title="Close chat history">&times;</button>
             </div>

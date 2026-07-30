@@ -172,6 +172,19 @@
         document.body.classList.toggle('workspace-hydrating', !!active);
     };
 
+    // Cold-start hydration and a user-initiated session switch are the same
+    // user-facing operation: resources for the selected case are arriving in
+    // the background. Keep them on the one non-blocking lower-right notice.
+    window.showCaseResourceLoading = function showCaseResourceLoading(scope = null) {
+        window.setWorkspaceHydrationState?.(
+            true,
+            typeof window._t === 'function'
+                ? window._t('正在加载病例资源…', 'Loading case resources...')
+                : 'Loading case resources...',
+            scope,
+        );
+    };
+
     function workspaceSnapshotHasClinicalResources(snapshot) {
         if (!snapshot || typeof snapshot !== 'object') return false;
         const agent = snapshot.agent && typeof snapshot.agent === 'object' ? snapshot.agent : {};
@@ -232,6 +245,8 @@
                 : 'Restoring case resources...',
             { sessionId, runId: generation },
         );
+        // Override legacy wording with the shared startup/switch notice.
+        window.showCaseResourceLoading?.({ sessionId, runId: generation });
         document.body.classList.add('workspace-hydrating');
         backgroundRestoreNoticeTimer = setTimeout(() => {
             if (generation !== backgroundRestoreGeneration || sessionId !== activeSessionId) return;
@@ -1241,6 +1256,7 @@
 
     function applySessionList(data) {
         sessions = sessionMapFromPayload(data);
+        updateRecycleBinCount(data?.trashed_count);
         const requested = String(data.active_session_id || '');
         const available = Object.keys(sessions);
         activeSessionId = requested && sessions[requested]
@@ -1309,12 +1325,7 @@
         if (blank) {
             window.setWorkspaceHydrationState?.(false);
         } else {
-            window.setWorkspaceHydrationState?.(
-                true,
-                typeof window._t === 'function'
-                    ? window._t('\u6b63\u5728\u6253\u5f00\u75c5\u4f8b...', 'Opening case...')
-                    : 'Opening case...',
-            );
+            window.showCaseResourceLoading?.({ sessionId });
         }
         return true;
     }
@@ -1324,6 +1335,7 @@
         if (!response.ok) throw new Error(`Session list failed: HTTP ${response.status}`);
         const data = await response.json();
         if (commit) applySessionList(data);
+        else updateRecycleBinCount(data?.trashed_count);
         if (!data.active_session_id && !Object.keys(sessions).length) {
             cancelBackgroundWorkspaceRestore();
         }
@@ -1563,13 +1575,10 @@
             const switchStartedAt = workspaceNow();
             _switchAbortController = new AbortController();
             const aborter = _switchAbortController;
-            // Show the switching indicator IMMEDIATELY for visual feedback.
-            window.setWorkspaceHydrationState?.(
-                true,
-                typeof window._t === 'function'
-                    ? window._t('正在切换病例…', 'Switching case…')
-                    : 'Switching case…',
-            );
+            // The spinner is always the lower-right case-resource notice;
+            // keep the immediate switch feedback and cold-start feedback
+            // visually indistinguishable.
+            window.showCaseResourceLoading?.({ sessionId: id });
             document.body.classList.add('workspace-hydrating');
             if (!(await prepareSessionChange())) {
                 cancelTransitionUi();
@@ -1656,6 +1665,62 @@
         renderSessionList();
     }
 
+    async function clearDeletedSessionBrowserData(sessionId) {
+        const id = String(sessionId || '');
+        if (!id) return;
+        const jobs = [];
+        if (window.SessionCache) {
+            jobs.push(Promise.resolve(window.SessionCache.invalidateSession(id)));
+        }
+        try { removeSessionScopedLocalState(id); } catch (_) {}
+
+        // Earlier builds saved a few session-scoped recovery and UI keys
+        // outside the four known clinical form keys. Remove only keys whose
+        // scope is unambiguously this deleted case; global preferences and
+        // the editor identity intentionally remain intact.
+        const scoped = key => key.endsWith(`:${id}`) || key.includes(`:${id}:`);
+        for (const storage of [window.localStorage, window.sessionStorage]) {
+            try {
+                const keys = [];
+                for (let index = 0; index < storage.length; index += 1) {
+                    const key = storage.key(index);
+                    if (key && scoped(key)) keys.push(key);
+                }
+                keys.forEach(key => storage.removeItem(key));
+            } catch (_) {}
+        }
+
+        // Remove the deleted case from the pre-workspace aggregate as well.
+        // It is no longer used for normal persistence, but a stale legacy
+        // blob must not be able to resurrect a deleted sidebar entry after a
+        // failed bootstrap or a browser downgrade.
+        try {
+            const rawSessions = window.localStorage.getItem('brachybot_sessions');
+            const legacySessions = rawSessions ? JSON.parse(rawSessions) : null;
+            if (legacySessions && typeof legacySessions === 'object' && legacySessions[id]) {
+                delete legacySessions[id];
+                window.localStorage.setItem('brachybot_sessions', JSON.stringify(legacySessions));
+            }
+            if (window.localStorage.getItem('brachybot_active_session') === id) {
+                window.localStorage.removeItem('brachybot_active_session');
+            }
+        } catch (_) {}
+        delete sessionRevisions[id];
+        delete window._sessionChatQueues?.[id];
+        delete window._sessionChatTaskIds?.[id];
+        delete window._sessionChatTaskStatuses?.[id];
+        delete window._detachedChatTasks?.[id];
+        await Promise.allSettled(jobs);
+    }
+
+    function updateRecycleBinCount(count) {
+        const target = document.getElementById('recycleBinCount');
+        if (!target) return;
+        const value = Math.max(0, Number(count) || 0);
+        target.textContent = value > 99 ? '99+' : String(value);
+        target.hidden = value === 0;
+    }
+
     window.deleteSession = async function deleteSession(id, options = {}) {
         if (!sessions[id]) return { success: false, error: 'The requested case does not exist.' };
         if (options.skipConfirm !== true) {
@@ -1701,19 +1766,15 @@
         }
         // Re-render BEFORE the server round-trip
         renderSessionList();
-        // Clean up browser-side durable caches for the deleted session so
-        // cross-session and cross-user data cannot bleed.  IndexedDB stores
-        // CT volumes, label volumes, 3D meshes, and report figures; the
-        // legacy localStorage path holds manual-state, report forms, and
-        // report snapshots scoped to this specific session.
-        if (window.SessionCache) {
-            window.SessionCache.invalidateSession(id).catch(function(){});
-        }
-        try { removeSessionScopedLocalState(id); } catch (_) {}
         try {
             const response = await workspaceFetch(`/api/sessions/${encodeURIComponent(id)}`, { method: 'DELETE' });
             const data = await response.json().catch(() => ({}));
             if (!response.ok) throw new Error(data.error || 'Unable to delete case');
+            // The server mutation is authoritative.  Only after it succeeds
+            // do we erase every browser cache entry for this case, so a
+            // transient network error cannot turn a still-active case into a
+            // locally unreadable one.
+            await clearDeletedSessionBrowserData(id);
             void loadServerSessions().then(() => renderSessionList()).catch(error => console.debug('[workspace] session list refresh deferred:', error));
             return { success: true, active_session_id: activeSessionId };
         } catch (error) {
@@ -1817,6 +1878,8 @@
         const response = await fetch(`/api/sessions/${encodeURIComponent(id)}/purge`, { method: 'DELETE' });
         const data = await response.json();
         if (!response.ok) throw new Error(data.error || 'Unable to permanently delete case');
+        await clearDeletedSessionBrowserData(id);
+        await loadServerSessions();
         await window.openRecycleBin();
     };
 
@@ -1824,6 +1887,8 @@
     window.persistWorkspace = persistWorkspace;
     window.applyWorkspaceSnapshot = applyWorkspaceSnapshot;
     window.applyChatSnapshotFast = applyChatSnapshotFast;
+    window.clearDeletedSessionBrowserData = clearDeletedSessionBrowserData;
+    window.updateRecycleBinCount = updateRecycleBinCount;
     window.loadServerSessions = loadServerSessions;
     window.refreshSessionAfterTaskCompletion = refreshSessionAfterTaskCompletion;
     window.invalidateDeferredWorkspaceRestore = invalidateDeferredWorkspaceRestore;
