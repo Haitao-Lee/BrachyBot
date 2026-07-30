@@ -368,19 +368,11 @@
             <span class="session-sidebar-title" data-i18n-zh="对话" data-i18n-en="Chats">Chats</span>
             <div class="session-sidebar-actions">
                 <button class="new-chat-btn" onclick="newChat()"><span data-i18n-zh="+ 新建" data-i18n-en="+ New">+ New</span></button>
-                <button class="session-sidebar-close recycle-bin-button" type="button" onclick="openRecycleBin()"
-                        aria-label="Open recycle bin" title="Recycle bin">
-                    &#8635;<span id="recycleBinCount" class="recycle-bin-count" hidden></span>
-                </button>
                 <button class="session-sidebar-close" type="button" onclick="closeSessionSidebar()"
                         aria-label="Close chat history" title="Close chat history">&times;</button>
             </div>
         </div>
         <div class="session-list" id="sessionList"></div>
-        <div id="recycleBinPanel" class="recycle-bin-panel" hidden aria-live="polite">
-            <div class="recycle-bin-header"><strong>Recycle bin</strong><button type="button" onclick="closeRecycleBin()" title="Close">&times;</button></div>
-            <div id="recycleBinList" class="recycle-bin-list"></div>
-        </div>
         <div class="sidebar-resize-handle" id="sidebarResizeHandle" data-splitter-version="v3-2026-06-15" style="cursor:col-resize;pointer-events:auto !important;isolation:isolate;transform:translateZ(0);" title="Drag to resize the chat history sidebar"></div>
         <div class="context-panel" id="contextPanel" style="display:none">
             <div class="context-panel-header">
@@ -1466,7 +1458,7 @@
 <script src="static/js/brachybot-chat-core.js?v=12"></script>
 <script src="static/js/brachybot-chat-todo.js?v=12"></script>
 <script src="static/js/brachybot-ui-api.js?v=25"></script>
-<script src="static/js/brachybot-auth.js?v=7"></script>
+<script src="static/js/brachybot-auth.js?v=8"></script>
 <script src="static/js/brachybot-viewer-volume.js?v=13"></script>
 <script src="static/js/brachybot-viewer-layout.js?v=10"></script>
 <script src="static/js/brachybot-3d-manual.js?v=24"></script>
@@ -1475,7 +1467,7 @@
     <script src="static/js/brachybot-dvh-planning.js?v=12"></script>
 <script src="static/js/brachybot-report-shell.js?v=13"></script>
 <script src="static/js/brachybot-report-editor.js?v=12"></script>
-<script src="static/js/brachybot-workspace.js?v=16"></script>
+<script src="static/js/brachybot-workspace.js?v=18"></script>
 <script src="static/js/brachybot-session-cache.js?v=1"></script>
 <script src="static/js/brachybot-report-export.js?v=12"></script>
 <script src="static/js/brachybot-data-export.js?v=1"></script>
