@@ -3125,10 +3125,10 @@ async function prewarmSegmentationMeshes(kind = 'all', opts = {}) {
     }
 }
 
-function startSegmentationMeshPrewarm(kind = 'all') {
+function startSegmentationMeshPrewarm(kind = 'all', opts = {}) {
     if (!state.ctLoaded && !state.ctPath) return;
     setTimeout(() => {
-        prewarmSegmentationMeshes(kind, { showStatus: true }).catch(e => {
+        prewarmSegmentationMeshes(kind, { ...opts, showStatus: opts.showStatus !== false }).catch(e => {
             console.warn('[3D prewarm] failed:', e);
             _setMeshPrewarmStatus('', false);
         });
@@ -3136,7 +3136,19 @@ function startSegmentationMeshPrewarm(kind = 'all') {
 }
 
 async function loadCTVAndObstacleMeshes() {
+    // Keep the first planning refresh responsive: CTV and safety-critical
+    // OARs are ready before the report/viewer pass continues.  The remaining
+    // OAR meshes are then constructed in the background, so every structure
+    // ultimately has a real 3D scene object without making an already-finished
+    // plan appear to hang for the duration of fifty mesh requests.
     await prewarmSegmentationMeshes('all', { showStatus: false, batchSize: 3 });
+    if (oarLabelData) {
+        startSegmentationMeshPrewarm('all', {
+            allOAR: true,
+            showStatus: false,
+            batchSize: 3,
+        });
+    }
     uiDebugLog(`[loadCTVAndObstacle] Meshes ready. Total scene meshes: ${Object.keys(scene3D.meshes).length}`);
 }
 
