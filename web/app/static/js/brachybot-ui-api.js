@@ -2044,7 +2044,19 @@ async function loadCTToViewers(ctPath, options = {}) {
                 await new Promise(resolve => setTimeout(resolve, waitMs));
                 continue;
             }
-            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            if (!res.ok) {
+                // A just-uploaded CT can race a detached session hydration
+                // worker.  The server now cancels stale publishes, but retain
+                // a short retry for an in-flight request which started before
+                // that cancellation was observed.
+                if (res.status >= 500 && attempt < 2) {
+                    await new Promise(resolve => setTimeout(resolve, 250 * (attempt + 1)));
+                    continue;
+                }
+                const problem = await res.json().catch(() => ({}));
+                const detail = String(problem.error || problem.message || '').trim();
+                throw new Error(detail || `HTTP ${res.status}`);
+            }
             data = await res.json();
             break;
         }

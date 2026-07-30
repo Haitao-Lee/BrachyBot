@@ -177,7 +177,7 @@ def test_local_turn_policy_shortcuts_only_low_risk_requests():
 
     planning = classify_local_turn("\u8bf7\u6267\u884c\u653e\u5c04\u6027\u7c92\u5b50\u690d\u5165\u89c4\u5212")
     assert planning.intent == "clinical_planning"
-    assert planning.use_router and planning.use_completeness
+    assert not planning.use_router and planning.use_completeness
     assert planning.requires_review
 
     external = classify_local_turn("\u8bf7\u67e5\u8be2 DeepRare \u7684\u5f00\u6e90\u4ee3\u7801")

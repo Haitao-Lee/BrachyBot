@@ -232,6 +232,16 @@ def test_structure_classification_is_bidirectional_and_persistent(tmp_path):
     assert object_id in memory.retrieve("structure_deleted_ids")
 
 
+def test_leaf_delete_contract_cannot_be_promoted_to_recursive_group_delete():
+    """The Data Tree must opt in before an OAR/CTV parent can be deleted."""
+    root = Path(__file__).resolve().parents[1]
+    routes = (root / "web" / "routes" / "data_routes.py").read_text(encoding="utf-8")
+    viewer = (root / "web" / "app" / "static" / "js" / "brachybot-viewer-volume.js").read_text(encoding="utf-8")
+    assert "Recursive group deletion requires explicit confirmation" in routes
+    assert "selectedItems.clear();\n    selectedItems.add(id);\n    lastClickedId = id;" in viewer
+    assert "recursive_groups: options.recursiveGroups === true" in viewer
+
+
 def test_export_service_serializes_true_units_geometry_and_types(tmp_path):
     store, user, session, agent = _case(tmp_path)
     service = ExportService(store)

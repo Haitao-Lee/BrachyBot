@@ -25,6 +25,7 @@ CLINICAL_TOOLS: FrozenSet[str] = frozenset({
     "trajectory_init", "trajectory_refine", "trajectory_planning",
     "seed_planning", "seed_planning_rule_based", "seed_planning_rl",
     "dose_engine", "dose_evaluation", "planning_pipeline",
+    "surgical_guide",
     "clinical_kb", "safety_validator", "plan_quality_scorer",
     "oar_constraint_checker", "plan_refinement", "report_auto_fill",
     "report_generator", "query_metrics", "ui_screenshot",
@@ -132,6 +133,8 @@ def classify_local_turn(message: str, pending_tumor_site: bool = False) -> Local
         segmentation = True
     planning = _contains_any(lower, (
         "执行规划", "开始规划", "重新规划", "粒子植入规划", "治疗计划",
+        "\u6267\u884c\u653e\u5c04\u6027\u7c92\u5b50\u690d\u5165\u89c4\u5212",
+        "\u653e\u5c04\u6027\u7c92\u5b50\u690d\u5165\u89c4\u5212",
         "planning_pipeline", "brachytherapy plan", "treatment plan", "replan",
     ))
     clinical_advice = _contains_any(lower, (
@@ -144,10 +147,15 @@ def classify_local_turn(message: str, pending_tumor_site: bool = False) -> Local
         "viewer", "slice", "zoom", "show", "hide", "opacity", "screenshot",
         "set", "adjust", "toggle", "drag",
     ))
+    if planning:
+        # A full planning request has an unambiguous local execution path
+        # (CTV/OAR -> planning pipeline).  Sending it through the remote
+        # multi-agent router first adds a second LLM round-trip of tens of
+        # seconds without improving the safety gates: review and completeness
+        # checks still run after the actual plan is produced.
+        return LocalTurnPolicy("clinical_planning", "high", False, True, True, CLINICAL_TOOLS)
     if segmentation:
         return LocalTurnPolicy("segmentation", "medium", True, False, True, CLINICAL_TOOLS)
-    if planning:
-        return LocalTurnPolicy("clinical_planning", "high", True, True, True, CLINICAL_TOOLS)
     if external:
         return LocalTurnPolicy("external_project_query", "low", True, True, True, frozenset({"web_search", "web_fetch", "web_access"}))
     if clinical_advice:

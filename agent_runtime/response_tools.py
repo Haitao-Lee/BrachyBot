@@ -165,6 +165,11 @@ print(json.dumps(result))
         # Bilingual patterns: Chinese terms match Chinese user input.
         # zh: 分割=segment, 靶区=target, 肿瘤=tumor, 器官=organ, 危及器官=OAR
         ACTION_PATTERNS = [
+            # A complete seed-implant planning request is deterministic once
+            # a CT and a supported target type are known. Avoid a redundant
+            # remote router call that merely rediscovered CTV -> OAR -> plan.
+            (r'(?:\u653e\u5c04\u6027?\u7c92\u5b50(?:\u690d\u5165)?\u89c4\u5212|\u7c92\u5b50(?:\u690d\u5165)?\u89c4\u5212|\u8fd1\u8ddd\u79bb\u653e\u7597\u89c4\u5212|'
+             r'brachytherapy\s+(?:implant\s+)?plan|treatment\s+plan|planning[_\s-]*pipeline)', 'plan_full'),
             # UTF-8-safe aliases; legacy mojibake patterns remain below for
             # compatibility with old transcripts.
             (r'(ctv|clinical\s+target\s+volume).{0,8}(segment|seg|\u5206\u5272)', 'segment_ctv'),
@@ -250,7 +255,7 @@ print(json.dumps(result))
         # whose system prompt asks one concise clarification question before
         # any CTV tool is called. OAR-only requests remain directly executable.
         if not tumor_type and any(
-            action in {"segment_ctv", "segment_all"} for action in ordered_actions
+            action in {"segment_ctv", "segment_all", "plan_full"} for action in ordered_actions
         ):
             # Some legacy test/integration memory adapters are read-only. The
             # marker is an optimization for the next clarification turn, not
@@ -295,6 +300,40 @@ print(json.dumps(result))
                     oar_call["force_reexecution"] = True
                 tools.append({"id": "tool_direct_ctv", "tool": "ctv_segmentation", "params": ctv_call})
                 tools.append({"id": "tool_direct_oar", "tool": "oar_segmentation", "params": oar_call})
+            elif action == 'plan_full' and ct_path:
+                # A full planning request is intentionally explicit.  The
+                # caller receives segmentation completion events before the
+                # planning tool starts, allowing the browser to publish masks
+                # into the Data Tree and 2D/3D viewers in parallel with the
+                # remaining clinical computation.
+                ctv_call = ctv_params()
+                oar_call = {"image_path": ct_path}
+                if force_reexecution:
+                    ctv_call["force_reexecution"] = True
+                    oar_call["force_reexecution"] = True
+                tools.extend([
+                    {"id": "tool_direct_ctv", "tool": "ctv_segmentation", "params": ctv_call},
+                    {"id": "tool_direct_oar", "tool": "oar_segmentation", "params": oar_call},
+                    {
+                        "id": "tool_direct_plan",
+                        "tool": "planning_pipeline",
+                        "params": {
+                            "ct_image_path": ct_path,
+                            "mode": "rule_based",
+                            "step": "full",
+                        },
+                    },
+                    # planning_pipeline deliberately invalidates an older
+                    # guide because the needle geometry changed.  Generate a
+                    # fresh, case-scoped guide as an explicit, traceable
+                    # completion step instead of relying solely on a later
+                    # browser refresh to notice the stale artifact.
+                    {
+                        "id": "tool_direct_surgical_guide",
+                        "tool": "surgical_guide",
+                        "params": {"action": "generate"},
+                    },
+                ])
             elif action == 'dose' and ct_path:
                 tools.append({"id": "tool_direct_dose", "tool": "dose_engine", "params": {}})
 

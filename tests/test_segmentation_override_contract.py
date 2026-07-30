@@ -96,3 +96,30 @@ def test_ctv_normalization_uses_persisted_site_for_llm_tool_call():
     harness = _DirectHarness(memory)
 
     assert harness._normalize_ctv_tool_params({})["tumor_type"] == "nnunet_pancreatic"
+
+
+def test_explicit_seed_implant_plan_runs_complete_local_delivery_chain():
+    """A clear plan request must not wait for router rediscovery.
+
+    The sequence intentionally leaves each segmentation result observable by
+    the browser before planning starts, then generates a guide from the
+    resulting needle geometry.
+    """
+    harness = _DirectHarness(_Memory({
+        "ct_path": "/tmp/case.nii.gz",
+        "tumor_type_used": "nnunet_pancreatic",
+    }))
+
+    calls = harness._detect_tool_request(
+        "\u8bf7\u6267\u884c\u653e\u5c04\u6027\u7c92\u5b50\u690d\u5165\u89c4\u5212"
+    )
+
+    assert [call["tool"] for call in calls] == [
+        "ctv_segmentation",
+        "oar_segmentation",
+        "planning_pipeline",
+        "surgical_guide",
+    ]
+    assert calls[0]["params"]["tumor_type"] == "nnunet_pancreatic"
+    assert calls[2]["params"]["step"] == "full"
+    assert calls[3]["params"] == {"action": "generate"}
