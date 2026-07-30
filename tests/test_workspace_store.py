@@ -383,6 +383,27 @@ def test_checkpoint_reuses_nested_arrays_after_restart_and_logs_stages(tmp_path,
     assert "arrays_reused=5" in messages
 
 
+def test_upload_stream_checks_account_capacity_once_not_per_chunk(tmp_path, monkeypatch):
+    """Large CT uploads must not recursively scan old case artifacts per MiB."""
+    store = WorkspaceStore(tmp_path / "runtime")
+    user = store.create_user("upload_owner", "hash")
+    case = store.create_session(user["id"], "Upload case")
+    calls = 0
+    original = store.user_storage_bytes
+
+    def counted(user_id):
+        nonlocal calls
+        calls += 1
+        return original(user_id)
+
+    monkeypatch.setattr(store, "user_storage_bytes", counted)
+    payload = b"x" * (3 * 1024 * 1024 + 17)
+    path = store.write_upload(user["id"], case.id, "ct.nii", BytesIO(payload), expected_bytes=len(payload))
+
+    assert path.read_bytes() == payload
+    assert calls == 1
+
+
 def test_checkpoint_drops_large_candidate_trajectory_workspace(tmp_path):
     """Thousands of optimizer candidates are regenerated, not session state."""
     store = WorkspaceStore(tmp_path / "runtime")
