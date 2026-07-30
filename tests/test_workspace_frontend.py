@@ -876,6 +876,7 @@ def test_completed_segmentation_retries_publication_and_rebuilds_2d_3d_per_sessi
     assert "await prewarmSegmentationMeshes(kind" not in manual
     assert "res.status === 202" in manual_3d
     assert "pending_timeout" in manual_3d
+    assert "window.SessionCache && !force" in manual_3d
 
 
 def test_task_resume_distinguishes_reconnect_from_a_server_lost_task():

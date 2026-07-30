@@ -3025,7 +3025,10 @@ async function _fetchAndAddOrganMesh({ labelId, source, organId, label, color, o
             const sid = String(sessionId || _activePlanningSceneSessionId());
             let data = null;
             // --- IndexedDB cache: mesh geometry is immutable once generated ---
-            if (sid && window.SessionCache) {
+            // A forced rebuild follows a new segmentation/import. Its mesh
+            // cache belongs to the prior data version and must not win over
+            // the freshly published server geometry.
+            if (sid && window.SessionCache && !force) {
                 const cacheKey = `mesh:${labelId}:${source}:${smoothing}`;
                 const cached = await window.SessionCache.get(sid, 'mesh', cacheKey);
                 if (cached && cached.byteLength > 0) {
