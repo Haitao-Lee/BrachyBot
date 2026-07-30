@@ -40,6 +40,31 @@
     outline-offset: 2px;
 }
 
+/* The recycle bin is a desktop control as well as a mobile one.  Previously
+   it inherited `display:none` from the mobile-only close button, which made
+   recoverable cases invisible after a server restart. */
+.session-sidebar-close.recycle-bin-button {
+    display: inline-flex;
+    position: relative;
+}
+
+.recycle-bin-count {
+    position: absolute;
+    top: -5px;
+    right: -6px;
+    min-width: 15px;
+    height: 15px;
+    padding: 0 3px;
+    border: 1px solid var(--bg-1);
+    border-radius: 8px;
+    background: var(--primary);
+    color: var(--text-on-primary, #fff);
+    font-size: 9px;
+    font-weight: 700;
+    line-height: 13px;
+    text-align: center;
+}
+
 @media (max-width: 900px) {
     .header {
         height: 54px;
