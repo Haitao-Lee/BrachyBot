@@ -3228,12 +3228,13 @@ function handleTreeItemRightClick(id, event) {
         showGroupContextMenu(event.clientX, event.clientY, id);
         return;
     }
-    // If right-clicking an unselected item, select only it
-    if (!selectedItems.has(id)) {
-        selectedItems.clear();
-        selectedItems.add(id);
-        lastClickedId = id;
-    }
+    // A leaf context menu acts on precisely the leaf under the pointer.
+    // Retaining an old multi-selection here made a right-click on one OAR
+    // capable of submitting every structure from its parent category for
+    // deletion.  Batch actions remain available from explicit parent menus.
+    selectedItems.clear();
+    selectedItems.add(id);
+    lastClickedId = id;
     // Show menu immediately
     showContextMenu(event.clientX, event.clientY);
 }
@@ -3826,7 +3827,7 @@ async function exportDataTreeGroup(category) {
     return true;
 }
 
-async function deleteSelectedDataTreeItems(objectIds = null) {
+async function deleteSelectedDataTreeItems(objectIds = null, options = {}) {
     const expectedSessionId = _viewerDataSessionId();
     const appearance = _structureAppearanceMap();
     const ids = [...new Set(objectIds || getSelectedOrganIds()
@@ -3853,7 +3854,11 @@ async function deleteSelectedDataTreeItems(objectIds = null) {
             ..._viewerDataHeaders(expectedSessionId),
             'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ session_id: expectedSessionId, object_ids: ids }),
+        body: JSON.stringify({
+            session_id: expectedSessionId,
+            object_ids: ids,
+            recursive_groups: options.recursiveGroups === true,
+        }),
     });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok || payload.success === false) {
@@ -3871,7 +3876,12 @@ async function deleteSelectedDataTreeItems(objectIds = null) {
 }
 
 async function deleteDataTreeGroup(category) {
-    return deleteSelectedDataTreeItems(_dataTreeGroupObjectIds(category));
+    // Expand a Data Tree parent to its stable descendants on the client.
+    // The API deliberately rejects an unqualified parent alias, so a stale
+    // selection cannot promote a leaf deletion into a category deletion.
+    return deleteSelectedDataTreeItems(_dataTreeGroupObjectIds(category), {
+        recursiveGroups: true,
+    });
 }
 
 async function moveDataTreeGroup(category, classification) {

@@ -1343,6 +1343,13 @@ class WorkspaceStore:
             "ct_source_meta", "ct_dicom_tags",
         }
         with memory._lock:
+            # An explicit CT import can cancel this worker after the first
+            # check above but before the lock becomes available.  Check again
+            # inside the publish critical section so old session artifacts can
+            # never clear or overwrite a newly imported case.
+            if cancel_event is not None and cancel_event.is_set():
+                logger.info("workspace hydration cancelled during atomic publish session=%s", session_id)
+                return snapshot
             live_ct = {
                 key: memory.planning_results[key]
                 for key in runtime_ct_keys
@@ -1386,7 +1393,7 @@ class WorkspaceStore:
             if cancel_event is not None and cancel_event.is_set():
                 logger.info("workspace hydration cancelled before CT restore session=%s", session_id)
                 return snapshot
-            self._hydrate_ct_image(root, memory)
+            self._hydrate_ct_image(root, memory, cancel_event=cancel_event)
         logger.info(
             "workspace hydration CT phase finished session=%s duration_ms=%.1f ct_loaded=%s",
             session_id,
@@ -1404,7 +1411,7 @@ class WorkspaceStore:
         return snapshot
 
     @staticmethod
-    def _hydrate_ct_image(root: Path, memory: Any) -> None:
+    def _hydrate_ct_image(root: Path, memory: Any, *, cancel_event: Any = None) -> None:
         if memory.retrieve("ct_data") is not None:
             return
         ct_path = memory.retrieve("ct_path")
@@ -1426,16 +1433,21 @@ class WorkspaceStore:
             image = sitk.DICOMOrient(raw_image, "LPI")
             import numpy as np
             array = sitk.GetArrayFromImage(image)
-            memory.planning_results["ct_path"] = str(path)
-            memory.planning_results["ct_image"] = image
-            memory.planning_results["ct_sitk"] = image
-            memory.planning_results["ct_image_raw"] = raw_image
-            memory.planning_results["ct_data"] = array
-            memory.planning_results["ct_shape"] = list(array.shape)
-            memory.planning_results["ct_spacing"] = tuple(float(v) for v in image.GetSpacing())
-            memory.planning_results["ct_origin"] = tuple(float(v) for v in image.GetOrigin())
-            memory.planning_results["ct_direction"] = tuple(float(v) for v in image.GetDirection())
-            memory.planning_results["ct_axis_map"] = {"axial": 0, "sagittal": 2, "coronal": 1}
+            if cancel_event is not None and cancel_event.is_set():
+                return
+            with memory._lock:
+                if cancel_event is not None and cancel_event.is_set():
+                    return
+                memory.planning_results["ct_path"] = str(path)
+                memory.planning_results["ct_image"] = image
+                memory.planning_results["ct_sitk"] = image
+                memory.planning_results["ct_image_raw"] = raw_image
+                memory.planning_results["ct_data"] = array
+                memory.planning_results["ct_shape"] = list(array.shape)
+                memory.planning_results["ct_spacing"] = tuple(float(v) for v in image.GetSpacing())
+                memory.planning_results["ct_origin"] = tuple(float(v) for v in image.GetOrigin())
+                memory.planning_results["ct_direction"] = tuple(float(v) for v in image.GetDirection())
+                memory.planning_results["ct_axis_map"] = {"axial": 0, "sagittal": 2, "coronal": 1}
         except Exception:
             # A damaged CT must not prevent the rest of the session metadata
             # from being inspected or deleted.

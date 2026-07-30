@@ -714,6 +714,41 @@ class ChatWorkflowMixin:
         self._turn_timings = {}
 
         def add_step(step_type, title, content, status="done", **kwargs):
+            # Trace text belongs to the conversational turn, not the global
+            # UI/report locale. Never expose raw internal English titles in a
+            # Chinese trace (or vice versa) merely because the tool registry
+            # happens to use English identifiers.
+            trace_lang = getattr(self, "_active_trace_language", None)
+            if trace_lang == "zh":
+                title = {
+                    "Final Response": "最终回复",
+                    "Response Synthesis": "生成回复",
+                    "Completeness Check": "完整性检查",
+                    "Source Verification": "来源核验",
+                    "Quality Check": "质量检查",
+                    "Auto Planning Pipeline": "自动规划流程",
+                }.get(title, title)
+                if isinstance(title, str) and title.startswith("Direct: "):
+                    tool_name = title.removeprefix("Direct: ")
+                    title = "直接调用：" + {
+                        "ctv_segmentation": "CTV 分割",
+                        "oar_segmentation": "OAR 分割",
+                        "planning_pipeline": "粒子植入规划",
+                        "surgical_guide": "手术导板生成",
+                    }.get(tool_name, tool_name)
+                content = {
+                    "Preparing the reviewed response...": "正在整理回复...",
+                    "Response delivered": "回复已发送",
+                    "Preparing the response from the completed tool results...": "正在根据工具结果整理回复...",
+                    "Response prepared": "回复已整理完成",
+                    "Checking requirement coverage...": "正在检查需求覆盖情况...",
+                    "Checked": "已检查",
+                    "Issues found": "发现需要关注的项目",
+                    "Auto-executed by workflow enforcer": "已按完整规划流程自动执行",
+                }.get(content, content)
+            elif trace_lang == "en":
+                if isinstance(title, str) and title.startswith("Direct: "):
+                    title = "Direct: " + title.removeprefix("Direct: ")
             step_id[0] += 1
             step = {
                 "id": step_id[0],
@@ -810,10 +845,38 @@ class ChatWorkflowMixin:
             _lang_info_start = _lang_detect_start(message)
         except Exception:
             _lang_info_start = {"code": "en", "name": "English", "source": "default"}
+        _trace_lang = "zh" if _lang_info_start.get("code") == "zh" else "en"
+        # The request locale is the source of truth for this turn's trace and
+        # direct-tool response. Persistent panels/reports deliberately use a
+        # separate global UI locale.
+        self.memory.user_lang = _trace_lang
+        self._active_trace_language = _trace_lang
+
+        def _trace_text(zh: str, en: str) -> str:
+            """Keep a request's trace in the language used for that request.
+
+            This deliberately does not read the global UI/report locale.  The
+            trace belongs to a conversational turn, while persistent controls
+            and reports follow the global language selector.
+            """
+            return zh if _trace_lang == "zh" else en
+
+        def _routing_summary(intent: str, complexity: str, review: bool) -> str:
+            if _trace_lang == "zh":
+                return "\u610f\u56fe: {}; \u590d\u6742\u5ea6: {}; \u590d\u6838: {}".format(
+                    intent,
+                    complexity,
+                    "\u9700\u8981" if review else "\u53ef\u9009",
+                )
+            return "Intent: {}, Complexity: {}, Review: {}".format(
+                intent,
+                complexity,
+                "Required" if review else "Optional",
+            )
         yield yield_event("start", {"message": message, "language": _lang_info_start})
 
         # User step
-        add_step("user", "User Input", message)
+        add_step("user", _trace_text("\u7528\u6237\u8f93\u5165", "User Input"), message)
         yield yield_event("step", steps[-1])
 
         # The local policy is an execution hint only. It does not synthesize
@@ -834,8 +897,12 @@ class ChatWorkflowMixin:
             and self.multi_agent_wrapper.enabled
             and local_policy.use_router
         ):
-            router_step = add_step("thinking", "Multi-Agent Router",
-                                 "Analyzing request...", status="pending")
+            router_step = add_step(
+                "thinking",
+                _trace_text("\u591a\u667a\u80fd\u4f53\u8def\u7531", "Multi-Agent Router"),
+                _trace_text("\u6b63\u5728\u5206\u6790\u8bf7\u6c42...", "Analyzing request..."),
+                status="pending",
+            )
             yield yield_event("step", router_step)
             try:
                 import asyncio
@@ -851,18 +918,19 @@ class ChatWorkflowMixin:
                     # Store routing intent for context building
                     self.memory._last_routing_intent = _ma_routing.intent
                     router_step["status"] = "done"
-                    router_step["content"] = (
-                        f"Intent: {_ma_routing.intent}, Complexity: {_ma_routing.complexity}, "
-                        f"Review: {'Required' if _ma_routing.requires_review else 'Optional'}"
+                    router_step["content"] = _routing_summary(
+                        _ma_routing.intent,
+                        _ma_routing.complexity,
+                        _ma_routing.requires_review,
                     )
                 else:
                     router_step["status"] = "done"
-                    router_step["content"] = "Routing not available"
+                    router_step["content"] = _trace_text("\u8def\u7531\u4e0d\u53ef\u7528", "Routing not available")
                 yield yield_event("step", router_step)
             except Exception as e:
                 logger.debug(f"Multi-agent routing failed: {e}")
                 router_step["status"] = "error"
-                router_step["content"] = f"Routing failed: {e}"
+                router_step["content"] = _trace_text("\u8def\u7531\u5931\u8d25", "Routing failed")
                 yield yield_event("step", router_step)
         elif not local_policy.use_router:
             # Keep the trace explicit while avoiding a second remote model
@@ -874,9 +942,12 @@ class ChatWorkflowMixin:
             )
             self.memory._last_routing_intent = local_policy.intent
             local_route_step = add_step(
-                "thinking", "Local Intent",
-                f"Intent: {local_policy.intent}, Complexity: {local_policy.complexity}, "
-                f"Review: {'Required' if local_policy.requires_review else 'Optional'}",
+                "thinking", _trace_text("\u672c\u5730\u610f\u56fe\u8bc6\u522b", "Local Intent"),
+                _routing_summary(
+                    local_policy.intent,
+                    local_policy.complexity,
+                    local_policy.requires_review,
+                ),
             )
             yield yield_event("step", local_route_step)
         self._turn_timings["router_ms"] = round((time.perf_counter() - _route_started) * 1000, 1)
@@ -908,7 +979,7 @@ class ChatWorkflowMixin:
         # the LLM so it can read the current case state and produce a meaningful
         # answer instead of auto-executing a tool the user didn't ask for.
         _direct_tool_calls = None
-        if local_policy.intent in ("segmentation", "planning", "treatment_plan"):
+        if local_policy.intent in ("segmentation", "planning", "treatment_plan", "clinical_planning"):
             _direct_tool_calls = self._detect_tool_request(message)
         if _direct_tool_calls:
             _lang = self.memory.user_lang
@@ -1053,9 +1124,9 @@ class ChatWorkflowMixin:
                 _direct_cc_step = {
                     "id": step_id[0],
                     "type": "tool",
-                    "title": "Completeness Check",
+                    "title": _trace_text("完整性检查", "Completeness Check"),
                     "tool": "completeness_checker",
-                    "content": "Checking requirement coverage...",
+                    "content": _trace_text("正在检查需求覆盖情况...", "Checking requirement coverage..."),
                     "status": "pending",
                 }
                 steps.append(_direct_cc_step)
@@ -1087,12 +1158,18 @@ class ChatWorkflowMixin:
                     if isinstance(_cc_result, str) and _cc_result:
                         pass  # Checker status shown in progress panel only
                     _direct_cc_step["status"] = "done"
-                    _direct_cc_step["content"] = "Checked" if not _cc_result else "Issues found"
+                    _direct_cc_step["content"] = _trace_text(
+                        "已完成" if not _cc_result else "发现待处理项",
+                        "Checked" if not _cc_result else "Issues found",
+                    )
                     yield yield_event("step", _direct_cc_step)
                 except Exception as e:
                     logger.debug(f"Direct completeness check skipped: {e}")
                     _direct_cc_step["status"] = "done"
-                    _direct_cc_step["content"] = "Coverage check unavailable; continuing."
+                    _direct_cc_step["content"] = _trace_text(
+                        "需求覆盖检查暂不可用，将继续生成回复。",
+                        "Coverage check unavailable; continuing.",
+                    )
                     yield yield_event("step", _direct_cc_step)
 
             self._finish_turn(response)

@@ -189,6 +189,22 @@ def register_data_routes(
             if not isinstance(raw_ids, list) or not raw_ids:
                 raise ExportError("object_ids must contain at least one object")
             ids = [str(value) for value in raw_ids]
+            # Parent deletion is intentionally destructive.  A leaf structure
+            # must never be interpreted as a request to delete its OAR/CTV
+            # collection because of a stale browser selection or legacy group
+            # alias.  Callers must explicitly opt in to recursive group
+            # deletion; the Data Tree group menu sends concrete child IDs.
+            recursive_groups = bool(payload.get("recursive_groups"))
+            group_aliases = {
+                "ctv", "oar", "group:structures:ctv", "group:structures:oar",
+                "planning", "group:planning", "group:planning:needles",
+                "group:planning:seeds", "group:dose", "group:dose:isosurfaces",
+            }
+            requested_groups = sorted(set(ids) & group_aliases)
+            if requested_groups and not recursive_groups:
+                raise ExportError(
+                    "Recursive group deletion requires explicit confirmation"
+                )
             available = {
                 item.object_id
                 for item in ExportService(store).catalog(

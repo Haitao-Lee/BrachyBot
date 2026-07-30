@@ -33,13 +33,23 @@ function _todoLabelForStep(step) {
         // Keep the internal evidence phase readable even when an older
         // localized dictionary does not yet contain the tool name.
         if (step.tool === 'fact_checker') {
-            return _activeTodoLang === 'zh' ? 'Source verification' : 'Source verification';
+            return _activeTodoLang === 'zh' ? '\u6765\u6e90\u6838\u9a8c' : 'Source verification';
         }
         return i18n.tools[step.tool] || (i18n.call_prefix + step.tool);
     }
     if (step.type === 'thinking') {
-        // Use the step title (e.g. "Multi-Agent Router", "LLM Call 1")
-        if (step.title) return step.title;
+        // Persisted traces from older sessions may contain English titles.
+        // Localize only their presentation; the stable step ID remains intact.
+        const title = String(step.title || '');
+        if (_activeTodoLang === 'zh') {
+            if (title === 'Multi-Agent Router') return '\u591a\u667a\u80fd\u4f53\u8def\u7531';
+            if (title === 'Local Intent') return '\u672c\u5730\u610f\u56fe\u8bc6\u522b';
+            if (/^LLM Call\s*(\d+)?$/i.test(title)) {
+                const suffix = title.replace(/^LLM Call\s*/i, '');
+                return `\u6a21\u578b\u8c03\u7528${suffix ? ` ${suffix}` : ''}`;
+            }
+        }
+        if (title) return title;
         return i18n.thinking;
     }
     if (step.type === 'memory') {
@@ -2004,9 +2014,10 @@ async function sendChat(prefill, options) {
                             // load label volumes so masks appear in viewer + data tree.
                             // Without this, masks are stored server-side but never
                             // fetched by the frontend.
-                            if (data.status === 'done' && data.tool && SEG_TOOLS.includes(data.tool)) {
-                                const segmentationKind = data.tool === 'oar_segmentation' ? 'oar' : 'ctv';
-                                uiDebugLog('[SSE-STEP] Segmentation done:', data.tool, '- hydrating viewer artifacts');
+                            const completedSegmentationTool = String(data.tool || data.parent_tool || '');
+                            if (data.status === 'done' && SEG_TOOLS.includes(completedSegmentationTool)) {
+                                const segmentationKind = completedSegmentationTool === 'oar_segmentation' ? 'oar' : 'ctv';
+                                uiDebugLog('[SSE-STEP] Segmentation done:', completedSegmentationTool, '- hydrating viewer artifacts');
                                 // The workspace may publish the tool result before the
                                 // label endpoint and 3D mesh service are ready. This
                                 // session-bound job retries the short publication race,
