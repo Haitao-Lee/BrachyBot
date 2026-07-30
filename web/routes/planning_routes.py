@@ -3514,6 +3514,11 @@ def register_planning_routes(
             _, user, session_id = request_case_context()
             task = chat_tasks.active(user["id"], session_id)
             if task is not None:
+                # The abort endpoint performs its own small, explicit
+                # interruption checkpoint below. Do not let the cancelled
+                # worker later run the normal completion hook against the
+                # same agent after a new chat turn has already started.
+                task._skip_finalization = True
                 chat_tasks.cancel(task)
             agent = (get_cached_agent(session_id) if callable(get_cached_agent) else None)
             if agent is None and task is not None:

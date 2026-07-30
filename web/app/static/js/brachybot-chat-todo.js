@@ -901,6 +901,13 @@ window._detachedChatTasks = window._detachedChatTasks || {};
 window._sessionChatQueues = window._sessionChatQueues || {};
 window._activeChatTaskSessionId = window._activeChatTaskSessionId || null;
 window._explicitChatStopSessions = window._explicitChatStopSessions || {};
+// Stop has two phases: aborting this tab's SSE stream and receiving the
+// server acknowledgement that the case-owned task is terminal. Keep that
+// acknowledgement per case so a new user turn cannot inherit an old aborted
+// controller while its cleanup is still in flight.
+window._sessionChatStopPromises = window._sessionChatStopPromises || {};
+window._chatTurnGeneration = Number(window._chatTurnGeneration || 0);
+window._activeChatTurnGeneration = Number(window._activeChatTurnGeneration || 0);
 window._sessionPlanningRefreshTimers = window._sessionPlanningRefreshTimers || {};
 
 function _setCaseTaskState(sessionId, status, taskId = undefined) {
@@ -1161,6 +1168,17 @@ async function sendChat(prefill, options) {
     const opts = options || {};
     const input = document.getElementById('chatInput');
     const isResumingTask = !!opts.resumeTaskId;
+    // Stop acknowledgement is a per-session barrier. Without it, an
+    // immediate follow-up request can race the prior /chat/abort cleanup and
+    // receive the old turn's already-aborted signal.
+    const pendingStopSessionId = String(activeSessionId || '');
+    const pendingStop = pendingStopSessionId
+        ? window._sessionChatStopPromises[pendingStopSessionId]
+        : null;
+    if (pendingStop && !isResumingTask) {
+        try { await pendingStop; } catch (_) {}
+        if (String(activeSessionId || '') !== pendingStopSessionId) return false;
+    }
     const isBusy = !!window._chatTurnActive || !!window._chatStreaming;
 
     // Enter is a submit action, not a cancellation action.  Preserve the
@@ -1188,6 +1206,8 @@ async function sendChat(prefill, options) {
     // aborting anything.
     if (isBusy) {
         const stopSessionId = String(window._activeChatTaskSessionId || activeSessionId || '');
+        const stopTurnGeneration = Number(window._activeChatTurnGeneration || 0);
+        const stopTurnAbortController = chatAbortController;
         if (stopSessionId) window._explicitChatStopSessions[stopSessionId] = true;
         try {
             if (typeof window._chatTurnCancelUi === 'function') window._chatTurnCancelUi('Stopped');
@@ -1197,14 +1217,21 @@ async function sendChat(prefill, options) {
                 window.cancelVisibleChatProgress('Stopped');
             }
         } catch (_) {}
-        try { chatAbortController.abort(); } catch (_) {}
+        try {
+            if (stopTurnAbortController) {
+                // The old stream must recognise this as an intentional stop
+                // even after a later turn changes the case task status.
+                stopTurnAbortController.__brachybotExplicitStop = true;
+                stopTurnAbortController.abort();
+            }
+        } catch (_) {}
+        if (chatAbortController === stopTurnAbortController) chatAbortController = null;
         window._chatTurnActive = false;
         window._chatStreaming = false;
         setStreamingState(false);
-        try {
-            // Session changes await this branch. Confirm that the server has
-            // cancelled the old case before its signed-cookie selection can
-            // move to another workspace.
+        const stopPromise = (async () => {
+            // Confirm that the server has cancelled the old case before a
+            // later user instruction is allowed to begin in this same case.
             const abortController = (typeof AbortController !== 'undefined') ? new AbortController() : null;
             const abortTimer = abortController ? setTimeout(() => abortController.abort(), CHAT_ABORT_TIMEOUT_MS) : null;
             let response;
@@ -1220,15 +1247,25 @@ async function sendChat(prefill, options) {
             if (!response.ok) console.warn('Chat abort was not acknowledged:', response.status);
             _setCaseTaskState(stopSessionId, 'cancelled', null);
             delete window._detachedChatTasks[stopSessionId];
+        })();
+        if (stopSessionId) window._sessionChatStopPromises[stopSessionId] = stopPromise;
+        try {
+            await stopPromise;
         } catch (_) {
             // The local abort and progress cleanup have already completed.
             // A disconnected browser is still protected by the turn token.
         } finally {
-            if (window._activeChatTaskSessionId === stopSessionId) {
+            // A same-session follow-up is a different turn. Never let the
+            // old stop cleanup clear its task identifiers.
+            if (window._activeChatTaskSessionId === stopSessionId
+                && Number(window._activeChatTurnGeneration || 0) === stopTurnGeneration) {
                 window._activeChatTaskId = null;
                 window._activeChatTaskSessionId = null;
             }
-            delete window._explicitChatStopSessions[stopSessionId];
+            if (window._sessionChatStopPromises[stopSessionId] === stopPromise) {
+                delete window._sessionChatStopPromises[stopSessionId];
+                delete window._explicitChatStopSessions[stopSessionId];
+            }
         }
         return;
     }
@@ -1298,6 +1335,9 @@ async function sendChat(prefill, options) {
         return;
     }
 
+    const turnGeneration = Number(window._chatTurnGeneration || 0) + 1;
+    window._chatTurnGeneration = turnGeneration;
+    window._activeChatTurnGeneration = turnGeneration;
     window._activeChatTaskSessionId = turnSessionId;
     _setCaseTaskState(turnSessionId, 'connecting', turnTaskId || undefined);
     window._chatStreaming = false;
@@ -2214,7 +2254,8 @@ async function sendChat(prefill, options) {
 
         const taskStatus = window._sessionChatTaskStatuses?.[turnSessionId];
         const explicitlyStopped = !!window._explicitChatStopSessions?.[turnSessionId]
-            || taskStatus === 'cancelled';
+            || taskStatus === 'cancelled'
+            || !!turnAbortController?.__brachybotExplicitStop;
         const interruptedStream = e?.name === 'AbortError'
             || /abort|timed out|network|fetch/i.test(String(e?.message || ''));
 
@@ -2264,6 +2305,7 @@ async function sendChat(prefill, options) {
         }
         if (chatAbortController === turnAbortController) chatAbortController = null;
         if (window._activeChatTaskSessionId === turnSessionId
+            && Number(window._activeChatTurnGeneration || 0) === turnGeneration
             && (turnCompleted || turnFailed || !reconnectNeeded)) {
             window._activeChatTaskId = null;
             window._activeChatTaskSessionId = null;

@@ -193,6 +193,39 @@ def test_cancel_discards_late_provider_events_and_replays_terminal_status_once()
     assert '"cancelled": true' in events[-1]
 
 
+def test_explicit_abort_can_skip_late_completion_finalization():
+    """Route-owned abort cleanup must not race a later turn's persistence."""
+
+    manager = ChatTaskManager()
+    gate = threading.Event()
+    started = threading.Event()
+    finalized = []
+
+    class _BufferedAgent(_Agent):
+        def chat_with_stream(self, _message):
+            yield _event("start", {})
+            started.set()
+            gate.wait(timeout=2)
+            yield _event("done", {})
+
+    task = manager.start(
+        _App(),
+        "user-a",
+        "case-a",
+        _BufferedAgent([]),
+        "hello",
+        {},
+        on_finish=finalized.append,
+    )
+    assert started.wait(timeout=2)
+    task._skip_finalization = True
+    assert manager.cancel(task) is True
+    gate.set()
+    assert task.wait_for_worker(timeout=2)
+    assert task.status == "cancelled"
+    assert finalized == []
+
+
 def test_same_case_rejects_concurrent_turn_but_other_case_is_allowed():
     manager = ChatTaskManager()
     gate = threading.Event()
