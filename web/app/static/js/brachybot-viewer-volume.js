@@ -754,6 +754,97 @@ async function loadLabelVolumes(options = {}) {
         return true;
 }
 
+// Segmentation tools finish on the agent worker before every browser-facing
+// endpoint has necessarily observed the new label arrays. Keep one
+// session-scoped reconciliation job per result so CTV/OAR data reaches the
+// Data Tree, all 2D canvases, and the 3D scene without making the chat turn
+// wait for mesh extraction.
+const _completedSegmentationArtifactJobs = new Map();
+
+function _segmentationLabelsReady(kind) {
+    const ctvReady = !!(ctvLabelData && ctvLabelData.length
+        && ctvLabelData.some(value => Number(value) > 0));
+    const oarReady = !!(oarLabelData && oarLabelData.length
+        && oarLabelData.some(value => Number(value) > 0));
+    return kind === 'ctv' ? ctvReady : oarReady;
+}
+
+window.hydrateCompletedSegmentationArtifacts = function hydrateCompletedSegmentationArtifacts({
+    sessionId = null,
+    kind = 'ctv',
+    reason = 'segmentation-complete',
+} = {}) {
+    const normalizedKind = kind === 'oar' ? 'oar' : 'ctv';
+    const scope = _captureViewerDataScope(sessionId);
+    const sid = String(scope.sessionId || '');
+    if (!sid || !_viewerDataScopeIsCurrent(scope)) return Promise.resolve({ stale: true });
+    const key = `${sid}:${normalizedKind}`;
+    if (_completedSegmentationArtifactJobs.has(key)) {
+        return _completedSegmentationArtifactJobs.get(key);
+    }
+
+    const job = (async () => {
+        const treeGroup = normalizedKind === 'ctv' ? dataTreeState.ctv : dataTreeState.oar;
+        if (treeGroup) {
+            treeGroup.loading = true;
+            treeGroup.error = null;
+            try { renderDataTree(); } catch (_) {}
+        }
+        let lastError = null;
+        try {
+            // A failed first fetch is normally a short publication race, not
+            // a failed segmentation. Keep this retry detached from the chat
+            // stream and cancel presentation as soon as the case changes.
+            for (let attempt = 0; attempt < 8; attempt += 1) {
+                if (!_viewerDataScopeIsCurrent(scope)) return { stale: true };
+                try {
+                    const loaded = await loadLabelVolumes({
+                        sessionId: sid,
+                        forceFresh: true,
+                        preserveViewerState: true,
+                        resetPresentation: true,
+                    });
+                    if (!_viewerDataScopeIsCurrent(scope)) return { stale: true };
+                    if (loaded && _segmentationLabelsReady(normalizedKind)) {
+                        if (normalizedKind === 'oar') {
+                            try { await hydrateOarDataTreeFromServer(scope.dataGeneration, sid); } catch (_) {}
+                        }
+                        reconcileSegmentationViewerState({ sessionId: sid, reason });
+                        try { renderDataTree(); } catch (_) {}
+                        if (typeof startSegmentationMeshPrewarm === 'function') {
+                            // Mesh extraction is deliberately background work.
+                            // It begins immediately and carries the current
+                            // result generation, while the user can continue
+                            // reviewing the freshly painted 2D structures.
+                            startSegmentationMeshPrewarm(normalizedKind, {
+                                sessionId: sid,
+                                allOAR: normalizedKind === 'oar',
+                                force: true,
+                                batchSize: 3,
+                            });
+                        }
+                        return { ready: true, kind: normalizedKind };
+                    }
+                } catch (error) {
+                    lastError = error;
+                }
+                await new Promise(resolve => setTimeout(resolve, 350 + attempt * 150));
+            }
+            if (_viewerDataScopeIsCurrent(scope) && treeGroup) {
+                treeGroup.error = lastError?.message || 'Segmentation labels are not available yet';
+            }
+            return { ready: false, error: lastError || new Error('Segmentation labels are not available yet') };
+        } finally {
+            if (_viewerDataScopeIsCurrent(scope) && treeGroup) {
+                treeGroup.loading = false;
+                try { renderDataTree(); } catch (_) {}
+            }
+            _completedSegmentationArtifactJobs.delete(key);
+        }
+    })();
+    _completedSegmentationArtifactJobs.set(key, job);
+    return job;
+};
 
 // Pre-allocate pixel buffer for reuse
 let _pixelBuffer = null;

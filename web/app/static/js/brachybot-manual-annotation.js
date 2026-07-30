@@ -709,37 +709,24 @@ async function runSegmentationStep(kind) {
         if (apiKind === 'oar' && typeof window.hydrateOarDataTreeFromPayload === 'function') {
             window.hydrateOarDataTreeFromPayload(data, ownerSessionId);
         }
-        if (typeof loadLabelVolumes === 'function') {
-            try {
-                await loadLabelVolumes({
-                    forceFresh: true,
-                    preserveViewerState: true,
-                    resetPresentation: true,
-                    sessionId: ownerSessionId,
-                });
-            } catch (e) { console.warn('[manual segmentation] loadLabelVolumes failed:', e); }
-        }
         if (!isCurrentOwner()) return { success: true, kind, labels: n, detached: true };
-        if (typeof window.reconcileSegmentationViewerState === 'function') {
-            window.reconcileSegmentationViewerState({
+        // Treat manual and chat segmentation identically: use the authoritative
+        // server labels, update the 2D scene/Data Tree first, then reconstruct
+        // 3D meshes as a detached current-session job. Waiting for 50+ OAR
+        // meshes here made a completed manual action look stalled.
+        if (typeof window.hydrateCompletedSegmentationArtifacts === 'function') {
+            void window.hydrateCompletedSegmentationArtifacts({
                 sessionId: ownerSessionId,
+                kind: apiKind,
                 reason: 'manual-segmentation-complete',
-            });
-        }
-        if (typeof renderDataTree === 'function') {
-            try { renderDataTree(); } catch (_) {}
-        }
-        if (typeof prewarmSegmentationMeshes === 'function') {
-            // Keep the progress row running until the structures are actually
-            // available to the 3D viewer. This prevents a false "done" state
-            // while mesh reconstruction is still running in the background.
-            await prewarmSegmentationMeshes(kind === 'ctv_segmentation' ? 'ctv' : 'oar', {
-                sessionId: ownerSessionId,
+            }).catch(error => console.warn('[manual segmentation] artifact hydration failed:', error));
+        } else if (typeof loadLabelVolumes === 'function') {
+            loadLabelVolumes({
+                forceFresh: true,
                 preserveViewerState: true,
-                allOAR: apiKind === 'oar',
-            });
-        } else if (typeof startSegmentationMeshPrewarm === 'function') {
-            startSegmentationMeshPrewarm(kind === 'ctv_segmentation' ? 'ctv' : 'oar');
+                resetPresentation: true,
+                sessionId: ownerSessionId,
+            }).catch(error => console.warn('[manual segmentation] fallback label load failed:', error));
         }
         if (!isCurrentOwner()) return { success: true, kind, labels: n, detached: true };
         if (apiKind === 'ctv' && String(body.tumor_type || '').startsWith('biomedparse_')) {

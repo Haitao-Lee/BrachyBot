@@ -3037,16 +3037,34 @@ async function _fetchAndAddOrganMesh({ labelId, source, organId, label, color, o
                 }
             }
             if (!data) {
-                const res = await fetch(API + '/viewer/3d_mask', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-BrachyBot-Session': String(sessionId || _activePlanningSceneSessionId()),
-                },
-                body: JSON.stringify({ label_id: labelId, source, smoothing }),
-            });
-            if (!res.ok) return { status: 'http', code: res.status, id: organId };
-            data = await res.json();
+                // A completed segmentation can reach the browser a moment
+                // before the lightweight workspace agent has finished loading
+                // its binary labels.  ``202`` means exactly that; it is not an
+                // empty mesh. Retry locally so the segmentation event always
+                // leads to a real 3D object once the data becomes available.
+                for (let attempt = 0; attempt < 12; attempt += 1) {
+                    const res = await fetch(API + '/viewer/3d_mask', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-BrachyBot-Session': String(sessionId || _activePlanningSceneSessionId()),
+                        },
+                        body: JSON.stringify({ label_id: labelId, source, smoothing }),
+                    });
+                    if (res.status === 202) {
+                        const retryAfter = Number(res.headers.get('Retry-After-Ms') || 300);
+                        await new Promise(resolve => setTimeout(
+                            resolve,
+                            Math.max(100, Math.min(1000, Number.isFinite(retryAfter) ? retryAfter : 300)),
+                        ));
+                        continue;
+                    }
+                    if (!res.ok) return { status: 'http', code: res.status, id: organId };
+                    data = await res.json();
+                    break;
+                }
+                if (!data) return { status: 'pending_timeout', id: organId };
+            }
             if (!data || !data.success || !data.vertex_count) return { status: 'empty', id: organId };
             if (data.face_count > 500000) {
                 console.warn(`[3D mesh] ${organId}: skipping (${data.face_count} faces > 100K limit)`);
@@ -3058,7 +3076,6 @@ async function _fetchAndAddOrganMesh({ labelId, source, organId, label, color, o
                 const enc = new TextEncoder();
                 window.SessionCache.put(sid, 'mesh', cacheKey, enc.encode(JSON.stringify(data)).buffer).catch(function(){});
             }
-            } // end of the else (server fetch) block
             if (generation !== _segmentationMeshPrewarm.generation
                 || (sessionId != null && sessionId !== state.sessionId)) {
                 return { status: 'stale', id: organId };
@@ -3091,7 +3108,7 @@ async function prewarmSegmentationMeshes(kind = 'all', opts = {}) {
     init3DScene();
 
     const generation = _segmentationMeshPrewarm.generation;
-    const sessionId = state.sessionId || null;
+    const sessionId = String(opts.sessionId || state.sessionId || '') || null;
 
     const includeCTV = kind === 'ctv' || kind === 'oar' || kind === 'all';
     const includeOAR = kind === 'oar' || kind === 'all';
