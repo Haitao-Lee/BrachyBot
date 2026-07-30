@@ -76,6 +76,34 @@ def test_training_monitor_frontend_handles_high_value_checkpoints_and_report_lif
     assert "monitor-avatar-breathe" in css
 
 
+def test_monitor_lifecycle_keeps_feedback_and_evidence_case_scoped():
+    root = Path(__file__).resolve().parents[1]
+    ui_api = (root / "web/app/static/js/brachybot-ui-api.js").read_text(encoding="utf-8")
+    manual = (root / "web/app/static/js/brachybot-3d-manual.js").read_text(encoding="utf-8")
+    routes = (root / "web/routes/planning_routes.py").read_text(encoding="utf-8")
+    css = (root / "web/app/static/css/brachybot-chat-status.css").read_text(encoding="utf-8")
+
+    # A delayed timer from another case may not erase a new case's feedback.
+    assert "function _flushMonitorFeedback(ownerSessionId, ownerRunId, options = {})" in ui_api
+    assert "if (!ownsRun || ownerSessionId !== _activeApiSessionId())" in ui_api
+    assert "{ allowStopping: true }" in manual
+    assert manual.index("_flushMonitorFeedback(stopSessionId, stopRunId") < manual.index("window.setTrainingMonitorPhase('stopping')")
+    # A late /training/start response cannot restore its global visual state in
+    # another selected session, and an empty interceptor attachment array must
+    # not discard the gallery attachment built by the capture pipeline.
+    assert "|| _activeApiSessionId() !== startSessionId) return data;" in manual
+    assert "Array.isArray(result.attachments) && result.attachments.length" in ui_api
+    assert "monitorScreenshotContext.items || []" in ui_api
+    # The perimeter transitions both in and out, while remaining entirely
+    # non-interactive.
+    assert ".monitor-edge-overlay.is-visible" in css
+    assert "pointer-events: none;" in css
+    # UI telemetry must not hydrate a cold case just to answer a click.
+    assert "agent = get_cached_agent(session_id) if monitor_run_matches" in routes
+    assert "and request_run_id" in routes
+    assert "A monitor run is already active for this case." in routes
+
+
 def test_monitor_seed_focus_restores_camera_and_mesh_state_after_capture():
     root = Path(__file__).resolve().parents[1]
     manual = (root / "web/app/static/js/brachybot-3d-manual.js").read_text(encoding="utf-8")

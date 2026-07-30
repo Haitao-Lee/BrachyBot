@@ -351,19 +351,26 @@ function _clearMonitorFeedbackTimer() {
     }
 }
 
-function _flushMonitorFeedback(ownerSessionId, ownerRunId) {
+function _flushMonitorFeedback(ownerSessionId, ownerRunId, options = {}) {
     _clearMonitorFeedbackTimer();
-    if (!trainingMonitorState.active
-        || trainingMonitorState.sessionId !== ownerSessionId
-        || trainingMonitorState.runId !== ownerRunId
-        || ownerSessionId !== _activeApiSessionId()) {
+    const ownsRun = trainingMonitorState.sessionId === ownerSessionId
+        && trainingMonitorState.runId === ownerRunId;
+    // A delayed timer from a case we have left must never clear the feedback
+    // accumulated by the newly selected case. It simply becomes irrelevant.
+    if (!ownsRun || ownerSessionId !== _activeApiSessionId()) {
+        return false;
+    }
+    // Finish Monitoring deliberately flushes the last small batch before its
+    // presentation changes to "stopping". Keep that batch user-visible rather
+    // than silently dropping the final manual edits.
+    if (!trainingMonitorState.active && !options.allowStopping) {
         trainingMonitorState.pendingFeedback = [];
-        return;
+        return false;
     }
     const pending = Array.isArray(trainingMonitorState.pendingFeedback)
         ? trainingMonitorState.pendingFeedback.splice(0)
         : [];
-    if (!pending.length) return;
+    if (!pending.length) return false;
     const unique = [...new Map(pending.map(item => [item.message, item])).values()];
     const title = monitorChatText('阶段监测', 'Stage monitor', ownerSessionId);
     const body = unique.length === 1
@@ -384,6 +391,7 @@ function _flushMonitorFeedback(ownerSessionId, ownerRunId) {
             responseLanguage: monitorConversationLanguage(ownerSessionId),
         },
     );
+    return true;
 }
 
 function _queueMonitorFeedback(message, type, label, ownerSessionId, ownerRunId) {
@@ -453,7 +461,29 @@ function setMonitorPresentation(phaseOrActive) {
     document.body.dataset.monitorPhase = phase;
     const edge = document.getElementById('monitorEdgeOverlay');
     if (edge) {
-        edge.hidden = !enabled;
+        if (edge._monitorHideTimer) {
+            clearTimeout(edge._monitorHideTimer);
+            edge._monitorHideTimer = null;
+        }
+        if (enabled) {
+            edge.hidden = false;
+            // Let the browser paint the non-visible state first so entering
+            // Monitor has a quiet, deliberate transition rather than a flash.
+            const showEdge = () => {
+                if (document.body.dataset.monitorPhase === phase) {
+                    edge.classList.add('is-visible');
+                }
+            };
+            if (typeof requestAnimationFrame === 'function') requestAnimationFrame(showEdge);
+            else showEdge();
+        } else {
+            edge.classList.remove('is-visible');
+            // Do not use `hidden` until the opacity transition has finished;
+            // otherwise Finish Monitoring visibly snaps the perimeter off.
+            edge._monitorHideTimer = setTimeout(() => {
+                if (document.body.dataset.monitorPhase === 'inactive') edge.hidden = true;
+            }, 280);
+        }
         edge.setAttribute('aria-hidden', enabled ? 'false' : 'true');
         edge.dataset.phase = phase;
     }
@@ -678,9 +708,17 @@ async function reportUIEvent(type, label, detail = {}, options = {}) {
                             || ownerRunId !== trainingMonitorState.runId
                             || ownerSessionId !== _activeApiSessionId()) return;
                         const title = monitorChatText('监测证据', 'Monitor evidence', ownerSessionId);
+                        const evidenceCaption = monitorChatText(
+                            '已捕获与当前规划检查对应的可视化证据。',
+                            'Captured visual evidence for the current planning checkpoint.',
+                            ownerSessionId,
+                        );
+                        const attachments = Array.isArray(result.attachments) && result.attachments.length
+                            ? result.attachments
+                            : (monitorScreenshotContext.items || []);
                         addChat(
                             'bot-response',
-                            `**${title}**${feedbackText ? `\n\n${feedbackText}` : ''}`,
+                            `**${title}**\n\n${evidenceCaption}`,
                             true,
                             Date.now(),
                             false,
@@ -690,7 +728,7 @@ async function reportUIEvent(type, label, detail = {}, options = {}) {
                                 messageId: monitorScreenshotContext.messageId,
                                 messageKind: 'monitor_evidence',
                                 responseLanguage: language,
-                                attachments: result.attachments || monitorScreenshotContext.items || [],
+                                attachments,
                             },
                         );
                     }).catch(error => {
@@ -2269,6 +2307,7 @@ async function _restoreActiveSessionWorkspace(options = {}) {
     // Training state belongs to the selected planning session as well. The
     // workspace snapshot already carries this state during background restore;
     // avoid a second request on the critical hydration path.
+    let restoredTraining = {};
     if (!(options.background === true && workspace)) {
         try {
             const uiCtrl = new AbortController();
@@ -2283,6 +2322,7 @@ async function _restoreActiveSessionWorkspace(options = {}) {
             if (uiResponse.ok && _activeApiSessionId() === sessionAtStart) {
                 const uiData = await uiResponse.json();
                 const training = uiData.training || {};
+                restoredTraining = training;
                 trainingMonitorState.runId = training.run_id || null;
                 trainingMonitorState.language = training.language || monitorConversationLanguage(sessionAtStart);
                 trainingMonitorState.goal = training.goal || '';
@@ -2294,11 +2334,42 @@ async function _restoreActiveSessionWorkspace(options = {}) {
         }
     } else {
         const training = workspace?.ui?.bridge?.training || workspace?.ui?.state?.training || {};
+        restoredTraining = training;
         trainingMonitorState.runId = training.run_id || training.runId || null;
         trainingMonitorState.language = training.language || monitorConversationLanguage(sessionAtStart);
         trainingMonitorState.goal = training.goal || '';
         trainingMonitorState.sessionId = sessionAtStart;
         setTrainingMonitorPhase(training.active ? 'active' : 'inactive');
+    }
+    // A Finish Monitoring request may return after a session switch. The
+    // server keeps the final summary on the case bridge, so restore it as a
+    // normal case-owned chat message exactly once when this case is revisited.
+    const persistedSummary = restoredTraining?.last_summary;
+    if (persistedSummary?.content && typeof sessions !== 'undefined' && sessions[sessionAtStart]) {
+        const summaryMessageId = String(persistedSummary.message_id || '');
+        const alreadyPresent = (sessions[sessionAtStart].messages || []).some(message =>
+            summaryMessageId && String(message?.id || '') === summaryMessageId
+        );
+        if (!alreadyPresent) {
+            const rawSummaryTimestamp = Number(persistedSummary.completed_at || Date.now());
+            const summaryTimestamp = rawSummaryTimestamp > 0 && rawSummaryTimestamp < 1e12
+                ? rawSummaryTimestamp * 1000
+                : rawSummaryTimestamp;
+            addChat(
+                'bot-response',
+                String(persistedSummary.content),
+                false,
+                summaryTimestamp,
+                false,
+                sessionAtStart,
+                {
+                    requestId: persistedSummary.request_id || '',
+                    messageId: summaryMessageId || `assistant-monitor-${Date.now()}-summary`,
+                    messageKind: 'monitor_summary',
+                    responseLanguage: persistedSummary.language || monitorConversationLanguage(sessionAtStart),
+                },
+            );
+        }
     }
 
     const ctPath = String(status.ct_path || '').trim();
