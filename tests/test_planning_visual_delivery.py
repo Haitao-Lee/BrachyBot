@@ -57,6 +57,19 @@ def test_terminal_planning_refresh_delivers_all_downstream_products():
         "updateClinicalEvaluation()",
     ):
         assert required in planning
+    assert "loadAllIsoSurfaces({ reconstruct3d: true })" in planning
+
+
+def test_surgical_guide_uses_real_mesh_for_data_tree_bound_2d_projection():
+    annotation = read("web/app/static/js/brachybot-manual-annotation.js")
+    guide = read("web/app/static/js/brachybot-surgical-guide.js")
+
+    assert "function _drawSurgicalGuideSliceProjection" in annotation
+    assert "function hasSurgicalGuideProjection" in annotation
+    assert "patient_specific_puncture_guide" in annotation
+    assert "_worldToIndex(world.x, world.y, world.z)" in annotation
+    assert "_drawSurgicalGuideSliceProjection(ctx, axisIdx, sliceIndex, orientIdx, toDisplay);" in annotation
+    assert "window.loadAllSlices?.();" in guide
 
 
 def test_planning_refresh_preserves_existing_tree_presentation_state():

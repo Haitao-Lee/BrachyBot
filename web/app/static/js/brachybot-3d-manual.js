@@ -1883,7 +1883,11 @@ function addMeshToScene(meshData) {
         depthTest: true,
     });
     const mesh = new THREE.Mesh(geometry, surfaceMat);
-    mesh.visible = opacity > 0.001;
+    // A mesh created during hydration/reconstruction must inherit the data
+    // tree state.  Otherwise a hidden planning or structure node reappears
+    // as soon as its real geometry finishes loading.
+    const visible = meshData.visible !== false;
+    mesh.visible = visible && opacity > 0.001;
     mesh.userData = { type: 'mesh', id, source: meshData.source || 'mesh', labelId: meshData.label_id, organId: id };
 
     scene3D.scene.add(mesh);
@@ -1914,7 +1918,7 @@ function addMeshToScene(meshData) {
             dataVersion: Number(meshData.data_version || dataTreeState.planning.version || 0),
             status: meshData.status || 'ready',
             color: colorHex,
-            visible: true,
+            visible,
             opacity,
             vertexCount: meshData.vertex_count || (meshData.vertices ? meshData.vertices.length / 3 : 0),
         };
