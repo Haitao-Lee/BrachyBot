@@ -1,0 +1,69 @@
+"""Regression contracts for chat-driven planning result delivery.
+
+The clinical pipeline may finish on a background worker, but its results must
+still travel through the same case-bound UI path: labels first, then planning
+objects, dose/DVH/report products, and finally non-blocking full OAR meshes.
+"""
+
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def read(relative: str) -> str:
+    return (ROOT / relative).read_text(encoding="utf-8")
+
+
+def test_chat_segmentation_completion_loads_labels_before_background_meshes():
+    chat = read("web/app/static/js/brachybot-chat-todo.js")
+
+    assert "loadLabelVolumes({" in chat
+    assert "forceFresh: true" in chat
+    assert "reconcileSegmentationViewerState" in chat
+    assert "startSegmentationMeshPrewarm(" in chat
+    assert "data.tool === 'oar_segmentation' ? { allOAR: true } : {}" in chat
+
+
+def test_full_oar_reconstruction_is_non_blocking_after_the_essential_meshes():
+    manual = read("web/app/static/js/brachybot-3d-manual.js")
+    block = manual.split("async function loadCTVAndObstacleMeshes()", 1)[1].split(
+        "// Load dose distribution", 1
+    )[0]
+
+    assert "await prewarmSegmentationMeshes('all', { showStatus: false, batchSize: 3 });" in block
+    assert "startSegmentationMeshPrewarm('all', {" in block
+    assert "allOAR: true" in block
+    assert "function startSegmentationMeshPrewarm(kind = 'all', opts = {})" in manual
+
+
+def test_terminal_planning_refresh_delivers_all_downstream_products():
+    chat = read("web/app/static/js/brachybot-chat-todo.js")
+    planning = read("web/app/static/js/brachybot-dvh-planning.js")
+
+    schedule = chat.split("function _scheduleCasePlanningRefresh", 1)[1].split(
+        "function _sessionChatQueue", 1
+    )[0]
+    assert "autoGenerateGuide: true" in schedule
+    assert "retryPending: true" in schedule
+    for required in (
+        "await loadLabelVolumes({",
+        "updateSeeds(data.seeds)",
+        "updateTrajectories(data.trajectories)",
+        "loadDoseOverlay()",
+        "drawDVH()",
+        "loadCTVAndObstacleMeshes()",
+        "reportAutoFill({ sessionId: expectedSessionId })",
+        "updateClinicalEvaluation()",
+    ):
+        assert required in planning
+
+
+def test_planning_refresh_preserves_existing_tree_presentation_state():
+    planning = read("web/app/static/js/brachybot-dvh-planning.js")
+
+    assert "const wasLoaded = !!dataTreeState.seeds.loaded;" in planning
+    assert "if (hasSeeds && !wasLoaded) dataTreeState.seeds.visible = true;" in planning
+    assert "const prior = new Map((dataTreeState.planning.seeds || []).map(seed =>" in planning
+    assert "const seedPresentation = new Map((dataTreeState.planning.seeds || []).map(seed =>" in planning
+    assert "visible: existing?.visible ?? true" in planning

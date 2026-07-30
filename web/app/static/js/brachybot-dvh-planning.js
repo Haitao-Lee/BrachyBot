@@ -1667,20 +1667,28 @@ function updateSeeds(seeds) {
         trajectory_id: _normalizeTrajectoryId(seed.trajectory_id),
     }));
     if (typeof dataTreeState !== 'undefined' && dataTreeState.seeds) {
-        dataTreeState.seeds.loaded = !!(state.seeds && state.seeds.length > 0);
-        dataTreeState.seeds.visible = dataTreeState.seeds.loaded;
+        const hasSeeds = state.seeds.length > 0;
+        const wasLoaded = !!dataTreeState.seeds.loaded;
+        dataTreeState.seeds.loaded = hasSeeds;
+        // A newly produced plan should be visible by default.  Later
+        // refreshes must not undo a deliberate parent-node Hide action.
+        if (hasSeeds && !wasLoaded) dataTreeState.seeds.visible = true;
+        if (!hasSeeds) dataTreeState.seeds.visible = false;
     }
     // Populate planning-level seeds so renderDataTree() shows them in
     // the Planning group (either under Trajectories or as a flat list).
     if (typeof dataTreeState !== 'undefined' && dataTreeState.planning) {
+        const prior = new Map((dataTreeState.planning.seeds || []).map(seed => [
+            String(seed.id || ''), seed,
+        ]));
         dataTreeState.planning.seeds = (state.seeds || []).map(s => ({
             id: s.id || s._id || `seed_${Math.random().toString(36).slice(2, 8)}`,
             position: s.pos || s.position,
             trajectory_id: s.trajectory_id,
             direction: s.direction,
-            visible: true,
-            opacity: 1.0,
-            color: '#ffcc00',
+            visible: prior.get(String(s.id || s._id || ''))?.visible ?? true,
+            opacity: prior.get(String(s.id || s._id || ''))?.opacity ?? 1.0,
+            color: prior.get(String(s.id || s._id || ''))?.color ?? '#ffcc00',
         }));
     }
 }
@@ -1692,6 +1700,12 @@ function updateSeeds(seeds) {
 function updateTrajectories(trajectories) {
     state.trajectories = trajectories || [];
     if (typeof dataTreeState === 'undefined' || !dataTreeState.planning) return;
+    const prior = new Map((dataTreeState.planning.trajectories || []).map(trajectory => [
+        _normalizeTrajectoryId(trajectory.id), trajectory,
+    ]));
+    const seedPresentation = new Map((dataTreeState.planning.seeds || []).map(seed => [
+        String(seed.id || ''), seed,
+    ]));
     // Group seeds by trajectory_id so the tree builder can do a single
     // groupChildren() call per trajectory.
     const grouped = {};
@@ -1702,15 +1716,24 @@ function updateTrajectories(trajectories) {
     });
     dataTreeState.planning.trajectories = (trajectories || []).map(t => {
         const trajId = _normalizeTrajectoryId(t.id);
-        const childSeeds = grouped[trajId] || [];
+        const existing = prior.get(trajId);
+        const childSeeds = (grouped[trajId] || []).map(seed => {
+            const saved = seedPresentation.get(String(seed.id || seed._id || ''));
+            return {
+                ...seed,
+                visible: saved?.visible ?? true,
+                opacity: saved?.opacity ?? 1.0,
+                color: saved?.color ?? '#ffcc00',
+            };
+        });
         return {
             id: trajId,
             index: t.index,
             entry: t.entry,
             target: t.target,
-            visible: true,
-            opacity: 0.8,
-            color: '#88ccff',
+            visible: existing?.visible ?? true,
+            opacity: existing?.opacity ?? 0.8,
+            color: existing?.color ?? '#88ccff',
             seeds: childSeeds,
         };
     });

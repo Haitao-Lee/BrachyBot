@@ -1928,7 +1928,14 @@ async function sendChat(prefill, options) {
                                         }
                                         if (typeof renderDataTree === 'function') renderDataTree();
                                         if (typeof startSegmentationMeshPrewarm === 'function') {
-                                            startSegmentationMeshPrewarm(data.tool === 'ctv_segmentation' ? 'ctv' : 'oar');
+                                            // CTV appears first so the next planning stage has a
+                                            // visible target immediately. Once OAR segmentation is
+                                            // ready, construct every real OAR mesh progressively in
+                                            // the background; do not make the chat task wait for it.
+                                            startSegmentationMeshPrewarm(
+                                                data.tool === 'ctv_segmentation' ? 'ctv' : 'oar',
+                                                data.tool === 'oar_segmentation' ? { allOAR: true } : {},
+                                            );
                                         }
                                     }).catch(e => console.warn('[SSE-STEP] loadLabelVolumes failed:', e));
                                 }
