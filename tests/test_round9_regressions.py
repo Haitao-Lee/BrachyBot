@@ -125,7 +125,6 @@ class Round9RegressionTests(unittest.TestCase):
         assert failed.success is False
         assert failed.error == "No URL provided"
         assert failed.message == failed.error
-
         steps = [
             {
                 "type": "tool",
@@ -147,6 +146,43 @@ class Round9RegressionTests(unittest.TestCase):
         assert successes
         assert failures
         assert _is_placeholder_tool_response("Tools executed. Check the execution trace above for results.")
+
+    def test_web_fetch_explains_anti_bot_block_instead_of_bare_status(self):
+        from unittest import mock
+        from tool_factory.web_fetch import WebFetchTool
+
+        tool = WebFetchTool()
+
+        class BlockedResp:
+            status_code = 403
+            headers = {}
+
+            def close(self):
+                pass
+
+            def iter_content(self, chunk_size):
+                return []
+
+        with mock.patch("tool_factory.web_fetch.requests.get", return_value=BlockedResp()):
+            r = tool._execute(url="https://zhuanlan.zhihu.com/p/123")
+            assert r.success is False
+            assert "blocked automated access" in r.error
+            assert "anti-bot" in r.error
+
+        class ServerResp:
+            status_code = 502
+            headers = {}
+
+            def close(self):
+                pass
+
+            def iter_content(self, chunk_size):
+                return []
+
+        with mock.patch("tool_factory.web_fetch.requests.get", return_value=ServerResp()):
+            r = tool._execute(url="https://example.com/")
+            assert r.success is False
+            assert "server error" in r.error
 
     def test_oar_count_uses_current_case_state_not_external_tools(self):
         from agent_runtime.chat_workflows import ChatWorkflowMixin

@@ -241,6 +241,18 @@ The tool will:
 
             if status_code != 200:
                 response.close()
+                if status_code in (401, 403, 429):
+                    return self._failure(
+                        f"HTTP {status_code}: the site blocked automated access. "
+                        "Use the search-result title and snippet, or ask the user for "
+                        "an alternative public source. (This is the site's anti-bot "
+                        "policy, not a connection problem.)"
+                    )
+                if 500 <= status_code < 600:
+                    return self._failure(
+                        f"HTTP {status_code}: the site returned a server error. "
+                        "Retry later or use another source."
+                    )
                 return self._failure(f"HTTP {status_code}")
 
             content_type = response.headers.get('content-type', '').lower()

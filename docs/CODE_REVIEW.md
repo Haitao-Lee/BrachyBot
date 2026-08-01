@@ -2,6 +2,38 @@
 
 _This file consolidates all code review reports. Sections are organized by date._
 
+## 2026-08-01 - web_fetch anti-bot error clarity
+
+Operator saw `web_fetch → HTTP 403` when fetching a Zhihu article. Zhihu blocks
+all non-browser requests (even search-engine spider UAs return 403), which is
+the site's anti-bot policy rather than a connection or code fault.
+
+`web_fetch` now returns an actionable, machine-readable reason instead of a bare
+status code:
+
+- `403/401/429` → "the site blocked automated access. Use the search-result
+  title and snippet, or ask the user for an alternative public source."
+- `5xx` → "the site returned a server error. Retry later or use another source."
+
+This feeds the honest-failure prompt so the LLM explains the block to the user
+and redirects to search snippets instead of reporting a mysterious failure.
+`web_search` already prefetches page content and skips blocked URLs silently, so
+search answers remain complete even when a specific page is unreachable.
+
+### Files changed
+
+| File | Change |
+|------|--------|
+| `tool_factory/web_fetch/__init__.py` | Actionable 4xx/5xx error messages |
+| `tests/test_round9_regressions.py` | Anti-bot + server-error messaging tests |
+
+### Verification
+
+- `pytest` main suites: 83 passed.
+- Mocked 403 and 502 responses return the new explanatory messages.
+
+---
+
 ## 2026-08-01 - Multi-agent router trace dedup, clean web fallback, and language matching
 
 Operator observed two "multi-agent router" rows (pending + done) in the trace
