@@ -144,6 +144,44 @@ def test_guide_preserves_every_user_adjustable_manufacturing_dimension():
     assert state["validation"]["watertight"] is True
 
 
+def test_guide_sleeve_and_channel_stay_outside_the_body():
+    """The channel must guide the needle from outside; the sleeve must not
+    penetrate into the skin. Previously sleeve_end = entry + inward *
+    sleeve_inward_mm pushed the channel wall into the patient, which would
+    prevent the guide from sitting flush against the skin surface."""
+    from scipy.spatial import cKDTree
+
+    def gen(inward_mm):
+        agent = _synthetic_agent()
+        guide = generate_surgical_guide(agent, {
+            "geometry_resolution_mm": 1.0,
+            "skin_clearance_mm": 0.0,
+            "plate_thickness_mm": 3.0,
+            "channel_radius_mm": 1.0,
+            "sleeve_outer_radius_mm": 3.0,
+            "sleeve_outward_mm": 8.0,
+            "sleeve_inward_mm": inward_mm,
+        })
+        return np.asarray(guide["vertices"]), guide
+
+    # The channel/sleeve geometry must be independent of sleeve_inward_mm: the
+    # tube is clamped flush with the skin entry, so asking for a longer inward
+    # extent must not change the mesh. Before the fix this parameter pushed the
+    # channel wall into the body and produced different geometry per value.
+    v1, g1 = gen(1.0)
+    v30, g30 = gen(30.0)
+    assert len(v1) == len(v30) > 0
+    tree = cKDTree(v30)
+    dist, _ = tree.query(v1)
+    assert float(dist.max()) < 1e-6
+    # The guide must reach out of the body (outward sleeve) and stay watertight.
+    assert g1["validation"]["watertight"] is True
+    entry = np.asarray(g1["needle_paths"][0]["entry_world_mm"])
+    inward = np.asarray(g1["needle_paths"][0]["direction_world"])
+    t = (v1 - entry) @ inward
+    assert float(t.max()) >= 5.0, "outward sleeve should protrude out of the body"
+
+
 def test_agent_tool_uses_the_same_versioned_guide_contract_as_the_web_route():
     agent = _synthetic_agent()
     result = SurgicalGuideTool(agent).execute(action="generate", parameters={"channel_radius_mm": 1.3})

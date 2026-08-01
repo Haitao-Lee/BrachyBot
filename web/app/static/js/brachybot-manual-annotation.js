@@ -1974,6 +1974,8 @@ function createMaskFromFreehand(axis, points) {
 
     renderDataTree();
     reloadOverlays();
+    requestViewerVisualRefresh('mask-draw');
+    if (scene3D?.meshes?.[id]) _reconstructMask3D(id, true);
     addChat('system', `Mask "${mask.name}" now has ${mask.voxels.size} voxels`);
 }
 
@@ -2038,6 +2040,10 @@ function eraseMaskArea(axis, points) {
     if (erased > 0) {
         renderDataTree();
         reloadOverlays();
+        requestViewerVisualRefresh('mask-erase');
+        for (const id of Object.keys(state.maskLabels)) {
+            if (scene3D?.meshes?.[id]) _reconstructMask3D(id, true);
+        }
         addChat('system', `Erased ${erased} voxels from masks`);
     }
 }
@@ -2518,7 +2524,15 @@ function setupBasicInteractions(axis, canvas) {
             state.viewerSettings.level = wlStart.l + dy * 2;
             document.getElementById('viewerWindow').value = Math.round(state.viewerSettings.window);
             document.getElementById('viewerLevel').value = Math.round(state.viewerSettings.level);
-            loadSlice(axis, state.slices[axis]);
+            // Re-render all three 2D viewers live.  The volume path re-renders
+            // from source data instantly; the server fallback needs its slice
+            // cache invalidated so the newly baked window/level appears.
+            if (typeof volumeData !== 'undefined' && volumeData) {
+                requestViewerVisualRefresh('wl-drag');
+            } else {
+                clearSliceCache();
+                loadAllSlices();
+            }
         }
     });
 

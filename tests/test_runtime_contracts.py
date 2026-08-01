@@ -275,3 +275,79 @@ def test_ui_controller_registers_manual_mask_commands():
     assert "annotate" in CONTROL_REGISTRY["viewer.tool"]["values"]
     assert "eraser" in CONTROL_REGISTRY["viewer.tool"]["values"]
     assert CONTROL_REGISTRY["mask.move"]["values"] == ["ctv", "oar"]
+
+
+def test_ui_controller_registers_parameter_targets():
+    from tool_factory.ui_controller import CONTROL_REGISTRY, UIControllerTool
+
+    for key in (
+        "parameter.catalog", "parameter.set", "planning.hyperparams.set",
+        "surgical_guide.parameters.set", "tree.color",
+        "report.field.set", "report.template.set",
+    ):
+        assert key in CONTROL_REGISTRY, f"{key} missing from ui_controller registry"
+        assert CONTROL_REGISTRY[key].get("description"), f"{key} lacks a description"
+
+    tool = UIControllerTool()
+    # Valid target/command passes server-side validation.
+    ok = tool.execute(actions=[{"target": "parameter.catalog", "command": "inspect"}])
+    assert ok.success is True
+    ok = tool.execute(actions=[{
+        "target": "parameter.set", "command": "set",
+        "value": '{"id":"seedRadius","value":0.5}',
+    }])
+    assert ok.success is True
+    ok = tool.execute(actions=[{
+        "target": "surgical_guide.parameters.set", "command": "set",
+        "value": '{"plate_thickness_mm":4}',
+    }])
+    assert ok.success is True
+    ok = tool.execute(actions=[{
+        "target": "tree.color", "command": "set",
+        "value": '{"id":"organ_1","color":"#ff0000"}',
+    }])
+    assert ok.success is True
+    ok = tool.execute(actions=[{
+        "target": "report.field.set", "command": "set",
+        "value": '{"key":"planning.prescriptionGy","value":120}',
+    }])
+    assert ok.success is True
+    # Group visibility accepts the extended mask/planning groups.
+    ok = tool.execute(actions=[{"target": "tree.group.visibility", "command": "set", "value": "masks,show"}])
+    assert ok.success is True
+    # Unknown target still rejected.
+    bad = tool.execute(actions=[{"target": "parameter.nope", "command": "run"}])
+    assert bad.success is False
+
+
+def test_surgical_guide_schema_enumerates_manufacturing_parameters():
+    from tool_factory.surgical_guide import SurgicalGuideTool
+
+    props = SurgicalGuideTool().input_schema["properties"]["parameters"]["properties"]
+    for name in (
+        "skin_threshold_hu", "skin_clearance_mm", "plate_thickness_mm",
+        "patch_margin_mm", "channel_radius_mm", "sleeve_outer_radius_mm",
+        "sleeve_outward_mm", "sleeve_inward_mm", "geometry_resolution_mm",
+    ):
+        assert name in props, f"{name} missing from surgical_guide parameter schema"
+        assert "minimum" in props[name] and "maximum" in props[name]
+
+
+def test_honest_failure_summary_detects_failed_tools():
+    from agent_runtime.llm_runtime import _failed_steps_summary, _HONEST_FAILURE_PROMPT
+
+    assert _failed_steps_summary([]) is None
+    assert _failed_steps_summary([
+        {"type": "tool", "tool": "web_search", "status": "done", "result": "ok"},
+    ]) is None
+    summary = _failed_steps_summary([
+        {"type": "tool", "tool": "ctv_segmentation", "status": "error",
+         "result": {"error": "No CT image loaded"}},
+        {"type": "tool", "tool": "planning_pipeline", "status": "done", "result": "ok"},
+    ])
+    assert summary is not None
+    assert "ctv_segmentation" in summary and "No CT image loaded" in summary
+    # The honest-failure prompt must never tell the LLM to claim success.
+    rendered = _HONEST_FAILURE_PROMPT.format(failures=summary)
+    assert "Do NOT claim success" in rendered
+    assert "tool executed" not in rendered.lower() or "Do NOT say 'tool executed'" in rendered

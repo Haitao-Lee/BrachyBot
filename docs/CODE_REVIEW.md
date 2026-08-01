@@ -2,6 +2,100 @@
 
 _This file consolidates all code review reports. Sections are organized by date._
 
+## 2026-08-01 - Live viewer refresh, dialog-driven parameters, honest failures, and guide flush-fit
+
+Four operator-requested capabilities were implemented and verified end to end.
+
+### 1. Every display change refreshes all viewers in real time
+
+The 3D viewer renders on demand, so any scene-state change that skipped a
+render request left stale pixels until the user moved the camera. The 2D
+viewers also had gaps for cross-axis window/level drags.
+
+- `createMaskFromFreehand` / `eraseMaskArea` (manual-annotation.js) now call
+  `requestViewerVisualRefresh` and rebuild the mask's 3D mesh live, so drawing
+  on one viewer updates the other viewers (including 3D) immediately.
+- Color-picker `applyColor` and `setDataTreeItemColor` now trigger a full 2D+3D
+  refresh instead of leaving the 3D mesh at its old color.
+- `deleteDataTreeMask` requests a 3D render after removing the mesh (no more
+  deleted-mesh ghost), and `moveSelectedMasks` refreshes 2D+3D and re-applies
+  data-tree visibility.
+- `applyThreshold` refreshes 2D+3D.
+- Shift+drag window/level now re-renders all three 2D viewers (volume path via
+  `requestViewerVisualRefresh`, server path via `clearSliceCache`+`loadAllSlices`).
+- `setDataOpacity` trajectory branch refreshes the 2D seed/needle overlays.
+
+### 2. Every editable UI parameter is settable through the chat
+
+A dynamic parameter system replaces hard-coded control handling:
+
+- `collectParameterSchema()` (ui-api.js) scans the live DOM and exposes every
+  editable control (128 today) with id, label, group, type, bounds, options and
+  current value — no hard-coded registry to drift from the UI.
+- New `ui_controller` targets: `parameter.catalog` (inspect schema),
+  `parameter.set` (set any control), `planning.hyperparams.set` (apply a batch
+  of planner hyperparameters via `applyHyperparams`), `surgical_guide.parameters.set`
+  (set puncture-guide parameters, converting radius↔diameter), `tree.color`,
+  `report.field.set`, and `report.template.set`. `tree.group.visibility` now
+  accepts every data-tree group.
+- The `surgical_guide` tool schema now enumerates its manufacturing parameters
+  with units and ranges, so the LLM can pass them directly or set them on the
+  panel first. Setting a surgical_guide parameter persists it for the next
+  generation.
+
+### 3. Honest failures with brief capability guidance
+
+Previously an impossible request could surface as the low-information
+"tool executed" placeholder. Now:
+
+- The system prompt has an "Honest Failure and Capability Guidance" section:
+  say plainly what could not be done and why, then offer up to three real
+  next steps, never claiming success.
+- `_present_instruction` (llm_runtime.py, both stream and non-stream paths)
+  detects failed tools this turn and explicitly instructs the LLM to answer
+  honestly and guide the user to what it can do.
+- The final fallback (`llm_runtime.py` and `core.py` `format_steps`) no longer
+  emits "Tools executed." It reports the actual failures and redirects to real
+  capabilities.
+- `_failed_steps_summary` / `_HONEST_FAILURE_PROMPT` are unit-tested.
+
+### 4. Surgical-guide channel is flush with the skin, not protruding inward
+
+The channel/sleeve previously ended at `entry + inward * sleeve_inward_mm`,
+pushing the channel wall up to 8 mm into the patient and preventing the guide
+from sitting flush against the skin. `web/surgical_guide.py` now clamps the
+sleeve/bore inner end to the skin entry (`sleeve_end = entry`); the tube only
+protrudes outward. `sleeve_inward_mm` remains in the schema for compatibility
+but no longer changes geometry. A regression test proves geometry is identical
+for `sleeve_inward_mm` of 1 mm and 30 mm. Documentation updated in
+`docs/PATIENT_SPECIFIC_PUNCTURE_GUIDE.md`.
+
+### Files changed
+
+| File | Change |
+|------|--------|
+| `web/app/static/js/brachybot-manual-annotation.js` | Live mask 2D+3D refresh; cross-axis WL drag |
+| `web/app/static/js/brachybot-viewer-volume.js` | Color/delete/move/threshold refresh; `setDataTreeItemColor` |
+| `web/app/static/js/brachybot-ui-api.js` | `collectParameterSchema`, `applyParameterSet`, new ui_controller handlers |
+| `tool_factory/ui_controller/__init__.py` | parameter/surgical_guide/tree.color/report targets |
+| `tool_factory/surgical_guide/__init__.py` | Parameter schema enumeration |
+| `agent_runtime/llm_runtime.py` | Honest-failure prompt + fallback |
+| `agent_runtime/core.py` | `format_steps` honest empty reply |
+| `config/prompts/system_prompt.md` | Honest Failure section |
+| `web/surgical_guide.py` | Channel flush with skin entry |
+| `docs/PATIENT_SPECIFIC_PUNCTURE_GUIDE.md` | Channel fit documentation |
+
+### Verification
+
+- `pytest` across the main suites: 80 passed.
+- Playwright: 128-parameter catalog; parameter.set / hyperparams / guide /
+  tree.color / report.field / report.template all execute and apply; no JS
+  errors; mask draw triggers `requestViewerVisualRefresh`.
+- `surgical_guide` geometry regression: identical mesh for `sleeve_inward_mm`
+  1 vs 30.
+
+---
+
 ## 2026-08-01 - Mask persistence, data-tree compliance, and batch operations
 
 ### Scope

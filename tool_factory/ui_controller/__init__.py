@@ -203,10 +203,8 @@ CONTROL_REGISTRY = {
     },
     "tree.group.visibility": {
         "commands": ["set"],
-        "values": ["ctv,show", "ctv,hide", "oar,show", "oar,hide",
-                   "non_traversable,show", "non_traversable,hide",
-                   "traversable,show", "traversable,hide"],
-        "description": "Toggle visibility for an entire organ group"
+        "value_type": "string",
+        "description": "Toggle visibility for an entire data-tree group. Value is 'group_name,show' or 'group_name,hide'. Valid groups include ctv, oar, non_traversable, traversable, masks, planning_trajectories, planning_seeds, planning_needles, planning_meshes, planning_artifacts."
     },
     "tree.group.opacity": {
         "commands": ["set"],
@@ -524,6 +522,41 @@ CONTROL_REGISTRY = {
         "value_type": "string",
         "description": "Set a named planning input control. Value is JSON such as {\"id\":\"refDirecY\",\"value\":1}; use only controls present in the current UI state."
     },
+    # ── Dynamic parameter system ──
+    "parameter.catalog": {
+        "commands": ["inspect"],
+        "description": "Inspect the full dynamic schema of every editable UI parameter (id, label, group, type, bounds, options, current value). Groups include hyperparams, surgical_guide, viewer, colorbar, report and other."
+    },
+    "parameter.set": {
+        "commands": ["set"],
+        "value_type": "string",
+        "description": "Set any editable UI parameter by id. Value is JSON {\"id\":\"seedRadius\",\"value\":0.5}, or an array of such entries. Consult parameter.catalog first. Setting a hyperparameter automatically applies it to the planner; setting a surgical_guide parameter persists it for the next guide generation."
+    },
+    "planning.hyperparams.set": {
+        "commands": ["set"],
+        "value_type": "string",
+        "description": "Set one or more planning hyperparameters and apply them immediately. Value is a JSON object mapping control ids to values, e.g. {\"seedRadius\":0.4,\"seedLength\":4.5,\"maxIter\":6}. These are the same controls shown in Input > Hyperparameters (seed geometry, volume labels, reference direction, dose limits, distance filters, iteration rates, deep-learning and RL parameters)."
+    },
+    "surgical_guide.parameters.set": {
+        "commands": ["set"],
+        "value_type": "string",
+        "description": "Set puncture-guide manufacturing parameters shown in Input > Manual Fine Planning > Puncture guide parameters. Value is a JSON object using the service-side names, e.g. {\"skin_threshold_hu\":-300,\"plate_thickness_mm\":3,\"channel_diameter_mm\":2.2,\"sleeve_outward_mm\":8}. Radius fields (channel_radius_mm, sleeve_outer_radius_mm) are accepted and converted to the diameter the UI displays. Values take effect on the next guide generation."
+    },
+    "tree.color": {
+        "commands": ["set"],
+        "value_type": "string",
+        "description": "Set the display color of a data-tree node (CTV/OAR/mask/seed/needle/dose iso-surface). Value is JSON {\"id\":\"organ_52\",\"color\":\"#ff0000\"}."
+    },
+    "report.field.set": {
+        "commands": ["set"],
+        "value_type": "string",
+        "description": "Set a single report form field. Value is JSON {\"key\":\"planning.prescriptionGy\",\"value\":120} where key matches the report data path (hospital.*, patient.*, study.*, case.*, planning.*, metrics.*, signature.*, interpretation, safety, qaNotes)."
+    },
+    "report.template.set": {
+        "commands": ["set"],
+        "values": ["", "pancreas", "prostate", "head_neck", "gynecology", "liver"],
+        "description": "Apply a report template by name (pancreas, prostate, head_neck, gynecology, liver, or empty for default)."
+    },
 }
 
 
@@ -830,6 +863,16 @@ class UIControllerTool(BaseTool):
             return f"Activated {tool_names.get(value, value)} tool"
 
         if target == "planning.parameter": return f"Planning control updated: {value}"
+
+        if target == "parameter.catalog": return "UI parameter catalog inspected"
+        if target == "parameter.set": return f"Parameter set: {value}"
+        if target == "planning.hyperparams.set": return f"Hyperparameters applied: {value}"
+        if target == "surgical_guide.parameters.set": return f"Puncture-guide parameters set: {value}"
+        if target == "tree.color":
+            parts = value.split('"') if value else []
+            return f"Color updated for {parts[1] if len(parts) > 1 else value}"
+        if target == "report.field.set": return f"Report field updated: {value}"
+        if target == "report.template.set": return f"Report template set to {value}"
 
         # 3D
         if target == "3d.reconstruct": return f"3D reconstruction started for '{value}'"
