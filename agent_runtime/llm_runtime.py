@@ -118,6 +118,13 @@ def _collect_tool_fallback_text(steps: List[Dict], messages: List[Dict]) -> Tupl
         elif step.get("tool") != "fact_checker" and not _is_placeholder_tool_response(result):
             add_unique(successes, result)
 
+    # Only fall back to the LLM-facing role=tool digest when no display-
+    # formatted step result is available. Step results are user-presentable
+    # (language-aware digests); the role=tool content is an internal model
+    # digest and would leak raw debug text into the user's answer.
+    if successes:
+        return successes, failures
+
     for msg in messages or []:
         content = msg.get("content") if isinstance(msg, dict) else None
         candidates = []
@@ -2515,16 +2522,20 @@ class LLMRuntimeMixin:
 
         # If final_response is still empty, try fallbacks
         if not final_response:
+            _fb_lang = "zh" if str(getattr(self.memory, "user_lang", "en") or "en").lower().startswith("zh") else "en"
             if accumulated_text:
                 final_response = accumulated_text
             elif tools_executed:
                 tool_results_text, failure_notes = _collect_tool_fallback_text(steps, messages)
                 if tool_results_text:
-                    final_response = "Based on the available results:\n\n" + "\n\n".join(tool_results_text)
+                    prefix = ("基于以下结果：\n\n" if _fb_lang == "zh" else "Based on the available results:\n\n")
+                    final_response = prefix + "\n\n".join(tool_results_text)
                 elif failure_notes:
                     final_response = (
-                        "I could not retrieve one or more requested sources, but the remaining tools completed. "
-                        "Please use the available source links and retry the blocked URL if needed.\n\n"
+                        ("部分请求来源未能获取，但其余工具已完成。请使用可用的来源链接并在需要时重试被拦截的链接。\n\n"
+                         if _fb_lang == "zh" else
+                         "I could not retrieve one or more requested sources, but the remaining tools completed. "
+                         "Please use the available source links and retry the blocked URL if needed.\n\n")
                         + "\n".join(failure_notes)
                     )
                 else:

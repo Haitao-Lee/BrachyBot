@@ -351,3 +351,52 @@ def test_honest_failure_summary_detects_failed_tools():
     rendered = _HONEST_FAILURE_PROMPT.format(failures=summary)
     assert "Do NOT claim success" in rendered
     assert "tool executed" not in rendered.lower() or "Do NOT say 'tool executed'" in rendered
+
+
+class _WebResult:
+    success = True
+    message = "Found 3 results"
+    display = None
+    error = None
+    data = {
+        "results": [
+            {"title": "DeepRare", "snippet": "clinical phenotype", "url": "https://x.com/1"},
+            {"title": "DeepRare KB", "snippet": "genetic variant", "url": "https://x.com/2"},
+        ],
+        "sources": ["https://x.com/1", "https://x.com/2"],
+        "quality": "good",
+    }
+    metadata = {"quality": "good"}
+
+
+def test_web_tool_results_format_clean_language_matched_digest():
+    from agent_runtime.core import ToolResultPipeline
+
+    zh = ToolResultPipeline.format("web_search", _WebResult(), "zh")
+    en = ToolResultPipeline.format("web_search", _WebResult(), "en")
+    # No raw LLM-facing debug text ("Found 3 results") leaks into the digest.
+    assert "Found 3 results" not in zh and "Found 3 results" not in en
+    assert "## 搜索结果" in zh and "来源: https://x.com/1" in zh
+    assert "## Search results" in en and "Source: https://x.com/1" in en
+    # Chinese digest must not mix in English labels and vice versa.
+    assert "Source:" not in zh
+    assert "来源:" not in en
+
+
+def test_tool_fallback_prefers_clean_step_results_over_llm_digest():
+    from agent_runtime.llm_runtime import _collect_tool_fallback_text
+
+    steps = [
+        {"type": "tool", "tool": "web_search", "status": "done",
+         "result": "## 搜索结果\n- **DeepRare**\n  来源: https://x.com/1"},
+    ]
+    messages = [
+        {"role": "tool", "content": "Search results:\n- DeepRare: clinical phenotype\n  Source: https://x.com/1\nFound 3 results"},
+    ]
+    successes, failures = _collect_tool_fallback_text(steps, messages)
+    assert failures == []
+    assert len(successes) >= 1
+    # The clean display-formatted step result is preferred; the raw LLM-facing
+    # digest must NOT be mixed into the user-facing list.
+    joined = "\n".join(successes)
+    assert "Search results:\n- DeepRare: clinical phenotype" not in joined

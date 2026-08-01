@@ -2,6 +2,51 @@
 
 _This file consolidates all code review reports. Sections are organized by date._
 
+## 2026-08-01 - Multi-agent router trace dedup, clean web fallback, and language matching
+
+Operator observed two "multi-agent router" rows (pending + done) in the trace
+and a final answer that dumped the raw LLM-facing web-search digest into the
+chat with a hard-coded English prefix.
+
+### 1. Duplicate multi-agent router rows
+
+The backend yields the same router step twice (pending, then done) so the user
+sees live progress. The frontend merged the first event into the optimistic
+row but discarded the server id, so the second event (same server id) appended
+a new row. `reconcileOptimisticTraceStep` now keeps the server id on the merged
+row and matches re-emissions by it, so the pending→done update lands on the
+same row.
+
+### 2. Web results no longer leak as raw debug text
+
+`ToolResultPipeline` gained a `_format_web` category producing a clean,
+language-matched digest (titles, snippets, source links) instead of the
+LLM-facing "Found N results" / "Search results:" text. `_collect_tool_fallback_text`
+now prefers the display-formatted step result and only reads the raw `role=tool`
+digest when no clean step result exists.
+
+### 3. Language-matched fallback framing
+
+The empty-response fallback prefix ("Based on the available results:") is now
+localized from `self.memory.user_lang`, matching the user's language.
+
+### Files changed
+
+| File | Change |
+|------|--------|
+| `web/app/static/js/brachybot-chat-todo.js` | Keep server id on merged router row; dedup re-emissions |
+| `agent_runtime/core.py` | `_format_web` clean bilingual digest |
+| `agent_runtime/llm_runtime.py` | Fallback prefers clean step results; localized prefix |
+| `tests/test_runtime_contracts.py` | Web digest + fallback priority tests |
+
+### Verification
+
+- `pytest` main suites: 82 passed.
+- Playwright: two same-id step events render as one row (status done);
+  Chinese web digest contains `来源:` and no English `Source:` labels.
+
+---
+
 ## 2026-08-01 - Live viewer refresh, dialog-driven parameters, honest failures, and guide flush-fit
 
 Four operator-requested capabilities were implemented and verified end to end.
