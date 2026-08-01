@@ -889,6 +889,7 @@ class ToolResultPipeline:
     _ANALYSIS_TOOLS = {"code_executor"}
     _UI_TOOLS = {"ui_controller", "ui_screenshot"}
     _PLANNING_TOOLS = {"planning_pipeline", "seed_planning", "trajectory_planning", "dose_engine", "dose_evaluation"}
+    _WEB_TOOLS = {"web_search", "web_fetch", "web_access"}
     _LOCALIZABLE_TOOLS = {"filesystem_browser", "shell_executor", "code_executor"}
 
     @staticmethod
@@ -920,6 +921,8 @@ class ToolResultPipeline:
             return ToolResultPipeline._format_ui(tool_name, result, meta, lang)
         if tool_name in ToolResultPipeline._PLANNING_TOOLS:
             return ToolResultPipeline._format_planning(tool_name, result, meta, lang)
+        if tool_name in ToolResultPipeline._WEB_TOOLS:
+            return ToolResultPipeline._format_web(tool_name, result, meta, lang)
 
         # 3. Use display_message from metadata (legacy support)
         display_msg = meta.get("display_message")
@@ -1096,6 +1099,70 @@ class ToolResultPipeline:
         display_msg = meta.get("display_message")
         if display_msg:
             return display_msg
+        return result.message or f"{tool_name} completed."
+
+    @staticmethod
+    def _format_web(tool_name: str, result, meta: dict, lang: str) -> str:
+        """Format web search/fetch results into a clean, user-presentable digest.
+
+        The previous fallback surfaced the LLM-facing digest ("Found N
+        results", "Search results:\n- title: snippet") verbatim into the user's
+        answer. This formatter produces a language-matched, source-linked
+        summary so a model-empty turn still reads as a real answer.
+        """
+        data = result.data if isinstance(result.data, dict) else {}
+        if tool_name in ("web_search", "web_access"):
+            results = data.get("results") or []
+            sources = data.get("sources") or []
+            if lang == "zh":
+                if not results:
+                    return "搜索没有返回可用结果。"
+                lines = ["## 搜索结果", ""]
+                for r in results[:5]:
+                    title = (r.get("title") or "").strip()
+                    url = (r.get("url") or "").strip()
+                    snippet = (r.get("snippet") or r.get("page_content") or "")[:160]
+                    if title:
+                        lines.append(f"- **{title}**")
+                    if snippet:
+                        lines.append(f"  {snippet}")
+                    if url:
+                        lines.append(f"  来源: {url}")
+                if sources:
+                    lines.append("")
+                    lines.append("来源: " + "、".join(sources[:5]))
+                return "\n".join(lines)
+            # English
+            if not results:
+                return "No usable results were returned by the search."
+            lines = ["## Search results", ""]
+            for r in results[:5]:
+                title = (r.get("title") or "").strip()
+                url = (r.get("url") or "").strip()
+                snippet = (r.get("snippet") or r.get("page_content") or "")[:160]
+                if title:
+                    lines.append(f"- **{title}**")
+                if snippet:
+                    lines.append(f"  {snippet}")
+                if url:
+                    lines.append(f"  Source: {url}")
+            if sources:
+                lines.append("")
+                lines.append("Sources: " + ", ".join(sources[:5]))
+            return "\n".join(lines)
+        if tool_name == "web_fetch":
+            title = (data.get("title") or "").strip()
+            content = (data.get("content") or data.get("text") or "")[:1000]
+            source = (data.get("source") or "").strip()
+            if lang == "zh":
+                head = f"## {title}" if title else "## 页面内容"
+                body = f"\n\n{content}" if content else "\n\n(无可用正文)"
+                src = f"\n\n来源: {source}" if source else ""
+                return f"{head}{body}{src}"
+            head = f"## {title}" if title else "## Page content"
+            body = f"\n\n{content}" if content else "\n\n(no usable body)"
+            src = f"\n\nSource: {source}" if source else ""
+            return f"{head}{body}{src}"
         return result.message or f"{tool_name} completed."
 
     @staticmethod

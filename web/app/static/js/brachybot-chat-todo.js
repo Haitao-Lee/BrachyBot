@@ -1465,13 +1465,24 @@ async function sendChat(prefill, options) {
         const optimisticId = step.type === 'user'
             ? optimisticTraceStepIds.user
             : (_optimisticRouterConsumed ? '' : optimisticTraceStepIds.router);
-        const index = optimisticId ? steps.findIndex(item => item.id === optimisticId) : -1;
+        let index = optimisticId ? steps.findIndex(item => item.id === optimisticId) : -1;
+        // A server step may be re-emitted after the optimistic router row was
+        // already consumed (the backend updates the same step from pending to
+        // done and yields it twice). Match by server id so the second event
+        // updates the row in place instead of appending a duplicate.
+        if (index < 0 && step.id != null) {
+            index = steps.findIndex(item => item.id === step.id);
+        }
         if (index < 0) return { step, index: -1 };
         // Keep the DOM identity created on click-send. This turns the
         // immediate pending row into the server-confirmed row in place and
         // prevents the first SSE event from creating a duplicate trace.
         const placeholder = steps[index];
-        const merged = Object.assign({}, placeholder, step, { id: optimisticId });
+        // Preserve the server id when present so later re-emissions of the
+        // same step (pending -> done) resolve to this row instead of pushing.
+        const merged = Object.assign({}, placeholder, step, {
+            id: (step.id != null) ? step.id : optimisticId,
+        });
         // Preserve the user-facing routing title; only status/content come
         // from the server. This keeps the routing row label stable whether
         // the server emitted a multi-agent-router or the local-intent
