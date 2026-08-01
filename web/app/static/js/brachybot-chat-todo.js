@@ -99,9 +99,10 @@ function _todoCreate() {
     toggle.className = 'chat-todo-toggle';
     toggle.innerHTML = '<span class="chat-todo-caret">▼</span> <span>' + _todoI18n().header + '</span> <span class="chat-todo-count"></span>';
     // Track the active todo API globally so _setActiveTodoLang()
-    // can re-render labels when the user flips the global EN/中
-    // toggle mid-task. There is only ever one todo visible at a
-    // time per chat (sendChat wipes the dock at start), so a
+    // can re-render labels when the user flips the global
+    // EN/Chinese language toggle mid-task. There is only ever one
+    // todo visible at a time per chat (sendChat wipes the dock at
+    // start), so a
     // single global ref is enough.
     window._activeTodoApi = null; // will be set after api is built
     toggle.onclick = () => {
@@ -501,8 +502,8 @@ function _todoCreate() {
     }
 
     // Register this todo as the currently active one so the global
-    // EN/中 toggle can re-render its labels in the new language
-    // (see _setActiveTodoLang above).
+    // EN/Chinese language toggle can re-render its labels in the new
+    // language (see _setActiveTodoLang above).
     window._activeTodoApi = api;
     // Stamp the owning session so clearCaseScopedProgressPresentation
     // can persist the items under the correct key even after
@@ -570,10 +571,11 @@ function _todoUpdateFromStep(todo, step) {
         if (dock) { dock.style.display = ''; todo.root.style.opacity = ''; }
     }
     // FILTER: skip runtime plumbing steps. The user complained that
-    // "接收用户请求 / Multi-Agent Router / Crystallized Skill / Experience
-    // Recall / LLM Call 1" — all internal LLM runtime — cluttered the
-    // todo list. These are already shown in the (folded) thinking chain,
-    // which is the right home for them. The todo list should only show
+    // internal LLM runtime trace rows ("receive user request /
+    // Multi-Agent Router / Crystallized Skill / Experience Recall /
+    // LLM Call 1") cluttered the todo list. These are already shown
+    // in the (folded) thinking chain, which is the right home for
+    // them. The todo list should only show
     // REAL business workflow steps (ctv_segmentation, oar_segmentation,
     // planning_pipeline, etc.) so the user sees a clean "what's happening
     // in the workflow" view, not a stream of every internal agent call.
@@ -662,13 +664,14 @@ function _todoUpdateFromStep(todo, step) {
 }
 
 // Pre-populate the todo with predicted workflow steps BEFORE the SSE
-// stream starts emitting events. The user complained "我都不知道后面
-// 要发生什么" — without this, the list grows incrementally as events
-// arrive and the user has no idea what's coming. We seed a known
-// 5-step planning pipeline (from the upstream opencode CLI todo list
-// style). As real step events arrive, _todoUpdateFromStep finds the
-// matching predicted entry (by tool name) and updates its status. New
-// events that don't match any prediction are appended as they come.
+// stream starts emitting events. The user complained they "had no idea
+// what was going to happen next" — without this, the list grows
+// incrementally as events arrive and the user has no idea what's
+// coming. We seed a known 5-step planning pipeline up front. As real
+// step events arrive, _todoUpdateFromStep finds the matching predicted
+// entry (by tool name) and updates its status. New events that don't
+// match any prediction
+// are appended as they come.
 //
 // Order matches the agent's documented workflow in
 // config/prompts/system_prompt.md §"Phase 4: ACT".
@@ -689,7 +692,8 @@ function _planningTemplates() {
     // and report_auto_fill is only invoked when the user explicitly
     // asks for a report). Predicting them caused the user to see
     // them stuck in "predicted" forever in the dock (2026-06-16
-    // bug: "11 步 9 完成, 中间两个没完成但后面的都完成了").
+    // bug: "11 steps, 9 done — the middle two never completed while
+    // the later ones did").
     return [
         { tool: 'ctv_segmentation',  label: i18n.tools.ctv_segmentation,  predicted: true },
         { tool: 'oar_segmentation',  label: i18n.tools.oar_segmentation,  predicted: true },
@@ -1444,22 +1448,37 @@ async function sendChat(prefill, options) {
             ? conversationLanguageForSession(turnSessionId)
             : window._i18nLang) === 'zh';
     };
-    const isRouterTraceStep = step => {
-        const value = `${step?.title || ''} ${step?.tool || ''} ${step?.type || ''}`.toLowerCase();
-        return value.includes('router') || value.includes('\u8def\u7531');
-    };
+// Structural reconciliation: the optimistic "router" row is just a
+    // placeholder for "the first real server step in this turn", whatever the
+    // server labels it (multi-agent router, local intent, or any future
+    // classification phase). We merge exactly one server step into the
+    // optimistic row per turn and mark it consumed; subsequent server steps
+    // append normally. This avoids any whitelist of step titles or types and
+    // stays correct if the backend adds a new classification phase later.
+    // Per UX preference, the row keeps the optimistic routing title (the
+    // localized "multi-agent router" label) so users see a single routing
+    // entry whether the backend used the remote router or the local-policy
+    // short-circuit.
+    let _optimisticRouterConsumed = false;
     const reconcileOptimisticTraceStep = step => {
         if (!step || typeof step !== 'object') return { step, index: -1 };
         const optimisticId = step.type === 'user'
             ? optimisticTraceStepIds.user
-            : (isRouterTraceStep(step) ? optimisticTraceStepIds.router : '');
+            : (_optimisticRouterConsumed ? '' : optimisticTraceStepIds.router);
         const index = optimisticId ? steps.findIndex(item => item.id === optimisticId) : -1;
         if (index < 0) return { step, index: -1 };
         // Keep the DOM identity created on click-send. This turns the
         // immediate pending row into the server-confirmed row in place and
         // prevents the first SSE event from creating a duplicate trace.
-        const merged = Object.assign({}, steps[index], step, { id: optimisticId });
+        const placeholder = steps[index];
+        const merged = Object.assign({}, placeholder, step, { id: optimisticId });
+        // Preserve the user-facing routing title; only status/content come
+        // from the server. This keeps the routing row label stable whether
+        // the server emitted a multi-agent-router or the local-intent
+        // short-circuit step.
+        if (step.type !== 'user' && placeholder.title) merged.title = placeholder.title;
         steps[index] = merged;
+        if (step.type !== 'user') _optimisticRouterConsumed = true;
         return { step: merged, index };
     };
     // Do not infer planning completion from the rendered trace shape. The
@@ -1718,8 +1737,8 @@ async function sendChat(prefill, options) {
                         // status messages, and any other UI text.
                         // Without this, the user would see English
                         // user input → Chinese todo entries → Chinese
-                        // LLM reply, which is a "顶层问题"
-                        // (top-level consistency bug).
+                        // LLM reply, which is a top-level consistency
+                        // bug.
                         if (data.language && data.language.code) {
                             window._responseLanguage = data.language.code;
                             if (typeof _setActiveTodoLang === 'function') {
@@ -1772,10 +1791,11 @@ async function sendChat(prefill, options) {
                         }
                         // Persistent todo — but ONLY create it when
                         // the LLM actually starts a multi-step workflow.
-                        // The user's complaint: trivial Q&A (e.g. "你好")
-                        // was showing the "执行进度" todo list with
-                        // weird numbers like "27.6s" — there was no
-                        // actual workflow to track. The LLM signals
+                        // The user's complaint: trivial Q&A (e.g. a
+                        // casual greeting) was showing the execution
+                        // progress todo list with weird numbers like
+                        // "27.6s" — there was no actual workflow to
+                        // track. The LLM signals
                         // "I need multiple steps" by emitting a step
                         // event with type === 'tool'. Until then, no
                         // todo list appears. This makes the todo
@@ -2414,6 +2434,20 @@ async function sendChat(prefill, options) {
             window._activeChatTaskSessionId = null;
         }
         if (isCurrentTurn) {
+            // Safety net: if the server never emitted a routing/local-intent
+            // step that reconcileOptimisticTraceStep could merge into, the
+            // optimistic routing row stays pending forever. Force any leftover
+            // client-router-* / client-user-* pending row to done before the
+            // chain folds so the trace cannot show a stuck "Analyzing request"
+            // state after the response has already been delivered.
+            for (const s of steps) {
+                if (s && typeof s.id === 'string'
+                    && (s.id === optimisticTraceStepIds.router
+                        || s.id === optimisticTraceStepIds.user)
+                    && (s.status === 'pending' || s.status === 'active')) {
+                    s.status = 'done';
+                }
+            }
             // Collapse the thinking chain when the send button transitions
             // back to ready state, so the user sees the full response and
             // footer before the trace folds.

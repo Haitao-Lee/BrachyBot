@@ -109,18 +109,18 @@ def _as_point(value: Any, field: str) -> np.ndarray:
     return point
 
 
-def _current_planning_snapshot(agent: Any) -> Dict[str, List[Dict[str, Any]]]:
-    """Read the displayed planning geometry without reconstructing coordinates.
+def _algorithm_planning_snapshot(agent: Any) -> Dict[str, List[Dict[str, Any]]]:
+    """Read the immutable automatic planning baseline geometry.
 
-    ``algorithm_plan_snapshot`` is the immutable automatic baseline.  Manual
-    arrays supersede it only after an explicit edit, matching the viewer and
-    manual-dose routes.  This keeps guide generation stable across restores.
+    The puncture guide is generated from the approved planned needle paths.  A
+    manual needle/seed addition extends that geometry but does not invalidate
+    the algorithm-derived guide; using the manual-superseding snapshot for
+    guide *matching* made a single added manual needle change the plan
+    signature, hide an otherwise valid guide, and disable its regenerate path.
+    Signature checks that decide whether an existing guide is still valid must
+    therefore compare against this baseline, not the display snapshot.
     """
     memory = agent.memory
-    manual_seeds = memory.retrieve("manual_seeds") or []
-    manual_needles = memory.retrieve("manual_needles") or []
-    if manual_seeds or manual_needles:
-        return {"seeds": list(manual_seeds), "needles": list(manual_needles)}
     baseline = memory.retrieve("algorithm_plan_snapshot")
     if isinstance(baseline, Mapping):
         return {
@@ -164,6 +164,21 @@ def _current_planning_snapshot(agent: Any) -> Dict[str, List[Dict[str, Any]]]:
             except SurgicalGuideError:
                 continue
     return {"seeds": seeds, "needles": needles}
+
+
+def _current_planning_snapshot(agent: Any) -> Dict[str, List[Dict[str, Any]]]:
+    """Read the displayed planning geometry without reconstructing coordinates.
+
+    ``algorithm_plan_snapshot`` is the immutable automatic baseline.  Manual
+    arrays supersede it only after an explicit edit, matching the viewer and
+    manual-dose routes.  This keeps guide generation stable across restores.
+    """
+    memory = agent.memory
+    manual_seeds = memory.retrieve("manual_seeds") or []
+    manual_needles = memory.retrieve("manual_needles") or []
+    if manual_seeds or manual_needles:
+        return {"seeds": list(manual_seeds), "needles": list(manual_needles)}
+    return _algorithm_planning_snapshot(agent)
 
 
 def available_guide_needles(agent: Any) -> List[Dict[str, Any]]:
@@ -735,6 +750,10 @@ def generate_surgical_guide(
     planning_id = str(memory.retrieve("manual_planning_id") or "")
     planning_version = int(memory.retrieve("manual_plan_version") or 0)
     path_checks = _planned_path_deviation(paths)
+    # The guide covers the current displayed needle paths, but its validity
+    # signature must be stable against the algorithm baseline: a manual needle
+    # added after generation must not hide this guide or disable its update
+    # path (guide_metadata compares against _algorithm_planning_snapshot).
     return {
         "id": "patient_specific_puncture_guide",
         "object_id": "patient_specific_puncture_guide",
@@ -748,7 +767,7 @@ def generate_surgical_guide(
         "data_type": "surgical_guide",
         "coordinate_system": "SimpleITK physical patient-world coordinates (mm)",
         "parameters": params,
-        "source_plan_signature": planning_signature(snapshot),
+        "source_plan_signature": planning_signature(_algorithm_planning_snapshot(agent)),
         "selected_needle_ids": [path.needle_id for path in paths],
         "needle_paths": path_checks,
         "vertices": vertices,

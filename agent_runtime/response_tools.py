@@ -162,8 +162,8 @@ print(json.dumps(result))
             }]
 
         # Find action keywords and their positions to preserve user's intended order
-        # Bilingual patterns: Chinese terms match Chinese user input.
-        # zh: 分割=segment, 靶区=target, 肿瘤=tumor, 器官=organ, 危及器官=OAR
+        # Bilingual patterns: Chinese terms below match Chinese user input
+        # (segment, target, tumor, organ, OAR in the zh locale).
         ACTION_PATTERNS = [
             # A complete seed-implant planning request is deterministic once
             # a CT and a supported target type are known. Avoid a redundant
@@ -236,7 +236,7 @@ print(json.dumps(result))
                     ordered_actions.append('segment_ctv')
 
         if not ordered_actions:
-            # A clarification reply such as "胰腺" has no action verb. It
+            # A clarification reply such as "pancreas" has no action verb. It
             # becomes a CTV action only after the previous turn asked for a
             # tumor site; a bare site in a new case must remain non-executing.
             pending = self.memory.retrieve("pending_clarification") or {}
@@ -966,6 +966,15 @@ Output (JSON array of strings):"""
         if not self.multi_agent_wrapper or not self.multi_agent_wrapper.enabled:
             return result_text
 
+        # Skip the extra LLM round when the search returned almost nothing.
+        # Running FactChecker on an empty/3-line result adds a full LLM call
+        # per tool step without evidence to verify, multiplying the cost of
+        # many small searches. The LLM still sees the raw (empty) result and
+        # can decide to re-search with better keywords.
+        _stripped = (result_text or "").strip()
+        if len(_stripped) < 300:
+            return result_text
+
         # Intelligently extract claims for FactChecker
         claims = self._prepare_fact_check_brief(result_text, sources)
         if not claims:
@@ -1288,7 +1297,8 @@ Output (JSON array of strings):"""
         )
         # ``\b`` does not split a Latin project name from adjacent CJK text
         # because both sides are Unicode word characters. Use ASCII-aware
-        # guards so strings such as ``查询DeepRare，`` are recognized.
+        # guards so a capitalized project name embedded in a CJK sentence is
+        # still recognized as a named project.
         named_projects = re.findall(
             r"(?<![A-Za-z0-9_])[A-Z][A-Za-z0-9_-]{2,}(?![A-Za-z0-9_])",
             scope_text,
@@ -1309,12 +1319,20 @@ Output (JSON array of strings):"""
         suffix = " official repository source code" if any(
             marker in scope_low for marker in ("代码", "源码", "source code", "repository", "github", "gitlab", "code")
         ) else " authoritative project information"
-        query_text = msg
+        # Use the detected project name(s) as the search body instead of the
+        # raw user utterance. Feeding the whole natural-language request to the
+        # search engine matches unrelated terms and returns an unhelpful "not
+        # found" answer. Restricting the query to the project name keeps the
+        # search focused and English-indexable; the original message is still
+        # in the conversation so the downstream LLM can phrase the final
+        # answer in the user's language.
         if followup and named_projects:
             # The current turn may only say "its code". Carry forward the
             # most recent named external project instead of searching that
             # pronoun literally.
             query_text = f"{named_projects[-1]} {msg}"
+        else:
+            query_text = " ".join(named_projects) if named_projects else msg
         return f"{query_text}{suffix}"
 
     def _normalize_tool_params(self, tool_calls: List[Dict]) -> List[Dict]:

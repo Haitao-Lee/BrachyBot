@@ -415,8 +415,8 @@ class LLMRuntimeMixin:
             messages.append({"role": "user", "content": user_content})
 
         # External-project requests are source-bound to public web tools.  Do
-        # this before direct-tool routing so a follow-up such as "其代码在哪"
-        # cannot fall through to local filesystem tools.
+        # this before direct-tool routing so a follow-up such as "where is its
+        # source code" cannot fall through to local filesystem tools.
         _external_project_query = self._detect_external_project_query(message)
 
         # The chat_with_stream path gates direct tool detection on
@@ -516,7 +516,13 @@ class LLMRuntimeMixin:
         _upsert_runtime_context(messages, runtime_context)
         messages = self._pack_context_for_provider(messages, message)
 
-        max_iterations = 8
+        # See streaming path: cap knowledge/external-project turns at 3 to
+        # avoid the 8-round × (LLM + FactChecker) spiral.
+        _turn_policy_intent = getattr(self._active_turn_policy, "intent", None)
+        if _turn_policy_intent in ("knowledge_query", "external_project_query", "clinical_knowledge"):
+            max_iterations = 3
+        else:
+            max_iterations = 8
         iteration = 0
         final_response = ""
         tools_executed = False
@@ -1555,7 +1561,16 @@ class LLMRuntimeMixin:
         _upsert_runtime_context(messages, runtime_context)
         messages = self._pack_context_for_provider(messages, message)
 
-        max_iterations = 8
+        # Knowledge / external-project queries don't need the full 8-round
+        # tool-calling budget. Capping at 3 keeps 1 web_search + 1 web_fetch
+        # + 1 synthesis round, which is enough to answer most named-project
+        # questions while avoiding the 8-round × (LLM + FactChecker) spiral
+        # that turned a simple project-lookup query into a ~180 s wait.
+        _turn_policy_intent = getattr(self._active_turn_policy, "intent", None)
+        if _turn_policy_intent in ("knowledge_query", "external_project_query", "clinical_knowledge"):
+            max_iterations = 3
+        else:
+            max_iterations = 8
         iteration = 0
         final_response = ""
         tools_executed = False

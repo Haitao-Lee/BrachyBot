@@ -45,6 +45,126 @@ class ChatWorkflowMixin:
             "请检查 ANTHROPIC_API_KEY/OPENAI_API_KEY 与对应的 BASE_URL、MODEL 配置后重试。"
         )
 
+    def _run_lightweight_conversation_stream(self, message, steps, step_id_ref, yield_event):
+        """Single-shot conversational answer for low-risk chat intents.
+
+        Small-talk turns (greetings, thanks, self-description, simple chit-chat)
+        do not need the clinical function-calling pipeline: that path serializes
+        every tool schema, renders the multi-thousand-token clinical system
+        prompt, injects runtime context, and loops up to N LLM rounds. A plain
+        casual greeting therefore used to wait ~30s for a response.
+
+        This method performs one non-tool LLM call with a minimal prompt, so
+        conversational intents complete in a couple of seconds. It is a
+        structural optimization keyed on the *intent category* produced by
+        turn_policy.classify_local_turn (any small_talk turn), not on a
+        whitelist of greeting keywords.
+
+        Yields the same events as _run_llm_function_calling_stream (one
+        "LLM Call" thinking step, then a final "_result" dict) so the caller
+        in chat_with_stream does not need a second code path.
+        """
+        import asyncio
+        router = getattr(self, "brain_router", None)
+        if router is None:
+            yield {
+                "type": "_result",
+                "response": self._llm_unavailable_message(),
+                "llm_meta": {"usage": {}, "latency_ms": 0, "llm_calls": 0},
+            }
+            return
+
+        step_id_ref[0] += 1
+        thinking_step = {
+            "id": step_id_ref[0],
+            "type": "thinking",
+            "title": "LLM Call 1",
+            "content": "Waiting for AI response...",
+            "status": "pending",
+        }
+        steps.append(thinking_step)
+        yield yield_event("step", thinking_step)
+
+        try:
+            # Minimal prompt: a short persona + the recent exchange. No tool
+            # schemas, no clinical context modules, no runtime state injection.
+            lang_clause = ""
+            try:
+                from memory.language import detect as _lang_detect, system_prompt_clause as _lang_clause
+                ui_state = self.memory.get_ui_state()
+                _ui_lang = (ui_state or {}).get("language") or None
+                _lang_info = _lang_detect(message, explicit=_ui_lang)
+                lang_clause = "\n" + _lang_clause(_lang_info) + "\n"
+            except Exception as _e:
+                logger.debug("Lightweight language detection skipped: %s", _e)
+
+            system_prompt = (
+                "You are BrachyBot, a concise, helpful clinical AI assistant for "
+                "radioactive-seed brachytherapy treatment planning. The user is "
+                "chatting casually; answer briefly and naturally in the user's "
+                "language. Do not invent tools, files, or clinical results that "
+                "do not exist."
+                + lang_clause
+            )
+
+            messages = [{"role": "system", "content": system_prompt}]
+            history = list(getattr(self.memory, "conversation", None) or [])[-8:]
+            for entry in history:
+                content = entry.get("content", "")
+                if isinstance(content, str):
+                    content = re.sub(r'\[Called [^\]]+\]', '', content).strip()
+                    content = re.sub(r'\[Tool result: [^\]]*\]', '', content).strip()
+                if not content:
+                    continue
+                messages.append({"role": entry.get("role", "user"), "content": content})
+
+            try:
+                if callable(getattr(self, '_pack_context_for_provider', None)):
+                    messages = self._pack_context_for_provider(messages, message)
+            except Exception as _p:
+                logger.debug("Lightweight context packing skipped: %s", _p)
+            call_start = time.perf_counter()
+            response = router.chat_messages(messages=messages, tools=None, task_type="general")
+            latency_ms = round((time.perf_counter() - call_start) * 1000, 1)
+            content = response.content or ""
+            finish_reason = getattr(response, "finish_reason", "") or ""
+            if hasattr(response, "usage") and response.usage:
+                usage = dict(response.usage)
+            else:
+                usage = {}
+            thinking_step["status"] = "done"
+            thinking_step["content"] = "Response generated"
+            yield yield_event("step", thinking_step)
+            # Providers may return a graceful error (finish_reason="error")
+            # instead of raising. Surface the friendly unavailable message
+            # with the technical reason appended for the operator.
+            if finish_reason == "error" or content.startswith("Error:"):
+                content = f"{self._llm_unavailable_message()}\n\n[{content}]"
+            yield {
+                "type": "_result",
+                "response": content,
+                "llm_meta": {
+                    "usage": usage,
+                    "latency_ms": latency_ms,
+                    "llm_calls": 1,
+                    "route": "lightweight_conversation",
+                },
+            }
+        except Exception as e:
+            # A conversational turn never needs the tool-calling pipeline, so
+            # on failure surface the provider error directly instead of
+            # re-entering the heavy path. Keep the technical reason visible so
+            # the operator can diagnose provider outages.
+            logger.warning("Lightweight conversation failed: %s", e)
+            thinking_step["status"] = "error"
+            thinking_step["content"] = f"LLM error: {e}"
+            yield yield_event("step", thinking_step)
+            yield {
+                "type": "_result",
+                "response": f"{self._llm_unavailable_message()}\n\n[{e}]",
+                "llm_meta": {"usage": {}, "latency_ms": 0, "llm_calls": 0},
+            }
+
     def _pending_tumor_site_clarification(self) -> bool:
         """Return whether the previous turn is waiting for a tumor site."""
         try:
@@ -1196,12 +1316,25 @@ class ChatWorkflowMixin:
 
         if self.brain_available:
             try:
-                for ev in self._run_llm_function_calling_stream(message, steps, step_id, yield_event):
-                    if isinstance(ev, dict) and ev.get("type") == "_result":
-                        response = ev.get("response", "")
-                        llm_meta = ev.get("llm_meta", {})
-                    else:
-                        yield ev
+                if local_policy.intent == "small_talk":
+                    # Conversational intent: use the single-shot lightweight
+                    # path (no tool schemas, no clinical context, no loop).
+                    # This is a structural fast lane for the whole small_talk
+                    # intent category, so a casual greeting no longer pays the
+                    # 30s function-calling pipeline cost.
+                    for ev in self._run_lightweight_conversation_stream(message, steps, step_id, yield_event):
+                        if isinstance(ev, dict) and ev.get("type") == "_result":
+                            response = ev.get("response", "")
+                            llm_meta = ev.get("llm_meta", {})
+                        else:
+                            yield ev
+                else:
+                    for ev in self._run_llm_function_calling_stream(message, steps, step_id, yield_event):
+                        if isinstance(ev, dict) and ev.get("type") == "_result":
+                            response = ev.get("response", "")
+                            llm_meta = ev.get("llm_meta", {})
+                        else:
+                            yield ev
             except Exception as e:
                 import traceback as _tb
                 logger.error(f"LLM function calling failed: {e}\n{_tb.format_exc()}")
@@ -1715,6 +1848,44 @@ class ChatWorkflowMixin:
                                     except Exception as _rep_e:
                                         logger.warning(f"Failed to build planning report: {_rep_e}")
                                         response = "✅ 自动完成完整规划流程（CTV → OAR → Planning）"
+                                    # A complete planning workflow always ends with
+                                    # surgical guide generation. The direct-tool path
+                                    # (response_tools._detect_tool_request plan_full)
+                                    # already chains ctv -> oar -> planning ->
+                                    # surgical_guide; the workflow enforcer used to
+                                    # stop at planning, so enforced runs never produced
+                                    # a guide for the frontend to display. Generate one
+                                    # here so both paths implement the same workflow.
+                                    if self.registry.get("surgical_guide"):
+                                        try:
+                                            logger.info("[WORKFLOW-ENFORCER-STREAM] Auto-generating surgical guide")
+                                            guide_step = add_step(
+                                                "tool",
+                                                "Auto Surgical Guide",
+                                                "Generating puncture guide from planned needle paths...",
+                                                status="pending",
+                                                tool="surgical_guide",
+                                            )
+                                            yield yield_event("step", guide_step)
+                                            guide_result = self._execute_tool_with_memory(
+                                                "surgical_guide", {"action": "generate"}
+                                            )
+                                            if guide_result and guide_result.success:
+                                                guide_step["status"] = "done"
+                                                guide_step["result"] = str(guide_result.message)[:200] if guide_result.message else "Guide generated"
+                                            else:
+                                                err = (
+                                                    guide_result.error or guide_result.message
+                                                    if guide_result is not None else "Guide generation failed"
+                                                )
+                                                guide_step["status"] = "error"
+                                                guide_step["result"] = str(err)[:200]
+                                            yield yield_event("step", guide_step)
+                                        except Exception as _guide_e:
+                                            logger.error(f"[WORKFLOW-ENFORCER-STREAM] Guide auto-generation failed: {_guide_e}")
+                                            guide_step["status"] = "error"
+                                            guide_step["result"] = str(_guide_e)[:200]
+                                            yield yield_event("step", guide_step)
                         except Exception as e:
                             logger.error(f"[WORKFLOW-ENFORCER-STREAM] Planning auto-execution failed: {e}")
                             planning_step["status"] = "error"

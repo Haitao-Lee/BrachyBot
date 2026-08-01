@@ -2172,6 +2172,18 @@ function createLiveThinkingChain(resumeStartTime, requestId = '') {
         }
         oldLive.remove();
     }
+    // Clean up any thinking-chain rendered by loadSessionChat during task
+    // resume. Those chains carry the same dataset.requestId as this live
+    // trace (the persisted execution trace is keyed by the task request id),
+    // so removing them here prevents the "two thinking chains for one turn"
+    // state where an Execution Trace row and a Thinking row showed different
+    // step counts for the same task. Only the current request's restored
+    // chain is removed; other turns' historical traces are untouched.
+    container.querySelectorAll('.thinking-chain[data-live="0"]').forEach(chain => {
+        if (String(chain.dataset.requestId || '') === stableRequestId) {
+            chain.closest('.chat-row')?.remove?.();
+        }
+    });
     // Also clean up any thinking-chain rendered by loadSessionChat during
     // task resume — these have no id so the getElementById above misses them.
     const row = document.createElement('div');

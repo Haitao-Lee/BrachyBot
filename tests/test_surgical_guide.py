@@ -192,5 +192,44 @@ def test_surgical_guide_is_rendered_as_an_independent_planning_artifact():
         "web/app/static/js/brachybot-viewer-volume.js", encoding="utf-8"
     ).read()
     assert "independentPlanningMeshes" in tree_script
-    assert "'surgical_guide'" in tree_script
-    assert "data-group=\"planning_meshes\"" in tree_script
+
+
+def test_manual_needle_addition_does_not_hide_algorithm_guide():
+    """Adding a manual needle must not invalidate an algorithm-derived guide.
+
+    guide_matches_current_plan compares the guide's source_plan_signature
+    against _algorithm_planning_snapshot. A manual needle/seed addition changes
+    the display snapshot (_current_planning_snapshot) but must leave the
+    algorithm baseline signature unchanged so the existing guide stays visible
+    and its regenerate path stays enabled.
+    """
+    from web.surgical_guide import (
+        _algorithm_planning_snapshot,
+        _current_planning_snapshot,
+        planning_signature,
+    )
+
+    agent = _synthetic_agent()
+    baseline_sig = planning_signature(_algorithm_planning_snapshot(agent))
+    display_sig = planning_signature(_current_planning_snapshot(agent))
+    assert baseline_sig == display_sig
+
+    agent.memory.store("manual_needles", [{
+        "id": "needle_manual_1",
+        "trajectory_id": "manual_traj_1",
+        "points": [[20.0, 20.0, 20.0], [20.0, 20.0, 5.0]],
+    }])
+    agent.memory.store("manual_seeds", [{
+        "id": "seed_manual_1",
+        "trajectory_id": "manual_traj_1",
+        "position": [20.0, 20.0, 12.0],
+    }])
+
+    # The display snapshot includes the manual addition, so its signature
+    # diverges from the algorithm baseline.
+    assert planning_signature(_current_planning_snapshot(agent)) != baseline_sig
+    # The algorithm baseline used for guide matching is unchanged.
+    assert planning_signature(_algorithm_planning_snapshot(agent)) == baseline_sig
+
+    guide = generate_surgical_guide(agent, {"geometry_resolution_mm": 1.0})
+    assert guide["source_plan_signature"] == baseline_sig

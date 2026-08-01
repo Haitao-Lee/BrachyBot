@@ -79,10 +79,10 @@ async function exportReport() {
 // The "Step-by-Step" section in the Input panel used to have these
 // buttons but their onclick handlers referenced three functions
 // (toggleStepButtons / runPlanningStep / showStepResults) that were
-// NEVER DECLARED. The user reported "折叠打不开了" — the toggle was
-// dead because the function was missing. We restore them here, with
-// proper UI feedback (loading spinner, error display, auto-refresh of
-// the relevant panel).
+// NEVER DECLARED. The user reported "the panel could not be expanded"
+// — the toggle was dead because the function was missing. We restore
+// them here, with proper UI feedback (loading spinner, error display,
+// auto-refresh of the relevant panel).
 //
 // Workflow design (product-manager view):
 //   1. Load CT (existing Browse button in Image Data section)
@@ -1100,6 +1100,26 @@ function renderDoseForCurrentSlice(axis, sliceIndex) {
                     doseCanvas.dataset.dosePending = 'false';
                     _clearDoseSliceRetry(axis, sliceIndex);
                 } catch (e) { console.warn(`[dose] render error after fetch:`, e); }
+            } else if (sliceData && state.doseOverlay && state.doseOverlay.visible
+                && _doseDesiredSlice[axis] === sliceIndex
+                && state.slices[axis] === sliceIndex
+                && doseCanvas.isConnected) {
+                // Race-tolerant repaint: the data for the user's current slice
+                // arrived, but a transient condition (typically renderEpoch
+                // bumped by an unrelated dose reload) made the strict check
+                // above fail. Painting it now is safe — the epoch only guards
+                // against a stale repaint when the slice changed, and this
+                // branch re-verifies slice identity. Without this, a dose
+                // overlay could stay frozen on an older slice even though the
+                // fresh slice data was already fetched and cached.
+                try {
+                    renderDoseOverlayOnLayer(doseCanvas, axis, sliceIndex, sliceData);
+                    _doseLastRendered[axis] = sliceIndex;
+                    doseCanvas._doseRenderEpoch = _doseOverlayRenderEpoch;
+                    doseCanvas.dataset.dosePending = 'false';
+                    _clearDoseSliceRetry(axis, sliceIndex);
+                    uiDebugLog(`[dose] painted via race-tolerant path for ${axis}_${sliceIndex}`);
+                } catch (e) { console.warn(`[dose] race-tolerant render error:`, e); }
             } else if (!sliceData && isCurrentRequest) {
                 _scheduleDoseSliceRetry(axis, sliceIndex);
             } else {

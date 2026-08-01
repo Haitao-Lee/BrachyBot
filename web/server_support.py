@@ -1999,6 +1999,14 @@ def _compute_manual_ai_dose(
             if not agent.memory.retrieve("manual_ai_dose"):
                 seed_plan = agent.memory.retrieve("seed_plan") or []
                 for trajectory_index, entry in enumerate(seed_plan):
+                    if isinstance(entry, dict):
+                        # A manual replan may have previously written the
+                        # dict-form plan here (older buggy builds). Dict
+                        # entries carry no per-seed dose maps, so they cannot
+                        # supply the removed contribution without inference;
+                        # treat them as a miss so the fallback below runs.
+                        old_misses += 1
+                        continue
                     if not isinstance(entry, (list, tuple)) or len(entry) < 3:
                         continue
                     trajectory_key = f"traj_{trajectory_index + 1}"
@@ -2008,7 +2016,7 @@ def _compute_manual_ai_dose(
                         seed_array = np.asarray(seed_dose, dtype=np.float32)
                         if seed_array.shape == dose_base.shape:
                             old_maps.append(seed_array)
-                old_misses = 0 if old_maps else 1
+                old_misses = 0 if old_maps else (old_misses or 1)
             if not old_maps and old_model:
                 old_maps, old_misses = _cached_seed_maps(
                     old_norm, old_model, deadline=interactive_deadline
@@ -2236,7 +2244,16 @@ def _compute_manual_ai_dose(
     agent.memory.store("dose_engine", "dose_unet_spacing1mm")
     agent.memory.store("manual_seeds", norm_seeds)
     agent.memory.store("manual_needles", norm_needles)
-    agent.memory.store("seed_plan", plan_serialized)
+    # Do NOT overwrite ``seed_plan`` here. The automatic planning pipeline
+    # stores it as [trajectory, seeds, per_seed_dose_maps] tuples, and
+    # _compute_manual_ai_dose reads entry[2] to incrementally remove the old
+    # needle's contribution on the next drag. Overwriting it with the
+    # dict-form manual plan (no dose maps) silently disabled that fast path:
+    # the second needle drag fell back to full 43-seed DoseUNet inference and
+    # took ~6 minutes. Manual geometry lives in ``manual_seeds``/``manual_needles``,
+    # which _current_planning_snapshot already reads first, so ``seed_plan``
+    # can stay the immutable automatic baseline.
+    agent.memory.store("manual_plan_serialized", plan_serialized)
     agent.memory.store("seed_plan_serialized", plan_serialized)
     agent.memory.store("total_seeds", len(norm_seeds))
     agent.memory.store("num_trajectories", len(grouped))
