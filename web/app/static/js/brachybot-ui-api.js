@@ -848,11 +848,11 @@ function instrumentUIControls() {
     const urlParams = new URLSearchParams(window.location.search);
     const keyFromUrl = urlParams.get('api_key');
     if (keyFromUrl) {
-        // A deployment key belongs to this browser session, not to the
-        // durable clinical workspace or an indefinitely persisted profile.
-        // Keep legacy localStorage reads below for existing installations,
-        // but never create another persistent copy from a shared URL.
-        sessionStorage.setItem('BRACHYBOT_API_KEY', keyFromUrl);
+        // A deployment key may be supplied in the URL for convenience. It is
+        // persisted to localStorage so a copied workstation retains the
+        // credential across reloads and tab closings, matching the operator's
+        // preference for a remembered key on this deployment.
+        localStorage.setItem('BRACHYBOT_API_KEY', keyFromUrl);
         window.BRACHYBOT_API_KEY = keyFromUrl;
         // Clean URL without reload
         const cleanUrl = window.location.pathname;
@@ -861,13 +861,14 @@ function instrumentUIControls() {
     window.setBrachyBotApiKey = function setBrachyBotApiKey(key) {
         const value = String(key || '').trim();
         window.BRACHYBOT_API_KEY = value;
-        if (value) sessionStorage.setItem('BRACHYBOT_API_KEY', value);
-        else sessionStorage.removeItem('BRACHYBOT_API_KEY');
+        if (value) localStorage.setItem('BRACHYBOT_API_KEY', value);
+        else localStorage.removeItem('BRACHYBOT_API_KEY');
     };
     window.fetch = function brachybotFetch(input, init) {
-        // The localStorage fallback supports a pre-workspace deployment. New
-        // values are session-scoped above so a copied workstation does not
-        // silently retain a perimeter credential.
+        // The deployment key is persisted in localStorage so the operator's
+        // remembered credential survives reloads and tab closings on this
+        // workstation, and setBrachyBotApiKey() keeps the in-memory copy in
+        // sync. Reading order keeps a fresh in-memory key authoritative.
         const key = window.BRACHYBOT_API_KEY
             || sessionStorage.getItem('BRACHYBOT_API_KEY')
             || localStorage.getItem('BRACHYBOT_API_KEY')

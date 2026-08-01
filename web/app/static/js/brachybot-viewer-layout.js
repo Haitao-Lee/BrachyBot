@@ -1485,9 +1485,15 @@ function _makeNeedleHandle(needle, pointIndex) {
     const point = points?.[pointIndex];
     if (!point) return null;
     const color = pointIndex === 0 ? 0xff77aa : 0x66d9ff;
-    // Endpoint handles are deliberately larger than the needle radius and
-    // rendered on top so they remain easy to select beside a dense surface.
-    const geo = new THREE.SphereGeometry(3.5, 20, 20);
+    // Endpoint handles are larger than the needle radius so they stay easy to
+    // select beside a dense surface, but they must NOT be always-on-top:
+    // depthTest=false plus the capture-phase hit guard made a handle float
+    // over every other object, so orbiting the scene would lock rotation
+    // whenever the pointer crossed a handle's screen position. With depth
+    // testing on, a handle occluded by the patient surface or needle shaft is
+    // invisible and cannot steal a rotation drag; only visible handles are
+    // draggable. Slightly smaller radius keeps selection precise.
+    const geo = new THREE.SphereGeometry(2.2, 20, 20);
     const mat = new THREE.MeshPhysicalMaterial({
         color,
         transparent: true,
@@ -1499,7 +1505,7 @@ function _makeNeedleHandle(needle, pointIndex) {
     });
     const mesh = new THREE.Mesh(geo, mat);
     mesh.renderOrder = 1000;
-    mat.depthTest = false;
+    mat.depthTest = true;
     mat.depthWrite = false;
     if (point.isVector3) mesh.position.copy(point);
     else mesh.position.set(..._vec3Array(point));

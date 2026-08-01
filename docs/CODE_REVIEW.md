@@ -2,6 +2,233 @@
 
 _This file consolidates all code review reports. Sections are organized by date._
 
+## 2026-08-01 - Guide STL resolution, manual needle mask validation, and toast stacking
+
+### Scope
+
+Follow-up on the 0.5 mm guide change: the operator requested a finer STL
+resolution because the needle channels are ~1.x mm. Also fixed a manual needle
+route that handed a flattened mask to obstacle validation (rejecting every
+needle), and stacked the three lower-right toasts without overlap.
+
+### 1. Guide STL resolution 0.5 → 0.35 mm (finer, export-quality option)
+
+The 1.x mm needle channel needs a sub-mm grid. Default `geometry_resolution_mm`
+is now 0.35 (a ~1.6 mm channel spans ~4.6 voxels, smooth through-hole), and the
+parameter range widens to `(0.2, 2.0)` so an operator can request a 0.2 mm
+grid for export. Frontend default and the Input-panel control (`min=0.2`,
+`step=0.05`, value 0.35) were updated to match. Synthetic verification:
+0.25 mm → 11.7k verts/23.4k faces per needle (too heavy for 9 needles),
+0.35 mm → 5.8k verts/11.6k faces (balanced), 0.5 mm → 3.1k verts/6.1k faces.
+
+### 2. Manual needle routes handed a flattened mask to obstacle validation
+
+#### Root cause
+
+`/api/manual_planning/update_geometry` (planning_routes.py) loaded the CTV/OAR
+mask by taking the first non-`None` key (`ctv_mask`, `ctv_array`,
+`ctv_full_labels`) **without** checking its shape. If the stored value was a
+flattened 1D array (12582912 = 48×512×512), `_world_segment_hits_obstacle`
+compared it against the 3D CT grid, the shapes differed, and it fail-closed by
+returning True ("hits obstacle") for **every** needle — so a single-needle
+edit was rejected wholesale and the operator saw the full-plan failure path.
+
+#### Resolution
+
+The route now selects only a mask whose shape matches the CT grid (the same
+`_mask_array` contract used by the dose-recompute path), skipping any flattened
+copy before calling `_validate_manual_needle_safety`.
+
+### 3. Toast stacking in the lower-right corner
+
+`workspace-hydration-notice` (bottom 18px), `workspace-recovery-notice`
+(bottom 66px), and `.app-notice-stack` (bottom 116px) now stack vertically at
+`right: 18px` without overlap, as bubbles. (The recovery notice was previously
+a centered modal; this and the hydration notice are the load/open-resource
+notices the operator wanted grouped bottom-right.)
+
+### Files changed
+
+| File | Change |
+|------|--------|
+| `web/surgical_guide.py` | Default resolution 0.5 → 0.35; parameter range (0.2, 2.0) |
+| `web/app/static/js/brachybot-surgical-guide.js` | Resolution default 0.35 |
+| `web/app/index.html` | Geometry-resolution input min/step/value |
+| `web/routes/planning_routes.py` | CT-grid-shaped mask selection for needle validation |
+| `web/app/static/css/brachybot-auth.css` | Recovery/hydration toast stacking |
+| `web/app/static/css/brachybot-theme-layout.css` | `.app-notice-stack` bottom offset |
+| `tests/test_needle_obstacle_safety.py` | Flattened-mask fail-closed regression |
+
+### Verification
+
+- `pytest tests/test_round9_regressions.py tests/test_external_project_scope.py tests/test_chat_tasks.py tests/test_multi_agent_basic.py tests/test_surgical_guide.py tests/test_runtime_contracts.py tests/test_needle_obstacle_safety.py` — 75 passed.
+- Synthetic guide at 0.35 mm is watertight; flattened 1D mask fail-closes in
+  needle validation while the matching 3D mask validates normally.
+
+---
+
+## 2026-08-01 - Guide bore resolution, mesh smoothing, needle-handle rotation conflict, seed-drag UX
+
+### Scope
+
+Follow-up on live verification: the surgical guide showed stepped surfaces and
+its needle bores were not visibly open, and orbiting the 3D scene locked
+whenever the pointer crossed a needle endpoint handle.
+
+### 1. Guide needle bores collapsed and surface stepped
+
+#### Root cause
+
+The default `geometry_resolution_mm` was 1.0. A 2.2 mm channel (1.1 mm radius)
+collapsed to ~2 voxels on a 1 mm grid, so the marching-cubes bore was not
+visibly open, and the surface showed obvious 1 mm steps ("bump" around each
+channel).
+
+#### Resolution
+
+- Default `geometry_resolution_mm` 1.0 → 0.5 (backend `DEFAULT_GUIDE_PARAMETERS`
+  and frontend `GUIDE_DEFAULTS`). At 0.5 mm the channel is a clear ~4.4 voxel
+  through-hole.
+- Added `_smooth_mesh_vertices`: a few uniform Laplacian passes over the
+  marching-cubes surface in local mm space before the world transform. Vertex
+  positions move (max ~0.11 mm in the synthetic case) while face connectivity
+  and watertightness are preserved. Facets are softened without closing the
+  needle bores.
+
+### 2. 3D orbiting locked on needle endpoint handles
+
+#### Root cause
+
+`_makeNeedleHandle` used a 3.5 mm sphere with `depthTest = false` (always
+on-top), and the capture-phase `beginNeedleHandleDrag` guard disabled
+`OrbitControls` when a handle was hit. Orbiting the scene would lock rotation
+whenever the pointer crossed a handle's screen position.
+
+#### Resolution
+
+- Handle radius 3.5 → 2.2 mm and `depthTest = true`, so a handle occluded by
+  the patient surface or needle shaft is invisible and cannot steal a rotation
+  drag. Only visibly exposed handles remain draggable.
+
+### 3. Seed drag and manual needle direction
+
+See the prior 2026-08-01 entry: immediate seed-drag arm, seed-drag recompute
+confirmation, and manual needle `[deep, shallow]` points with the planned
+needle's direction.
+
+### Files changed
+
+| File | Change |
+|------|--------|
+| `web/surgical_guide.py` | Default resolution 0.5; Laplacian mesh smoothing |
+| `web/app/static/js/brachybot-surgical-guide.js` | Frontend resolution default 0.5 |
+| `web/app/static/js/brachybot-viewer-layout.js` | Needle-handle radius + depth test |
+
+### Verification
+
+- `pytest tests/test_surgical_guide.py tests/test_runtime_contracts.py tests/test_round9_regressions.py` — 46 passed.
+- Synthetic guide at 0.5 mm: 3,060 vertices / 6,112 faces, watertight before and after smoothing; max vertex displacement 0.11 mm.
+- Sleeve band radius 0.9–3.07 mm confirms the 1.1 mm channel and 3.0 mm outer wall are present.
+
+---
+
+## 2026-08-01 - Seed drag UX, manual needle direction, guide bore resolution, and viewer rotation
+
+### Scope
+
+Follow-up on live verification regressions: seed drag was still unusable, the
+manually added needle pointed opposite to the planned needles, the surgical
+guide showed no needle bore and a stepped surface, the 3D viewer could not
+rotate freely, and each dose iso-surface appeared twice in the Data Tree.
+
+### 1. Seed drag: hold-to-arm timer cancelled by movement
+
+#### Root cause
+
+`brachybot-3d-manual.js` armed the seed drag via a 220 ms `setTimeout` while
+`updateManualDrag` cancelled any pending seed drag on >6 px movement. A normal
+press-and-drag gesture therefore cancelled itself before the timer fired, so a
+seed could never be dragged along its needle.
+
+#### Resolution
+
+- Arm the seed drag immediately on `mousedown` (no hold delay), so pressing a
+  seed and moving it starts the drag right away. `updateManualDrag` keeps
+  projecting the dragged seed onto its owning needle.
+- On pointer-up the drag now asks the operator whether to recompute dose/DVH
+  (`_confirmAction`): "Yes" runs the full commit + `recomputeManualDose`;
+  "No" commits the geometry only (`onManualSeedEdited` gains a
+  `skipDoseRecompute` option).
+
+### 2. Manual needle direction opposite to planned needles
+
+#### Root cause
+
+`addManualNeedle` built `points` in `[shallow, deep]` order while the automatic
+planner stores `[deep, external]`, so the same physical needle rendered with
+its direction reversed. The direction itself came from the camera view, not
+from the plan's reference direction.
+
+#### Resolution
+
+- `addManualNeedle` now emits `points[0] = deep (intrabody target)`,
+  `points[1] = shallow (skin entry)`, matching the planner convention so the
+  manual needle lines up with the planned ones.
+- Direction preference: an existing planned needle's direction, then the
+  reference-direction UI controls (`refDirecX/Y/Z` or auto `[0,0,1]`), then
+  the camera direction.
+
+### 3. Surgical guide: needle bore not visible and stepped surface
+
+#### Root cause
+
+The default `geometry_resolution_mm` was 1.0. A 2.2 mm channel (1.1 mm radius)
+collapsed to ~2 voxels on a 1 mm grid, so the marching-cubes bore was not
+visibly open, and the surface showed obvious 1 mm steps.
+
+#### Resolution
+
+- Default `geometry_resolution_mm` changed to 0.5 (backend
+  `DEFAULT_GUIDE_PARAMETERS` and frontend `GUIDE_DEFAULTS`). At 0.5 mm the
+  channel is a clear through-hole (~4.4 voxels) and the surface is smooth.
+- Verified: 1.0 mm produced 87 bore voxels / 6.9k vertices (1 needle); 0.5 mm
+  produced 449 bore voxels / 27.4k vertices with a clean bore.
+
+### 4. 3D viewer rotation capped
+
+`minPolarAngle=0.01` / `maxPolarAngle=π-0.01` limited orbiting; changed to full
+`0..π` range so the scene rotates freely.
+
+### 5. Duplicate dose iso-surfaces in the Data Tree
+
+`loadAllIsoSurfaces` called `loadDoseIsosurface` without setting
+`window._suppressSingleIsoEntry`, so each threshold got two entries. The flag
+is now set around the call so the outer function owns the `doseLevels` array.
+
+### 6. Recovery notice placement
+
+The "Manual dose update did not complete" recovery notice rendered as a centered
+modal; it now uses the same bottom-right pill styling as the case-resource
+hydration toast (`workspace-recovery-notice` → `right:18px; bottom:18px`,
+`border-radius:999px`, 12 px).
+
+### Files changed
+
+| File | Change |
+|------|--------|
+| `web/app/static/js/brachybot-3d-manual.js` | Immediate seed-drag arm; seed drag recompute confirmation; manual needle `[deep, shallow]` points + planned/reference direction |
+| `web/surgical_guide.py` | Default `geometry_resolution_mm` 1.0 → 0.5 |
+| `web/app/static/js/brachybot-surgical-guide.js` | Frontend guide resolution default 0.5 |
+| `web/app/static/css/brachybot-auth.css` | Recovery notice → bottom-right pill |
+
+### Verification
+
+- `pytest tests/test_surgical_guide.py` — 11 passed.
+- Playwright: no `pageerror`; `addManualNeedle` / `addManualSeed` / `addMeshToScene` resolve; recovery notice renders bottom-right pill; guide functions return proper session ids after the `activeSessionId` shadowing fix.
+- Bore/resolution experiment: 0.5 mm gives a clean through-hole and smooth surface at acceptable mesh size.
+
+---
+
 ## 2026-08-01 - Manual seed drag, monitor stop intent, and guide validity against the algorithm baseline
 
 ### Scope

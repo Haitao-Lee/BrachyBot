@@ -151,6 +151,20 @@
                 if (userEl && !userEl.value && remembered) userEl.value = remembered;
                 if (remEl && remembered) remEl.checked = true;
             } catch (_) {}
+            // Auto-fill the deployment access key from any key the browser
+            // already holds (set via ?api_key=, a previous sign-in, or the
+            // session/local storage copy). The operator should only need to
+            // enter username and password on a protected deployment.
+            try {
+                const keyInput = document.getElementById('authDeploymentKey');
+                if (keyInput && !keyInput.value) {
+                    const storedKey = window.BRACHYBOT_API_KEY
+                        || sessionStorage.getItem('BRACHYBOT_API_KEY')
+                        || localStorage.getItem('BRACHYBOT_API_KEY')
+                        || '';
+                    if (storedKey) keyInput.value = storedKey;
+                }
+            } catch (_) {}
             // Focus management — first field gets focus so Enter submits the form.
             const first = document.getElementById('authUsername');
             if (first) {
@@ -199,10 +213,11 @@
         } else {
             // The UI API wrapper normally provides this helper. Keep the
             // login shell usable when static assets are temporarily cached
-            // out of order, without persisting the credential to a case.
+            // out of order. Persist to localStorage so the remembered key
+            // survives reloads and tab closings.
             window.BRACHYBOT_API_KEY = key;
-            if (key) sessionStorage.setItem('BRACHYBOT_API_KEY', key);
-            else sessionStorage.removeItem('BRACHYBOT_API_KEY');
+            if (key) localStorage.setItem('BRACHYBOT_API_KEY', key);
+            else localStorage.removeItem('BRACHYBOT_API_KEY');
         }
     }
 

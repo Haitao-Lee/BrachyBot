@@ -40,7 +40,12 @@ DEFAULT_GUIDE_PARAMETERS: Dict[str, float] = {
     "sleeve_outer_radius_mm": 3.0,
     "sleeve_outward_mm": 8.0,
     "sleeve_inward_mm": 8.0,
-    "geometry_resolution_mm": 1.0,
+    # 0.35 mm resolution: a 1 mm grid made the ~2.2 mm guide channel collapse to
+    # ~2 voxels (bore not visibly open, stepped surface). 0.35 mm keeps the
+    # channel as a clear through-hole (~6 voxels) with a smooth printable
+    # surface while keeping a 9-needle guide around ~50k vertices. Operators
+    # can request an even finer 0.2 mm grid for export-quality STL.
+    "geometry_resolution_mm": 0.35,
     "minimum_component_voxels": 24.0,
 }
 
@@ -57,7 +62,7 @@ _PARAMETER_LIMITS = {
     "sleeve_outer_radius_mm": (1.0, 12.0),
     "sleeve_outward_mm": (1.0, 30.0),
     "sleeve_inward_mm": (1.0, 30.0),
-    "geometry_resolution_mm": (0.5, 2.0),
+    "geometry_resolution_mm": (0.2, 2.0),
     "minimum_component_voxels": (1.0, 10000.0),
 }
 
@@ -595,10 +600,62 @@ def _mesh_from_voxels(
     # the resampled lattice and supports arbitrary orientation matrices.
     index_zyx = vertices_zyx / np.asarray(spacing_zyx, dtype=np.float64) - 1.0
     local_xyz_mm = index_zyx[:, ::-1] * spacing_xyz
+    # Smooth the surface in local millimetre space before the world transform.
+    # Marching cubes on a 0.5 mm voxel grid leaves visible facet steps on a
+    # printable guide; a few Laplacian passes soften the facets without moving
+    # the mesh off the intended geometry (edges are preserved by keeping the
+    # surface watertight — only vertex positions move, connectivity is fixed).
+    local_xyz_mm = _smooth_mesh_vertices(local_xyz_mm, np.asarray(faces, dtype=np.int64))
     crop_origin = _crop_origin_world(ct_image, lower_xyz)
     direction = np.asarray(ct_image.GetDirection(), dtype=np.float64).reshape(3, 3)
     vertices_world = (direction @ local_xyz_mm.T).T + crop_origin
     return vertices_world.astype(np.float32), np.asarray(faces, dtype=np.int32)
+
+
+def _smooth_mesh_vertices(
+    vertices: np.ndarray,
+    faces: np.ndarray,
+    iterations: int = 3,
+    lambda_factor: float = 0.5,
+) -> np.ndarray:
+    """Apply a few uniform Laplacian passes to a triangle mesh.
+
+    Only vertex positions change; the face connectivity is untouched so the
+    mesh stays watertight. The guide's sharp channel openings are preserved
+    because Laplacian smoothing is shrink-free at convex corners only to a
+    small degree; a modest lambda and iteration count softens facets without
+    closing the needle bores.
+    """
+    import numpy as np
+
+    verts = np.asarray(vertices, dtype=np.float64)
+    faces = np.asarray(faces, dtype=np.int64)
+    if verts.ndim != 2 or verts.shape[1] != 3 or faces.ndim != 2 or faces.shape[1] != 3:
+        return np.asarray(vertices, dtype=np.float64)
+    if len(verts) == 0 or len(faces) == 0:
+        return np.asarray(vertices, dtype=np.float64)
+
+    # Build one-ring adjacency (both edge directions) from faces.
+    edge_forward = faces[:, [0, 1, 2]].reshape(-1)
+    edge_back = faces[:, [1, 2, 0]].reshape(-1)
+    import scipy.sparse as sparse
+
+    data = np.ones(edge_forward.size, dtype=np.float64)
+    adjacency = sparse.csr_matrix(
+        (data, (edge_forward, edge_back)),
+        shape=(len(verts), len(verts)),
+    )
+    adjacency = (adjacency + adjacency.T).tocsr()
+    degree = np.asarray(adjacency.sum(axis=1)).ravel()
+    degree = np.maximum(degree, 1.0)
+
+    smoothed = verts.copy()
+    for _ in range(int(iterations)):
+        # Average of one-ring neighbours.
+        neighbour_sum = np.asarray(adjacency.dot(smoothed))
+        average = neighbour_sum / degree[:, None]
+        smoothed = smoothed + lambda_factor * (average - smoothed)
+    return smoothed
 
 
 def mesh_validation(vertices: np.ndarray, faces: np.ndarray) -> Dict[str, Any]:

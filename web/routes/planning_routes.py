@@ -2915,17 +2915,29 @@ def register_planning_routes(
             ct_image = memory.retrieve("ct_image")
             if ct_image is None:
                 raise ValueError("No CT image loaded")
+            # A flattened/1D mask must never be handed to needle-safety
+            # validation: _world_segment_hits_obstacle compares the mask shape
+            # against the CT grid and fail-closes (rejects every needle) when
+            # they differ. Pick only masks that match the CT grid, matching the
+            # _mask_array contract used by the dose recompute path.
+            expected_shape = tuple(int(value) for value in reversed(ct_image.GetSize()))
             ctv_mask = None
             for key in ("ctv_mask", "ctv_array", "ctv_full_labels"):
                 candidate = memory.retrieve(key)
-                if candidate is not None:
-                    ctv_mask = candidate
+                if candidate is None:
+                    continue
+                arr = np.asarray(candidate)
+                if tuple(arr.shape) == expected_shape:
+                    ctv_mask = arr
                     break
             oar_mask = None
             for key in ("oar_array", "oar_label_data"):
                 candidate = memory.retrieve(key)
-                if candidate is not None:
-                    oar_mask = candidate
+                if candidate is None:
+                    continue
+                arr = np.asarray(candidate)
+                if tuple(arr.shape) == expected_shape:
+                    oar_mask = arr
                     break
             _server_support._validate_manual_needle_safety(
                 agent, normalized_needles, ct_image, ctv_mask, oar_mask
