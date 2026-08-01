@@ -3749,10 +3749,13 @@ async function _executeUIActionRaw(a, options = {}) {
         }
         if (target === 'mask.move') {
             const cfg = _parseUIControlPayload(value);
-            const cls = String(command === 'set' ? cfg?.to || value : value);
+            // Accept {"id":"mask_1","to":"ctv"} JSON, or a plain "ctv"/"oar"
+            // (applies to the active mask).
+            const cls = String(cfg?.to || cfg?.classification || (typeof value === 'string' && !value.startsWith('{') ? value : 'ctv')).toLowerCase();
             const id = cfg?.id || null;
-            if (typeof moveSelectedMasks === 'function' && (id || (state.activeMaskId && cls))) {
-                moveSelectedMasks(cls === 'oar' ? 'oar' : 'ctv', id ? [id] : null);
+            const targetCls = cls === 'oar' ? 'oar' : 'ctv';
+            if (typeof moveSelectedMasks === 'function' && (id || state.activeMaskId)) {
+                moveSelectedMasks(targetCls, id ? [String(id)] : null);
             }
             return;
         }

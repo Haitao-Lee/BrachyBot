@@ -529,6 +529,12 @@
                 annotations: typeof state !== 'undefined' && Array.isArray(state.annotations)
                     ? jsonClone(state.annotations)
                     : [],
+                // Manual/threshold masks are case data and must survive a
+                // restart. voxels are Sets; jsonClone turns them into arrays,
+                // and applyWorkspaceSnapshot converts them back.
+                masks: (typeof state !== 'undefined' && state.maskLabels)
+                    ? jsonClone({ labels: state.maskLabels, counter: state.maskLabelCounter || 0, activeMaskId: state.activeMaskId || null })
+                    : { labels: {}, counter: 0, activeMaskId: null },
                 scene: sceneViewState(),
                 dvh: dvhViewState(),
             },
@@ -1016,6 +1022,21 @@
                 if (uiState.viewer.doseTexture) state.doseTexture = Object.assign(state.doseTexture || {}, uiState.viewer.doseTexture);
                 if (Array.isArray(uiState.viewer.annotations)) {
                     state.annotations = jsonClone(uiState.viewer.annotations);
+                }
+                // Restore manual/threshold masks (voxels are stored as arrays
+                // by jsonClone; convert back to Sets).
+                if (uiState.viewer.masks && typeof state !== 'undefined') {
+                    const labels = uiState.viewer.masks.labels || {};
+                    state.maskLabels = {};
+                    Object.entries(labels).forEach(([id, m]) => {
+                        if (!m || typeof m !== 'object') return;
+                        state.maskLabels[id] = {
+                            ...m,
+                            voxels: new Set(Array.isArray(m.voxels) ? m.voxels : []),
+                        };
+                    });
+                    state.maskLabelCounter = Number(uiState.viewer.masks.counter) || 0;
+                    state.activeMaskId = uiState.viewer.masks.activeMaskId || null;
                 }
             }
             if (uiState.data_tree && typeof dataTreeState !== 'undefined') {
