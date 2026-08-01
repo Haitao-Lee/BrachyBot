@@ -49,7 +49,7 @@ pressed.
 | Patch margin | mm | 24.0 | Surface patch radius around each selected entry. |
 | Channel diameter | mm | 2.2 | Inner guide-hole diameter. The UI converts it to the internal radius exactly once. |
 | Sleeve outer diameter | mm | 6.0 | Outer support sleeve diameter. It must exceed the channel diameter. |
-| Sleeve outward/inward length | mm | 8.0 / 8.0 | Sleeve extents on either side of the skin entry. |
+| Sleeve outward/inward length | mm | 8.0 / 8.0 | Sleeve extents on either side of the skin entry. The channel is clamped flush with the skin surface: it always protrudes outward from the patient and never penetrates the skin, so the guide can sit tightly against the skin. `sleeve_inward` is accepted for compatibility but no longer changes the geometry. |
 | Geometry resolution | mm | 1.0 | Isotropic local construction lattice. Smaller values improve detail but cost time and memory. |
 
 The **Guided needles** multi-select can create a guide for a deliberate subset

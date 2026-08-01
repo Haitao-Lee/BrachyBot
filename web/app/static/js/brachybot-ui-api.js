@@ -43,6 +43,110 @@ function showBrachyBotNotice(message, kind = 'info', durationMs = 6000) {
 }
 window.showBrachyBotNotice = showBrachyBotNotice;
 
+/**
+ * Collect a declarative schema of every editable parameter in the UI.
+ *
+ * Unlike collectUIState (a point-in-time value snapshot), this returns the
+ * editable contract for each control: its semantic id, human label, group,
+ * input type, bounds, step, allowed options, and default. The schema is
+ * derived directly from the live DOM, so it stays in sync with every panel
+ * without a hard-coded parameter registry. The LLM can inspect this catalog
+ * and then set any parameter through parameter.set.
+ */
+function collectParameterSchema() {
+    const excluded = new Set([
+        'ctPath', 'ctvPath', 'oarPath', 'dicomRtPath',
+        'fileCT', 'fileCTV', 'fileOAR', 'fileDicomRT',
+        'guideStlValidationFile', 'guideVersionSelect',
+        'authUsername', 'authPassword', 'authRemember', 'authDeploymentKey',
+        'currentPassword', 'newPassword', 'chatInput',
+    ]);
+    const groupOf = (el) => {
+        let node = el;
+        while (node && node !== document.body) {
+            if (node.id === 'hyperparamsSection') return 'hyperparams';
+            if (node.id === 'surgicalGuideParameters') return 'surgical_guide';
+            if (node.id === 'doseColorbarPanel') return 'colorbar';
+            if (node.id === 'panelReport' || node.id === 'reportFormHost') return 'report';
+            if (node.id === 'panelViewers') return 'viewer';
+            if (node.id === 'panelInput') return 'input';
+            node = node.parentElement;
+        }
+        return 'other';
+    };
+    const labelOf = (el) => {
+        const label = el.closest('.form-group')?.querySelector('.form-label');
+        if (label) return (label.textContent || '').trim();
+        const container = el.closest('.form-group, .control-row, label');
+        if (container) {
+            const txt = (container.textContent || '').replace(/\s+/g, ' ').trim();
+            return txt.slice(0, 60);
+        }
+        return el.getAttribute('aria-label') || el.title || el.id || '';
+    };
+    const nodes = document.querySelectorAll('input[id], select[id], textarea[id]');
+    const items = [];
+    nodes.forEach((el) => {
+        const id = el.id;
+        if (!id || excluded.has(id)) return;
+        const type = el.type || 'text';
+        if (type === 'password' || type === 'file' || type === 'hidden') return;
+        if (id.toLowerCase().includes('apikey') || id.toLowerCase().includes('token')) return;
+        const item = {
+            id,
+            label: labelOf(el),
+            group: groupOf(el),
+            type,
+            disabled: !!el.disabled,
+        };
+        if (el.tagName === 'SELECT') {
+            item.options = Array.from(el.options).map((o) => o.value).filter(Boolean);
+            item.value = el.value || '';
+        } else if (type === 'checkbox') {
+            item.value = !!el.checked;
+        } else if (type === 'number' || type === 'range') {
+            item.min = el.min || undefined;
+            item.max = el.max || undefined;
+            item.step = el.step || undefined;
+            item.value = el.value === '' ? null : Number(el.value);
+        } else {
+            item.value = el.value || '';
+        }
+        item.default = el.defaultValue !== undefined
+            ? (type === 'checkbox' ? !!el.defaultChecked : el.defaultValue)
+            : item.value;
+        items.push(item);
+    });
+    return items;
+}
+
+/** Apply a single parameter schema entry to the live control. */
+function applyParameterSet(param) {
+    const id = param && (param.id || param.control);
+    const value = param && param.value;
+    if (!id) return false;
+    const el = document.getElementById(id);
+    if (!el) return false;
+    if ('checked' in el && (el.type === 'checkbox' || el.type === 'radio')) {
+        el.checked = !!value;
+    } else if ('value' in el) {
+        el.value = value === undefined || value === null ? '' : String(value);
+    } else {
+        el.textContent = String(value === undefined ? '' : value);
+    }
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+    reportUIEvent('parameter.set', id, { value });
+    // Compute parameters need an explicit apply step to reach the server.
+    const group = collectParameterSchema().find((p) => p.id === id)?.group || '';
+    if (group === 'hyperparams' && typeof applyHyperparams === 'function') {
+        applyHyperparams();
+    } else if (group === 'surgical_guide' && typeof window.scheduleWorkspaceSave === 'function') {
+        window.scheduleWorkspaceSave('surgical_guide.parameters');
+    }
+    return true;
+}
+
 function collectUIState() {
     const gv = (id) => {
         const el = document.getElementById(id);
@@ -3997,7 +4101,123 @@ async function _executeUIActionRaw(a, options = {}) {
             });
         }
         if (target === 'ui.catalog') {
-            return { success: true, message: 'The server-side declarative UI catalog is already included in the ui_controller schema.' };
+            const schema = (typeof collectParameterSchema === 'function') ? collectParameterSchema() : [];
+            const compact = schema.map((p) => ({
+                id: p.id,
+                label: p.label,
+                group: p.group,
+                type: p.type,
+                min: p.min, max: p.max, step: p.step,
+                options: p.options,
+                value: p.value,
+            }));
+            return { success: true, parameters: compact, count: compact.length,
+                     message: `UI parameter catalog has ${compact.length} editable parameters.` };
+        }
+        if (target === 'parameter.catalog') {
+            const schema = (typeof collectParameterSchema === 'function') ? collectParameterSchema() : [];
+            return { success: true, parameters: schema, count: schema.length,
+                     message: `Exposed ${schema.length} editable UI parameters.` };
+        }
+        if (target === 'parameter.set') {
+            const cfg = _parseUIControlPayload(value);
+            // Accept {"id":"seedRadius","value":0.5}, or JSON array of such entries.
+            if (Array.isArray(cfg)) {
+                let applied = 0;
+                cfg.forEach((entry) => { if (applyParameterSet(entry)) applied++; });
+                return { success: true, applied, message: `Applied ${applied} parameter(s).` };
+            }
+            if (cfg && cfg.id) {
+                const ok = applyParameterSet(cfg);
+                return ok ? { success: true, applied: 1, message: `Set ${cfg.id} = ${cfg.value}.` }
+                          : { success: false, error: `Parameter control not found: ${cfg.id}` };
+            }
+            return { success: false, error: 'parameter.set needs JSON {"id":"<control>","value":<value>}' };
+        }
+        if (target === 'planning.hyperparams.set') {
+            const cfg = _parseUIControlPayload(value);
+            const values = cfg && typeof cfg === 'object' && !Array.isArray(cfg)
+                ? cfg
+                : (typeof value === 'string' && !value.startsWith('{') ? {} : cfg || {});
+            let applied = 0;
+            for (const [id, v] of Object.entries(values)) {
+                if (applyParameterSet({ id, value: v })) applied++;
+            }
+            if (applied > 0 && typeof applyHyperparams === 'function') applyHyperparams();
+            return { success: true, applied,
+                     message: `Set ${applied} hyperparameter(s) and applied them to the planner.` };
+        }
+        if (target === 'surgical_guide.parameters.set') {
+            const cfg = _parseUIControlPayload(value);
+            const values = cfg && typeof cfg === 'object' && !Array.isArray(cfg)
+                ? cfg
+                : (typeof value === 'string' && !value.startsWith('{') ? {} : cfg || {});
+            // Map service-side radius fields to the UI diameter controls, and
+            // the service-side parameter names to the panel control ids.
+            const RADIUS_TO_DIAMETER = {
+                channel_radius_mm: 'guideChannelDiameter',
+                sleeve_outer_radius_mm: 'guideSleeveOuterDiameter',
+            };
+            const PARAM_TO_CONTROL = {
+                skin_threshold_hu: 'guideSkinThreshold',
+                skin_clearance_mm: 'guideSkinClearance',
+                plate_thickness_mm: 'guidePlateThickness',
+                patch_margin_mm: 'guidePatchMargin',
+                channel_diameter_mm: 'guideChannelDiameter',
+                channel_radius_mm: 'guideChannelDiameter',
+                sleeve_outer_diameter_mm: 'guideSleeveOuterDiameter',
+                sleeve_outer_radius_mm: 'guideSleeveOuterDiameter',
+                sleeve_outward_mm: 'guideSleeveOutward',
+                sleeve_inward_mm: 'guideSleeveInward',
+                geometry_resolution_mm: 'guideGeometryResolution',
+            };
+            let applied = 0;
+            for (const [key, raw] of Object.entries(values)) {
+                let id = PARAM_TO_CONTROL[key] || key;
+                let v = raw;
+                if (RADIUS_TO_DIAMETER[key] && raw !== undefined && raw !== null) v = Number(raw) * 2;
+                if (applyParameterSet({ id, value: v })) applied++;
+            }
+            if (applied > 0 && typeof window.scheduleWorkspaceSave === 'function') {
+                window.scheduleWorkspaceSave('surgical_guide.parameters');
+            }
+            return { success: true, applied,
+                     message: `Set ${applied} puncture-guide parameter(s). They take effect on the next "Generate guide".` };
+        }
+        if (target === 'tree.color') {
+            const cfg = _parseUIControlPayload(value);
+            const id = cfg && cfg.id;
+            const color = cfg && (cfg.color || cfg.value);
+            if (!id || !color) return { success: false, error: 'tree.color needs JSON {"id":"...","color":"#rrggbb"}' };
+            if (typeof setDataTreeItemColor === 'function') {
+                const ok = setDataTreeItemColor(id, color);
+                return ok ? { success: true, message: `Set color of ${id} to ${color}.` }
+                          : { success: false, error: `Data-tree node not found or bad color: ${id}` };
+            }
+            return { success: false, error: 'Color control is unavailable.' };
+        }
+        if (target === 'report.field.set') {
+            const cfg = _parseUIControlPayload(value);
+            const key = cfg && cfg.key;
+            const v = cfg && (cfg.value !== undefined ? cfg.value : cfg.text);
+            if (!key) return { success: false, error: 'report.field.set needs JSON {"key":"...","value":...}' };
+            const el = document.getElementById('rf-' + String(key).replace(/[^a-zA-Z0-9_]/g, '_'));
+            if (!el) { return { success: false, error: `Report field not found: ${key}` }; }
+            if ('checked' in el && (el.type === 'checkbox' || el.type === 'radio')) el.checked = !!v;
+            else if ('value' in el) el.value = v === undefined || v === null ? '' : String(v);
+            el.dispatchEvent(new Event('input', { bubbles: true }));
+            el.dispatchEvent(new Event('change', { bubbles: true }));
+            if (typeof onReportFieldEdit === 'function') onReportFieldEdit(key);
+            if (typeof _scheduleReportAutoSave === 'function') _scheduleReportAutoSave();
+            return { success: true, message: `Set report field ${key}.` };
+        }
+        if (target === 'report.template.set') {
+            const sel = document.getElementById('reportTemplateSelect');
+            if (!sel) return { success: false, error: 'Report template selector is unavailable.' };
+            sel.value = String(value || '');
+            sel.dispatchEvent(new Event('change', { bubbles: true }));
+            if (typeof applyReportTemplate === 'function') applyReportTemplate();
+            return { success: true, message: `Report template set to ${value}.` };
         }
         if (target === 'planning.parameter') {
             return executeGenericUIControl('set', value);

@@ -44,7 +44,49 @@ class SurgicalGuideTool(BaseTool):
                 },
                 "parameters": {
                     "type": "object",
-                    "description": "Optional skin offset, plate, sleeve, and bore parameters in mm.",
+                    "description": (
+                        "Optional puncture-guide manufacturing parameters in mm or HU. "
+                        "All keys are optional; omitted keys keep the case's current "
+                        "panel values (or defaults)."
+                    ),
+                    "properties": {
+                        "skin_threshold_hu": {
+                            "type": "number", "minimum": -800, "maximum": 100,
+                            "description": "CT HU threshold defining the skin surface.",
+                        },
+                        "skin_clearance_mm": {
+                            "type": "number", "minimum": 0, "maximum": 5,
+                            "description": "Offset from the skin surface to the guide plate.",
+                        },
+                        "plate_thickness_mm": {
+                            "type": "number", "minimum": 1, "maximum": 10,
+                            "description": "Printable shell thickness.",
+                        },
+                        "patch_margin_mm": {
+                            "type": "number", "minimum": 10, "maximum": 80,
+                            "description": "Surface patch radius around each entry.",
+                        },
+                        "channel_radius_mm": {
+                            "type": "number", "minimum": 0.3, "maximum": 6,
+                            "description": "Inner guide-hole RADIUS (the UI shows diameter = 2x radius).",
+                        },
+                        "sleeve_outer_radius_mm": {
+                            "type": "number", "minimum": 1, "maximum": 12,
+                            "description": "Outer support sleeve RADIUS (UI diameter = 2x radius).",
+                        },
+                        "sleeve_outward_mm": {
+                            "type": "number", "minimum": 1, "maximum": 30,
+                            "description": "Sleeve length protruding OUTWARD from the skin entry.",
+                        },
+                        "sleeve_inward_mm": {
+                            "type": "number", "minimum": 1, "maximum": 30,
+                            "description": "Accepted for compatibility; the channel is clamped flush with the skin and never penetrates the body.",
+                        },
+                        "geometry_resolution_mm": {
+                            "type": "number", "minimum": 0.2, "maximum": 2,
+                            "description": "Isotropic local construction lattice.",
+                        },
+                    },
                 },
             },
             # The planner commonly requests the default operation with an

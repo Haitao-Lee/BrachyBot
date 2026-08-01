@@ -1278,7 +1278,11 @@ class ToolResultPipeline:
                 parts.append(result)
         if errors:
             parts.append(("## ⚠️ " + ("问题" if lang == "zh" else "Issues")) + "\n" + "\n".join(errors))
-        return "\n\n".join(parts) or ("工具已执行。" if lang == "zh" else "Tools executed.")
+        if parts:
+            return "\n\n".join(parts)
+        # Never emit the empty "tool executed" placeholder: an empty step list
+        # should read as a plain statement, not a pretend success.
+        return ("没有执行任何操作。" if lang == "zh" else "No operation was executed.")
 
     @staticmethod
     def synthesize(formatted_results: List[dict], user_message: str, brain_router, lang: str, query_type: str = "knowledge") -> str:

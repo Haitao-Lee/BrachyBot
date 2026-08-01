@@ -785,7 +785,13 @@ def generate_surgical_guide(
             <= params["patch_margin_mm"] ** 2
         )
         sleeve_start = entry - path.inward_direction * params["sleeve_outward_mm"]
-        sleeve_end = entry + path.inward_direction * params["sleeve_inward_mm"]
+        # The sleeve and channel must guide the needle from OUTSIDE the
+        # patient. The inner end sits flush with the skin surface so the guide
+        # can be positioned against the patient; extending it beyond the skin
+        # entry would push the channel wall into the skin and prevent a flush
+        # fit. sleeve_inward_mm is retained in the schema for compatibility but
+        # is clamped to the skin entry and never penetrates the body.
+        sleeve_end = entry
         outer_sleeves |= _segment_mask(
             grid, sleeve_start, sleeve_end, params["sleeve_outer_radius_mm"]
         )

@@ -26,11 +26,50 @@ _RUNTIME_CONTEXT_MARKER = "[BrachyBot runtime context: data only]"
 
 def _tool_failure_reason(result) -> str:
     """Return a useful failure reason even for legacy tools that only set message."""
+    if isinstance(result, dict):
+        return str(
+            result.get("error") or result.get("message") or "execution failed"
+        ).strip()
     return str(
         getattr(result, "error", None)
         or getattr(result, "message", None)
         or "execution failed"
     ).strip()
+
+
+def _failed_steps_summary(steps: List[Dict]) -> Optional[str]:
+    """Return a short, honest summary of any tools that failed this turn.
+
+    Returns None when nothing failed. When tools failed, the returned text is
+    used to steer the LLM (or the final fallback) toward an honest answer
+    instead of the generic "tool executed" placeholder.
+    """
+    failed = [
+        s for s in (steps or [])
+        if s.get("type") == "tool" and s.get("status") == "error"
+    ]
+    if not failed:
+        return None
+    lines = []
+    for s in failed[:4]:
+        result = s.get("result")
+        reason = _tool_failure_reason(result if result is not None else s)
+        tool = str(s.get("tool") or "tool").strip()
+        lines.append(f"- ❌ {tool}: {reason}" if tool else f"- ❌ {reason}")
+    return "\n".join(lines)
+
+
+_HONEST_FAILURE_PROMPT = (
+    "One or more tools in this turn FAILED and were not completed:\n"
+    "{failures}\n\n"
+    "Respond honestly to the user in their language:\n"
+    "1. State plainly what could NOT be done and the reason, in 1-2 sentences.\n"
+    "2. Then list at most 3 concrete, real things BrachyBot CAN do next that are "
+    "relevant to their goal (e.g. load a CT, segment CTV/OAR, generate a plan, "
+    "adjust planning or guide parameters, generate a puncture guide, answer "
+    "clinical questions).\n"
+    "Do NOT claim success. Do NOT invent results. Do NOT say 'tool executed'. Keep it brief."
+)
 
 
 def _is_placeholder_tool_response(text: str) -> bool:
@@ -868,6 +907,9 @@ class LLMRuntimeMixin:
                         "Do NOT summarize prior treatment planning results unless the user explicitly asked about them. "
                         "If search results are insufficient or uncertain, say so clearly and cite what was found."
                     )
+                _fail_summary = _failed_steps_summary(steps)
+                if _fail_summary:
+                    _present_instruction = _HONEST_FAILURE_PROMPT.format(failures=_fail_summary)
                 messages.append({"role": "user", "content": _present_instruction})
 
         # Clean response - no summarization
@@ -2438,6 +2480,9 @@ class LLMRuntimeMixin:
                         "Do NOT summarize prior treatment planning results unless the user explicitly asked about them. "
                         "If search results are insufficient or uncertain, say so clearly and cite what was found."
                     )
+                _fail_summary = _failed_steps_summary(steps)
+                if _fail_summary:
+                    _present_instruction = _HONEST_FAILURE_PROMPT.format(failures=_fail_summary)
                 messages.append({"role": "user", "content": _present_instruction})
 
         # No summarization - use LLM response directly
@@ -2483,9 +2528,36 @@ class LLMRuntimeMixin:
                         + "\n".join(failure_notes)
                     )
                 else:
-                    final_response = "Tools executed. Check the execution trace above for results."
+                    # Honest, capability-aware fallback: never the empty
+                    # "tool executed" placeholder. If tools failed, say so and
+                    # guide the user toward what BrachyBot can actually do.
+                    fail_summary = _failed_steps_summary(steps)
+                    if fail_summary:
+                        final_response = (
+                            "Some of the requested operations could not be completed:\n\n"
+                            f"{fail_summary}\n\n"
+                            "I cannot continue with the part that failed. "
+                            "I can help with: loading/segmenting CT (CTV/OAR), generating a seed "
+                            "plan and dose, adjusting planning or puncture-guide parameters, "
+                            "generating a patient-specific puncture guide, or answering clinical "
+                            "questions. Tell me which one and I'll continue."
+                        )
+                    else:
+                        final_response = (
+                            "I could not complete that request automatically. "
+                            "I can help with: loading/segmenting CT (CTV/OAR), generating a seed "
+                            "plan and dose, adjusting planning or puncture-guide parameters, "
+                            "generating a patient-specific puncture guide, or answering clinical "
+                            "questions. Tell me which one and I'll continue."
+                        )
             else:
-                final_response = "Tools executed. Check the execution trace above for results."
+                final_response = (
+                    "I could not complete that request automatically. "
+                    "I can help with: loading/segmenting CT (CTV/OAR), generating a seed "
+                    "plan and dose, adjusting planning or puncture-guide parameters, "
+                    "generating a patient-specific puncture guide, or answering clinical "
+                    "questions. Tell me which one and I'll continue."
+                )
 
         ui_screenshot_response = _ui_screenshot_turn_response()
         if ui_screenshot_response is not None:

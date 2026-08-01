@@ -1768,6 +1768,7 @@ function applyThreshold() {
         }
         renderDataTree();
         reloadOverlays();
+        requestViewerVisualRefresh('mask-threshold');
         _scheduleDataTreeSave('mask.threshold');
     }
 }
@@ -3267,6 +3268,7 @@ function openColorPicker(id, swatchEl) {
             });
             renderDataTreeDebounced();
             _scheduleDataTreeSave(`viewer.color:${id}`);
+            requestViewerVisualRefresh('color-picker');
         }, 100);
         closeDialog();
     }
@@ -3281,6 +3283,51 @@ function openColorPicker(id, swatchEl) {
     dialog.querySelector('#colorDialogClose').addEventListener('click', closeDialog);
     backdrop.addEventListener('click', closeDialog);
 }
+
+// Programmatic color change for a data-tree node, mirroring the color-dialog
+// applyColor path. Supported node ids: ctv, oar, ctv_*, organ_*, mask_*,
+// seed_*, needle_*, dose_iso_*. Refreshes 2D overlays and the 3D mesh.
+function setDataTreeItemColor(id, color) {
+    if (!/^#[0-9a-f]{6}$/i.test(String(color || ''))) return false;
+    let itemState;
+    if (id === 'ctv') itemState = dataTreeState.ctv;
+    else if (id === 'oar') itemState = dataTreeState.oar;
+    else if (id === 'dose') itemState = dataTreeState.dose;
+    else if (id === 'seeds') itemState = dataTreeState.seeds;
+    else if (id === 'needles') itemState = dataTreeState.needles;
+    else if (id.startsWith('ctv_')) itemState = dataTreeState.ctvLabels?.[id];
+    else if (id.startsWith('seed_')) itemState = dataTreeState.planning.seeds.find(s => s.id === id);
+    else if (id.startsWith('needle_')) itemState = dataTreeState.planning.needles.find(n => n.id === id);
+    else if (id.startsWith('dose_iso_')) {
+        const threshold = parseFloat(id.replace('dose_iso_', ''));
+        itemState = dataTreeState.planning.doseLevels.find(d => d.threshold === threshold);
+    } else if (id.startsWith('mask_')) itemState = state.maskLabels?.[id];
+    else itemState = dataTreeState.organs.find(o => o.id === id);
+    if (!itemState) return false;
+    itemState.color = color;
+    if (id.startsWith('organ_') || id.startsWith('ctv_')) {
+        const labelId = itemState.labelId ?? parseInt(id.replace('ctv_', ''), 10);
+        if (Number.isFinite(Number(labelId))) {
+            const r = parseInt(color.slice(1, 3), 16);
+            const g = parseInt(color.slice(3, 5), 16);
+            const b = parseInt(color.slice(5, 7), 16);
+            labelColorLUT[labelId] = [r, g, b];
+        }
+    }
+    const mesh3d = scene3D.meshes[id];
+    if (mesh3d) {
+        _setMeshMaterialColor(mesh3d, color);
+        const savedMaterial = state.doseTexture?.originalMaterials?.[id];
+        if (savedMaterial) _setMeshMaterialColor({ material: savedMaterial }, color);
+    }
+    reloadOverlays();
+    redrawSeedNeedleOverlays();
+    renderDataTreeDebounced();
+    _scheduleDataTreeSave(`viewer.color:${id}`);
+    requestViewerVisualRefresh('tree-color');
+    return true;
+}
+window.setDataTreeItemColor = setDataTreeItemColor;
 
 function getItemGroup(id) {
     if (id === 'ctv') return 'ctv';
@@ -5221,6 +5268,7 @@ function setDataOpacity(id, value) {
             if (typeof _setNeedleHandlesVisibility === 'function') _setNeedleHandlesVisibility(needle.id, needle.visible !== false, opacity);
         });
         renderDataTreeDebounced();
+        redrawSeedNeedleOverlays();
         _scheduleDataTreeSave(`viewer.opacity:${id}`);
         return;
     }
@@ -5355,6 +5403,7 @@ function deleteDataTreeMask(id) {
     }
     renderDataTree();
     reloadOverlays();
+    if (scene3D?.requestRender) scene3D.requestRender(2);
     _scheduleDataTreeSave('mask.delete');
     return true;
 }
@@ -5377,6 +5426,8 @@ async function moveSelectedMasks(classification, objectIds = null) {
     }
     renderDataTree();
     reloadOverlays();
+    requestViewerVisualRefresh('mask-move');
+    if (typeof applyDataTreeViewVisibility === 'function') applyDataTreeViewVisibility();
     _scheduleDataTreeSave('mask.move');
     addChat('system', _dtText(
         `已移动 ${ids.length} 个掩膜到 ${classification.toUpperCase()}（仅显示，不参与剂量计算）。`,
