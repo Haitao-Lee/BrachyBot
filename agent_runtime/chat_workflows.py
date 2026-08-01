@@ -850,7 +850,7 @@ class ChatWorkflowMixin:
                 }.get(title, title)
                 if isinstance(title, str) and title.startswith("Direct: "):
                     tool_name = title.removeprefix("Direct: ")
-                    title = "直接调用：" + {
+                    title = {
                         "ctv_segmentation": "CTV 分割",
                         "oar_segmentation": "OAR 分割",
                         "planning_pipeline": "粒子植入规划",
@@ -868,7 +868,7 @@ class ChatWorkflowMixin:
                 }.get(content, content)
             elif trace_lang == "en":
                 if isinstance(title, str) and title.startswith("Direct: "):
-                    title = "Direct: " + title.removeprefix("Direct: ")
+                    title = title.removeprefix("Direct: ")
             step_id[0] += 1
             step = {
                 "id": step_id[0],

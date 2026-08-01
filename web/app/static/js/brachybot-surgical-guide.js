@@ -10,7 +10,7 @@
         sleeve_outer_radius_mm: 3,
         sleeve_outward_mm: 8,
         sleeve_inward_mm: 8,
-        geometry_resolution_mm: 1,
+        geometry_resolution_mm: 0.35,
     });
     const GUIDE_CONTROLS = Object.freeze({
         skin_threshold_hu: 'guideSkinThreshold',
@@ -44,17 +44,31 @@
             : (window._i18nLang === 'zh' ? zh : en);
     }
 
-    function activeSessionId() {
-        // Prefer the module-scope `activeSessionId` (a top-level `let` from
-        // chat-core.js). `window.activeSessionId` is never assigned, so relying
-        // on it made the guide's session checks disagree with refreshPlanningUI's
-        // expected session and silently left the Generate Guide button disabled.
+    // Resolve the active case session id. This file is an IIFE; naming this
+    // helper `activeSessionId` would shadow the module-scope `let activeSessionId`
+    // from chat-core.js (a top-level `let`, not a `window` property) inside this
+    // closure. Referencing the bare name then returned the function itself, which
+    // String() rendered as source code and broke every guide request header and
+    // the `sessionId !== activeSessionId()` guards. Reading the module variable
+    // through `eval` avoids the shadow and keeps the check in sync with the
+    // rest of the app, with the API helper and state as fallbacks.
+    function getActiveSessionId() {
+        let moduleId = '';
+        try {
+            // Indirect eval runs in global scope and reads the top-level `let`.
+            moduleId = (0, eval)('typeof activeSessionId !== "undefined" ? String(activeSessionId) : ""');
+        } catch (_) { moduleId = ''; }
         return String(
-            (typeof activeSessionId !== 'undefined' && activeSessionId)
+            moduleId
+            || (typeof window._activeApiSessionId === 'function' ? window._activeApiSessionId() : '')
             || window.activeSessionId
             || window.state?.sessionId
             || ''
         );
+    }
+
+    function activeSessionId() {
+        return getActiveSessionId();
     }
 
     function notify(message, kind = 'info') {

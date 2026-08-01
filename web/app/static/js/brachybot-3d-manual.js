@@ -279,18 +279,39 @@ async function _persistNeedleGeometryOnly() {
 function addManualNeedle() {
     init3DScene();
     const center = new THREE.Vector3(..._planningCenterWorld());
-    const dir = new THREE.Vector3();
-    if (scene3D.camera) scene3D.camera.getWorldDirection(dir);
+    // Direction of the new needle. Prefer an existing planned needle's
+    // direction so a manually added needle lines up with the current plan
+    // instead of the camera view. Fall back to the reference-direction UI
+    // controls, then to the camera direction.
+    const plannedNeedle = (dataTreeState?.planning?.needles || []).find(n => Array.isArray(n.points) && n.points.length >= 2);
+    let dir = new THREE.Vector3();
+    if (plannedNeedle) {
+        const p0 = _vec3Array(plannedNeedle.points[0]);
+        const p1 = _vec3Array(plannedNeedle.points[1]);
+        dir = new THREE.Vector3(...p1).sub(new THREE.Vector3(...p0)).normalize();
+    }
+    if (dir.length() < 1e-6) {
+        const refAuto = document.getElementById('refDirecAuto')?.checked;
+        const rx = Number(document.getElementById('refDirecX')?.value || 0);
+        const ry = Number(document.getElementById('refDirecY')?.value || 1);
+        const rz = Number(document.getElementById('refDirecZ')?.value || 0);
+        const hasRef = (rx !== 0 || ry !== 0 || rz !== 0);
+        dir.set(...(refAuto ? [0, 0, 1] : hasRef ? [rx, ry, rz] : [0, 0, 1]));
+    }
     if (dir.length() < 1e-6) dir.set(0, 0, 1);
     dir.normalize();
     manualPlanningState.needleCounter += 1;
     const id = `needle_manual_${manualPlanningState.needleCounter}`;
     const trajId = `manual_traj_${manualPlanningState.needleCounter}`;
-    const start = center.clone().sub(dir.clone().multiplyScalar(80));
-    const end = center.clone().add(dir.clone().multiplyScalar(25));
+    // Keep the same [deep, external] point convention as the automatic
+    // planner (points[0] = intrabody/deep target, points[1] = shallow skin
+    // entry). The previous code emitted [shallow, deep], so the manually
+    // added needle rendered with its direction opposite to the planned ones.
+    const deep = center.clone().sub(dir.clone().multiplyScalar(80));
+    const shallow = center.clone().add(dir.clone().multiplyScalar(25));
     const needle = {
         id,
-        points: [[end.x, end.y, end.z], [start.x, start.y, start.z]],
+        points: [[deep.x, deep.y, deep.z], [shallow.x, shallow.y, shallow.z]],
         trajectory_id: trajId,
         visible: true,
         opacity: 0.75,
@@ -578,7 +599,7 @@ function _projectPointOntoNeedle(position, needle) {
     return best ? [best.x, best.y, best.z] : _vec3Array(position);
 }
 
-async function onManualSeedEdited(seedId, position, rollbackSeeds = null) {
+async function onManualSeedEdited(seedId, position, rollbackSeeds = null, options = {}) {
     const rollback = Array.isArray(rollbackSeeds) ? rollbackSeeds : _cloneManualSeeds();
     const seed = dataTreeState.planning.seeds.find(s => s.id === seedId);
     const needle = seed
@@ -602,9 +623,14 @@ async function onManualSeedEdited(seedId, position, rollbackSeeds = null) {
     reportUIEvent('manual.seed.drag', seedId, {
         position: projected,
         projected_to_needle: !!needle,
+        dose_recomputed: options.skipDoseRecompute !== true,
     });
     await _commitManualSeeds('move', rollback);
-    await recomputeManualDose('seed_drag');
+    // The operator may choose not to pay the AI dose recompute cost after a
+    // seed slide; the geometry is already committed either way.
+    if (options.skipDoseRecompute !== true) {
+        await recomputeManualDose('seed_drag');
+    }
 }
 
 async function onManualNeedleHandleEdited(handle) {
@@ -1118,8 +1144,11 @@ function init3DScene() {
     scene3D.controls.enablePan = true;
     scene3D.controls.enableZoom = true;
     scene3D.controls.enableRotate = true;
-    scene3D.controls.minPolarAngle = 0.01;
-    scene3D.controls.maxPolarAngle = Math.PI - 0.01;
+    // Full polar range for unrestricted orbiting. OrbitControls internally
+    // clamps to a tiny epsilon at the exact poles, so free rotation around the
+    // scene does not get stuck at a limited angle.
+    scene3D.controls.minPolarAngle = 0;
+    scene3D.controls.maxPolarAngle = Math.PI;
     scene3D.controls.minDistance = 5;
     scene3D.controls.maxDistance = 3000;
     scene3D.controls.mouseButtons = {
@@ -1527,7 +1556,13 @@ function init3DScene() {
                     seedDragRollback = _cloneManualSeeds();
                     scene3D.controls.enabled = false;
                     interactionCanvas.style.cursor = 'wait';
-                    pendingSeedTimer = setTimeout(armSeedDrag, 220);
+                    // Arm the seed drag immediately on press. The previous
+                    // 220 ms hold-to-arm timer combined with the >6 px
+                    // movement cancellation in updateManualDrag meant a normal
+                    // press-and-drag gesture cancelled itself before the timer
+                    // fired, so a seed could never be dragged along its needle.
+                    if (pendingSeedTimer) { clearTimeout(pendingSeedTimer); pendingSeedTimer = null; }
+                    armSeedDrag();
                 }
 
                 // Show info
@@ -1638,7 +1673,7 @@ function init3DScene() {
     window.addEventListener('pointermove', updateManualDrag);
 
     // Mouse up - end drag
-    const finishManualDrag = (event) => {
+    const finishManualDrag = async (event) => {
         if (pendingSeed && !isDragging) {
             clearPendingSeedDrag();
             return;
@@ -1671,9 +1706,26 @@ function init3DScene() {
                     seed.position = [selectedObject.position.x, selectedObject.position.y, selectedObject.position.z];
                 }
                 addChat('system', `Seed ${seedId} repositioned to [${selectedObject.position.x.toFixed(1)}, ${selectedObject.position.y.toFixed(1)}, ${selectedObject.position.z.toFixed(1)}]`);
+                // Ask whether to recompute the dose and DVH after the drag.
+                // The seed geometry is committed either way; only the
+                // (potentially slow) AI dose recompute waits for consent.
+                const recalcDose = typeof _confirmAction === 'function'
+                    ? await _confirmAction(
+                        `种子 ${seedId} 已沿针道滑动。是否重新计算剂量和各项指标？`,
+                        `Seed ${seedId} slid along its needle. Recompute dose and metrics?`,
+                        {
+                            yesZh: '重新计算剂量',
+                            yesEn: 'Recompute dose',
+                            noZh: '仅移动粒子',
+                            noEn: 'Move only',
+                            titleZh: '粒子位置已改变',
+                            titleEn: 'Seed position changed',
+                        },
+                    )
+                    : true;
                 if (typeof onManualSeedEdited === 'function') {
                     const rollback = seedDragRollback;
-                    onManualSeedEdited(seedId, selectedObject.position, rollback).catch(error => {
+                    onManualSeedEdited(seedId, selectedObject.position, rollback, { skipDoseRecompute: recalcDose !== true }).catch(error => {
                         const message = typeof window._t === 'function'
                             ? window._t(`粒子移动失败：${error.message}`, `Seed move failed: ${error.message}`)
                             : `Seed move failed: ${error.message}`;
@@ -2879,7 +2931,17 @@ async function loadAllIsoSurfaces(options = {}) {
         try {
             if (reconstruct3d) {
                 uiDebugLog(`[IsoSurf] Loading ${v} Gy (color=${hexStr}, opacity=${opacity})...`);
-                await loadDoseIsosurface(v, color, requestScope);
+                // loadDoseIsosurface would push its own data-tree entry;
+                // loadAllIsoSurfaces owns the doseLevels array and adds the
+                // richer entry below. Suppress the single-entry push here to
+                // avoid two identical rows per threshold in the Data Tree.
+                const _prevSuppress = window._suppressSingleIsoEntry;
+                window._suppressSingleIsoEntry = true;
+                try {
+                    await loadDoseIsosurface(v, color, requestScope);
+                } finally {
+                    window._suppressSingleIsoEntry = _prevSuppress;
+                }
                 if (!_planningSceneScopeIsCurrent(requestScope)) return { stale: true };
                 uiDebugLog(`[IsoSurf] ${v} Gy: mesh=${scene3D.meshes['dose_iso_'+v] ? 'loaded' : 'FAILED'}`);
                 // Override the just-added mesh's opacity with the per-level

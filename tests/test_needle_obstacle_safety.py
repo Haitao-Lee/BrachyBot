@@ -260,5 +260,29 @@ def test_data_tree_ctv_bone_label_is_merged_into_final_hard_obstacle_grid():
     assert np.all(merged[6, 6, 4:8] == next(iter(synthetic)))
 
 
+def test_flattened_mask_fails_closed_in_needle_validation():
+    """A 1D (flattened) mask must never silently pass needle-safety checks.
+
+    _world_segment_hits_obstacle compares the mask shape against the CT grid
+    and fail-closes (returns True = "hits obstacle") when they differ. The
+    manual needle routes must therefore only pass a CT-grid-shaped mask to the
+    validator; passing a flattened copy previously rejected every needle and
+    turned a single-needle edit into a full-plan failure.
+    """
+    image, _, oar = _image_and_masks()
+    flat_ctv = np.zeros(oar.size, dtype=np.uint8)  # 1D
+    # A 1D mask does not match the CT grid -> validator fail-closes.
+    assert _world_segment_hits_obstacle(
+        [np.array([0.0, 0.0, 0.0]), np.array([19.0, 0.0, 0.0])],
+        image, flat_ctv, oar, {77},
+    ) is True
+    # The equivalent 3D mask (same grid as oar) validates normally.
+    ctv = flat_ctv.reshape(oar.shape)
+    assert _world_segment_hits_obstacle(
+        [np.array([0.0, 0.0, 0.0]), np.array([19.0, 0.0, 0.0])],
+        image, ctv, oar, {77},
+    ) is False
+
+
 if __name__ == "__main__":
     unittest.main()

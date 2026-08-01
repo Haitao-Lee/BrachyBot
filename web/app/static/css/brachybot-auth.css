@@ -615,21 +615,21 @@
 .workspace-recovery-notice {
     z-index: 1199;
     position: fixed;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
+    right: 18px;
+    bottom: 66px;
+    transform: translateY(0);
     display: flex;
     align-items: center;
-    gap: 12px;
-    min-width: 220px;
-    max-width: min(520px, calc(100vw - 40px));
-    padding: 14px 24px;
+    gap: 9px;
+    min-width: 0;
+    max-width: min(360px, calc(100vw - 36px));
+    padding: 8px 12px;
     border: 1px solid var(--primary);
-    border-radius: var(--radius-md);
+    border-radius: 999px;
     background: var(--bg-card);
     color: var(--text);
-    box-shadow: var(--shadow-xl);
-    font-size: 14px;
+    box-shadow: var(--shadow-md);
+    font-size: 12px;
     backdrop-filter: var(--blur-md);
     -webkit-backdrop-filter: var(--blur-md);
 }
