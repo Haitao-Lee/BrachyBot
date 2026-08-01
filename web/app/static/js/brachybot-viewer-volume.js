@@ -3688,7 +3688,18 @@ async function _refreshAfterDataMutation(
         return true;
     }
 
-    _clearInvalidatedPlanningPresentation(invalidated);
+    // When a structure is reclassified but the user chose NOT to replan
+    // (preserveDoseDvh), keep the existing dose/DVH/surgical-guide visible and
+    // only mark them stale. Clearing them made a simple "move to CTV/OAR"
+    // wipe the dose heatmap, DVH curve, and guide from the viewer and data
+    // tree even though the needle geometry was unchanged.
+    if (options.preserveDoseDvh === true) {
+        _clearInvalidatedPlanningPresentation(
+            invalidated.filter(item => !['dose', 'dvh', 'evaluation', 'surgical_guide', 'guide'].includes(item)),
+        );
+    } else {
+        _clearInvalidatedPlanningPresentation(invalidated);
+    }
     if (structureMutation) {
         Object.keys(scene3D?.meshes || {})
             .filter(id => id === 'ctv' || id.startsWith('ctv_') || id.startsWith('organ_'))
@@ -3705,6 +3716,16 @@ async function _refreshAfterDataMutation(
         });
         if (String(expectedSessionId) !== _viewerDataSessionId()) return false;
         _applyStructureAppearanceMap(appearance || {});
+        // Rebuilding the moved structure's 3D mesh is required: the CTV/OAR
+        // meshes were disposed above, and loadLabelVolumes only refreshes the
+        // 2D overlays and data tree. Without this, a "Move to CTV/OAR" left
+        // the moved mask gone from the 3D viewer.
+        try {
+            if (typeof startSegmentationMeshPrewarm === 'function') {
+                startSegmentationMeshPrewarm('ctv', { force: true, batchSize: 3 });
+                startSegmentationMeshPrewarm('oar', { force: true, batchSize: 3 });
+            }
+        } catch (_) {}
     }
 
     if (planningMutation && typeof refreshPlanningUI === 'function') {
@@ -3793,15 +3814,61 @@ async function moveSelectedStructures(classification, objectIds = null) {
     if (!response.ok || payload.success === false) {
         throw new Error(payload.error || _dtText('结构分类更新失败', 'Structure classification failed'));
     }
+    // Ask the user whether to replan with the new structure masks. Choosing
+    // "No" (or dismissing) keeps the moved structures visible under their new
+    // parent's default presentation and preserves the current dose/DVH/guide
+    // as stale-but-visible evidence; choosing "Yes" replans with the new mask.
+    const shouldReplan = await _confirmAction(
+        _dtText(
+            `结构分类已更改。是否基于新的 ${classification.toUpperCase()} 掩码重新规划？选择“否”将保留当前剂量显示。`,
+            `Structure classification changed. Replan with the new ${classification.toUpperCase()} mask? Choosing "No" keeps the current dose display.`,
+        ),
+        null,
+        {
+            yesZh: '重新规划',
+            yesEn: 'Replan',
+            noZh: '仅移动',
+            noEn: 'Just move',
+            titleZh: '结构分类已更改',
+            titleEn: 'Structure classification changed',
+        },
+    );
     await _refreshAfterDataMutation(payload, appearance, expectedSessionId, {
         objectIds: selected,
+        // Preserve dose/DVH unless the user explicitly chose to replan.
+        preserveDoseDvh: shouldReplan !== true,
     });
     selectedItems.clear();
+    if (shouldReplan) {
+        try {
+            await replanAfterStructureChange(expectedSessionId);
+        } catch (error) {
+            console.warn('[data-tree] replan after structure move failed:', error);
+            addChat('error', _dtText(
+                `重新规划失败：${error.message}；结构已移动，可稍后重试。`,
+                `Replan failed: ${error.message}; the structure was moved and can be replanned later.`,
+            ));
+        }
+    }
     addChat('system', _dtText(
         `已将 ${selected.length} 个结构移动到 ${classification.toUpperCase()}；相关剂量、DVH、评估和报告已标记为需要更新。`,
         `${selected.length} structure(s) moved to ${classification.toUpperCase()}; related dose, DVH, evaluation, and report results are now stale.`,
     ));
     return true;
+}
+
+async function replanAfterStructureChange(expectedSessionId) {
+    const ctPath = typeof state !== 'undefined' ? state.ctPath : '';
+    if (!ctPath) throw new Error('No CT image available for replanning');
+    if (typeof refreshPlanningUI !== 'function') throw new Error('Planning refresh unavailable');
+    await refreshPlanningUI({
+        sessionId: expectedSessionId,
+        skipLabelLoad: false,
+        preserveViewerState: true,
+        switchToViewers: false,
+        backgroundRestore: false,
+        autoGenerateGuide: true,
+    });
 }
 
 async function exportSelectedDataTreeItems(objectIds = null) {

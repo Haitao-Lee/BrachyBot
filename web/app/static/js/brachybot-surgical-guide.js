@@ -45,7 +45,16 @@
     }
 
     function activeSessionId() {
-        return String(window.activeSessionId || window.state?.sessionId || '');
+        // Prefer the module-scope `activeSessionId` (a top-level `let` from
+        // chat-core.js). `window.activeSessionId` is never assigned, so relying
+        // on it made the guide's session checks disagree with refreshPlanningUI's
+        // expected session and silently left the Generate Guide button disabled.
+        return String(
+            (typeof activeSessionId !== 'undefined' && activeSessionId)
+            || window.activeSessionId
+            || window.state?.sessionId
+            || ''
+        );
     }
 
     function notify(message, kind = 'info') {
@@ -304,7 +313,14 @@
             const suffix = Number.isInteger(version) && version > 0 ? `?version=${encodeURIComponent(version)}` : '';
             const payload = await guideFetch(`/api/surgical-guides/mesh${suffix}`, {}, sessionId);
             if (generation !== guideLoadGeneration || sessionId !== activeSessionId()) return false;
-            if (!payload.available || payload.guide?.status !== 'ready') {
+            // A guide whose plan signature still matches the current needle
+            // geometry is valid regardless of its stored status. The status
+            // can be flipped to "stale" by operations unrelated to guide
+            // geometry (e.g. reclassifying an OAR in the Data Tree), which
+            // must not hide an otherwise valid guide. `guide_matches_current_plan`
+            // is the authoritative validity signal.
+            if (!payload.available || !payload.guide
+                || (payload.guide?.status !== 'ready' && payload.guide_matches_current_plan !== true)) {
                 applyGuideMetadata(payload);
                 removeGuideMesh();
                 return false;
@@ -359,7 +375,13 @@
             const payload = await guideFetch('/api/surgical-guides', {}, sessionId);
             if (sessionId !== activeSessionId()) return false;
             applyGuideMetadata(payload, payload.guide);
-            if (payload.available && payload.guide?.status === 'ready'
+            // Load the existing guide when it matches the current plan's needle
+            // geometry. Signature match is the authoritative validity signal;
+            // the stored status may be stale for reasons unrelated to needle
+            // geometry (e.g. an OAR reclassification), which must not hide the
+            // guide. Only fall through to (re)generation when the geometry
+            // genuinely changed or no guide exists.
+            if (payload.available && payload.guide
                 && payload.guide_matches_current_plan === true) {
                 return window.loadSurgicalGuideMesh({ sessionId });
             }

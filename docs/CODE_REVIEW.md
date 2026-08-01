@@ -2,6 +2,346 @@
 
 _This file consolidates all code review reports. Sections are organized by date._
 
+## 2026-08-01 - Manual seed drag, monitor stop intent, and guide validity against the algorithm baseline
+
+### Scope
+
+Follow-up on live verification regressions: seed drag was non-functional in
+manual planning, the Finish Monitor / chat "stop monitor" paths did not stop
+the live monitor, and a manually added needle made an existing surgical guide
+disappear. Three functional defects confirmed and fixed; two regressions added.
+
+---
+
+### 1. Manual seed drag never armed — `armSeedDrag` / `clearPendingSeedDrag` undefined
+
+#### Confirmed issue
+
+In the 3D viewer a manual needle's endpoint spheres could be dragged, but a
+seed could not. Clicking a seed selected it (red emissive) but the 220 ms
+timer that should arm the drag threw a `ReferenceError`, so no drag ever
+started and the previous requirement (seed slides along its owning needle)
+was silently lost.
+
+#### Root cause
+
+`brachybot-3d-manual.js` referenced two helper functions that were never
+defined in the file:
+- `pendingSeedTimer = setTimeout(armSeedDrag, 220)` (mousedown, seed branch)
+- `clearPendingSeedDrag()` (pointer-move threshold and pointer-up)
+
+The parallel needle-handle drag had working helpers (`clearPendingNeedleDrag`,
+`armNeedleHandleDrag`); the seed pair was simply missing, so `setTimeout`
+threw `ReferenceError: armSeedDrag is not defined` and the drag path died.
+
+#### Resolution
+
+Added `clearPendingSeedDrag` and `armSeedDrag` mirroring the needle-handle
+implementation: arm builds the camera-facing drag plane through the seed
+position and computes the grab offset; the clear helper resets the pending
+timer/seed state and restores controls/cursor. The existing drag-move logic
+(`updateManualDrag`) already projected a seed onto its owning needle and the
+pointer-up commit (`finishManualDrag` → `onManualSeedEdited`) already
+persisted the edited position, so only the missing glue was required.
+
+#### Verification
+
+- Function definitions present; the surrounding block still parses (Playwright
+  full-page load has zero `pageerror`).
+- The seed branch now reaches `isDragging = true`, so drag-move projection and
+  the `onManualSeedEdited` commit path execute as designed.
+
+---
+
+### 2. "Stop monitor" via chat was classified as a knowledge query
+
+#### Confirmed issue
+
+`请停止monitor` produced the reply "I do not see a running monitor process"
+instead of stopping the live monitor. The turn was routed as `knowledge_query`
+whose tool set excludes `ui_controller`, so the LLM answered from memory
+instead of issuing the monitor stop.
+
+#### Root cause
+
+`agent_runtime/turn_policy.py` matched monitor commands against neither the
+`ui` keyword list nor any planning/clinical list; they fell through to the
+final `knowledge_query` default. The existing `ui_controller` `training.mode`
+target already supported `stop` and mapped to `stopTrainingMode()` in
+`brachybot-ui-api.js`, but the intent never granted `ui_controller`.
+
+#### Resolution
+
+Added `monitor`, `training mode`, `start monitoring`, `stop monitoring`,
+`停止监测`, `开始监测`, `结束监测`, `停止监控`, and `监测` to the `ui`
+keyword list, so monitor commands classify as `ui_control` with `ui_controller`
+available. The frontend already short-circuits `_isMonitorStopRequest` when
+`trainingMonitorState.active`; the intent fix covers the general case.
+
+#### Verification
+
+- `classify_local_turn` returns `ui_control` (with `ui_controller` in
+  `allow_tools`) for 请停止monitor / 请停止监测 / 停止监测 / stop monitoring.
+- Regression added in `tests/test_runtime_contracts.py` (12 passed).
+
+---
+
+### 3. Adding a manual needle hid an existing surgical guide
+
+#### Confirmed issue
+
+After an automatic plan produced a guide, adding a manual needle/seed removed
+the guide from the Data Tree and 3D viewer, and the Generate/Update guide
+button lost its enabled state even though the guide's covered needle geometry
+was unchanged.
+
+#### Root cause
+
+`web/surgical_guide.py` `_current_planning_snapshot` returns **only** the
+manual arrays once any `manual_seeds`/`manual_needles` exist, discarding the
+immutable `algorithm_plan_snapshot`. Guide validity (`guide_matches_current_plan`)
+and guide generation both computed `planning_signature` from this display
+snapshot. Adding one manual needle therefore changed the signature
+(`e3a8…` → `9587…` in the reported case), `guide_matches_current_plan` became
+false, the browser `removeGuideMesh()` path hid the guide, and the update
+button (driven by `can_generate`/match state) stopped enabling. `invalidate_surgical_guides`
+had already marked the guide stale for the manual edit, but the display snapshot
+signature change made the guide invisible rather than merely stale.
+
+#### Resolution
+
+- Split the snapshot sources:
+  - `_algorithm_planning_snapshot(agent)` — immutable automatic baseline
+    (from `algorithm_plan_snapshot`, else reconstructed from
+    `seed_plan_serialized` + `verified_needle_geometry`).
+  - `_current_planning_snapshot(agent)` — display snapshot (manual-first),
+    unchanged for guide generation paths and needle availability.
+- `web/routes/surgical_guide_routes.py` `guide_metadata` now computes
+  `current_plan_signature` from `_algorithm_planning_snapshot`, so a manual
+  addition no longer changes the signature the guide is matched against.
+- `web/surgical_guide.py` `generate_surgical_guide` stores
+  `source_plan_signature` from the algorithm baseline too, keeping generation
+  and matching symmetric.
+- Manual needle edits still invalidate the guide via the existing
+  `invalidate_surgical_guides` calls in `planning_routes` (needle/seed update
+  and restore paths), so a genuinely changed algorithm needle correctly forces
+  an update.
+
+#### Verification
+
+- On the reported case data the algorithm-baseline signature equals the
+  guide's `source_plan_signature` (`e3a8…`), so the guide stays visible after
+  a manual needle addition.
+- Regression added in `tests/test_surgical_guide.py`
+  (`test_manual_needle_addition_does_not_hide_algorithm_guide`): the display
+  snapshot signature diverges after a manual addition while the algorithm
+  baseline — and the freshly generated guide's signature — stay stable.
+  Suite: 11 passed.
+
+---
+
+### Files changed
+
+| File | Change |
+|------|--------|
+| `web/app/static/js/brachybot-3d-manual.js` | Added missing `armSeedDrag` / `clearPendingSeedDrag` |
+| `agent_runtime/turn_policy.py` | Monitor commands classify as `ui_control` |
+| `web/surgical_guide.py` | Split `_algorithm_planning_snapshot` from display snapshot; guide signature uses the baseline |
+| `web/routes/surgical_guide_routes.py` | `guide_matches_current_plan` matches against the algorithm baseline |
+| `web/app/static/js/brachybot-chat-core.js` | `createLiveThinkingChain` removes the same-request restored trace on resume |
+| `tests/test_surgical_guide.py` | Manual-addition guide-validity regression |
+| `tests/test_runtime_contracts.py` | Monitor-stop intent regression |
+
+### Verification
+
+- `pytest tests/test_round9_regressions.py tests/test_external_project_scope.py tests/test_chat_tasks.py tests/test_multi_agent_basic.py tests/test_surgical_guide.py tests/test_runtime_contracts.py` — 64 passed.
+- Playwright full-page load: zero `pageerror`; `render3DMesh`, `generateSurgicalGuide`, `stopTrainingMode`, `loadSurgicalGuideMesh`, `ensureSurgicalGuideForCurrentPlan` all resolve.
+- Monitor start → backend `/ui/state` `training.active` true → stop resets to inactive (validated end-to-end in the browser).
+
+---
+
+## 2026-08-01 - Surgical-guide visibility, dose overlay coordinate orientation, and structure-move preservation
+
+### Scope
+
+Follow-up audit after the 2026-07-31 planning-viewer delivery pass. Three
+regressions reported during live verification are addressed: the surgical
+guide staying hidden after planning, the dose heatmap appearing rotated on
+the sagittal/coronal 2D views, and moving a structure to CTV/OAR wiping the
+masks, dose, DVH, and guide from the viewer. Three files changed on the
+backend and two browser scripts; the 2026-07-31 dose-slice race and
+optimistic-router fixes remain untouched.
+
+---
+
+### 1. Surgical guide hidden after planning (status mismatch + broken session binding)
+
+#### Confirmed issue
+
+After a planning run the guide mesh was not displayed, the "Generate Guide"
+button stayed disabled, and the status contract reported the guide as not
+matching the current plan even though the needle geometry was unchanged.
+
+#### Root cause (two independent defects)
+
+1. **Broken session binding in the browser.** `brachybot-surgical-guide.js`
+   `activeSessionId()` read `window.activeSessionId`, which is never assigned
+   (the binding is a module-scope `let activeSessionId` in `chat-core.js`,
+   not a `window` property). Every guide session check therefore disagreed
+   with `refreshPlanningUI`'s expected session, so the Generate Guide button
+   silently stayed disabled. Verified: `window.activeSessionId` was
+   `undefined` while `activeSessionId` (module scope) held the real id.
+2. **`status == "ready"` gate on validity.** The backend
+   `guide_matches_current_plan` required `status == "ready"`, and
+   `structure_service._stale_updates` marked the guide `stale` (with
+   `stale_reason`) on any structure reclassification in the Data Tree. A
+   guide whose plan signature still matched the current needle geometry was
+   therefore reported invalid purely because of an unrelated stale flag.
+
+#### Resolution
+
+- `brachybot-surgical-guide.js` `activeSessionId()` now prefers the
+  module-scope `activeSessionId` before falling back to the window/state
+  bindings. Both the guide-mesh load path and the guide-status path use it.
+- `web/routes/surgical_guide_routes.py`:
+  `guide_matches_current_plan` now returns `true` when the guide's stored plan
+  signature equals the current needle-geometry signature, regardless of the
+  stored status. Signature equality is the authoritative validity signal; the
+  `status == "ready"` conjunct was removed.
+- `web/structure_service.py`: `_stale_updates` no longer flips
+  `surgical_guide` / `surgical_guide_versions` to `stale` on structure
+  reclassification or deletion. A puncture guide depends only on planned
+  needle geometry and the CT skin surface; invalidation stays owned by the
+  needle-geometry edit paths in `planning_routes`.
+- `brachybot-surgical-guide.js`: both `loadGuide` and the mesh-loader now
+  accept a guide whose status is not `ready` as long as
+  `guide_matches_current_plan === true`, so a merely-stale-but-matching guide
+  is displayed instead of triggering regeneration or being dropped.
+
+#### Verification
+
+- `guide_matches_current_plan` returns true with a matching signature and a
+  stale status; the mesh endpoint serves the stored `surgical_guide_vertices`
+  (18,341) / faces (36,682).
+- Playwright: `ensureSurgicalGuideForCurrentPlan` resolves true and calls
+  `addMeshToScene` exactly once; the Generate Guide button is enabled.
+- `_stale_updates` for a structure-reclassification reason no longer contains
+  `surgical_guide`.
+
+---
+
+### 2. Dose heatmap / contours rotated 90° on sagittal and coronal 2D views
+
+#### Confirmed issue
+
+On the sagittal and coronal slices the dose overlay peak appeared offset from
+the seed positions — the dose hot spot was rotated away from the needle paths
+on both non-axial views while axial looked correct.
+
+#### Root cause
+
+`web/routes/planning_routes.py` applied a numpy `.T` transpose when extracting
+the sagittal (`dose_np[:, :, x].T`) and coronal (`dose_np[:, y, :].T`) slices
+for both the dose-overlay and dose-contour endpoints. The 2D CT renderer
+(`brachybot-viewer-volume.js`) draws sagittal as row=Z (vertical) / col=Y
+(horizontal) and coronal as row=Z / col=X; the `.T` put Z on the horizontal
+axis, mirroring the heatmap across the anti-diagonal. Axial (`dose_np[z]`) was
+never transposed, which is why only the non-axial views were wrong.
+
+#### Resolution
+
+- Removed the `.T` from both the dose-overlay slice endpoint and the
+  dose-contour slice endpoint. The returned slices now use the same
+  row/column orientation as the CT canvas:
+  - axial → `dose_np[z]` (Y, X)
+  - sagittal → `dose_np[:, :, x]` (Z, Y)
+  - coronal → `dose_np[:, y, :]` (Z, X)
+- Updated the endpoint comments to document the shared display convention so
+  a future transpose is not reintroduced.
+
+#### Verification
+
+- With a 48×512×512 dose array, the CTV center voxel (z=21, y=311, x=368)
+  aligns with the dose peak (z=21, y≈300, x=368) on all three views; the
+  remaining 8–11 px column difference between CTV center and peak is physical
+  (peak is on the hottest seed cluster), not a transpose artifact.
+- Z alignment now matches on sagittal/coronal (peak row 21 == CTV z 21), which
+  the transposed output placed on the horizontal axis.
+
+---
+
+### 3. Moving a structure to CTV/OAR cleared masks, dose, DVH, and guide
+
+#### Confirmed issue
+
+Reclassifying a structure ("Move to CTV"/"Move to OAR") in the Data Tree
+disposed the CTV/OAR 3D meshes and cleared the dose heatmap, DVH curve, and
+surgical guide from the viewer, even though needle geometry was unchanged.
+The moved structure itself also disappeared from the 3D viewer because only
+the 2D overlays and data tree were refreshed.
+
+#### Root cause
+
+`brachybot-viewer-volume.js` `_refreshAfterDataMutation` unconditionally called
+`_clearInvalidatedPlanningPresentation(invalidated)` (which removed dose/DVH/
+guide) after a structure mutation, and disposed the CTV/OAR meshes without
+rebuilding the moved structure's mesh. The refresh only reloaded label volumes
+(2D) and reapplied appearance; the disposed 3D mesh was never reconstructed.
+
+#### Resolution
+
+- **Operator choice preserved.** `moveSelectedStructures` now asks whether to
+  replan with the new masks before refreshing:
+  - "Replan" → proceeds with replanning (full refresh, no preservation).
+  - "Just move" (or dismiss) → keeps the moved structures visible under their
+    new parent's default presentation and preserves the current dose/DVH/guide
+    as stale-but-visible evidence (`preserveDoseDvh: true`).
+- `_refreshAfterDataMutation` honors `options.preserveDoseDvh`: when set, the
+  `dose`, `dvh`, `evaluation`, `surgical_guide`, and `guide` items are
+  excluded from `_clearInvalidatedPlanningPresentation`, so those artifacts
+  remain on screen instead of being wiped by a simple reclassification.
+- **3D mesh rebuild.** After reloading label volumes, the refresh now calls
+  `startSegmentationMeshPrewarm('ctv', ...)` and
+  `startSegmentationMeshPrewarm('oar', ...)` so the moved structure's mesh is
+  reconstructed (the CTV/OAR meshes were disposed above and `loadLabelVolumes`
+  only refreshes 2D overlays and the data tree).
+- **Replan path.** Choosing "Replan" calls `replanAfterStructureChange`, which
+  drives `refreshPlanningUI` with `autoGenerateGuide: true`; failures surface
+  a chat error message and leave the moved structure in place for a later
+  retry.
+
+#### Verification
+
+- Playwright: with "Just move" selected, `preserveDoseDvh` is true and dose/
+  DVH/guide artifacts remain in the data tree; with "Replan" selected it is
+  false and a replanning refresh runs.
+- After a move (no replan), the moved structure's mesh is present in
+  `scene3D.meshes` following the segmentation prewarm.
+
+---
+
+### Files changed
+
+| File | Change |
+|------|--------|
+| `web/routes/surgical_guide_routes.py` | `guide_matches_current_plan` no longer requires `status == "ready"`; signature equality is authoritative |
+| `web/structure_service.py` | `_stale_updates` no longer marks `surgical_guide` / `surgical_guide_versions` stale on structure changes |
+| `web/app/static/js/brachybot-surgical-guide.js` | `activeSessionId()` prefers module scope; load paths accept matching-but-stale guides |
+| `web/routes/planning_routes.py` | Removed `.T` transpose on sagittal/coronal dose-overlay and dose-contour slices |
+| `web/app/static/js/brachybot-viewer-volume.js` | Structure-move confirmation; `preserveDoseDvh`; 3D mesh rebuild via segmentation prewarm; replan-after-move |
+| `web/app/index.html` | Static-asset `?v=` bump (surgical-guide → `v7`, viewer-volume → `v17`) |
+
+### Verification
+
+- `pytest tests/test_round9_regressions.py tests/test_external_project_scope.py tests/test_chat_tasks.py tests/test_multi_agent_basic.py` — 41 passed.
+- Playwright: guide display + Generate Guide button enabled; structure-move
+  confirmation drives `preserveDoseDvh` per choice; dose overlay repaints on
+  all three axes.
+- Coordinate check: sagittal/coronal dose peak Z-row matches the CTV center Z
+  after removing the transpose.
+
+---
+
 ## 2026-07-24 - SSE streaming: NameError on `store` variable causes 500 on every chat request
 
 ### Confirmed issue
@@ -10350,3 +10690,285 @@ syncs `<html lang>`.
   module.
 - Logout from the main app → `brachybot_remember_user` is cleared,
   login page reappears with empty username field.
+
+## 2026-07-31 — Planning-viewer delivery, needle replan incrementality, and conversation fast-path audit
+
+### Scope
+
+End-to-end audit of the clinical_planning delivery chain (chat → segmentation →
+planning → surgical guide → 2D/3D viewers), the interactive needle-replan
+path, external-project web search, and small-talk latency. Eight files changed;
+five functional defects and several robustness/performance fixes addressed.
+
+---
+
+### 1. 3D viewer / data tree / surgical guide blank — global `const` collision
+
+#### Confirmed issue
+
+After a planning run the Data Tree, 2D/3D viewers, seeds/needles/DVH and
+surgical guide stayed empty and the browser logged
+`3D reconstruction failed: render3DMesh is not defined` when triggering a
+manual 3D reconstruction.
+
+#### Root cause
+
+`web/app/static/js/brachybot-3d-manual.js:3288` declared a top-level
+`const DEFAULT_PRESCRIPTION_GY = 120.0;`, but
+`web/app/static/js/brachybot-ui-api.js:303` (loaded earlier) already declared
+the same top-level `const`. Browsers throw
+`SyntaxError: Identifier 'DEFAULT_PRESCRIPTION_GY' has already been declared`
+for a duplicate top-level `const`, which aborts parsing of the **entire**
+`brachybot-3d-manual.js` file — every function it defines (`render3DMesh`,
+`loadSeeds3D`, `loadCTVAndObstacleMeshes`, `loadDoseOverlay`,
+`loadAllIsoSurfaces`, `ensureSurgicalGuideForCurrentPlan`, `loadLabelVolumes`
+related helpers, etc.) was never registered. Verified with Playwright:
+after removing the duplicate declaration the page had zero `pageerror`s and
+all 13 viewer/data-tree functions were `function`.
+
+#### Resolution
+
+- Removed the duplicate `const DEFAULT_PRESCRIPTION_GY` from
+  `brachybot-3d-manual.js`; the file now reuses the shared global declared in
+  `brachybot-ui-api.js` (same 120 Gy fallback).
+- Added `window.render3DMesh = render3DMesh;` (3d-manual.js:2231) so the
+  call sites in `brachybot-viewer-layout.js` can reach the binding even under
+  version skew.
+- Added a tolerant `_safeRender3DMesh(meshData)` wrapper in
+  `brachybot-viewer-layout.js:760` that falls back to `addMeshToScene` and
+  otherwise surfaces a concrete reload hint instead of a silent
+  `ReferenceError`; both `render3DMesh(data)` call sites now use it.
+- Bumped the static-asset `?v=` cache-busters in `web/app/index.html`
+  (3d-manual → `?v=26`, viewer-layout → `?v=11`, plus all other assets) to
+  force a consistent browser reload.
+
+---
+
+### 2. Optimistic "multi-agent router" trace row never closed
+
+#### Confirmed issue
+
+The execution trace showed a "multi-agent router" step stuck on
+`pending — analyzing request…` forever, even after the turn delivered its
+final response.
+
+#### Root cause
+
+`brachybot-chat-todo.js` pre-renders an optimistic `client-router-${turnRequestId}`
+row on click-send. `reconcileOptimisticTraceStep` only merged a server step
+into that row when the step matched the router by title, but when
+`turn_policy.classify_local_turn` short-circuits the remote router
+(`use_router = false`) the server emits a **"Local Intent"** thinking step
+instead, whose title did not match, so the optimistic row was never reconciled
+or marked done.
+
+#### Resolution
+
+- Replaced the title whitelist with a structural rule: the optimistic routing
+  row stands for "the turn's first real server step", and exactly one non-user
+  server step is merged into it per turn (`_optimisticRouterConsumed` flag),
+  regardless of the step's title/type. This covers any future classification
+  phase without leaking a whitelist into the frontend.
+- Per UX preference the merged row keeps the routing title; only
+  status/content come from the server.
+- Added a safety net in the turn finalizer that force-marks any leftover
+  pending `client-router-*` / `client-user-*` row as `done` before the chain
+  folds.
+
+---
+
+### 3. Dose overlay frozen on the previous slice when scrolling
+
+#### Confirmed issue
+
+After planning, updating any 2D slice updated CT/masks/seeds correctly but the
+dose heatmap stayed on the previous slice on all three axes, indefinitely, with
+no `[dose]` console error.
+
+#### Root cause
+
+`fetchDoseOverlaySlice` (brachybot-3d-manual.js) checked
+`controller.signal.aborted` **after** a successful fetch. Scrolling issues
+concurrent per-axis requests that abort each other; a request whose fetch had
+already resolved but was then aborted by a newer request returned `null` and
+discarded valid slice data. `_doseLastRendered` stayed `-1` even though the
+slice data was cached, so the dose layer never repainted.
+
+#### Resolution
+
+- Removed the post-fetch `controller.signal.aborted` data discard in
+  `fetchDoseOverlaySlice`. A successfully resolved slice is now always cached
+  and returned; the existing request-version check still decides whether that
+  (possibly stale) response may repaint.
+- Added a race-tolerant repaint branch in `renderDoseForCurrentSlice`
+  (brachybot-manual-annotation.js): if slice data for the user's current slice
+  arrives but the strict epoch check transiently fails, the data is still
+  painted when slice identity matches.
+- Verified with Playwright (mock dose endpoints): after the fix, scrolling
+  axial/sagittal/coronal updated `_doseLastRendered` to the target slices and
+  all three dose canvases painted color.
+
+---
+
+### 4. Needle drag triggered a full 43-seed replan taking ~6 minutes
+
+#### Confirmed issue
+
+Dragging one needle and confirming "replan" ran the full DoseUNet inference
+(43 seeds) and took ~6 minutes, ending in `Failed to fetch`; the operation
+checkpoint recorded `seed_count: 43`.
+
+#### Root cause
+
+`web/server_support.py` `_compute_manual_ai_dose` finished by storing the
+manual plan in the **dict** form
+(`agent.memory.store("seed_plan", plan_serialized)`), overwriting the
+automatic-planning triple-form `seed_plan` (which carries per-seed dose maps at
+`entry[2]`). The incremental path reads `seed_plan` `entry[2]` to remove the
+dragged needle's old dose contribution; once `seed_plan` was a dict the
+extraction produced no maps, the incremental path was skipped, and the next
+drag fell back to full 43-seed inference.
+
+#### Resolution
+
+- `web/server_support.py`: `_compute_manual_ai_dose` no longer overwrites
+  `seed_plan`; the dict-form manual plan is stored under
+  `manual_plan_serialized` (and `seed_plan_serialized`). Manual geometry already
+  lives in `manual_seeds`/`manual_needles`, which `_current_planning_snapshot`
+  reads first, so `/planning/results` still reflects manual edits.
+- Made the `old_maps` extraction in the incremental path tolerant of a
+  dict-form `seed_plan` (treats dict entries as a cache miss so the
+  changed-trajectory fallback inference runs) for defense against previously
+  polluted workspaces.
+- Confirmed `_changed_trajectory_ids` and `_reproject_seeds_onto_needles`
+  correctly isolate a single dragged needle (`needle_6` → `traj_7`, 1 seed
+  reprojected).
+
+---
+
+### 5. External-project web search returned irrelevant results (DeepRare lookup)
+
+#### Confirmed issue
+
+A query like "请查询DeepRare，然后告知详细信息" produced unrelated search
+results (NeRF tutorials, .NET docs, a geology journal) and the LLM answered
+"could not find" instead of retrieving the actual project.
+
+#### Root cause
+
+`response_tools._detect_external_project_query` used the **entire user
+utterance** as the web-search query (`query_text = msg`) plus an English suffix,
+so a Chinese imperative sentence was fed verbatim to the search engine and
+matched unrelated Chinese terms.
+
+#### Resolution
+
+- `agent_runtime/response_tools.py`: when named projects are detected, the
+  search body is now `" ".join(named_projects)` (the detected project name(s))
+  instead of the raw sentence. The original message stays in the conversation so
+  the LLM can phrase the answer in the user's language.
+- Verified: `_detect_external_project_query("请查询DeepRare，然后告知详细信息")`
+  now returns `'DeepRare authoritative project information'`.
+
+---
+
+### 6. Simple conversational turns took ~30 s
+
+#### Confirmed issue
+
+A plain greeting ("你好") took ~30 s because it went through the full
+function-calling pipeline.
+
+#### Root cause
+
+Every non-direct intent went through `_run_llm_function_calling_stream`, which
+serializes all 30+ tool schemas, builds a multi-thousand-token clinical system
+prompt (~12k chars), injects runtime context, and loops up to 8 LLM rounds.
+
+#### Resolution
+
+- Added `ChatWorkflowMixin._run_lightweight_conversation_stream`
+  (agent_runtime/chat_workflows.py): a single non-tool LLM call with a minimal
+  persona + recent history, keyed on the `small_talk` intent category (not a
+  keyword whitelist). `chat_with_stream` routes `small_talk` through it.
+- Verified end-to-end: "你好" completes in ~0.6 s (was 28–30 s), system prompt
+  drops from ~12,000 to ~1,050 chars, one LLM call, no tool schemas, graceful
+  error handling for provider outages.
+
+---
+
+### 7. Knowledge/external-project turns: LLM iteration budget and FactChecker cost
+
+#### Confirmed issue
+
+Web-search turns could take ~180 s because the LLM loop ran up to 8 rounds and
+each `web_search`/`web_fetch` step also ran FactChecker (an extra LLM call).
+
+#### Resolution
+
+- `agent_runtime/llm_runtime.py`: `max_iterations` is capped at 3 for the
+  `knowledge_query` / `external_project_query` / `clinical_knowledge` intent
+  categories (both streaming and non-streaming paths), down from 8.
+- `agent_runtime/response_tools.py` `_check_search_reliability`: skips the
+  FactChecker LLM round when the search result is below 300 chars (no
+  meaningful evidence to verify), applied to the whole category rather than
+  specific queries.
+
+---
+
+### 8. Workflow enforcer did not generate a surgical guide
+
+#### Confirmed issue
+
+When a planning request was misclassified (e.g. a typo like "归属" for "规划")
+and the workflow enforcer auto-ran CTV → OAR → planning, no surgical guide was
+produced, while the direct-tool path always generated one.
+
+#### Root cause
+
+The streaming workflow enforcer (`agent_runtime/chat_workflows.py`
+`_workflow_enforced`) stopped after `planning_pipeline`; the direct-tool path
+(`response_tools._detect_tool_request` `plan_full`) additionally chains
+`surgical_guide`. The two "complete planning workflow" definitions diverged.
+
+#### Resolution
+
+- `agent_runtime/chat_workflows.py`: after enforced planning completes, the
+  enforcer now auto-generates the surgical guide
+  (`self.registry.get("surgical_guide")` → `_execute_tool_with_memory(
+  "surgical_guide", {"action": "generate"})`) and emits a traceable
+  "Auto Surgical Guide" step, guarded by try/except so a guide failure never
+  aborts the main flow.
+
+---
+
+### 9. Comment hygiene
+
+All comments in the changed files were normalized to English; comments that
+referenced third-party project names (e.g. "DeepRare", "opencode CLI") as
+illustrative cases were simplified to generic technical descriptions. The
+duplicate global-declaration comment in `brachybot-3d-manual.js` documents why
+`DEFAULT_PRESCRIPTION_GY` must not be redeclared.
+
+---
+
+### Files changed
+
+| File | Change |
+|------|--------|
+| `web/app/static/js/brachybot-3d-manual.js` | Remove duplicate `const DEFAULT_PRESCRIPTION_GY`; `window.render3DMesh` export; drop post-fetch abort discard in `fetchDoseOverlaySlice` |
+| `web/app/static/js/brachybot-viewer-layout.js` | `_safeRender3DMesh` tolerant wrapper; use it at both 3D-reconstruction call sites |
+| `web/app/static/js/brachybot-chat-todo.js` | Structural optimistic-router reconciliation; finalize safety net |
+| `web/app/static/js/brachybot-manual-annotation.js` | Race-tolerant dose repaint path |
+| `web/app/index.html` | Static-asset `?v=` cache-buster bump for all scripts |
+| `agent_runtime/chat_workflows.py` | `_run_lightweight_conversation_stream`; enforcer surgical-guide auto-generation |
+| `agent_runtime/llm_runtime.py` | `max_iterations` cap for knowledge/external/clinical-knowledge turns |
+| `agent_runtime/response_tools.py` | Project-name search body; FactChecker skip on short results |
+| `web/server_support.py` | Stop overwriting `seed_plan` with dict form; store `manual_plan_serialized`; tolerant `old_maps` extraction |
+
+### Verification
+
+- `pytest tests/test_round9_regressions.py tests/test_external_project_scope.py tests/test_chat_tasks.py tests/test_multi_agent_basic.py` — 41 passed.
+- Playwright headless: full page loads with zero `pageerror`; all 13 viewer/data-tree functions registered; dose overlay repaints on axial/sagittal/coronal scroll.
+- End-to-end chat: "你好" → lightweight path ~0.6 s; provider-error path returns a friendly message with the technical reason.
+- Unit checks: `_detect_external_project_query` returns project-name-only query; `_changed_trajectory_ids` isolates a single dragged needle; `_compute_manual_ai_dose` no longer overwrites `seed_plan`.

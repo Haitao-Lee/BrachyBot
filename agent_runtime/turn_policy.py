@@ -146,6 +146,14 @@ def classify_local_turn(message: str, pending_tumor_site: bool = False) -> Local
         "颜色", "截图", "调节", "设置", "切换", "拖拽", "3d", "2d",
         "viewer", "slice", "zoom", "show", "hide", "opacity", "screenshot",
         "set", "adjust", "toggle", "drag",
+        # Monitor/training-mode control is a UI command (start/stop live
+        # planning monitoring), not a clinical execution or knowledge query.
+        # Without these keywords a request like "请停止monitor" fell through
+        # to the generic knowledge_query intent, whose tool set excludes
+        # ui_controller, so the LLM answered "no monitor is running" instead
+        # of actually stopping it.
+        "monitor", "training mode", "start monitoring", "stop monitoring",
+        "停止监测", "开始监测", "结束监测", "停止监控", "监测",
     ))
     if planning:
         # A full planning request has an unambiguous local execution path

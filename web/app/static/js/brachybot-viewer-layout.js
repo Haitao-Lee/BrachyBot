@@ -749,6 +749,25 @@ async function reconstruct3D() {
 }
 
 // 3D reconstruction for individual organs from data tree
+
+// Tolerant wrapper for render3DMesh. brachybot-3d-manual.js is loaded
+// AFTER this file in index.html, so during version-skew (e.g. a stale
+// cached 3d-manual without the render3DMesh top-level binding) the bare
+// call raised "render3DMesh is not defined" and aborted the whole 3D
+// reconstruction, leaving CTV/OAR/seed/needle/DVH/surgical guide blank.
+// Fall back to addMeshToScene (same module, also global) when available,
+// otherwise surface a concrete hint instead of a silent ReferenceError.
+function _safeRender3DMesh(meshData) {
+    const fn = (typeof window.render3DMesh === 'function')
+        ? window.render3DMesh
+        : (typeof render3DMesh === 'function' ? render3DMesh : null);
+    if (fn) return fn(meshData);
+    if (typeof window.addMeshToScene === 'function') {
+        return window.addMeshToScene(meshData);
+    }
+    throw new Error('render3DMesh module not loaded; please refresh the page to reload viewer scripts.');
+}
+
 function getCtvMeshLabelIds() {
     const ids = new Set();
     Object.keys(window._ctvLabelMap || {}).forEach(value => {
@@ -820,7 +839,7 @@ async function reconstructOrgan3D(id, silent = false) {
                             const c = labelColorLUT[labelIds[i]];
                             data.color = c ? (c[0] << 16 | c[1] << 8 | c[2]) : 0xff6b6b;
                             data.organ_id = `ctv_${labelIds[i]}`;  // Use same ID as data tree
-                            render3DMesh(data);
+                            _safeRender3DMesh(data);
                             successCount++;
                         }
                     }
@@ -880,7 +899,7 @@ async function reconstructOrgan3D(id, silent = false) {
             data.color = color;
             data.organ_id = id;
             state.mesh3D = data;
-            render3DMesh(data);
+            _safeRender3DMesh(data);
             switchPanel('viewers', document.querySelectorAll('.panel-tab')[2]);
         }
     } catch (e) {

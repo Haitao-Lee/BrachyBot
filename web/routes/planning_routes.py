@@ -2095,24 +2095,26 @@ def register_planning_routes(
                     dose_original = resampler.Execute()
                     dose_np = sitk.GetArrayFromImage(dose_original)
 
-            # Extract 2D slice (dose_np is in z,y,x order)
+            # Extract 2D slice (dose_np is in z,y,x order).
+            # The 2D CT renderer (brachybot-viewer-volume.js) draws the
+            # sagittal canvas as row=Z (vertical) / col=Y (horizontal) and the
+            # coronal canvas as row=Z / col=X. Return the dose slice in that
+            # same row/column orientation so the dose heatmap overlays the CT:
+            #   axial   -> dose_np[z]          (Y, X) rows=Y cols=X
+            #   sagittal-> dose_np[:, :, x]    (Z, Y) rows=Z cols=Y
+            #   coronal -> dose_np[:, y, :]    (Z, X) rows=Z cols=X
+            # The previous implementation applied a numpy .T transpose, which
+            # put Z on the horizontal axis and made the dose peak appear
+            # rotated 90° away from the seed positions on sagittal/coronal.
             if axis in {"axial", "z"}:
                 z = max(0, min(int(slice_index), dose_np.shape[0] - 1))
                 slice_2d = dose_np[z].tolist()
             elif axis in {"coronal", "y"}:
                 y = max(0, min(int(slice_index), dose_np.shape[1] - 1))
-                # The 2D viewer displays coronal slices as (X, Z), while
-                # the dose array is stored as (Z, Y, X).  Return the same
-                # row/column orientation as viewer_routes.py; otherwise the
-                # dose layer is transposed relative to CT and appears to
-                # disappear or drift when the slice changes.
-                slice_2d = dose_np[:, y, :].T.tolist()
+                slice_2d = dose_np[:, y, :].tolist()
             else:  # sagittal
                 x = max(0, min(int(slice_index), dose_np.shape[2] - 1))
-                # Sagittal display coordinates are (Y, Z), not the storage
-                # order (Z, Y).  Keep all three dose endpoints in the same
-                # display convention as the CT renderer.
-                slice_2d = dose_np[:, :, x].T.tolist()
+                slice_2d = dose_np[:, :, x].tolist()
 
             return jsonify({
                 "success": True,
@@ -2212,20 +2214,18 @@ def register_planning_routes(
                 for value in iso_values_gy
             ]
 
-            # Extract 2D slice from 3D dose array
+            # Extract 2D slice from 3D dose array, in the same row/column
+            # orientation as the dose-overlay slice endpoint and the 2D CT
+            # canvas (row=Z vertical, col=Y/X horizontal). No transpose.
             if axis == 'axial' or axis == 'z':
                 z = max(0, min(int(slice_index), dose_np.shape[0] - 1))
                 slice_2d = dose_np[z]
             elif axis == 'coronal' or axis == 'y':
                 y = max(0, min(int(slice_index), dose_np.shape[1] - 1))
-                # Keep contour coordinates in the same (X, Z) display space
-                # as the coronal CT and dose overlay canvas.
-                slice_2d = dose_np[:, y, :].T
+                slice_2d = dose_np[:, y, :]
             else:  # sagittal
                 x = max(0, min(int(slice_index), dose_np.shape[2] - 1))
-                # Keep contour coordinates in the same (Y, Z) display space
-                # as the sagittal CT and dose overlay canvas.
-                slice_2d = dose_np[:, :, x].T
+                slice_2d = dose_np[:, :, x]
 
             d_min = float(dose_np.min())
             d_max = float(dose_np.max())

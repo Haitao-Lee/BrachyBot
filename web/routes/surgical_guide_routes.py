@@ -55,11 +55,16 @@ def register_surgical_guide_routes(app, get_agent):
         return guide_state_for_version(agent, version)
 
     def guide_metadata(agent: Any) -> Dict[str, Any]:
-        from web.surgical_guide import _current_planning_snapshot
+        from web.surgical_guide import _algorithm_planning_snapshot
 
         needles = available_guide_needles(agent)
         current = current_guide(agent)
-        signature = planning_signature(_current_planning_snapshot(agent))
+        # Guide validity is judged against the immutable automatic planning
+        # baseline, not the display snapshot. Adding or editing a manual
+        # needle/seed changes the display snapshot's signature and would make
+        # an otherwise-valid guide (which covers the algorithm needle paths)
+        # silently disappear and its regenerate button lose its enabled state.
+        signature = planning_signature(_algorithm_planning_snapshot(agent))
         current_signature = (
             str(current.get("source_plan_signature") or "")
             if isinstance(current, dict) else ""
@@ -69,9 +74,15 @@ def register_surgical_guide_routes(app, get_agent):
             "needle_options": needles,
             "can_generate": bool(needles),
             "current_plan_signature": signature,
+            # A guide whose plan signature matches the current needle geometry
+            # is authoritative regardless of its stored status. The status is
+            # flipped to "stale" by operations unrelated to guide geometry
+            # (e.g. reclassifying an OAR in the Data Tree) which must not hide
+            # an otherwise valid guide. Signature equality is the real validity
+            # signal; `status == "ready"` was dropped from this check because
+            # stale guides with matching geometry must still be displayed.
             "guide_matches_current_plan": bool(
                 current
-                and current.get("status") == "ready"
                 and current_signature
                 and current_signature == signature
             ),

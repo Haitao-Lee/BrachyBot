@@ -1357,6 +1357,30 @@ function init3DScene() {
         }
     };
 
+    const clearPendingSeedDrag = () => {
+        if (pendingSeedTimer) clearTimeout(pendingSeedTimer);
+        pendingSeedTimer = null;
+        pendingSeed = null;
+        pendingSeedStart = null;
+        seedDragRollback = null;
+        if (!isDragging) {
+            scene3D.controls.enabled = true;
+            interactionCanvas.style.cursor = 'grab';
+        }
+    };
+
+    const armSeedDrag = () => {
+        if (!pendingSeed || isDragging) return;
+        isDragging = true;
+        const cameraDir = new THREE.Vector3();
+        scene3D.camera.getWorldDirection(cameraDir);
+        dragPlane.setFromNormalAndCoplanarPoint(cameraDir, pendingSeed.position);
+        const intersection = new THREE.Vector3();
+        if (raycaster.ray.intersectPlane(dragPlane, intersection)) dragOffset.copy(pendingSeed.position).sub(intersection);
+        addChat('system', `Selected seed ${pendingSeed.userData.id} | Trajectory ${pendingSeed.userData.trajectoryId}`);
+        requestRender(2);
+    };
+
     const armNeedleHandleDrag = () => {
         if (!pendingNeedleHandle || isDragging) return;
         isDragging = true;
@@ -2224,6 +2248,13 @@ function render3DMesh(meshData) {
     addMeshToScene(meshData);
     window.dose3D = true;
 }
+// Explicit global export so brachybot-viewer-layout.js (loaded earlier in
+// index.html) can call render3DMesh even if a stale cached copy of this
+// file is served without a top-level binding. Without this, a version-skew
+// between the two bundles raises "render3DMesh is not defined" and the
+// entire 3D reconstruction path stays empty (no CTV/OAR/seed/needle meshes,
+// no surgical guide, no DVH figure).
+window.render3DMesh = render3DMesh;
 
 function _3dMeshOpacity(mesh) {
     const surface = (typeof getMeshSurface === 'function') ? getMeshSurface(mesh) : mesh;
@@ -3278,7 +3309,12 @@ function clearDoseOverlayRuntime() {
 // documented fallback for older servers, but never scatter literal conversion
 // factors through the viewer code.
 const DEFAULT_DOSE_SCALE_GY = 190.8;
-const DEFAULT_PRESCRIPTION_GY = 120.0;
+// DEFAULT_PRESCRIPTION_GY is declared once in brachybot-ui-api.js (loaded
+// before this file). Redeclaring it here as a top-level const would raise
+// "Identifier has already been declared", abort parsing of THIS entire file,
+// and unregister every function it defines (render3DMesh, loadSeeds3D,
+// loadCTVAndObstacleMeshes, ...) — the blank-viewer/data-tree root cause.
+// Use the shared global with the same 120 Gy fallback.
 
 function _getDoseScaleGy() {
     const candidates = [
@@ -3841,7 +3877,13 @@ async function fetchDoseOverlaySlice(axis, sliceIndex) {
             if (res.status !== 202 || attempt >= 60) break;
             await new Promise(resolve => setTimeout(resolve, Math.min(1000, 150 + attempt * 25)));
         }
-        if (controller.signal.aborted) return null;
+        // A concurrent request for the same axis may abort this one (abort is
+        // used to drop redundant in-flight fetches). If the fetch already
+        // resolved with valid data, that data is still authoritative for its
+        // slice and must be cached; dropping it here made every racing request
+        // return null and left the dose overlay frozen on an older slice.
+        // Versioning below decides whether this (possibly stale) request gets
+        // to repaint — the slice data itself is always worth keeping.
         if (!res.ok) { uiDebugLog(`[dose] fetch HTTP ${res.status} for ${cacheKey}`); return null; }
         const data = await res.json();
         if (!data.success) { uiDebugLog(`[dose] fetch failed: ${data.error} for ${cacheKey}`); return null; }

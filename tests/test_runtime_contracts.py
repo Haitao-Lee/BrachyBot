@@ -199,6 +199,21 @@ def test_segmentation_intent_and_site_followup_are_not_knowledge_queries():
     assert followup.use_completeness
 
 
+def test_monitor_stop_request_is_ui_control_not_knowledge_query():
+    from agent_runtime.turn_policy import classify_local_turn
+
+    for message in (
+        "\u8bf7\u505c\u6b62monitor",
+        "\u8bf7\u505c\u6b62\u76d1\u6d4b",
+        "stop monitoring please",
+        "\u7ed3\u675f\u76d1\u6d4b",
+    ):
+        policy = classify_local_turn(message)
+        assert policy.intent == "ui_control", f"{message!r} -> {policy.intent}"
+        assert "ui_controller" in policy.allow_tools
+        assert not policy.use_router
+
+
 def test_tool_schema_cache_invalidates_when_registry_changes():
     from agent_runtime.core import ToolRegistry
 

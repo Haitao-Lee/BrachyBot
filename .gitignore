@@ -106,3 +106,7 @@ start_server.sh
 
 # PDF files (not part of codebase)
 *.pdf
+
+# Local tooling / transient sync artifacts
+.codex-sync/
+server_codex_*.pid
