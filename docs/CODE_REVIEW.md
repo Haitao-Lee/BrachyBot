@@ -2,6 +2,81 @@
 
 _This file consolidates all code review reports. Sections are organized by date._
 
+## 2026-08-01 - Colorbar gating, session-progress dedup, and surgical-guide reconstruction
+
+Three operator-reported issues were fixed and verified end to end.
+
+### 1. 2D colorbar appears before dose exists
+
+The 2D dose colorbar could appear while planning was still segmenting (no
+dose), because `_setPlanningDoseProjectionVisibility` and other refresh paths
+called `updateDoseColorbars(true)` without checking that a dose result exists.
+
+- `updateDoseColorbars` now hides the 2D bars unless `state.doseOverlay?.shape`
+  is present (`hasDose`), and honors the per-dose `colorbarVisible2D` flag.
+- `update3DColorbar` honors `colorbarVisible3D`.
+- The dose node in the Data Tree now carries `colorbarVisible2D/3D` (persisted),
+  and the right-click menu on `dose_overlay` offers Show/Hide 2D/3D Color Bar
+  with a live ☑/☐ indicator via `setDoseColorbarViewVisibility`.
+- Verified: no-dose → all 2D bars hidden; with-dose → shown; toggle hides/shows
+  immediately and persists.
+
+### 2. Session switch appends duplicate progress steps
+
+When switching away mid-planning and back, the resumed task replayed the full
+event journal; restored todo items had lost their dedup anchors
+(`predicted`/`predictedTool`/`toolName`), so replayed `ctv_segmentation` /
+`oar_segmentation` done events matched nothing and appended duplicate rows
+(`PROGRESS (5/7)` → `(7/9)`).
+
+- The `sendChat` resume path now rebuilds each item with `tool = si.toolName ||
+  si.predictedTool` and restores `predicted`, `predictedTool`, and `toolName`,
+  so `_todoUpdateFromStep` dedups replayed events in place.
+- Verified: restoring 3 items then replaying a ctv_segmentation done event keeps
+  item count at 3 (no new row).
+
+### 3. Surgical guide reconstruction
+
+The operator reported the channel was not a clean cylinder, lacked a real hole,
+protruded into the skin, the plate was bumpy (stair-stepped by 5 mm CT slices),
+and generation took ~6 minutes.
+
+- **Flat-ended cylinder**: `_segment_mask` now produces a TRUE cylinder with flat
+  end faces instead of a capsule with rounded caps. The rounded cap previously
+  poked the sleeve wall into the skin and sealed the bore on the body side
+  (blind hole). Verified: outer end-face is flat (t range < 1.6 mm at 1 mm res),
+  bore mouth is open, no channel material sits inside the body.
+- **Anchor flush with the plate**: the sleeve inner end is now at the plate's
+  skin-facing face (`entry - inward * skin_clearance`), never inside the body;
+  `sleeve_inward_mm` no longer moves geometry.
+- **Smooth skin**: `_smooth_body_mask` applies an anisotropic Gaussian to the
+  body envelope (sigma 2 mm, matched to CT spacing) before building the plate,
+  so the plate hugs a smooth skin surface instead of the raw 5 mm slice steps.
+- **Performance**: sleeve/bore are computed on a per-needle local bounding box
+  (`_sleeve_bore_in_region`) instead of the full ~31M-voxel grid. Single-needle
+  generation dropped from ~113 s to ~0.2 s; 5-needle at 0.8 mm runs in ~0.3 s.
+- Regression test `test_guide_channel_is_clean_flat_cylinder_with_open_through_hole`
+  asserts watertightness, speed, no inward penetration, flat end face, and an
+  open bore mouth.
+
+### Files changed
+
+| File | Change |
+|------|--------|
+| `web/app/static/js/brachybot-3d-manual.js` | Colorbar gating, `setDoseColorbarViewVisibility` |
+| `web/app/static/js/brachybot-viewer-volume.js` | Dose-node colorbar flags, right-click menu items |
+| `web/app/static/js/brachybot-chat-todo.js` | Session-resume dedup anchors |
+| `web/surgical_guide.py` | Flat cylinder, smooth skin, local-region sleeve/bore, entry anchor |
+| `tests/test_surgical_guide.py` | New geometry regression test |
+
+### Verification
+
+- `pytest` main suites: 83 passed (13 surgical-guide).
+- Playwright: colorbar gating + menu verified; no JS errors; multi-needle guide
+  watertight in <1 s.
+
+---
+
 ## 2026-08-01 - web_fetch anti-bot error clarity
 
 Operator saw `web_fetch → HTTP 403` when fetching a Zhihu article. Zhihu blocks

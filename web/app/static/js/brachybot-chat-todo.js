@@ -1402,9 +1402,15 @@ async function sendChat(prefill, options) {
         const dock = document.getElementById('chatTodoDock');
         if (dock) { dock.appendChild(todo.root); dock.style.display = ''; }
         for (const si of savedItems) {
+            // Rebuild the dedup anchors lost in the previous restore path.
+            // Predicted items were born with toolName=null but carry
+            // predictedTool; replay events match on (predicted, predictedTool)
+            // and on toolName. Without restoring these, the replayed
+            // ctv/oar done events fail every match and append duplicate rows.
+            const anchorTool = si.toolName || si.predictedTool || '';
             const stubStep = {
                 type: 'tool',
-                tool: si.toolName || '',
+                tool: anchorTool,
                 title: si.label || '',
                 id: si.id || '',
                 status: si.status,
@@ -1412,6 +1418,10 @@ async function sendChat(prefill, options) {
             const item = todo.addPending(stubStep);
             item.startedAt = si.startedAt;
             item.endedAt = si.endedAt;
+            // Restore the fields _todoUpdateFromStep / _todoFindPredicted use.
+            item.predicted = !!si.predicted;
+            item.predictedTool = si.predictedTool || null;
+            item.toolName = anchorTool || null;
             if (si._realElapsedMs) item._realElapsedMs = si._realElapsedMs;
             if (si.status === 'done' || si.status === 'error') {
                 todo.markDone(item, si.status === 'error' ? 'failed' : undefined);

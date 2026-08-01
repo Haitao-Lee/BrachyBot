@@ -271,3 +271,59 @@ def test_manual_needle_addition_does_not_hide_algorithm_guide():
 
     guide = generate_surgical_guide(agent, {"geometry_resolution_mm": 1.0})
     assert guide["source_plan_signature"] == baseline_sig
+
+
+def test_guide_channel_is_clean_flat_cylinder_with_open_through_hole():
+    """The channel must be a TRUE flat-ended cylinder that protrudes OUTWARD.
+
+    Regression for three related defects seen in earlier guides:
+    1. The sleeve used a capsule (rounded end caps) instead of a flat cylinder,
+       so the rounded cap poked the sleeve wall into the skin and sealed the
+       bore on the body side (a blind hole).
+    2. The sleeve inner end was anchored at the first interior voxel, deeper
+       than the skin surface, compounding the inward protrusion.
+    3. The local-region sleeve/bore evaluation had to be fast enough to keep
+       guide generation practical on real CTs.
+    """
+    import time
+
+    agent = _synthetic_agent()
+    started = time.time()
+    guide = generate_surgical_guide(agent, {
+        "geometry_resolution_mm": 1.0,
+        "skin_clearance_mm": 0.0,
+        "plate_thickness_mm": 3.0,
+        "channel_radius_mm": 1.0,
+        "sleeve_outer_radius_mm": 3.0,
+        "sleeve_outward_mm": 8.0,
+    })
+    elapsed = time.time() - started
+    assert guide["validation"]["watertight"] is True
+    # The per-needle local-region evaluation keeps a single-needle guide fast.
+    assert elapsed < 30.0, f"guide generation too slow: {elapsed:.1f}s"
+
+    entry = np.asarray(guide["needle_paths"][0]["entry_world_mm"])
+    inward = np.asarray(guide["needle_paths"][0]["direction_world"])
+    vertices = np.asarray(guide["vertices"], dtype=np.float64)
+    rel = vertices - entry
+    t = rel @ inward
+    radial = np.linalg.norm(rel - np.outer(t, inward), axis=1)
+
+    # (1) No sleeve/channel material may sit deep inside the body along the
+    # needle axis (t > 0 toward the target, beyond the flush skin face).
+    axis_near = radial < 1.5
+    assert float(t[axis_near].max()) <= 0.75, "channel/sleeve penetrates the body"
+
+    # (2) The outer end is a FLAT face (a true cylinder), not a rounded cap:
+    # wall vertices near the sleeve tip share nearly the same axial position.
+    tip_wall = (radial > 1.5) & (radial < 3.4) & (t < -10.0)
+    assert tip_wall.any(), "sleeve outer end-face has no wall vertices"
+    tip_range = float(t[tip_wall].max()) - float(t[tip_wall].min())
+    # One marching-cubes voxel of staircase is expected at 1 mm resolution; a
+    # capsule would show ~sleeve_radius of rounding (>= 3 mm).
+    assert tip_range < 1.6, f"outer end-face is rounded, not flat (t range {tip_range:.2f})"
+
+    # (3) The bore mouth is open on the outer face (channel is a through-hole).
+    mouth = (radial < 1.0) & (t < -10.0)
+    assert mouth.sum() >= 3, "bore mouth is not open on the outer face"
+

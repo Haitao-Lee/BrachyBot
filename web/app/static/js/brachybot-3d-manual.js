@@ -3641,14 +3641,46 @@ function _labelClassForDoseColorbarPosition(pos) {
 // Update all 3 colorbars (axial/sagittal/coronal) in lock-step.
 // doseMinNorm, doseMaxNorm: dose range in NORMALIZED units (raw CNN output).
 // They are converted to Gy here so the labels show real physical dose.
-// The 2D colorbar always spans [COLORBAR_MIN_GY, COLORBAR_MAX_GY] (= 0–600 Gy).
+// The 2D colorbar always spans [COLORBAR_MIN_GY, COLORBAR_MAX_GY] (= 0-600 Gy).
 // Dose values above the configured maximum are saturated to the top color.
+
+// Toggle colorbar visibility per view from the Data Tree right-click menu.
+// Persists the flag on the dose node and refreshes the viewers immediately.
+function setDoseColorbarViewVisibility(scope, visible) {
+    const node = dataTreeState?.planning?.doseOverlay;
+    if (!node) return false;
+    const on = !!visible;
+    if (scope === '3d') {
+        node.colorbarVisible3D = on;
+        update3DColorbar(!!state?.doseTexture?.enabled);
+    } else {
+        node.colorbarVisible2D = on;
+        updateDoseColorbars(!!state?.doseOverlay?.visible);
+    }
+    renderDataTree();
+    if (typeof _scheduleDataTreeSave === 'function') {
+        _scheduleDataTreeSave(`viewer.colorbar:${scope}:dose_overlay`);
+    }
+    return true;
+}
+window.setDoseColorbarViewVisibility = setDoseColorbarViewVisibility;
+
 function updateDoseColorbars(visible, doseMinNorm, doseMaxNorm) {
+    // A colorbar must never appear before a dose result exists. Many planning
+    // refresh paths call this with visible=true while dose is still computing
+    // (e.g. during CTV/OAR segmentation); showing a fake 0-600 Gy bar there is
+    // misleading. The 2D bars also respect the per-dose colorbar visibility
+    // toggle from the Data Tree context menu.
+    const hasDose = !!state?.doseOverlay?.shape;
+    const node2d = dataTreeState?.planning?.doseOverlay;
+    const barVisible2D = hasDose && node2d?.colorbarVisible2D !== false;
     document.querySelectorAll('.dose-colorbar').forEach(cb => {
-        const shouldShow = cb.id === 'doseColorbar3D' ? (visible && !!state.doseTexture?.enabled) : visible;
+        const shouldShow = cb.id === 'doseColorbar3D'
+            ? (visible && !!state.doseTexture?.enabled)
+            : (visible && barVisible2D);
         cb.style.display = shouldShow ? 'block' : 'none';
     });
-    if (!visible) return;
+    if (!visible || !barVisible2D) return;
 
     const cfg = getDoseColorbarConfig('twoD');
     const tickGy = [cfg.maxGy, cfg.minGy + (cfg.maxGy - cfg.minGy) * 0.8,
@@ -3689,8 +3721,10 @@ function update3DColorbar(visible) {
     const colorbar3D = document.getElementById('doseColorbar3D');
     if (!colorbar3D) return;
 
-    colorbar3D.style.display = visible ? 'block' : 'none';
-    if (!visible) return;
+    const node3d = dataTreeState?.planning?.doseOverlay;
+    const effective = visible && node3d?.colorbarVisible3D !== false;
+    colorbar3D.style.display = effective ? 'block' : 'none';
+    if (!effective) return;
 
     // Render the gradient on the 3D colorbar canvas
     const canvas = colorbar3D.querySelector('.colorbarCanvas');
