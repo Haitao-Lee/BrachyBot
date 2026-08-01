@@ -1471,17 +1471,19 @@ async function sendChat(prefill, options) {
         // done and yields it twice). Match by server id so the second event
         // updates the row in place instead of appending a duplicate.
         if (index < 0 && step.id != null) {
-            index = steps.findIndex(item => item.id === step.id);
+            index = steps.findIndex(item => item._serverId === step.id);
         }
         if (index < 0) return { step, index: -1 };
         // Keep the DOM identity created on click-send. This turns the
         // immediate pending row into the server-confirmed row in place and
-        // prevents the first SSE event from creating a duplicate trace.
+        // prevents the first SSE event from creating a duplicate trace. The
+        // row keeps its optimistic DOM id so appendStepToChain can still find
+        // the existing block; the server id is recorded separately so later
+        // re-emissions of the same logical step resolve to this row.
         const placeholder = steps[index];
-        // Preserve the server id when present so later re-emissions of the
-        // same step (pending -> done) resolve to this row instead of pushing.
         const merged = Object.assign({}, placeholder, step, {
-            id: (step.id != null) ? step.id : optimisticId,
+            id: optimisticId || placeholder.id,
+            _serverId: (step.id != null) ? step.id : placeholder._serverId,
         });
         // Preserve the user-facing routing title; only status/content come
         // from the server. This keeps the routing row label stable whether
