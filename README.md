@@ -806,6 +806,14 @@ export BRACHY_LLM_PROVIDER="qwen"
 
 # Option D: Ollama (local)
 export BRACHY_LLM_PROVIDER="ollama"
+
+# Option E: OpenCode Go (open-source subscription models)
+# Models auto-route to the correct protocol by name: MiMo/Grok/GLM/Kimi/
+# DeepSeek/Hy3 use the OpenAI-compatible endpoint, MiniMax/Qwen use the
+# Anthropic endpoint. Just switch ANTHROPIC_MODEL to change models.
+export ANTHROPIC_BASE_URL="https://opencode.ai/zen/go"
+export ANTHROPIC_API_KEY="your-opencode-go-key"
+export ANTHROPIC_MODEL="mimo-v2.5"
 ```
 
 ### Step 3: Configure Security (Recommended for Production)

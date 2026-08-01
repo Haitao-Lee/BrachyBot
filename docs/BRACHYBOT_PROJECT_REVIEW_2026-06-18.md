@@ -172,7 +172,7 @@
 
 **问题描述：**
 ```python
-llm_config["anthropic"]["api_key"] = "tp-cebuhb3x0bgx7qhx4wyc5g7ri65s8a91b7x4gocgvsoom89y"
+llm_config["anthropic"]["api_key"] = "BRACHYBOT_LLM_API_KEY_REDACTED"
 ```
 
 这是 xiaoMi MiMo token-plan 的 key，被硬编码到源码里。user 的 memory `llm-provider-agnostic.md` 声称"switch vendors by changing base_url/api_key/model only"，但这个 hardcoded key 违背了这个设计——任何 fork 都会烧同样的账户。
@@ -193,7 +193,7 @@ llm_config["anthropic"]["api_key"] = "tp-cebuhb3x0bgx7qhx4wyc5g7ri65s8a91b7x4goc
 ```python
 # 替换 AgenticSys.py:1345
 # BEFORE:
-"api_key": "tp-cebuhb3x0bgx7qhx4wyc5g7ri65s8a91b7x4gocgvsoom89y"
+"api_key": "BRACHYBOT_LLM_API_KEY_REDACTED"
 
 # AFTER:
 "api_key": os.environ.get("BRACHYBOT_LLM_API_KEY", ""),
@@ -210,7 +210,7 @@ pip install git-filter-repo
 cd /home/lht/snap/brachyplan/BrachyBot
 git filter-repo --replace-text expressions.txt
 # 其中 expressions.txt 包含:
-# tp-cebuhb3x0bgx7qhx4wyc5g7ri65s8a91b7x4gocgvsoom89y==>BRACHYBOT_LLM_API_KEY_REDACTED
+# BRACHYBOT_LLM_API_KEY_REDACTED==>BRACHYBOT_LLM_API_KEY_REDACTED
 ```
 
 **重要：** 清理后立即在 vendor 后台撤销该 key 并生成新 key。
@@ -1537,7 +1537,7 @@ sed -i 's|"api_key": "tp-cebuhb3x[^"]*"|"api_key": os.environ.get("BRACHYBOT_LLM
 grep -q "^import os" AgenticSys.py || sed -i '0,/^import os\|^from os/s/^import os/import os\nimport os/' AgenticSys.py
 
 # 2. 撤销泄露的 key（关键步骤，必须做）
-# 登录 xiaoMi MiMo 后台，撤销 tp-cebuhb3x0bgx7qhx4wyc5g7ri65s8a91b7x4gocgvsoom89y
+# 登录 xiaoMi MiMo 后台，撤销 BRACHYBOT_LLM_API_KEY_REDACTED
 
 # 3. 修复 _validate_path (Finding #2)
 # 替换 web/server.py:135-147 的实现（见 Finding #2 修复方案）
