@@ -263,16 +263,27 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
             _key = os.environ.get("ANTHROPIC_API_KEY", "") or os.environ.get("ANTHROPIC_AUTH_TOKEN", "")
             _model = os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-20250514")
 
-            # Auto-detect API format from URL:
+            # Auto-detect API format from URL and model:
             #   - Contains "/anthropic" or "anthropic" in host → Anthropic SDK
             #   - Otherwise → OpenAI-compatible (generic provider)
             # This lets users switch base_url between Anthropic and
             # OpenAI endpoints without changing code.
+            #
+            # OpenCode Go (https://opencode.ai/zen/go) is protocol-ambiguous:
+            # its models are split between /v1/messages (Anthropic) and
+            # /v1/chat/completions (OpenAI). The endpoint table in the Go
+            # docs maps MiniMax and Qwen to the Anthropic SDK and MiMo/Grok/
+            # GLM/Kimi/DeepSeek/Hy3 to OpenAI-compatible. Decide by model
+            # name whenever the base_url is an OpenCode Go endpoint, and by
+            # the URL otherwise.
             _is_anthropic_format = (
                 "anthropic" in _base.lower()
                 or _base.rstrip("/").endswith("/v1/messages")
                 or not _base  # no base_url = direct Anthropic API
             )
+            if not _is_anthropic_format and ("opencode.ai" in _base.lower() or "/zen/go" in _base.lower()):
+                _model_lower = _model.lower()
+                _is_anthropic_format = _model_lower.startswith(("minimax-", "qwen3", "qwen-"))
 
             if _is_anthropic_format:
                 return {

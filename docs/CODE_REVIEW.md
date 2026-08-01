@@ -2,6 +2,57 @@
 
 _This file consolidates all code review reports. Sections are organized by date._
 
+## 2026-08-01 - OpenCode Go model protocol routing
+
+### Scope
+
+Add support for the OpenCode Go subscription endpoint
+(`https://opencode.ai/zen/go`), whose models split across two wire protocols.
+The previous auto-detection keyed on the base URL only, which mis-routed
+MiniMax/Qwen models.
+
+### Root cause
+
+`AgenticSys._auto_detect_llm_provider` chose the provider protocol by whether
+the base URL contained `anthropic`. OpenCode Go exposes both:
+- `/v1/chat/completions` (OpenAI-compatible) for MiMo, Grok, GLM, Kimi,
+  DeepSeek, Hy3
+- `/v1/messages` (Anthropic) for MiniMax, Qwen
+
+With `https://opencode.ai/zen/go` (no `anthropic` substring) every model was
+forced to the OpenAI-compatible path, so MiniMax/Qwen (Anthropic wire format)
+failed and MiMo worked only because it is OpenAI-compatible.
+
+### Resolution
+
+When the base URL is an OpenCode Go endpoint, the model name selects the
+protocol:
+- `minimax-*`, `qwen3*`, `qwen-*` → Anthropic provider
+- everything else (mimo, grok, glm, kimi, deepseek, hy3) → generic
+  OpenAI-compatible provider
+
+Non-Go endpoints keep the existing URL-only heuristic. The README documents
+the Go usage (set `ANTHROPIC_BASE_URL`, `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL`;
+switch models by changing `ANTHROPIC_MODEL`).
+
+### Verification
+
+- Protocol table verified: mimo-v2.5/-pro, grok-4.5, glm-5.2, kimi-k3,
+  deepseek-v4-*, hy3 → OpenAI-compat; minimax-m3/m2.7, qwen3.x → Anthropic.
+- End-to-end: `_auto_detect_llm_provider` → `LLMRouter._create_llm` →
+  generic provider calls mimo-v2.5 through `opencode.ai/zen/go/v1` and
+  returns `ok`.
+- `pytest tests/test_round9_regressions.py tests/test_runtime_contracts.py tests/test_chat_tasks.py` — 47 passed.
+
+### Files changed
+
+| File | Change |
+|------|--------|
+| `AgenticSys.py` | OpenCode Go model-name → protocol routing |
+| `README.md` | OpenCode Go provider configuration example |
+
+---
+
 ## 2026-08-01 - Guide STL resolution, manual needle mask validation, and toast stacking
 
 ### Scope
