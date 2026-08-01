@@ -259,3 +259,19 @@ def test_streaming_tool_callbacks_are_turn_local_after_cancellation():
     assert "self._pending_callback_events" not in source
     assert "callback_events_lock" in source
     assert "if _cancelled():\n                        return" in source
+
+
+def test_ui_controller_registers_manual_mask_commands():
+    from tool_factory.ui_controller import CONTROL_REGISTRY
+
+    for key in (
+        "mask.create", "mask.finalize", "mask.threshold",
+        "mask.rename", "mask.move", "mask.delete",
+        "viewer.tool", "viewer.threshold",
+    ):
+        assert key in CONTROL_REGISTRY, f"{key} missing from ui_controller registry"
+        assert CONTROL_REGISTRY[key].get("description"), f"{key} lacks a description"
+
+    assert "annotate" in CONTROL_REGISTRY["viewer.tool"]["values"]
+    assert "eraser" in CONTROL_REGISTRY["viewer.tool"]["values"]
+    assert CONTROL_REGISTRY["mask.move"]["values"] == ["ctv", "oar"]

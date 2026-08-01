@@ -332,11 +332,70 @@ function setViewerLayout(layout) {
 }
 
 function setViewerTool(tool) {
+    // Clicking the already-active tool toggles it off (deselect + unhighlight).
+    // This keeps the toolbar honest: pressing a highlighted tool again cancels
+    // the mode instead of leaving it stuck on.
+    if (tool !== 'crosshair' && state.viewerSettings.activeTool === tool) {
+        state.viewerSettings.activeTool = null;
+        if (window._annotationToolState) {
+            window._annotationToolState.active = false;
+            window._annotationToolState.points = [];
+        }
+        // For the Draw tool, toggling off also finalises the in-progress mask.
+        if (tool === 'annotate' && state.activeMaskId && state.maskLabels?.[state.activeMaskId]) {
+            const finalName = state.maskLabels[state.activeMaskId].name;
+            state.activeMaskId = null;
+            addChat('system', `Manual mask "${finalName}" finalised. Right-click it in the Data Tree to rename or move it.`);
+        }
+        const toolIds = ['toolCrosshair', 'toolMeasure', 'toolAngle', 'toolRect', 'toolZoombox', 'toolAnnotate', 'toolEraser'];
+        toolIds.forEach(id => {
+            const btn = document.getElementById(id);
+            if (btn) btn.style.background = '';
+        });
+        ['axial', 'sagittal', 'coronal'].forEach(axis => {
+            const canvas = document.getElementById('sliceCanvas' + capitalize(axis));
+            if (canvas) canvas.style.cursor = 'default';
+        });
+        return;
+    }
     state.viewerSettings.activeTool = tool;
     // Reset annotation tool state when switching tools
     if (window._annotationToolState) {
         window._annotationToolState.active = false;
         window._annotationToolState.points = [];
+    }
+    // The Draw tool is a manual-mask entry point: the first click creates a
+    // new empty mask and enters painting; clicking Draw again (or another
+    // tool) finalises it. Track the active mask so subsequent strokes merge
+    // into it instead of spawning a new mask per stroke.
+    if (tool === 'annotate') {
+        if (state.activeMaskId && state.maskLabels?.[state.activeMaskId]) {
+            // Finalise the current mask.
+            const finalName = state.maskLabels[state.activeMaskId].name;
+            state.activeMaskId = null;
+            addChat('system', `Manual mask "${finalName}" finalised. Right-click it in the Data Tree to rename or move it.`);
+        } else {
+            const id = _startNewMask();
+            state.activeMaskId = id;
+            if (id) {
+                const name = state.maskLabels[id].name;
+                addChat('system', `Manual mask "${name}" created. Paint on the slices with the Draw tool; click Draw again to finalise.`);
+            }
+        }
+    } else if (tool === 'eraser') {
+        // Erase needs an active mask target; if none exists, erase is a no-op
+        // hint. Do not auto-create here.
+        if (!state.activeMaskId) {
+            addChat('system', 'Erase removes voxels from the currently active mask. Click Draw first to create/paint a mask, then Erase.');
+        }
+    } else {
+        // Selecting any other tool (including crosshair) finalises an
+        // in-progress mask.
+        if (state.activeMaskId && state.maskLabels?.[state.activeMaskId]) {
+            const finalName = state.maskLabels[state.activeMaskId].name;
+            state.activeMaskId = null;
+            addChat('system', `Manual mask "${finalName}" finalised.`);
+        }
     }
     const toolIds = ['toolCrosshair', 'toolMeasure', 'toolAngle', 'toolRect', 'toolZoombox', 'toolAnnotate', 'toolEraser'];
     toolIds.forEach(id => {
@@ -873,6 +932,10 @@ async function reconstructOrgan3D(id, silent = false) {
                 if (c.startsWith('#')) { color = parseInt(c.slice(1), 16); }
                 else { const m = c.match(/(\d+)/g); color = m ? (parseInt(m[0]) << 16 | parseInt(m[1]) << 8 | parseInt(m[2])) : 0x0ea5e9; }
             } else { color = 0x0ea5e9; }
+        } else if (id.startsWith('mask_')) {
+            // Manual/threshold masks are local voxel sets; reconstruct them
+            // on the client as a merged voxel cube mesh.
+            return _reconstructMask3D(id, silent);
         } else {
             return;
         }
@@ -914,9 +977,89 @@ async function reconstructOrgan3D(id, silent = false) {
     }
 }
 
+// Reconstruct a manual/threshold mask (a local voxel Set) as a merged cube
+// mesh on the client. Masks live in patient-world coordinates derived from the
+// CT origin/spacing, matching how the 2D overlay renders them. A hard cap keeps
+// the mesh renderable for large threshold masks by sparse-sampling the voxels.
+function _reconstructMask3D(id, silent = false) {
+    const requestScope = _captureViewer3DRequestScope();
+    const mask = (typeof state !== 'undefined' && state.maskLabels) ? state.maskLabels[id] : null;
+    if (!mask || !mask.voxels || mask.voxels.size === 0) {
+        if (!silent) addChat('error', 'Mask has no voxels to reconstruct.');
+        return;
+    }
+    const origin = (state.ctOrigin || [0, 0, 0]).slice(0, 3);
+    const spacing = (state.ctSpacing || [0.68, 0.68, 5.0]).slice(0, 3);
+    const all = Array.from(mask.voxels);
+    const cap = 120000;
+    const step = all.length > cap ? Math.ceil(all.length / cap) : 1;
+    const color = typeof mask.color === 'string' && mask.color.startsWith('#')
+        ? parseInt(mask.color.slice(1), 16)
+        : 0x8b5cf6;
+    const opacity = typeof mask.opacity === 'number' ? mask.opacity : 0.6;
+
+    // Build a single BufferGeometry from unit cubes at each sampled voxel.
+    const positions = [];
+    const indices = [];
+    const cube = new Float32Array([
+        0,0,0, 1,0,0, 1,1,0, 0,1,0,
+        0,0,1, 1,0,1, 1,1,1, 0,1,1,
+    ]);
+    const cubeIdx = [
+        0,1,2, 0,2,3, 4,5,6, 4,6,7,
+        0,1,5, 0,5,4, 2,3,7, 2,7,6,
+        0,3,7, 0,7,4, 1,2,6, 1,6,5,
+    ];
+    let count = 0;
+    for (let i = 0; i < all.length; i += step) {
+        const parts = String(all[i]).split(',');
+        const x = Number(parts[0]);
+        const y = Number(parts[1]);
+        const z = Number(parts[2]);
+        if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) continue;
+        const wx = origin[0] + x * spacing[0];
+        const wy = origin[1] + y * spacing[1];
+        const wz = origin[2] + z * spacing[2];
+        const base = positions.length / 3;
+        for (let v = 0; v < 8; v++) {
+            positions.push(wx + cube[v * 3] * spacing[0],
+                            wy + cube[v * 3 + 1] * spacing[1],
+                            wz + cube[v * 3 + 2] * spacing[2]);
+        }
+        for (let f = 0; f < cubeIdx.length; f++) indices.push(base + cubeIdx[f]);
+        count++;
+        if (count >= cap) break;
+    }
+
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(positions), 3));
+    geometry.setIndex(indices);
+    geometry.computeVertexNormals();
+    const material = new THREE.MeshPhysicalMaterial({
+        color, transparent: true, opacity,
+        side: THREE.DoubleSide, roughness: 0.5, metalness: 0.1,
+        depthWrite: opacity > 0.001,
+    });
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.userData = { type: 'mask', id, source: 'mask' };
+
+    if (typeof init3DScene === 'function') init3DScene();
+    if (scene3D.meshes[id]) {
+        scene3D.scene.remove(scene3D.meshes[id]);
+        scene3D.meshes[id].geometry?.dispose?.();
+        scene3D.meshes[id].material?.dispose?.();
+        delete scene3D.meshes[id];
+    }
+    scene3D.scene.add(mesh);
+    scene3D.meshes[id] = mesh;
+    if (typeof window.applyDataTreeViewVisibility === 'function') window.applyDataTreeViewVisibility();
+    if (scene3D.requestRender) scene3D.requestRender(4);
+    if (!silent) switchPanel('viewers', document.querySelectorAll('.panel-tab')[2]);
+    return { vertices: positions.length / 3, faces: indices.length / 3 };
+}
+
 // Persistent 3D scene manager
-const scene3D = {
-    scene: null, camera: null, renderer: null, controls: null,
+const scene3D = {    scene: null, camera: null, renderer: null, controls: null,
     meshes: {},       // {organ_id: THREE.Group (with surfaceMesh + wireframe)}
     skinMesh: null,   // CT skin mesh
     initialized: false,
