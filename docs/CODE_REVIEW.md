@@ -2,6 +2,48 @@
 
 _This file consolidates all code review reports. Sections are organized by date._
 
+## 2026-08-01 - Mask persistence, data-tree compliance, and batch operations
+
+### Scope
+
+Verification pass over the manual/threshold mask feature found gaps in
+persistence, selectability, and the batch operation set. These are fixed here
+so masks behave exactly like OAR/CTV nodes.
+
+### 1. Mask persistence across restart
+
+`workspaceUiState` now serialises `viewer.masks` (`{labels, counter,
+activeMaskId}`); `applyWorkspaceSnapshot` restores it, converting voxel arrays
+back into Sets. Verified end-to-end: `persistWorkspace` sends masks; a fresh
+snapshot restores the mask name, voxels (as a Set), counter, and activeMaskId.
+
+### 2. Data-tree compliance
+
+- `getSelectableIds` now includes `mask_*`, so masks are range-selectable and
+  `getSelectedOrganIds`/`showContextMenu` work (Rename, Move to CTV/OAR,
+  Delete, Change Color, 3D Reconstruct all appear).
+- `_findDataTreeNode` resolves `mask_*` to `state.maskLabels`.
+- `batchToggleVisibility`, `batchSetOpacity`, and `batchSetViewVisibility`
+  gained `mask_*` branches, matching the single-item `toggleDataVisibility` /
+  `setDataOpacity` paths.
+
+### Files changed
+
+| File | Change |
+|------|--------|
+| `web/app/static/js/brachybot-workspace.js` | Persist/restore `viewer.masks` |
+| `web/app/static/js/brachybot-viewer-volume.js` | getSelectableIds/_findDataTreeNode mask support; batch ops mask branches |
+| `web/app/static/js/brachybot-ui-api.js` | `mask.move` payload parsing fix |
+
+### Verification
+
+- `pytest tests/test_round9_regressions.py tests/test_external_project_scope.py tests/test_chat_tasks.py tests/test_multi_agent_basic.py tests/test_surgical_guide.py tests/test_runtime_contracts.py tests/test_needle_obstacle_safety.py` — 76 passed.
+- Playwright: mask context menu shows Rename/Move/Delete/Color/3D; batch
+  visibility/opacity/view-visibility all apply to masks; persistence
+  save→restore round-trips masks.
+
+---
+
 ## 2026-08-01 - Manual/threshold masks in the Data Tree + ui_controller integration
 
 ### Scope

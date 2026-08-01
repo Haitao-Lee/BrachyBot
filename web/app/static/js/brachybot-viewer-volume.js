@@ -2286,6 +2286,7 @@ function getSelectableIds() {
     _planningItems('meshes').forEach(item => ids.push(item.id));
     (dataTreeState.annotations || []).forEach(item => ids.push(item.id));
     (dataTreeState.exportArtifacts || []).forEach(item => ids.push(item.id));
+    Object.keys(state.maskLabels || {}).forEach(id => ids.push(id));
     return ids;
 }
 
@@ -3581,6 +3582,7 @@ function _findDataTreeNode(id) {
     if (id === 'ctv') return dataTreeState.ctv;
     if (id.startsWith('ctv_')) return dataTreeState.ctvLabels?.[id] || null;
     if (id.startsWith('organ_')) return dataTreeState.organs.find(item => item.id === id) || null;
+    if (id.startsWith('mask_')) return state.maskLabels?.[id] || null;
     for (const key of ['trajectories', 'seeds', 'needles', 'doseLevels', 'meshes']) {
         const item = _planningItems(key).find(value => {
             if (key === 'doseLevels') return `dose_iso_${value.threshold}` === id;
@@ -4355,6 +4357,15 @@ function batchToggleVisibility(visible) {
                 if (mesh) applyMeshVisibility(mesh, visible, d.opacity ?? 0.3);
             }
         }
+        // Manual/threshold masks
+        else if (id.startsWith('mask_')) {
+            const m = state.maskLabels?.[id];
+            if (m) {
+                m.visible = visible;
+                const mesh = scene3D.meshes[id];
+                if (mesh) applyMeshVisibility(mesh, visible, m.opacity ?? 0.6);
+            }
+        }
     });
     renderDataTree();
     if (state.ctLoaded) reloadOverlays();
@@ -4543,6 +4554,13 @@ function batchSetOpacity(opacity) {
             if (d) {
                 d.opacity = opacity;
                 applyMeshOpacity(scene3D.meshes[id], opacity, d.visible !== false);
+            }
+        } else if (id.startsWith('mask_')) {
+            const m = state.maskLabels?.[id];
+            if (m) {
+                m.opacity = opacity;
+                applyMeshOpacity(scene3D.meshes[id], opacity, m.visible !== false);
+                reloadOverlays();
             }
         } else {
             const o = dataTreeState.organs.find(o => o.id === id);
