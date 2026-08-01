@@ -2,6 +2,83 @@
 
 _This file consolidates all code review reports. Sections are organized by date._
 
+## 2026-08-01 - Manual/threshold masks in the Data Tree + ui_controller integration
+
+### Scope
+
+The Draw/Erase viewer tools created mask voxel sets that were never rendered
+or listed; the Threshold slider only did a red overlay. This change wires both
+into a first-class "Masks" group in the Data Tree (a sibling of CTV/OAR that
+never feeds dose/planning) and exposes every action to the ui_controller so the
+LLM can drive them.
+
+### 1. Mask data-tree group
+
+- `renderDataTree` renders a `Masks (N)` group under Segmentation listing each
+  `state.maskLabels` entry with the same leaf interactions as OAR/CTV
+  (visibility eye, color swatch, opacity slider, 3D button, right-click menu).
+- Right-click menu for a mask adds Rename, 3D Reconstruct, Move to CTV/OAR
+  (presentation-only), Change Color, and Delete.
+- `_allDataTreeVisualNodes`, `toggleDataVisibility`, `setDataOpacity`,
+  `setGroupVisibility`, `setGroupOpacity`, `soloGroup`, `openColorPicker`
+  and `handleTreeItemRightClick` all gained `mask_*` / `masks` handling.
+- `resetAllState` clears `maskLabels`/`activeMaskId` so masks do not leak
+  across sessions.
+
+### 2. Draw/Erase workflow
+
+- `setViewerTool('annotate')` now toggles: first click creates an empty mask
+  and enters painting; clicking Draw again (or switching to another tool)
+  finalises it. Strokes merge into the active mask instead of spawning a new
+  mask per stroke.
+- Clicking an already-active tool now deselects it (the toolbar previously
+  left it stuck highlighted).
+- `createMaskFromFreehand`/`eraseMaskArea` now use the exact same
+  display→volume mapping as `renderSliceFromVolume` (axial Z flip,
+  sagittal/coronal spacing resample), so painted voxels line up with the 2D
+  overlay.
+
+### 3. Threshold slider → mask
+
+`applyThreshold` now also creates/replaces a `Threshold N HU` mask from
+`volumeData > N` into the Masks group (display-only). The existing red overlay
+is preserved.
+
+### 4. Mask 3D reconstruction
+
+`reconstructOrgan3D` routes `mask_*` to `_reconstructMask3D`, which builds a
+client-side merged cube mesh from the voxel Set (capped at 120k voxels),
+reusing the existing scene mesh registry and data-tree visibility.
+
+### 5. ui_controller integration
+
+- `tool_factory/ui_controller/CONTROL_REGISTRY` gained `mask.create`,
+  `mask.finalize`, `mask.threshold`, `mask.rename`, `mask.move`, `mask.delete`.
+- `_executeUIAction` in `brachybot-ui-api.js` maps them to the new functions
+  (and the existing `viewer.tool` / `viewer.threshold` entries now drive the
+  mask workflow). The LLM can therefore create/paint/finalise/rename/move/
+  delete masks by name.
+
+### Files changed
+
+| File | Change |
+|------|--------|
+| `web/app/static/js/brachybot-viewer-volume.js` | Masks group render; mask overlay in `renderSliceFromVolume`; mask 2D/3D visibility/opacity/group ops; rename/move/delete; threshold→mask |
+| `web/app/static/js/brachybot-viewer-layout.js` | Tool toggle-off; draw create/finalise workflow; mask 3D reconstruction |
+| `web/app/static/js/brachybot-manual-annotation.js` | `_startNewMask`; mask coordinate unification; merge strokes into active mask |
+| `web/app/static/js/brachybot-ui-api.js` | `activeMaskId` state; resetAllState mask clear; ui_controller action mapping |
+| `tool_factory/ui_controller/__init__.py` | mask.* CONTROL_REGISTRY entries |
+| `tests/test_runtime_contracts.py` | ui_controller mask command registration test |
+
+### Verification
+
+- Playwright: Draw click creates `mask_1`, second click finalises (activeMaskId
+  null); rename/move/toggle-opacity/delete round-trip without errors; tool
+  toggle-off clears highlight; all original toolbar functions still defined.
+- `pytest tests/test_round9_regressions.py tests/test_external_project_scope.py tests/test_chat_tasks.py tests/test_multi_agent_basic.py tests/test_surgical_guide.py tests/test_runtime_contracts.py tests/test_needle_obstacle_safety.py` — 76 passed.
+
+---
+
 ## 2026-08-01 - OpenCode Go model protocol routing
 
 ### Scope

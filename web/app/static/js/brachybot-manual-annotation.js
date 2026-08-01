@@ -1884,11 +1884,35 @@ function pushUndo(annotation) {
 /******** MANUAL MASK DRAWING ********/
 const MASK_COLORS = ['#ff4444','#44ff44','#4488ff','#ffaa00','#ff44ff','#44ffff','#ffff44','#ff8844'];
 
-function createMaskFromFreehand(axis, points) {
-    if (!state.ctShape || points.length < 3) return;
+function _startNewMask() {
+    if (!state.maskLabels) state.maskLabels = {};
     state.maskLabelCounter++;
     const id = 'mask_' + state.maskLabelCounter;
     const color = MASK_COLORS[(state.maskLabelCounter - 1) % MASK_COLORS.length];
+    state.maskLabels[id] = {
+        name: `Manual Mask ${state.maskLabelCounter}`,
+        color: color,
+        voxels: new Set(),
+        visible: true,
+        visible2D: true,
+        visible3D: true,
+        opacity: 0.6,
+        axis: 'axial',
+    };
+    renderDataTree();
+    return id;
+}
+
+function createMaskFromFreehand(axis, points) {
+    if (!state.ctShape || points.length < 3) return;
+    // Merge the painted region into the active mask when the Draw workflow is
+    // active; otherwise fall back to creating a fresh mask (legacy behaviour
+    // used when the mask was created directly without the Draw entry point).
+    let id = state.activeMaskId;
+    if (!id || !state.maskLabels?.[id]) {
+        id = _startNewMask();
+        state.activeMaskId = id;
+    }
 
     // Create a canvas to rasterize the polygon
     const sliceCanvas = getSliceCanvas(axis);
@@ -1911,7 +1935,15 @@ function createMaskFromFreehand(axis, points) {
 
     const maskData = mctx.getImageData(0, 0, w, h).data;
 
-    // Convert to voxel coordinates
+    // Convert to voxel coordinates. Use the exact same display→volume mapping
+    // as renderSliceFromVolume so a painted mask lines up with what the viewer
+    // shows: axial Z is flipped ((Z-1)-slice), sagittal/coronal display Y maps
+    // to Z via the spacing resample ratio.
+    const shape = state.ctShape || [];
+    const zCount = shape[0] || 0;
+    const yCount = shape[1] || 0;
+    const xCount = shape[2] || 0;
+    const spacing = window.volumeSpacing || [0.68, 0.68, 5.0];
     const voxelSet = new Set();
     for (let py = 0; py < h; py++) {
         for (let px = 0; px < w; px++) {
@@ -1919,35 +1951,30 @@ function createMaskFromFreehand(axis, points) {
             if (maskData[idx] > 128) {
                 let volX, volY, volZ;
                 if (axis === 'axial') {
-                    volX = px; volY = py; volZ = state.slices.axial;
+                    volX = px; volY = py;
+                    volZ = (zCount - 1) - (state.slices.axial || 0);
                 } else if (axis === 'sagittal') {
-                    volX = state.slices.sagittal; volY = px;
-                    const spacing = window.volumeSpacing || [0.68, 0.68, 5.0];
-                    volZ = Math.round(py * spacing[1] / spacing[2]);
+                    volX = state.slices.sagittal || 0; volY = px;
+                    volZ = Math.floor(py * spacing[1] / spacing[2]);
                 } else {
-                    volX = px; volY = state.slices.coronal;
-                    const spacing = window.volumeSpacing || [0.68, 0.68, 5.0];
-                    volZ = Math.round(py * spacing[0] / spacing[2]);
+                    volX = px; volY = state.slices.coronal || 0;
+                    volZ = Math.floor(py * spacing[0] / spacing[2]);
                 }
-                if (volX >= 0 && volX < state.ctShape[2] && volY >= 0 && volY < state.ctShape[1] && volZ >= 0 && volZ < state.ctShape[0]) {
+                if (volX >= 0 && volX < xCount && volY >= 0 && volY < yCount && volZ >= 0 && volZ < zCount) {
                     voxelSet.add(`${volX},${volY},${volZ}`);
                 }
             }
         }
     }
 
-    state.maskLabels[id] = {
-        name: `Manual Mask ${state.maskLabelCounter}`,
-        color: color,
-        voxels: voxelSet,
-        visible: true,
-        opacity: 0.6,
-        axis: axis,
-    };
+    // Merge painted voxels into the (possibly newly created) mask.
+    const mask = state.maskLabels[id];
+    for (const key of voxelSet) mask.voxels.add(key);
+    mask.axis = axis;
 
     renderDataTree();
     reloadOverlays();
-    addChat('system', `Created mask "${state.maskLabels[id].name}" with ${voxelSet.size} voxels`);
+    addChat('system', `Mask "${mask.name}" now has ${mask.voxels.size} voxels`);
 }
 
 function eraseMaskArea(axis, points) {
@@ -1973,7 +2000,13 @@ function eraseMaskArea(axis, points) {
 
     const maskData = mctx.getImageData(0, 0, w, h).data;
 
-    // Erase from all visible masks
+    // Erase from all visible masks. Use the same display→volume mapping as
+    // createMaskFromFreehand / renderSliceFromVolume.
+    const shape = state.ctShape || [];
+    const zCount = shape[0] || 0;
+    const yCount = shape[1] || 0;
+    const xCount = shape[2] || 0;
+    const spacing = window.volumeSpacing || [0.68, 0.68, 5.0];
     let erased = 0;
     for (const [id, mask] of Object.entries(state.maskLabels)) {
         if (!mask.visible) continue;
@@ -1983,15 +2016,14 @@ function eraseMaskArea(axis, points) {
                 if (maskData[idx] > 128) {
                     let volX, volY, volZ;
                     if (axis === 'axial') {
-                        volX = px; volY = py; volZ = state.slices.axial;
+                        volX = px; volY = py;
+                        volZ = (zCount - 1) - (state.slices.axial || 0);
                     } else if (axis === 'sagittal') {
-                        volX = state.slices.sagittal; volY = px;
-                        const spacing = window.volumeSpacing || [0.68, 0.68, 5.0];
-                        volZ = Math.round(py * spacing[1] / spacing[2]);
+                        volX = state.slices.sagittal || 0; volY = px;
+                        volZ = Math.floor(py * spacing[1] / spacing[2]);
                     } else {
-                        volX = px; volY = state.slices.coronal;
-                        const spacing = window.volumeSpacing || [0.68, 0.68, 5.0];
-                        volZ = Math.round(py * spacing[0] / spacing[2]);
+                        volX = px; volY = state.slices.coronal || 0;
+                        volZ = Math.floor(py * spacing[0] / spacing[2]);
                     }
                     const key = `${volX},${volY},${volZ}`;
                     if (mask.voxels.has(key)) {

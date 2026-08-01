@@ -1104,10 +1104,12 @@ function renderSliceFromVolume(axis, sliceIndex) {
     const data = imageData.data;
     const displayMode = state.viewerSettings.displayMode || 'ct';
     const isLabelOnly = displayMode === 'label';
-    const showOverlay = (ctvLabelData || oarLabelData) &&
-                        (displayMode === 'overlay' || isLabelOnly) &&
-                        ((isDataTreeNodeVisible2D(dataTreeState.ctv) && state.viewerSettings.showCTV) ||
-                         (isDataTreeNodeVisible2D(dataTreeState.oar) && state.viewerSettings.showOAR));
+    const hasMasks2d = Object.keys(state.maskLabels || {}).some(id => _maskVisibleInTarget(state.maskLabels[id]));
+    const showOverlay = (ctvLabelData || oarLabelData || hasMasks2d) &&
+                        (displayMode === 'overlay' || isLabelOnly || hasMasks2d) &&
+                        (((isDataTreeNodeVisible2D(dataTreeState.ctv) && state.viewerSettings.showCTV)) ||
+                         (isDataTreeNodeVisible2D(dataTreeState.oar) && state.viewerSettings.showOAR) ||
+                         hasMasks2d);
     const labelSliceSize = Y * X;
     const organOpacities = showOverlay ? (() => { const m = {}; dataTreeState.organs.forEach(o => { m[o.labelId] = o.opacity; }); return m; })() : {};
     const thresholdRaw = state.viewerSettings.threshold;
@@ -1147,8 +1149,27 @@ function renderSliceFromVolume(axis, sliceIndex) {
             if (showOverlay && flatIdx >= 0) {
                 let oR = 0, oG = 0, oB = 0, oA = 0;
 
+                // Manual/threshold masks are the lowest overlay layer. Each
+                // visible mask paints its voxels with its own color/opacity.
+                const flatKeyBase = `${volX2},${volY2},${volZ}`;
+                if (hasMasks2d) {
+                    for (const mask of Object.values(state.maskLabels || {})) {
+                        if (!_maskVisibleInTarget(mask)) continue;
+                        if (mask.movedTo === 'ctv' && !(isDataTreeNodeVisible2D(dataTreeState.ctv) && state.viewerSettings.showCTV)) continue;
+                        if (mask.movedTo === 'oar' && !(isDataTreeNodeVisible2D(dataTreeState.oar) && state.viewerSettings.showOAR)) continue;
+                        if (!mask.voxels || !mask.voxels.has(flatKeyBase)) continue;
+                        const hex = mask.color || '#8b5cf6';
+                        const mr = parseInt(hex.slice(1, 3), 16) || 139;
+                        const mg = parseInt(hex.slice(3, 5), 16) || 92;
+                        const mb = parseInt(hex.slice(5, 7), 16) || 246;
+                        const opacity = typeof mask.opacity === 'number' ? mask.opacity : 0.6;
+                        oR = mr; oG = mg; oB = mb; oA = Math.round(opacity * 255);
+                        break;
+                    }
+                }
+
                 // OAR overlay
-                if (isDataTreeNodeVisible2D(dataTreeState.oar) && state.viewerSettings.showOAR && oarLabelData && oarLabelData.length > flatIdx) {
+                if (oA === 0 && isDataTreeNodeVisible2D(dataTreeState.oar) && state.viewerSettings.showOAR && oarLabelData && oarLabelData.length > flatIdx) {
                     const oarVal = oarLabelData[flatIdx];
                     if (oarVal > 0) {
                         const visible = !dataTreeState.organs.length ||
@@ -1712,6 +1733,42 @@ function applyThreshold() {
     if (state.ctLoaded) {
         clearSliceCache();
         loadAllSlices();
+    }
+    // Create (or update) a threshold mask in the Data Tree Segmentation group.
+    // The mask is display-only: it never feeds dose/planning.
+    if (Number.isFinite(threshold) && volumeData && volumeShape) {
+        const [Z, Y, X] = volumeShape;
+        const sliceSize = Y * X;
+        const voxels = new Set();
+        for (let z = 0; z < Z; z++) {
+            for (let y = 0; y < Y; y++) {
+                const base = z * sliceSize + y * X;
+                for (let x = 0; x < X; x++) {
+                    if (volumeData[base + x] > threshold) {
+                        voxels.add(`${x},${y},${z}`);
+                    }
+                }
+            }
+        }
+        if (!state.maskLabels) state.maskLabels = {};
+        const id = 'mask_threshold';
+        const existing = state.maskLabels[id];
+        state.maskLabels[id] = {
+            name: existing ? existing.name : `Threshold ${threshold} HU`,
+            color: existing ? existing.color : '#8b5cf6',
+            voxels,
+            visible: existing ? existing.visible !== false : true,
+            visible2D: existing ? existing.visible2D !== false : true,
+            visible3D: existing ? existing.visible3D !== false : true,
+            opacity: existing ? existing.opacity : 0.5,
+            axis: 'axial',
+        };
+        if (voxels.size === 0) {
+            delete state.maskLabels[id];
+        }
+        renderDataTree();
+        reloadOverlays();
+        _scheduleDataTreeSave('mask.threshold');
     }
 }
 
@@ -2450,12 +2507,14 @@ function renderDataTree() {
     }
     const hasMultiLabelCtv = ctvLabels.length > 1;
 
-    const hasSeg = dataTreeState.ctv.loaded || dataTreeState.organs.length > 0;
+    const hasSeg = dataTreeState.ctv.loaded || dataTreeState.organs.length > 0
+        || Object.keys(state.maskLabels || {}).length > 0;
+    const maskCount = Object.keys(state.maskLabels || {}).length;
     const segCount = hasMultiLabelCtv ? ctvLabels.length : (dataTreeState.ctv.loaded ? 1 : 0);
     html += `<div class="tree-group">
         <div class="tree-group-header" onclick="toggleTreeGroup(this)" oncontextmenu="event.preventDefault();showGroupContextMenu(event.clientX,event.clientY,'segmentation')">
             <span class="arrow">&#9660;</span>
-            <span>Segmentation ${hasSeg ? `(${dataTreeState.organs.length + segCount})` : ''}</span>
+            <span>Segmentation ${hasSeg ? `(${dataTreeState.organs.length + segCount + maskCount})` : ''}</span>
         </div>
         <div class="tree-group-items">`;
 
@@ -2682,6 +2741,45 @@ function renderDataTree() {
             const info = organ.voxelCount > 0 && voxelVolume ? `${(organ.voxelCount * voxelVolume).toFixed(1)} cm³` : '';
             html += renderTreeItem(organ.id, organState, info);
         }
+        html += `</div></div>`;
+    }
+
+    // === Manual/Threshold Mask group (sibling of CTV/OAR) ===
+    // Masks come from the Draw/Erase tools and the Threshold slider. They are
+    // display-only structures: they share the full data-tree interaction set
+    // (visibility, opacity, color, context menu, 3D) but never participate in
+    // dose calculation or planning.
+    const masks = Object.entries(state.maskLabels || {});
+    if (masks.length > 0) {
+        const maskVis = masks.some(([, m]) => m.visible !== false);
+        const maskOp = masks[0]?.[1]?.opacity ?? 0.6;
+        html += `<div class="tree-group" data-group="masks">
+            <div class="tree-group-header" onclick="toggleTreeGroup(this)" oncontextmenu="event.preventDefault();handleTreeItemRightClick('masks', event)">
+                <span class="arrow">&#9660;</span>
+                <button class="eye-btn ${maskVis ? '' : 'hidden'}" onclick="event.stopPropagation();setGroupVisibility('masks', ${!maskVis})" title="Toggle all masks">${maskVis ? '&#128065;' : '&#128064;'}</button>
+                <span>Masks (${masks.length})</span>
+                <span style="margin-left:auto;display:flex;align-items:center;gap:4px;">
+                    <input type="range" class="opacity-slider" min="0" max="100" value="${Math.round(maskOp * 100)}" onclick="event.stopPropagation()" oninput="setGroupOpacity('masks', this.value)" title="Opacity for all masks">
+                </span>
+            </div>
+            <div class="tree-group-items">`;
+        masks.forEach(([id, mask]) => {
+            const state_ = ensureDataTreeNodeMetadata({
+                id,
+                objectId: id,
+                label: mask.name || id,
+                type: 'mask',
+                source: 'mask',
+                parentId: 'masks',
+                loaded: true,
+                visible: mask.visible !== false,
+                visible2D: mask.visible2D !== false,
+                visible3D: mask.visible3D !== false,
+                opacity: typeof mask.opacity === 'number' ? mask.opacity : 0.6,
+                color: mask.color || '#8b5cf6',
+            }, 'mask', 'masks');
+            html += renderTreeItem(id, state_, `${mask.voxels ? mask.voxels.size : 0} vox`);
+        });
         html += `</div></div>`;
     }
 
@@ -2924,11 +3022,11 @@ function renderTreeItem(id, itemState, info) {
     const eyeClass = itemState.visible ? '' : 'hidden';
     const loadedClass = itemState.loaded ? '' : 'style="opacity:0.4;"';
     const disabledAttr = itemState.loaded ? '' : 'disabled';
-    // Indent for sub-items: organs, CTV labels, planning items
-    const isSubItem = id.startsWith('organ_') || id.startsWith('ctv_') || id.startsWith('seed_') || id.startsWith('needle_') || id.startsWith('dose_iso_');
+    // Indent for sub-items: organs, CTV labels, planning items, masks
+    const isSubItem = id.startsWith('organ_') || id.startsWith('ctv_') || id.startsWith('seed_') || id.startsWith('needle_') || id.startsWith('dose_iso_') || id.startsWith('mask_');
     const indent = isSubItem ? 'style="padding-left:1.6rem;"' : '';
-    // 3D button for organs, CTV, CTV sub-labels, and planning items
-    const canRecon3d = id === 'ctv' || id.startsWith('organ_') || id.startsWith('ctv_') || id.startsWith('seed_') || id.startsWith('needle_');
+    // 3D button for organs, CTV, CTV sub-labels, planning items, and masks
+    const canRecon3d = id === 'ctv' || id.startsWith('organ_') || id.startsWith('ctv_') || id.startsWith('seed_') || id.startsWith('needle_') || id.startsWith('mask_');
     const recon3dBtn = canRecon3d ? `<button class="recon3d-btn" title="3D Reconstruct" onclick="event.stopPropagation();reconstructOrgan3D('${id}')">&#9638;</button>` : '';
 
     const dataAttr = (id === 'ctv' || id.startsWith('organ_') || id.startsWith('ctv_')) ? `data-organ-id="${id}"` : '';
@@ -2988,6 +3086,8 @@ function openColorPicker(id, swatchEl) {
     } else if (id.startsWith('dose_iso_')) {
         const threshold = parseFloat(id.replace('dose_iso_', ''));
         itemState = dataTreeState.planning.doseLevels.find(d => d.threshold === threshold);
+    } else if (id.startsWith('mask_')) {
+        itemState = state.maskLabels?.[id];
     } else {
         const organ = dataTreeState.organs.find(o => o.id === id);
         if (organ) itemState = organ;
@@ -3222,6 +3322,7 @@ function handleTreeItemRightClick(id, event) {
         'ctv', 'oar', 'non_traversable', 'traversable',
         'planning', 'planning_trajectories', 'planning_seeds',
         'planning_needles', 'dose_isosurfaces', 'planning_meshes',
+        'masks',
     ]);
     if (groupIds.has(id)) {
         selectedItems.clear();
@@ -3274,6 +3375,9 @@ function showGroupContextMenu(x, y, category) {
     } else if (category === 'artifacts') {
         catInfo = { label: _dtText('工件与标注', 'Artifacts & Annotations'), icon: 'A' };
         count = _dataTreeGroupObjectIds('artifacts').length;
+    } else if (category === 'masks') {
+        catInfo = { label: _dtText('手动/阈值掩膜', 'Masks'), icon: '🎨' };
+        count = Object.keys(state.maskLabels || {}).length;
     } else {
         catInfo = ORGAN_CATEGORIES[category] || { label: category, icon: '📁' };
         count = dataTreeState.organs.filter(o => o.category === category).length;
@@ -3386,12 +3490,13 @@ function showGroupContextMenu(x, y, category) {
     activeContextMenu = menu;
 }
 
-function soloGroup(category) {
+ function soloGroup(category) {
     dataTreeState.organs.forEach(o => { o.visible = (o.category === category); });
     dataTreeState.ctv.visible = (category === 'ctv');
     _planningItems('seeds').forEach(s => { s.visible = (category === 'planning_seeds'); });
     _planningItems('needles').forEach(n => { n.visible = (category === 'planning_needles'); });
     _planningItems('doseLevels').forEach(d => { d.visible = (category === 'dose_isosurfaces'); });
+    Object.entries(state.maskLabels || {}).forEach(([id, m]) => { m.visible = (category === 'masks'); });
     // Update 3D meshes
     Object.entries(scene3D.meshes).forEach(([id, mesh]) => {
         if (id.startsWith('seed_')) {
@@ -3406,6 +3511,10 @@ function soloGroup(category) {
             const threshold = parseFloat(id.replace('dose_iso_', ''));
             const d = dataTreeState.planning.doseLevels.find(d => d.threshold === threshold);
             applyMeshVisibility(mesh, d?.visible ?? false, d?.opacity ?? 0.3);
+        }
+        else if (id.startsWith('mask_')) {
+            const m = state.maskLabels?.[id];
+            applyMeshVisibility(mesh, m?.visible !== false && category === 'masks', m?.opacity ?? 0.6);
         }
     });
     applyDataTreeViewVisibility();
@@ -4046,8 +4155,34 @@ function showContextMenu(x, y) {
         items += `<div class="ctx-menu-sep"></div>`;
     }
 
+    // Manual/threshold masks: rename, move to a structure, or delete.
+    // Masks are display-only (no dose/planning participation), so they offer
+    // the same presentation controls as OAR/CTV plus rename.
+    const isMaskSelection = selIds.every(id => id.startsWith('mask_'));
+    if (isMaskSelection) {
+        if (isSingle) {
+            items += `<div class="ctx-menu-item" onclick="hideContextMenu();renameDataTreeMask('${firstId}')">
+                <span class="ctx-icon">&#9998;</span> ${_dtText('重命名', 'Rename')}</div>`;
+            items += `<div class="ctx-menu-item" onclick="hideContextMenu();reconstructOrgan3D('${firstId}')">
+                <span class="ctx-icon">&#9638;</span> ${_dtText('3D 重建', '3D Reconstruct')}</div>`;
+        } else {
+            items += `<div class="ctx-menu-item" onclick="hideContextMenu();batchReconstruct3D()">
+                <span class="ctx-icon">&#9638;</span> ${_dtText('3D 重建全部', '3D Reconstruct All')}</div>`;
+        }
+        items += `<div class="ctx-menu-sep"></div>`;
+        items += `<div class="ctx-menu-item" onclick="hideContextMenu();_runDataTreeAction(moveSelectedMasks('ctv'))">
+            <span class="ctx-icon">&#8644;</span> ${_dtText('移动到 CTV', 'Move to CTV')}</div>`;
+        items += `<div class="ctx-menu-item" onclick="hideContextMenu();_runDataTreeAction(moveSelectedMasks('oar'))">
+            <span class="ctx-icon">&#8644;</span> ${_dtText('移动到 OAR', 'Move to OAR')}</div>`;
+        items += `<div class="ctx-menu-sep"></div>`;
+        if (isSingle) {
+            items += `<div class="ctx-menu-item ctx-menu-danger" onclick="hideContextMenu();deleteDataTreeMask('${firstId}')">
+                <span class="ctx-icon">&#128465;</span> ${_dtText('删除掩膜', 'Delete mask')}</div>`;
+        }
+    }
+
     // Change Color (for single item: organs, CTV labels, or planning items)
-    if (isSingle && (firstId.startsWith('organ_') || firstId.startsWith('ctv_') || isPlanningItem)) {
+    if (isSingle && (firstId.startsWith('organ_') || firstId.startsWith('ctv_') || isPlanningItem || firstId.startsWith('mask_'))) {
         items += `<div class="ctx-menu-item" onclick="hideContextMenu();openColorPicker('${firstId}')">
             <span class="ctx-icon">&#127912;</span> Change Color</div>`;
         items += `<div class="ctx-menu-sep"></div>`;
@@ -4236,6 +4371,11 @@ function _allDataTreeVisualNodes() {
         dataTreeState.oar,
         ...(Object.values(dataTreeState.ctvLabels || {})),
         ...(dataTreeState.organs || []),
+        ...(Object.entries(state.maskLabels || {})).map(([maskId, mask]) => {
+            if (typeof mask !== 'object' || mask === null) return null;
+            if (!mask.id) mask.id = maskId;
+            return mask;
+        }).filter(Boolean),
         ..._planningItems('trajectories'),
         ..._planningItems('seeds'),
         ..._planningItems('needles'),
@@ -4550,6 +4690,13 @@ function setGroupVisibility(category, visible) {
             const mesh = scene3D.meshes[o.id];
             if (mesh) applyMeshVisibility(mesh, visible, o.opacity ?? 0.5);
         });
+    } else if (category === 'masks') {
+        Object.entries(state.maskLabels || {}).forEach(([id, mask]) => {
+            mask.visible = !!visible;
+            const mesh = scene3D.meshes[id];
+            if (mesh) applyMeshVisibility(mesh, !!visible, mask.opacity ?? 0.6);
+        });
+        reloadOverlays();
     } else if (category === 'planning_seeds') {
         _planningItems('seeds').forEach(seed => {
             seed.visible = visible;
@@ -4643,6 +4790,12 @@ function setGroupOpacity(category, value) {
             // Update 3D mesh
             applyMeshOpacity(scene3D.meshes[o.id], opacity, o.visible !== false);
         });
+    } else if (category === 'masks') {
+        Object.entries(state.maskLabels || {}).forEach(([id, mask]) => {
+            mask.opacity = opacity;
+            applyMeshOpacity(scene3D.meshes[id], opacity, mask.visible !== false);
+        });
+        reloadOverlays();
     } else if (category === 'planning_seeds') {
         _planningItems('seeds').forEach(seed => {
             seed.opacity = opacity;
@@ -4883,6 +5036,20 @@ function toggleDataVisibility(id) {
         return;
     }
 
+    // Handle manual/threshold mask toggles
+    if (id.startsWith('mask_')) {
+        const mask = state.maskLabels?.[id];
+        if (mask) {
+            mask.visible = !(mask.visible !== false);
+            const mesh = scene3D.meshes[id];
+            if (mesh) applyMeshVisibility(mesh, mask.visible !== false, mask.opacity ?? 0.6);
+            renderDataTree();
+            reloadOverlays();
+            _scheduleDataTreeSave(`viewer.visibility:${id}`);
+        }
+        return;
+    }
+
     // Handle individual 3D mesh toggles (CTV/OAR/dose/etc. added via
     // addMeshToScene). The id is the same one used in scene3D.meshes.
     const meshEntry = (dataTreeState.planning.meshes || []).find(m => m.id === id);
@@ -5082,6 +5249,19 @@ function setDataOpacity(id, value) {
         return;
     }
 
+    // Handle manual/threshold mask opacity
+    if (id.startsWith('mask_')) {
+        const mask = state.maskLabels?.[id];
+        if (mask) {
+            mask.opacity = opacity;
+            applyMeshOpacity(scene3D.meshes[id], opacity, mask.visible !== false);
+            reloadOverlays();
+            requestViewerVisualRefresh('mask-opacity');
+            _scheduleDataTreeSave(`viewer.opacity:${id}`);
+        }
+        return;
+    }
+
     const meshEntry = (dataTreeState.planning.meshes || []).find(m => m.id === id);
     if (meshEntry) {
         meshEntry.opacity = opacity;
@@ -5122,3 +5302,96 @@ function refreshDataTree() {
 setTimeout(() => renderDataTree(), 500);
 
 /******** DATA TREE RESIZE ********/
+
+/******** MANUAL / THRESHOLD MASKS ********/
+
+// Rename a manual/threshold mask. When invoked from the UI (right-click) a
+// prompt is shown; the ui_controller path passes the new name directly.
+function renameDataTreeMask(id, providedName) {
+    const mask = state.maskLabels?.[id];
+    if (!mask) return;
+    const current = mask.name || id;
+    let next = typeof providedName === 'string' ? providedName : null;
+    if (next === null) {
+        next = window.prompt(_dtText('输入新的掩膜名称', 'Enter a new mask name'), current);
+    }
+    if (next === null) return;
+    const trimmed = String(next).trim();
+    if (!trimmed) return;
+    mask.name = trimmed;
+    renderDataTree();
+    _scheduleDataTreeSave('mask.rename');
+    addChat('system', _dtText(`掩膜已重命名为 "${trimmed}"`, `Mask renamed to "${trimmed}"`));
+}
+
+// Delete a mask and its 3D mesh.
+function deleteDataTreeMask(id) {
+    if (!state.maskLabels?.[id]) return false;
+    delete state.maskLabels[id];
+    if (state.activeMaskId === id) state.activeMaskId = null;
+    if (scene3D?.meshes?.[id]) {
+        scene3D.scene.remove(scene3D.meshes[id]);
+        scene3D.meshes[id].geometry?.dispose?.();
+        scene3D.meshes[id].material?.dispose?.();
+        delete scene3D.meshes[id];
+    }
+    renderDataTree();
+    reloadOverlays();
+    _scheduleDataTreeSave('mask.delete');
+    return true;
+}
+
+// Move selected masks to the CTV or OAR display group. Masks are display-only
+// structures (they never feed dose/planning); moving reclassifies their
+// presentation so they render under the target structure's color/visibility.
+async function moveSelectedMasks(classification, objectIds = null) {
+    const ids = objectIds
+        || Array.from(selectedItems).filter(id => String(id).startsWith('mask_'));
+    if (!ids.length) return false;
+    for (const id of ids) {
+        const mask = state.maskLabels?.[id];
+        if (!mask) continue;
+        mask.movedTo = classification === 'ctv' ? 'ctv' : 'oar';
+        // Inherit the target structure's default color so the move is obvious.
+        mask.color = classification === 'ctv'
+            ? (dataTreeState.ctv.color || '#ef4444')
+            : (dataTreeState.oar.color || '#22c55e');
+    }
+    renderDataTree();
+    reloadOverlays();
+    _scheduleDataTreeSave('mask.move');
+    addChat('system', _dtText(
+        `已移动 ${ids.length} 个掩膜到 ${classification.toUpperCase()}（仅显示，不参与剂量计算）。`,
+        `Moved ${ids.length} mask(s) to ${classification.toUpperCase()} (display-only, not used for dose).`,
+    ));
+    selectedItems.clear();
+    return true;
+}
+
+// Parse a "x,y,z" voxel key.
+function _maskKeyParts(key) {
+    const parts = String(key).split(',');
+    if (parts.length !== 3) return null;
+    const x = Number(parts[0]);
+    const y = Number(parts[1]);
+    const z = Number(parts[2]);
+    if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) return null;
+    return { x, y, z };
+}
+
+// Whether a mask is currently displayed (respects its movedTo target and the
+// target group's visibility).
+function _maskVisibleInTarget(mask) {
+    if (!mask || mask.visible === false || mask.visible2D === false) return false;
+    const target = mask.movedTo;
+    if (target === 'ctv') {
+        const g = dataTreeState.ctv;
+        return g.visible !== false && (state.viewerSettings.showCTV !== false);
+    }
+    if (target === 'oar') {
+        const g = dataTreeState.oar;
+        return g.visible !== false && (state.viewerSettings.showOAR !== false);
+    }
+    return true;
+}
+

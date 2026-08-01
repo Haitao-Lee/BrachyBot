@@ -83,6 +83,35 @@ CONTROL_REGISTRY = {
         "values": ["crosshair", "measure", "angle", "rect", "zoombox", "annotate", "eraser"],
         "description": "Activate a 2D viewer interaction tool"
     },
+    "mask.create": {
+        "commands": ["run"],
+        "description": "Start a new manual mask and enter the Draw tool. Paint on the 2D slices; the mask appears under Segmentation > Masks in the Data Tree."
+    },
+    "mask.finalize": {
+        "commands": ["run"],
+        "description": "Finalise the currently active manual mask (same as clicking the Draw tool again)."
+    },
+    "mask.threshold": {
+        "commands": ["set"],
+        "value_type": "int",
+        "range": [-1000, 1000],
+        "description": "Create/replace a threshold mask in the Data Tree from HU > value (display-only, never used for dose)."
+    },
+    "mask.rename": {
+        "commands": ["set"],
+        "value_type": "string",
+        "description": "Rename a mask by id (e.g. mask_1). Value is JSON {\"id\":\"mask_1\",\"name\":\"My Mask\"}."
+    },
+    "mask.move": {
+        "commands": ["set"],
+        "values": ["ctv", "oar"],
+        "description": "Reclassify a mask as display CTV or OAR (presentation only). Value is JSON {\"id\":\"mask_1\"}."
+    },
+    "mask.delete": {
+        "commands": ["run"],
+        "value_type": "string",
+        "description": "Delete a mask by id (value: mask_1)."
+    },
     "viewer.colorbar": {
         "commands": ["set", "reset"],
         "value_type": "string",

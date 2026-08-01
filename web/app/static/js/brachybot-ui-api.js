@@ -284,8 +284,11 @@ const state = {
     annotationUndoStack: [],
     annotationRedoStack: [],
     // Manual mask drawing state
-    maskLabels: {}, // { 'mask_1': { name: 'Manual Mask 1', color: '#ff0000', slices: { axial: Set, sagittal: Set, coronal: Set }, visible: true, opacity: 0.6 } }
+    maskLabels: {}, // { 'mask_1': { name: 'Manual Mask 1', color: '#ff0000', voxels: Set<'x,y,z'>, visible: true, opacity: 0.6, movedTo: 'ctv'|'oar'|undefined } }
     maskLabelCounter: 0,
+    // The mask being painted by the Draw tool; null when no mask is in
+    // progress. Clicking Draw again (or another tool) finalises it.
+    activeMaskId: null,
     labelImage: {
         axial:   { visible: true, opacity: 0.6 },
         sagittal: { visible: true, opacity: 0.6 },
@@ -1502,6 +1505,12 @@ function resetAllState(options = {}) {
         _dataTreeArtifactCatalogPromise = null;
     }
     state.annotations = [];
+
+    // Manual/threshold masks are case data; clear them so a previous case's
+    // masks cannot leak into a newly selected session.
+    state.maskLabels = {};
+    state.maskLabelCounter = 0;
+    state.activeMaskId = null;
 
     // Prevent cross-session seed/needle contamination in 2D viewer
     state.seedsOverlay = null;
@@ -3714,6 +3723,45 @@ async function _executeUIActionRaw(a, options = {}) {
         }
         if (target === 'viewer.tool') {
             setViewerTool(value);
+            return;
+        }
+        // ── Manual / threshold masks ──
+        if (target === 'mask.create') {
+            if (typeof setViewerTool === 'function') setViewerTool('annotate');
+            return;
+        }
+        if (target === 'mask.finalize') {
+            if (typeof setViewerTool === 'function' && state.activeMaskId) setViewerTool('annotate');
+            return;
+        }
+        if (target === 'mask.threshold') {
+            const el = document.getElementById('viewerThreshold');
+            if (el) { el.value = String(value); }
+            if (typeof applyThreshold === 'function') applyThreshold();
+            return;
+        }
+        if (target === 'mask.rename') {
+            const cfg = _parseUIControlPayload(value);
+            if (cfg && cfg.id && typeof renameDataTreeMask === 'function') {
+                renameDataTreeMask(cfg.id, cfg.name);
+            }
+            return;
+        }
+        if (target === 'mask.move') {
+            const cfg = _parseUIControlPayload(value);
+            const cls = String(command === 'set' ? cfg?.to || value : value);
+            const id = cfg?.id || null;
+            if (typeof moveSelectedMasks === 'function' && (id || (state.activeMaskId && cls))) {
+                moveSelectedMasks(cls === 'oar' ? 'oar' : 'ctv', id ? [id] : null);
+            }
+            return;
+        }
+        if (target === 'mask.delete') {
+            const cfg = _parseUIControlPayload(value);
+            const id = cfg?.id || value || null;
+            if (id && typeof deleteDataTreeMask === 'function') {
+                deleteDataTreeMask(String(id));
+            }
             return;
         }
         if (target === 'viewer.colorbar' || target === 'viewer.dose_scale') {
