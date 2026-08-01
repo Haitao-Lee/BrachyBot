@@ -2026,6 +2026,10 @@ function reconcileDataTreeVisualNodes() {
             // The dose grid has no standalone 3D mesh; dose iso-surfaces are
             // the 3D representation and keep their own node state.
             visible3D: false,
+            // Per-view colorbar visibility (toggled from the right-click menu).
+            // Preserved on the dose node so a refresh does not reset them.
+            colorbarVisible2D: dataTreeState.planning.doseOverlay?.colorbarVisible2D !== false,
+            colorbarVisible3D: dataTreeState.planning.doseOverlay?.colorbarVisible3D !== false,
             opacity: Number(overlay.opacity ?? state.doseOpacity ?? 0.4),
             color: '#f59e0b', loaded: true,
         }, 'dose_contour_2d', 'planning')
@@ -4285,6 +4289,22 @@ function showContextMenu(x, y) {
         <span class="ctx-icon">3D</span> Show in 3D</div>`;
     items += `<div class="ctx-menu-item" onclick="hideContextMenu();batchSetViewVisibility('3d',false)">
         <span class="ctx-icon">3D</span> Hide in 3D</div>`;
+
+    // Colorbar visibility for the dose overlay node (2D and 3D).
+    if (isSingle && firstId === 'dose_overlay') {
+        const doseNode = dataTreeState?.planning?.doseOverlay;
+        const cb2d = doseNode?.colorbarVisible2D !== false;
+        const cb3d = doseNode?.colorbarVisible3D !== false;
+        items += `<div class="ctx-menu-sep"></div>`;
+        items += `<div class="ctx-menu-item" onclick="hideContextMenu();setDoseColorbarViewVisibility('2d',true)">
+            <span class="ctx-icon">${cb2d ? '&#9745;' : '&#9744;'}</span> ${_dtText('显示 2D Color Bar', 'Show 2D Color Bar')}</div>`;
+        items += `<div class="ctx-menu-item" onclick="hideContextMenu();setDoseColorbarViewVisibility('2d',false)">
+            <span class="ctx-icon">${cb2d ? '&#9744;' : '&#9745;'}</span> ${_dtText('隐藏 2D Color Bar', 'Hide 2D Color Bar')}</div>`;
+        items += `<div class="ctx-menu-item" onclick="hideContextMenu();setDoseColorbarViewVisibility('3d',true)">
+            <span class="ctx-icon">${cb3d ? '&#9745;' : '&#9744;'}</span> ${_dtText('显示 3D Color Bar', 'Show 3D Color Bar')}</div>`;
+        items += `<div class="ctx-menu-item" onclick="hideContextMenu();setDoseColorbarViewVisibility('3d',false)">
+            <span class="ctx-icon">${cb3d ? '&#9744;' : '&#9745;'}</span> ${_dtText('隐藏 3D Color Bar', 'Hide 3D Color Bar')}</div>`;
+    }
 
     // Solo
     items += `<div class="ctx-menu-item" onclick="hideContextMenu();batchSolo()">

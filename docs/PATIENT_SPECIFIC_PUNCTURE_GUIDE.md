@@ -28,6 +28,14 @@ C++/VTK/CGAL workflow:
 4. Subtract finite, coaxial inner guide bores.
 5. Extract and validate a closed triangle mesh before STL export.
 
+The native implementation smooths the thresholded body envelope (anisotropic
+Gaussian matched to the CT spacing) before constructing the plate, so the guide
+follows a smooth skin surface rather than the raw CT slice steps. Each channel
+is a true flat-ended cylinder that protrudes OUTWARD from the patient; its bore
+is a full through-hole and its inner end sits flush with the plate's skin-facing
+face. It never extends into the body, so the guide can be positioned tightly
+against the skin.
+
 Rather than relying on `vtkBooleanOperationPolyDataFilter` for near-coplanar
 surfaces, the native implementation performs the solid operations on an exact
 isotropic physical lattice in the bounded guide region and extracts one final
