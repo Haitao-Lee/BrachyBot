@@ -2,6 +2,58 @@
 
 _This file consolidates all code review reports. Sections are organized by date._
 
+## 2026-08-02 - Data-tree node rename, empty-state text, and rename persistence
+
+### 1. Rename any data-tree node from the right-click menu
+
+`renameDataTreeNode(id)` now supports renaming every leaf node type — CTV
+label, OAR organ, seed, needle, trajectory, dose iso-surface, planning mesh,
+annotation, and (existing) masks — plus the CTV / OAR group headers. The tree
+renderers prefer a user-assigned label over generated `Trajectory N` /
+`Seed N` / `Needle N` / `N Gy` names.
+
+### 2. Rename compatibility across render / reload / restore
+
+A follow-up audit found several places where a rename was lost or invisible:
+
+- `ctv_*` labels were clobbered back to defaults on every `renderDataTree`
+  (both the tumor and auxiliary CTV branches). They now preserve a custom
+  label.
+- `dose_iso_*` and `dose_overlay` showed hard-coded labels; they now render the
+  renamed label.
+- Single-label CTV and the CTV / OAR group headers now use the renamed label.
+- `copyDisplayProperties` (workspace.js) previously never copied names; it now
+  restores a user-renamed label (any label that does not match a generated
+  default pattern) across refresh / session-switch, including planning
+  trajectories / seeds / needles / doseLevels matched by stable ID.
+- The undefined `updateTreeLabelInScene` call was replaced with
+  `syncSceneAppearanceFromDataTree`.
+
+### 3. Clearer empty-state text for ungenerated CTV / OAR
+
+When segmentation has not run, the OAR group showed a terse "Not generated"
+node and CTV the same. Empty-state placeholders now use clear bilingual text
+("尚未生成 OAR 分割 / Run OAR segmentation to list organs here") and status
+badges are localized (`not_generated` → 未生成, `stale`/`expired` → 已过期,
+`loading` → 进行中, `error` → 错误).
+
+### Files changed
+
+| File | Change |
+|------|--------|
+| `web/app/static/js/brachybot-viewer-volume.js` | `renameDataTreeNode`, label-preserving renderers, empty-state text, `_dtStatusText` |
+| `web/app/static/js/brachybot-3d-manual.js` | Seed/needle loaders preserve custom labels |
+| `web/app/static/js/brachybot-workspace.js` | `copyDisplayProperties` restores user-renamed labels; planning-row label restore |
+| `web/app/index.html` | Cache-busting version bumps |
+
+### Verification
+
+- `pytest` main suites: 109 passed.
+- Playwright: organ/seed/needle/trajectory/dose_iso renames apply; organ
+  context menu shows Rename; empty-state and badge text localize.
+
+---
+
 ## 2026-08-02 - Finite-FOV CT: stop treating scan-boundary truncation as skin
 
 Operator reported that on a CT covering only a local body region (short
