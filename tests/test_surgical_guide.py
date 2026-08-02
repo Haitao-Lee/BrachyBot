@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import numpy as np
+import pytest
 import SimpleITK as sitk
 
 from tool_factory.surgical_guide import SurgicalGuideTool
@@ -400,6 +401,112 @@ def test_guide_mesh_status_stays_ready_in_the_data_tree():
         "ensureDataTreeNodeMetadata must treat explicit 'ready' as authoritative"
     )
     assert "not_generated" in tree_script
+
+
+def _truncated_cylinder_agent(z_count=24, yx=32, radius=12):
+    """A CT whose body is a cylinder touching the z scan boundaries (finite FOV).
+
+    The cylinder spans the full z range, so the first and last slices are FLAT
+    truncation planes, not real skin — exactly the finite-field-of-view case.
+    """
+    ct = np.full((z_count, yx, yx), -1000, dtype=np.int16)
+    center = yx / 2
+    for z in range(z_count):
+        for y in range(yx):
+            for x in range(yx):
+                if (x - center) ** 2 + (y - center) ** 2 <= radius ** 2:
+                    ct[z, y, x] = 40
+    image = sitk.GetImageFromArray(ct)
+    image.SetSpacing((1.0, 1.0, 1.0))
+    return _Agent({
+        "ct_image": image,
+        "ct_data": ct,
+        "algorithm_plan_snapshot": {
+            "needles": [{
+                "id": "needle_0",
+                "trajectory_id": "traj_1",
+                "points": [[16.0, 16.0, 12.0], [16.0, 16.0, -20.0]],  # enters from +z top
+            }],
+            "seeds": [{
+                "id": "seed_0",
+                "trajectory_id": "traj_1",
+                "position": [16.0, 16.0, 10.0],
+            }],
+        },
+    })
+
+
+def test_truncated_fov_body_is_detected_as_flat_cap():
+    from web.surgical_guide import (
+        _body_mask,
+        _smooth_body_mask,
+        _truncated_boundary_slices,
+    )
+
+    agent = _truncated_cylinder_agent()
+    image = agent.memory.retrieve("ct_image")
+    ct = agent.memory.retrieve("ct_data")
+    body = _body_mask(ct, -300)
+    body = _smooth_body_mask(body, (1.0, 1.0, 1.0), 2.0)
+    trunc_z_min, trunc_z_max = _truncated_boundary_slices(body)
+    assert trunc_z_min is True, "body touches z-min slice: inferior scan boundary is truncated"
+    assert trunc_z_max is True, "body touches z-max slice: superior scan boundary is truncated"
+
+
+def test_guide_entry_on_truncation_plane_is_rejected_and_lateral_skin_used():
+    from web.surgical_guide import (
+        SurgicalGuideError,
+        _body_mask,
+        _sample_skin_entry,
+        _smooth_body_mask,
+        _truncated_boundary_slices,
+    )
+
+    agent = _truncated_cylinder_agent()
+    image = agent.memory.retrieve("ct_image")
+    ct = agent.memory.retrieve("ct_data")
+    body = _body_mask(ct, -300)
+    body = _smooth_body_mask(body, (1.0, 1.0, 1.0), 2.0)
+    trunc_z_min, trunc_z_max = _truncated_boundary_slices(body)
+
+    # Needle entering from above (through the +z truncation plane) must NOT pick
+    # the flat cap as its entry.
+    target = np.asarray([16.0, 16.0, 12.0])
+    external_top = np.asarray([16.0, 16.0, -20.0])
+    with pytest.raises(SurgicalGuideError):
+        _sample_skin_entry(
+            image, body, target, external_top,
+            truncated_z_min=trunc_z_min, truncated_z_max=trunc_z_max,
+        )
+
+    # A lateral needle enters through real cylindrical skin.
+    external_lateral = np.asarray([-20.0, 16.0, 12.0])
+    entry, _ = _sample_skin_entry(
+        image, body, target, external_lateral,
+        truncated_z_min=trunc_z_min, truncated_z_max=trunc_z_max,
+    )
+    assert abs(entry[2] - 12.0) < 3.0, "lateral entry should sit mid-scan (real skin)"
+
+
+def test_guide_with_only_truncated_entries_refuses_to_generate():
+    """A guide whose only entry would be on a truncation plane must fail."""
+    from web.surgical_guide import SurgicalGuideError, generate_surgical_guide
+
+    agent = _truncated_cylinder_agent()
+    # Force the needle to enter from the +z top only (no lateral alternative).
+    agent.memory.store("algorithm_plan_snapshot", {
+        "needles": [{
+            "id": "needle_0", "trajectory_id": "traj_1",
+            "points": [[16.0, 16.0, 12.0], [16.0, 16.0, -20.0]],
+        }],
+        "seeds": [{
+            "id": "seed_0", "trajectory_id": "traj_1", "position": [16.0, 16.0, 10.0],
+        }],
+    })
+    with pytest.raises(SurgicalGuideError) as exc_info:
+        generate_surgical_guide(agent, {"geometry_resolution_mm": 1.0})
+    assert "truncation" in str(exc_info.value).lower() or "scan" in str(exc_info.value).lower()
+
 
 
 

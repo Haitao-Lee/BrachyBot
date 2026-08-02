@@ -138,6 +138,78 @@ class NeedleObstacleSafetyTests(unittest.TestCase):
         self.assertTrue(np.allclose(points[0], [20.0, 8.0, 6.0]))
         self.assertTrue(np.allclose(points[1], [-140.0, 8.0, 6.0]))
 
+    def test_candidate_entering_through_truncated_z_boundary_is_rejected(self):
+        from tool_factory.seed_plan.planning_pipeline import (
+            _body_mask_from_ct,
+            _needle_enters_through_truncated_boundary,
+        )
+
+        # Truncated CT: a cylinder body touching both z boundaries (finite FOV).
+        z_count, yx, radius = 24, 32, 12
+        ct = np.full((z_count, yx, yx), -1000, dtype=np.int16)
+        for z in range(z_count):
+            for y in range(yx):
+                for x in range(yx):
+                    if (x - yx / 2) ** 2 + (y - yx / 2) ** 2 <= radius ** 2:
+                        ct[z, y, x] = 40
+        image = sitk.GetImageFromArray(ct)
+        image.SetSpacing((1.0, 1.0, 1.0))
+        image.SetOrigin((0.0, 0.0, 0.0))
+        body = _body_mask_from_ct(image, threshold=-300)
+
+        # Needle entering from +z (through the truncation plane) must be flagged.
+        top_needle = [np.array([16.0, 16.0, 12.0]), np.array([16.0, 16.0, -20.0])]
+        self.assertTrue(
+            _needle_enters_through_truncated_boundary(top_needle, image, body_mask=body),
+            "a needle entering through the truncated +z boundary must be rejected",
+        )
+        # A lateral needle is not truncated.
+        lateral_needle = [np.array([16.0, 16.0, 12.0]), np.array([-20.0, 16.0, 12.0])]
+        self.assertFalse(
+            _needle_enters_through_truncated_boundary(lateral_needle, image, body_mask=body),
+            "a lateral needle should not be flagged as truncation",
+        )
+
+    def test_filter_world_safe_trajectories_rejects_truncated_entries(self):
+        from tool_factory.seed_plan.planning_pipeline import _filter_world_safe_trajectories
+
+        z_count, yx, radius = 24, 32, 12
+        ct = np.full((z_count, yx, yx), -1000, dtype=np.int16)
+        for z in range(z_count):
+            for y in range(yx):
+                for x in range(yx):
+                    if (x - yx / 2) ** 2 + (y - yx / 2) ** 2 <= radius ** 2:
+                        ct[z, y, x] = 40
+        image = sitk.GetImageFromArray(ct)
+        image.SetSpacing((1.0, 1.0, 1.0))
+        image.SetOrigin((0.0, 0.0, 0.0))
+        ctv = np.zeros((z_count, yx, yx), dtype=np.uint8)
+        oar = np.zeros((z_count, yx, yx), dtype=np.uint8)
+
+        # Trajectory along [-1,0,0] in planning voxel space maps to a world +z
+        # exit (enters through the +z truncation plane).
+        truncated_traj = [
+            np.array([16.0, 16.0, 12.0]),
+            np.array([-1.0, 0.0, 0.0]),
+            [3.0],
+            [],
+        ]
+        # Trajectory along [0,0,1] maps to a lateral (-x) world exit, through
+        # real cylindrical skin.
+        lateral_traj = [
+            np.array([16.0, 16.0, 12.0]),
+            np.array([0.0, 0.0, 1.0]),
+            [3.0],
+            [],
+        ]
+        safe = _filter_world_safe_trajectories(
+            [truncated_traj, lateral_traj], image, image, ctv, oar, set(),
+        )
+        # The truncated (world +z exit) candidate must be removed; only the
+        # lateral candidate remains.
+        self.assertEqual(len(safe), 1, f"expected 1 safe trajectory, got {len(safe)}")
+        self.assertIs(safe[0], lateral_traj, "lateral entry must remain")
+
     def test_final_geometry_uses_candidate_trajectory_not_seed_reconstruction(self):
         image, ctv, oar = _image_and_masks()
         # The optimizer trajectory is clear at y=0.  The seed payload is

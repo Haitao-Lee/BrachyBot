@@ -2,6 +2,65 @@
 
 _This file consolidates all code review reports. Sections are organized by date._
 
+## 2026-08-02 - Finite-FOV CT: stop treating scan-boundary truncation as skin
+
+Operator reported that on a CT covering only a local body region (short
+head-to-foot scan range), the system mistook the CT top/bottom truncation
+planes for real skin: planned needles entered through the scan edge and the
+surgical guide was generated on a flat truncation plane.
+
+### Root cause chain
+
+1. `_body_mask` + `_smooth_body_mask` let the CT first/last slices become body
+   foreground (binary_closing erodes the edge, smoothing pulls it back), so the
+   truncation plane is treated as a skin surface.
+2. `_sample_skin_entry` returned the first body voxel entered by the needle;
+   on a truncated CT that is the flat cap (entry index z=0).
+3. Automatic planning built needles from a fixed 150 mm extension with no
+   z-boundary check, and `_world_segment_hits_obstacle` explicitly allowed the
+   external segment outside the CT FOV.
+4. `_mesh_from_voxels` zero-pads and marching-cubes-closes any open boundary,
+   producing a flat cap in the guide mesh.
+5. The only finite-FOV guard (`compute_body_shell_and_ref_direction`) served
+   only ref-direction auto-detect and had a full-fallback failure mode.
+
+### Fixes
+
+- **`_truncated_boundary_slices`** (web/surgical_guide.py): detects when the
+  body envelope is cut off by the CT z boundaries — a boundary slice holding a
+  large, roughly constant cross-section (a flat cap) is a truncation plane, not
+  skin. Returns `(z_min_truncated, z_max_truncated)`.
+- **`_sample_skin_entry`** now skips entries landing on a truncated boundary
+  slice and keeps searching for a real lateral skin entry; if the whole segment
+  stays in the truncated region it raises, so the guide refuses to generate.
+- **Automatic planning** (`planning_pipeline.py`): `_needle_enters_through_truncated_boundary`
+  rejects candidates whose external endpoint reaches the CT z extent (needle
+  would exit through the flat truncation cap). `_filter_world_safe_trajectories`
+  applies this before obstacle filtering, and `_body_mask_from_ct` builds the
+  body envelope once for the check.
+- **Guide metadata** now carries `validation.finite_fov.{truncated_superior,truncated_inferior}`,
+  surfaced as a clear warning toast and stored on the mesh node so the operator
+  knows the guide was built only from available lateral skin.
+
+### Tests
+
+- `test_truncated_fov_body_is_detected_as_flat_cap`
+- `test_guide_entry_on_truncation_plane_is_rejected_and_lateral_skin_used`
+- `test_guide_with_only_truncated_entries_refuses_to_generate`
+- `test_candidate_entering_through_truncated_z_boundary_is_rejected`
+- `test_filter_world_safe_trajectories_rejects_truncated_entries`
+- Existing full-body tests (sphere fully inside CT) still pass, confirming no
+  regression for complete-scan CTs.
+
+### Verification
+
+- `pytest` main suites: 109 passed.
+- Synthetic truncated cylinder: z-min/z-max detected as truncated; top entry
+  rejected, lateral entry kept; guide with only truncated entries refuses.
+- `_needle_enters_through_truncated_boundary`: +z exit flagged, lateral not.
+
+---
+
 ## 2026-08-02 - Free-orbit 3D rotation and instant needle/seed restore
 
 Two operator-reported issues were fixed and verified.

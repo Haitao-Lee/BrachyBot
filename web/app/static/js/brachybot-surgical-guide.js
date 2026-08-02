@@ -294,6 +294,7 @@
             data_version: guide.data_version || guide.version || 1,
             status: guide.status || 'ready',
             visible: previous?.visible !== false,
+            finite_fov: guide.validation?.finite_fov || null,
         });
         applyGuideParameters(guide.parameters || {});
         // The guide mesh is the authoritative geometry. Repaint the MPR
@@ -371,6 +372,18 @@
                 `Puncture guide v${payload.guide.version} generated`,
             );
             if (!options.silent) notify(completed, 'success');
+            // Finite-FOV warning: if the body envelope was truncated by the CT
+            // scan boundaries, surface that clearly so the operator knows the
+            // guide was built only from the available lateral skin and must not
+            // be treated as covering a full body surface.
+            const fov = payload?.guide?.validation?.finite_fov;
+            if (fov && (fov.truncated_superior || fov.truncated_inferior)) {
+                const warn = t(
+                    `注意：当前 CT 扫描范围有限，体表在扫描边界处被截断。导板仅基于可用侧方皮肤生成，请确认入针点均位于真实体表。`,
+                    `Note: the CT scan range is finite and the body surface is truncated at the scan boundary. The guide was built from the available lateral skin only; confirm every entry point sits on real skin.`,
+                );
+                if (!options.silent) notify(warn, 'warning');
+            }
             window.reportUIEvent?.('surgical_guide.completed', completed, {
                 state: 'completed', version: payload.guide.version,
             });

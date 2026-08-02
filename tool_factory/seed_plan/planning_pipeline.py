@@ -1119,6 +1119,102 @@ def _world_segment_hits_obstacle(
         return True
 
 
+def _needle_enters_through_truncated_boundary(points, ct_image, body_mask=None, margin_mm=8.0):
+    """Return True when a needle's external entry crosses a truncated CT z-boundary.
+
+    A finite-FOV CT stops at its first/last slice; the body mask ends flat
+    there instead of closing over real skin. If the needle's external endpoint
+    lies beyond a truncated boundary slice (z=0 or z=Z-1) while the anchor is
+    inside, the needle would enter through that flat truncation plane — an
+    anatomically impossible puncture. Such candidates are rejected so planning
+    never produces a needle that enters via the scan edge.
+    """
+    if ct_image is None or points is None or len(points) != 2:
+        return False
+    try:
+        size_xyz = np.asarray(ct_image.GetSize(), dtype=np.int64)
+        if size_xyz.size != 3 or size_xyz[2] < 3:
+            return False
+        # Convert world points to continuous CT indices (xyz order).
+        indices = []
+        for point in points:
+            idx = np.asarray(
+                ct_image.TransformPhysicalPointToContinuousIndex(
+                    tuple(float(value) for value in np.asarray(point).reshape(-1)[:3])
+                ),
+                dtype=np.float64,
+            )
+            indices.append(idx)
+        anchor_idx = indices[0]
+        external_idx = indices[1]
+        if np.any(np.isnan(anchor_idx)) or np.any(np.isnan(external_idx)):
+            return False
+        # Anchor must be inside the scan; external must be at/outside a boundary.
+        inside_anchor = all(0.0 <= anchor_idx[i] <= float(size_xyz[i] - 1) for i in range(3))
+        if not inside_anchor:
+            return False
+        # Flag when the external endpoint reaches or passes the CT z extent:
+        # the needle would exit through the flat truncation cap. Use a tight
+        # 1-slice tolerance so a lateral needle (external inside the z range)
+        # is never misclassified.
+        margin = max(1.0, 1.0)
+        exit_low = external_idx[2] <= margin
+        exit_high = external_idx[2] >= float(size_xyz[2] - 1) - margin
+        if not (exit_low or exit_high):
+            return False
+        # Only reject when the direction points out of the scan on that side and
+        # the body actually reaches the boundary. binary_closing erodes the very
+        # edge slice, so probe the boundary ZONE (several slices in) instead of
+        # only the exact boundary slice.
+        if body_mask is not None:
+            z_shape = body_mask.shape[0]
+            if z_shape < 3:
+                return True
+            probe = max(3, min(z_shape // 3, 6))
+            if exit_low:
+                low_zone = body_mask[:probe].any(axis=(1, 2))
+                if not bool(low_zone.any()):
+                    return False  # no body near the boundary: not a body truncation
+            if exit_high:
+                high_zone = body_mask[-probe:].any(axis=(1, 2))
+                if not bool(high_zone.any()):
+                    return False
+        return True
+    except Exception:
+        logger.exception("[needle_safety] Truncated-boundary check failed")
+        return False
+
+
+def _is_flat_slice(a, b):
+    """A truncation plane keeps a large, roughly constant cross-section; a
+    natural anatomical closing drops off sharply across the last slices."""
+    if int(a.sum()) < 64 or int(b.sum()) < 64:
+        return False
+    ratio = float(a.sum()) / max(1.0, float(b.sum()))
+    return ratio >= 0.5
+
+
+def _body_mask_from_ct(ct_image, threshold=-300):
+    """Build a z,y,x body mask from the CT array with boundary fill guard."""
+    import numpy as np
+    import SimpleITK as sitk
+    from scipy import ndimage
+
+    ct_array = sitk.GetArrayFromImage(ct_image)
+    if ct_array.ndim != 3:
+        return None
+    candidate = np.asarray(ct_array, dtype=np.float32) > float(threshold)
+    labels, count = ndimage.label(candidate, structure=np.ones((3, 3, 3), dtype=np.uint8))
+    if count <= 0:
+        return None
+    sizes = np.bincount(labels.ravel())
+    sizes[0] = 0
+    body = labels == int(np.argmax(sizes))
+    body = ndimage.binary_closing(body, structure=np.ones((3, 3, 3)), iterations=1)
+    body = ndimage.binary_fill_holes(body)
+    return body
+
+
 def _filter_world_safe_trajectories(
     trajectories,
     planning_image,
@@ -1130,13 +1226,30 @@ def _filter_world_safe_trajectories(
     """Reject candidates whose full 150 mm physical needle intersects hard masks."""
     safe = []
     rejected = 0
+    truncation_rejected = 0
     extension = _needle_extension_mm()
+    # Build the body envelope once to detect truncated CT scan boundaries. A
+    # needle entering through a flat truncation plane (not real skin) is
+    # rejected regardless of obstacle clearance.
+    body_mask = None
+    try:
+        body_mask = _body_mask_from_ct(ct_image)
+    except Exception:
+        logger.warning("[needle_safety] Body mask unavailable; truncation check skipped", exc_info=True)
     for trajectory in trajectories or []:
         points = _candidate_world_needle_points(trajectory, planning_image, extension)
+        if _needle_enters_through_truncated_boundary(points, ct_image, body_mask=body_mask):
+            truncation_rejected += 1
+            continue
         if _world_segment_hits_obstacle(points, ct_image, ctv_mask, oar_mask, obstacle_labels):
             rejected += 1
         else:
             safe.append(trajectory)
+    if truncation_rejected:
+        logger.warning(
+            "[needle_safety] rejected %d/%d candidates entering through a truncated CT scan boundary (flat truncation plane, not real skin)",
+            truncation_rejected, len(trajectories or []),
+        )
     if rejected:
         logger.warning(
             "[needle_safety] rejected %d/%d candidates after full %.1f mm physical needle validation",
