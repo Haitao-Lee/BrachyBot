@@ -935,6 +935,19 @@ function _setCaseTaskState(sessionId, status, taskId = undefined) {
     }
 }
 
+// True when the browser tracked an actually-in-flight task for this case.
+// The status map is restored from the workspace snapshot (chat.task_status),
+// so after a server restart it reflects the last persisted task state rather
+// than assuming every old task was running.
+function _hadInFlightTask(sessionId) {
+    const key = String(sessionId || '');
+    if (window._sessionChatTaskStatuses?.[key] === 'running') return true;
+    // Fall back to the workspace snapshot status when present.
+    const saved = window._activeWorkspaceSnapshot?.chat?.task_status;
+    if (saved === 'running') return true;
+    return false;
+}
+
 function _chatLanguageForSession(sessionId) {
     return (typeof conversationLanguageForSession === 'function'
         ? conversationLanguageForSession(sessionId)
@@ -2611,7 +2624,11 @@ window.resumeSessionChatTask = async function resumeSessionChatTask() {
             delete window._detachedChatTasks[sessionId];
             delete window._sessionChatTaskIds[sessionId];
             _setCaseTaskState(sessionId, 'failed', null);
-            _addTaskRecoveryNotice(sessionId, staleTaskId, 'unavailable');
+            // Only warn the operator when the browser actually tracked an
+            // in-flight task for this case. After a server restart the browser
+            // reloads; a completed or failed history task is not an actionable
+            // loss and must not produce the "no longer running" notice.
+            if (staleTaskId && _hadInFlightTask(sessionId)) _addTaskRecoveryNotice(sessionId, staleTaskId, 'unavailable');
             return false;
         }
         const payload = await response.json();
@@ -2645,7 +2662,10 @@ window.resumeSessionChatTask = async function resumeSessionChatTask() {
                 }
             }
             if (!task || task?.status === 'failed' || task?.status === 'cancelled') {
-                _addTaskRecoveryNotice(sessionId, staleTaskId, 'unavailable');
+                // Only warn when the browser actually had an in-flight task.
+                // A completed/failed history task on a freshly loaded page
+                // (e.g. after a server restart) is not an actionable loss.
+                if (staleTaskId && _hadInFlightTask(sessionId)) _addTaskRecoveryNotice(sessionId, staleTaskId, 'unavailable');
             }
             if (typeof window.flushQueuedChatTurns === 'function') {
                 setTimeout(() => window.flushQueuedChatTurns(), 0);
