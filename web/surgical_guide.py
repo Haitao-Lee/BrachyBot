@@ -47,6 +47,13 @@ DEFAULT_GUIDE_PARAMETERS: Dict[str, float] = {
     # can request an even finer 0.2 mm grid for export-quality STL.
     "geometry_resolution_mm": 0.35,
     "minimum_component_voxels": 24.0,
+    # Minimum distance the guide plate must keep from a truncated (finite-FOV)
+    # CT superior/inferior boundary. The scan-boundary plane is a flat cut, not
+    # anatomical skin, so the plate is shaved back by this margin AND every
+    # plate voxel whose nearest body voxel sits on the boundary slice is
+    # removed. If the remaining valid skin cannot support a needle's sleeve the
+    # guide is rejected with a clear message instead of building on the cut.
+    "truncation_margin_mm": 5.0,
 }
 
 # A bounded history preserves clinically reviewable guide alternatives without
@@ -71,6 +78,7 @@ _PARAMETER_LIMITS = {
     "sleeve_inward_mm": (1.0, 30.0),
     "geometry_resolution_mm": (0.2, 2.0),
     "minimum_component_voxels": (1.0, 10000.0),
+    "truncation_margin_mm": (0.0, 40.0),
 }
 
 
@@ -618,46 +626,78 @@ def _world_grid(
     return world_x, world_y, world_z
 
 
-def _sleeve_bore_in_region(
+def _flat_cylinder_sdf(
+    grid: Tuple[np.ndarray, np.ndarray, np.ndarray],
+    start: np.ndarray,
+    end: np.ndarray,
+    radius: float,
+) -> np.ndarray:
+    """Signed distance field of a TRUE flat-ended cylinder (negative inside).
+
+    A point is inside the solid cylinder iff its unclamped projection onto the
+    axis lies in ``[0, length]`` and its perpendicular distance to the axis is
+    ``<= radius``. The returned field is negative inside the cylinder, zero on
+    its surface and positive outside, so it is an exact, resolution-independent
+    form of the boolean-mask cylinder used for sleeve and bore volumes.
+    """
+    world_x, world_y, world_z = grid
+    start = np.asarray(start, dtype=np.float64)
+    end = np.asarray(end, dtype=np.float64)
+    axis = end - start
+    length = float(np.linalg.norm(axis))
+    if length <= 1e-10:
+        raise SurgicalGuideError("Guide sleeve has zero length")
+    direction = axis / length
+    dx = world_x - start[0]
+    dy = world_y - start[1]
+    dz = world_z - start[2]
+    # Signed axial coordinate (mm) along the axis from ``start``.
+    axial = dx * direction[0] + dy * direction[1] + dz * direction[2]
+    # Perpendicular (radial) distance to the axis line.
+    radial_sq = np.maximum((dx * dx + dy * dy + dz * dz) - axial * axial, 0.0)
+    radial = np.sqrt(radial_sq)
+    # Flat-ended cylinder: negative inside iff radial <= radius AND 0 <= axial
+    # <= length. Using the max of the three unsigned distances is the exact
+    # SDF of a flat-ended (not rounded) cylinder.
+    return np.maximum(np.maximum(radial - float(radius), -axial), axial - length)
+
+
+def _cylinder_sdf_in_region(
     ct_image: Any,
     lower_xyz: np.ndarray,
     shape_zyx: Sequence[int],
     spacing_xyz: Sequence[float],
-    sleeve_start: np.ndarray,
-    sleeve_end: np.ndarray,
-    sleeve_radius: float,
-    bore_radius: float,
-) -> Tuple[np.ndarray, np.ndarray]:
-    """Compute the sleeve (outer cylinder) and bore (inner cylinder) masks.
+    cylinder_start: np.ndarray,
+    cylinder_end: np.ndarray,
+    radius: float,
+) -> Tuple[np.ndarray, Tuple[slice, slice, slice]]:
+    """Evaluate an exact cylinder SDF on a tight local box, not the full grid.
 
-    The per-needle sleeve/bore are evaluated on a tight local bounding box
-    instead of the full 31M-voxel grid. The box spans the sleeve axis plus the
-    outer radius in every direction; only voxels that can possibly belong to
-    the cylinder are tested, which removes the O(needles x volume) cost that
-    previously dominated guide generation (~85% of runtime).
+    Returns the SDF values over a compact bounding box around the cylinder axis
+    plus the box slices, so the caller can blend it into the global guide field
+    with ``np.minimum`` (union) or ``np.maximum(-sdf)`` (subtract) without
+    paying O(volume) per needle.
     """
     spacing = np.asarray(spacing_xyz, dtype=np.float64)
     direction = np.asarray(ct_image.GetDirection(), dtype=np.float64).reshape(3, 3)
     crop_origin = _crop_origin_world(ct_image, lower_xyz)
     shape = np.asarray(shape_zyx, dtype=np.int64)
 
-    # World -> local continuous index (inverse of _world_grid). The grid arrays
-    # and mask are in zyx order; convert the world coords to that order too.
     def _world_to_index_zyx(world: np.ndarray) -> np.ndarray:
         rel = np.asarray(world, dtype=np.float64) - crop_origin
         local_xyz = direction.T @ rel
         return (local_xyz / spacing)[::-1]
 
-    i_start = _world_to_index_zyx(sleeve_start)
-    i_end = _world_to_index_zyx(sleeve_end)
-    radius_vox = sleeve_radius / spacing[::-1]  # per-axis radius in zyx voxels
+    i_start = _world_to_index_zyx(cylinder_start)
+    i_end = _world_to_index_zyx(cylinder_end)
+    radius_vox = radius / spacing[::-1]
     margin = np.maximum(np.ceil(np.max(radius_vox)), 2)
     lo = np.floor(np.minimum(i_start, i_end)).astype(np.int64) - int(margin)
     hi = np.ceil(np.maximum(i_start, i_end)).astype(np.int64) + int(margin) + 1
     lo = np.maximum(lo, 0)
     hi = np.minimum(hi, shape - 1)
     if np.any(hi <= lo):
-        raise SurgicalGuideError("Guide sleeve falls outside the local plate grid")
+        raise SurgicalGuideError("Guide cylinder falls outside the local plate grid")
 
     zs, ys, xs = lo.astype(int)
     ze, ye, xe = hi.astype(int)
@@ -671,49 +711,9 @@ def _sleeve_bore_in_region(
     world_x = crop_origin[0] + direction[0, 0] * scaled_x + direction[0, 1] * scaled_y + direction[0, 2] * scaled_z
     world_y = crop_origin[1] + direction[1, 0] * scaled_x + direction[1, 1] * scaled_y + direction[1, 2] * scaled_z
     world_z = crop_origin[2] + direction[2, 0] * scaled_x + direction[2, 1] * scaled_y + direction[2, 2] * scaled_z
-    local_grid = (world_x, world_y, world_z)
-
-    sleeve_local = _segment_mask(local_grid, sleeve_start, sleeve_end, sleeve_radius)
-    bore_local = _segment_mask(local_grid, sleeve_start, sleeve_end, bore_radius)
-
-    sleeve = np.zeros(shape, dtype=bool)
-    bore = np.zeros(shape, dtype=bool)
-    sleeve[zs:ze, ys:ye, xs:xe] = sleeve_local
-    bore[zs:ze, ys:ye, xs:xe] = bore_local
-    return sleeve, bore
-
-
-def _segment_mask(
-    grid: Tuple[np.ndarray, np.ndarray, np.ndarray],
-    start: np.ndarray,
-    end: np.ndarray,
-    radius: float,
-) -> np.ndarray:
-    """Return voxels inside a TRUE flat-ended cylinder from ``start`` to ``end``.
-
-    The previous implementation used a clipped projection which produced a
-    capsule with spherical end caps. A capsule's rounded cap poked the sleeve
-    wall into the skin and left the channel's inner opening sealed on the body
-    side (the bore is smaller than the sleeve, so the rounded sleeve cap
-    formed a solid plug in front of the bore). A flat-ended cylinder keeps the
-    channel a clean through-hole: voxels belong iff their unclamped projection
-    onto the axis lies within ``[0,1]`` AND their perpendicular distance to the
-    axis is ``<= radius``.
-    """
-    world_x, world_y, world_z = grid
-    vector = np.asarray(end - start, dtype=np.float64)
-    length_sq = float(np.dot(vector, vector))
-    if length_sq <= 1e-10:
-        raise SurgicalGuideError("Guide sleeve has zero length")
-    dx = world_x - start[0]
-    dy = world_y - start[1]
-    dz = world_z - start[2]
-    # Unclamped projection fraction along the axis.
-    proj = (dx * vector[0] + dy * vector[1] + dz * vector[2]) / length_sq
-    along = (proj >= 0.0) & (proj <= 1.0)
-    # Perpendicular (radial) distance squared to the axis line.
-    radial_sq = (dx * dx + dy * dy + dz * dz) - proj * proj * length_sq
-    return along & (radial_sq <= float(radius) ** 2)
+    sdf = _flat_cylinder_sdf((world_x, world_y, world_z), cylinder_start, cylinder_end, radius)
+    box = (slice(zs, ze), slice(ys, ye), slice(xs, xe))
+    return sdf, box
 
 
 def _filter_components(mask: np.ndarray, minimum_voxels: int) -> np.ndarray:
@@ -765,19 +765,39 @@ def _resample_mask_to_local_grid(
     return sampled.astype(bool), tuple(float(value) for value in target_spacing)
 
 
-def _mesh_from_voxels(
+def _mesh_from_mask(
     mask: np.ndarray,
     ct_image: Any,
     lower_xyz: np.ndarray,
     spacing_xyz: Sequence[float],
 ) -> Tuple[np.ndarray, np.ndarray]:
+    """Isosurface a boolean solid mask into a smooth, watertight mesh.
+
+    The solid is built as a boolean volume (plate ∩ patch, union sleeves,
+    subtract bores), so Marching Cubes on it is watertight by construction —
+    this cannot produce the degenerate creases or open edges that direct
+    SDF-CSG min/max isosurfacing can. Before extraction the mask is lightly
+    blurred (anti-aliasing) so the isosurface rounds the CSG creases and voxel
+    stair-steps into smooth fillets instead of hard edges. The blur sigma is a
+    small fraction of the construction grid, well below the channel bore
+    radius, so it never closes a through-hole. The extracted surface is then
+    Taubin-smoothed (shrink-free) in local millimetre space before the world
+    transform, producing a printable surface without pulling the plate off the
+    skin.
+    """
     from skimage import measure
+    from scipy import ndimage as _ndi
 
     if not bool(np.any(mask)):
         raise SurgicalGuideError("Guide construction produced an empty plate")
     spacing_xyz = np.asarray(spacing_xyz, dtype=np.float64)
     spacing_zyx = tuple(float(value) for value in spacing_xyz[::-1])
-    padded = np.pad(mask.astype(np.uint8), 1, mode="constant")
+    # Sub-voxel blur rounds the voxel steps and CSG creases. It is capped below
+    # the smallest guide feature (the needle bore) so the through-holes stay
+    # open, and it never exceeds a fraction of a voxel on coarse grids.
+    blur_sigma = min(0.4, 0.35 * float(np.min(spacing_zyx)))
+    field = _ndi.gaussian_filter(mask.astype(np.float64), sigma=blur_sigma)
+    padded = np.pad(field, 1, mode="constant", constant_values=0.0)
     vertices_zyx, faces, _, _ = measure.marching_cubes(
         padded, level=0.5, spacing=spacing_zyx, allow_degenerate=False
     )
@@ -787,11 +807,10 @@ def _mesh_from_voxels(
     # the resampled lattice and supports arbitrary orientation matrices.
     index_zyx = vertices_zyx / np.asarray(spacing_zyx, dtype=np.float64) - 1.0
     local_xyz_mm = index_zyx[:, ::-1] * spacing_xyz
-    # Smooth the surface in local millimetre space before the world transform.
-    # Marching cubes on a 0.5 mm voxel grid leaves visible facet steps on a
-    # printable guide; a few Laplacian passes soften the facets without moving
-    # the mesh off the intended geometry (edges are preserved by keeping the
-    # surface watertight — only vertex positions move, connectivity is fixed).
+    # Taubin-smooth the extracted surface in local millimetre space before the
+    # world transform. Taubin is shrink-free: it removes the residual facet
+    # steps while preserving the plate's skin fit, the channel geometry and the
+    # sleeve axis alignment.
     local_xyz_mm = _smooth_mesh_vertices(local_xyz_mm, np.asarray(faces, dtype=np.int64))
     crop_origin = _crop_origin_world(ct_image, lower_xyz)
     direction = np.asarray(ct_image.GetDirection(), dtype=np.float64).reshape(3, 3)
@@ -802,7 +821,7 @@ def _mesh_from_voxels(
 def _smooth_mesh_vertices(
     vertices: np.ndarray,
     faces: np.ndarray,
-    iterations: int = 12,
+    iterations: int = 20,
     lambda_factor: float = 0.5,
     mu_factor: Optional[float] = None,
 ) -> np.ndarray:
@@ -815,9 +834,9 @@ def _smooth_mesh_vertices(
     followed by a negative ``mu`` pass) removes the faceted high frequencies
     while preserving the low-frequency shape, so the guide gets visibly
     smoother and more refined without losing the plate's skin contact or the
-    channel geometry. The default 12 lambda/mu cycles smooth a 0.35 mm voxel
-    grid into a printable surface (a pure Laplacian needs ~60 passes and would
-    shrink the plate by ~0.5 mm).
+    channel geometry. The default 20 lambda/mu cycles turn a Marching-Cubes
+    surface on the smooth guide SDF into a printable surface (a pure Laplacian
+    needs ~60 passes and would shrink the plate by ~0.5 mm).
 
     Only vertex positions change; the face connectivity is untouched so the
     mesh stays watertight and the needle bores stay open.
@@ -953,8 +972,10 @@ def generate_surgical_guide(
         + params["skin_clearance_mm"]
         + params["plate_thickness_mm"]
         + params["sleeve_outward_mm"]
-        + params["sleeve_inward_mm"]
         + params["sleeve_outer_radius_mm"]
+        # sleeve_inward_mm is accepted for compatibility but no longer moves
+        # any geometry (the channel is clamped flush with the skin), so it must
+        # not size the crop and change the guide's discretised mesh.
     )
     lower_xyz, upper_xyz = _crop_bounds(ct_image, [path.entry for path in paths], span_margin)
     lower_zyx = lower_xyz[::-1]
@@ -978,78 +999,103 @@ def generate_surgical_guide(
         params["geometry_resolution_mm"],
     )
     spacing_xyz = tuple(reversed(spacing_zyx))
-    outside_distance = ndimage.distance_transform_edt(~body_crop, sampling=spacing_zyx)
-    shell = (
+    # Signed distance to the body surface (positive outside, like the EDT of
+    # the empty space). `nearest_body` records, for every voxel, the index of
+    # the closest body voxel so we can reject plate voxels that are "backed by"
+    # a flat truncation cap rather than real lateral skin.
+    outside_distance, nearest_body = ndimage.distance_transform_edt(
+        ~body_crop, sampling=spacing_zyx, return_indices=True
+    )
+    clearance = params["skin_clearance_mm"]
+    plate_thickness = params["plate_thickness_mm"]
+    # Plate mask: voxels inside the shell band [clearance, clearance+thickness]
+    # offset OUTSIDE the skin (od > 0 means outside the body; od=0 is the body
+    # interior and must be excluded), intersected with the patch sphere around
+    # every entry. The boolean mask (not an SDF max) keeps the isosurface
+    # watertight by construction: Marching-Cubes on a binary volume is always a
+    # closed manifold, avoiding the degenerate creases that SDF-CSG min/max
+    # produce.
+    plate_mask = (
         (~body_crop)
-        & (outside_distance >= params["skin_clearance_mm"])
-        & (outside_distance <= params["skin_clearance_mm"] + params["plate_thickness_mm"])
+        & (outside_distance >= clearance)
+        & (outside_distance <= clearance + plate_thickness)
     )
     grid = _world_grid(ct_image, lower_xyz, body_crop.shape, spacing_xyz)
-    patch = np.zeros_like(shell, dtype=bool)
-    outer_sleeves = np.zeros_like(shell, dtype=bool)
-    bores = np.zeros_like(shell, dtype=bool)
+    patch_mask = np.zeros_like(plate_mask)
+    world_x, world_y, world_z = grid
     for path in paths:
         entry = path.entry
-        world_x, world_y, world_z = grid
-        patch |= (
+        patch_mask |= (
             (world_x - entry[0]) ** 2
             + (world_y - entry[1]) ** 2
             + (world_z - entry[2]) ** 2
             <= params["patch_margin_mm"] ** 2
         )
-        # The sleeve is a TRUE cylinder (flat ends) anchored on the plate and
-        # protruding OUTWARD from the patient. Its inner end sits at the plate's
-        # skin-facing face (skin_clearance outside the smoothed skin surface),
-        # never inside the body. The bore is a full through-hole from that inner
-        # face to the sleeve tip, so the needle is guided the whole way and the
-        # channel stays open on the skin side. sleeve_inward_mm is retained in
-        # the schema for compatibility but no longer moves any geometry.
-        sleeve_inner = entry - path.inward_direction * params["skin_clearance_mm"]
+    solid = plate_mask & patch_mask
+    # Union the sleeve cylinders (|=) and subtract the bores (&= ~). The order
+    # is deliberately "all cylinders first, then drill all holes": every bore
+    # is subtracted from the fully-unioned solid, so no neighbouring sleeve
+    # wall can ever plug a channel, regardless of needle spacing or crossing
+    # angle. Sleeve and bore volumes are exact flat-ended cylinder SDFs, not
+    # voxel facets, so the boolean result is a clean through-hole per channel.
+    for path in paths:
+        entry = path.entry
+        sleeve_inner = entry - path.inward_direction * clearance
         sleeve_outer = sleeve_inner - path.inward_direction * (
-            params["plate_thickness_mm"] + params["sleeve_outward_mm"]
+            plate_thickness + params["sleeve_outward_mm"]
         )
-        sleeve, bore = _sleeve_bore_in_region(
-            ct_image,
-            lower_xyz,
-            body_crop.shape,
-            spacing_xyz,
-            sleeve_inner,
-            sleeve_outer,
-            params["sleeve_outer_radius_mm"],
-            # Subtract a slightly larger bore than the nominal channel radius so
-            # a neighbouring sleeve wall can never intrude into this channel
-            # when needles are closely spaced. The visible channel opening is
-            # still defined by the sleeve inner wall (= channel_radius); the
-            # margin only guarantees the through-hole stays open.
+        sleeve_sdf, box = _cylinder_sdf_in_region(
+            ct_image, lower_xyz, body_crop.shape, spacing_xyz,
+            sleeve_inner, sleeve_outer, params["sleeve_outer_radius_mm"],
+        )
+        # Trim the sleeve's skin-facing side flush with the plate: for oblique
+        # needles the sleeve wall can cross the skin, so clip it at the
+        # clearance offset before unioning.
+        sleeve_mask = (sleeve_sdf <= 0.0) & (outside_distance[box] >= clearance)
+        solid[box] |= sleeve_mask
+        bore_sdf, box = _cylinder_sdf_in_region(
+            ct_image, lower_xyz, body_crop.shape, spacing_xyz,
+            sleeve_inner, sleeve_outer,
             params["channel_radius_mm"] + GUIDE_BORE_MARGIN_MM,
         )
-        outer_sleeves |= sleeve
-        bores |= bore
-    solid = (shell & patch) | outer_sleeves
-    solid &= ~bores
-    # Trim the guide's skin-facing side with the smoothed skin surface. The
-    # sleeve cylinder is built along the needle axis; for oblique needles its
-    # wall can cross the skin and leave voxels inside the body. Cutting the
-    # solid with the smoothed body's distance field (outside_distance) removes
-    # anything closer to the skin than the clearance, so the sleeve inner face
-    # is shaved flush with the plate's skin side and never pokes into the skin.
-    solid &= outside_distance >= params["skin_clearance_mm"]
-    # Shave the guide off the CT scan boundaries (finite FOV). The shell and
-    # sleeves are built from the body envelope; when that envelope is truncated
-    # by the CT first/last slice, the guide plate can wrap onto the flat
-    # truncation plane and be mistaken for a skin-contact surface. Remove solid
-    # voxels in the boundary layers that coincide with the CT z edges, so the
-    # guide only contacts real lateral skin.
+        solid[box] &= ~(bore_sdf <= 0.0)
+    # Reject plate voxels that are backed by a truncated flat cap. When the
+    # body envelope is cut by the CT first/last slice, the cap plane is NOT
+    # anatomical skin: any guide voxel whose nearest body voxel lies on the
+    # truncated boundary slice would hug the cut, so it is removed. This
+    # guarantees the plate only contacts real lateral skin.
     if truncated_fov:
-        boundary_remove = min(2, max(1, int(round(1.0 / max(1e-6, spacing_zyx[0])))))
+        ct_z_min = int(lower_zyx[0]) == 0
+        ct_z_max = int(upper_zyx[0]) == int(body.shape[0] - 1)
+        nearest_z = np.asarray(nearest_body[0], dtype=np.int64)
+        cap_backed = np.zeros(body_crop.shape, dtype=bool)
+        if trunc_z_min and ct_z_min:
+            cap_backed |= nearest_z == 0
+        if trunc_z_max and ct_z_max:
+            cap_backed |= nearest_z == int(body_crop.shape[0] - 1)
+        solid[cap_backed] = False
+    # Shave the guide off the CT scan boundaries (finite FOV): keep a clear
+    # safety margin between the plate and the truncation plane so the guide
+    # never contacts the flat scan-boundary cut.
+    if truncated_fov:
+        boundary_voxels = max(1, int(round(params["truncation_margin_mm"] / max(1e-6, spacing_zyx[0]))))
         ct_z_min = int(lower_zyx[0]) == 0
         ct_z_max = int(upper_zyx[0]) == int(body.shape[0] - 1)
         if trunc_z_min and ct_z_min:
-            solid[:boundary_remove] = False
+            solid[:boundary_voxels] = False
         if trunc_z_max and ct_z_max:
-            solid[-boundary_remove:] = False
+            solid[-boundary_voxels:] = False
+    # A component disconnected from every needle sleeve is a floating fragment
+    # or a plate built on an invalid region; keep only the largest components.
     solid = _filter_components(solid, int(params["minimum_component_voxels"]))
-    vertices, faces = _mesh_from_voxels(solid, ct_image, lower_xyz, spacing_xyz)
+    if not bool(np.any(solid)):
+        raise SurgicalGuideError(
+            "The CT does not cover enough real skin to support a puncture guide "
+            "near the planned needles. Load a scan that includes the full body "
+            "surface around the target, or move the needle entries away from the "
+            "scan boundary."
+        )
+    vertices, faces = _mesh_from_mask(solid, ct_image, lower_xyz, spacing_xyz)
     validation = mesh_validation(vertices, faces)
     if not validation.get("watertight"):
         raise SurgicalGuideError(
