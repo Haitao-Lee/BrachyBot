@@ -2674,7 +2674,10 @@ function renderDataTree() {
 
         html += `</div></div>`; // close CTV group
     } else {
-        html += renderTreeItem('ctv', dataTreeState.ctv, 'Not generated');
+        const notGenText = dataTreeState.ctv.loading
+            ? _dtText('CTV 分割进行中…', 'CTV segmentation in progress...')
+            : _dtText('尚未生成 CTV 分割', 'CTV segmentation not generated yet');
+        html += renderTreeItem('ctv', { ...dataTreeState.ctv, loaded: dataTreeState.ctv.loading }, notGenText);
     }
 
     // OAR with sub-categories
@@ -2699,13 +2702,13 @@ function renderDataTree() {
 
     if (dataTreeState.organs.length === 0) {
         const oarStatus = ensureDataTreeNodeMetadata({
-            id: 'oar_status', label: 'OAR masks', loaded: false,
+            id: 'oar_status', label: _dtText('尚未生成 OAR 分割', 'OAR segmentation not generated yet'), loaded: false,
             status: dataTreeState.oar.loading ? 'loading' : 'not_generated',
             visible: false, opacity: 0.5, color: '#22c55e',
             contextActions: [],
         }, 'status', 'oar');
         html += renderTreeItem('oar_status', oarStatus,
-            dataTreeState.oar.loading ? 'Loading' : 'Not generated');
+            dataTreeState.oar.loading ? _dtText('OAR 分割进行中…', 'Loading') : _dtText('运行 OAR 分割后此处将显示器官', 'Run OAR segmentation to list organs here'));
     }
 
     // Non-traversable sub-group
@@ -3044,7 +3047,7 @@ function renderTreeItem(id, itemState, info) {
     const selectedClass = selectedItems.has(id) ? 'selected' : '';
 
     const statusLabel = itemState.status && itemState.status !== 'ready'
-        ? `<span class="item-status item-status-${itemState.status}" title="${escHtml(itemState.error || itemState.status)}">${escHtml(itemState.status.replace('_', ' '))}</span>`
+        ? `<span class="item-status item-status-${itemState.status}" title="${escHtml(itemState.error || itemState.status)}">${escHtml(_dtStatusText(itemState.status))}</span>`
         : '';
     return `<div class="tree-item ${selectedClass}" data-node-id="${escHtml(itemState.nodeId || id)}" data-node-type="${escHtml(itemState.type || 'visual') }" data-status="${escHtml(itemState.status || 'ready')}" ${loadedClass} ${indent} ${dataAttr}
         onclick="handleTreeItemClick('${id}', event)"
@@ -3627,6 +3630,18 @@ function _dtText(zh, en) {
         }
     } catch (_) {}
     return document.documentElement.lang?.toLowerCase().startsWith('zh') ? zh : en;
+}
+
+// Localized status badge text for Data Tree nodes.
+function _dtStatusText(status) {
+    const map = {
+        'not_generated': _dtText('未生成', 'Not generated'),
+        'stale': _dtText('已过期', 'Stale'),
+        'expired': _dtText('已过期', 'Expired'),
+        'loading': _dtText('进行中', 'Loading'),
+        'error': _dtText('错误', 'Error'),
+    };
+    return map[status] || String(status || '').replace('_', ' ');
 }
 
 function _findDataTreeNode(id) {
