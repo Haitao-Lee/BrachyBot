@@ -590,40 +590,24 @@ def _crop_origin_world(ct_image: Any, lower_xyz: np.ndarray) -> np.ndarray:
     )
 
 
-def _world_grid(
+def _world_to_local_index_zyx(
     ct_image: Any,
     lower_xyz: np.ndarray,
-    shape_zyx: Sequence[int],
+    world: np.ndarray,
     spacing_xyz: Sequence[float],
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Return world coordinates for a local, isotropic physical grid.
+) -> np.ndarray:
+    """Convert a physical point to a continuous index in the local grid.
 
-    The reference C++ workflow performs its guide booleans in millimetres,
-    rather than in acquisition-index units.  CT slices can be substantially
-    thicker than in-plane pixels, so operating directly in source voxels would
-    distort sleeve diameters and plate thickness.  This native implementation
-    therefore resamples only the small guide region to a validated isotropic
-    grid while retaining the original SimpleITK origin and direction matrix.
+    This is the inverse of ``_world_grid``'s forward transform, expressed as a
+    single point so callers can compute patch distances entirely in the
+    isotropic local index space.
     """
     spacing = np.asarray(spacing_xyz, dtype=np.float64)
-    origin = np.asarray(ct_image.GetOrigin(), dtype=np.float64)
     direction = np.asarray(ct_image.GetDirection(), dtype=np.float64).reshape(3, 3)
     crop_origin = _crop_origin_world(ct_image, lower_xyz)
-    # ``origin`` is intentionally not used for index arithmetic below.  The
-    # crop origin has already crossed the canonical SimpleITK index-to-world
-    # transform, keeping arbitrary direction matrices correct.
-    del origin
-    z = np.arange(int(shape_zyx[0]), dtype=np.float64)
-    y = np.arange(int(shape_zyx[1]), dtype=np.float64)
-    x = np.arange(int(shape_zyx[2]), dtype=np.float64)
-    zz, yy, xx = np.meshgrid(z, y, x, indexing="ij")
-    scaled_x = xx * spacing[0]
-    scaled_y = yy * spacing[1]
-    scaled_z = zz * spacing[2]
-    world_x = crop_origin[0] + direction[0, 0] * scaled_x + direction[0, 1] * scaled_y + direction[0, 2] * scaled_z
-    world_y = crop_origin[1] + direction[1, 0] * scaled_x + direction[1, 1] * scaled_y + direction[1, 2] * scaled_z
-    world_z = crop_origin[2] + direction[2, 0] * scaled_x + direction[2, 1] * scaled_y + direction[2, 2] * scaled_z
-    return world_x, world_y, world_z
+    rel = np.asarray(world, dtype=np.float64) - crop_origin
+    local_xyz = direction.T @ rel
+    return (local_xyz / spacing)[::-1]
 
 
 def _flat_cylinder_sdf(
@@ -1002,10 +986,19 @@ def generate_surgical_guide(
     # Signed distance to the body surface (positive outside, like the EDT of
     # the empty space). `nearest_body` records, for every voxel, the index of
     # the closest body voxel so we can reject plate voxels that are "backed by"
-    # a flat truncation cap rather than real lateral skin.
-    outside_distance, nearest_body = ndimage.distance_transform_edt(
-        ~body_crop, sampling=spacing_zyx, return_indices=True
-    )
+    # a flat truncation cap rather than real lateral skin. Computing the
+    # nearest-body indices is only necessary for the finite-FOV cap rejection;
+    # skipping it for the common full-FOV case avoids three extra full-size
+    # int64 allocations.
+    if truncated_fov:
+        outside_distance, nearest_body = ndimage.distance_transform_edt(
+            ~body_crop, sampling=spacing_zyx, return_indices=True
+        )
+    else:
+        outside_distance = ndimage.distance_transform_edt(
+            ~body_crop, sampling=spacing_zyx
+        )
+        nearest_body = None
     clearance = params["skin_clearance_mm"]
     plate_thickness = params["plate_thickness_mm"]
     # Plate mask: voxels inside the shell band [clearance, clearance+thickness]
@@ -1020,24 +1013,36 @@ def generate_surgical_guide(
         & (outside_distance >= clearance)
         & (outside_distance <= clearance + plate_thickness)
     )
-    grid = _world_grid(ct_image, lower_xyz, body_crop.shape, spacing_xyz)
+    # Patch mask: spherical region of radius patch_margin_mm around every entry.
+    # The local grid is isotropic, so a world distance equals an index distance
+    # scaled by the uniform spacing. Convert each entry to a local continuous
+    # index once and compute the patch distance ONLY on the plate-shell voxels
+    # (a few percent of the crop), via a KD-tree of the entry indices. This is
+    # exact (the same continuous-index transform as the world grid) and avoids
+    # the full-size per-entry squared-distance array pass.
+    patch_radius_index = params["patch_margin_mm"] / float(spacing_zyx[0])
+    plate_voxel_indices = np.argwhere(plate_mask)
     patch_mask = np.zeros_like(plate_mask)
-    world_x, world_y, world_z = grid
-    for path in paths:
-        entry = path.entry
-        patch_mask |= (
-            (world_x - entry[0]) ** 2
-            + (world_y - entry[1]) ** 2
-            + (world_z - entry[2]) ** 2
-            <= params["patch_margin_mm"] ** 2
-        )
+    if plate_voxel_indices.size:
+        from scipy.spatial import cKDTree
+
+        entry_indices = np.array([
+            _world_to_local_index_zyx(ct_image, lower_xyz, path.entry, spacing_xyz)
+            for path in paths
+        ], dtype=np.float32)
+        if len(entry_indices):
+            entry_tree = cKDTree(entry_indices)
+            distance, _ = entry_tree.query(plate_voxel_indices.astype(np.float32))
+            plate_voxel_indices = plate_voxel_indices[distance <= patch_radius_index]
+            patch_mask[tuple(plate_voxel_indices.T)] = True
     solid = plate_mask & patch_mask
-    # Union the sleeve cylinders (|=) and subtract the bores (&= ~). The order
-    # is deliberately "all cylinders first, then drill all holes": every bore
-    # is subtracted from the fully-unioned solid, so no neighbouring sleeve
-    # wall can ever plug a channel, regardless of needle spacing or crossing
-    # angle. Sleeve and bore volumes are exact flat-ended cylinder SDFs, not
-    # voxel facets, so the boolean result is a clean through-hole per channel.
+    # Pass 1: union ALL sleeve cylinders first, so the plate and every sleeve
+    # form one merged solid before any bore is drilled. This is deliberately
+    # "all cylinders first, then drill all holes": if the bores were subtracted
+    # inside the same loop, a later needle's sleeve wall would re-enter an
+    # earlier needle's already-drilled channel and plug it. Sleeve and bore
+    # volumes are exact flat-ended cylinder SDFs, not voxel facets, so the
+    # merged solid has clean round walls.
     for path in paths:
         entry = path.entry
         sleeve_inner = entry - path.inward_direction * clearance
@@ -1053,6 +1058,15 @@ def generate_surgical_guide(
         # clearance offset before unioning.
         sleeve_mask = (sleeve_sdf <= 0.0) & (outside_distance[box] >= clearance)
         solid[box] |= sleeve_mask
+    # Pass 2: subtract every bore from the fully-unioned solid, so a
+    # neighbouring sleeve wall can never plug a channel, regardless of needle
+    # spacing or crossing angle.
+    for path in paths:
+        entry = path.entry
+        sleeve_inner = entry - path.inward_direction * clearance
+        sleeve_outer = sleeve_inner - path.inward_direction * (
+            plate_thickness + params["sleeve_outward_mm"]
+        )
         bore_sdf, box = _cylinder_sdf_in_region(
             ct_image, lower_xyz, body_crop.shape, spacing_xyz,
             sleeve_inner, sleeve_outer,

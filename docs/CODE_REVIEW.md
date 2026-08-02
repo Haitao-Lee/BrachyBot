@@ -2,6 +2,47 @@
 
 _This file consolidates all code review reports. Sections are organized by date._
 
+## 2026-08-02 - Seed default to needle middle + proximity seed pick; faster surgical guide
+
+### Manual seed placement and 3D picking
+
+The operator reported that a manually added seed landed on the needle endpoint
+and could not be selected/dragged in the 3D viewer, because the seed's thin
+physical cylinder merged with the larger endpoint handle sphere.
+
+- `addManualSeed` now places each new seed symmetrically around the needle
+  MIDDLE (first seed at the midpoint), never at an endpoint. Subsequent seeds
+  spread around the midpoint with a capped, symmetric spacing.
+- The 3D pick in `brachybot-3d-manual.js` now prefers a seed over a coincident
+  endpoint handle: when the pointer is within a generous pick radius of a seed's
+  position, that seed is selected (then dragged and projected onto its needle
+  axis) instead of the handle.
+- Cache-busting versions bumped (`brachybot-viewer-layout.js?v=12`,
+  `brachybot-3d-manual.js?v=31`) so browsers load the updated interaction code.
+
+### Surgical guide generation speed (same STL quality)
+
+Guide generation on a 120^3 CT with 7 needles went from ~6.4s to ~2.9s without
+changing the resulting mesh:
+
+- Replaced the full-crop `_world_grid` meshgrid + per-entry squared-distance
+  patch pass with a KD-tree of entry local indices queried ONLY on the
+  plate-shell voxels (~8% of the crop). The patch membership is identical
+  (verified 0 differing voxels, including a translated origin).
+- `distance_transform_edt(..., return_indices=True)` is only computed when the
+  FOV is truncated (the nearest-body indices feed only the cap rejection);
+  full-FOV generation avoids three extra full-size int64 arrays.
+- Removed the now-unused `_world_grid` / `_local_index_zyx` helpers.
+
+### Verification
+
+- `addManualSeed` first seed lands at the midpoint (frac=0.5 region); seeds are
+  proximity-pickable over endpoint handles; drag still projects onto the needle.
+- Surgical guide tests (23) pass, including anisotropic-CT coordinate checks and
+  the converging-bore / truncation regressions; 110 related tests pass.
+
+---
+
 ## 2026-08-02 - Hide deprecated VoCo aliases from the LLM; keep them as routing-only
 
 The operator uploaded a liver CT and the routing log still showed
