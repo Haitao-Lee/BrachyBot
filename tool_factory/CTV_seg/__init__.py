@@ -34,7 +34,7 @@ from .aorta_voco import VoCoAortaSegTool
 from .brats21_voco import VoCoBRATS21SegTool
 from .pancreatic_tumor_nnunet import NNUNetPancreaticTumorTool
 from .biomedparse_v2 import BiomedParseV2CTVTool, SITE_SPECS as BIOMEDPARSE_SITE_SPECS
-from .model_catalog import CTVModelCatalogTool, catalog_with_local_status
+from .model_catalog import CTVModelCatalogTool, catalog_with_local_status, filter_catalog
 
 # Removed VoCoProstateTool (was using wrong Amos-MR weights)
 # Removed VoCoPancSegTool (was pointing to PANORAMA weights with wrong out_channels)
@@ -97,6 +97,18 @@ def list_tools():
     return list(TOOL_REGISTRY.keys())
 
 
+# The LLM-facing tumor_type options. The canonical non-pancreatic sites are the
+# biomedparse_* prompts plus the friendly *_tumor aliases; the legacy voco_*
+# aliases are kept in TOOL_REGISTRY only for backward call compatibility and are
+# deliberately hidden from the agent so it cannot pick a deprecated VoCo name.
+# Pancreatic production routing stays on nnU-Net.
+_PREFERRED_TUMOR_TYPES = (
+    ["pancreatic_tumor", "nnunet_pancreatic"]
+    + list(BIOMEDPARSE_SITE_SPECS)
+    + ["liver_tumor", "kidney_tumor", "lung_tumor", "colon_tumor", "prostate_tumor"]
+)
+
+
 class CTVSegmentationTool(BaseTool):
     """
     Unified CTV segmentation tool that delegates to tumor-specific tools.
@@ -106,7 +118,7 @@ class CTVSegmentationTool(BaseTool):
     """
 
     def __init__(self):
-        self._tumor_types = list(TOOL_REGISTRY.keys())
+        self._tumor_types = list(_PREFERRED_TUMOR_TYPES)
 
     @property
     def name(self) -> str:
@@ -239,7 +251,7 @@ class CTVSegmentationTool(BaseTool):
                             "Which tumor site should BrachyBot segment as CTV? "
                             "Examples: pancreas, liver, kidney, lung, colon, prostate."
                         ),
-                        "model_catalog": catalog_with_local_status(),
+                        "model_catalog": filter_catalog(),
                     },
                 )
             if tumor_type:
@@ -253,7 +265,7 @@ class CTVSegmentationTool(BaseTool):
                         ),
                         metadata={
                             "tumor_type_used": tumor_type,
-                            "model_catalog": catalog_with_local_status(),
+                            "model_catalog": filter_catalog(),
                         },
                     )
                 tool = TOOL_REGISTRY[tumor_type]()
@@ -327,7 +339,7 @@ class CTVSegmentationTool(BaseTool):
                 # why a non-pancreatic model was unavailable.
                 failure_meta = dict(result.metadata or {})
                 failure_meta.setdefault("tumor_type_used", tumor_type)
-                failure_meta.setdefault("model_catalog", catalog_with_local_status())
+                failure_meta.setdefault("model_catalog", filter_catalog())
                 return ToolResult(
                     success=False,
                     data=result.data,
@@ -347,7 +359,7 @@ class CTVSegmentationTool(BaseTool):
                 "tumor_type_used",
                 tumor_type or ("manual_label" if from_label_path else "unknown"),
             )
-            failure_meta.setdefault("model_catalog", catalog_with_local_status())
+            failure_meta.setdefault("model_catalog", filter_catalog())
             return ToolResult(
                 success=False,
                 error=(
@@ -401,7 +413,7 @@ class CTVSegmentationTool(BaseTool):
             "label_counts": res_meta.get("label_counts", {}),
             "label_map": label_map,
             "label_stats": res_meta.get("label_stats", {}),
-            "model_catalog": catalog_with_local_status(),
+            "model_catalog": filter_catalog(),
         }
         for provenance_key in (
             "research_only",

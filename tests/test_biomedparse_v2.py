@@ -19,6 +19,25 @@ def test_biomedparse_catalog_is_explicit_and_excludes_pancreatic_production():
     assert set(SITE_SPECS) <= set(CTVSegmentationTool().input_schema["properties"]["tumor_type"]["enum"])
 
 
+def test_deprecated_voco_aliases_are_hidden_from_the_agent():
+    """The LLM-facing enum and catalog must advertise the biomedparse_*
+    candidates, not the deprecated VoCo SwinUNETR aliases. The aliases remain
+    accepted for backward compatibility (they route to BiomedParse) but must
+    never be presented to the agent as a model choice."""
+    from tool_factory.CTV_seg import CTVSegmentationTool, get_tool
+    from tool_factory.CTV_seg.biomedparse_v2 import BiomedParseV2CTVTool
+    from tool_factory.CTV_seg.model_catalog import filter_catalog
+
+    enum = CTVSegmentationTool().input_schema["properties"]["tumor_type"]["enum"]
+    assert "biomedparse_liver_tumor" in enum
+    assert "liver_tumor" in enum
+    # No deprecated VoCo alias may appear in the agent-facing enum or catalog.
+    assert not any(str(t).startswith("voco_") for t in enum), "voco_* aliases must be hidden from the agent"
+    assert not any(str(m.get("tumor_type", "")).startswith("voco_") for m in filter_catalog())
+    # The aliases must still resolve so existing callers keep working.
+    assert isinstance(get_tool("voco_liver"), BiomedParseV2CTVTool)
+
+
 def test_legacy_voco_aliases_route_to_biomedparse():
     """All non-pancreatic CTV aliases (liver/kidney/lung/colon and their VoCo
     forms) must resolve to BiomedParse, never the deprecated VoCo SwinUNETR.
