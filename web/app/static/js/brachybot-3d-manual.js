@@ -188,6 +188,9 @@ function _applyAuthoritativeManualSeeds(data) {
             ...seed,
             position,
             pos: position,
+            // Cache the position the seed had when it was first seen in this
+            // case, so the context menu can restore it after manual drags.
+            _originalPosition: old._originalPosition || [position[0], position[1], position[2]],
             visible: seed.visible !== false,
             visible2D: seed.visible2D ?? old.visible2D ?? true,
             visible3D: seed.visible3D ?? old.visible3D ?? true,
@@ -1353,6 +1356,7 @@ function init3DScene() {
     let pendingSeedTimer = null;
     let seedDragRollback = null;
     let needleDragMoved = false;
+    let seedDragMoved = false;
     let hoveredInternalNeedleId = null;
     let dragPlane = new THREE.Plane();
     let dragOffset = new THREE.Vector3();
@@ -1392,6 +1396,7 @@ function init3DScene() {
         pendingSeed = null;
         pendingSeedStart = null;
         seedDragRollback = null;
+        seedDragMoved = false;
         if (!isDragging) {
             scene3D.controls.enabled = true;
             interactionCanvas.style.cursor = 'grab';
@@ -1401,6 +1406,7 @@ function init3DScene() {
     const armSeedDrag = () => {
         if (!pendingSeed || isDragging) return;
         isDragging = true;
+        seedDragMoved = false;
         const cameraDir = new THREE.Vector3();
         scene3D.camera.getWorldDirection(cameraDir);
         dragPlane.setFromNormalAndCoplanarPoint(cameraDir, pendingSeed.position);
@@ -1520,7 +1526,15 @@ function init3DScene() {
         const objects = Object.values(scene3D.meshes);
         const handleObjects = objects.filter(obj => obj?.userData?.type === 'needle_handle');
         const handleHits = raycaster.intersectObjects(handleObjects, true);
-        const intersects = handleHits.length ? handleHits : raycaster.intersectObjects(objects, true);
+        // Seeds sit inside the body (CTV/OAR surfaces occlude them) and hug
+        // the needle axis, so an all-object raycast never reaches them. Give
+        // seeds the same priority treatment as endpoint handles: raycast seed
+        // meshes first, then handles, then everything else.
+        const seedObjects = objects.filter(obj => obj?.userData?.type === 'seed');
+        const seedHits = raycaster.intersectObjects(seedObjects, true);
+        const intersects = seedHits.length ? seedHits
+            : handleHits.length ? handleHits
+            : raycaster.intersectObjects(objects, true);
 
         if (intersects.length > 0) {
             let obj = intersects[0].object;
@@ -1623,6 +1637,7 @@ function init3DScene() {
                 const projected = _projectPointOntoNeedle(nextPosition, needle);
                 nextPosition.set(projected[0], projected[1], projected[2]);
             }
+            seedDragMoved = true;
             if (seed) {
                 const coordinates = [nextPosition.x, nextPosition.y, nextPosition.z];
                 seed.position = coordinates;
@@ -1698,7 +1713,7 @@ function init3DScene() {
             pendingNeedleStart = null;
             requestRender(4);
 
-            if (selectedObject && selectedObject.userData.type === 'seed') {
+            if (selectedObject && selectedObject.userData.type === 'seed' && seedDragMoved) {
                 // Update seed position in data tree state
                 const seedId = selectedObject.userData.id;
                 const seed = dataTreeState.planning.seeds.find(s => s.id === seedId);
@@ -1706,16 +1721,17 @@ function init3DScene() {
                     seed.position = [selectedObject.position.x, selectedObject.position.y, selectedObject.position.z];
                 }
                 addChat('system', `Seed ${seedId} repositioned to [${selectedObject.position.x.toFixed(1)}, ${selectedObject.position.y.toFixed(1)}, ${selectedObject.position.z.toFixed(1)}]`);
-                // Ask whether to recompute the dose and DVH after the drag.
+                // Ask whether to replan (recompute dose and DVH) after the drag.
                 // The seed geometry is committed either way; only the
-                // (potentially slow) AI dose recompute waits for consent.
+                // (potentially slow) AI dose recompute waits for consent. A
+                // simple click without a drag never reaches this prompt.
                 const recalcDose = typeof _confirmAction === 'function'
                     ? await _confirmAction(
-                        `种子 ${seedId} 已沿针道滑动。是否重新计算剂量和各项指标？`,
-                        `Seed ${seedId} slid along its needle. Recompute dose and metrics?`,
+                        `种子 ${seedId} 已沿针道滑动。是否重新规划并重新计算剂量？`,
+                        `Seed ${seedId} slid along its needle. Replan and recompute dose?`,
                         {
-                            yesZh: '重新计算剂量',
-                            yesEn: 'Recompute dose',
+                            yesZh: '重新规划',
+                            yesEn: 'Replan',
                             noZh: '仅移动粒子',
                             noEn: 'Move only',
                             titleZh: '粒子位置已改变',
@@ -1735,6 +1751,13 @@ function init3DScene() {
                 pendingSeed = null;
                 pendingSeedStart = null;
                 seedDragRollback = null;
+                seedDragMoved = false;
+            } else if (selectedObject && selectedObject.userData.type === 'seed' && !seedDragMoved) {
+                // Click without drag: keep the selection but do not commit.
+                pendingSeed = null;
+                pendingSeedStart = null;
+                seedDragRollback = null;
+                seedDragMoved = false;
             } else if (finishedObject && finishedObject.userData.type === 'needle_handle' && needleDragMoved) {
                 addChat('system', `Needle endpoint updated for ${finishedObject.userData.needleId}.`);
                 if (typeof onManualNeedleHandleEdited === 'function') {
@@ -1766,13 +1789,19 @@ function init3DScene() {
         raycaster.setFromCamera(mouse, scene3D.camera);
         // Endpoint handles are the actionable object. Prefer them over a
         // surface or needle shaft at the same pixel so the context menu can
-        // restore and edit the intended needle deterministically.
+        // restore and edit the intended needle deterministically. Seeds get
+        // the same priority: they sit inside CTV/OAR surfaces and hug the
+        // needle axis, so a plain all-object raycast never reaches them.
         const objects = Object.values(scene3D.meshes);
+        const seedObjects = objects.filter(obj => obj?.userData?.type === 'seed');
+        const seedHits = raycaster.intersectObjects(seedObjects, true);
         const handleObjects = objects.filter(obj => obj?.userData?.type === 'needle_handle');
         const handleHits = raycaster.intersectObjects(handleObjects, true);
-        const intersects = handleHits.length
-            ? handleHits
-            : raycaster.intersectObjects(objects, true);
+        const intersects = seedHits.length
+            ? seedHits
+            : handleHits.length
+                ? handleHits
+                : raycaster.intersectObjects(objects, true);
 
         if (intersects.length > 0) {
             let obj = intersects[0].object;
@@ -1828,6 +1857,11 @@ function init3DScene() {
             // Show dose at seed position
             items += `<div class="ctx-menu-item" onclick="hideContextMenu();showSeedDose('${id}')">
                 <span class="ctx-icon">&#9889;</span> Show Dose</div>`;
+
+            // Restore to the original position (the spot the seed had when the
+            // case was loaded), independent of the manual drag.
+            items += `<div class="ctx-menu-item" onclick="hideContextMenu();restoreSeedToOriginalPosition('${id}')">
+                <span class="ctx-icon">&#8634;</span> Restore original position</div>`;
 
             // Delete seed
             items += `<div class="ctx-menu-item" onclick="hideContextMenu();deleteSeed3D('${id}')">
@@ -2560,18 +2594,26 @@ async function loadSeeds3D() {
         const savedNeedleAppearance = new Map(
             (dataTreeState.planning.needles || []).map(needle => [String(needle.id), needle]),
         );
-        dataTreeState.planning.seeds = data.seeds.map(seed => ({
-            id: seed.id,
-            position: seed.position,
-            voxel_index: seed.voxel_index || null,
-            direction: seed.direction,
-            trajectory_id: _normalizeTrajectoryId(seed.trajectory_id),
-            visible: savedSeedAppearance.get(String(seed.id))?.visible !== false,
-            visible2D: savedSeedAppearance.get(String(seed.id))?.visible2D !== false,
-            visible3D: savedSeedAppearance.get(String(seed.id))?.visible3D !== false,
-            opacity: savedSeedAppearance.get(String(seed.id))?.opacity ?? 1.0,
-            color: savedSeedAppearance.get(String(seed.id))?.color || '#ffcc00',
-        }));
+        dataTreeState.planning.seeds = data.seeds.map(seed => {
+            const saved = savedSeedAppearance.get(String(seed.id)) || {};
+            const position = _vec3Array(seed.position || seed.pos);
+            return {
+                id: seed.id,
+                position,
+                pos: position,
+                voxel_index: seed.voxel_index || null,
+                direction: seed.direction,
+                trajectory_id: _normalizeTrajectoryId(seed.trajectory_id),
+                // Cache the first-seen position so the context menu can
+                // restore a manually dragged seed to its original spot.
+                _originalPosition: saved._originalPosition || [position[0], position[1], position[2]],
+                visible: saved.visible !== false,
+                visible2D: saved.visible2D !== false,
+                visible3D: saved.visible3D !== false,
+                opacity: saved.opacity ?? 1.0,
+                color: saved.color || '#ffcc00',
+            };
+        });
 
         dataTreeState.planning.needles = data.needles.map(needle => ({
             id: needle.id,
@@ -4607,5 +4649,32 @@ async function restoreNeedleToAlgorithm(needleId) {
         return null;
     }
 }
+
+// Restore a manually dragged seed to the position it had when this case was
+// first loaded (cached in `_originalPosition`). The seed is moved back through
+// the existing commit path and dose recompute is offered, matching the
+// needle-endpoint restore semantics without a new slow backend round-trip.
+async function restoreSeedToOriginalPosition(seedId) {
+    const localize = (zh, en) => typeof window._t === 'function' ? window._t(zh, en) : en;
+    const seed = dataTreeState.planning.seeds.find(item => item.id === seedId);
+    const original = seed?._originalPosition;
+    if (!seed || !original) {
+        addChat('error', localize(`无法恢复 ${seedId}：缺少原始位置。`, `Cannot restore ${seedId}: no original position recorded.`));
+        return null;
+    }
+    const mesh = scene3D.meshes[seedId];
+    if (mesh) mesh.position.set(original[0], original[1], original[2]);
+    addChat('system', localize(`正在将 ${seedId} 恢复到原始位置…`, `Restoring ${seedId} to its original position...`));
+    try {
+        const result = await onManualSeedEdited(seedId, original, null, {});
+        if (result && typeof refreshPlanningUI === 'function') await refreshPlanningUI();
+        return result;
+    } catch (error) {
+        const message = localize(`粒子恢复失败：${error.message}`, `Seed restore failed: ${error.message}`);
+        addChat('error', message);
+        return null;
+    }
+}
+window.restoreSeedToOriginalPosition = restoreSeedToOriginalPosition;
 
 /******** VIEWER INTERACTIVE TOOLS (Slicer-like) ********/

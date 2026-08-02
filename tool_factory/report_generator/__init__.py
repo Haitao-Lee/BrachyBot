@@ -35,8 +35,8 @@ Capabilities:
     input_schema = {
         "action": {
             "type": "string",
-            "description": "Action: full_report, summary, dvh_report, export_json, export_markdown",
-            "enum": ["full_report", "summary", "dvh_report", "export_json", "export_markdown"]
+            "description": "Action: generate/full_report, summary, dvh_report, export_json, export_markdown. 'generate' produces the complete treatment report.",
+            "enum": ["generate", "full_report", "summary", "dvh_report", "export_json", "export_markdown"]
         },
         "plan_data": {"type": "object", "description": "Complete plan data"},
         "patient_info": {"type": "object", "description": "Patient info (optional)"},
@@ -270,6 +270,12 @@ Capabilities:
         plan = kwargs.get("plan_data", {})
         patient = kwargs.get("patient_info")
         output_path = kwargs.get("output_path")
+
+        # The LLM commonly asks to "generate/regenerate the report". Treat those
+        # as the full-report action so a natural-language request never fails
+        # with "Invalid value for action".
+        if str(action or "").strip().lower() in ("generate", "regenerate", "full_report"):
+            action = "full_report"
 
         if not action:
             # Return error with helpful guidance about available actions

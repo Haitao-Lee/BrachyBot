@@ -1649,6 +1649,53 @@ def _reproject_seeds_onto_needles(
     return updated, changed
 
 
+def _authoritative_previous_needles(
+    agent,
+    submitted_previous: list,
+    current_needles: list,
+) -> list:
+    """Return the true pre-edit needle geometry for an incremental replan.
+
+    The browser supplies ``previous_needles`` so the incremental dose path can
+    diff changed trajectories. After a server restart that cache is lost, and
+    the frontend falls back to the *current* (already edited) geometry, making
+    the diff empty and silently turning a one-needle edit into a full-plan
+    DoseUNet run (~minutes). Prefer the authoritative stored geometry whenever
+    the submitted baseline is empty or identical to the current needles.
+    """
+    def _signature(items):
+        parts = []
+        for item in items or []:
+            if not isinstance(item, dict):
+                continue
+            points = item.get("points")
+            if not isinstance(points, list) or len(points) < 2:
+                continue
+            parts.append((
+                str(item.get("id") or ""),
+                tuple(tuple(float(v) for v in p) for p in (points[0], points[-1])),
+            ))
+        return sorted(parts)
+
+    submitted = list(submitted_previous or [])
+    if submitted and _signature(submitted) != _signature(current_needles):
+        return submitted
+
+    stored = agent.memory.retrieve("manual_needles")
+    if isinstance(stored, list) and stored and _signature(stored) != _signature(current_needles):
+        return stored
+
+    snapshot = agent.memory.retrieve("algorithm_plan_snapshot") or {}
+    if isinstance(snapshot, dict):
+        baseline = snapshot.get("needles") or []
+        if isinstance(baseline, list) and baseline and _signature(baseline) != _signature(current_needles):
+            return baseline
+
+    # No better baseline exists: return the submitted geometry (empty diff),
+    # which degrades to a full recompute rather than an incorrect partial one.
+    return submitted
+
+
 def _compute_manual_ai_dose(
     agent,
     seeds: list,
@@ -1677,11 +1724,15 @@ def _compute_manual_ai_dose(
     # the submitted seeds onto the new needle before converting coordinates for
     # DoseUNet inference. The previous geometry is supplied by the browser so
     # this remains correct even when the stored plan came from automatic mode.
-    seeds, reprojection_count = _reproject_seeds_onto_needles(
-        seeds,
-        needles,
-        previous_needles or [],
-    ) if reproject_seeds else (list(seeds or []), 0)
+    if reproject_seeds:
+        baseline = _authoritative_previous_needles(agent, previous_needles or [], needles or [])
+        seeds, reprojection_count = _reproject_seeds_onto_needles(
+            seeds,
+            needles,
+            baseline,
+        )
+    else:
+        seeds, reprojection_count = list(seeds or []), 0
     ct_image = agent.memory.retrieve("ct_image")
     ct_data = agent.memory.retrieve("ct_data")
     if ct_image is None or ct_data is None:
@@ -1956,7 +2007,7 @@ def _compute_manual_ai_dose(
     interactive_deadline = None
     if reproject_seeds:
         try:
-            timeout_s = float(os.environ.get("BRACHYBOT_MANUAL_REPLAN_TIMEOUT_S", "180"))
+            timeout_s = float(os.environ.get("BRACHYBOT_MANUAL_REPLAN_TIMEOUT_S", "120"))
         except ValueError as exc:
             raise ValueError("BRACHYBOT_MANUAL_REPLAN_TIMEOUT_S must be numeric") from exc
         if timeout_s <= 0:
