@@ -361,8 +361,18 @@ async function addManualSeed() {
     const p1 = new THREE.Vector3(..._vec3Array(needle.points[1]));
     const dir = new THREE.Vector3().subVectors(p0, p1).normalize();
     const existing = dataTreeState.planning.seeds.filter(s => s.trajectory_id === needle.trajectory_id).length;
-    const frac = Math.max(0.12, Math.min(0.88, 0.22 + existing * 0.10));
-    const pos = new THREE.Vector3().lerpVectors(p1, p0, frac);
+    // Add each new seed around the needle MIDDLE, never at an endpoint. The
+    // first seed lands at the midpoint so it stays clearly inside the needle
+    // and cannot merge with the endpoint handles; subsequent seeds spread out
+    // symmetrically around the middle. This keeps every seed individually
+    // selectable in the 3D viewer (a seed coincident with an endpoint sphere
+    // was effectively ungrabbable).
+    const spread = Math.min(0.34, 0.10 + existing * 0.04);
+    const frac = existing % 2 === 0
+        ? 0.5 - spread * Math.ceil(existing / 2)
+        : 0.5 + spread * Math.ceil(existing / 2);
+    const clampedFrac = Math.max(0.18, Math.min(0.82, frac));
+    const pos = new THREE.Vector3().lerpVectors(p1, p0, clampedFrac);
     manualPlanningState.seedCounter += 1;
     const seed = {
         id: `seed_manual_${manualPlanningState.seedCounter}`,
@@ -1543,6 +1553,32 @@ function init3DScene() {
             // Find parent group if it's a child
             while (obj.parent && !obj.userData.type) {
                 obj = obj.parent;
+            }
+            // A seed that coincides with an endpoint handle (or hides inside an
+            // OAR surface) is hard to grab because its thin physical cylinder
+            // either loses the raycast or is overlapped by the larger handle
+            // sphere. When the pointer is within a generous radius of a seed's
+            // position, prefer that seed over any endpoint handle or surface so
+            // the user can select it and slide it along its needle.
+            if (obj.userData.type !== 'seed') {
+                const seedObjectsAll = Object.values(scene3D.meshes)
+                    .filter(m => m && m.userData?.type === 'seed');
+                let bestSeed = null;
+                let bestSeedDist = Infinity;
+                for (const seedMesh of seedObjectsAll) {
+                    const seedPos = seedMesh.position;
+                    const toSeed = new THREE.Vector3().subVectors(seedPos, raycaster.ray.origin);
+                    const projection = toSeed.dot(raycaster.ray.direction);
+                    if (projection < 0) continue;
+                    const closest = raycaster.ray.origin.clone().add(raycaster.ray.direction.clone().multiplyScalar(projection));
+                    const perp = closest.distanceTo(seedPos);
+                    const pickRadius = Math.max(2.5, seedMesh.geometry?.parameters?.radius * 6 || 2.5);
+                    if (perp < pickRadius && projection < bestSeedDist) {
+                        bestSeed = seedMesh;
+                        bestSeedDist = projection;
+                    }
+                }
+                if (bestSeed) obj = bestSeed;
             }
 
             if (obj.userData.type === 'seed' || obj.userData.type === 'needle' || obj.userData.type === 'needle_handle') {

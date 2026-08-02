@@ -293,11 +293,32 @@ def test_needle_render_scheduler_survives_mixed_static_asset_revisions():
     # Keep this contract aligned with the actual cache-busting revisions in
     # index.html. A stale assertion here falsely reports a deployment bug and
     # hides whether the endpoint interaction bundle is really versioned.
-    assert "brachybot-viewer-layout.js?v=11" in index
-    assert "brachybot-3d-manual.js?v=30" in index
+    assert "brachybot-viewer-layout.js?v=12" in index
+    assert "brachybot-3d-manual.js?v=31" in index
     assert "scene3D.requestRender(1)" in layout
     assert "scene3D.requestRender(2)" in layout
     assert "window.requestRender = requestRender;" in manual
+
+
+def test_manual_seed_defaults_to_needle_middle_and_is_proximity_selectable():
+    """A manually added seed must land inside the needle (around its midpoint),
+    never on an endpoint, and must win the 3D pick over a coincident endpoint
+    handle so the user can slide it along the needle.
+
+    Regression: seeds added at frac near 0.22 / 0.88 could sit on the needle
+    endpoint, merge with the endpoint handle sphere, and become ungrabbable."""
+    manual = (ROOT / "web/app/static/js/brachybot-3d-manual.js").read_text(encoding="utf-8")
+    add_block = manual.split("async function addManualSeed()", 1)[1].split("_upsertSceneMesh(seed.id", 1)[0]
+    # The first seed must be placed around the midpoint, not at an endpoint.
+    assert "0.5 - spread * Math.ceil(existing / 2)" in add_block
+    assert "0.5 + spread * Math.ceil(existing / 2)" in add_block
+    assert "Math.max(0.18, Math.min(0.82, frac))" in add_block
+    assert "0.22" not in add_block
+    # The 3D pick must prefer a seed near the pointer over an endpoint handle.
+    assert "prefer that seed over any endpoint handle" in manual
+    assert "perp < pickRadius" in manual
+    assert "if (bestSeed) obj = bestSeed;" in manual
+
 
 
 def test_dicom_rt_summary_omits_contour_coordinates():
