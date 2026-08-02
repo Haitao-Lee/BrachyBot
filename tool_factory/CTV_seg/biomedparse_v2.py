@@ -616,8 +616,11 @@ class BiomedParseV2CTVTool(BaseTool):
                 spec["window"],
             )
             runtime_python_text = availability.get("runtime_python")
+            # Do NOT resolve symlinks here: POSIX venvs expose .venv/bin/python
+            # as a symlink, and resolving it bypasses pyvenv.cfg, losing every
+            # package installed in the isolated environment (numpy, torch, ...).
             runtime_python = (
-                Path(runtime_python_text).resolve()
+                Path(runtime_python_text)
                 if runtime_python_text
                 else Path(sys.executable).resolve()
             )

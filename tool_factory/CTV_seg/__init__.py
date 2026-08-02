@@ -41,24 +41,28 @@ from .model_catalog import CTVModelCatalogTool, catalog_with_local_status
 
 
 TOOL_REGISTRY = {
-    # CTV models. Tumor aliases point to tumor-trained models when available.
+    # CTV models. The pancreatic production path always uses nnU-Net.
     "pancreatic_tumor": NNUNetPancreaticTumorTool,
-    "liver_tumor": VoCoLiverTumorTool,
-    "kidney_tumor": VoCoKidneyTumorTool,
-    "lung_tumor": VoCoLungTumorTool,
-    "colon_tumor": VoCoColonTumorTool,
+    # Non-pancreatic CTV segmentation uses Microsoft BiomedParse v2 (the
+    # installed research adapter). The legacy VoCo SwinUNETR checkpoints were
+    # deprecated because their liver/kidney/lung/colon lesion segmentation was
+    # clinically unreliable; all former VoCo aliases now resolve to BiomedParse.
+    "liver_tumor": BiomedParseV2CTVTool,
+    "kidney_tumor": BiomedParseV2CTVTool,
+    "lung_tumor": BiomedParseV2CTVTool,
+    "colon_tumor": BiomedParseV2CTVTool,
     # Whole-gland prostate can be a prostate-brachytherapy target in some
     # workflows, but this is not a lesion segmentation model.
     "prostate_tumor": ProstateTumorSegmentationTool,
-    # VoCo pre-trained tools (tumor-focused)
-    "voco_pancreatic": VoCoPancreaticTumorTool,
+    # VoCo pre-trained aliases are retained for call compatibility but now
+    # resolve to BiomedParse; the pancreatic one still goes to nnU-Net.
+    "voco_pancreatic": NNUNetPancreaticTumorTool,
     "nnunet_pancreatic": NNUNetPancreaticTumorTool,
-    "voco_liver": VoCoLiverTumorTool,
-    "voco_colon": VoCoColonTumorTool,
-    "voco_kidney": VoCoKidneyTumorTool,
-    "voco_lung": VoCoLungTumorTool,
-    # Microsoft BiomedParse v2 is an explicit research-only adapter.  It is
-    # never used for the pancreatic production alias, which remains nnU-Net.
+    "voco_liver": BiomedParseV2CTVTool,
+    "voco_colon": BiomedParseV2CTVTool,
+    "voco_kidney": BiomedParseV2CTVTool,
+    "voco_lung": BiomedParseV2CTVTool,
+    # Microsoft BiomedParse v2 research adapter (all supported tumor prompts).
     **{key: BiomedParseV2CTVTool for key in BIOMEDPARSE_SITE_SPECS},
     # Anatomical, embolism, infection, and MRI-only research models remain
     # importable below but are intentionally excluded from automatic CTV
@@ -66,11 +70,13 @@ TOOL_REGISTRY = {
 }
 
 
-# When an optional legacy site model has no local checkpoint, use the
-# corresponding BiomedParse research candidate if that external runtime is
-# explicitly installed.  A missing fallback remains a hard, honest error;
-# BrachyBot must not claim that an unavailable model produced a CTV.
+# Legacy VoCo site aliases now resolve to the corresponding BiomedParse prompt.
+# These are the only non-pancreatic CTV sites supported for automatic routing.
 BIOMEDPARSE_FALLBACKS = {
+    "liver_tumor": "biomedparse_liver_tumor",
+    "kidney_tumor": "biomedparse_kidney_lesion",
+    "lung_tumor": "biomedparse_lung_lesion",
+    "colon_tumor": "biomedparse_colon_primary",
     "voco_liver": "biomedparse_liver_tumor",
     "voco_kidney": "biomedparse_kidney_lesion",
     "voco_lung": "biomedparse_lung_lesion",
@@ -256,32 +262,19 @@ class CTVSegmentationTool(BaseTool):
             if isinstance(tool, NNUNetPancreaticTumorTool):
                 tool_kwargs["return_all_labels"] = True
             if isinstance(tool, BiomedParseV2CTVTool):
-                # The research adapter selects its text prompt from the
-                # explicit tumor_type.  The unified wrapper historically
-                # dropped that argument, so every non-pancreatic request
-                # reached BiomedParse as an empty/unsupported type and lost
-                # its useful missing-runtime diagnostics.
-                tool_kwargs["tumor_type"] = tumor_type
-            fallback_type = BIOMEDPARSE_FALLBACKS.get(tumor_type)
-            model_path = getattr(tool, "MODEL_PATH", None)
-            if (
-                fallback_type
-                and isinstance(model_path, str)
-                and not os.path.isfile(model_path)
-            ):
-                # Optional VoCo checkpoints are not silently fabricated.  If
-                # the explicitly installed BiomedParse runtime is available,
-                # use it as a research candidate and retain provenance.
-                fallback_tool = BiomedParseV2CTVTool()
-                result = fallback_tool._execute(image=image, tumor_type=fallback_type)
-                if result.metadata is None:
-                    result.metadata = {}
-                result.metadata["requested_tumor_type"] = tumor_type
-                result.metadata["fallback_from_unavailable_model"] = True
+                # The research adapter selects its text prompt from the explicit
+                # tumor_type. Normalize a legacy VoCo alias (voco_liver etc.) to
+                # the corresponding biomedparse_* key so the adapter always
+                # receives a supported prompt.
+                bp_type = BIOMEDPARSE_FALLBACKS.get(tumor_type) or tumor_type
+                tool_kwargs["tumor_type"] = bp_type
+                tumor_type_used = bp_type
             else:
-                result = tool._execute(**tool_kwargs)
+                tumor_type_used = tumor_type
+            result = tool._execute(**tool_kwargs)
             if result.success:
                 result_meta = result.metadata or {}
+                result_meta.setdefault("tumor_type_used", tumor_type_used)
                 from tool_factory.segmentation_alignment import (
                     align_label_array_to_reference,
                     align_label_image_to_reference,
