@@ -176,7 +176,10 @@ class VoCoTotalSegmentatorTool(BaseTool):
             use_v2=True,
         )
 
-        checkpoint = torch.load(model_path, map_location=self._device, weights_only=True)
+        # weights_only=False for the locally deployed VoCo OAR checkpoint
+        # (trusted deployment artifact; PyTorch 2.6's weights_only=True default
+        # rejects the numpy scalars in these older checkpoints).
+        checkpoint = torch.load(model_path, map_location=self._device, weights_only=False)
         if "state_dict" in checkpoint:
             state_dict = checkpoint["state_dict"]
         else:

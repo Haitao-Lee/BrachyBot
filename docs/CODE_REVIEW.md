@@ -2,6 +2,45 @@
 
 _This file consolidates all code review reports. Sections are organized by date._
 
+## 2026-08-02 - Fix PyTorch 2.6 weights_only regression in VoCo model loading
+
+A liver-tumor CTV segmentation failed with "Weights only load failed ...
+Unsupported global: GLOBAL numpy.core.multiarray.scalar". The same failure
+affects every non-pancreatic CTV model and the VoCo OAR models.
+
+### Root cause
+
+PyTorch 2.6 changed `torch.load`'s default `weights_only` argument from False to
+True. The deployed VoCo checkpoints (fixed paths under `VoCo/`, optionally
+overridable by `VOCO_*_MODEL` env vars) were saved by older PyTorch and contain
+numpy scalars, which `weights_only=True` rejects. A prior change switched the
+load sites from `weights_only=False` to `weights_only=True`, breaking all these
+models. Verified: `torch.load(model_voco_74.27.pt, weights_only=True)` fails;
+`weights_only=False` loads fine and yields `{epoch, best_acc, state_dict}`.
+
+### Fix
+
+All VoCo CTV/OAR load sites now pass `weights_only=False`. These are trusted
+local deployment artifacts (not user-supplied files), so arbitrary-code
+execution is not a concern here. The dose model loader already used
+`weights_only=False` with a `TypeError` fallback.
+
+- `tool_factory/CTV_seg/voco_base.py` (base class — fixes liver, kidney, colon,
+  lung, btcv, brats21, etc.)
+- `tool_factory/CTV_seg/prostate_tumor_voco.py`
+- `tool_factory/OAR_seg/voco_total_segmentation.py`
+- `tool_factory/OAR_seg/aorta_vessel_voco.py`
+
+### Verification
+
+- `torch.load` on the real liver checkpoint: `weights_only=True` reproduces the
+  error; `weights_only=False` succeeds.
+- Regression test `test_local_model_checkpoints_load_with_weights_only_false`
+  asserts every load site passes `weights_only=False`.
+- `pytest` main suites: 110 passed.
+
+---
+
 ## 2026-08-02 - Data-tree node rename, empty-state text, and rename persistence
 
 ### 1. Rename any data-tree node from the right-click menu

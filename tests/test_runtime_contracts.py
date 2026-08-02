@@ -400,3 +400,27 @@ def test_tool_fallback_prefers_clean_step_results_over_llm_digest():
     # digest must NOT be mixed into the user-facing list.
     joined = "\n".join(successes)
     assert "Search results:\n- DeepRare: clinical phenotype" not in joined
+
+
+def test_local_model_checkpoints_load_with_weights_only_false():
+    """VoCo CTV/OAR model checkpoints are trusted local deployment artifacts.
+
+    PyTorch 2.6 changed torch.load's default weights_only to True, which rejects
+    the numpy scalars stored in these older checkpoints and broke every
+    non-pancreatic CTV model (liver, kidney, colon, lung, ...) plus the OAR
+    VoCo models. Every load site must pass weights_only=False; the dose model
+    loader already handles this via an explicit flag."""
+    ROOT = Path(__file__).resolve().parents[1]
+    files = [
+        ROOT / "tool_factory/CTV_seg/voco_base.py",
+        ROOT / "tool_factory/CTV_seg/prostate_tumor_voco.py",
+        ROOT / "tool_factory/OAR_seg/voco_total_segmentation.py",
+        ROOT / "tool_factory/OAR_seg/aorta_vessel_voco.py",
+    ]
+    for path in files:
+        src = path.read_text(encoding="utf-8")
+        assert "torch.load(" in src, f"{path.name} has no checkpoint load"
+        assert "weights_only=False" in src, (
+            f"{path.name} must load its trusted local checkpoint with "
+            "weights_only=False (PyTorch 2.6 default True rejects numpy scalars)"
+        )
