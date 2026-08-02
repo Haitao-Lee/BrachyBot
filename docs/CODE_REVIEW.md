@@ -2,6 +2,52 @@
 
 _This file consolidates all code review reports. Sections are organized by date._
 
+## 2026-08-02 - Guide still generated on CT truncation plane + nearby sleeves plug channels
+
+Two follow-up surgical-guide defects were reported and fixed.
+
+### 1. Guide still generated on the CT top/bottom truncation plane
+
+The finite-FOV detection existed but could miss a real truncated scan: the
+flat-cap heuristic only fired when the boundary slice area was >= 50% of its
+neighbour, and entries could still land exactly on the first/last slice.
+
+- `_flat_cap` threshold relaxed (>= 0.35 ratio, >= 32 voxels) so a flat
+  truncation cap is caught even when the scan starts mid-body.
+- `_sample_skin_entry` now **unconditionally rejects** an entry on the CT
+  first or last slice (`z == 0 || z == Z-1`) when the body reaches that
+  boundary — a genuine anatomical entry can never sit exactly on the scan edge.
+  It keeps searching for a real lateral skin entry, or refuses generation when
+  the whole segment lies in the truncated region.
+
+### 2. Nearby needle sleeves plugged neighbouring channels
+
+When two needles are closely spaced, the wall of one sleeve intruded into the
+neighbouring channel opening (radial 0.7-1.0 mm from the neighbour axis),
+partially plugging it.
+
+- Added `GUIDE_BORE_MARGIN_MM = 0.4`: each channel bore is cleared with an
+  extra 0.4 mm radial margin beyond the nominal `channel_radius`, so a
+  neighbouring sleeve wall can never enter the channel. The visible channel
+  opening is still defined by the sleeve inner wall; the margin only
+  guarantees the through-hole stays open for closely spaced needles.
+
+### Files changed
+
+| File | Change |
+|------|--------|
+| `web/surgical_guide.py` | Bore margin; stricter truncation detection + unconditional boundary-slice entry rejection |
+| `tests/test_surgical_guide.py` | Nearby-sleeve no-plug test; channel-open assertion updated for the bore margin |
+
+### Verification
+
+- 4-needle guide with two close pairs: 0 wall intrusions, all channels open,
+  watertight.
+- Truncated cylinder: top entry rejected, lateral entry kept.
+- `pytest` main suites: 111 passed.
+
+---
+
 ## 2026-08-02 - Fix PyTorch 2.6 weights_only regression in VoCo model loading
 
 A liver-tumor CTV segmentation failed with "Weights only load failed ...
