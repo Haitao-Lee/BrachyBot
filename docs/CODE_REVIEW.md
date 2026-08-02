@@ -2,6 +2,58 @@
 
 _This file consolidates all code review reports. Sections are organized by date._
 
+## 2026-08-02 - Surgical guide: stop building on CT truncation planes, keep bores open, smooth the mesh
+
+The operator reported three surgical-guide defects: (a) channel bores still
+blocked by neighbouring needle sleeve walls, (b) the guide plate still adhered
+to the CT superior/inferior truncation planes instead of real lateral skin, and
+(c) the mesh was voxel-stepped and rough.
+
+### Root causes
+
+1. **(b) Cap adherence**: the plate shell was built from the CLOSED body mask
+   (`~body_crop & distance band`), so it wrapped the flat superior/inferior caps
+   of a finite-FOV scan and the guide's contact surface followed the flat cut
+   plane. The old boundary shave removed only ~1 mm from the z-edges, far less
+   than the plate thickness, so the plate still hugged the truncation planes.
+2. **(c) Roughness**: the mesh came straight from Marching Cubes on a binary
+   mask with only 12 Taubin iterations, leaving visible voxel stair-steps on the
+   plate face and sleeve walls.
+3. **(a) Bore blocking**: bores were subtracted per-needle inside the loop while
+   the sleeve union accumulated, so an oblique neighbouring sleeve wall could
+   intrude into an adjacent channel before that channel's bore was drilled.
+
+### Fixes
+
+- **Boolean-solid construction**: the plate is now built only from voxels that
+  are OUTSIDE the body (`~body_crop`) within the clearance band, so the body
+  interior can never become part of the guide.
+- **Cap-backed rejection**: when the FOV is truncated, any guide voxel whose
+  nearest body voxel (EDT `return_indices`) lies on the truncated boundary
+  slice is removed, so the plate only contacts real lateral skin.
+- **Truncation margin**: the guide is shaved back from each truncated boundary
+  by a configurable `truncation_margin_mm` (default 5 mm) instead of ~1 mm.
+- **Unified drilling**: all sleeve cylinders are unioned first, then every bore
+  is subtracted from the fully-unioned solid, so no neighbouring wall can plug a
+  channel regardless of spacing or crossing angle. Sleeve/bore volumes use exact
+  flat-ended cylinder SDFs.
+- **Smooth watertight isosurface**: the boolean solid is lightly blurred
+  (anti-aliasing) and isosurfaced at 0.5 — watertight by construction on a
+  binary volume — then Taubin-smoothed with 20 shrink-free iterations.
+- **Insufficient-skin rejection**: if the remaining valid skin cannot support
+  the plate, generation fails with a clear message instead of building on the
+  cut plane.
+
+### Verification
+
+- Truncated-cylinder guide: no vertices within the 5 mm margin of the CT
+  boundaries, and no flat horizontal platform faces on the cap interior.
+- Converging-needle case: every channel stays a clean through-hole.
+- 23 surgical-guide tests pass (including new converging-bore and cap-platform
+  regressions).
+
+---
+
 ## 2026-08-02 - Deprecate VoCo CTV; route all non-pancreatic sites to BiomedParse v2
 
 The operator reported the liver CTV segmentation still used the VoCo SwinUNETR

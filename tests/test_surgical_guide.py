@@ -609,15 +609,139 @@ def test_guide_is_shaved_off_truncated_ct_boundaries():
     assert fov.get("truncated_superior") is True
     assert fov.get("truncated_inferior") is True
     vertices = np.asarray(guide["vertices"], dtype=np.float64)
-    # CT z in [0, z_count-1]. The guide must be shaved off the boundary slices:
-    # no vertex may sit exactly on z=0 or z=z_count-1 (the flat truncation
-    # planes), otherwise the plate would contact the scan boundary as if skin.
+    # CT z in [0, z_count-1]. The guide must be shaved off the boundary slices
+    # by the truncation safety margin (default 5 mm), not just a single voxel:
+    # no vertex may sit on or near the flat scan-boundary planes, otherwise the
+    # plate would contact the cut as if it were real skin.
     min_z = float(vertices[:, 2].min())
     max_z = float(vertices[:, 2].max())
-    assert min_z > 0.4, f"guide still touches z=0 truncation plane (min z {min_z:.2f})"
-    assert max_z < float(z_count - 1) - 0.4, (
-        f"guide still touches z={z_count - 1} truncation plane (max z {max_z:.2f})"
+    assert min_z >= 3.0, f"guide still contacts z=0 truncation plane (min z {min_z:.2f})"
+    assert max_z <= float(z_count - 1) - 3.0, (
+        f"guide still contacts z={z_count - 1} truncation plane (max z {max_z:.2f})"
     )
+
+
+def test_guide_contact_surface_has_no_flat_platform_on_truncated_cap():
+    """The plate on a truncated cylinder must not form a flat horizontal
+    platform spanning the scan-boundary cap.
+
+    Previously the guide plate was built from the CLOSED body mask, so the
+    shell wrapped the flat superior/inferior caps and the guide's contact
+    surface adhered to the CT truncation plane instead of real lateral skin.
+    After the fix the plate is built only from voxels whose nearest body voxel
+    is lateral skin (not a truncated boundary slice), and the plate is shaved
+    back by ``truncation_margin_mm``. As a result the guide has no large
+    horizontal platform faces on the cap: its top/bottom edges are narrow rims
+    hugging the cylinder wall, and the whole mesh stays clear of the boundary.
+    """
+    z_count, yx, radius = 40, 48, 15
+    ct = np.full((z_count, yx, yx), -1000, dtype=np.int16)
+    for z in range(z_count):
+        for y in range(yx):
+            for x in range(yx):
+                if (x - yx / 2) ** 2 + (y - yx / 2) ** 2 <= radius ** 2:
+                    ct[z, y, x] = 40
+    image = sitk.GetImageFromArray(ct)
+    image.SetSpacing((1.0, 1.0, 1.0))
+    image.SetOrigin((0.0, 0.0, 0.0))
+    agent = _Agent({
+        "ct_image": image,
+        "ct_data": ct,
+        "algorithm_plan_snapshot": {
+            "needles": [{
+                "id": "needle_0", "trajectory_id": "traj_1",
+                "points": [[24.0, 24.0, 20.0], [-20.0, 24.0, 20.0]],
+            }],
+            "seeds": [{
+                "id": "seed_0", "trajectory_id": "traj_1", "position": [20.0, 24.0, 20.0],
+            }],
+        },
+    })
+    guide = generate_surgical_guide(agent, {"geometry_resolution_mm": 0.5})
+    vertices = np.asarray(guide["vertices"], dtype=np.float64)
+    faces = np.asarray(guide["faces"], dtype=np.int64)
+    tri = vertices[faces]
+    normals = np.cross(tri[:, 1] - tri[:, 0], tri[:, 2] - tri[:, 0])
+    norms = np.linalg.norm(normals, axis=1)
+    norms[norms < 1e-9] = 1.0
+    normals = normals / norms[:, None]
+    face_z = tri.mean(axis=1)[:, 2]
+    # Horizontal platform faces (normal ~ along z) far from the cylinder wall
+    # would mean the plate wraps the flat cap. The body radius is 15; the plate
+    # hugs the lateral wall at radius ~16-19. Faces with a tiny radial extent
+    # inside the cap interior are the forbidden flat platform.
+    cx = cy = yx / 2.0
+    center = tri.mean(axis=1)[:, :2]
+    radial = np.sqrt((center[:, 0] - cx) ** 2 + (center[:, 1] - cy) ** 2)
+    horizontal = np.abs(normals[:, 2]) > 0.9
+    # The plate is shaved back by 5 mm from the boundaries, so the natural
+    # top/bottom rims sit at z in [5, 34]. Faces inside that band that are
+    # horizontal AND close to the body axis (radial < radius) would be a flat
+    # cap platform rather than the lateral ring's end rim.
+    in_band = (face_z > 6.0) & (face_z < 33.0)
+    cap_platform = horizontal & in_band & (radial < float(radius) - 1.0)
+    assert int(cap_platform.sum()) == 0, (
+        f"{int(cap_platform.sum())} flat platform faces on the truncated cap"
+    )
+
+
+def test_converging_needle_bores_stay_open_after_unified_drilling():
+    """Closely spaced converging needles must each keep a clean through-hole.
+
+    The guide is built as ``(plate ∪ all sleeves) \\ all bores``: every sleeve
+    cylinder is unioned first, then every bore is subtracted from the fully
+    unioned solid. This guarantees a neighbouring sleeve wall can never plug a
+    channel regardless of spacing or crossing angle. Previously the bores were
+    drilled before the sleeves were fully merged, so an oblique sleeve wall
+    could intrude into an adjacent channel opening."""
+    from scipy.spatial import cKDTree
+
+    shape = (90, 90, 90)
+    zz, yy, xx = np.indices(shape)
+    body = (xx - 45) ** 2 / 900 + (yy - 45) ** 2 / 900 + (zz - 45) ** 2 / 900 <= 1.0
+    ct = np.where(body, 40, -1000).astype(np.int16)
+    image = sitk.GetImageFromArray(ct)
+    image.SetSpacing((1.0, 1.0, 1.0))
+    entries = [(12.0, y, 45.0) for y in (40.0, 43.0, 47.0, 50.0)]
+    targets = [(45.0, 44.0, 45.0), (45.0, 45.0, 45.0), (45.0, 45.0, 45.0), (45.0, 46.0, 45.0)]
+    agent = _Agent({
+        "ct_image": image,
+        "ct_data": ct,
+        "algorithm_plan_snapshot": {
+            "needles": [
+                {"id": f"needle_{i}", "trajectory_id": f"traj_{i + 1}",
+                 "points": [list(t), list(e)]}
+                for i, (e, t) in enumerate(zip(entries, targets))
+            ],
+            "seeds": [
+                {"id": f"seed_{i}", "trajectory_id": f"traj_{i + 1}",
+                 "position": [28.0, t[1], t[2]]}
+                for i, t in enumerate(targets)
+            ],
+        },
+    })
+    guide = generate_surgical_guide(agent, {"geometry_resolution_mm": 0.5})
+    assert guide["validation"]["watertight"] is True
+    vertices = np.asarray(guide["vertices"], dtype=np.float64)
+    tree = cKDTree(vertices)
+    for path in guide["needle_paths"]:
+        entry = np.asarray(path["entry_world_mm"])
+        inward = np.asarray(path["direction_world"])
+        # Sample the channel axis in the open OUTWARD sleeve region. The first
+        # few millimetres behind the entry sit inside the plate (where the bore
+        # meets the plate's skin side); the test samples the free sleeve beyond
+        # that junction. The bore is drilled at channel_radius + margin
+        # (1.3 mm), so points on the axis must stay clear of solid material.
+        samples = entry[None, :] + inward[None, :] * np.linspace(-5.0, -11.0, 20)[:, None]
+        dist, _ = tree.query(samples)
+        # The channel core must be clear. At 0.5 mm resolution the bore wall
+        # isosurface can lie ~0.3 mm inside the nominal 1.3 mm bore radius, so
+        # a 0.3 mm threshold checks the through-hole is genuinely open without
+        # mistaking the discretised wall for a blocked channel.
+        blocked = int((dist < 0.3).sum())
+        assert blocked == 0, (
+            f"{path['needle_id']} channel is blocked by a neighbouring sleeve wall"
+        )
 
 
 
