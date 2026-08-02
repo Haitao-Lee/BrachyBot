@@ -34,7 +34,12 @@ follows a smooth skin surface rather than the raw CT slice steps. Each channel
 is a true flat-ended cylinder that protrudes OUTWARD from the patient; its bore
 is a full through-hole and its inner end sits flush with the plate's skin-facing
 face. It never extends into the body, so the guide can be positioned tightly
-against the skin.
+against the skin. After the solid is built it is trimmed against the smoothed
+skin's distance field (removing any oblique-needle sleeve that would cross into
+the skin), and the final mesh is Taubin-smoothed for a refined, printable
+surface. Versions are reused when both the plan signature and manufacturing
+parameters are unchanged, so duplicate generation calls do not inflate the
+version number.
 
 Rather than relying on `vtkBooleanOperationPolyDataFilter` for near-coplanar
 surfaces, the native implementation performs the solid operations on an exact
@@ -55,7 +60,7 @@ pressed.
 | Skin clearance | mm | 1.0 | Offset from the thresholded skin surface to the plate. |
 | Plate thickness | mm | 3.0 | Printable shell thickness. |
 | Patch margin | mm | 24.0 | Surface patch radius around each selected entry. |
-| Channel diameter | mm | 2.2 | Inner guide-hole diameter. The UI converts it to the internal radius exactly once. |
+| Channel diameter | mm | 1.8 | Inner guide-hole diameter. The UI converts it to the internal radius exactly once. |
 | Sleeve outer diameter | mm | 6.0 | Outer support sleeve diameter. It must exceed the channel diameter. |
 | Sleeve outward/inward length | mm | 8.0 / 8.0 | Sleeve extents on either side of the skin entry. The channel is clamped flush with the skin surface: it always protrudes outward from the patient and never penetrates the skin, so the guide can sit tightly against the skin. `sleeve_inward` is accepted for compatibility but no longer changes the geometry. |
 | Geometry resolution | mm | 1.0 | Isotropic local construction lattice. Smaller values improve detail but cost time and memory. |

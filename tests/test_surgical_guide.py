@@ -327,3 +327,79 @@ def test_guide_channel_is_clean_flat_cylinder_with_open_through_hole():
     mouth = (radial < 1.0) & (t < -10.0)
     assert mouth.sum() >= 3, "bore mouth is not open on the outer face"
 
+
+def test_guide_oblique_needle_does_not_penetrate_skin_after_trim():
+    """An angled needle must not leave sleeve material inside the skin.
+
+    The sleeve is a cylinder along the needle axis; for oblique needles its
+    wall crosses the skin surface. The guide is trimmed with the smoothed
+    skin's distance field (solid &= outside_distance >= skin_clearance), so no
+    guide voxel may remain inside the body regardless of entry angle."""
+    agent = _synthetic_agent()
+    agent.memory.store("algorithm_plan_snapshot", {
+        "needles": [{
+            "id": "needle_0", "trajectory_id": "traj_1",
+            # Oblique approach: target toward +y, external toward -x.
+            "points": [[32.0, 40.0, 32.0], [-10.0, 24.0, 32.0]],
+        }],
+        "seeds": [{
+            "id": "seed_0", "trajectory_id": "traj_1", "position": [28.0, 34.0, 32.0],
+        }],
+    })
+    guide = generate_surgical_guide(agent, {
+        "geometry_resolution_mm": 0.5,
+        "skin_clearance_mm": 1.0,
+        "plate_thickness_mm": 3.0,
+        "channel_radius_mm": 0.9,
+        "sleeve_outer_radius_mm": 3.0,
+        "sleeve_outward_mm": 8.0,
+    })
+    assert guide["validation"]["watertight"] is True
+    entry = np.asarray(guide["needle_paths"][0]["entry_world_mm"])
+    inward = np.asarray(guide["needle_paths"][0]["direction_world"])
+    vertices = np.asarray(guide["vertices"], dtype=np.float64)
+    rel = vertices - entry
+    t = rel @ inward
+    radial = np.linalg.norm(rel - np.outer(t, inward), axis=1)
+    center = np.array([32.0, 32.0, 32.0])
+    body_in = np.linalg.norm(vertices - center, axis=1) < 22.0
+    wall = (radial > 0.5) & (radial < 3.4) & (t > -1.0)
+    # No sleeve-wall vertex may sit inside the body sphere.
+    assert int((wall & body_in).sum()) == 0, "sleeve material penetrates the skin"
+
+
+def test_guide_version_is_reused_when_plan_and_parameters_are_identical():
+    """Duplicate generation calls must not bump the version number.
+
+    After a server restart, the LLM tool call and the frontend auto-generate
+    can both fire for the same plan; without dedup this produced v1, v2, v3
+    all with the same geometry. Identical plan signature + parameters must
+    reuse the latest version."""
+    agent = _synthetic_agent()
+    first = save_guide_version(agent, generate_surgical_guide(agent, {"geometry_resolution_mm": 1.0}))
+    assert first["version"] == 1
+    second = save_guide_version(agent, generate_surgical_guide(agent, {"geometry_resolution_mm": 1.0}))
+    assert second["version"] == 1, "identical regen must not bump version"
+    changed = save_guide_version(agent, generate_surgical_guide(agent, {
+        "geometry_resolution_mm": 1.0, "plate_thickness_mm": 4.0,
+    }))
+    assert changed["version"] == 2, "parameter change should bump version"
+    versions = guide_version_summaries(agent)
+    assert [item["version"] for item in versions] == [2, 1]
+
+
+def test_guide_mesh_status_stays_ready_in_the_data_tree():
+    """A generated guide must not render as 'not_generated' in the Data Tree.
+
+    The guide mesh carries status 'ready' without a `loaded` flag; the tree
+    metadata resolver previously downgraded it to 'not_generated'."""
+    tree_script = open(
+        "web/app/static/js/brachybot-viewer-volume.js", encoding="utf-8"
+    ).read()
+    assert "explicitStatus === 'ready'" in tree_script, (
+        "ensureDataTreeNodeMetadata must treat explicit 'ready' as authoritative"
+    )
+    assert "not_generated" in tree_script
+
+
+

@@ -6,7 +6,7 @@
         skin_clearance_mm: 1,
         plate_thickness_mm: 3,
         patch_margin_mm: 24,
-        channel_radius_mm: 1.1,
+        channel_radius_mm: 0.9,
         sleeve_outer_radius_mm: 3,
         sleeve_outward_mm: 8,
         sleeve_inward_mm: 8,

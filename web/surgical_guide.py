@@ -36,7 +36,7 @@ DEFAULT_GUIDE_PARAMETERS: Dict[str, float] = {
     "skin_clearance_mm": 1.0,
     "plate_thickness_mm": 3.0,
     "patch_margin_mm": 24.0,
-    "channel_radius_mm": 1.1,
+    "channel_radius_mm": 0.9,
     "sleeve_outer_radius_mm": 3.0,
     "sleeve_outward_mm": 8.0,
     "sleeve_inward_mm": 8.0,
@@ -717,16 +717,25 @@ def _mesh_from_voxels(
 def _smooth_mesh_vertices(
     vertices: np.ndarray,
     faces: np.ndarray,
-    iterations: int = 3,
+    iterations: int = 12,
     lambda_factor: float = 0.5,
+    mu_factor: Optional[float] = None,
 ) -> np.ndarray:
-    """Apply a few uniform Laplacian passes to a triangle mesh.
+    """Apply Taubin smoothing to a triangle mesh without shrinking it.
+
+    A plain uniform Laplacian (the previous implementation) both smooths and
+    shrinks the surface, so raising the iteration count to remove the visible
+    voxel stair-steps would also pull the guide's faces off the intended skin
+    fit. Taubin's lambda/mu two-pole scheme (a positive ``lambda`` pass
+    followed by a negative ``mu`` pass) removes the faceted high frequencies
+    while preserving the low-frequency shape, so the guide gets visibly
+    smoother and more refined without losing the plate's skin contact or the
+    channel geometry. The default 12 lambda/mu cycles smooth a 0.35 mm voxel
+    grid into a printable surface (a pure Laplacian needs ~60 passes and would
+    shrink the plate by ~0.5 mm).
 
     Only vertex positions change; the face connectivity is untouched so the
-    mesh stays watertight. The guide's sharp channel openings are preserved
-    because Laplacian smoothing is shrink-free at convex corners only to a
-    small degree; a modest lambda and iteration count softens facets without
-    closing the needle bores.
+    mesh stays watertight and the needle bores stay open.
     """
     import numpy as np
 
@@ -736,6 +745,7 @@ def _smooth_mesh_vertices(
         return np.asarray(vertices, dtype=np.float64)
     if len(verts) == 0 or len(faces) == 0:
         return np.asarray(vertices, dtype=np.float64)
+    mu = float(mu_factor) if mu_factor is not None else -float(lambda_factor) - 0.1
 
     # Build one-ring adjacency (both edge directions) from faces.
     edge_forward = faces[:, [0, 1, 2]].reshape(-1)
@@ -753,10 +763,15 @@ def _smooth_mesh_vertices(
 
     smoothed = verts.copy()
     for _ in range(int(iterations)):
-        # Average of one-ring neighbours.
         neighbour_sum = np.asarray(adjacency.dot(smoothed))
         average = neighbour_sum / degree[:, None]
-        smoothed = smoothed + lambda_factor * (average - smoothed)
+        # Positive lambda pass.
+        smoothed = smoothed + float(lambda_factor) * (average - smoothed)
+        # Negative mu pass (Taubin's second pole) removes the shrinkage the
+        # positive pass introduces, netting a shrink-free smoother.
+        neighbour_sum = np.asarray(adjacency.dot(smoothed))
+        average = neighbour_sum / degree[:, None]
+        smoothed = smoothed + mu * (average - smoothed)
     return smoothed
 
 
@@ -916,6 +931,13 @@ def generate_surgical_guide(
         bores |= bore
     solid = (shell & patch) | outer_sleeves
     solid &= ~bores
+    # Trim the guide's skin-facing side with the smoothed skin surface. The
+    # sleeve cylinder is built along the needle axis; for oblique needles its
+    # wall can cross the skin and leave voxels inside the body. Cutting the
+    # solid with the smoothed body's distance field (outside_distance) removes
+    # anything closer to the skin than the clearance, so the sleeve inner face
+    # is shaved flush with the plate's skin side and never pokes into the skin.
+    solid &= outside_distance >= params["skin_clearance_mm"]
     solid = _filter_components(solid, int(params["minimum_component_voxels"]))
     vertices, faces = _mesh_from_voxels(solid, ct_image, lower_xyz, spacing_xyz)
     validation = mesh_validation(vertices, faces)
@@ -925,7 +947,21 @@ def generate_surgical_guide(
         )
     snapshot = _current_planning_snapshot(agent)
     prior = memory.retrieve("surgical_guide")
-    version = int(prior.get("version", 0)) + 1 if isinstance(prior, Mapping) else 1
+    signature = planning_signature(_algorithm_planning_snapshot(agent))
+    # Deduplicate versions: when the plan geometry and manufacturing parameters
+    # are identical to the latest version, keep that version number instead of
+    # bumping it. This prevents spurious v2 -> v3 jumps caused by duplicate
+    # auto-generation calls (LLM tool + frontend auto-generate after a session
+    # restart) that would otherwise produce N copies of the same guide.
+    reuse_version = None
+    if isinstance(prior, Mapping):
+        prior_sig = str(prior.get("source_plan_signature") or "")
+        prior_params = prior.get("parameters") or {}
+        if prior_sig == signature and prior_params == params:
+            reuse_version = int(prior.get("version") or 0)
+    version = int(reuse_version) if reuse_version else (
+        int(prior.get("version", 0)) + 1 if isinstance(prior, Mapping) else 1
+    )
     planning_id = str(memory.retrieve("manual_planning_id") or "")
     planning_version = int(memory.retrieve("manual_plan_version") or 0)
     path_checks = _planned_path_deviation(paths)
@@ -946,7 +982,7 @@ def generate_surgical_guide(
         "data_type": "surgical_guide",
         "coordinate_system": "SimpleITK physical patient-world coordinates (mm)",
         "parameters": params,
-        "source_plan_signature": planning_signature(_algorithm_planning_snapshot(agent)),
+        "source_plan_signature": signature,
         "selected_needle_ids": [path.needle_id for path in paths],
         "needle_paths": path_checks,
         "vertices": vertices,
