@@ -343,6 +343,48 @@ def _body_mask(ct_array: np.ndarray, threshold: float) -> np.ndarray:
     return _largest_component(candidate)
 
 
+def _truncated_boundary_slices(body: np.ndarray) -> Tuple[bool, bool]:
+    """Detect whether the body envelope is truncated by the CT scan boundaries.
+
+    A finite-field-of-view CT stops at its first and last slices; the body
+    mask therefore simply ends there instead of closing over a real skin
+    surface. ``body[0]`` (z-min) and ``body[-1]`` (z-max) holding any body
+    voxels means the patient's true skin continues beyond the scan and the
+    boundary slice is a flat truncation plane, NOT anatomical skin.
+
+    A real skin surface that legitimately reaches a scan edge (e.g. the top of
+    the head) tapers to a small area over the last few slices, whereas a
+    truncation plane keeps a large near-constant cross-section right up to the
+    edge. We classify a boundary slice as truncated when it holds a substantial
+    body area comparable to its neighbour (a flat cap), i.e. the contour was
+    simply cut off rather than naturally closing.
+
+    Returns ``(z_min_truncated, z_max_truncated)``.
+    """
+    if body.ndim != 3 or min(body.shape) < 3:
+        return False, False
+    z_min_has_body = bool(np.any(body[0]))
+    z_max_has_body = bool(np.any(body[-1]))
+    if not (z_min_has_body or z_max_has_body):
+        return False, False
+
+    def _flat_cap(idx: int) -> bool:
+        a = body[idx]
+        neighbour = body[idx + 1] if idx < body.shape[0] - 1 else body[idx - 1]
+        area_a = int(a.sum())
+        area_n = int(neighbour.sum())
+        if area_a < 64:
+            return False  # sparse boundary row: not a meaningful truncation cap
+        # A truncation plane keeps a large, roughly constant cross-section right
+        # at the boundary. A natural closing (head/sacrum) drops off sharply.
+        ratio = float(area_a) / max(1.0, float(area_n))
+        return ratio >= 0.5
+
+    z_min = _flat_cap(0) if z_min_has_body else False
+    z_max = _flat_cap(body.shape[0] - 1) if z_max_has_body else False
+    return bool(z_min), bool(z_max)
+
+
 def _smooth_body_mask(
     body: np.ndarray,
     source_spacing_zyx: Sequence[float],
@@ -372,12 +414,22 @@ def _sample_skin_entry(
     body: np.ndarray,
     target: np.ndarray,
     external: np.ndarray,
+    *,
+    truncated_z_min: bool = False,
+    truncated_z_max: bool = False,
 ) -> Tuple[np.ndarray, np.ndarray]:
     """Find the first body voxel entered by the physical needle segment.
 
     The planner stores ``[deep, external]`` endpoints.  The method still
     searches the complete physical segment rather than assuming an axis or
     image orientation, and returns a direction that points into the patient.
+
+    When the body envelope is truncated by the CT scan boundaries (finite FOV),
+    an entry landing on the first/last slice is a FLAT truncation plane, not a
+    real skin surface. Such entries are skipped so the needle enters through
+    genuine lateral skin; if the whole segment stays inside the truncated
+    region an error is raised so the caller refuses an anatomically impossible
+    guide.
     """
     line = target - external
     length = float(np.linalg.norm(line))
@@ -388,6 +440,7 @@ def _sample_skin_entry(
     step = max(0.25, min(0.75, float(np.min(np.abs(spacing))) * 0.5))
     samples = max(2, int(math.ceil(length / step)) + 1)
     size_xyz = np.asarray(ct_image.GetSize(), dtype=np.int64)
+    z_count = int(size_xyz[2])
     inside_before = False
     first_inside: Optional[np.ndarray] = None
     for fraction in np.linspace(0.0, 1.0, samples, dtype=np.float64):
@@ -405,11 +458,26 @@ def _sample_skin_entry(
         x, y, z = np.rint(index_xyz).astype(np.int64)
         in_body = bool(body[z, y, x])
         if in_body and not inside_before:
+            # Reject an entry on a truncated (flat) scan-boundary slice.
+            on_truncated_boundary = (
+                (z == 0 and truncated_z_min) or (z == z_count - 1 and truncated_z_max)
+            )
+            if on_truncated_boundary:
+                # The needle enters through the CT truncation plane, not real
+                # skin. Keep searching: a real lateral skin entry may exist
+                # further along the segment.
+                inside_before = True
+                continue
             first_inside = point
             break
         inside_before = in_body
     if first_inside is None:
-        raise SurgicalGuideError("A planned needle does not intersect the CT-derived skin surface")
+        raise SurgicalGuideError(
+            "The planned needle only intersects the CT scan-boundary truncation "
+            "plane, not a real skin surface. The scan range is too short to "
+            "generate a safe puncture guide; use a CT that covers the full body "
+            "region or a lateral entry."
+        )
     return first_inside, inward
 
 
@@ -436,6 +504,7 @@ def _path_records(
         except SurgicalGuideError:
             continue
     paths: List[NeedleGuidePath] = []
+    trunc_z_min, trunc_z_max = _truncated_boundary_slices(body)
     for index, needle in enumerate(snapshot["needles"]):
         if not isinstance(needle, Mapping):
             continue
@@ -447,7 +516,11 @@ def _path_records(
             continue
         target = _as_point(points[0], "needle target")
         external = _as_point(points[-1], "needle external endpoint")
-        entry, inward = _sample_skin_entry(ct_image, body, target, external)
+        entry, inward = _sample_skin_entry(
+            ct_image, body, target, external,
+            truncated_z_min=trunc_z_min,
+            truncated_z_max=trunc_z_max,
+        )
         trajectory_id = str(needle.get("trajectory_id") or needle_id)
         linked_seeds = seed_by_trajectory.get(trajectory_id, [])
         if linked_seeds:
@@ -855,7 +928,13 @@ def generate_surgical_guide(
     body = _smooth_body_mask(body, source_spacing_zyx=tuple(
         float(value) for value in np.asarray(ct_image.GetSpacing(), dtype=np.float64)[::-1]
     ), sigma_mm=2.0)
+    # Finite-FOV detection: if the body envelope is truncated by the CT scan
+    # boundaries, the guide must only be built from real lateral skin. Entries
+    # falling on a truncated flat plane are rejected inside _path_records;
+    # record the truncation state so the caller can warn the operator.
+    trunc_z_min, trunc_z_max = _truncated_boundary_slices(body)
     paths = _path_records(agent, body, selected_needle_ids)
+    truncated_fov = bool(trunc_z_min or trunc_z_max)
 
     span_margin = (
         params["patch_margin_mm"]
@@ -993,6 +1072,11 @@ def generate_surgical_guide(
             "max_centerline_deviation_mm": 0.0,
             "skin_fit": "CT threshold surface with explicit clearance",
             "geometry_resolution_mm": params["geometry_resolution_mm"],
+            "finite_fov": {
+                "truncated_superior": bool(trunc_z_max),
+                "truncated_inferior": bool(trunc_z_min),
+                "all_entries_on_real_skin": True,
+            },
         },
     }
 
