@@ -4,6 +4,64 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def _needle_geometry(needles):
+    return [
+        {
+            "id": n["id"],
+            "trajectory_id": n["trajectory_id"],
+            "points": [list(p) for p in n["points"]],
+        }
+        for n in needles
+    ]
+
+
+def test_authoritative_previous_needles_recovers_baseline_after_restart():
+    """The incremental replan diff must not collapse to a full run.
+
+    After a server restart the browser's previous_needles cache is lost and it
+    submits the current (already edited) geometry as the baseline, which made
+    the diff empty and triggered a full-plan DoseUNet inference (~minutes)."""
+    from web.server_support import _authoritative_previous_needles
+
+    old_needle = {"id": "n1", "trajectory_id": "t1", "points": [[10.0, 10.0, 10.0], [10.0, 30.0, 10.0]]}
+    new_needle = {"id": "n1", "trajectory_id": "t1", "points": [[12.0, 10.0, 10.0], [12.0, 30.0, 10.0]]}
+
+    class Memory:
+        def __init__(self, values):
+            self.values = values
+
+        def retrieve(self, key):
+            return self.values.get(key)
+
+    # 1. Submitted baseline is stale (== current): fall back to stored manual needles.
+    stored = [dict(old_needle)]
+    agent = object.__new__(type("A", (), {}))
+    agent.memory = Memory({"manual_needles": stored})
+    result = _authoritative_previous_needles(agent, _needle_geometry([new_needle]), _needle_geometry([new_needle]))
+    assert result == _needle_geometry(stored)
+    assert result[0]["points"][0][0] == 10.0
+
+    # 2. Submitted baseline differs: use it directly.
+    agent = object.__new__(type("A", (), {}))
+    agent.memory = Memory({})
+    result = _authoritative_previous_needles(agent, _needle_geometry([old_needle]), _needle_geometry([new_needle]))
+    assert result[0]["points"][0][0] == 10.0
+
+    # 3. No stored baseline: fall back to the algorithm plan snapshot.
+    agent = object.__new__(type("A", (), {}))
+    agent.memory = Memory({
+        "algorithm_plan_snapshot": {"needles": _needle_geometry([old_needle])},
+    })
+    result = _authoritative_previous_needles(agent, _needle_geometry([new_needle]), _needle_geometry([new_needle]))
+    assert result[0]["points"][0][0] == 10.0
+
+    # 4. Nothing available: return the submitted (empty diff) gracefully.
+    agent = object.__new__(type("A", (), {}))
+    agent.memory = Memory({})
+    result = _authoritative_previous_needles(agent, _needle_geometry([new_needle]), _needle_geometry([new_needle]))
+    assert result == _needle_geometry([new_needle])
+
+
 def test_replan_reverses_current_ui_direction_and_reuses_masks():
     from AgenticSys import BrachyAgent
 
@@ -235,8 +293,8 @@ def test_needle_render_scheduler_survives_mixed_static_asset_revisions():
     # Keep this contract aligned with the actual cache-busting revisions in
     # index.html. A stale assertion here falsely reports a deployment bug and
     # hides whether the endpoint interaction bundle is really versioned.
-    assert "brachybot-viewer-layout.js?v=10" in index
-    assert "brachybot-3d-manual.js?v=22" in index
+    assert "brachybot-viewer-layout.js?v=11" in index
+    assert "brachybot-3d-manual.js?v=28" in index
     assert "scene3D.requestRender(1)" in layout
     assert "scene3D.requestRender(2)" in layout
     assert "window.requestRender = requestRender;" in manual

@@ -2,6 +2,69 @@
 
 _This file consolidates all code review reports. Sections are organized by date._
 
+## 2026-08-02 - Seed drag/restore in 3D, fast incremental replan, report_generator fix
+
+Three operator-reported issues were fixed and verified.
+
+### 1. Seed select + drag along needle + restore in the 3D viewer
+
+Seeds sit inside the body (CTV/OAR surfaces occlude them) and hug the needle
+axis, so an all-object raycast never reached them — a seed could not be selected
+or dragged. Both the mousedown picker and the right-click context menu now
+raycast `seed` objects with the same priority treatment as endpoint handles
+(`seed` -> `needle_handle` -> everything). The drag already constrained the seed
+to its needle via `_projectPointOntoNeedle` (between the two endpoints).
+
+- A seed is now selectable and draggable along its needle between the endpoints.
+- The replan prompt only fires when the seed actually moved (`seedDragMoved`),
+  so a plain click does not open a dialog; the prompt offers Replan / Move only.
+- The seed right-click menu gained **Restore original position**, backed by a
+  client-side `_originalPosition` cache (captured when the seed is first seen)
+  and `restoreSeedToOriginalPosition` which commits through the existing path.
+
+### 2. Replan is incremental and bounded, not a full re-run
+
+The incremental replan (only reprocess the changed needle's seeds, subtract old
+maps, add new maps) already existed, but after a server restart the browser's
+`previous_needles` cache is lost and it submitted the current (already edited)
+geometry as the baseline — the diff became empty and the whole plan fell into a
+full DoseUNet inference (~6 minutes).
+
+- New `_authoritative_previous_needles(agent, submitted, current)` recovers the
+  true pre-edit baseline from the submitted value (if different), then the
+  stored `manual_needles`, then `algorithm_plan_snapshot.needles`. Only when no
+  better baseline exists does it return the submitted (empty-diff) geometry.
+- Verified: a two-needle plan with one needle moved reports only `{n1, t1}` as
+  changed; the unchanged needle is never reprocessed.
+- Interactive replan deadline tightened from 180s to a 120s default so a
+  runaway request fails fast with a clear error instead of hanging.
+
+### 3. report_generator rejected action "generate"
+
+The LLM asked to "重新生成报告" and called `report_generator action: "generate"`,
+which failed gateway enum validation (`Invalid value for action`). The schema
+and executor now accept `generate`/`regenerate` as synonyms for `full_report`,
+so a natural-language report request succeeds.
+
+### Files changed
+
+| File | Change |
+|------|--------|
+| `web/app/static/js/brachybot-3d-manual.js` | Seed-priority raycast (mousedown + context menu), seedDragMoved gating, Restore original position |
+| `web/server_support.py` | `_authoritative_previous_needles`, tightened replan deadline |
+| `tool_factory/report_generator/__init__.py` | Accept `generate`/`regenerate` |
+| `tests/test_round7_regressions.py` | Baseline-recovery test; align asset-revision contract |
+| `web/app/index.html` | JS cache-busting versions |
+
+### Verification
+
+- `pytest` main suites: 104 passed.
+- Playwright: seed restore function present, no JS errors, seed-priority picker.
+- `_changed_trajectory_ids`: only the moved needle is flagged.
+- `report_generator(execute action=generate)` succeeds; gateway accepts it.
+
+---
+
 ## 2026-08-02 - Guide smoothness, skin trim, status fix, version dedup, channel diameter
 
 Operator feedback on the regenerated guide: the plate still looked bumpy
