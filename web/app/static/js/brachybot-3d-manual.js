@@ -191,6 +191,8 @@ function _applyAuthoritativeManualSeeds(data) {
             // Cache the position the seed had when it was first seen in this
             // case, so the context menu can restore it after manual drags.
             _originalPosition: old._originalPosition || [position[0], position[1], position[2]],
+            // Preserve a user-assigned label across server reloads.
+            label: seed.label || old.label || undefined,
             visible: seed.visible !== false,
             visible2D: seed.visible2D ?? old.visible2D ?? true,
             visible3D: seed.visible3D ?? old.visible3D ?? true,
@@ -2607,6 +2609,8 @@ async function loadSeeds3D() {
                 // Cache the first-seen position so the context menu can
                 // restore a manually dragged seed to its original spot.
                 _originalPosition: saved._originalPosition || [position[0], position[1], position[2]],
+                // Preserve a user-assigned label across server reloads.
+                label: seed.label || saved.label || undefined,
                 visible: saved.visible !== false,
                 visible2D: saved.visible2D !== false,
                 visible3D: saved.visible3D !== false,
@@ -2624,6 +2628,8 @@ async function loadSeeds3D() {
             visible3D: savedNeedleAppearance.get(String(needle.id))?.visible3D !== false,
             opacity: savedNeedleAppearance.get(String(needle.id))?.opacity ?? 0.9,
             color: savedNeedleAppearance.get(String(needle.id))?.color || '#ff2266',
+            // Preserve a user-assigned label across server reloads.
+            label: needle.label || savedNeedleAppearance.get(String(needle.id))?.label || undefined,
         }));
         manualPlanningState.planningId = data.planning_id || manualPlanningState.planningId;
         manualPlanningState.planningVersion = Number(

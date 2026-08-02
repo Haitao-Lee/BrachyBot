@@ -2838,7 +2838,8 @@ function renderDataTree() {
             <div class="tree-group-items">`;
         planningTrajectories.forEach(traj => {
             const trajId = traj.id;
-            const trajState = ensureDataTreeNodeMetadata({ ...traj, visible: traj.visible, opacity: traj.opacity, color: traj.color, loaded: true, label: `Trajectory ${traj.index + 1}` }, 'trajectory', 'planning');
+            const trajLabel = traj.label || `Trajectory ${traj.index + 1}`;
+            const trajState = ensureDataTreeNodeMetadata({ ...traj, visible: traj.visible, opacity: traj.opacity, color: traj.color, loaded: true, label: trajLabel }, 'trajectory', 'planning');
             const childSeeds = traj.seeds || [];
             const childHeader = childSeeds.length > 0 ? ` (${childSeeds.length} seeds)` : '';
             html += `<div class="tree-group" data-group="${trajId}">
@@ -2846,11 +2847,12 @@ function renderDataTree() {
                     <span class="arrow">&#9660;</span>
                     <button class="eye-btn ${traj.visible ? '' : 'hidden'}" onclick="event.stopPropagation();toggleDataVisibility('${trajId}')">${traj.visible ? '&#128065;' : '&#128064;'}</button>
                     <span style="color:#88ccff;">➤</span>
-                    <span>Trajectory ${traj.index + 1}${childHeader}</span>
+                    <span>${escHtml(trajLabel)}${childHeader}</span>
                 </div>
                 <div class="tree-group-items">`;
             childSeeds.forEach(seed => {
-                const seedState = ensureDataTreeNodeMetadata({ ...seed, visible: seed.visible !== false, opacity: seed.opacity ?? 1.0, color: seed.color || '#ffcc00', loaded: true, label: `Seed ${seed.id.split('_').slice(-1)[0]}` }, 'seed', trajId);
+                const seedLabel = seed.label || `Seed ${seed.id.split('_').slice(-1)[0]}`;
+                const seedState = ensureDataTreeNodeMetadata({ ...seed, visible: seed.visible !== false, opacity: seed.opacity ?? 1.0, color: seed.color || '#ffcc00', loaded: true, label: seedLabel }, 'seed', trajId);
                 html += renderTreeItem(seed.id, seedState, '');
             });
             html += `</div></div>`; // close trajectory sub-group
@@ -2871,7 +2873,7 @@ function renderDataTree() {
             </div>
             <div class="tree-group-items">`;
         planningSeeds.forEach(seed => {
-            const seedState = ensureDataTreeNodeMetadata({ ...seed, visible: seed.visible, opacity: seed.opacity, color: seed.color, loaded: true, label: `Seed ${seed.id}` }, 'seed', 'planning');
+            const seedState = ensureDataTreeNodeMetadata({ ...seed, visible: seed.visible, opacity: seed.opacity, color: seed.color, loaded: true, label: seed.label || `Seed ${seed.id}` }, 'seed', 'planning');
             html += renderTreeItem(seed.id, seedState, `Traj ${seed.trajectory_id}`);
         });
         html += `</div></div>`;
@@ -2892,7 +2894,7 @@ function renderDataTree() {
             </div>
             <div class="tree-group-items">`;
         planningNeedles.forEach(needle => {
-            const needleState = ensureDataTreeNodeMetadata({ ...needle, visible: needle.visible, opacity: needle.opacity, color: needle.color, loaded: true, label: `Needle ${needle.id}` }, 'needle', 'planning');
+            const needleState = ensureDataTreeNodeMetadata({ ...needle, visible: needle.visible, opacity: needle.opacity, color: needle.color, loaded: true, label: needle.label || `Needle ${needle.id}` }, 'needle', 'planning');
             html += renderTreeItem(needle.id, needleState, `${needle.points.length} pts`);
         });
         html += `</div></div>`;
@@ -4244,6 +4246,19 @@ function showContextMenu(x, y) {
         items += `<div class="ctx-menu-sep"></div>`;
     }
 
+    // Universal rename for any single leaf node (CTV label, OAR, seed, needle,
+    // trajectory, dose iso-surface, planning mesh, annotation, mask). Masks
+    // already offer Rename above; this adds it for every other node type.
+    if (isSingle && !firstId.startsWith('mask_') && !['ctv', 'oar'].includes(firstId)
+        && (firstId.startsWith('organ_') || firstId.startsWith('ctv_') || firstId.startsWith('seed_')
+            || firstId.startsWith('needle_') || firstId.startsWith('traj_') || firstId.startsWith('trajectory_')
+            || firstId.startsWith('dose_iso_') || firstId.startsWith('planning_mesh_')
+            || firstId === 'dose_overlay')) {
+        items += `<div class="ctx-menu-item" onclick="hideContextMenu();renameDataTreeNode('${firstId}')">
+            <span class="ctx-icon">&#9998;</span> ${_dtText('重命名', 'Rename')}</div>`;
+        items += `<div class="ctx-menu-sep"></div>`;
+    }
+
     // OAR traversability remains a presentation classification. CTV/OAR is a
     // clinical structure classification and therefore uses the backend
     // transaction below instead of the legacy local category assignment.
@@ -5412,6 +5427,64 @@ function renameDataTreeMask(id, providedName) {
     _scheduleDataTreeSave('mask.rename');
     addChat('system', _dtText(`掩膜已重命名为 "${trimmed}"`, `Mask renamed to "${trimmed}"`));
 }
+
+// Rename any Data Tree node from its right-click menu. Masks keep the dedicated
+// mask path; every other leaf (CTV label, OAR organ, seed, needle, trajectory,
+// dose iso-surface, planning mesh, annotation) is renamed generically by
+// updating its persisted `label`/`name` field, then re-rendering.
+function renameDataTreeNode(id, providedName) {
+    let node = _findDataTreeNode(id);
+    let current = '';
+    let setLabel = null;
+
+    if (id.startsWith('mask_')) {
+        return renameDataTreeMask(id, providedName);
+    }
+    if (id === 'ctv') {
+        node = dataTreeState.ctv;
+        current = node?.label || 'CTV Mask';
+        setLabel = value => { if (node) node.label = value; };
+    } else if (id === 'oar') {
+        node = dataTreeState.oar;
+        current = node?.label || 'All OARs';
+        setLabel = value => { if (node) node.label = value; };
+    } else if (id.startsWith('ctv_')) {
+        node = dataTreeState.ctvLabels?.[id];
+        current = node?.label || id;
+        setLabel = value => { if (node) node.label = value; };
+    } else if (id.startsWith('organ_')) {
+        node = dataTreeState.organs.find(item => item.id === id) || null;
+        current = node?.label || node?.name || id;
+        setLabel = value => { if (node) { node.label = value; node.name = value; } };
+    } else if (id.startsWith('dose_iso_')) {
+        const threshold = parseFloat(id.replace('dose_iso_', ''));
+        node = _planningItems('doseLevels').find(item => item.threshold === threshold) || null;
+        current = node?.label || id;
+        setLabel = value => { if (node) node.label = value; };
+    } else {
+        // Planning trajectories / seeds / needles / meshes and annotations.
+        node = _findDataTreeNode(id);
+        current = node?.label || node?.name || id;
+        setLabel = value => {
+            if (node) { node.label = value; node.name = value; }
+        };
+    }
+
+    if (!node || !setLabel) return;
+    let next = typeof providedName === 'string' ? providedName : null;
+    if (next === null) {
+        next = window.prompt(_dtText('输入新的名称', 'Enter a new name'), current);
+    }
+    if (next === null) return;
+    const trimmed = String(next).trim();
+    if (!trimmed) return;
+    setLabel(trimmed);
+    renderDataTree();
+    if (typeof updateTreeLabelInScene === 'function') updateTreeLabelInScene(id, trimmed);
+    _scheduleDataTreeSave(`tree.rename:${id}`);
+    addChat('system', _dtText(`已重命名为 "${trimmed}"`, `Renamed to "${trimmed}"`));
+}
+window.renameDataTreeNode = renameDataTreeNode;
 
 // Delete a mask and its 3D mesh.
 function deleteDataTreeMask(id) {
