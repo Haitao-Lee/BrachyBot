@@ -111,7 +111,13 @@ class VoCoSegmentationBase(BaseTool):
             use_v2=True,
         )
 
-        checkpoint = torch.load(self.MODEL_PATH, map_location=self._device, weights_only=True)
+        # weights_only=False: these are locally deployed VoCo model checkpoints
+        # (fixed paths under the VoCo/ directory, optionally overridable by the
+        # VOCO_MODEL_PATH environment variable). They are trusted deployment
+        # artifacts, not user-supplied files. PyTorch 2.6 changed torch.load's
+        # default weights_only to True, which rejects the numpy scalars stored
+        # in these older checkpoints and broke every non-pancreatic CTV model.
+        checkpoint = torch.load(self.MODEL_PATH, map_location=self._device, weights_only=False)
         state_dict = checkpoint.get("state_dict", checkpoint)
 
         # Handle common key prefixes
