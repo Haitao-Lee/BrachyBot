@@ -2,6 +2,40 @@
 
 _This file consolidates all code review reports. Sections are organized by date._
 
+## 2026-08-02 - Shave guide off truncated CT boundaries (follow-up)
+
+Following the bore-margin and truncation fixes, the operator requested two
+clarifying improvements:
+
+1. **"Put the cylinders first, drill the holes last"** — the construction
+   already does exactly this: `solid = (shell & patch) | outer_sleeves` (all
+   sleeve cylinders unioned) then `solid &= ~bores` (all channels drilled last).
+   The bore margin guarantees a neighbouring sleeve wall cannot plug another
+   channel. No change was needed beyond confirming the ordering.
+
+2. **Shave the final guide off the CT top/bottom truncation planes** — even
+   with valid lateral-skin entries, the plate's large patch could wrap onto the
+   flat scan-boundary plane and look like a skin-contact surface. After the
+   skin-side trim, the guide now removes solid voxels in the cropped grid's
+   boundary layers that coincide with the CT z edges (only when the body is
+   truncated there). The guide therefore only contacts real lateral skin.
+
+### Files changed
+
+| File | Change |
+|------|--------|
+| `web/surgical_guide.py` | Shave solid off truncated z-boundary layers after bores/trim |
+| `tests/test_surgical_guide.py` | `test_guide_is_shaved_off_truncated_ct_boundaries` |
+
+### Verification
+
+- Truncated-cylinder guide (lateral entry): watertight, `finite_fov` reported,
+  vertices stay off the z=0 / z=Z-1 planes (min z 0.62, max z 38.35 on a
+  0..39 CT), confirming the plate no longer contacts the scan boundaries.
+- `pytest` main suites: 111 passed (21 surgical-guide).
+
+---
+
 ## 2026-08-02 - Guide still generated on CT truncation plane + nearby sleeves plug channels
 
 Two follow-up surgical-guide defects were reported and fixed.

@@ -1034,6 +1034,20 @@ def generate_surgical_guide(
     # anything closer to the skin than the clearance, so the sleeve inner face
     # is shaved flush with the plate's skin side and never pokes into the skin.
     solid &= outside_distance >= params["skin_clearance_mm"]
+    # Shave the guide off the CT scan boundaries (finite FOV). The shell and
+    # sleeves are built from the body envelope; when that envelope is truncated
+    # by the CT first/last slice, the guide plate can wrap onto the flat
+    # truncation plane and be mistaken for a skin-contact surface. Remove solid
+    # voxels in the boundary layers that coincide with the CT z edges, so the
+    # guide only contacts real lateral skin.
+    if truncated_fov:
+        boundary_remove = min(2, max(1, int(round(1.0 / max(1e-6, spacing_zyx[0])))))
+        ct_z_min = int(lower_zyx[0]) == 0
+        ct_z_max = int(upper_zyx[0]) == int(body.shape[0] - 1)
+        if trunc_z_min and ct_z_min:
+            solid[:boundary_remove] = False
+        if trunc_z_max and ct_z_max:
+            solid[-boundary_remove:] = False
     solid = _filter_components(solid, int(params["minimum_component_voxels"]))
     vertices, faces = _mesh_from_voxels(solid, ct_image, lower_xyz, spacing_xyz)
     validation = mesh_validation(vertices, faces)
