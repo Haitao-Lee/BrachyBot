@@ -576,5 +576,49 @@ def test_nearby_needle_sleeve_does_not_plug_neighbouring_channel():
             )
 
 
+def test_guide_is_shaved_off_truncated_ct_boundaries():
+    """A guide on a truncated-CT cylinder must not wrap onto the scan-boundary
+    flat planes: after generation the mesh must not contain solid at the CT
+    first/last slice, even though the entry is valid lateral skin."""
+    z_count, yx, radius = 40, 48, 15
+    ct = np.full((z_count, yx, yx), -1000, dtype=np.int16)
+    for z in range(z_count):
+        for y in range(yx):
+            for x in range(yx):
+                if (x - yx / 2) ** 2 + (y - yx / 2) ** 2 <= radius ** 2:
+                    ct[z, y, x] = 40
+    image = sitk.GetImageFromArray(ct)
+    image.SetSpacing((1.0, 1.0, 1.0))
+    image.SetOrigin((0.0, 0.0, 0.0))
+    agent = _Agent({
+        "ct_image": image,
+        "ct_data": ct,
+        "algorithm_plan_snapshot": {
+            "needles": [{
+                "id": "needle_0", "trajectory_id": "traj_1",
+                "points": [[24.0, 24.0, 20.0], [-20.0, 24.0, 20.0]],
+            }],
+            "seeds": [{
+                "id": "seed_0", "trajectory_id": "traj_1", "position": [20.0, 24.0, 20.0],
+            }],
+        },
+    })
+    guide = generate_surgical_guide(agent, {"geometry_resolution_mm": 0.5})
+    assert guide["validation"]["watertight"] is True
+    fov = guide["validation"].get("finite_fov") or {}
+    assert fov.get("truncated_superior") is True
+    assert fov.get("truncated_inferior") is True
+    vertices = np.asarray(guide["vertices"], dtype=np.float64)
+    # CT z in [0, z_count-1]. The guide must be shaved off the boundary slices:
+    # no vertex may sit exactly on z=0 or z=z_count-1 (the flat truncation
+    # planes), otherwise the plate would contact the scan boundary as if skin.
+    min_z = float(vertices[:, 2].min())
+    max_z = float(vertices[:, 2].max())
+    assert min_z > 0.4, f"guide still touches z=0 truncation plane (min z {min_z:.2f})"
+    assert max_z < float(z_count - 1) - 0.4, (
+        f"guide still touches z={z_count - 1} truncation plane (max z {max_z:.2f})"
+    )
+
+
 
 
