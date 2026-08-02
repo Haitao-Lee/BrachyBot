@@ -320,13 +320,20 @@ def test_guide_channel_is_clean_flat_cylinder_with_open_through_hole():
     tip_wall = (radial > 1.5) & (radial < 3.4) & (t < -10.0)
     assert tip_wall.any(), "sleeve outer end-face has no wall vertices"
     tip_range = float(t[tip_wall].max()) - float(t[tip_wall].min())
-    # One marching-cubes voxel of staircase is expected at 1 mm resolution; a
-    # capsule would show ~sleeve_radius of rounding (>= 3 mm).
-    assert tip_range < 1.6, f"outer end-face is rounded, not flat (t range {tip_range:.2f})"
+    # One marching-cubes voxel of staircase is expected at 1 mm resolution (plus
+    # the 0.4 mm bore margin around the channel opening); a capsule would show
+    # ~sleeve_radius of rounding (>= 3 mm).
+    assert tip_range < 2.0, f"outer end-face is rounded, not flat (t range {tip_range:.2f})"
 
     # (3) The bore mouth is open on the outer face (channel is a through-hole).
-    mouth = (radial < 1.0) & (t < -10.0)
-    assert mouth.sum() >= 3, "bore mouth is not open on the outer face"
+    # The nominal channel opening is defined by the sleeve inner wall at
+    # channel_radius; the bore is cleared with a margin so the opening is fully
+    # open. r < channel_radius must contain no solid material.
+    mouth_core = (radial < 0.8) & (t < -10.0)
+    assert int(mouth_core.sum()) == 0, "bore core must be fully open on the outer face"
+    # The channel rim (sleeve inner wall) must be present just outside the bore.
+    rim = (radial > 1.0) & (radial < 2.0) & (t < -10.0)
+    assert int(rim.sum()) >= 3, "channel rim must be present on the outer face"
 
 
 def test_guide_oblique_needle_does_not_penetrate_skin_after_trim():
@@ -506,6 +513,67 @@ def test_guide_with_only_truncated_entries_refuses_to_generate():
     with pytest.raises(SurgicalGuideError) as exc_info:
         generate_surgical_guide(agent, {"geometry_resolution_mm": 1.0})
     assert "truncation" in str(exc_info.value).lower() or "scan" in str(exc_info.value).lower()
+
+
+def test_nearby_needle_sleeve_does_not_plug_neighbouring_channel():
+    """Two closely spaced needles must keep each channel a clean through-hole.
+
+    Without the bore margin, the wall of one sleeve intruded into the
+    neighbouring channel opening (radial distance 0.7-1.0 mm from the neighbour
+    axis). The bore subtraction is now enlarged by GUIDE_BORE_MARGIN_MM so a
+    neighbouring wall can never enter the channel."""
+    shape = (64, 64, 64)
+    zz, yy, xx = np.indices(shape)
+    body = (xx - 32) ** 2 / 900 + (yy - 32) ** 2 / 900 + (zz - 32) ** 2 / 900 <= 1.0
+    ct = np.where(body, 40, -1000).astype(np.int16)
+    image = sitk.GetImageFromArray(ct)
+    image.SetSpacing((1.0, 1.0, 1.0))
+    agent = _Agent({
+        "ct_image": image,
+        "ct_data": ct,
+        "algorithm_plan_snapshot": {
+            "needles": [
+                {"id": "needle_0", "trajectory_id": "traj_1",
+                 "points": [[32.0, 32.0, 32.0], [-10.0, 32.0, 32.0]]},
+                {"id": "needle_1", "trajectory_id": "traj_2",
+                 "points": [[35.0, 32.0, 32.0], [-10.0, 35.0, 32.0]]},
+            ],
+            "seeds": [
+                {"id": "seed_0", "trajectory_id": "traj_1", "position": [28.0, 32.0, 32.0]},
+                {"id": "seed_1", "trajectory_id": "traj_2", "position": [28.0, 35.0, 32.0]},
+            ],
+        },
+    })
+    guide = generate_surgical_guide(agent, {"geometry_resolution_mm": 0.5})
+    assert guide["validation"]["watertight"] is True
+    vertices = np.asarray(guide["vertices"], dtype=np.float64)
+    entries = [np.asarray(p["entry_world_mm"]) for p in guide["needle_paths"]]
+    directions = [np.asarray(p["direction_world"]) for p in guide["needle_paths"]]
+
+    # For each needle, check that no OTHER needle's sleeve wall (radial 1.0-3.2
+    # mm from that other needle's axis) intrudes into THIS channel (radial < 1.0
+    # mm from this axis) along the sleeve region.
+    for i in range(2):
+        e_i = entries[i]
+        d_i = directions[i]
+        for j in range(2):
+            if i == j:
+                continue
+            e_j = entries[j]
+            d_j = directions[j]
+            rel_i = vertices - e_i
+            t_i = rel_i @ d_i
+            r_i = np.linalg.norm(rel_i - np.outer(t_i, d_i), axis=1)
+            rel_j = vertices - e_j
+            r_j = np.linalg.norm(rel_j - np.outer(rel_j @ d_j, d_j), axis=1)
+            # This channel (near needle i axis, in the sleeve region) must not
+            # contain material from the neighbouring sleeve wall.
+            in_channel = (r_i < 1.0) & (t_i < -6.0)
+            from_neighbour_wall = (r_j > 1.0) & (r_j < 3.2)
+            intrusion = int((in_channel & from_neighbour_wall).sum())
+            assert intrusion == 0, (
+                f"needle {j} sleeve wall intrudes into needle {i} channel ({intrusion} vertices)"
+            )
 
 
 

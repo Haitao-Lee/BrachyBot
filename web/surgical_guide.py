@@ -53,6 +53,13 @@ DEFAULT_GUIDE_PARAMETERS: Dict[str, float] = {
 # allowing repeated mesh generation to grow one case workspace without limit.
 MAX_SAVED_GUIDE_VERSIONS = 5
 
+# Extra radial clearance subtracted around every channel bore, beyond the
+# nominal channel_radius. Without this, two nearby needle sleeves can merge and
+# the wall of one sleeve intrudes into the neighbouring channel, partially
+# plugging its opening. The margin keeps every channel a clean through-hole
+# even for closely spaced needles (>= a printable wall thickness).
+GUIDE_BORE_MARGIN_MM = 0.4
+
 _PARAMETER_LIMITS = {
     "skin_threshold_hu": (-800.0, 100.0),
     "skin_clearance_mm": (0.0, 5.0),
@@ -373,12 +380,14 @@ def _truncated_boundary_slices(body: np.ndarray) -> Tuple[bool, bool]:
         neighbour = body[idx + 1] if idx < body.shape[0] - 1 else body[idx - 1]
         area_a = int(a.sum())
         area_n = int(neighbour.sum())
-        if area_a < 64:
-            return False  # sparse boundary row: not a meaningful truncation cap
-        # A truncation plane keeps a large, roughly constant cross-section right
-        # at the boundary. A natural closing (head/sacrum) drops off sharply.
+        if area_a < 32:
+            return False  # tiny boundary row: ambiguous, not a clear truncation
+        # A truncation plane keeps a substantial, roughly constant cross-section
+        # right at the boundary; a natural closing (head/sacrum) drops off fast.
+        # A ratio >= 0.35 catches flat truncation caps even when the scan starts
+        # mid-body, while a genuinely curved skin closure drops below it.
         ratio = float(area_a) / max(1.0, float(area_n))
-        return ratio >= 0.5
+        return ratio >= 0.35
 
     z_min = _flat_cap(0) if z_min_has_body else False
     z_max = _flat_cap(body.shape[0] - 1) if z_max_has_body else False
@@ -458,10 +467,13 @@ def _sample_skin_entry(
         x, y, z = np.rint(index_xyz).astype(np.int64)
         in_body = bool(body[z, y, x])
         if in_body and not inside_before:
-            # Reject an entry on a truncated (flat) scan-boundary slice.
+            # Reject an entry on a truncated (flat) scan-boundary slice. The CT
+            # first/last slice is a flat scan-boundary plane, not real skin,
+            # regardless of how the flat-cap heuristic classifies it: a genuine
+            # anatomical entry can never sit exactly on the scan edge.
             on_truncated_boundary = (
                 (z == 0 and truncated_z_min) or (z == z_count - 1 and truncated_z_max)
-            )
+            ) or z == 0 or z == z_count - 1
             if on_truncated_boundary:
                 # The needle enters through the CT truncation plane, not real
                 # skin. Keep searching: a real lateral skin entry may exist
@@ -1004,7 +1016,12 @@ def generate_surgical_guide(
             sleeve_inner,
             sleeve_outer,
             params["sleeve_outer_radius_mm"],
-            params["channel_radius_mm"],
+            # Subtract a slightly larger bore than the nominal channel radius so
+            # a neighbouring sleeve wall can never intrude into this channel
+            # when needles are closely spaced. The visible channel opening is
+            # still defined by the sleeve inner wall (= channel_radius); the
+            # margin only guarantees the through-hole stays open.
+            params["channel_radius_mm"] + GUIDE_BORE_MARGIN_MM,
         )
         outer_sleeves |= sleeve
         bores |= bore
