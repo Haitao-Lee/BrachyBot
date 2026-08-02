@@ -146,6 +146,14 @@
 				const lastPosition = new THREE.Vector3();
 				const lastQuaternion = new THREE.Quaternion();
 				const twoPI = 2 * Math.PI;
+				// Free-orbit pole handling. OrbitControls recomputes the
+				// spherical coords from the camera position every frame, which
+				// loses the azimuth exactly at the top/bottom pole and makes a
+				// drag dead-stop there. Once a rotate drag starts crossing a
+				// pole, we carry the accumulated spherical forward across frames
+				// (skipping the recompute) so the orbit continues to any angle.
+				const _sphericalCarry = new THREE.Spherical();
+				let _carryAcrossPole = false;
 				return function update() {
 
 					const position = scope.object.position;
@@ -153,7 +161,13 @@
 
 					offset.applyQuaternion( quat ); // angle from z-axis around y-axis
 
-					spherical.setFromVector3( offset );
+					if ( _carryAcrossPole ) {
+						spherical.theta = _sphericalCarry.theta;
+						spherical.phi = _sphericalCarry.phi;
+						spherical.radius = _sphericalCarry.radius;
+					} else {
+						spherical.setFromVector3( offset );
+					}
 
 					if ( scope.autoRotate && state === STATE.NONE ) {
 
@@ -194,7 +208,35 @@
 
 					} // restrict phi to be between desired limits
 
-
+					// Free-orbit pole crossing. OrbitControls natively clamps phi
+					// to [0, PI]; a drag reaching the top/bottom pole stops there
+					// and can only be reversed. Allow the camera to roll over the
+					// pole instead: when phi crosses 0 (top) or PI (bottom), map it
+					// to the opposite hemisphere (phi -> PI - phi for the top pole,
+					// phi -> 2PI - phi for the bottom pole) while flipping theta.
+					// This keeps the orbit direction continuous so the scene can be
+					// viewed from any angle. Once crossing is active, the spherical
+					// coords are carried across frames (the position-based recompute
+					// would otherwise lose the azimuth exactly at the pole).
+					if ( spherical.phi < 0 ) {
+						// Crossed the top pole (phi negative).
+						spherical.phi = Math.PI - spherical.phi; // e.g. -eps -> PI+eps... use PI + phi to stay in range
+						spherical.theta += Math.PI;
+						_carryAcrossPole = true;
+						_sphericalCarry.theta = spherical.theta;
+						_sphericalCarry.phi = spherical.phi;
+						_sphericalCarry.radius = spherical.radius;
+					} else if ( spherical.phi > Math.PI ) {
+						// Crossed the bottom pole (phi beyond PI).
+						spherical.phi = 2 * Math.PI - spherical.phi;
+						spherical.theta += Math.PI;
+						_carryAcrossPole = true;
+						_sphericalCarry.theta = spherical.theta;
+						_sphericalCarry.phi = spherical.phi;
+						_sphericalCarry.radius = spherical.radius;
+					} else if ( _carryAcrossPole ) {
+						_carryAcrossPole = false;
+					}
 					spherical.phi = Math.max( scope.minPolarAngle, Math.min( scope.maxPolarAngle, spherical.phi ) );
 					spherical.makeSafe();
 					spherical.radius *= scale; // restrict radius to be between desired limits

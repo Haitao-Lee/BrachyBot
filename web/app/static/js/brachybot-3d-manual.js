@@ -4632,7 +4632,17 @@ async function restoreNeedleToAlgorithm(needleId) {
         }
         if (restoreSessionId !== String(_activeApiSessionId() || '')) return data;
         await loadSeeds3D();
-        if (typeof refreshPlanningUI === 'function') await refreshPlanningUI();
+        // Use the lightweight refresh (metrics/DVH/seeds/needles/dose overlay)
+        // instead of refreshPlanningUI(), which reloads CT labels, every OAR
+        // mesh, report figures and all 3D objects. A needle restore must feel
+        // instant, and the backend already returned the authoritative geometry
+        // and (when applicable) the recomputed dose metrics.
+        if (data && typeof data.metrics === 'object' && typeof _refreshManualDoseViews === 'function') {
+            const wasTexture = !!(state && state.doseTexture && state.doseTexture.enabled);
+            await _refreshManualDoseViews(data, wasTexture);
+        } else {
+            if (typeof refreshPlanningUI === 'function') await refreshPlanningUI();
+        }
         if (typeof loadAllSlices === 'function' && state.ctLoaded) await loadAllSlices();
         const message = data.fast_restore
             ? localize(`${needleId} 已恢复到算法规划位置，原始粒子和剂量已恢复。`, `${needleId} restored to the algorithm position; original seeds and dose were restored.`)
@@ -4666,9 +4676,18 @@ async function restoreSeedToOriginalPosition(seedId) {
     if (mesh) mesh.position.set(original[0], original[1], original[2]);
     addChat('system', localize(`正在将 ${seedId} 恢复到原始位置…`, `Restoring ${seedId} to its original position...`));
     try {
-        const result = await onManualSeedEdited(seedId, original, null, {});
-        if (result && typeof refreshPlanningUI === 'function') await refreshPlanningUI();
-        return result;
+        // Commit the geometry and recompute dose through the (now fast)
+        // incremental path, then apply the lightweight view refresh instead of
+        // reloading every CT label / OAR mesh / 3D object via refreshPlanningUI.
+        await onManualSeedEdited(seedId, original, null, {});
+        const doseResult = await recomputeManualDose('seed_restore');
+        if (doseResult && typeof doseResult.metrics === 'object' && typeof _refreshManualDoseViews === 'function') {
+            const wasTexture = !!(state && state.doseTexture && state.doseTexture.enabled);
+            await _refreshManualDoseViews(doseResult, wasTexture);
+        } else if (typeof refreshPlanningUI === 'function') {
+            await refreshPlanningUI();
+        }
+        return doseResult;
     } catch (error) {
         const message = localize(`粒子恢复失败：${error.message}`, `Seed restore failed: ${error.message}`);
         addChat('error', message);

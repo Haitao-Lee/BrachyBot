@@ -2,6 +2,56 @@
 
 _This file consolidates all code review reports. Sections are organized by date._
 
+## 2026-08-02 - Free-orbit 3D rotation and instant needle/seed restore
+
+Two operator-reported issues were fixed and verified.
+
+### 1. 3D viewer rotation dead-stops at the poles
+
+Dragging the 3D scene could only rotate to a limited angle and then required
+reversing. OrbitControls natively clamps the polar angle to `[0, PI]`, so a
+vertical drag reaching the top or bottom pole stops there and can only be
+reversed.
+
+- `update()` now carries the accumulated spherical coordinates across frames
+  once a drag starts crossing a pole (`_carryAcrossPole` / `_sphericalCarry`),
+  and maps the pole crossing by reflecting phi and flipping theta. This gives
+  continuous, unrestricted orbit: a full vertical drag now rolls from the top
+  pole through the bottom pole back to the equator, and horizontal rotation
+  continues freely afterward.
+- Verified end-to-end: a 16-step vertical drag produces `y=114 -> 212 -> 277
+  -> -300 (pole crossed) -> -277 -> -114 -> 0`, followed by normal horizontal
+  rotation.
+
+### 2. Right-click needle/seed restore is instant
+
+`restoreNeedleToAlgorithm` and `restoreSeedToOriginalPosition` called
+`refreshPlanningUI()` after success, which reloads CT labels, every OAR mesh,
+report figures and all 3D objects — making a simple restore feel slow.
+
+- Both now use the lightweight `_refreshManualDoseViews(data, ...)` (metrics /
+  DVH / seeds / needles / dose overlay only) when the backend returned the
+  authoritative geometry and metrics, falling back to `refreshPlanningUI` only
+  when needed. A needle restore now reuses the algorithm baseline dose
+  (`fast_restore`) and repaints only what changed.
+
+### Files changed
+
+| File | Change |
+|------|--------|
+| `web/app/static/js/OrbitControls.js` | Free-orbit pole crossing (spherical carry + phi/theta flip) |
+| `web/app/static/js/brachybot-3d-manual.js` | Lightweight refresh for needle/seed restore |
+| `web/app/index.html` | Cache-busting version bumps |
+| `tests/test_round7_regressions.py` | Align asset-revision contract |
+
+### Verification
+
+- `pytest` main suites: 104 passed.
+- Playwright: vertical drag crosses the pole continuously; no JS errors.
+- Restore path verified via code review (uses `_refreshManualDoseViews`).
+
+---
+
 ## 2026-08-02 - Seed drag/restore in 3D, fast incremental replan, report_generator fix
 
 Three operator-reported issues were fixed and verified.
