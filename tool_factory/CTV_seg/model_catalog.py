@@ -442,6 +442,14 @@ def catalog_with_local_status(repo_root: Optional[str] = None) -> List[Dict[str,
                 ),
                 "callable": bool(entry["local_present"]),
             })
+        # Legacy VoCo SwinUNETR entries are deprecated for CTV: their
+        # liver/kidney/lung/colon lesion segmentation is clinically unreliable
+        # and all non-pancreatic aliases now route to BiomedParse v2.
+        if str(entry.get("tumor_type", "")).startswith("voco_"):
+            entry["deprecated"] = True
+            entry["deprecated_reason"] = (
+                "Legacy VoCo SwinUNETR; use the biomedparse_* candidate for this site."
+            )
         items.append(entry)
     return items
 

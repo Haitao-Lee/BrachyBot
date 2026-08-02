@@ -2,6 +2,50 @@
 
 _This file consolidates all code review reports. Sections are organized by date._
 
+## 2026-08-02 - Deprecate VoCo CTV; route all non-pancreatic sites to BiomedParse v2
+
+The operator reported the liver CTV segmentation still used the VoCo SwinUNETR
+and the resulting mask was not shown in the 2D viewer.
+
+### Root causes
+
+1. **VoCo still selected**: `TOOL_REGISTRY` mapped `voco_liver` /
+   `liver_tumor` etc. to `VoCoLiverTumorTool`, and the system prompt told the
+   LLM the local model is "preferred" — so a liver request used VoCo.
+2. **BiomedParse inference failed**: `_execute` resolved the venv python
+   symlink (`Path(runtime_python_text).resolve()`), which bypasses `pyvenv.cfg`
+   and runs the isolated worker under the system interpreter — losing numpy and
+   every venv package (`ModuleNotFoundError: No module named 'numpy'`).
+3. **Viewer ignored BiomedParse provenance**: `api_viewer_label_volume` only
+   treated `ctv_source == "model"` as model-produced multi-label output, so
+   BiomedParse's single-label mask still resolved correctly but provenance was
+   not recognized as model output.
+
+### Fixes
+
+- `TOOL_REGISTRY`: `liver_tumor` / `kidney_tumor` / `lung_tumor` / `colon_tumor`
+  and `voco_liver` / `voco_kidney` / `voco_lung` / `voco_colon` all resolve to
+  `BiomedParseV2CTVTool`. Pancreatic aliases stay on nnU-Net.
+- `_execute` normalizes a legacy `voco_*` tumor_type to the matching
+  `biomedparse_*` key before running BiomedParse, and does NOT resolve the venv
+  python symlink (the fallback to `sys.executable` is still resolved).
+- `api_viewer_label_volume` treats `biomedparse_v2_research_candidate` as a
+  model source so multi-label output is split correctly.
+- System prompt now states BiomedParse is the default for liver/kidney/lung/
+  colon/head-neck and VoCo is deprecated.
+- `model_catalog` marks `voco_*` entries as deprecated.
+
+### Verification
+
+- Real BiomedParse inference now runs (previously `No module named numpy` from
+  the resolved venv symlink). Synthetic input returns an empty candidate at low
+  confidence, which is the adapter's honest empty-mask behavior.
+- `voco_liver`/`liver_tumor` → `BiomedParseV2CTVTool`; `nnunet_pancreatic` →
+  nnU-Net.
+- `pytest` main suites: 124 passed.
+
+---
+
 ## 2026-08-02 - Shave guide off truncated CT boundaries (follow-up)
 
 Following the bore-margin and truncation fixes, the operator requested two

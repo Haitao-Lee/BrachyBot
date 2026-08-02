@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import numpy as np
 import SimpleITK as sitk
 import torch
@@ -15,6 +17,45 @@ def test_biomedparse_catalog_is_explicit_and_excludes_pancreatic_production():
     assert "nnunet_pancreatic" in TOOL_REGISTRY
     assert "biomedparse_pancreas_tumor" not in SITE_SPECS
     assert set(SITE_SPECS) <= set(CTVSegmentationTool().input_schema["properties"]["tumor_type"]["enum"])
+
+
+def test_legacy_voco_aliases_route_to_biomedparse():
+    """All non-pancreatic CTV aliases (liver/kidney/lung/colon and their VoCo
+    forms) must resolve to BiomedParse, never the deprecated VoCo SwinUNETR.
+    The pancreatic production alias stays on nnU-Net."""
+    from tool_factory.CTV_seg import BIOMEDPARSE_FALLBACKS, TOOL_REGISTRY, get_tool
+    from tool_factory.CTV_seg.biomedparse_v2 import BiomedParseV2CTVTool
+    from tool_factory.CTV_seg.pancreatic_tumor_nnunet import NNUNetPancreaticTumorTool
+
+    for alias in ("liver_tumor", "kidney_tumor", "lung_tumor", "colon_tumor",
+                  "voco_liver", "voco_kidney", "voco_lung", "voco_colon"):
+        assert isinstance(get_tool(alias), BiomedParseV2CTVTool), alias
+        assert alias in BIOMEDPARSE_FALLBACKS, alias
+        assert BIOMEDPARSE_FALLBACKS[alias].startswith("biomedparse_"), alias
+    # Pancreatic stays on nnU-Net for all aliases.
+    assert isinstance(get_tool("nnunet_pancreatic"), NNUNetPancreaticTumorTool)
+    assert isinstance(get_tool("voco_pancreatic"), NNUNetPancreaticTumorTool)
+    assert isinstance(get_tool("pancreatic_tumor"), NNUNetPancreaticTumorTool)
+
+
+def test_runtime_python_venv_symlink_is_not_resolved():
+    """A POSIX venv exposes .venv/bin/python as a symlink; resolving it would
+    bypass pyvenv.cfg and lose every installed package (numpy/torch). The
+    external inference must use the venv path verbatim."""
+    import tool_factory.CTV_seg.biomedparse_v2 as adapter
+
+    src = Path(adapter.__file__).read_text(encoding="utf-8")
+    # The _execute path must build runtime_python from availability WITHOUT
+    # .resolve(): a POSIX venv python is a symlink and resolving it bypasses
+    # pyvenv.cfg, losing numpy/torch. The line that uses the venv path must not
+    # resolve it, while the fallback to sys.executable does.
+    idx = src.index("runtime_python = (")
+    venv_line_end = src.index("\n", src.index("Path(runtime_python_text)"))
+    venv_branch = src[idx:venv_line_end]
+    assert "resolve" not in venv_branch, "venv runtime_python must not be resolved"
+    assert "Path(sys.executable).resolve()" in src, "fallback python is resolved"
+    assert "_run_external_inference(" in src
+    assert adapter._runtime_python.__name__ == "_runtime_python"
 
 
 def test_biomedparse_missing_runtime_fails_closed(monkeypatch, tmp_path):

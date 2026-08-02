@@ -649,8 +649,11 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
             ctv_full_memory = agent._get_label_array("ctv_full_labels")
             # Only model-produced multi-label CTV output may be split into
             # embedded artery/vein/pancreas OAR labels. Uploaded CTV data is
-            # opaque user data and remains a foreground CTV mask.
-            ctv_full = ctv_full_memory if ctv_source == "model" else None
+            # opaque user data and remains a foreground CTV mask. BiomedParse
+            # research output is also model-produced (multi-label liver +
+            # liver_tumor), so treat it like the nnU-Net model source.
+            model_sources = {"model", "biomedparse_v2_research_candidate"}
+            ctv_full = ctv_full_memory if ctv_source in model_sources else None
             if ctv_full is None:
                 ctv_full = _uploaded_label_array(ctv_source, "ctv_array", "ctv_path")
             oar_array = _uploaded_label_array(oar_source, "oar_array", "oar_path")
