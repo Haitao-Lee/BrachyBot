@@ -801,12 +801,28 @@
 
     function copyDisplayProperties(target, saved) {
         if (!target || !saved || typeof saved !== 'object') return;
-        // These are presentation preferences. Never copy label IDs, names,
-        // voxel counts, categories, geometry, or planning arrays from a UI
-        // snapshot: those values are reconstructed from the current case.
+        // These are presentation preferences. Geometry, voxel counts,
+        // categories, and planning arrays are reconstructed from the current
+        // case and must not be copied from a UI snapshot.
         ['visible', 'visible2D', 'visible3D', 'opacity', 'color', 'material', 'locked'].forEach(key => {
             if (Object.prototype.hasOwnProperty.call(saved, key)) target[key] = saved[key];
         });
+        // A user-renamed node label is a deliberate presentation override and
+        // must survive a refresh / session switch. Default anatomical names
+        // (e.g. "CTV Mask", "OAR 3", "Seed seed_1", "Trajectory 1", "120 Gy")
+        // are reconstructed from the case, so only carry over labels that do
+        // not look like a generated default.
+        if (Object.prototype.hasOwnProperty.call(saved, 'label') && typeof saved.label === 'string') {
+            const savedLabel = String(saved.label).trim();
+            const looksDefault = /^(CTV Mask|All OARs|Dose overlay \(2D\)|OAR\s+\d+|Seed\s+\S+|Needle\s+\S+|Trajectory\s+\d+|Label\s+\d+|\d+\s*Gy)$/i.test(savedLabel);
+            if (savedLabel && !looksDefault) target.label = savedLabel;
+        }
+        // `name` is the backend-facing field for OAR organs; carry over only
+        // when it matches the user label (avoids clobbering anatomy names).
+        if (Object.prototype.hasOwnProperty.call(saved, 'name') && typeof saved.name === 'string'
+            && target.label && String(saved.name).trim() === String(target.label).trim()) {
+            target.name = target.label;
+        }
     }
 
     function applyDataTreePresentation(savedTree) {
@@ -829,6 +845,19 @@
             (dataTreeState.planning.meshes || []).forEach(mesh => {
                 copyDisplayProperties(mesh, savedMeshes.get(String(mesh?.id || '')));
             });
+            // Restore user-renamed labels for planning rows (trajectories,
+            // seeds, needles, dose iso-surfaces) by stable ID. These rows are
+            // rebuilt from the server without labels, so the saved custom label
+            // is the only record of a rename across a refresh.
+            const savedByKey = (list, keyFn) => new Map((list || []).map(item => [String(keyFn(item)), item]));
+            const savedTraj = savedByKey(savedTree.planning.trajectories, t => t?.id);
+            const savedSeed = savedByKey(savedTree.planning.seeds, s => s?.id);
+            const savedNeedle = savedByKey(savedTree.planning.needles, n => n?.id);
+            const savedDose = savedByKey(savedTree.planning.doseLevels, d => d?.threshold);
+            (dataTreeState.planning.trajectories || []).forEach(t => copyDisplayProperties(t, savedTraj.get(String(t?.id || ''))));
+            (dataTreeState.planning.seeds || []).forEach(s => copyDisplayProperties(s, savedSeed.get(String(s?.id || ''))));
+            (dataTreeState.planning.needles || []).forEach(n => copyDisplayProperties(n, savedNeedle.get(String(n?.id || ''))));
+            (dataTreeState.planning.doseLevels || []).forEach(d => copyDisplayProperties(d, savedDose.get(String(d?.threshold ?? d?.thresholdGy ?? ''))));
         }
         const savedLabels = savedTree.ctvLabels || savedTree.ctv_labels || {};
         if (!dataTreeState.ctvLabels) dataTreeState.ctvLabels = {};

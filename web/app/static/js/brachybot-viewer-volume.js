@@ -2570,17 +2570,21 @@ function renderDataTree() {
         const ctvSubLabels = [];
         const addCtvSubLabel = (labelId, category, fallbackColor) => {
             const count = ctvLabelData.filter(v => v === labelId).length;
-            const name = labelNames[labelId] || `Label ${labelId}`;
+            const defaultName = labelNames[labelId] || `Label ${labelId}`;
             const color = labelColorLUT[labelId]
                 ? `rgb(${labelColorLUT[labelId].join(',')})`
                 : fallbackColor;
             const id = `ctv_${labelId}`;
             const { objectId, current } = ctvAppearanceFor(labelId);
+            // Preserve a user-renamed label; fall back to the default otherwise.
+            const customLabel = current?.label && !/^label\s+\d+$/i.test(String(current.label).trim())
+                ? current.label
+                : '';
             const item = {
                 id,
                 objectId,
                 labelId,
-                label: name,
+                label: customLabel || defaultName,
                 color,
                 visible: current.visible !== false,
                 opacity: Number.isFinite(Number(current.opacity)) ? Number(current.opacity) : 0.5,
@@ -2609,11 +2613,12 @@ function renderDataTree() {
         // CTV group header (like OAR)
         const ctvVis = dataTreeState.ctv.visible;
         const ctvOp = dataTreeState.ctv.opacity ?? 0.7;
+        const ctvGroupLabel = dataTreeState.ctv.label || 'CTV';
         html += `<div class="tree-group" data-group="ctv">
             <div class="tree-group-header" onclick="toggleTreeGroup(this)" oncontextmenu="event.preventDefault();handleTreeItemRightClick('ctv', event)">
                 <span class="arrow">&#9660;</span>
                 <button class="eye-btn ${ctvVis ? '' : 'hidden'}" onclick="event.stopPropagation();toggleDataVisibility('ctv')">${ctvVis ? '&#128065;' : '&#128064;'}</button>
-                <span>CTV</span>
+                <span>${escHtml(ctvGroupLabel)}</span>
                 <span style="margin-left:auto;display:flex;align-items:center;gap:4px;">
                     <input type="range" class="opacity-slider" min="0" max="100" value="${Math.round(ctvOp * 100)}" onclick="event.stopPropagation()" oninput="setGroupOpacity('ctv', this.value)" title="Opacity">
                 </span>
@@ -2624,7 +2629,7 @@ function renderDataTree() {
         if (tumorLabels.length > 0) {
             tumorLabels.forEach(labelId => {
                 const count = ctvLabelData ? ctvLabelData.filter(v => v === labelId).length : 0;
-                const name = labelNames[labelId] || 'tumor';
+                const defaultName = labelNames[labelId] || 'tumor';
                 const volumeText = count > 0 && voxelVolumeCm3
                     ? `${(count * voxelVolumeCm3).toFixed(1)} cm³`
                     : '';
@@ -2633,9 +2638,15 @@ function renderDataTree() {
                     ? `rgb(${labelColorLUT[labelId].join(',')})`
                     : '#ff69b4';
                 const { objectId, current } = ctvAppearanceFor(labelId);
+                // Preserve a user-renamed label; only fall back to the default
+                // when no custom label was assigned.
+                const customLabel = current?.label && !/^tumor$/i.test(String(current.label).trim())
+                    ? current.label
+                    : '';
                 const tumorState = ensureDataTreeNodeMetadata({
                     ...current,
-                    id: `ctv_${labelId}`, labelId, label: name, color: tumorColor,
+                    id: `ctv_${labelId}`, labelId,
+                    label: customLabel || defaultName, color: tumorColor,
                     visible: current.visible !== false && dataTreeState.ctv.visible !== false,
                     visible2D: current.visible2D !== false,
                     visible3D: current.visible3D !== false,
@@ -2651,7 +2662,7 @@ function renderDataTree() {
             const ctvVolume = state.ctvVolume || null;
             const ctvInfo = ctvVolume ? `${ctvVolume.toFixed(1)} mm³` : '';
             html += renderTreeItem('ctv', ensureDataTreeNodeMetadata({
-                ...dataTreeState.ctv, label: 'CTV Mask', loaded: true,
+                ...dataTreeState.ctv, label: dataTreeState.ctv.label || 'CTV Mask', loaded: true,
             }, 'segmentation', 'segmentation'), ctvInfo);
         }
 
@@ -2925,7 +2936,9 @@ function renderDataTree() {
             const absGy = (level.thresholdGy != null)
                 ? level.thresholdGy
                 : Math.round(level.threshold);
-            const levelState = ensureDataTreeNodeMetadata({ ...level, visible: level.visible, opacity: level.opacity, color: level.color, loaded: true, label: `${absGy} Gy` }, 'dose_iso_surface', 'planning');
+            // Preserve a user-renamed iso-surface label; default remains "N Gy".
+            const doseLabel = level.label || `${absGy} Gy`;
+            const levelState = ensureDataTreeNodeMetadata({ ...level, visible: level.visible, opacity: level.opacity, color: level.color, loaded: true, label: doseLabel }, 'dose_iso_surface', 'planning');
             const pctLabel = level.pctLabel || `${absGy} Gy`;
             html += renderTreeItem(`dose_iso_${level.threshold}`, levelState, pctLabel);
         });
@@ -2939,7 +2952,7 @@ function renderDataTree() {
         html += `<div class="tree-item" data-item="dose_overlay" data-node-id="${escHtml(dataTreeState.planning.doseOverlay.nodeId || 'dose_overlay')}" data-node-type="dose_contour_2d" data-status="${escHtml(dataTreeState.planning.doseOverlay.status || 'ready')}" onclick="handleTreeItemClick('dose_overlay', event)" oncontextmenu="event.preventDefault();event.stopPropagation();handleTreeItemRightClick('dose_overlay', event)" style="display:flex;align-items:center;gap:6px;padding:2px 8px;font-size:0.7rem;">
             <button class="eye-btn ${ovVis ? '' : 'hidden'}" onclick="event.stopPropagation();toggleDataVisibility('dose_overlay')" style="font-size:0.65rem;">${ovVis ? '&#128065;' : '&#128064;'}</button>
             <span style="color:#22d3ee;">◉</span>
-            <span>Dose Overlay (2D)</span>
+            <span>${escHtml(dataTreeState.planning.doseOverlay.label || 'Dose Overlay (2D)')}</span>
             <span style="margin-left:auto;font-size:0.6rem;color:var(--text-dim);">max: ${state.doseOverlay.doseMax?.toFixed(1) || '--'}</span>
             <input type="range" class="opacity-slider" min="0" max="100" value="${Math.round(ovOp * 100)}" onclick="event.stopPropagation()" oninput="setDoseOverlayOpacity(this.value)" title="Opacity">
         </div>`;
@@ -3452,6 +3465,13 @@ function showGroupContextMenu(x, y, category) {
     let items = `<div class="ctx-menu-item" style="opacity:0.5;cursor:default;font-size:0.6rem;">
         <span class="ctx-icon">${catInfo.icon}</span> ${catInfo.label} (${count})</div>`;
     items += `<div class="ctx-menu-sep"></div>`;
+
+    // Rename the CTV / OAR group node from its header context menu.
+    if (category === 'ctv' || category === 'oar') {
+        items += `<div class="ctx-menu-item" onclick="hideContextMenu();renameDataTreeNode('${category}')">
+            <span class="ctx-icon">&#9998;</span> ${_dtText('重命名', 'Rename')}</div>`;
+        items += `<div class="ctx-menu-sep"></div>`;
+    }
 
     // 3D Reconstruct all in group (only for OAR/organ groups)
     if (category === 'oar' || (ORGAN_CATEGORIES[category] && category !== 'ctv')) {
@@ -5495,7 +5515,9 @@ function renameDataTreeNode(id, providedName) {
     if (!trimmed) return;
     setLabel(trimmed);
     renderDataTree();
-    if (typeof updateTreeLabelInScene === 'function') updateTreeLabelInScene(id, trimmed);
+    // Organ/CTV 3D mesh labels read the data-tree label directly, so a rename
+    // propagates to the 3D scene on the next appearance sync.
+    if (typeof syncSceneAppearanceFromDataTree === 'function') syncSceneAppearanceFromDataTree();
     _scheduleDataTreeSave(`tree.rename:${id}`);
     addChat('system', _dtText(`已重命名为 "${trimmed}"`, `Renamed to "${trimmed}"`));
 }
