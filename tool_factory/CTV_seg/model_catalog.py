@@ -459,16 +459,21 @@ def filter_catalog(
     include_experimental: bool = True,
     *,
     for_ui: bool = False,
+    include_deprecated: bool = False,
 ) -> List[Dict[str, object]]:
     """Filter catalog entries by site, visibility, and research status.
 
     ``ctv_model_catalog`` intentionally exposes the complete audit catalog so
     an operator can inspect research resources.  The web selector uses
     ``for_ui=True`` and must not expose the unvalidated pancreatic VoCo
-    alternative as a second production choice.
+    alternative as a second production choice. Deprecated legacy VoCo entries
+    are hidden by default so an LLM or operator is never steered toward a
+    checkpoint that has been superseded by BiomedParse v2.
     """
     site_norm = (site or "").strip().lower()
     items = catalog_with_local_status()
+    if not include_deprecated:
+        items = [m for m in items if not bool(m.get("deprecated"))]
     if site_norm:
         items = [m for m in items if str(m.get("site", "")).lower() == site_norm]
     if not include_experimental:

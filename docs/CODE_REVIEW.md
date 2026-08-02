@@ -2,6 +2,42 @@
 
 _This file consolidates all code review reports. Sections are organized by date._
 
+## 2026-08-02 - Hide deprecated VoCo aliases from the LLM; keep them as routing-only
+
+The operator uploaded a liver CT and the routing log still showed
+`tumor_type: "voco_liver"`. Although `TOOL_REGISTRY` had already mapped
+`voco_liver` to `BiomedParseV2CTVTool`, the **agent-facing** surface still
+advertised `voco_*` as a first-class model choice:
+- `CTVSegmentationTool.input_schema` built its `tumor_type` enum from
+  `TOOL_REGISTRY.keys()`, which included every legacy `voco_*` alias.
+- `CTVModelCatalogTool._execute` returned the full catalog (deprecated VoCo
+  entries included), so the LLM could still be steered toward them.
+
+### Fixes
+
+- Added `_PREFERRED_TUMOR_TYPES`: the LLM-facing enum is now
+  `[pancreatic_tumor, nnunet_pancreatic] + biomedparse_* prompts + friendly
+  *_tumor aliases + prostate`. No `voco_*` name is presented.
+- `filter_catalog` (used by the catalog tool and every LLM-facing
+  `model_catalog` metadata field in `CTVSegmentationTool`) now drops deprecated
+  entries by default; the full audit catalog remains available via
+  `catalog_with_local_status()` and `include_deprecated=True`.
+- Backward compatibility preserved: `voco_liver` etc. still resolve to
+  `BiomedParseV2CTVTool` (normalized to `biomedparse_*` inside the adapter), so
+  any persisted/legacy caller keeps working.
+
+### Verification
+
+- LLM enum contains `biomedparse_liver_tumor` and no `voco_*`; filtered catalog
+  shows `biomedparse_liver_tumor` and no `voco_*`; full audit catalog still lists
+  `voco_liver` for provenance.
+- `voco_liver` / `liver_tumor` / `biomedparse_liver_tumor` all resolve to
+  `BiomedParseV2CTVTool`.
+- New regression `test_deprecated_voco_aliases_are_hidden_from_the_agent`;
+  85 related tests pass.
+
+---
+
 ## 2026-08-02 - Surgical guide: stop building on CT truncation planes, keep bores open, smooth the mesh
 
 The operator reported three surgical-guide defects: (a) channel bores still
