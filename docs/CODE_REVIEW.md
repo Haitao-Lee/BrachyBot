@@ -2,6 +2,70 @@
 
 _This file consolidates all code review reports. Sections are organized by date._
 
+## 2026-08-02 - Guide smoothness, skin trim, status fix, version dedup, channel diameter
+
+Operator feedback on the regenerated guide: the plate still looked bumpy
+(low-STL-resolution feel), the skin-facing side could still be invaded by the
+sleeve on oblique needles, the tree showed "not generated" despite success,
+the version jumped v2 -> v3 after a restart, and the default channel diameter
+should be 1.8 mm.
+
+### 1. Smoother, more refined guide surface
+
+The mesh was only run through 3 uniform-Laplacian passes, which both smooths
+weakly and shrinks the surface. `_smooth_mesh_vertices` now applies Taubin
+two-pole smoothing (12 lambda/mu cycles by default): it removes the visible
+0.35 mm voxel stair-stepping without pulling the plate off the intended skin
+fit or closing the bores. Measured dihedral p95 dropped from 54.7 deg (raw) to
+27.5 deg.
+
+### 2. Skin-side trim ("削" the skin-facing face)
+
+The sleeve cylinder is built along the needle axis; on oblique needles its wall
+crosses the skin and left voxels inside the body. The final solid is now cut
+with the smoothed skin's distance field:
+`solid &= outside_distance >= skin_clearance`. Verified: an oblique-needle guide
+has zero sleeve-wall vertices inside the body.
+
+### 3. "not generated" status in the Data Tree
+
+`ensureDataTreeNodeMetadata` downgraded a node with an explicit `status:'ready'`
+but no `loaded` flag to `'not_generated'`, which hit the surgical-guide mesh.
+Explicit `'ready'` is now authoritative and preserved.
+
+### 4. Version no longer jumps on duplicate generation
+
+Version was `prior.version + 1` with no content dedup, so the LLM tool call +
+frontend auto-generate after a restart produced v1/v2/v3 all with identical
+geometry. `generate_surgical_guide` now reuses the latest version when both the
+plan signature and parameters are unchanged; only a real geometry or parameter
+change bumps the version.
+
+### 5. Default channel diameter 1.8 mm
+
+`channel_radius_mm` default changed 1.1 -> 0.9 (diameter 2.2 -> 1.8 mm) in the
+backend defaults, frontend `GUIDE_DEFAULTS`, and the panel input.
+
+### Files changed
+
+| File | Change |
+|------|--------|
+| `web/surgical_guide.py` | Taubin smoothing, skin trim, version dedup, channel default |
+| `web/app/static/js/brachybot-viewer-volume.js` | Keep explicit 'ready' status |
+| `web/app/static/js/brachybot-surgical-guide.js` | Channel default 0.9 |
+| `web/app/index.html` | Panel default 1.8 mm; JS version bumps |
+| `tests/test_surgical_guide.py` | Oblique-no-penetration, version-dedup, status-preservation tests |
+
+### Verification
+
+- `pytest` main suites: 87 passed (16 surgical-guide).
+- Playwright: panel default 1.8 mm; guide node status stays 'ready';
+  no JS errors.
+- Synthetic: oblique needle => 0 sleeve-wall vertices inside the body;
+  identical regeneration reuses the version (v1 stays v1, param change -> v2).
+
+---
+
 ## 2026-08-01 - Colorbar gating, session-progress dedup, and surgical-guide reconstruction
 
 Three operator-reported issues were fixed and verified end to end.

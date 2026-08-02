@@ -1959,10 +1959,13 @@ function ensureDataTreeNodeMetadata(node, type, parentId = null) {
     node.loading = !!node.loading;
     node.error = node.error || null;
     const explicitStatus = String(node.status || '').toLowerCase();
+    // 'ready' is authoritative and must not be downgraded to 'not_generated'
+    // merely because the node lacks a `loaded` flag (planning meshes such as
+    // the surgical guide carry status 'ready' without a `loaded` field).
     node.status = node.error ? 'error'
         : node.loading ? 'loading'
         : ['expired', 'stale'].includes(explicitStatus) ? explicitStatus
-        : node.loaded ? 'ready' : 'not_generated';
+        : (node.loaded || explicitStatus === 'ready') ? 'ready' : 'not_generated';
     node.contextActions = Array.isArray(node.contextActions)
         ? node.contextActions
         : ['toggle_visibility', 'set_opacity', 'set_color', 'reconstruct3d'];
