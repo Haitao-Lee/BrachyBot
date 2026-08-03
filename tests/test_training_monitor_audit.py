@@ -100,6 +100,9 @@ def test_monitor_lifecycle_keeps_feedback_and_evidence_case_scoped():
     assert "pointer-events: none;" in css
     # UI telemetry must not hydrate a cold case just to answer a click.
     assert "agent = get_cached_agent(session_id) if monitor_run_matches" in routes
+    assert "def monitor_control_agent(session_id):" in routes
+    assert "return get_agent(session_id, _lightweight=True)" in routes
+    assert "agent = monitor_control_agent(session_id)" in routes
     assert "and request_run_id" in routes
     assert "A monitor run is already active for this case." in routes
 
@@ -116,6 +119,16 @@ def test_monitor_seed_focus_restores_camera_and_mesh_state_after_capture():
     assert "focusPlanningSeedsForScreenshot(options.focusSeedIds)" in ui_api
 
 
+def test_manual_artifact_status_is_projected_to_visible_data_tree_nodes():
+    root = Path(__file__).resolve().parents[1]
+    viewer = (root / "web/app/static/js/brachybot-viewer-volume.js").read_text(encoding="utf-8")
+
+    assert "const artifactStatus = dataTreeState.planning?.artifactStatus;" in viewer
+    assert "applyArtifactStatus(dataTreeState.planning?.doseOverlay, 'dose')" in viewer
+    assert "applyArtifactStatus(dataTreeState.planning?.dvh, 'dvh')" in viewer
+    assert "String(node.source || '').toLowerCase() === 'surgical_guide'" in viewer
+
+
 def test_manual_workflow_exposes_real_surgical_guide_actions():
     root = Path(__file__).resolve().parents[1]
     html = (root / "web/app/index.html").read_text(encoding="utf-8")
@@ -128,7 +141,7 @@ def test_manual_workflow_exposes_real_surgical_guide_actions():
     assert "/api/surgical-guides/generate" in guide
 
 
-def test_monitor_and_screenshots_prefer_global_ui_language():
+def test_monitor_and_screenshots_follow_conversation_language():
     root = Path(__file__).resolve().parents[1]
     chat_core = (root / "web/app/static/js/brachybot-chat-core.js").read_text(encoding="utf-8")
     ui_api = (root / "web/app/static/js/brachybot-ui-api.js").read_text(encoding="utf-8")
@@ -137,8 +150,8 @@ def test_monitor_and_screenshots_prefer_global_ui_language():
     assert "function detectConversationLanguage(text)" in chat_core
     assert "function conversationLanguageForSession" in chat_core
     assert "session.conversationLanguage = detectedLanguage" in chat_core
-    assert "if (window._i18nLang) return window._i18nLang;" in ui_api
-    assert "const raw = window._i18nLang || (" in ui_api
+    assert "const conversation = window.conversationLanguageForSession(sessionId);" in ui_api
+    assert "return window._responseLanguage || window._i18nLang || 'en';" in ui_api
     assert "const language = monitorConversationLanguage(ownerSessionId);" in ui_api
     assert "window.monitorConversationLanguage(startSessionId)" in manual
     assert "window.monitorConversationLanguage(stopSessionId)" in manual
@@ -177,6 +190,16 @@ def test_monitor_maps_manual_stages_to_their_own_viewer_checkpoint():
     assert _training_screenshot_for_event(None, None, dose_event, "stage")["target"] == "dose-overview"
     assert _training_screenshot_for_event(None, None, running_event, "stage") is None
     assert "Trajectory refinement completed" in _training_feedback_for_event(None, None, trajectory_event)
+
+    cold_needle_event = {
+        "type": "manual.needle.add",
+        "label": "Needle added",
+        "detail": {},
+        "language": "en",
+    }
+    cold_feedback = _training_feedback_for_event(None, None, cold_needle_event)
+    assert cold_feedback and "Needle edit recorded" in cold_feedback
+    assert _training_screenshot_for_event(None, None, cold_needle_event, cold_feedback)["target"] == "viewer-3d"
 
     class Memory:
         def __init__(self):

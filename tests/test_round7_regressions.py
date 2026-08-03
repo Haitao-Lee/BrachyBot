@@ -264,7 +264,7 @@ def test_position_only_needle_edit_has_a_safe_persistence_endpoint():
     assert '"dose_recomputed": False' in routes
     assert "_persistNeedleGeometryOnly" in manual
     assert "manual_planning/update_geometry" in manual
-    assert "await _persistNeedleGeometryOnly()" in manual
+    assert "await _persistNeedleGeometryOnly(" in manual
 
 
 def test_needle_endpoint_interaction_uses_scene_render_scheduler_and_seed_clipped_geometry():
@@ -294,7 +294,7 @@ def test_needle_render_scheduler_survives_mixed_static_asset_revisions():
     # index.html. A stale assertion here falsely reports a deployment bug and
     # hides whether the endpoint interaction bundle is really versioned.
     assert "brachybot-viewer-layout.js?v=12" in index
-    assert "brachybot-3d-manual.js?v=31" in index
+    assert "brachybot-3d-manual.js?v=36" in index
     assert "scene3D.requestRender(1)" in layout
     assert "scene3D.requestRender(2)" in layout
     assert "window.requestRender = requestRender;" in manual

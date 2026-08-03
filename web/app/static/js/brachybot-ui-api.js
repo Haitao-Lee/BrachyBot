@@ -542,11 +542,11 @@ function _queueMonitorFeedback(message, type, label, ownerSessionId, ownerRunId)
 }
 
 function monitorConversationLanguage(sessionId = trainingMonitorState.sessionId) {
-    if (window._i18nLang) return window._i18nLang;
     if (typeof window.conversationLanguageForSession === 'function') {
-        return window.conversationLanguageForSession(sessionId);
+        const conversation = window.conversationLanguageForSession(sessionId);
+        if (conversation === 'zh' || conversation === 'en') return conversation;
     }
-    return window._responseLanguage || 'en';
+    return window._responseLanguage || window._i18nLang || 'en';
 }
 window.monitorConversationLanguage = monitorConversationLanguage;
 
@@ -654,6 +654,16 @@ var manualPlanningState = {
     // Keep the last accepted geometry separate from the live drag preview.
     lastDoseNeedles: [],
     needleReplanPrompt: null,
+    // Coalesce rapid edits before the expensive dose/DVH request. The owner
+    // session fence prevents a timer from firing after a case switch.
+    doseRecomputeTimer: null,
+    doseRecomputeOwnerSessionId: null,
+    doseRecomputeScheduledPromise: null,
+    doseRecomputeRunning: false,
+    doseRecomputeQueued: false,
+    doseRecomputeSequence: 0,
+    _doseRecomputePromise: null,
+    _doseRecomputeJob: null,
 };
 
 function _activeApiSessionId() {
@@ -955,11 +965,10 @@ function instrumentUIControls() {
     const urlParams = new URLSearchParams(window.location.search);
     const keyFromUrl = urlParams.get('api_key');
     if (keyFromUrl) {
-        // A deployment key may be supplied in the URL for convenience. It is
-        // persisted to localStorage so a copied workstation retains the
-        // credential across reloads and tab closings, matching the operator's
-        // preference for a remembered key on this deployment.
-        localStorage.setItem('BRACHYBOT_API_KEY', keyFromUrl);
+        // A deployment key may be supplied in the URL for convenience. Keep
+        // it scoped to this browser session; credentials must not survive a
+        // deleted case or leak into a later session through persistent storage.
+        sessionStorage.setItem('BRACHYBOT_API_KEY', keyFromUrl);
         window.BRACHYBOT_API_KEY = keyFromUrl;
         // Clean URL without reload
         const cleanUrl = window.location.pathname;
@@ -968,8 +977,8 @@ function instrumentUIControls() {
     window.setBrachyBotApiKey = function setBrachyBotApiKey(key) {
         const value = String(key || '').trim();
         window.BRACHYBOT_API_KEY = value;
-        if (value) localStorage.setItem('BRACHYBOT_API_KEY', value);
-        else localStorage.removeItem('BRACHYBOT_API_KEY');
+        if (value) sessionStorage.setItem('BRACHYBOT_API_KEY', value);
+        else sessionStorage.removeItem('BRACHYBOT_API_KEY');
     };
     window.fetch = function brachybotFetch(input, init) {
         // The deployment key is persisted in localStorage so the operator's
@@ -1701,6 +1710,7 @@ function clearClientWorkspace(options = {}) {
     try { window.clearCaseScopedProgressPresentation?.(); } catch (_) {}
     try { window.clearManualDoseProgressPresentation?.(); } catch (_) {}
     try { window.clearManualWorkflowProgressPresentation?.(); } catch (_) {}
+    try { window.cancelScheduledManualDoseRecompute?.(); } catch (_) {}
     // Invalidate asynchronous 3D mesh fetches before removing current-case
     // objects. A late response from the previous session may still complete,
     // but it is no longer allowed to add geometry to the new case.

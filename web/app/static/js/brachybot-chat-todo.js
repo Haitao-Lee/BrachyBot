@@ -1351,11 +1351,11 @@ async function sendChat(prefill, options) {
         requestId: turnRequestId,
         userMessageId: turnUserMessageId,
         messageId: turnAssistantMessageId,
-        responseLanguage: window._i18nLang
-            || (typeof conversationLanguageForSession === 'function'
+        responseLanguage: (typeof conversationLanguageForSession === 'function'
                 ? conversationLanguageForSession(turnSessionId)
                 : '')
             || window._responseLanguage
+            || window._i18nLang
             || '',
     };
     if (!opts.hiddenUserMessage && !isResumingTask && typeof addChat === 'function') {
@@ -1654,11 +1654,10 @@ async function sendChat(prefill, options) {
                         user_message_id: turnUserMessageId,
                         assistant_message_id: turnAssistantMessageId,
                         internal_followup: !!opts.internalFollowup,
-                        response_language: window._i18nLang || (
-                            typeof conversationLanguageForSession === 'function'
-                                ? conversationLanguageForSession(turnSessionId)
-                                : window._responseLanguage || ''
-                        ),
+                        response_language: turnIdentity.responseLanguage
+                            || window._responseLanguage
+                            || window._i18nLang
+                            || '',
                     }),
                     signal: turnAbortController ? turnAbortController.signal : undefined,
                 });

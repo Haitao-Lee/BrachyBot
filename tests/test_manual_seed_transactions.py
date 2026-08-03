@@ -4,9 +4,13 @@ import numpy as np
 
 from web.routes.planning_routes import (
     _current_planning_snapshot,
+    _deduplicate_manual_needle_records,
+    _deduplicate_manual_seed_records,
     _manual_seed_geometry_settings,
     _normalize_manual_seed_records,
+    _submitted_manual_needles,
 )
+from web.server_support import _manual_grid_array
 
 
 class Memory:
@@ -93,6 +97,75 @@ def test_manual_snapshot_accepts_numpy_restored_records_without_truthiness():
     }
 
 
+def test_hydrated_flattened_volume_is_restored_to_the_ct_grid():
+    flat = np.arange(2 * 3 * 4, dtype=np.int16)
+
+    restored = _manual_grid_array(flat, (2, 3, 4), label="CTV")
+
+    assert restored.shape == (2, 3, 4)
+    assert restored[1, 2, 3] == flat[-1]
+
+
+def test_hydrated_volume_with_wrong_size_is_rejected():
+    try:
+        _manual_grid_array(np.zeros(11, dtype=np.uint8), (2, 3, 4), label="OAR")
+    except ValueError as exc:
+        assert "OAR shape" in str(exc)
+    else:
+        raise AssertionError("a mismatched persisted volume must be rejected")
+
+
+def test_explicit_empty_needles_is_a_real_delete_request():
+    current = [{"id": "needle_old"}]
+
+    assert _submitted_manual_needles({"needles": []}, current) == []
+    assert _submitted_manual_needles({}, current) == current
+    assert _submitted_manual_needles({"needles": None}, current) == current
+
+
+def test_legacy_manual_needles_and_seeds_are_deduplicated_by_stable_id():
+    needles, needle_ids = _deduplicate_manual_needle_records([
+        {"id": "needle_manual_1", "points": [[0, 0, 0], [0, 0, 1]]},
+        {"id": "needle_manual_1", "points": [[0, 0, 0], [0, 0, 2]]},
+    ])
+    seeds, seed_ids = _deduplicate_manual_seed_records([
+        {"id": "seed_manual_1", "position": [0, 0, 1]},
+        {"id": "seed_manual_1", "position": [0, 0, 2]},
+    ])
+
+    assert needle_ids == ["needle_manual_1"]
+    assert len(needles) == 1
+    assert needles[0]["points"][-1] == [0, 0, 2]
+    assert seed_ids == ["seed_manual_1"]
+    assert len(seeds) == 1
+    assert seeds[0]["position"] == [0, 0, 2]
+
+
+def test_manual_needle_mutations_use_authoritative_backend_transactions():
+    root = __import__("pathlib").Path(__file__).resolve().parents[1]
+    manual = (root / "web/app/static/js/brachybot-3d-manual.js").read_text(encoding="utf-8")
+    routes = (root / "web/routes/planning_routes.py").read_text(encoding="utf-8")
+
+    assert "await _persistNeedleGeometryOnly({" in manual
+    assert "reason: 'needle_add'" in manual
+    assert "await _commitManualSeeds('needle_delete', rollback.seeds, rollback.needles)" in manual
+    assert "expected_version: payload.planning_version" in manual
+    assert '"artifact_status": artifact_status' in routes
+    assert 'memory.store("manual_plan_version", next_version)' in routes
+    assert "_mark_manual_dependents_stale(" in routes
+
+
+def test_manual_tree_repairs_duplicate_planning_rows_before_render():
+    root = __import__("pathlib").Path(__file__).resolve().parents[1]
+    manual = (root / "web/app/static/js/brachybot-3d-manual.js").read_text(encoding="utf-8")
+    viewer = (root / "web/app/static/js/brachybot-viewer-volume.js").read_text(encoding="utf-8")
+
+    assert "function _dedupeManualNeedles(needles)" in manual
+    assert "dataTreeState.planning.needles = _dedupeManualNeedles" in manual
+    assert "function _deduplicatePlanningRows()" in viewer
+    assert "_deduplicatePlanningRows();" in viewer
+
+
 def test_seed_transaction_rejects_missing_owner_and_duplicate_ids():
     memory = Memory()
     needles = [{
@@ -149,3 +222,11 @@ def test_3d_seed_drag_repaints_the_2d_projection_before_commit():
     assert marker in source
     assert source.index(marker) < source.index("requestRender(1);", source.index(marker))
     assert "redrawSeedNeedleOverlays()" in source
+
+
+def test_manual_dose_marks_the_backend_commit_before_slow_viewer_hydration():
+    root = __import__("pathlib").Path(__file__).resolve().parents[1]
+    source = (root / "web/app/static/js/brachybot-3d-manual.js").read_text(encoding="utf-8")
+
+    assert "_refreshManualDoseViews(data, wasDoseTextureEnabled, { background: true })" in source
+    assert "manualPlanningState.backgroundDoseViewerRefresh = refreshPromise" in source

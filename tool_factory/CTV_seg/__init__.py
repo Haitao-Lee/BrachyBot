@@ -360,14 +360,51 @@ class CTVSegmentationTool(BaseTool):
                 tumor_type or ("manual_label" if from_label_path else "unknown"),
             )
             failure_meta.setdefault("model_catalog", filter_catalog())
+
+            # Build an honest, diagnostic reason instead of a generic "model is
+            # missing" guess. When the underlying model actually ran, it reports
+            # which labels it found, so we can tell the user exactly what
+            # happened and what to check — and distinguish a real model
+            # availability problem from a data problem.
+            if from_label_path:
+                diagnostic = (
+                    "The provided CTV label is empty (no foreground voxels). "
+                    "Please check the label file: it may be background-only, "
+                    "misaligned with the CT grid, or out of the image range."
+                )
+            else:
+                label_counts = res_meta.get("label_counts") or {}
+                found = {
+                    name: int(count)
+                    for name, count in label_counts.items()
+                    if count and int(count) > 0
+                }
+                if found:
+                    found_desc = ", ".join(
+                        f"{name} ({count} vox)" for name, count in found.items()
+                    )
+                    diagnostic = (
+                        f"The segmentation model completed inference but did NOT detect any "
+                        f"tumor region in this CT (labels it did find: {found_desc}). "
+                        f"This is usually a data problem rather than a missing model: the CT "
+                        f"may not cover the full tumor extent (too few slices / large slice "
+                        f"thickness), the tumor may be outside the scanned field, or too "
+                        f"subtle for this model. Verify the CT actually covers the tumor "
+                        f"(check slice count and spacing), or provide label_path for a "
+                        f"manual/clinical CTV."
+                    )
+                else:
+                    diagnostic = (
+                        "CTV segmentation produced an empty mask. The model did not "
+                        "detect the requested tumor_type in this CT. This can mean the "
+                        "model is not installed, is an experimental checkpoint not wired "
+                        "for inference, the selected site is unsupported, or the CT does "
+                        "not cover the tumor. Use label_path for a manual CTV or run "
+                        "ctv_model_catalog to inspect verified models and datasets."
+                    )
             return ToolResult(
                 success=False,
-                error=(
-                    "CTV segmentation produced an empty mask. This usually means the requested "
-                    "tumor model is not installed, is an experimental checkpoint not wired for "
-                    "inference, or the selected site is unsupported. Use label_path for a manual "
-                    "CTV or run ctv_model_catalog to see verified models and datasets."
-                ),
+                error=diagnostic,
                 metadata=failure_meta,
             )
         spacing = ctv_mask.GetSpacing() if hasattr(ctv_mask, 'GetSpacing') else (1, 1, 1)

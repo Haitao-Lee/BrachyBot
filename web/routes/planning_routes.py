@@ -75,6 +75,24 @@ def _saved_dose_scale_gy(agent) -> float:
     )
 
 
+def _submitted_manual_needles(data: Dict[str, Any], current_needles: Any) -> list:
+    """Resolve the needle list without confusing an explicit empty list.
+
+    ``needles=[]`` is a valid mutation when the operator deletes the last
+    needle.  Only an omitted or ``null`` field means "keep the server list".
+    Keeping this rule in one small helper prevents every mutation route from
+    accidentally resurrecting deleted planning objects.
+    """
+    if "needles" not in data or data.get("needles") is None:
+        needles = list(current_needles or [])
+    else:
+        needles = data.get("needles")
+        if not isinstance(needles, list):
+            raise ValueError("needles must be a list")
+    needles, _ = _deduplicate_manual_needle_records(needles)
+    return needles
+
+
 _UI_BRIDGE_LOCK = _server_support._UI_BRIDGE_LOCK
 _append_ui_event = _server_support._append_ui_event
 _build_plan_advice = _server_support._build_plan_advice
@@ -188,6 +206,85 @@ def _snapshot_from_seed_plan(serialized_plan, needle_geometry):
     return {"seeds": seeds, "needles": needles}
 
 
+def _deduplicate_manual_seed_records(records):
+    """Repair a legacy manual snapshot that contains the same seed ID twice.
+
+    A seed ID is the stable identity used by the Data Tree, Viewer and dose
+    transactions. Older snapshots could duplicate an entry after a failed
+    optimistic edit, making every later geometry update fail validation. Keep
+    the last record for a duplicated ID (the most recent edit) and report the
+    repaired IDs to the caller for logging.
+    """
+    result = []
+    indexes = {}
+    duplicate_ids = []
+    for record in records or []:
+        if not isinstance(record, dict):
+            result.append(record)
+            continue
+        seed_id = str(record.get("id") or "").strip()
+        if seed_id and seed_id in indexes:
+            result[indexes[seed_id]] = record
+            duplicate_ids.append(seed_id)
+            continue
+        if seed_id:
+            indexes[seed_id] = len(result)
+        result.append(record)
+    return result, sorted(set(duplicate_ids))
+
+
+def _deduplicate_manual_needle_records(records):
+    """Repair legacy manual needle snapshots by stable needle ID."""
+    result = []
+    indexes = {}
+    duplicate_ids = []
+    for record in records or []:
+        if not isinstance(record, dict):
+            result.append(record)
+            continue
+        needle_id = str(record.get("id") or "").strip()
+        if needle_id and needle_id in indexes:
+            result[indexes[needle_id]] = record
+            duplicate_ids.append(needle_id)
+            continue
+        if needle_id:
+            indexes[needle_id] = len(result)
+        result.append(record)
+    return result, sorted(set(duplicate_ids))
+
+
+def _repair_serialized_manual_seed_plan(memory, seeds):
+    """Drop duplicate IDs from the serialized mirror used by the viewer."""
+    serialized = memory.retrieve("seed_plan_serialized")
+    if not isinstance(serialized, list):
+        serialized = memory.retrieve("seed_plan")
+    if not isinstance(serialized, list):
+        return
+    seen = set()
+    repaired = []
+    for entry in serialized:
+        if not isinstance(entry, dict):
+            repaired.append(entry)
+            continue
+        entry_copy = dict(entry)
+        clean_seeds = []
+        for seed in entry.get("seeds") or []:
+            if not isinstance(seed, dict):
+                continue
+            seed_id = str(seed.get("id") or "").strip()
+            if seed_id and seed_id in seen:
+                continue
+            if seed_id:
+                seen.add(seed_id)
+            clean_seeds.append(seed)
+        entry_copy["seeds"] = clean_seeds
+        entry_copy["num_seeds"] = len(clean_seeds)
+        repaired.append(entry_copy)
+    memory.store("seed_plan", repaired)
+    memory.store("seed_plan_serialized", repaired)
+    memory.store("total_seeds", len(seeds or []))
+
+
 def _current_planning_snapshot(agent):
     """Return the current manual snapshot, or the automatic baseline."""
     memory = agent.memory
@@ -195,6 +292,15 @@ def _current_planning_snapshot(agent):
     raw_manual_needles = memory.retrieve("manual_needles")
     manual_seeds = list(raw_manual_seeds) if raw_manual_seeds is not None else []
     manual_needles = list(raw_manual_needles) if raw_manual_needles is not None else []
+    manual_seeds, duplicate_ids = _deduplicate_manual_seed_records(manual_seeds)
+    if duplicate_ids:
+        logger.warning("Repairing duplicate manual seed IDs: %s", duplicate_ids)
+        memory.store("manual_seeds", manual_seeds)
+        _repair_serialized_manual_seed_plan(memory, manual_seeds)
+    manual_needles, duplicate_needle_ids = _deduplicate_manual_needle_records(manual_needles)
+    if duplicate_needle_ids:
+        logger.warning("Repairing duplicate manual needle IDs: %s", duplicate_needle_ids)
+        memory.store("manual_needles", manual_needles)
     if (
         memory.retrieve("manual_plan_active")
         or len(manual_seeds) > 0
@@ -422,6 +528,23 @@ def register_planning_routes(
                 "retry_after_ms": 250,
             }), 202
         return None
+
+    def monitor_control_agent(session_id):
+        """Resolve monitor state without synchronously hydrating a case."""
+        if callable(get_cached_agent):
+            cached = get_cached_agent(session_id)
+            if cached is not None:
+                return cached
+        if not callable(get_agent):
+            return None
+        try:
+            # The server callback installs a metadata shell and continues
+            # decoding CT/planning arrays in its background hydration worker.
+            return get_agent(session_id, _lightweight=True)
+        except TypeError:
+            # Small test/app factories may still expose the old callback
+            # signature. Do not fall back to a potentially blocking cold load.
+            return None
 
     def workspace_output_dir(category: str) -> str:
         """Return an owned artifact directory; client paths are never trusted."""
@@ -2604,13 +2727,18 @@ def register_planning_routes(
             "detail": data.get("detail", {}),
             "language": language,
         })
+        # The deterministic monitor checks are intentionally allowed to run
+        # without a cached Agent.  A cold session must not make Monitor look
+        # dead, and these helpers already degrade to event-focused guidance
+        # when a clinical snapshot is unavailable.  Do not call get_agent here:
+        # this request path must remain non-blocking during CT hydration.
         feedback = (
             _training_feedback_for_event(agent, session_id, event)
-            if monitor_run_matches and agent is not None else None
+            if monitor_run_matches else None
         )
         suggested_screenshot = (
             _training_screenshot_for_event(agent, session_id, event, feedback)
-            if monitor_run_matches and agent is not None else None
+            if monitor_run_matches else None
         )
         if feedback:
             with _UI_BRIDGE_LOCK:
@@ -2702,9 +2830,17 @@ def register_planning_routes(
     @rate_limit
     def api_training_stop():
         """Stop live monitoring and return a final deterministic training report."""
+        stop_started = time.perf_counter()
         data = request.get_json() or {}
         session_id = request_ui_session_id(data)
-        agent = get_agent(session_id)
+        logger.info("[monitor_stop] request received session=%s", session_id)
+        # Do not synchronously hydrate CT/planning arrays while closing
+        # Monitor. A stop request must be fast even for a cold session.
+        agent = monitor_control_agent(session_id)
+        logger.info(
+            "[monitor_stop] control agent resolved session=%s agent=%s elapsed_ms=%.1f",
+            session_id, bool(agent), (time.perf_counter() - stop_started) * 1000.0,
+        )
         bucket = _ui_bucket(session_id)
         with _UI_BRIDGE_LOCK:
             training = bucket.setdefault("training", {})
@@ -2739,7 +2875,15 @@ def register_planning_routes(
         for event in events:
             etype = str(event.get("type", "ui.event"))
             counts[etype] = counts.get(etype, 0) + 1
-        advice = _build_plan_advice(agent, session_id)
+        # Finish Monitoring must return promptly.  Seed/needle spacing and
+        # artifact-state checks are deterministic and cheap; CT/OAR needle
+        # intersection validation is intentionally deferred to the full
+        # advice/quality-check path so a large volume cannot block the UI.
+        advice = _build_plan_advice(agent, session_id, fast=True)
+        logger.info(
+            "[monitor_stop] advice built session=%s elapsed_ms=%.1f",
+            session_id, (time.perf_counter() - stop_started) * 1000.0,
+        )
         localized_advice = _localize_plan_advice(advice, language)
         summary = _format_training_summary(events, counts, advice, language)
         summary_message = {
@@ -2756,6 +2900,10 @@ def register_planning_routes(
         with _UI_BRIDGE_LOCK:
             training["last_summary"] = summary_message
         checkpoint_ui_bridge(session_id, "training.stopped")
+        logger.info(
+            "[monitor_stop] response ready session=%s elapsed_ms=%.1f",
+            session_id, (time.perf_counter() - stop_started) * 1000.0,
+        )
         return jsonify({
             "success": True,
             "session_id": session_id,
@@ -2777,7 +2925,7 @@ def register_planning_routes(
         """Return detailed advice for the current auto/manual plan."""
         data = request.get_json(silent=True) or {}
         session_id = request_ui_session_id(data)
-        agent = get_agent(session_id)
+        agent = monitor_control_agent(session_id)
         if agent is None:
             return jsonify({"error": "Agent not available"}), 500
         language = _monitor_language(
@@ -2795,9 +2943,7 @@ def register_planning_routes(
         """Return a product-readiness checklist for the current case."""
         data = request.get_json(silent=True) or {}
         session_id = request_ui_session_id(data)
-        agent = get_agent(session_id)
-        if agent is None:
-            return jsonify({"error": "Agent not available"}), 500
+        agent = monitor_control_agent(session_id)
         return jsonify(_build_system_readiness(agent, session_id))
 
     @app.route("/api/manual_planning/update", methods=["POST"])
@@ -2887,9 +3033,11 @@ def register_planning_routes(
         if agent is None:
             return jsonify({"success": False, "error": "Agent not available"}), 500
 
-        raw_needles = data.get("needles") or []
-        if not isinstance(raw_needles, list) or not raw_needles:
-            return jsonify({"success": False, "error": "needles must be a non-empty list"}), 400
+        raw_needles = data.get("needles")
+        if raw_needles is None:
+            raw_needles = []
+        if not isinstance(raw_needles, list):
+            return jsonify({"success": False, "error": "needles must be a list"}), 400
 
         normalized_needles = []
         try:
@@ -2911,7 +3059,30 @@ def register_planning_routes(
                     "trajectory_id": needle.get("trajectory_id"),
                 })
 
+            normalized_needles, repaired_needle_ids = _deduplicate_manual_needle_records(
+                normalized_needles
+            )
+            if repaired_needle_ids:
+                logger.warning("Repairing duplicate submitted needle IDs: %s", repaired_needle_ids)
+
             memory = agent.memory
+            current = _current_planning_snapshot(agent)
+            current_version = int(memory.retrieve("manual_plan_version") or 0)
+            expected_version = data.get("expected_version")
+            if expected_version is not None:
+                try:
+                    expected_version = int(expected_version)
+                except (TypeError, ValueError):
+                    return jsonify({"success": False, "error": "expected_version must be an integer"}), 400
+                if expected_version != current_version:
+                    return jsonify({
+                        "success": False,
+                        "error": "The planning data changed before this needle edit was committed.",
+                        "code": "stale_manual_plan",
+                        "planning_version": current_version,
+                        "seeds": list(current.get("seeds") or []),
+                        "needles": list(current.get("needles") or []),
+                    }), 409
             ct_image = memory.retrieve("ct_image")
             if ct_image is None:
                 raise ValueError("No CT image loaded")
@@ -2939,19 +3110,68 @@ def register_planning_routes(
                 if tuple(arr.shape) == expected_shape:
                     oar_mask = arr
                     break
-            _server_support._validate_manual_needle_safety(
-                agent, normalized_needles, ct_image, ctv_mask, oar_mask
-            )
+            if normalized_needles:
+                _server_support._validate_manual_needle_safety(
+                    agent, normalized_needles, ct_image, ctv_mask, oar_mask
+                )
 
-            current = _current_planning_snapshot(agent)
             current_seeds = list(current.get("seeds") or [])
+            raw_seeds = data.get("seeds")
+            if raw_seeds is not None:
+                if not isinstance(raw_seeds, list):
+                    raise ValueError("seeds must be a list")
+                raw_seeds, repaired_seed_ids = _deduplicate_manual_seed_records(raw_seeds)
+                if repaired_seed_ids:
+                    logger.warning("Repairing duplicate submitted seed IDs: %s", repaired_seed_ids)
+                current_seeds = _normalize_manual_seed_records(
+                    memory, raw_seeds, normalized_needles
+                )
+            if current_seeds and not normalized_needles:
+                raise ValueError("A seed requires an owning needle")
+            planning_id = str(memory.retrieve("manual_planning_id") or uuid4().hex)
+            next_version = current_version + 1
             # Keep seeds and geometry coherent for later explicit replanning,
             # restore, reload, and session switching.
+            memory.store("manual_planning_id", planning_id)
             memory.store("manual_seeds", current_seeds)
             memory.store("manual_needles", normalized_needles)
             memory.store("manual_plan_active", True)
+            memory.store("manual_plan_version", next_version)
             memory.store("manual_geometry_only", True)
             reason = str(data.get("reason") or "needle_position_only")
+            grouped_seeds: Dict[str, list] = {}
+            for seed in current_seeds:
+                grouped_seeds.setdefault(str(seed["trajectory_id"]), []).append(seed)
+            serialized_plan = []
+            for needle_item in normalized_needles:
+                trajectory_id = str(needle_item.get("trajectory_id") or needle_item.get("id") or "")
+                seed_items = grouped_seeds.get(trajectory_id, [])
+                serialized_plan.append({
+                    "trajectory_id": trajectory_id,
+                    "needle_id": str(needle_item.get("id") or trajectory_id),
+                    "trajectory": {
+                        "id": trajectory_id,
+                        "points": needle_item.get("points") or [],
+                    },
+                    "seeds": [
+                        {
+                            "id": seed["id"],
+                            "position": seed["position"],
+                            "direction": seed["direction"],
+                            "trajectory_id": trajectory_id,
+                        }
+                        for seed in seed_items
+                    ],
+                    "num_seeds": len(seed_items),
+                })
+            memory.store("seed_plan", serialized_plan)
+            memory.store("seed_plan_serialized", serialized_plan)
+            memory.store("total_seeds", len(current_seeds))
+            artifact_status = _mark_manual_dependents_stale(
+                memory,
+                reason=reason,
+                planning_version=next_version,
+            )
             try:
                 from web.surgical_guide import invalidate_surgical_guides
                 invalidate_surgical_guides(agent, f"manual needle geometry updated: {reason}")
@@ -2962,6 +3182,10 @@ def register_planning_routes(
                 "label": reason,
                 "detail": {
                     "needle_count": len(normalized_needles),
+                    "planning_id": planning_id,
+                    "planning_version": next_version,
+                    "seed_count": len(current_seeds),
+                    "artifacts_stale": True,
                     "dose_recomputed": False,
                 },
             })
@@ -2978,8 +3202,13 @@ def register_planning_routes(
             )
             return jsonify({
                 "success": True,
+                "session_id": session_id,
+                "case_id": session_id,
+                "planning_id": planning_id,
+                "planning_version": next_version,
                 "needles": normalized_needles,
                 "seeds": current_seeds,
+                "artifact_status": artifact_status,
                 "dose_recomputed": False,
                 "event": event,
             })
@@ -3018,9 +3247,10 @@ def register_planning_routes(
 
         memory = agent.memory
         current = _current_planning_snapshot(agent)
-        needles = data.get("needles")
-        if not isinstance(needles, list) or not needles:
-            needles = list(current.get("needles") or [])
+        try:
+            needles = _submitted_manual_needles(data, current.get("needles"))
+        except ValueError as exc:
+            return jsonify({"success": False, "error": str(exc)}), 400
         if not needles and raw_seeds:
             return jsonify({"success": False, "error": "A seed requires an owning needle"}), 400
 
@@ -3043,6 +3273,9 @@ def register_planning_routes(
 
         reason = str(data.get("reason") or "seed_geometry")
         try:
+            raw_seeds, repaired_seed_ids = _deduplicate_manual_seed_records(raw_seeds)
+            if repaired_seed_ids:
+                logger.warning("Repairing duplicate submitted seed IDs: %s", repaired_seed_ids)
             normalized_seeds = _normalize_manual_seed_records(memory, raw_seeds, needles)
             planning_id = str(memory.retrieve("manual_planning_id") or uuid4().hex)
             next_version = current_version + 1
