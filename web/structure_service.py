@@ -376,6 +376,7 @@ def _stale_updates(memory: Any, reason: str) -> Dict[str, Any]:
             "dvh": "stale",
             "evaluation": "stale",
             "report": "stale",
+            "surgical_guide": "stale",
             "reason": reason,
             "updated_at": _utc_now(),
             "planning_version": planning_version,
@@ -386,18 +387,22 @@ def _stale_updates(memory: Any, reason: str) -> Dict[str, Any]:
             "dvh": "stale",
             "report": "stale",
             "quality_check": "stale",
+            "surgical_guide": "stale",
             "reason": reason,
             "updated_at": _utc_now(),
             "planning_version": planning_version,
         },
     }
-    # A puncture guide depends only on the planned needle geometry and the CT
-    # skin surface, neither of which changes when structures are reclassified
-    # or deleted in the Data Tree. Marking it stale here made a valid guide
-    # disappear (status=stale blocked display even though the plan signature
-    # still matched). Guide invalidation is owned by the needle-geometry edit
-    # paths (planning_routes manual needle/seed updates), so leave the guide
-    # untouched here.
+    guide = memory.retrieve("surgical_guide")
+    if isinstance(guide, dict):
+        # Reclassification changes the structure references consumed by the
+        # plan. Keep the mesh and its metadata for inspection, but prevent an
+        # old guide from being presented as the current clinical result.
+        guide_update = dict(guide)
+        guide_update["status"] = "stale"
+        guide_update["stale_reason"] = reason
+        guide_update["updated_at"] = _utc_now()
+        updates["surgical_guide"] = guide_update
     return updates
 
 

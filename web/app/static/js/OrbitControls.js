@@ -144,6 +144,7 @@
 				const quat = new THREE.Quaternion().setFromUnitVectors( object.up, new THREE.Vector3( 0, 1, 0 ) );
 				const quatInverse = quat.clone().invert();
 				const lastPosition = new THREE.Vector3();
+				const lastTarget = new THREE.Vector3();
 				const lastQuaternion = new THREE.Quaternion();
 				const twoPI = 2 * Math.PI;
 				// Free-orbit pole handling. OrbitControls recomputes the
@@ -154,9 +155,20 @@
 				// (skipping the recompute) so the orbit continues to any angle.
 				const _sphericalCarry = new THREE.Spherical();
 				let _carryAcrossPole = false;
+				let _carryPoleParity = 0;
 				return function update() {
 
 					const position = scope.object.position;
+					// Fit/reset/report capture may reposition the camera outside the
+					// pointer interaction. Never interpret that as a continuation of
+					// the previous unwrapped orbit.
+					if ( _carryAcrossPole && (
+						position.distanceToSquared( lastPosition ) > 1e-10 ||
+						scope.target.distanceToSquared( lastTarget ) > 1e-10
+					) ) {
+						_carryAcrossPole = false;
+						_carryPoleParity = 0;
+					}
 					offset.copy( position ).sub( scope.target ); // rotate offset to "y-axis-is-up" space
 
 					offset.applyQuaternion( quat ); // angle from z-axis around y-axis
@@ -208,33 +220,43 @@
 
 					} // restrict phi to be between desired limits
 
-					// Free-orbit pole crossing. OrbitControls natively clamps phi
-					// to [0, PI]; a drag reaching the top/bottom pole stops there
-					// and can only be reversed. Allow the camera to roll over the
-					// pole instead: when phi crosses 0 (top) or PI (bottom), map it
-					// to the opposite hemisphere (phi -> PI - phi for the top pole,
-					// phi -> 2PI - phi for the bottom pole) while flipping theta.
-					// This keeps the orbit direction continuous so the scene can be
-					// viewed from any angle. Once crossing is active, the spherical
-					// coords are carried across frames (the position-based recompute
-					// would otherwise lose the azimuth exactly at the pole).
-					if ( spherical.phi < 0 ) {
-						// Crossed the top pole (phi negative).
-						spherical.phi = Math.PI - spherical.phi; // e.g. -eps -> PI+eps... use PI + phi to stay in range
-						spherical.theta += Math.PI;
+					// Free-orbit pole crossing. OrbitControls normally clamps phi to
+					// [0, PI]. That is safe, but it makes a drag reaching a pole stop
+					// and reverse. This viewer intentionally permits a complete orbit,
+					// so reflect the angle into the canonical hemisphere and rotate the
+					// azimuth by PI for every odd pole crossing.
+					//
+					// The old top-pole branch used `PI - phi` for a negative phi. For
+					// phi=-eps that produced PI+eps and was immediately clamped to PI,
+					// which caused the visible 180-degree camera jump reported in the
+					// viewer. Keep the unwrapped phi in the carry state: storing only
+					// the reflected angle loses which pole was crossed on the next drag
+					// frame and can reintroduce a jump after a second crossing.
+					const rawPhi = spherical.phi;
+					const wrappedPhi = ( ( rawPhi % twoPI ) + twoPI ) % twoPI;
+					const poleParity = Math.abs( Math.floor( rawPhi / Math.PI ) ) % 2;
+					if ( wrappedPhi > Math.PI ) {
+						spherical.phi = twoPI - wrappedPhi;
+					} else {
+						spherical.phi = wrappedPhi;
+					}
+
+					if ( rawPhi < 0 || rawPhi > Math.PI ) {
+						// Remove the previous pole offset before applying the parity
+						// for the current unwrapped angle. This supports repeated pole
+						// crossings and simultaneous azimuth rotation.
+						if ( _carryAcrossPole ) spherical.theta -= _carryPoleParity * Math.PI;
+						spherical.theta += poleParity * Math.PI;
 						_carryAcrossPole = true;
+						_carryPoleParity = poleParity;
 						_sphericalCarry.theta = spherical.theta;
-						_sphericalCarry.phi = spherical.phi;
-						_sphericalCarry.radius = spherical.radius;
-					} else if ( spherical.phi > Math.PI ) {
-						// Crossed the bottom pole (phi beyond PI).
-						spherical.phi = 2 * Math.PI - spherical.phi;
-						spherical.theta += Math.PI;
-						_carryAcrossPole = true;
-						_sphericalCarry.theta = spherical.theta;
-						_sphericalCarry.phi = spherical.phi;
+						_sphericalCarry.phi = rawPhi;
 						_sphericalCarry.radius = spherical.radius;
 					} else if ( _carryAcrossPole ) {
+						// Returning to the canonical interval removes the last pole
+						// offset before normal position-based spherical reconstruction.
+						spherical.theta -= _carryPoleParity * Math.PI;
+						_carryPoleParity = 0;
 						_carryAcrossPole = false;
 					}
 					spherical.phi = Math.max( scope.minPolarAngle, Math.min( scope.maxPolarAngle, spherical.phi ) );
@@ -280,6 +302,7 @@
 
 						scope.dispatchEvent( _changeEvent );
 						lastPosition.copy( scope.object.position );
+						lastTarget.copy( scope.target );
 						lastQuaternion.copy( scope.object.quaternion );
 						zoomChanged = false;
 						return true;

@@ -1452,10 +1452,20 @@ function _projectPointerAlongNeedle2D(event, needle, view) {
         const dy = b.y - a.y;
         const norm2 = dx * dx + dy * dy;
         if (norm2 < 1e-8) continue;
-        const parameter = Math.max(0, Math.min(
-            1,
-            ((pointer.x - a.x) * dx + (pointer.y - a.y) * dy) / norm2,
-        ));
+        const rawParameter = ((pointer.x - a.x) * dx + (pointer.y - a.y) * dy) / norm2;
+        const worldLength = Math.hypot(
+            worldB[0] - worldA[0],
+            worldB[1] - worldA[1],
+            worldB[2] - worldA[2],
+        );
+        const seedLength = Math.max(
+            0.1,
+            Number(document.getElementById('seedLength')?.value || needle.seed_length || 4.5),
+        );
+        const clearance = worldLength > 1e-8
+            ? Math.min(0.49, (seedLength / 2) / worldLength)
+            : 0;
+        const parameter = Math.max(clearance, Math.min(1 - clearance, rawParameter));
         const projectedX = a.x + parameter * dx;
         const projectedY = a.y + parameter * dy;
         const distance = Math.hypot(pointer.x - projectedX, pointer.y - projectedY);

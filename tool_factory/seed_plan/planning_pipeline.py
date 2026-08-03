@@ -1075,16 +1075,33 @@ def _world_segment_hits_obstacle(
         if start.size != 3 or end.size != 3 or not np.all(np.isfinite(start + end)):
             return True
         reference_shape = tuple(int(value) for value in reversed(ct_image.GetSize()))
-        ctv = None if ctv_mask is None else np.asarray(ctv_mask)
-        oar = None if oar_mask is None else np.asarray(oar_mask)
+        def _canonical_mask(mask, label):
+            if mask is None:
+                return None
+            array = np.asarray(mask)
+            if tuple(array.shape) == reference_shape:
+                return array
+            expected_size = int(np.prod(reference_shape, dtype=np.int64))
+            if int(array.size) == expected_size:
+                logger.debug(
+                    "[needle_safety] reshaping flat %s mask %s to CT grid %s",
+                    label, tuple(array.shape), reference_shape,
+                )
+                return array.reshape(reference_shape)
+            logger.error(
+                "[needle_safety] %s shape %s does not match CT shape %s",
+                label, tuple(array.shape), reference_shape,
+            )
+            return None
+
+        ctv = _canonical_mask(ctv_mask, "CTV")
+        oar = _canonical_mask(oar_mask, "OAR")
+        if ctv_mask is not None and ctv is None:
+            return True
+        if oar_mask is not None and oar is None:
+            return True
         if ctv is None and oar is None:
             logger.error("[needle_safety] No original-grid masks available for final needle validation")
-            return True
-        if ctv is not None and tuple(ctv.shape) != reference_shape:
-            logger.error("[needle_safety] CTV shape %s does not match CT shape %s", ctv.shape, reference_shape)
-            return True
-        if oar is not None and tuple(oar.shape) != reference_shape:
-            logger.error("[needle_safety] OAR shape %s does not match CT shape %s", oar.shape, reference_shape)
             return True
 
         distance = float(np.linalg.norm(end - start))

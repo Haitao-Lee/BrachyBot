@@ -104,6 +104,25 @@ function _planningVisualEntries() {
     return entries;
 }
 
+function _deduplicatePlanningRows() {
+    const planning = dataTreeState?.planning;
+    if (!planning) return;
+    const uniqueById = (items) => {
+        const byId = new Map();
+        (Array.isArray(items) ? items : []).forEach(item => {
+            const id = String(item?.id || '').trim();
+            if (id) byId.set(id, item);
+        });
+        return [...byId.values()];
+    };
+    planning.trajectories = uniqueById(planning.trajectories);
+    planning.seeds = uniqueById(planning.seeds);
+    planning.needles = uniqueById(planning.needles);
+    planning.trajectories.forEach(trajectory => {
+        trajectory.seeds = planning.seeds.filter(seed => _trajectoryContains(seed, trajectory));
+    });
+}
+
 function _trajectoryContains(item, trajectory) {
     const itemId = item?.trajectory_id ?? item?.trajectoryId;
     if (itemId === undefined || itemId === null) return false;
@@ -2053,6 +2072,37 @@ function reconcileDataTreeVisualNodes() {
         visible: annotation.visible !== false, opacity: annotation.opacity ?? 1,
         color: annotation.color || '#60a5fa', loaded: true,
     }, 'manual_annotation', 'annotations'));
+
+    // Manual edits are persisted as one authoritative artifact-status map on
+    // the planning snapshot. Project those statuses back onto the concrete
+    // Data Tree nodes so an old Dose/DVH/Guide is never presented as current
+    // merely because its binary/mesh payload is still visible. This is a
+    // one-way projection; it does not create placeholder data nodes.
+    const artifactStatus = dataTreeState.planning?.artifactStatus;
+    if (artifactStatus && typeof artifactStatus === 'object') {
+        const applyArtifactStatus = (node, key) => {
+            if (!node) return;
+            const status = String(artifactStatus[key] || '').toLowerCase();
+            if (['ready', 'stale', 'expired', 'loading', 'error'].includes(status)) {
+                node.status = status;
+            }
+        };
+        applyArtifactStatus(dataTreeState.dose, 'dose');
+        applyArtifactStatus(dataTreeState.planning?.doseOverlay, 'dose');
+        applyArtifactStatus(dataTreeState.planning?.dvh, 'dvh');
+        (dataTreeState.planning?.doseLevels || []).forEach(node => applyArtifactStatus(node, 'dose'));
+        (dataTreeState.planning?.meshes || []).forEach(node => {
+            if (String(node.source || '').toLowerCase() === 'surgical_guide') {
+                applyArtifactStatus(node, 'surgical_guide');
+            }
+        });
+        (dataTreeState.exportArtifacts || []).forEach(node => {
+            const type = String(node.dataType || node.type || '').toLowerCase();
+            if (type === 'report' || type === 'pdf') applyArtifactStatus(node, 'report');
+            if (type.includes('guide')) applyArtifactStatus(node, 'surgical_guide');
+            if (type === 'dvh') applyArtifactStatus(node, 'dvh');
+        });
+    }
 }
 
 window.ensureDataTreeNodeMetadata = ensureDataTreeNodeMetadata;
@@ -2470,6 +2520,10 @@ function renderDataTree() {
     const body = document.getElementById('dataTreeBody');
     if (!body) return;
 
+    // Stable IDs are the Data Tree/Viewer identity boundary. Repair legacy
+    // snapshots before rendering so one needle or seed cannot appear twice
+    // under different trajectory rows after hydration or a manual edit.
+    _deduplicatePlanningRows();
     reconcileDataTreeVisualNodes();
     // Catalog hydration is deliberately non-blocking. The active Session UI
     // renders immediately, then durable artifact rows arrive independently.

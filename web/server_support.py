@@ -500,7 +500,11 @@ def _segment_segment_distance(
     return math.sqrt(sum(value * value for value in delta))
 
 
-def _latest_plan_snapshot(agent) -> Dict[str, Any]:
+def _latest_plan_snapshot(
+    agent,
+    *,
+    validate_obstacles: bool = True,
+) -> Dict[str, Any]:
     if agent is None or not hasattr(agent, "memory"):
         return {}
     metrics = agent.memory.retrieve("dose_metrics") or agent.memory.retrieve("metrics") or {}
@@ -727,7 +731,7 @@ def _latest_plan_snapshot(agent) -> Dict[str, Any]:
                 })
 
     obstacle_hits = []
-    if needle_entries:
+    if needle_entries and validate_obstacles:
         try:
             from tool_factory.seed_plan.planning_pipeline import (
                 _merge_embedded_hard_obstacles,
@@ -828,9 +832,36 @@ def _source_backed_target_context(agent) -> Dict[str, Any]:
         return {}
 
 
-def _build_plan_advice(agent, session_id: Optional[str] = None) -> Dict[str, Any]:
+def _build_plan_advice(
+    agent,
+    session_id: Optional[str] = None,
+    *,
+    fast: bool = False,
+) -> Dict[str, Any]:
     """Create deterministic planning advice from current metrics and UI events."""
-    snapshot = _latest_plan_snapshot(agent)
+    if agent is None or not hasattr(agent, "memory"):
+        # Monitor stop/advice is a control-plane action and may race the
+        # background hydration of a newly opened case.  Return a useful,
+        # explicitly pending result instead of forcing callers to wait for CT
+        # and planning arrays or raising an opaque 500 error.
+        return {
+            "metrics": {},
+            "strengths": [],
+            "issues": [],
+            "advice": [
+                "Case resources are still loading; detailed planning metrics will be available when hydration completes.",
+            ],
+            "artifact_status": {},
+            "hydration_pending": True,
+        }
+    # Stopping Monitor is a control-plane action.  CT/OAR segment intersection
+    # checks can scan millions of voxels and must not keep the UI in
+    # ``monitor-stopping`` while the final chat message is being assembled.
+    # The full geometry pass remains available to the advice endpoint and
+    # subsequent quality checks.
+    snapshot = _latest_plan_snapshot(agent, validate_obstacles=not fast)
+    if fast:
+        snapshot["geometry_validation"] = "deferred"
     metrics = snapshot.get("metrics", {}) or {}
     events = list((_ui_bucket(session_id).get("events") or [])[-80:])
     advice: list = []
@@ -1086,6 +1117,8 @@ def _localize_monitor_text(text: Any, language: str = "en") -> str:
     }
     if raw in exact:
         return exact[raw]
+    if raw.startswith("Case resources are still loading;"):
+        return "病例资源仍在后台加载；加载完成后将提供详细规划指标。"
     match = re.fullmatch(r"CTV V100 is ([0-9.]+)%; compare it with the applicable site-specific guidance or confirmed case protocol target\.", raw)
     if match:
         return f"CTV V100 为 {match.group(1)}%；请与适用的部位特异性指南或已确认的病例方案目标比较。"
@@ -1500,6 +1533,28 @@ def _safe_float_list(values: Any, length: int = 3, default: Optional[list] = Non
         return list(default)
 
 
+def _manual_grid_array(value: Any, shape: Iterable[int], *, label: str = "array"):
+    """Return a persisted manual-planning array in canonical Z/Y/X order.
+
+    Workspace artifacts may be stored either as a shaped volume or as a flat
+    buffer.  The image grid is authoritative; accepting a same-sized flat
+    buffer here prevents hydration from reintroducing a shape mismatch into
+    needle safety and dose evaluation.
+    """
+    import numpy as np
+
+    expected = tuple(int(item) for item in shape)
+    array = np.asarray(value)
+    if tuple(array.shape) == expected:
+        return array
+    expected_size = int(np.prod(expected, dtype=np.int64))
+    if int(array.size) == expected_size:
+        return array.reshape(expected)
+    raise ValueError(
+        f"{label} shape {tuple(array.shape)} does not match the image grid {expected}."
+    )
+
+
 class ManualNeedleSafetyError(ValueError):
     """Raised when a manual needle would cross a hard Data Tree obstacle."""
 
@@ -1738,7 +1793,13 @@ def _compute_manual_ai_dose(
     if ct_image is None or ct_data is None:
         raise ValueError("No CT image loaded")
 
-    original_shape = tuple(int(v) for v in np.asarray(ct_data).shape)
+    # Workspace hydration may serialize CT arrays as a flat artifact to save
+    # metadata overhead.  All downstream planning and safety code operates on
+    # the canonical NumPy Z/Y/X grid, so derive the shape from the authoritative
+    # SimpleITK image and reshape same-sized persisted arrays before using them.
+    ct_grid_shape = tuple(int(v) for v in reversed(ct_image.GetSize()))
+    _manual_grid_array(ct_data, ct_grid_shape, label="CT data")
+    original_shape = ct_grid_shape
 
     def _mask_array(*keys, shape=original_shape):
         for key in keys:
@@ -1746,9 +1807,7 @@ def _compute_manual_ai_dose(
             if arr is None:
                 continue
             try:
-                arr_np = np.asarray(arr)
-                if arr_np.shape == shape:
-                    return arr_np
+                return _manual_grid_array(arr, shape, label=key)
             except Exception:
                 continue
         return None
@@ -3372,6 +3431,8 @@ def _monitor_activity_label_clean(key: str, language: str = "en") -> str:
         "segmentation.step": ("\u5206\u5272\u6b65\u9aa4", "Segmentation steps"),
         "manual.needle.drag": ("\u624b\u52a8\u9488\u9053\u62d6\u62fd", "Manual needle drags"),
         "manual.needle.position_only": ("\u624b\u52a8\u9488\u9053\u4f4d\u7f6e\u8c03\u6574", "Manual needle position updates"),
+        "manual.needle.add": ("\u624b\u52a8\u6dfb\u52a0\u9488\u9053", "Manual needle additions"),
+        "manual.needle.delete": ("\u624b\u52a8\u5220\u9664\u9488\u9053", "Manual needle deletions"),
         "manual.seed.drag": ("\u624b\u52a8\u7c92\u5b50\u62d6\u62fd", "Manual seed drags"),
         "manual.seed.add": ("\u624b\u52a8\u6dfb\u52a0\u7c92\u5b50", "Manual seed additions"),
         "manual.seed.delete": ("\u624b\u52a8\u5220\u9664\u7c92\u5b50", "Manual seed deletions"),
