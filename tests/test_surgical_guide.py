@@ -108,6 +108,13 @@ def test_auxiliary_holes_can_be_disabled_without_changing_primary_contract():
 
 
 def test_auxiliary_hole_parameters_enforce_primary_wall_and_ring_spacing():
+    defaults = normalize_guide_parameters()
+    assert defaults["auxiliary_holes_enabled"] is True
+    assert defaults["auxiliary_hole_first_offset_mm"] == 4.0
+
+    legacy = normalize_guide_parameters({"sleeve_outer_radius_mm": 3.6})
+    assert legacy["auxiliary_holes_enabled"] is False
+
     with pytest.raises(ValueError, match="wall"):
         normalize_guide_parameters({"auxiliary_hole_first_offset_mm": 2.0})
     with pytest.raises(ValueError, match="dense|wall"):
