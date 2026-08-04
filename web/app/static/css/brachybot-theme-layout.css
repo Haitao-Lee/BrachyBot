@@ -6,11 +6,17 @@
    ============================================================= */
 
 :root {
+    color-scheme: light;
     /* Brand */
-    --primary: #3b82f6;
-    --primary-soft: #eff6ff;
-    --primary-hover: #2563eb;
-    --primary-ink: #1e3a8a;
+    --primary: #0f7181;
+    --primary-soft: rgba(15, 113, 129, 0.12);
+    --primary-hover: #0b5965;
+    --primary-ink: #0b4550;
+    --accent: #0f7181;
+    --accent-hover: #0b5965;
+    --accent-soft: rgba(15, 113, 129, 0.12);
+    --accent-ink: #0b4550;
+    --accent-ring: rgba(15, 113, 129, 0.28);
 
     /* Semantic */
     --success: #10b981;
@@ -26,23 +32,23 @@
     --info-soft: #ecfeff;
 
     /* Three-tier surface depth (Linear / Vercel) */
-    --bg-canvas:        #f5f7fb;     /* ground */
-    --bg-1:             #f8fafc;     /* subtle */
+    --bg-canvas:        #f2f7f6;     /* ground */
+    --bg-1:             #f7fbfa;     /* subtle */
     --bg-2:             #ffffff;     /* base elevated */
-    --bg-3:             #f1f5f9;     /* intermediate */
-    --bg-sunken:        #eef2f7;     /* recessed well */
-    --bg-sunken-strong: #e6ecf3;
+    --bg-3:             #eaf2f1;     /* intermediate */
+    --bg-sunken:        #e4edeb;     /* recessed well */
+    --bg-sunken-strong: #dce8e5;
     --bg-elevated:      #ffffff;
-    --bg-card:          rgba(255, 255, 255, 0.72);
+    --bg-card:          rgba(255, 255, 255, 0.84);
 
     /* Hairline borders (Linear signature) */
-    --glass-border:        rgba(15, 23, 42, 0.06);
-    --glass-border-strong: rgba(15, 23, 42, 0.10);
-    --border-soft:         #e2e8f0;
-    --border:              #cbd5e1;
-    --border-hairline:     rgba(15, 23, 42, 0.06);
-    --border-default:      rgba(15, 23, 42, 0.09);
-    --border-emphasis:     rgba(15, 23, 42, 0.14);
+    --glass-border:        rgba(31, 76, 83, 0.10);
+    --glass-border-strong: rgba(31, 76, 83, 0.16);
+    --border-soft:         #d9e6e3;
+    --border:              #bfd2ce;
+    --border-hairline:     rgba(31, 76, 83, 0.10);
+    --border-default:      rgba(31, 76, 83, 0.14);
+    --border-emphasis:     rgba(31, 76, 83, 0.22);
 
     /* Multi-stop shadows (ambient + ring + contact) */
     --shadow-xs: 0 1px 2px rgba(15, 23, 42, 0.04);
@@ -80,10 +86,10 @@
     --blur-lg: blur(20px) saturate(180%);
 
     /* Text */
-    --text: #0f172a;
-    --text-secondary: #475569;
-    --text-dim: #94a3b8;
-    --text-faint: #cbd5e1;
+    --text: #17333b;
+    --text-secondary: #4a6269;
+    --text-dim: #789197;
+    --text-faint: #a8b9bc;
 
     /* Radii */
     --radius-xs: 6px;
@@ -99,11 +105,11 @@
     --t-slow: 320ms;
 
     /* Chat semantics (NEW) */
-    --msg-user-bg:           rgba(59, 130, 246, 0.09);
-    --msg-user-border:       rgba(59, 130, 246, 0.22);
-    --msg-assistant-bg:      #eef2f7;
-    --msg-assistant-border:  rgba(15, 23, 42, 0.08);
-    --msg-hover:             rgba(15, 23, 42, 0.025);
+    --msg-user-bg:           rgba(15, 113, 129, 0.10);
+    --msg-user-border:       rgba(15, 113, 129, 0.24);
+    --msg-assistant-bg:      #eef4f3;
+    --msg-assistant-border:  rgba(31, 76, 83, 0.12);
+    --msg-hover:             rgba(15, 113, 129, 0.04);
 
     /* Form-control canonical (Linear) */
     --control-h:        30px;
@@ -111,7 +117,8 @@
     --control-r:        8px;
     --control-pad-x:    10px;
     --control-font:     12.5px;
-    --control-focus-ring: 0 0 0 3px rgba(59, 130, 246, 0.16);
+    --control-focus-ring: 0 0 0 3px rgba(15, 113, 129, 0.18);
+    --control-scheme: light;
 
     /* Status pill */
     --pill-h: 22px;
@@ -120,8 +127,8 @@
 
     /* Viewer chrome (overrides light theme on canvas-adjacent surfaces) */
     --viewer-bg:        #000;
-    --viewer-chrome-bg: #1e293b;
-    --viewer-chrome-fg: #e2e8f0;
+    --viewer-chrome-bg: #edf4f3;
+    --viewer-chrome-fg: #23404a;
 }
 
 /* ===========================================================
@@ -132,6 +139,7 @@
    =========================================================== */
 [data-theme="dark"] {
     color-scheme: dark;
+    --control-scheme: dark;
 
     /* Brand — electric indigo for dark backgrounds */
     --primary:        #4f7cff;
@@ -432,6 +440,41 @@ body::before {
     background: var(--primary);
     color: #fff;
 }
+
+/* Global appearance switch. It stays icon-only to keep the header compact;
+   its tooltip and accessible label describe the next action. */
+.theme-toggle {
+    width: 30px;
+    height: 26px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+    padding: 0;
+    border: 1px solid var(--border-default);
+    border-radius: var(--pill-r);
+    background: var(--bg-2);
+    color: var(--text-secondary);
+    box-shadow: var(--inset-top), var(--shadow-xs);
+    cursor: pointer;
+    transition: background var(--t-base) var(--ease), color var(--t-base) var(--ease), border-color var(--t-base) var(--ease), box-shadow var(--t-base) var(--ease);
+}
+.theme-toggle:hover {
+    color: var(--primary);
+    background: var(--primary-soft);
+    border-color: var(--primary);
+    box-shadow: var(--inset-top), var(--shadow-sm);
+}
+.theme-toggle:focus-visible {
+    outline: 2px solid var(--primary);
+    outline-offset: 2px;
+}
+.theme-toggle[aria-pressed="true"] {
+    color: var(--primary);
+    background: var(--primary-soft);
+    border-color: var(--primary);
+}
+.theme-toggle-icon { width: 15px; height: 15px; display: block; }
 
 /* ===========================================================
    MAIN BODY
@@ -812,7 +855,7 @@ body.workspace-transitioning #sessionList {
     border: 1px solid var(--border);
     border-radius: 5px;
     background: var(--bg-2);
-    color-scheme: dark;
+    color-scheme: var(--control-scheme);
 }
 
 .guide-parameters > summary {
@@ -884,7 +927,7 @@ body.workspace-transitioning #sessionList {
     height: 28px;
     appearance: none;
     -webkit-appearance: none;
-    color-scheme: dark;
+    color-scheme: var(--control-scheme);
     background: var(--bg-3);
     color: var(--text);
     border: 1px solid var(--border-default);
@@ -931,7 +974,7 @@ body.workspace-transitioning #sessionList {
     background-color: var(--bg-3) !important;
     color: var(--text) !important;
     opacity: 1 !important;
-    color-scheme: dark;
+    color-scheme: var(--control-scheme);
 }
 
 .guide-parameter-grid select.is-empty {
