@@ -273,7 +273,7 @@ def test_workspace_transitions_publish_measurable_first_paint_and_restore_stages
     assert "restore.planning_dvh" in ui_api
     assert "restore.report_and_presentation" in ui_api
     assert "restore.fully_interactive" in ui_api
-    assert "brachybot-workspace.js?v=22" in index
+    assert "brachybot-workspace.js?v=23" in index
     assert "brachybot-ui-api.js?v=30" in index
 
 
