@@ -9,6 +9,7 @@ import SimpleITK as sitk
 from tool_factory.surgical_guide import SurgicalGuideTool
 from web.surgical_guide import (
     generate_surgical_guide,
+    _filter_components,
     guide_state_for_version,
     guide_version_summaries,
     invalidate_surgical_guides,
@@ -58,6 +59,23 @@ def _synthetic_agent():
             }],
         },
     })
+
+
+def test_filter_components_removes_diagonal_spurs_before_meshing():
+    mask = np.zeros((12, 12, 12), dtype=bool)
+    mask[2:7, 2:7, 2:7] = True
+    # These voxels form a tiny component that touches the main solid only by
+    # edges/corners.  Keeping it can make the marching-cubes surface non-manifold.
+    mask[7, 7, 7] = True
+    mask[7, 6, 7] = True
+    mask[6, 7, 7] = True
+
+    filtered = _filter_components(mask, minimum_voxels=24)
+
+    assert filtered[2:7, 2:7, 2:7].all()
+    assert not filtered[7, 7, 7]
+    assert not filtered[7, 6, 7]
+    assert not filtered[6, 7, 7]
 
 
 def test_guide_is_watertight_and_stl_round_trips():
