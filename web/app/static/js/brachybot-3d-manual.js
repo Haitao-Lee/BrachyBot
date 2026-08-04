@@ -1824,12 +1824,20 @@ function init3DScene() {
     let pendingFrames = 0;
     let drawingFrame = false;
     let viewer3DSize = { cssWidth: 0, cssHeight: 0, dpr: 0, pixelWidth: 0, pixelHeight: 0 };
+    let viewer3DSizeDirty = true;
 
     // Keep CSS layout pixels, camera aspect, and WebGL drawing-buffer pixels
     // in one place. Mixing these coordinate systems after a resize caused
     // the zoom-out crop/stretch bug on high-DPI displays.
-    function syncViewer3DSize() {
+    function syncViewer3DSize({ force = false } = {}) {
         if (!scene3D.renderer || !scene3D.camera || !canvas) return null;
+        if (!force && !viewer3DSizeDirty
+            && viewer3DSize.pixelWidth > 0
+            && viewer3DSize.pixelHeight > 0
+            && scene3D.renderer.domElement.width === viewer3DSize.pixelWidth
+            && scene3D.renderer.domElement.height === viewer3DSize.pixelHeight) {
+            return { ...viewer3DSize, changed: false };
+        }
         const rect = typeof canvas.getBoundingClientRect === 'function'
             ? canvas.getBoundingClientRect() : null;
         const cssWidth = Math.max(1, Math.floor(rect?.width || canvas.clientWidth || 0));
@@ -1850,6 +1858,7 @@ function init3DScene() {
             scene3D.camera.updateProjectionMatrix();
             viewer3DSize = { cssWidth, cssHeight, dpr, pixelWidth, pixelHeight };
         }
+        viewer3DSizeDirty = false;
         scene3D.renderer.domElement.style.width = '100%';
         scene3D.renderer.domElement.style.height = '100%';
         scene3D.renderer.domElement.style.display = 'block';
@@ -1917,7 +1926,7 @@ function init3DScene() {
     }
 
     function resizeViewer3D() {
-        const geometry = syncViewer3DSize();
+        const geometry = syncViewer3DSize({ force: true });
         if (!geometry) return false;
         requestRender(2);
         return !!geometry;
@@ -1944,9 +1953,14 @@ function init3DScene() {
     // is user state and must remain untouched unless Fit/Reset is explicit.
     const resizeObserver3D = new ResizeObserver(() => {
         if (!scene3D.renderer || !scene3D.camera) return;
+        viewer3DSizeDirty = true;
         resizeViewer3D();
     });
     resizeObserver3D.observe(canvas);
+    window.addEventListener('resize', () => {
+        viewer3DSizeDirty = true;
+        resizeViewer3D();
+    }, { passive: true });
 
     // ==================== 3D PICKING / INTERACTION ====================
     const raycaster = new THREE.Raycaster();
@@ -2114,8 +2128,25 @@ function init3DScene() {
             _setNeedleInternalHandleHover(nextId, true);
         }
     };
-    interactionCanvas.addEventListener('pointermove', updateNeedleHandleHover, true);
-    interactionCanvas.addEventListener('mousemove', updateNeedleHandleHover, true);
+    // Pointer events are the canonical path. The old pointer+mouse pair made
+    // one physical drag run the raycast and overlay redraw several times.
+    const supportsPointerEvents = typeof window.PointerEvent === 'function';
+    let hoverFrame = 0;
+    let pendingHoverPoint = null;
+    const scheduleNeedleHandleHover = (event) => {
+        pendingHoverPoint = { clientX: event.clientX, clientY: event.clientY };
+        if (hoverFrame) return;
+        hoverFrame = requestAnimationFrame(() => {
+            hoverFrame = 0;
+            const point = pendingHoverPoint;
+            pendingHoverPoint = null;
+            if (point) updateNeedleHandleHover(point);
+        });
+    };
+    interactionCanvas.addEventListener('pointermove', scheduleNeedleHandleHover, true);
+    if (!supportsPointerEvents) {
+        interactionCanvas.addEventListener('mousemove', scheduleNeedleHandleHover, true);
+    }
 
     // Mouse down - start drag or select
     canvas.addEventListener('mousedown', (event) => {
@@ -2228,7 +2259,16 @@ function init3DScene() {
         }
     });
 
-    // Mouse move - drag seed
+    // Mouse move - drag seed. The projection redraw is frame-coalesced so
+    // 2D remains live without competing with the 3D raycast on every event.
+    let overlayRedrawFrame = 0;
+    const scheduleManualOverlayRedraw = () => {
+        if (overlayRedrawFrame) return;
+        overlayRedrawFrame = requestAnimationFrame(() => {
+            overlayRedrawFrame = 0;
+            if (typeof redrawSeedNeedleOverlays === 'function') redrawSeedNeedleOverlays();
+        });
+    };
     const updateManualDrag = (event) => {
         if (pendingSeed && !isDragging) {
             const dx = event.clientX - pendingSeedStart.x;
@@ -2310,13 +2350,16 @@ function init3DScene() {
         // The overlay reads the same session-owned planning records, so this
         // is a visual preview only; the authoritative transaction remains on
         // pointer-up and can still roll back on failure.
-        if (typeof redrawSeedNeedleOverlays === 'function') redrawSeedNeedleOverlays();
+        scheduleManualOverlayRedraw();
         requestRender(1);
     };
-    interactionCanvas.addEventListener('mousemove', updateManualDrag);
-    interactionCanvas.addEventListener('pointermove', updateManualDrag);
-    window.addEventListener('mousemove', updateManualDrag);
-    window.addEventListener('pointermove', updateManualDrag);
+    if (supportsPointerEvents) {
+        // A single window listener also covers release/drag outside the
+        // canvas; pointer events bubble here, so no canvas duplicate is used.
+        window.addEventListener('pointermove', updateManualDrag);
+    } else {
+        window.addEventListener('mousemove', updateManualDrag);
+    }
 
     // Mouse up - end drag
     const finishManualDrag = async (event) => {
@@ -2397,13 +2440,13 @@ function init3DScene() {
             }
         }
     };
-    canvas.addEventListener('mouseup', finishManualDrag);
-    interactionCanvas.addEventListener('pointerup', finishManualDrag);
-    interactionCanvas.addEventListener('pointercancel', finishManualDrag);
     // Releasing outside the canvas must still commit the endpoint update.
-    window.addEventListener('mouseup', finishManualDrag);
-    window.addEventListener('pointerup', finishManualDrag);
-    window.addEventListener('pointercancel', finishManualDrag);
+    if (supportsPointerEvents) {
+        window.addEventListener('pointerup', finishManualDrag);
+        window.addEventListener('pointercancel', finishManualDrag);
+    } else {
+        window.addEventListener('mouseup', finishManualDrag);
+    }
     window.addEventListener('blur', finishManualDrag);
 
     // Right-click context menu for 3D objects

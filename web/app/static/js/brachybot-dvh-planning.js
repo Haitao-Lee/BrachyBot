@@ -1621,7 +1621,7 @@ async function refreshPlanningUI(options = {}) {
         //     after every planning run. Now we trigger it automatically.
         try {
             if (typeof Report !== 'undefined' && Report.autoFill && Report.autoFill.fromAll) {
-                Report.autoFill.fromAll();
+                await Report.autoFill.fromAll();
             }
         } catch (_) {}
 

@@ -12247,3 +12247,48 @@ duplicate global-declaration comment in `brachybot-3d-manual.js` documents why
 - Python compilation checks passed for `web/server.py`,
   `web/server_support.py`, and `web/routes/planning_routes.py`.
 - Startup smoke test returned HTTP 200 and the server job stopped cleanly.
+
+## 2026-08-04 - Report quality-column persistence and viewer interaction performance
+
+### Confirmed issues
+
+- The Report Plan Quality Assessment table stored numeric metrics, but its
+  Reference and Status cells were derived during rendering from transient
+  prescription rationale. A session restore could therefore keep Value while
+  reverting the other two columns to fallback text.
+- Planning completion triggered `Report.autoFill.fromAll()` without awaiting
+  the asynchronous server patch. The workspace checkpoint could run between
+  the local numeric fill and the source-backed report update.
+- 3D manual interaction registered both pointer and mouse move paths on the
+  renderer and window. A single physical drag could therefore repeat picking,
+  projection redraw, and render scheduling. The render loop also queried the
+  canvas layout on every frame, causing avoidable layout work during orbiting.
+
+### Resolution
+
+- `web/app/static/js/brachybot-report-export.js` now persists a versioned
+  `qualityAssessment` object for every plan-quality metric. Report rendering,
+  Markdown export, and restore use the persisted rows first and only derive a
+  source-backed fallback when a legacy report has no row yet.
+- `web/app/static/js/brachybot-report-shell.js` synchronizes the assessment
+  after the server rationale patch, and
+  `web/app/static/js/brachybot-dvh-planning.js` awaits the complete auto-fill
+  before the planning refresh/checkpoint can finish.
+- `web/app/static/js/brachybot-workspace.js` and `web/workspace_store.py`
+  preserve the quality rows in both nested and legacy report snapshots and
+  schedule a one-time save when restoring an older report.
+- `web/app/static/js/brachybot-3d-manual.js` uses one canonical pointer drag
+  path, frame-coalesces hover raycasts and 2D overlay redraws, and caches the
+  renderer size between resize events so orbiting does not force layout reads
+  on every frame.
+
+### Verification
+
+- Node syntax checks passed for the changed report, workspace, planning, and
+  3D viewer bundles.
+- Python compilation passed for `web/workspace_store.py`.
+- An inline VM regression verified that a restored plan keeps its Reference
+  and Status rows, including source-backed V100/D90 criteria and default rows
+  for D95/CI/HI/GI.
+- Added regression coverage for report snapshot retention, awaited planning
+  auto-fill, canonical pointer interaction, and the cached 3D resize path.

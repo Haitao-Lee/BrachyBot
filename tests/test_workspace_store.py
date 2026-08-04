@@ -161,6 +161,30 @@ def test_legacy_direct_report_form_is_canonicalized_without_losing_text(tmp_path
     assert "interpretation" not in report
 
 
+def test_report_quality_assessment_survives_snapshot_merge(tmp_path):
+    store = WorkspaceStore(tmp_path / "runtime")
+    user = store.create_user("quality_owner", "hash")
+    case = store.create_session(user["id"], "Quality report case")
+    form = {
+        "version": 3,
+        "updatedAt": 200,
+        "metrics": {"v100": 90.6, "d90": 122.75},
+        "qualityAssessment": {
+            "version": 1,
+            "language": "en",
+            "generatedAt": 200,
+            "metrics": {
+                "v100": {"value": 90.6, "reference": "See cited case criteria", "statusText": "Not assessed"},
+                "d90": {"value": 122.75, "reference": "See cited case criteria", "statusText": "Not assessed"},
+            },
+        },
+    }
+    store.save_snapshot_patch(user["id"], case.id, {"report": {"form": form}})
+    restored = store.load_snapshot(user["id"], case.id)["report"]["form"]
+    assert restored["qualityAssessment"]["metrics"]["v100"]["reference"] == "See cited case criteria"
+    assert restored["qualityAssessment"]["metrics"]["d90"]["statusText"] == "Not assessed"
+
+
 def test_chat_snapshot_updates_merge_by_stable_message_identity(tmp_path):
     """Screenshot, Trace, and final text updates must remain one reply."""
     store = WorkspaceStore(tmp_path / "runtime")
