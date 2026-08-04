@@ -10,6 +10,12 @@
         sleeve_outer_radius_mm: 3,
         sleeve_outward_mm: 8,
         sleeve_inward_mm: 8,
+        auxiliary_holes_enabled: true,
+        auxiliary_hole_radius_mm: 0.45,
+        auxiliary_hole_ring_count: 2,
+        auxiliary_holes_per_ring: 12,
+        auxiliary_hole_first_offset_mm: 4,
+        auxiliary_hole_ring_spacing_mm: 3,
         geometry_resolution_mm: 0.35,
     });
     const GUIDE_CONTROLS = Object.freeze({
@@ -21,6 +27,12 @@
         sleeve_outer_diameter_mm: 'guideSleeveOuterDiameter',
         sleeve_outward_mm: 'guideSleeveOutward',
         sleeve_inward_mm: 'guideSleeveInward',
+        auxiliary_holes_enabled: 'guideAuxiliaryHolesEnabled',
+        auxiliary_hole_diameter_mm: 'guideAuxiliaryHoleDiameter',
+        auxiliary_hole_ring_count: 'guideAuxiliaryHoleRingCount',
+        auxiliary_holes_per_ring: 'guideAuxiliaryHolesPerRing',
+        auxiliary_hole_first_offset_mm: 'guideAuxiliaryHoleFirstOffset',
+        auxiliary_hole_ring_spacing_mm: 'guideAuxiliaryHoleRingSpacing',
         geometry_resolution_mm: 'guideGeometryResolution',
     });
     const GUIDE_NEEDLE_SELECTION_ID = 'guideNeedleSelection';
@@ -127,6 +139,27 @@
             sleeve_outer_radius_mm: numericControl(GUIDE_CONTROLS.sleeve_outer_diameter_mm, GUIDE_DEFAULTS.sleeve_outer_radius_mm * 2) / 2,
             sleeve_outward_mm: numericControl(GUIDE_CONTROLS.sleeve_outward_mm, GUIDE_DEFAULTS.sleeve_outward_mm),
             sleeve_inward_mm: numericControl(GUIDE_CONTROLS.sleeve_inward_mm, GUIDE_DEFAULTS.sleeve_inward_mm),
+            auxiliary_holes_enabled: document.getElementById(GUIDE_CONTROLS.auxiliary_holes_enabled)?.checked !== false,
+            auxiliary_hole_radius_mm: numericControl(
+                GUIDE_CONTROLS.auxiliary_hole_diameter_mm,
+                GUIDE_DEFAULTS.auxiliary_hole_radius_mm * 2,
+            ) / 2,
+            auxiliary_hole_ring_count: Math.round(numericControl(
+                GUIDE_CONTROLS.auxiliary_hole_ring_count,
+                GUIDE_DEFAULTS.auxiliary_hole_ring_count,
+            )),
+            auxiliary_holes_per_ring: Math.round(numericControl(
+                GUIDE_CONTROLS.auxiliary_holes_per_ring,
+                GUIDE_DEFAULTS.auxiliary_holes_per_ring,
+            )),
+            auxiliary_hole_first_offset_mm: numericControl(
+                GUIDE_CONTROLS.auxiliary_hole_first_offset_mm,
+                GUIDE_DEFAULTS.auxiliary_hole_first_offset_mm,
+            ),
+            auxiliary_hole_ring_spacing_mm: numericControl(
+                GUIDE_CONTROLS.auxiliary_hole_ring_spacing_mm,
+                GUIDE_DEFAULTS.auxiliary_hole_ring_spacing_mm,
+            ),
             geometry_resolution_mm: numericControl(GUIDE_CONTROLS.geometry_resolution_mm, GUIDE_DEFAULTS.geometry_resolution_mm),
         };
     }
@@ -146,6 +179,28 @@
         setValue(GUIDE_CONTROLS.sleeve_outer_diameter_mm, value('sleeve_outer_radius_mm', GUIDE_DEFAULTS.sleeve_outer_radius_mm) * 2);
         setValue(GUIDE_CONTROLS.sleeve_outward_mm, value('sleeve_outward_mm', GUIDE_DEFAULTS.sleeve_outward_mm));
         setValue(GUIDE_CONTROLS.sleeve_inward_mm, value('sleeve_inward_mm', GUIDE_DEFAULTS.sleeve_inward_mm));
+        const auxiliaryEnabled = document.getElementById(GUIDE_CONTROLS.auxiliary_holes_enabled);
+        if (auxiliaryEnabled) {
+            auxiliaryEnabled.checked = parameters.auxiliary_holes_enabled === undefined
+                ? GUIDE_DEFAULTS.auxiliary_holes_enabled
+                : parameters.auxiliary_holes_enabled !== false;
+        }
+        setValue(
+            GUIDE_CONTROLS.auxiliary_hole_diameter_mm,
+            value('auxiliary_hole_radius_mm', GUIDE_DEFAULTS.auxiliary_hole_radius_mm) * 2,
+        );
+        setValue(GUIDE_CONTROLS.auxiliary_hole_ring_count, value(
+            'auxiliary_hole_ring_count', GUIDE_DEFAULTS.auxiliary_hole_ring_count,
+        ));
+        setValue(GUIDE_CONTROLS.auxiliary_holes_per_ring, value(
+            'auxiliary_holes_per_ring', GUIDE_DEFAULTS.auxiliary_holes_per_ring,
+        ));
+        setValue(GUIDE_CONTROLS.auxiliary_hole_first_offset_mm, value(
+            'auxiliary_hole_first_offset_mm', GUIDE_DEFAULTS.auxiliary_hole_first_offset_mm,
+        ));
+        setValue(GUIDE_CONTROLS.auxiliary_hole_ring_spacing_mm, value(
+            'auxiliary_hole_ring_spacing_mm', GUIDE_DEFAULTS.auxiliary_hole_ring_spacing_mm,
+        ));
         setValue(GUIDE_CONTROLS.geometry_resolution_mm, value('geometry_resolution_mm', GUIDE_DEFAULTS.geometry_resolution_mm));
     }
 
@@ -338,6 +393,7 @@
             status: guide.status || 'ready',
             visible: previous?.visible !== false,
             finite_fov: guide.validation?.finite_fov || null,
+            auxiliary_holes: guide.auxiliary_holes || guide.validation?.auxiliary_holes || null,
         });
         applyGuideParameters(guide.parameters || {});
         // The guide mesh is the authoritative geometry. Repaint the MPR
@@ -415,7 +471,21 @@
                 `穿刺导板 v${payload.guide.version} 已生成`,
                 `Puncture guide v${payload.guide.version} generated`,
             );
-            if (!options.silent) notify(completed, 'success');
+            const auxiliary = payload?.guide?.auxiliary_holes || {};
+            const auxiliaryCount = Number(auxiliary.realized_count || 0);
+            const auxiliarySkippedCount = Number(auxiliary.skipped_count || 0);
+            const auxiliaryNotice = auxiliary.enabled !== false && auxiliaryCount > 0
+                ? t(
+                    `，已加入 ${auxiliaryCount} 个周边辅助穿刺孔`,
+                    `, with ${auxiliaryCount} non-protruding auxiliary puncture holes`,
+                )
+                : auxiliary.enabled !== false && auxiliarySkippedCount > 0
+                    ? t(
+                        `，${auxiliarySkippedCount} 个辅助孔因空间约束未生成`,
+                        `, ${auxiliarySkippedCount} auxiliary holes were skipped by geometric constraints`,
+                    )
+                    : '';
+            if (!options.silent) notify(`${completed}${auxiliaryNotice}`, 'success');
             // Finite-FOV warning: if the body envelope was truncated by the CT
             // scan boundaries, surface that clearly so the operator knows the
             // guide was built only from the available lateral skin and must not

@@ -26,7 +26,9 @@ C++/VTK/CGAL workflow:
    surface to obtain a skin entry.
 3. Construct a local skin-offset plate and fuse outer sleeve solids.
 4. Subtract finite, coaxial inner guide bores.
-5. Extract and validate a closed triangle mesh before STL export.
+5. Subtract the reference-style auxiliary puncture-hole cylinders from the
+   plate shell only.
+6. Extract and validate a closed triangle mesh before STL export.
 
 The native implementation smooths the thresholded body envelope (anisotropic
 Gaussian matched to the CT spacing) before constructing the plate, so the guide
@@ -40,6 +42,16 @@ the skin), and the final mesh is Taubin-smoothed for a refined, printable
 surface. Versions are reused when both the plan signature and manufacturing
 parameters are unchanged, so duplicate generation calls do not inflate the
 version number.
+
+### Auxiliary puncture holes
+
+Each primary needle entry can receive one or more concentric rings of small
+alternate puncture holes. Their axes are parallel to the primary needle axis,
+and their cylinders are subtracted only from the plate shell. They do not add
+an outer sleeve or a raised feature, and they cannot remove primary sleeve
+material. The guide metadata records the requested, realized, and skipped
+holes, their ring/index, needle association, radial offset, and world-mm
+centre. The primary channel geometry remains the authoritative planned path.
 
 Rather than relying on `vtkBooleanOperationPolyDataFilter` for near-coplanar
 surfaces, the native implementation performs the solid operations on an exact
@@ -63,6 +75,10 @@ pressed.
 | Channel diameter | mm | 1.8 | Inner guide-hole diameter. The UI converts it to the internal radius exactly once. |
 | Sleeve outer diameter | mm | 6.0 | Outer support sleeve diameter. It must exceed the channel diameter. |
 | Sleeve outward/inward length | mm | 8.0 / 8.0 | Sleeve extents on either side of the skin entry. The channel is clamped flush with the skin surface: it always protrudes outward from the patient and never penetrates the skin, so the guide can sit tightly against the skin. `sleeve_inward` is accepted for compatibility but no longer changes the geometry. |
+| Auxiliary holes enabled | - | true | Subtract non-protruding alternate puncture holes around each primary channel. |
+| Auxiliary hole diameter | mm | 0.9 | Diameter of each small alternate puncture hole. |
+| Auxiliary ring count / holes per ring | - | 2 / 12 | Number of concentric rings and equally spaced holes on each ring. |
+| First-ring offset / ring spacing | mm | 4.0 / 3.0 | Radial distance from the primary sleeve and spacing between rings. Values are checked so auxiliary holes cannot damage the primary sleeve or violate printable wall thickness. |
 | Geometry resolution | mm | 1.0 | Isotropic local construction lattice. Smaller values improve detail but cost time and memory. |
 
 The **Guided needles** multi-select can create a guide for a deliberate subset
@@ -101,4 +117,6 @@ Those remain explicit local quality-control and clinician responsibilities.
 - rejection when CT or planned needle geometry is missing;
 - physical-coordinate correctness on anisotropic CT with a flipped slice
   direction; and
-- version retention, parameter provenance, and grouped stale invalidation.
+- version retention, parameter provenance, and grouped stale invalidation;
+- realized/disabled auxiliary-hole patterns, primary-channel preservation, and
+  printable wall-spacing validation.

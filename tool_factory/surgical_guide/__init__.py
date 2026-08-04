@@ -23,7 +23,9 @@ class SurgicalGuideTool(BaseTool):
             "Generate or inspect a patient-specific skin-fitting puncture guide "
             "from the current CT and approved planned needle paths. The guide "
             "uses the same physical patient coordinates as planning, records QA, "
-            "and can be exported as STL. Use only after a CT and needle plan exist."
+            "and can be exported as STL. It includes optional non-protruding "
+            "auxiliary puncture holes around each primary channel for patient-motion "
+            "robustness. Use only after a CT and needle plan exist."
         )
 
     @property
@@ -81,6 +83,30 @@ class SurgicalGuideTool(BaseTool):
                         "sleeve_inward_mm": {
                             "type": "number", "minimum": 1, "maximum": 30,
                             "description": "Accepted for compatibility; the channel is clamped flush with the skin and never penetrates the body.",
+                        },
+                        "auxiliary_holes_enabled": {
+                            "type": "boolean",
+                            "description": "Subtract dense, non-protruding alternate puncture holes around each primary channel.",
+                        },
+                        "auxiliary_hole_radius_mm": {
+                            "type": "number", "minimum": 0.2, "maximum": 1.5,
+                            "description": "Radius of each auxiliary alternate puncture hole.",
+                        },
+                        "auxiliary_hole_ring_count": {
+                            "type": "integer", "minimum": 1, "maximum": 4,
+                            "description": "Number of concentric auxiliary-hole rings around each primary channel.",
+                        },
+                        "auxiliary_holes_per_ring": {
+                            "type": "integer", "minimum": 4, "maximum": 24,
+                            "description": "Number of equally spaced auxiliary holes on each ring.",
+                        },
+                        "auxiliary_hole_first_offset_mm": {
+                            "type": "number", "minimum": 2, "maximum": 15,
+                            "description": "Radial distance from the primary channel to the first auxiliary ring.",
+                        },
+                        "auxiliary_hole_ring_spacing_mm": {
+                            "type": "number", "minimum": 1.5, "maximum": 10,
+                            "description": "Radial spacing between auxiliary-hole rings.",
                         },
                         "geometry_resolution_mm": {
                             "type": "number", "minimum": 0.2, "maximum": 2,
