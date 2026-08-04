@@ -219,6 +219,49 @@ def test_report_quality_assessment_survives_snapshot_merge(tmp_path):
     assert restored["qualityAssessment"]["metrics"]["d90"]["statusText"] == "Not assessed"
 
 
+def test_newer_incomplete_report_snapshot_cannot_erase_quality_columns(tmp_path):
+    store = WorkspaceStore(tmp_path / "runtime")
+    user = store.create_user("quality_merge_owner", "hash")
+    case = store.create_session(user["id"], "Quality merge case")
+    complete = {
+        "version": 3,
+        "updatedAt": 200,
+        "metrics": {"v100": 91.23, "d90": 122.55},
+        "qualityAssessment": {
+            "version": 2,
+            "language": "en",
+            "generatedAt": 200,
+            "inputFingerprint": "stable-plan-inputs",
+            "metrics": {
+                "v100": {"value": 91.23, "reference": "See cited case criteria", "statusText": "Not assessed"},
+                "d90": {"value": 122.55, "reference": "See cited case criteria", "statusText": "Not assessed"},
+            },
+        },
+    }
+    store.save_snapshot_patch(user["id"], case.id, {"report": {"form": complete}})
+    # This represents a later shell/hydration write that has the metrics but
+    # has not rebuilt the derived columns yet.
+    incomplete = {
+        "version": 3,
+        "updatedAt": 300,
+        "metrics": {"v100": 91.23, "d90": 122.55},
+        "qualityAssessment": {
+            "version": 2,
+            "language": "en",
+            "generatedAt": 300,
+            "metrics": {
+                "v100": {"value": 91.23},
+                "d90": {"value": 122.55},
+            },
+        },
+    }
+    store.save_snapshot_patch(user["id"], case.id, {"report": {"form": incomplete}})
+    restored = store.load_snapshot(user["id"], case.id)["report"]["form"]
+    assert restored["qualityAssessment"]["metrics"]["v100"]["reference"] == "See cited case criteria"
+    assert restored["qualityAssessment"]["metrics"]["v100"]["statusText"] == "Not assessed"
+    assert restored["qualityAssessment"]["metrics"]["d90"]["reference"] == "See cited case criteria"
+
+
 def test_chat_snapshot_updates_merge_by_stable_message_identity(tmp_path):
     """Screenshot, Trace, and final text updates must remain one reply."""
     store = WorkspaceStore(tmp_path / "runtime")

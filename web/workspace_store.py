@@ -468,6 +468,109 @@ def _report_content_score(form: Any) -> int:
     return score
 
 
+_REPORT_QUALITY_KEYS = ('v100', 'd90', 'd95', 'v150', 'v200', 'ci', 'hi', 'gi', 'score')
+
+
+def _quality_row_has_display(row: Any) -> bool:
+    if not isinstance(row, Mapping):
+        return False
+    return bool(str(row.get('reference') or '').strip()
+                or str(row.get('statusText') or '').strip())
+
+
+def _quality_row_matches_value(row: Any, metrics: Mapping[str, Any]) -> bool:
+    if not isinstance(row, Mapping):
+        return False
+    key = row.get('_metric_key')
+    if key not in metrics:
+        return True
+    target = metrics.get(key)
+    actual = row.get('value')
+    if target in (None, ''):
+        return actual in (None, '')
+    try:
+        return math.isclose(float(actual), float(target), rel_tol=0.0, abs_tol=1e-9)
+    except (TypeError, ValueError):
+        return False
+
+
+def _merge_report_quality_assessment(
+    old_form: Mapping[str, Any],
+    new_form: Mapping[str, Any],
+    base_form: Mapping[str, Any],
+) -> Dict[str, Any]:
+    """Keep durable Reference/Status rows when a delayed form is incomplete.
+
+    Browser report saves are full-form snapshots, but hydration and report
+    auto-fill can arrive in different orders.  A newer snapshot may therefore
+    contain the numeric metrics while its derived quality rows are still
+    empty.  Merge row-by-row only when the saved row belongs to the metrics in
+    the form being retained; never resurrect a row for a different planning
+    result.
+    """
+    result = dict(base_form or {})
+    base_quality = result.get('qualityAssessment')
+    old_quality = old_form.get('qualityAssessment') if isinstance(old_form, Mapping) else None
+    new_quality = new_form.get('qualityAssessment') if isinstance(new_form, Mapping) else None
+    candidates = [quality for quality in (base_quality, new_quality, old_quality)
+                  if isinstance(quality, Mapping)]
+    if not candidates:
+        return result
+
+    metrics = result.get('metrics') if isinstance(result.get('metrics'), Mapping) else {}
+    quality = dict(base_quality) if isinstance(base_quality, Mapping) else {}
+    rows = dict(quality.get('metrics')) if isinstance(quality.get('metrics'), Mapping) else {}
+    for key in _REPORT_QUALITY_KEYS:
+        selected = dict(rows.get(key)) if isinstance(rows.get(key), Mapping) else {}
+        selected['_metric_key'] = key
+        if not _quality_row_matches_value(selected, metrics):
+            selected = {}
+        for candidate in candidates:
+            candidate_row = candidate.get('metrics', {}).get(key) if isinstance(candidate.get('metrics'), Mapping) else None
+            if not _quality_row_has_display(candidate_row):
+                continue
+            candidate_with_key = dict(candidate_row)
+            candidate_with_key['_metric_key'] = key
+            if not _quality_row_matches_value(candidate_with_key, metrics):
+                continue
+            # Prefer the base/new row, but fill any missing display field from
+            # the older durable row instead of replacing a current value.
+            for field in ('reference', 'statusText', 'statusClass'):
+                current = selected.get(field)
+                if current in (None, '') and candidate_row.get(field) not in (None, ''):
+                    selected[field] = candidate_row.get(field)
+            if selected.get('value') in (None, '') and 'value' in candidate_row:
+                selected['value'] = candidate_row.get('value')
+            break
+        selected.pop('_metric_key', None)
+        if selected:
+            rows[key] = selected
+        else:
+            rows.pop(key, None)
+
+    if not rows:
+        return result
+    quality['metrics'] = rows
+    # If the retained base had no usable rows, keep the metadata from the
+    # first complete candidate as well, including its input fingerprint.
+    base_rows = base_quality.get('metrics') if isinstance(base_quality, Mapping) else None
+    base_has_display = (
+        isinstance(base_rows, Mapping)
+        and any(_quality_row_has_display(row) for row in base_rows.values())
+    )
+    if not base_has_display:
+        for candidate in candidates:
+            candidate_rows = candidate.get('metrics') if isinstance(candidate, Mapping) else None
+            if isinstance(candidate_rows, Mapping) and any(
+                _quality_row_has_display(row) for row in candidate_rows.values()
+            ):
+                quality = {**dict(candidate), **quality}
+                quality['metrics'] = rows
+                break
+    result['qualityAssessment'] = quality
+    return result
+
+
 def _report_timestamp(form: Any) -> float:
     if not isinstance(form, Mapping):
         return 0.0
@@ -562,7 +665,9 @@ def _merge_report_patch(current: Mapping[str, Any], incoming: Mapping[str, Any])
     for key in _REPORT_FORM_KEYS:
         result.pop(key, None)
     result.pop("form", None)
-    result["form"] = dict(old_form if keep_old else new_form)
+    merged_form = dict(old_form if keep_old else new_form)
+    merged_form = _merge_report_quality_assessment(old_form, new_form, merged_form)
+    result["form"] = merged_form
     return result
 
 
