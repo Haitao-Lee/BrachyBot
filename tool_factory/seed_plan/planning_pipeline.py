@@ -1081,6 +1081,13 @@ def _world_segment_hits_obstacle(
             array = np.asarray(mask)
             if tuple(array.shape) == reference_shape:
                 return array
+            expected_size = int(np.prod(reference_shape, dtype=np.int64))
+            if int(array.size) == expected_size:
+                logger.debug(
+                    "[needle_safety] reshaping flat %s mask %s to CT grid %s",
+                    label, tuple(array.shape), reference_shape,
+                )
+                return array.reshape(reference_shape)
             logger.error(
                 "[needle_safety] %s shape %s does not match CT grid %s; refusing unsafe mask",
                 label, tuple(array.shape), reference_shape,
