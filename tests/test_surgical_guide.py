@@ -78,7 +78,10 @@ def test_auxiliary_holes_are_real_plate_only_alternate_paths():
     report realized alternate bores, keep them associated with the source
     needle, and mark them as plate-only/non-protruding geometry.
     """
-    guide = generate_surgical_guide(_synthetic_agent(), {"geometry_resolution_mm": 0.5})
+    guide = generate_surgical_guide(_synthetic_agent(), {
+        "geometry_resolution_mm": 0.5,
+        "auxiliary_holes_enabled": True,
+    })
     auxiliary = guide["auxiliary_holes"]
     assert auxiliary["enabled"] is True
     assert auxiliary["requested_count"] == 24
