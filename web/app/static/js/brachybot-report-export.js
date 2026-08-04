@@ -185,7 +185,9 @@ async function reportAutoFill(options = {}) {
         return { stale: false };
     }
     if (!isCurrentCase()) return { stale: true };
-    syncReportQualityAssessment(f, { force: true });
+    // Rebuild from the metrics/source fingerprint. A forced rebuild here can
+    // erase durable Reference/Status cells while planning context hydrates.
+    syncReportQualityAssessment(f);
     _setReportStatus('Auto-filled from NIfTI + planning', 'ok');
     renderReportEditor(); _updateReportPreview(); _scheduleReportAutoSave();
     return { stale: false };
@@ -366,7 +368,7 @@ function _localizedEmptyReportForm(language) {
         metrics: { v100: null, d90: null, d95: null, v150: null, v200: null, ci: null, hi: null, gi: null, score: null },
         // Persist the rendered quality columns with the report. Rebuilding
         // these cells from in-memory rationale loses them after restore.
-        qualityAssessment: { version: 1, language: language, generatedAt: 0, metrics: {} },
+        qualityAssessment: { version: 2, language: language, generatedAt: 0, inputFingerprint: '', metrics: {} },
         oarDose: [],
         interpretation: '',
         safety: '',
@@ -482,10 +484,78 @@ function _storedMetricAssessment(form, metricKey) {
     };
 }
 
+const _REPORT_QUALITY_METRICS = ['v100', 'd90', 'd95', 'v150', 'v200', 'ci', 'hi', 'gi', 'score'];
+
+function _stableReportQualityValue(value) {
+    if (value === null || value === undefined) return null;
+    if (Array.isArray(value)) return value.map(_stableReportQualityValue);
+    if (typeof value !== 'object') return value;
+    const result = {};
+    Object.keys(value).sort().forEach(key => {
+        const normalized = _stableReportQualityValue(value[key]);
+        if (normalized !== undefined) result[key] = normalized;
+    });
+    return result;
+}
+
+function _normalizedReportMetricValue(value) {
+    if (value === null || value === undefined || value === '') return null;
+    const number = Number(value);
+    return Number.isFinite(number) ? number : null;
+}
+
+function _reportQualityInputFingerprint(form) {
+    const metrics = {};
+    _REPORT_QUALITY_METRICS.forEach(key => {
+        metrics[key] = _normalizedReportMetricValue(form?.metrics?.[key]);
+    });
+    const planning = form?.planning || {};
+    return JSON.stringify(_stableReportQualityValue({
+        language: form?.language || 'en',
+        metrics,
+        prescriptionGy: _normalizedReportMetricValue(planning.prescriptionGy),
+        prescriptionRationale: planning.prescriptionRationale || null,
+    }));
+}
+
+function _hasStoredMetricAssessment(row) {
+    if (!row || typeof row !== 'object') return false;
+    const reference = row.reference == null ? '' : String(row.reference).trim();
+    const statusText = row.statusText == null ? '' : String(row.statusText).trim();
+    return reference.length > 0 || statusText.length > 0;
+}
+
+function _hasStoredQualityAssessment(assessment) {
+    const rows = assessment?.metrics;
+    return !!rows && typeof rows === 'object'
+        && _REPORT_QUALITY_METRICS.some(key => _hasStoredMetricAssessment(rows[key]));
+}
+
+function _qualityAssessmentMatchesMetrics(assessment, form) {
+    if (!assessment || typeof assessment !== 'object') return false;
+    return _REPORT_QUALITY_METRICS.every(key => {
+        const row = assessment.metrics?.[key];
+        if (!row || typeof row !== 'object') return false;
+        const expected = _normalizedReportMetricValue(form?.metrics?.[key]);
+        const actual = _normalizedReportMetricValue(row.value);
+        return expected === null ? actual === null : actual === expected;
+    });
+}
+
+function _reportHasSourceContext(form) {
+    const rationale = form?.planning?.prescriptionRationale;
+    if (!rationale || typeof rationale !== 'object') return false;
+    return (Array.isArray(rationale.sources) && rationale.sources.length > 0)
+        || (Array.isArray(rationale.source_records) && rationale.source_records.length > 0)
+        || (rationale.target_criteria && typeof rationale.target_criteria === 'object'
+            && Object.keys(rationale.target_criteria).length > 0);
+}
+
 function _sourceBackedMetricAssessment(form, metricKey, value, options = {}) {
     if (!options.ignoreStored) {
         const stored = _storedMetricAssessment(form, metricKey);
-        if (stored) return stored;
+        const rawStored = form?.qualityAssessment?.metrics?.[metricKey];
+        if (stored && _hasStoredMetricAssessment(rawStored)) return stored;
     }
     const rationale = form?.planning?.prescriptionRationale || {};
     const criteria = rationale.target_criteria || {};
@@ -585,28 +655,44 @@ function _defaultMetricAssessment(form, metricKey, value) {
 function syncReportQualityAssessment(form, options = {}) {
     if (!form || typeof form !== 'object') return null;
     const language = form.language || 'en';
-    const metricKeys = ['v100', 'd90', 'd95', 'v150', 'v200', 'ci', 'hi', 'gi', 'score'];
+    const metricKeys = _REPORT_QUALITY_METRICS;
     const values = form.metrics || {};
     const previous = form.qualityAssessment;
-    const unchanged = !options.force
-        && previous?.version === 1
+    const inputFingerprint = _reportQualityInputFingerprint(form);
+    const metricsMatch = _qualityAssessmentMatchesMetrics(previous, form);
+    const hasStoredRows = _hasStoredQualityAssessment(previous);
+    const hasSourceContext = _reportHasSourceContext(form);
+    const unchanged = previous
+        && (previous.version === 1 || previous.version === 2)
         && previous.language === language
-        && metricKeys.every(key => {
-            const row = previous.metrics?.[key];
-            const current = values[key] == null || values[key] === '' ? null : Number(values[key]);
-            return row && (row.value == null ? current == null : Number(row.value) === current);
-        });
+        && previous.inputFingerprint === inputFingerprint
+        && metricsMatch
+        && (!options.force || hasSourceContext);
     if (unchanged) return previous;
+
+    // Older sessions do not have an input fingerprint. Keep their durable
+    // cells while source context is unavailable; once the rationale arrives,
+    // the fingerprint changes and the rows are rebuilt from real criteria.
+    if (hasStoredRows && metricsMatch && !hasSourceContext && previous.language === language) return previous;
+
     const metrics = {};
     metricKeys.forEach(key => {
         const raw = values[key];
         const value = raw == null || raw === '' || !Number.isFinite(Number(raw)) ? null : Number(raw);
-        metrics[key] = { value, ..._defaultMetricAssessment(form, key, value) };
+        const previousRow = previous?.metrics?.[key];
+        const preservePreviousRow = !hasSourceContext
+            && previous?.language === language
+            && _hasStoredMetricAssessment(previousRow)
+            && _normalizedReportMetricValue(previousRow.value) === value;
+        metrics[key] = preservePreviousRow
+            ? { ...previousRow, value }
+            : { value, ..._defaultMetricAssessment(form, key, value) };
     });
     form.qualityAssessment = {
-        version: 1,
+        version: 2,
         language,
         generatedAt: Date.now(),
+        inputFingerprint,
         metrics,
     };
     return form.qualityAssessment;
@@ -873,6 +959,12 @@ function _hpMetricRow(name, value, unit, refText, statusClass, sOverride, status
         statusClass = stored.statusClass;
         statusTextOverride = stored.statusText;
     }
+    // Never emit empty cells when a legacy snapshot contains a blank field.
+    // The durable assessment or the source-backed fallback supplies the
+    // visible value instead.
+    if (refText === null || refText === undefined || String(refText).trim() === '') refText = ND;
+    if (statusTextOverride === null || statusTextOverride === undefined
+        || String(statusTextOverride).trim() === '') statusTextOverride = 'Not assessed';
     if (value === null || value === undefined) {
         return `<tr><td>${name}</td><td colspan="3" style="color:#94a3b8;text-align:center;">${ND}</td></tr>`;
     }

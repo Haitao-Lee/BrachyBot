@@ -136,7 +136,9 @@ def test_report_quality_columns_are_persisted_and_auto_fill_is_awaited():
     assert "qualityAssessment" in workspace
     assert "function syncReportQualityAssessment" in report
     assert "_storedMetricAssessment" in report
-    assert "window.syncReportQualityAssessment(f, { force: true })" in shell
+    assert "inputFingerprint" in report
+    assert "window.syncReportQualityAssessment(f);" in shell
+    assert "window.syncReportQualityAssessment(f, { force: true })" not in shell
     assert "await Report.autoFill.fromAll()" in planning
 
 

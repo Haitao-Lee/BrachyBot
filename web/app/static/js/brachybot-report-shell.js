@@ -458,7 +458,10 @@ window.Report = (function () {
             applied++;
         }
         if (typeof window.syncReportQualityAssessment === 'function') {
-            window.syncReportQualityAssessment(f, { force: true });
+            // The quality rows are rebuilt from their input fingerprint. A
+            // forced rebuild during hydration can replace durable cells with
+            // defaults before prescription rationale has arrived.
+            window.syncReportQualityAssessment(f);
         }
         if (options.render !== false) {
             panels.editor();
@@ -503,7 +506,7 @@ window.Report = (function () {
             // Persist the source-backed Reference and Status cells together
             // with the numeric metrics before report rendering/checkpointing.
             if (typeof window.syncReportQualityAssessment === 'function') {
-                window.syncReportQualityAssessment(f, { force: true });
+                window.syncReportQualityAssessment(f);
             }
             // BUG FIX 2026-06-17 (auto-screenshots in report):
             // auto-capture visual evidence (CT + masks, dose heatmap,
