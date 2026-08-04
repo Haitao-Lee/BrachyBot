@@ -1,0 +1,205 @@
+/* Light workspace skin.
+   The imaging canvases intentionally remain black for diagnostic contrast;
+   this layer changes the surrounding application chrome and the legacy
+   dark-only chat/viewer rules that cannot be expressed by root tokens alone. */
+[data-theme="light"] body {
+    background: var(--bg-canvas);
+    color: var(--text);
+}
+[data-theme="light"] body::before {
+    background-image: radial-gradient(circle at 1px 1px, rgba(31, 76, 83, 0.035) 1px, transparent 0);
+    opacity: 0.42;
+}
+[data-theme="light"] ::selection {
+    background: rgba(15, 113, 129, 0.20);
+    color: var(--text);
+}
+[data-theme="light"] * {
+    scrollbar-color: rgba(15, 113, 129, 0.30) transparent;
+}
+[data-theme="light"] ::-webkit-scrollbar-thumb {
+    background: rgba(15, 113, 129, 0.24);
+}
+[data-theme="light"] ::-webkit-scrollbar-thumb:hover {
+    background: rgba(15, 113, 129, 0.40);
+}
+
+[data-theme="light"] .chat-area {
+    background:
+        radial-gradient(900px 420px at 18% 0%, rgba(15, 113, 129, 0.07), transparent 68%),
+        var(--bg-sunken);
+}
+[data-theme="light"] .chat-area::before {
+    background: linear-gradient(90deg, rgba(15, 113, 129, 0.06), transparent 42%);
+}
+
+[data-theme="light"] .chat-msg.user {
+    background: linear-gradient(135deg, rgba(15, 113, 129, 0.14) 0%, rgba(15, 113, 129, 0.07) 100%);
+    color: var(--text);
+    border-color: rgba(15, 113, 129, 0.28);
+    box-shadow: var(--inset-top), var(--shadow-xs);
+}
+[data-theme="light"] .chat-msg.user:hover {
+    background: linear-gradient(135deg, rgba(15, 113, 129, 0.19) 0%, rgba(15, 113, 129, 0.10) 100%);
+    border-color: rgba(15, 113, 129, 0.42);
+}
+[data-theme="light"] .chat-msg.bot,
+[data-theme="light"] .chat-msg.bot-response {
+    color: var(--text);
+    box-shadow: var(--inset-top), var(--shadow-sm);
+}
+[data-theme="light"] .chat-msg a[href],
+[data-theme="light"] .md-table a[href],
+[data-theme="light"] .chat-msg li a,
+[data-theme="light"] .chat-msg p a,
+[data-theme="light"] .md-list a,
+[data-theme="light"] .md-ordered-list a {
+    color: var(--primary-ink);
+    border-bottom-color: rgba(15, 113, 129, 0.28);
+}
+[data-theme="light"] .chat-msg a[href]:hover,
+[data-theme="light"] .md-table a[href]:hover,
+[data-theme="light"] .chat-msg li a:hover,
+[data-theme="light"] .chat-msg p a:hover {
+    color: var(--primary-hover);
+    border-bottom-color: var(--primary-hover);
+}
+[data-theme="light"] .chat-event-content {
+    background: rgba(255, 255, 255, 0.72);
+    border-color: var(--border-default);
+}
+[data-theme="light"] .md-code-block {
+    background: var(--bg-sunken);
+    border-color: var(--border-default);
+    color: var(--text);
+}
+[data-theme="light"] .md-table {
+    background: rgba(255, 255, 255, 0.86);
+    border-color: var(--border-default);
+    box-shadow: var(--inset-top), var(--shadow-xs);
+}
+[data-theme="light"] .md-table th,
+[data-theme="light"] .md-table td {
+    border-bottom-color: var(--border-soft);
+    color: var(--text);
+}
+[data-theme="light"] .md-table th {
+    background: var(--bg-3);
+    color: var(--text-secondary);
+    border-bottom-color: var(--border-default);
+}
+[data-theme="light"] .md-table tbody tr:nth-child(even) td {
+    background: rgba(15, 113, 129, 0.025);
+}
+[data-theme="light"] .md-table tbody tr:hover td {
+    background: var(--primary-soft);
+}
+[data-theme="light"] .md-table code {
+    background: var(--bg-sunken);
+    color: var(--primary-ink);
+    border-color: var(--border-soft);
+}
+[data-theme="light"] .md-h2 { color: var(--primary-ink); }
+[data-theme="light"] .md-h3,
+[data-theme="light"] .md-h4 { color: var(--text); }
+
+[data-theme="light"] .chat-screenshot,
+[data-theme="light"] .chat-gallery-item img {
+    background: var(--bg-sunken);
+    border-color: var(--border-default);
+}
+
+/* The 4-up viewer layout had a late dark-only override. Keep the canvas black
+   but make its toolbar, card frame, controls, and Data Tree part of the light
+   workspace. */
+[data-theme="light"] .viewers-panel.layout-grid {
+    background: linear-gradient(180deg, #e8f1f0 0%, #dfeae8 100%);
+    box-shadow: inset 0 0 0 1px var(--border-default);
+}
+[data-theme="light"] .viewers-panel.layout-grid > .viewer-card {
+    background: #000;
+    border-color: var(--border-default);
+    box-shadow: var(--shadow-sm), inset 0 0 0 1px rgba(31, 76, 83, 0.08);
+}
+[data-theme="light"] .viewers-panel.layout-grid .viewer-card-header,
+[data-theme="light"] .viewers-panel.layout-grid .viewer-card-ctrl {
+    background: linear-gradient(180deg, #f7fbfa 0%, #e9f2f0 100%);
+    border-color: var(--border-default);
+    color: var(--text);
+}
+[data-theme="light"] .viewers-panel.layout-grid .viewer-card-label,
+[data-theme="light"] .viewers-panel.layout-grid .viewer-card-ctrl label,
+[data-theme="light"] .viewers-panel.layout-grid label {
+    color: var(--text-secondary) !important;
+}
+[data-theme="light"] .viewers-panel.layout-grid .viewers-toolbar {
+    background: linear-gradient(180deg, #f7fbfa 0%, #e8f1f0 100%);
+    border-bottom-color: var(--border-default);
+    box-shadow: var(--inset-top);
+}
+[data-theme="light"] .viewers-panel.layout-grid .data-tree-container {
+    background: linear-gradient(180deg, #f7fbfa 0%, #edf5f3 100%);
+    border-right-color: var(--border-default);
+    color: var(--text);
+    box-shadow: var(--inset-top);
+}
+[data-theme="light"] .viewers-panel.layout-grid .file-btn,
+[data-theme="light"] .viewers-panel.layout-grid button.file-btn,
+[data-theme="light"] .viewers-panel.layout-grid div[style*="display:flex"] button.file-btn {
+    background: rgba(255, 255, 255, 0.82) !important;
+    border-color: var(--border-default) !important;
+    color: var(--text-secondary) !important;
+    box-shadow: var(--shadow-xs) !important;
+}
+[data-theme="light"] .viewers-panel.layout-grid .file-btn:hover {
+    background: var(--primary-soft) !important;
+    color: var(--primary-ink) !important;
+    border-color: var(--primary) !important;
+    box-shadow: var(--shadow-sm) !important;
+}
+[data-theme="light"] .viewers-panel.layout-grid .file-btn.active {
+    background: var(--primary) !important;
+    color: #fff !important;
+    border-color: var(--primary) !important;
+    box-shadow: 0 0 0 1px var(--accent-ring), var(--shadow-sm) !important;
+}
+[data-theme="light"] .viewers-panel.layout-grid #windowPreset,
+[data-theme="light"] .viewers-panel.layout-grid #viewerWindow,
+[data-theme="light"] .viewers-panel.layout-grid #viewerLevel,
+[data-theme="light"] .viewers-panel.layout-grid #viewerThreshold,
+[data-theme="light"] .viewers-panel.layout-grid #displayMode {
+    background: rgba(255, 255, 255, 0.86) !important;
+    border-color: var(--border-default) !important;
+    color: var(--text) !important;
+}
+[data-theme="light"] .viewers-panel.layout-grid #huDisplay {
+    color: var(--primary-ink) !important;
+    background: var(--primary-soft);
+}
+
+/* Guide inputs use the same light control surface as the rest of Input. */
+[data-theme="light"] .guide-parameters,
+[data-theme="light"] .guide-input-unit input,
+[data-theme="light"] .guide-parameter-grid select,
+[data-theme="light"] .guide-parameter-grid select[multiple],
+[data-theme="light"] .guide-parameter-grid select:disabled {
+    color-scheme: light;
+}
+[data-theme="light"] .guide-parameter-grid select option,
+[data-theme="light"] .guide-parameter-grid select option:disabled {
+    background-color: var(--bg-2) !important;
+    color: var(--text-secondary) !important;
+}
+
+/* Preserve readable text in the legacy report-control widgets without
+   affecting the intentionally white/black printable report page (.hp-*). */
+[data-theme="light"] .rp-shell,
+[data-theme="light"] .report-controls,
+[data-theme="light"] .report-panel {
+    color: var(--text);
+}
+[data-theme="light"] .rp-helper-text,
+[data-theme="light"] .rp-field-hint,
+[data-theme="light"] .rp-field-suffix {
+    color: var(--text-secondary);
+}
