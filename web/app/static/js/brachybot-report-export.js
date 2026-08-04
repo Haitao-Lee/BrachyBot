@@ -185,6 +185,7 @@ async function reportAutoFill(options = {}) {
         return { stale: false };
     }
     if (!isCurrentCase()) return { stale: true };
+    syncReportQualityAssessment(f, { force: true });
     _setReportStatus('Auto-filled from NIfTI + planning', 'ok');
     renderReportEditor(); _updateReportPreview(); _scheduleReportAutoSave();
     return { stale: false };
@@ -363,6 +364,9 @@ function _localizedEmptyReportForm(language) {
             totalSeeds: null, totalActivityMBq: null, trajectoryCount: null, dwellPositionCount: null,
         },
         metrics: { v100: null, d90: null, d95: null, v150: null, v200: null, ci: null, hi: null, gi: null, score: null },
+        // Persist the rendered quality columns with the report. Rebuilding
+        // these cells from in-memory rationale loses them after restore.
+        qualityAssessment: { version: 1, language: language, generatedAt: 0, metrics: {} },
         oarDose: [],
         interpretation: '',
         safety: '',
@@ -466,7 +470,23 @@ function _renderMarkdown(md) {
 }
 
 // ----- 17. Render the multi-page A4 preview -----
-function _sourceBackedMetricAssessment(form, metricKey, value) {
+function _storedMetricAssessment(form, metricKey) {
+    const stored = form?.qualityAssessment?.metrics?.[metricKey];
+    if (!stored || typeof stored !== 'object') return null;
+    if (!Object.prototype.hasOwnProperty.call(stored, 'reference')
+        && !Object.prototype.hasOwnProperty.call(stored, 'statusText')) return null;
+    return {
+        reference: stored.reference == null ? '—' : String(stored.reference),
+        statusClass: stored.statusClass || null,
+        statusText: stored.statusText == null ? 'Not assessed' : String(stored.statusText),
+    };
+}
+
+function _sourceBackedMetricAssessment(form, metricKey, value, options = {}) {
+    if (!options.ignoreStored) {
+        const stored = _storedMetricAssessment(form, metricKey);
+        if (stored) return stored;
+    }
     const rationale = form?.planning?.prescriptionRationale || {};
     const criteria = rationale.target_criteria || {};
     const sources = Array.isArray(rationale.sources) ? rationale.sources : [];
@@ -544,11 +564,61 @@ function _sourceBackedOarAssessment(form, row) {
     };
 }
 
+function _defaultMetricAssessment(form, metricKey, value) {
+    if (['v100', 'd90', 'v150', 'v200'].includes(metricKey)) {
+        return _sourceBackedMetricAssessment(form, metricKey, value, { ignoreStored: true });
+    }
+    if (metricKey === 'score') {
+        return {
+            reference: form?.language === 'zh' ? '内部质量排序' : 'Internal QA ranking',
+            statusClass: null,
+            statusText: form?.language === 'zh' ? '非临床批准' : 'Not clinical approval',
+        };
+    }
+    return {
+        reference: '—',
+        statusClass: null,
+        statusText: form?.language === 'zh' ? '未评估' : 'Not assessed',
+    };
+}
+
+function syncReportQualityAssessment(form, options = {}) {
+    if (!form || typeof form !== 'object') return null;
+    const language = form.language || 'en';
+    const metricKeys = ['v100', 'd90', 'd95', 'v150', 'v200', 'ci', 'hi', 'gi', 'score'];
+    const values = form.metrics || {};
+    const previous = form.qualityAssessment;
+    const unchanged = !options.force
+        && previous?.version === 1
+        && previous.language === language
+        && metricKeys.every(key => {
+            const row = previous.metrics?.[key];
+            const current = values[key] == null || values[key] === '' ? null : Number(values[key]);
+            return row && (row.value == null ? current == null : Number(row.value) === current);
+        });
+    if (unchanged) return previous;
+    const metrics = {};
+    metricKeys.forEach(key => {
+        const raw = values[key];
+        const value = raw == null || raw === '' || !Number.isFinite(Number(raw)) ? null : Number(raw);
+        metrics[key] = { value, ..._defaultMetricAssessment(form, key, value) };
+    });
+    form.qualityAssessment = {
+        version: 1,
+        language,
+        generatedAt: Date.now(),
+        metrics,
+    };
+    return form.qualityAssessment;
+}
+window.syncReportQualityAssessment = syncReportQualityAssessment;
+
 function _updateReportPreview() {
     const pagesEl = document.getElementById('reportPages');
     if (!pagesEl) return;
     if (!window.reportForm) window.reportForm = _newEmptyReportForm();
     const f = window.reportForm;
+    syncReportQualityAssessment(f);
     const s = (typeof REPORT_STRINGS !== 'undefined') ? REPORT_STRINGS[f.language] : null;
     if (!s) return;
     const hospitalName = f.hospital.name || s.hospitalName;
@@ -652,8 +722,13 @@ function _updateReportPreview() {
     const trajUnit = s.trajUnitWord ? ' ' + s.trajUnitWord : '';
     const aV100 = _sourceBackedMetricAssessment(f, 'v100', f.metrics.v100);
     const aD90 = _sourceBackedMetricAssessment(f, 'd90', f.metrics.d90);
+    const aD95 = _storedMetricAssessment(f, 'd95') || _defaultMetricAssessment(f, 'd95', f.metrics.d95);
     const aV150 = _sourceBackedMetricAssessment(f, 'v150', f.metrics.v150);
     const aV200 = _sourceBackedMetricAssessment(f, 'v200', f.metrics.v200);
+    const aCI = _storedMetricAssessment(f, 'ci') || _defaultMetricAssessment(f, 'ci', f.metrics.ci);
+    const aHI = _storedMetricAssessment(f, 'hi') || _defaultMetricAssessment(f, 'hi', f.metrics.hi);
+    const aGI = _storedMetricAssessment(f, 'gi') || _defaultMetricAssessment(f, 'gi', f.metrics.gi);
+    const aScore = _storedMetricAssessment(f, 'score') || _defaultMetricAssessment(f, 'score', f.metrics.score);
     const notAssessed = f.language === 'zh' ? '未评估' : 'Not assessed';
     let p2 = `<div class="report-page">
         <div class="hp-running-header"><span>${escHtml(s.confidentiality)}</span><span class="right">${escHtml(s.section2)}</span></div>
@@ -787,6 +862,17 @@ function _updateReportPreview() {
 function _hpMetricRow(name, value, unit, refText, statusClass, sOverride, statusTextOverride) {
     const s = sOverride || ((typeof REPORT_STRINGS !== 'undefined') ? REPORT_STRINGS[window.reportForm.language] : null);
     const ND = s.noData || '—';
+    let metricKey = {
+        'V100 (CTV)': 'v100', D90: 'd90', D95: 'd95', V150: 'v150', V200: 'v200',
+        CI: 'ci', HI: 'hi', GI: 'gi', 'Plan score': 'score',
+    }[name];
+    if (!metricKey && (/score|评分/i.test(String(name)) || unit === '/100')) metricKey = 'score';
+    const stored = metricKey ? _storedMetricAssessment(window.reportForm, metricKey) : null;
+    if (stored) {
+        refText = stored.reference;
+        statusClass = stored.statusClass;
+        statusTextOverride = stored.statusText;
+    }
     if (value === null || value === undefined) {
         return `<tr><td>${name}</td><td colspan="3" style="color:#94a3b8;text-align:center;">${ND}</td></tr>`;
     }
@@ -902,6 +988,7 @@ function exportReportHTML() {
 
 function exportReportMarkdown() {
     const f = window.reportForm;
+    syncReportQualityAssessment(f);
     const s = (typeof REPORT_STRINGS !== 'undefined') ? REPORT_STRINGS[f.language] : null;
     const lines = [];
     lines.push(`# ${s.reportTitle}`);
@@ -922,7 +1009,10 @@ function exportReportMarkdown() {
         const assessment = _sourceBackedMetricAssessment(f, 'd90', f.metrics.d90);
         lines.push(`| D90 | ${f.metrics.d90.toFixed(2)} Gy | ${assessment.reference} | ${assessment.statusText} |`);
     }
-    if (f.metrics.score !== null) lines.push(`| Plan score | ${f.metrics.score.toFixed(0)}/100 | Internal QA ranking | Not clinical approval |`);
+    if (f.metrics.score !== null) {
+        const assessment = _storedMetricAssessment(f, 'score') || _defaultMetricAssessment(f, 'score', f.metrics.score);
+        lines.push(`| Plan score | ${f.metrics.score.toFixed(0)}/100 | ${assessment.reference} | ${assessment.statusText} |`);
+    }
     if (f.interpretation) { lines.push(''); lines.push(`## ${s.section5}`); lines.push(f.interpretation); }
     if (f.references && f.references.length > 0) {
         lines.push(''); lines.push(`## ${s.section7}`);

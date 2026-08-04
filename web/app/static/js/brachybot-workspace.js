@@ -688,6 +688,7 @@
         Object.values(form.planning || {}).forEach(value => {
             if (value !== null && value !== undefined && value !== '') score += 4;
         });
+        Object.keys(form.qualityAssessment?.metrics || {}).forEach(() => { score += 4; });
         return score;
     }
 
@@ -698,7 +699,7 @@
     const REPORT_FORM_KEYS = new Set([
         'version', 'language', 'templateKey', 'sessionId', 'updatedAt', 'updated_at',
         'hospital', 'patient', 'study', 'case', 'imaging', 'segmentation',
-        'planning', 'metrics', 'oarDose', 'interpretation', 'safety', 'qaNotes',
+        'planning', 'metrics', 'qualityAssessment', 'oarDose', 'interpretation', 'safety', 'qaNotes',
         'references', 'figures', 'signature', 'editedFields',
     ]);
 
@@ -1240,6 +1241,7 @@
         if (!snapshot) return;
         const sessionId = workspaceSnapshotSessionId(snapshot);
         if (!sessionId || sessionId !== String(activeSessionId || '')) return false;
+        let qualityAssessmentNeedsPersist = false;
         rememberWorkspaceRevision(snapshot);
         const ui = snapshot.ui || {};
         const uiState = ui.state || ui;
@@ -1361,6 +1363,12 @@
                     window.reportForm = report;
                 }
                 const targetReport = keepCurrentReport ? window.reportForm : report;
+                const previousQualityTimestamp = Number(targetReport?.qualityAssessment?.generatedAt || 0);
+                if (typeof window.syncReportQualityAssessment === 'function') {
+                    window.syncReportQualityAssessment(targetReport);
+                    qualityAssessmentNeedsPersist = Number(targetReport?.qualityAssessment?.generatedAt || 0)
+                        !== previousQualityTimestamp;
+                }
                 // Keep cache metadata from the control-plane snapshot attached
                 // to the populated form when that form is newer. This lets the
                 // image hydrate without replacing its narrative fields.
@@ -1481,6 +1489,9 @@
                         void window.loadSurgicalGuideMesh({ sessionId: guideSessionId });
                     }
                 }, 0);
+            }
+            if (qualityAssessmentNeedsPersist && options.persist !== false) {
+                scheduleWorkspaceSave('report.quality_assessment.restored');
             }
             return true;
         } finally {

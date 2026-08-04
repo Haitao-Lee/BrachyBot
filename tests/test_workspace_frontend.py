@@ -128,6 +128,18 @@ def test_report_restore_does_not_erase_newer_generated_text():
     assert "const reportSection = snapshot.report" in workspace
 
 
+def test_report_quality_columns_are_persisted_and_auto_fill_is_awaited():
+    workspace = read("web/app/static/js/brachybot-workspace.js")
+    report = read("web/app/static/js/brachybot-report-export.js")
+    shell = read("web/app/static/js/brachybot-report-shell.js")
+    planning = read("web/app/static/js/brachybot-dvh-planning.js")
+    assert "qualityAssessment" in workspace
+    assert "function syncReportQualityAssessment" in report
+    assert "_storedMetricAssessment" in report
+    assert "window.syncReportQualityAssessment(f, { force: true })" in shell
+    assert "await Report.autoFill.fromAll()" in planning
+
+
 def test_report_recapture_is_durably_scheduled_after_viewer_hydration():
     planning = read("web/app/static/js/brachybot-dvh-planning.js")
     store = read("web/workspace_store.py")

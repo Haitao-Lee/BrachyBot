@@ -457,6 +457,9 @@ window.Report = (function () {
             }
             applied++;
         }
+        if (typeof window.syncReportQualityAssessment === 'function') {
+            window.syncReportQualityAssessment(f, { force: true });
+        }
         if (options.render !== false) {
             panels.editor();
             panels.preview();
@@ -496,6 +499,11 @@ window.Report = (function () {
                 }).applied;
             } catch (e) {
                 console.warn('Server report auto-fill unavailable; using local data:', e);
+            }
+            // Persist the source-backed Reference and Status cells together
+            // with the numeric metrics before report rendering/checkpointing.
+            if (typeof window.syncReportQualityAssessment === 'function') {
+                window.syncReportQualityAssessment(f, { force: true });
             }
             // BUG FIX 2026-06-17 (auto-screenshots in report):
             // auto-capture visual evidence (CT + masks, dose heatmap,

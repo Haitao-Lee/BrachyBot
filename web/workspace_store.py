@@ -460,6 +460,11 @@ def _report_content_score(form: Any) -> int:
     for group, weight in (('metrics', 8), ('planning', 4)):
         values = form.get(group) if isinstance(form.get(group), Mapping) else {}
         score += sum(weight for value in values.values() if value not in (None, ''))
+    quality = form.get('qualityAssessment')
+    if isinstance(quality, Mapping):
+        metrics = quality.get('metrics')
+        if isinstance(metrics, Mapping):
+            score += len(metrics) * 4
     return score
 
 
@@ -476,7 +481,7 @@ def _report_timestamp(form: Any) -> float:
 _REPORT_FORM_KEYS = frozenset({
     "version", "language", "templateKey", "sessionId", "updatedAt", "updated_at",
     "hospital", "patient", "study", "case", "imaging", "segmentation",
-    "planning", "metrics", "oarDose", "interpretation", "safety", "qaNotes",
+    "planning", "metrics", "qualityAssessment", "oarDose", "interpretation", "safety", "qaNotes",
     "references", "figures", "signature", "editedFields",
 })
 

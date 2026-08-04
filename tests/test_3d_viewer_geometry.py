@@ -7,7 +7,7 @@ ROOT = Path(__file__).resolve().parents[1]
 def test_3d_renderer_uses_one_css_to_drawing_buffer_geometry_path():
     source = (ROOT / "web/app/static/js/brachybot-3d-manual.js").read_text(encoding="utf-8")
 
-    assert "function syncViewer3DSize()" in source
+    assert "function syncViewer3DSize({ force = false } = {})" in source
     assert "renderer.setPixelRatio(dpr)" in source
     assert "renderer.setSize(cssWidth, cssHeight, false)" in source
     assert "renderer.domElement.style.width = '100%'" in source
@@ -19,6 +19,7 @@ def test_3d_renderer_uses_one_css_to_drawing_buffer_geometry_path():
     # configured; it would crop the scene when the viewer card is resized.
     assert "setViewport(0, 0, w, h)" not in source
     assert source.index("const geometry = syncViewer3DSize()") < source.index("const controlsChanged = scene3D.controls.update()")
+    assert "viewer3DSizeDirty" in source
     assert "axesGroup.quaternion.copy(scene3D.camera.quaternion)" in source
     assert "function sync3DCameraPose" in source
 
