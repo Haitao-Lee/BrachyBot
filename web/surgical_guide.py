@@ -900,7 +900,13 @@ def _cylinder_sdf_in_region(
 def _filter_components(mask: np.ndarray, minimum_voxels: int) -> np.ndarray:
     from scipy import ndimage
 
-    labels, count = ndimage.label(mask, structure=np.ones((3, 3, 3), dtype=np.uint8))
+    # Keep only face-connected solids before marching cubes.  Corner-connected
+    # specks can survive a 26-connected filter and create non-manifold edges
+    # when they touch the guide plate only diagonally.
+    labels, count = ndimage.label(
+        mask,
+        structure=ndimage.generate_binary_structure(3, 1),
+    )
     if count == 0:
         return np.zeros_like(mask, dtype=bool)
     sizes = np.bincount(labels.ravel())

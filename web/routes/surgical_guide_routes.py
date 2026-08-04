@@ -204,8 +204,9 @@ def register_surgical_guide_routes(app, get_agent):
             logger.exception("Surgical guide generation failed")
             try:
                 snapshot(agent, "surgical_guide.failed", {
-                    "state": "ready",
+                    "state": "failed",
                     "message": f"Puncture guide generation failed: {exc}",
+                    "error": str(exc),
                     "updated_at": time.time(),
                 })
             except Exception:
