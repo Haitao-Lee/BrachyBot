@@ -4660,13 +4660,44 @@ def register_planning_routes(
     @require_api_key
     @rate_limit
     def api_chat_task():
-        """Return the latest in-process task for the selected case."""
+        """Return the selected case's live task and durable recovery hints.
+
+        The in-process task is authoritative while the server is running, but
+        the browser may reconnect after a case switch or a dropped SSE stream.
+        Returning the compact persisted task marker as well prevents a stale
+        control-plane snapshot from being mistaken for a new chat request.
+        """
         try:
-            _, user, session_id = request_case_context()
+            store, user, session_id = request_case_context()
         except WorkspaceError:
             return jsonify({"error": "Authentication required"}), 401
         task = chat_tasks.active(user["id"], session_id) or chat_tasks.latest(user["id"], session_id)
-        return jsonify({"task": task.public_state() if task is not None else None})
+        persisted = {
+            "task_id": None,
+            "last_task_id": None,
+            "status": "idle",
+            "operation_state": "ready",
+        }
+        try:
+            snapshot = store.load_snapshot(user["id"], session_id)
+            chat = snapshot.get("chat") if isinstance(snapshot.get("chat"), dict) else {}
+            operation = snapshot.get("operation") if isinstance(snapshot.get("operation"), dict) else {}
+            persisted.update({
+                "task_id": chat.get("task_id"),
+                "last_task_id": chat.get("last_task_id"),
+                "status": chat.get("task_status") or "idle",
+                "operation_state": operation.get("state") or "ready",
+                "updated_at": chat.get("updated_at") or snapshot.get("saved_at"),
+            })
+        except WorkspaceError:
+            # The case was deleted between the ownership check and the read.
+            # Keep the endpoint useful for the currently selected case without
+            # exposing a filesystem exception to the browser.
+            pass
+        return jsonify({
+            "task": task.public_state() if task is not None else None,
+            "persisted": persisted,
+        })
 
     @app.route("/api/chat/tasks/<task_id>/stream", methods=["GET"])
     @require_api_key

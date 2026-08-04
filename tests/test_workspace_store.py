@@ -101,6 +101,40 @@ def test_workspace_snapshot_round_trip_preserves_arrays_and_ui(tmp_path):
     assert snapshot["chat"]["messages"][0]["content"] == "ready"
 
 
+def test_hydration_holds_checkpoint_lock_while_reading_array_sidecars(tmp_path):
+    """Checkpoint pruning cannot delete an array between snapshot and decode."""
+    store = WorkspaceStore(tmp_path / "runtime")
+    user = store.create_user("hydration_lock_owner", "hash")
+    case = store.create_session(user["id"], "Hydration lock case")
+    store.snapshot_agent(user["id"], case.id, _Agent(), reason="test.lock.seed")
+
+    case_lock = store._checkpoint_work_lock(user["id"], case.id)
+    assert case_lock.acquire(timeout=1)
+    finished = threading.Event()
+    errors = []
+    restored = _Agent()
+
+    def hydrate():
+        try:
+            store.hydrate_agent(user["id"], case.id, restored)
+        except Exception as exc:  # pragma: no cover - assertion reports it
+            errors.append(exc)
+        finally:
+            finished.set()
+
+    worker = threading.Thread(target=hydrate)
+    worker.start()
+    assert not finished.wait(0.05)
+    case_lock.release()
+    assert finished.wait(3)
+    worker.join(timeout=1)
+    assert not errors
+    assert np.array_equal(
+        restored.memory.retrieve("ct_data"),
+        np.arange(12, dtype=np.int16).reshape(3, 2, 2),
+    )
+
+
 def test_chat_snapshot_patches_are_append_only(tmp_path):
     """A stale browser patch must not erase a detached task transcript."""
     store = WorkspaceStore(tmp_path / "runtime")

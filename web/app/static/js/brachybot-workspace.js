@@ -299,6 +299,15 @@
                         skipClientClear: true,
                     });
                 }
+                // Resource hydration deliberately skips chat state so it
+                // cannot erase a live replay. Reconcile once more after the
+                // heavy phase because a task may have become active or
+                // terminal while CT/mesh resources were loading.
+                if (generation === backgroundRestoreGeneration
+                    && sessionId === activeSessionId
+                    && typeof window.resumeSessionChatTask === 'function') {
+                    void window.resumeSessionChatTask();
+                }
                 recordWorkspacePerformance('restore.completed', {
                     sessionId,
                     startedAt: restoreStartedAt,
@@ -768,7 +777,7 @@
         target.hidden = false;
     }
 
-    function applyChatSnapshotFast(snapshot) {
+    function applyChatSnapshotFast(snapshot, options = {}) {
         const chat = snapshot?.chat;
         const sessionId = workspaceSnapshotSessionId(snapshot);
         if (!chat || !sessionId || sessionId !== String(activeSessionId || '')
@@ -798,16 +807,32 @@
             if (typeof loadSessionChat === 'function') loadSessionChat(sessionId);
         }
         window._sessionChatQueues = window._sessionChatQueues || {};
-        window._sessionChatQueues[sessionId] = Array.isArray(chat.queued) ? jsonClone(chat.queued) : [];
-        window._sessionChatTaskStatuses = window._sessionChatTaskStatuses || {};
-        if (chat.task_id) {
-            window._sessionChatTaskIds = window._sessionChatTaskIds || {};
-            window._sessionChatTaskIds[sessionId] = chat.task_id;
-            window._sessionChatTaskStatuses[sessionId] = chat.task_status || 'running';
-        } else {
-            delete window._sessionChatTaskIds?.[sessionId];
-            delete window._detachedChatTasks?.[sessionId];
-            window._sessionChatTaskStatuses[sessionId] = chat.task_status || 'idle';
+        if (!options.skipChat) {
+            window._sessionChatQueues[sessionId] = Array.isArray(chat.queued) ? jsonClone(chat.queued) : [];
+            window._sessionChatTaskStatuses = window._sessionChatTaskStatuses || {};
+            if (chat.task_id) {
+                window._sessionChatTaskIds = window._sessionChatTaskIds || {};
+                window._sessionChatTaskIds[sessionId] = chat.task_id;
+                window._sessionChatTaskStatuses[sessionId] = chat.task_status || 'running';
+            } else {
+                // A fast switch snapshot may be one write behind the live
+                // task identity. Preserve an in-memory running hint until
+                // /api/chat/task confirms the server state; a stale empty
+                // snapshot must not cancel replay for a case we just left.
+                const localTaskId = window._sessionChatTaskIds?.[sessionId]
+                    || window._detachedChatTasks?.[sessionId]
+                    || null;
+                const savedStatus = String(chat.task_status || '');
+                const preserveLiveTask = !!localTaskId
+                    && (!savedStatus || savedStatus === 'idle' || savedStatus === 'running');
+                if (!preserveLiveTask) {
+                    delete window._sessionChatTaskIds?.[sessionId];
+                    delete window._detachedChatTasks?.[sessionId];
+                    window._sessionChatTaskStatuses[sessionId] = chat.task_status || 'idle';
+                } else {
+                    window._sessionChatTaskStatuses[sessionId] = 'running';
+                }
+            }
         }
         return true;
     }
@@ -1408,16 +1433,31 @@
             const chat = snapshot.chat || {};
             if (sessionId !== String(activeSessionId || '')) return false;
             window._sessionChatQueues = window._sessionChatQueues || {};
-            window._sessionChatQueues[sessionId] = Array.isArray(chat.queued) ? jsonClone(chat.queued) : [];
-            window._sessionChatTaskStatuses = window._sessionChatTaskStatuses || {};
-            if (chat.task_id) {
-                window._sessionChatTaskIds = window._sessionChatTaskIds || {};
-                window._sessionChatTaskIds[sessionId] = chat.task_id;
-                window._sessionChatTaskStatuses[sessionId] = chat.task_status || 'running';
-            } else {
-                delete window._sessionChatTaskIds?.[sessionId];
-                delete window._detachedChatTasks?.[sessionId];
-                window._sessionChatTaskStatuses[sessionId] = chat.task_status || 'idle';
+            if (!options.skipChat) {
+                window._sessionChatQueues[sessionId] = Array.isArray(chat.queued) ? jsonClone(chat.queued) : [];
+                window._sessionChatTaskStatuses = window._sessionChatTaskStatuses || {};
+                if (chat.task_id) {
+                    window._sessionChatTaskIds = window._sessionChatTaskIds || {};
+                    window._sessionChatTaskIds[sessionId] = chat.task_id;
+                    window._sessionChatTaskStatuses[sessionId] = chat.task_status || 'running';
+                } else {
+                    // A fast switch snapshot may be one write behind the
+                    // live task identity. Preserve the local hint until the
+                    // case-scoped task endpoint confirms its terminal state.
+                    const localTaskId = window._sessionChatTaskIds?.[sessionId]
+                        || window._detachedChatTasks?.[sessionId]
+                        || null;
+                    const savedStatus = String(chat.task_status || '');
+                    const preserveLiveTask = !!localTaskId
+                        && (!savedStatus || savedStatus === 'idle' || savedStatus === 'running');
+                    if (!preserveLiveTask) {
+                        delete window._sessionChatTaskIds?.[sessionId];
+                        delete window._detachedChatTasks?.[sessionId];
+                        window._sessionChatTaskStatuses[sessionId] = chat.task_status || 'idle';
+                    } else {
+                        window._sessionChatTaskStatuses[sessionId] = 'running';
+                    }
+                }
             }
             let chatMessages = Array.isArray(chat.messages) ? chat.messages : null;
             if (!chatMessages && Array.isArray(chat.execution_trace) && chat.execution_trace.length) {

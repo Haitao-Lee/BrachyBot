@@ -963,6 +963,34 @@ def test_task_resume_distinguishes_reconnect_from_a_server_lost_task():
     assert "The server is no longer running this task" in chat
 
 
+def test_continue_is_a_case_task_command_and_replay_failures_are_terminal():
+    """Continue must never fall through to the clinical/knowledge router."""
+    chat = read("web/app/static/js/brachybot-chat-todo.js")
+    workspace = read("web/app/static/js/brachybot-workspace.js")
+    routes = read("web/routes/planning_routes.py")
+
+    assert "function _isContinuationRequest(value)" in chat
+    assert "resumeSessionChatTask({ userInitiated: true })" in chat
+    assert "rawResumeState === 'failed' || rawResumeState === 'cancelled'" in chat
+    assert "const replayResult = await sendChat(null" in chat
+    assert "reason: 'replay_http_error'" in chat
+    assert "return false;\n        }\n\n        const ctype" in chat
+    assert '"last_task_id": None' in routes
+    assert '"persisted": persisted' in routes
+    assert "void window.resumeSessionChatTask();" in workspace
+
+
+def test_background_snapshot_restore_cannot_clear_live_task_identity():
+    """Clinical hydration must skip chat/task presentation and then reconcile."""
+    workspace = read("web/app/static/js/brachybot-workspace.js")
+    ui_api = read("web/app/static/js/brachybot-ui-api.js")
+
+    assert "if (!options.skipChat)" in workspace
+    assert "Preserve the local hint until" in workspace
+    assert "preserveClinicalData: true" in ui_api
+    assert "skipChat: true" in ui_api
+
+
 def test_ui_controller_waits_for_async_viewer_and_manual_planning_actions():
     """UI action progress must represent completion, not merely task launch."""
     ui_api = read("web/app/static/js/brachybot-ui-api.js")

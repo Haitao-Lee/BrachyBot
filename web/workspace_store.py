@@ -1434,6 +1434,38 @@ class WorkspaceStore:
         cancel_event: Any = None,
         phase_callback: Optional[Callable[[str], None]] = None,
     ) -> Dict[str, Any]:
+        """Hydrate one case while its checkpoint sidecars are read-consistent.
+
+        Checkpoints publish a new JSON snapshot and then prune array sidecars
+        that are no longer referenced by that snapshot.  Hydration must hold
+        the same per-case work lock from snapshot read through array decode;
+        otherwise it can read an older snapshot and lose its sidecar between
+        those two operations.
+        """
+        with self._checkpoint_work_lock(user_id, session_id):
+            return self._hydrate_agent_locked(
+                user_id,
+                session_id,
+                agent,
+                include_planning_results=include_planning_results,
+                load_ct=load_ct,
+                mark_interrupted=mark_interrupted,
+                cancel_event=cancel_event,
+                phase_callback=phase_callback,
+            )
+
+    def _hydrate_agent_locked(
+        self,
+        user_id: str,
+        session_id: str,
+        agent: Any,
+        *,
+        include_planning_results: bool = True,
+        load_ct: bool = True,
+        mark_interrupted: bool = True,
+        cancel_event: Any = None,
+        phase_callback: Optional[Callable[[str], None]] = None,
+    ) -> Dict[str, Any]:
         """Load a checkpoint into a fresh agent without evaluating any code.
 
         A lightweight pass restores only JSON metadata and UI/chat state. Large
