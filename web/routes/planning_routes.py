@@ -26,6 +26,15 @@ from web.auth import current_user
 from web.chat_tasks import ChatTask, ChatTaskManager
 from web.workspace_store import WorkspaceError, WorkspaceQuotaExceeded, WorkspaceNotFound
 from agent_runtime.core import resolve_reference_direction_input
+from web.planning_runs import (
+    activate_planning_run,
+    active_planning_id,
+    fork_planning_run,
+    invalidate_planning_dependents,
+    list_planning_runs,
+    mark_planning_run,
+    publish_planning_run,
+)
 
 try:
     from web.server_support import (
@@ -73,6 +82,24 @@ def _saved_dose_scale_gy(agent) -> float:
         dose_metrics,
         dose_scale_gy=stored_scale,
     )
+
+
+def _submitted_manual_needles(data: Dict[str, Any], current_needles: Any) -> list:
+    """Resolve the needle list without confusing an explicit empty list.
+
+    ``needles=[]`` is a valid mutation when the operator deletes the last
+    needle.  Only an omitted or ``null`` field means "keep the server list".
+    Keeping this rule in one small helper prevents every mutation route from
+    accidentally resurrecting deleted planning objects.
+    """
+    if "needles" not in data or data.get("needles") is None:
+        needles = list(current_needles or [])
+    else:
+        needles = data.get("needles")
+        if not isinstance(needles, list):
+            raise ValueError("needles must be a list")
+    needles, _ = _deduplicate_manual_needle_records(needles)
+    return needles
 
 
 _UI_BRIDGE_LOCK = _server_support._UI_BRIDGE_LOCK
@@ -188,6 +215,85 @@ def _snapshot_from_seed_plan(serialized_plan, needle_geometry):
     return {"seeds": seeds, "needles": needles}
 
 
+def _deduplicate_manual_seed_records(records):
+    """Repair a legacy manual snapshot that contains the same seed ID twice.
+
+    A seed ID is the stable identity used by the Data Tree, Viewer and dose
+    transactions. Older snapshots could duplicate an entry after a failed
+    optimistic edit, making every later geometry update fail validation. Keep
+    the last record for a duplicated ID (the most recent edit) and report the
+    repaired IDs to the caller for logging.
+    """
+    result = []
+    indexes = {}
+    duplicate_ids = []
+    for record in records or []:
+        if not isinstance(record, dict):
+            result.append(record)
+            continue
+        seed_id = str(record.get("id") or "").strip()
+        if seed_id and seed_id in indexes:
+            result[indexes[seed_id]] = record
+            duplicate_ids.append(seed_id)
+            continue
+        if seed_id:
+            indexes[seed_id] = len(result)
+        result.append(record)
+    return result, sorted(set(duplicate_ids))
+
+
+def _deduplicate_manual_needle_records(records):
+    """Repair legacy manual needle snapshots by stable needle ID."""
+    result = []
+    indexes = {}
+    duplicate_ids = []
+    for record in records or []:
+        if not isinstance(record, dict):
+            result.append(record)
+            continue
+        needle_id = str(record.get("id") or "").strip()
+        if needle_id and needle_id in indexes:
+            result[indexes[needle_id]] = record
+            duplicate_ids.append(needle_id)
+            continue
+        if needle_id:
+            indexes[needle_id] = len(result)
+        result.append(record)
+    return result, sorted(set(duplicate_ids))
+
+
+def _repair_serialized_manual_seed_plan(memory, seeds):
+    """Drop duplicate IDs from the serialized mirror used by the viewer."""
+    serialized = memory.retrieve("seed_plan_serialized")
+    if not isinstance(serialized, list):
+        serialized = memory.retrieve("seed_plan")
+    if not isinstance(serialized, list):
+        return
+    seen = set()
+    repaired = []
+    for entry in serialized:
+        if not isinstance(entry, dict):
+            repaired.append(entry)
+            continue
+        entry_copy = dict(entry)
+        clean_seeds = []
+        for seed in entry.get("seeds") or []:
+            if not isinstance(seed, dict):
+                continue
+            seed_id = str(seed.get("id") or "").strip()
+            if seed_id and seed_id in seen:
+                continue
+            if seed_id:
+                seen.add(seed_id)
+            clean_seeds.append(seed)
+        entry_copy["seeds"] = clean_seeds
+        entry_copy["num_seeds"] = len(clean_seeds)
+        repaired.append(entry_copy)
+    memory.store("seed_plan", repaired)
+    memory.store("seed_plan_serialized", repaired)
+    memory.store("total_seeds", len(seeds or []))
+
+
 def _current_planning_snapshot(agent):
     """Return the current manual snapshot, or the automatic baseline."""
     memory = agent.memory
@@ -195,6 +301,15 @@ def _current_planning_snapshot(agent):
     raw_manual_needles = memory.retrieve("manual_needles")
     manual_seeds = list(raw_manual_seeds) if raw_manual_seeds is not None else []
     manual_needles = list(raw_manual_needles) if raw_manual_needles is not None else []
+    manual_seeds, duplicate_ids = _deduplicate_manual_seed_records(manual_seeds)
+    if duplicate_ids:
+        logger.warning("Repairing duplicate manual seed IDs: %s", duplicate_ids)
+        memory.store("manual_seeds", manual_seeds)
+        _repair_serialized_manual_seed_plan(memory, manual_seeds)
+    manual_needles, duplicate_needle_ids = _deduplicate_manual_needle_records(manual_needles)
+    if duplicate_needle_ids:
+        logger.warning("Repairing duplicate manual needle IDs: %s", duplicate_needle_ids)
+        memory.store("manual_needles", manual_needles)
     if (
         memory.retrieve("manual_plan_active")
         or len(manual_seeds) > 0
@@ -423,6 +538,23 @@ def register_planning_routes(
             }), 202
         return None
 
+    def monitor_control_agent(session_id):
+        """Resolve monitor state without synchronously hydrating a case."""
+        if callable(get_cached_agent):
+            cached = get_cached_agent(session_id)
+            if cached is not None:
+                return cached
+        if not callable(get_agent):
+            return None
+        try:
+            # The server callback installs a metadata shell and continues
+            # decoding CT/planning arrays in its background hydration worker.
+            return get_agent(session_id, _lightweight=True)
+        except TypeError:
+            # Small test/app factories may still expose the old callback
+            # signature. Do not fall back to a potentially blocking cold load.
+            return None
+
     def workspace_output_dir(category: str) -> str:
         """Return an owned artifact directory; client paths are never trusted."""
         store, user, session_id = request_case_context()
@@ -585,11 +717,31 @@ def register_planning_routes(
                 message_id: str = "",
                 request_id: str = "",
                 attachments: Any = None,
+                turn_sequence: Optional[int] = None,
+                reply_to_message_id: str = "",
             ) -> None:
                 content = str(content or "")
                 if not content and message_type != "thinking":
                     if not attachments:
                         return
+                message_kind = (
+                    "execution_trace"
+                    if message_type == "thinking"
+                    else "assistant_final"
+                    if message_type == "bot-response"
+                    else "user_message"
+                    if message_type == "user"
+                    else message_type
+                )
+                sequence = (
+                    int(turn_sequence)
+                    if turn_sequence is not None
+                    else 1
+                    if message_kind == "execution_trace"
+                    else 0
+                    if message_kind == "user_message"
+                    else 2
+                )
                 candidate = {
                     "type": message_type,
                     "content": content,
@@ -606,14 +758,19 @@ def register_planning_routes(
                     ),
                     "id": str(message_id or uuid4().hex),
                     "request_id": str(request_id or task.request_id),
-                    "message_kind": (
-                        "execution_trace"
-                        if message_type == "thinking"
-                        else "assistant_final"
-                        if message_type == "bot-response"
-                        else message_type
-                    ),
+                    "message_kind": message_kind,
+                    "turn_sequence": sequence,
                 }
+                response_language = str(getattr(task, "response_language", "") or "")[:8]
+                if response_language:
+                    # The language belongs to the turn, not to the current
+                    # global UI language.  Persist it on every durable row so
+                    # a refreshed Trace renders in the language used for the
+                    # original request.
+                    candidate["response_language"] = response_language
+                    candidate["trace_language"] = response_language
+                if reply_to_message_id:
+                    candidate["reply_to_message_id"] = str(reply_to_message_id)
                 if attachments:
                     candidate["attachments"] = list(attachments)
 
@@ -670,9 +827,20 @@ def register_planning_routes(
                                 combined.append(item)
                                 known.add(key)
                         existing["attachments"] = combined
-                    existing["timestamp"] = candidate["timestamp"]
+                    previous_timestamp = int(existing.get("timestamp") or 0)
+                    candidate_timestamp = int(candidate.get("timestamp") or 0)
+                    if previous_timestamp and candidate_timestamp:
+                        existing["timestamp"] = min(previous_timestamp, candidate_timestamp)
+                    elif candidate_timestamp:
+                        existing["timestamp"] = candidate_timestamp
                     existing["request_id"] = candidate["request_id"]
                     existing["message_kind"] = candidate["message_kind"]
+                    existing["turn_sequence"] = candidate["turn_sequence"]
+                    if candidate.get("response_language"):
+                        existing["response_language"] = candidate["response_language"]
+                        existing["trace_language"] = candidate["trace_language"]
+                    if candidate.get("reply_to_message_id"):
+                        existing["reply_to_message_id"] = candidate["reply_to_message_id"]
                     return
 
                 previous = messages[-1] if messages else None
@@ -809,6 +977,8 @@ def register_planning_routes(
                     timestamp_ms=int((task.finished_at or time.time()) * 1000),
                     message_id=f"trace-{task.request_id}",
                     request_id=task.request_id,
+                    turn_sequence=1,
+                    reply_to_message_id=task.assistant_message_id,
                 )
             # A user-cancelled turn must never resurrect buffered draft text
             # when the case is reopened. Preserve the request and trace for
@@ -1262,8 +1432,22 @@ def register_planning_routes(
             if tumor_type and isinstance(dose_metrics, dict):
                 dose_metrics["tumor_type"] = tumor_type
 
+            current_planning_id = active_planning_id(agent.memory)
+            active_run = next(
+                (
+                    item for item in list_planning_runs(agent.memory)
+                    if str(item.get("planning_id") or "") == str(current_planning_id or "")
+                ),
+                {},
+            )
+            artifact_status = agent.memory.retrieve("manual_artifact_status") or {}
             return jsonify({
                 "success": True,
+                "planning_id": current_planning_id,
+                "planning_label": active_run.get("label"),
+                "planning_status": active_run.get("status"),
+                "planning_data_version": active_run.get("data_version"),
+                "artifact_status": artifact_status if isinstance(artifact_status, dict) else {},
                 "metrics": dose_metrics,
                 "seeds": seeds,
                 "needles": current_needles,
@@ -1284,6 +1468,62 @@ def register_planning_routes(
             import traceback
             logger.error(traceback.format_exc())
             return jsonify({"error": str(e)}), 500
+
+    @app.route("/api/planning/runs", methods=["GET"])
+    @require_api_key
+    @rate_limit
+    def api_planning_runs():
+        """List the session's saved planning runs without loading meshes."""
+        agent = get_agent(_lightweight=True)
+        if agent is None:
+            return jsonify({"success": False, "error": "Agent not available"}), 500
+        pending = workspace_data_pending(agent)
+        if pending is not None:
+            return pending
+        try:
+            runs = list_planning_runs(agent.memory)
+            return jsonify({
+                "success": True,
+                "active_planning_id": active_planning_id(agent.memory),
+                "runs": runs,
+            })
+        except Exception as exc:
+            logger.exception("Unable to list planning runs")
+            return jsonify({"success": False, "error": str(exc)}), 500
+
+    @app.route("/api/planning/runs/<planning_id>/activate", methods=["POST"])
+    @require_api_key
+    @rate_limit
+    def api_activate_planning_run(planning_id: str):
+        """Make one saved Planning the active alias for this Session.
+
+        Activation is intentionally separate from a visibility-only browser
+        toggle: all downstream APIs (Dose, DVH, Report and Surgical Guide)
+        must read the same active planning ID after this transaction.
+        """
+        agent = get_agent(_lightweight=True)
+        if agent is None:
+            return jsonify({"success": False, "error": "Agent not available"}), 500
+        pending = workspace_data_pending(agent)
+        if pending is not None:
+            return pending
+        try:
+            summary = activate_planning_run(agent, planning_id)
+            return jsonify({
+                "success": True,
+                "active_planning_id": str(planning_id),
+                "planning": summary,
+                # Clinical arrays stay behind the existing planning/mesh
+                # endpoints.  Returning the raw snapshot here would attempt
+                # to JSON-encode Numpy/SimpleITK objects and make activation
+                # fail for exactly the large cases this endpoint is for.
+                "requires_refresh": True,
+            })
+        except KeyError as exc:
+            return jsonify({"success": False, "error": str(exc)}), 404
+        except Exception as exc:
+            logger.exception("Unable to activate planning run %s", planning_id)
+            return jsonify({"success": False, "error": str(exc)}), 500
 
     @app.route("/api/planning/show_step", methods=["POST"])
     @require_api_key
@@ -1307,7 +1547,11 @@ def register_planning_routes(
             trajectories = agent.memory.retrieve("trajectories") or agent.memory.retrieve("refined_trajectories")
             dose_distribution = agent.memory.retrieve("dose_distribution")
 
-            result = {"success": True, "step": step}
+            result = {
+                "success": True,
+                "step": step,
+                "planning_id": active_planning_id(agent.memory),
+            }
 
             if step in ("trajectories", "trajectory_init", "trajectory_refine", "all"):
                 result["trajectories"] = trajectories or []
@@ -2437,7 +2681,10 @@ def register_planning_routes(
                         return {
                             "state": dict(bridge.get("state") or {}),
                             "events": list(bridge.get("events") or []),
-                            "training": dict(bridge.get("training") or {}),
+                            "training": _server_support._close_stale_training_snapshot(
+                                bridge.get("training") or {},
+                                reason="server_restart_or_pending_restore",
+                            ),
                             "updated_at": bridge.get("updated_at"),
                         }
 
@@ -2449,7 +2696,10 @@ def register_planning_routes(
                         return {
                             "state": dict(bridge.get("state") or {}),
                             "events": list(bridge.get("events") or []),
-                            "training": dict(bridge.get("training") or {}),
+                            "training": _server_support._close_stale_training_snapshot(
+                                bridge.get("training") or {},
+                                reason="server_restart_or_durable_restore",
+                            ),
                             "updated_at": bridge.get("updated_at"),
                         }
                 except WorkspaceError:
@@ -2604,13 +2854,18 @@ def register_planning_routes(
             "detail": data.get("detail", {}),
             "language": language,
         })
+        # The deterministic monitor checks are intentionally allowed to run
+        # without a cached Agent.  A cold session must not make Monitor look
+        # dead, and these helpers already degrade to event-focused guidance
+        # when a clinical snapshot is unavailable.  Do not call get_agent here:
+        # this request path must remain non-blocking during CT hydration.
         feedback = (
             _training_feedback_for_event(agent, session_id, event)
-            if monitor_run_matches and agent is not None else None
+            if monitor_run_matches else None
         )
         suggested_screenshot = (
             _training_screenshot_for_event(agent, session_id, event, feedback)
-            if monitor_run_matches and agent is not None else None
+            if monitor_run_matches else None
         )
         if feedback:
             with _UI_BRIDGE_LOCK:
@@ -2648,6 +2903,17 @@ def register_planning_routes(
         )
         with _UI_BRIDGE_LOCK:
             previous = bucket.get("training") or {}
+            # A persisted ``active`` flag is not proof that a live browser is
+            # still attached.  Browser refreshes, server restarts and evicted
+            # agent instances can leave an abandoned run in the durable
+            # bridge. Close that run before accepting a new one so a new
+            # monitor can start without a false 409 conflict.
+            if _server_support._training_is_stale(previous):
+                previous = _server_support._close_stale_training_snapshot(
+                    previous,
+                    reason="monitor_timeout",
+                )
+                bucket["training"] = previous
             if previous.get("active"):
                 previous_run_id = str(previous.get("run_id") or "").strip()
                 if previous_run_id == run_id:
@@ -2664,12 +2930,14 @@ def register_planning_routes(
                     "error": "该病例已有正在运行的监测任务。" if language == "zh" else "A monitor run is already active for this case.",
                     "monitor_run_id": previous_run_id or None,
                 }), 409
+            now = time.time()
             bucket["training"] = {
                 "active": True,
                 "run_id": run_id,
                 "goal": goal,
                 "language": language,
-                "started_at": time.time(),
+                "started_at": now,
+                "last_activity_at": now,
                 "stopped_at": None,
                 "events": [],
                 "feedback": [],
@@ -2702,22 +2970,54 @@ def register_planning_routes(
     @rate_limit
     def api_training_stop():
         """Stop live monitoring and return a final deterministic training report."""
+        stop_started = time.perf_counter()
         data = request.get_json() or {}
         session_id = request_ui_session_id(data)
-        agent = get_agent(session_id)
+        logger.info("[monitor_stop] request received session=%s", session_id)
+        auto_close = bool(data.get("auto_close") or data.get("silent"))
         bucket = _ui_bucket(session_id)
         with _UI_BRIDGE_LOCK:
             training = bucket.setdefault("training", {})
             request_run_id = str(data.get("monitor_run_id") or "").strip()
             active_run_id = str(training.get("run_id") or "").strip()
+            active = bool(training.get("active"))
+            language = _monitor_language(
+                data.get("language")
+                or (data.get("ui_state") or {}).get("language")
+                or training.get("language")
+                or (bucket.get("state") or {}).get("language")
+            )
+            # Monitor is a Session-owned resource. A browser restored after a
+            # server restart may still know an old run id, but that run is no
+            # longer active. Stop must be idempotent so pagehide/session-switch
+            # cleanup never becomes a user-visible error.
+            if not active:
+                return jsonify({
+                    "success": True,
+                    "already_stopped": True,
+                    "no_active_run": True,
+                    "session_id": session_id,
+                    "monitor_run_id": active_run_id or request_run_id or None,
+                    "summary_message": training.get("last_summary"),
+                    "training": training,
+                    "language": language,
+                })
             if request_run_id and active_run_id and request_run_id != active_run_id:
                 return jsonify({
-                    "success": False,
-                    "error": "This monitor run is no longer active.",
+                    "success": True,
+                    "already_stopped": True,
+                    "run_mismatch": True,
+                    "no_active_run": True,
+                    "session_id": session_id,
                     "monitor_run_id": active_run_id,
-                }), 409
+                    "training": training,
+                    "language": language,
+                })
             training["active"] = False
             training["stopped_at"] = time.time()
+            training["last_activity_at"] = training["stopped_at"]
+            training["closed_reason"] = str(data.get("reason") or "user").strip()
+            training["auto_closed"] = auto_close
             # ``events`` is initialized for every training run. Do not use a
             # truthiness fallback here: an empty training run must stay empty
             # instead of re-counting unrelated global UI events (including
@@ -2729,17 +3029,23 @@ def register_planning_routes(
                 else (bucket.get("events") or [])
             )
             feedback = list(training.get("feedback") or [])
-            language = _monitor_language(
-                data.get("language")
-                or (data.get("ui_state") or {}).get("language")
-                or training.get("language")
-                or (bucket.get("state") or {}).get("language")
-            )
+        # Do not synchronously hydrate CT/planning arrays while a browser is
+        # leaving a case. Auto-close only records the event boundary; manual
+        # Finish Monitoring may still build the deterministic advice report.
+        agent = None if auto_close else monitor_control_agent(session_id)
         counts: Dict[str, int] = {}
         for event in events:
             etype = str(event.get("type", "ui.event"))
             counts[etype] = counts.get(etype, 0) + 1
-        advice = _build_plan_advice(agent, session_id)
+        # Finish Monitoring must return promptly.  Seed/needle spacing and
+        # artifact-state checks are deterministic and cheap; CT/OAR needle
+        # intersection validation is intentionally deferred to the full
+        # advice/quality-check path so a large volume cannot block the UI.
+        advice = {} if auto_close else _build_plan_advice(agent, session_id, fast=True)
+        logger.info(
+            "[monitor_stop] advice built session=%s elapsed_ms=%.1f",
+            session_id, (time.perf_counter() - stop_started) * 1000.0,
+        )
         localized_advice = _localize_plan_advice(advice, language)
         summary = _format_training_summary(events, counts, advice, language)
         summary_message = {
@@ -2756,6 +3062,10 @@ def register_planning_routes(
         with _UI_BRIDGE_LOCK:
             training["last_summary"] = summary_message
         checkpoint_ui_bridge(session_id, "training.stopped")
+        logger.info(
+            "[monitor_stop] response ready session=%s elapsed_ms=%.1f",
+            session_id, (time.perf_counter() - stop_started) * 1000.0,
+        )
         return jsonify({
             "success": True,
             "session_id": session_id,
@@ -2777,7 +3087,7 @@ def register_planning_routes(
         """Return detailed advice for the current auto/manual plan."""
         data = request.get_json(silent=True) or {}
         session_id = request_ui_session_id(data)
-        agent = get_agent(session_id)
+        agent = monitor_control_agent(session_id)
         if agent is None:
             return jsonify({"error": "Agent not available"}), 500
         language = _monitor_language(
@@ -2795,9 +3105,7 @@ def register_planning_routes(
         """Return a product-readiness checklist for the current case."""
         data = request.get_json(silent=True) or {}
         session_id = request_ui_session_id(data)
-        agent = get_agent(session_id)
-        if agent is None:
-            return jsonify({"error": "Agent not available"}), 500
+        agent = monitor_control_agent(session_id)
         return jsonify(_build_system_readiness(agent, session_id))
 
     @app.route("/api/manual_planning/update", methods=["POST"])
@@ -2816,7 +3124,17 @@ def register_planning_routes(
         reason = data.get("reason") or "manual_update"
         previous_needles = data.get("previous_needles") or []
         reproject_seeds = bool(data.get("reproject_seeds")) or reason in {"needle_drag", "manual_replan"}
+        previous_planning_id = active_planning_id(agent.memory)
+        planning_id = None
+        created_new_planning = False
         try:
+            # A completed Planning is immutable. The first dose/replan edit
+            # creates a child draft; repeated edits while that draft is open
+            # reuse the same planning_id instead of producing one run per
+            # drag/click.
+            planning_id = fork_planning_run(agent, reason=str(reason))
+            created_new_planning = str(planning_id) != str(previous_planning_id or "")
+            invalidate_planning_dependents(agent.memory, reason=str(reason))
             checkpoint_operation(
                 agent,
                 "running",
@@ -2847,6 +3165,8 @@ def register_planning_routes(
             })
             result["event"] = event
             result["advice"] = _build_plan_advice(agent, session_id)
+            result["planning_id"] = planning_id
+            publish_planning_run(agent, result, status="completed")
             checkpoint_operation(
                 agent,
                 "ready",
@@ -2855,6 +3175,11 @@ def register_planning_routes(
             )
             return jsonify(result)
         except Exception as e:
+            if created_new_planning:
+                try:
+                    mark_planning_run(agent, planning_id, "failed", error=str(e))
+                except Exception:
+                    logger.warning("Unable to roll back failed manual planning run %s", planning_id, exc_info=True)
             checkpoint_operation(
                 agent,
                 "interrupted",
@@ -2887,9 +3212,14 @@ def register_planning_routes(
         if agent is None:
             return jsonify({"success": False, "error": "Agent not available"}), 500
 
-        raw_needles = data.get("needles") or []
-        if not isinstance(raw_needles, list) or not raw_needles:
-            return jsonify({"success": False, "error": "needles must be a non-empty list"}), 400
+        planning_id = None
+        created_new_planning = False
+
+        raw_needles = data.get("needles")
+        if raw_needles is None:
+            raw_needles = []
+        if not isinstance(raw_needles, list):
+            return jsonify({"success": False, "error": "needles must be a list"}), 400
 
         normalized_needles = []
         try:
@@ -2911,7 +3241,31 @@ def register_planning_routes(
                     "trajectory_id": needle.get("trajectory_id"),
                 })
 
+            normalized_needles, repaired_needle_ids = _deduplicate_manual_needle_records(
+                normalized_needles
+            )
+            if repaired_needle_ids:
+                logger.warning("Repairing duplicate submitted needle IDs: %s", repaired_needle_ids)
+
             memory = agent.memory
+            current = _current_planning_snapshot(agent)
+            current_version = int(memory.retrieve("manual_plan_version") or 0)
+            expected_version = data.get("expected_version")
+            if expected_version is not None:
+                try:
+                    expected_version = int(expected_version)
+                except (TypeError, ValueError):
+                    return jsonify({"success": False, "error": "expected_version must be an integer"}), 400
+                if expected_version != current_version:
+                    return jsonify({
+                        "success": False,
+                        "error": "The planning data changed before this needle edit was committed.",
+                        "code": "stale_manual_plan",
+                        "planning_version": current_version,
+                        "seeds": list(current.get("seeds") or []),
+                        "needles": list(current.get("needles") or []),
+                    }), 409
+
             ct_image = memory.retrieve("ct_image")
             if ct_image is None:
                 raise ValueError("No CT image loaded")
@@ -2939,29 +3293,92 @@ def register_planning_routes(
                 if tuple(arr.shape) == expected_shape:
                     oar_mask = arr
                     break
-            _server_support._validate_manual_needle_safety(
-                agent, normalized_needles, ct_image, ctv_mask, oar_mask
-            )
+            if normalized_needles:
+                _server_support._validate_manual_needle_safety(
+                    agent, normalized_needles, ct_image, ctv_mask, oar_mask
+                )
 
-            current = _current_planning_snapshot(agent)
             current_seeds = list(current.get("seeds") or [])
+            raw_seeds = data.get("seeds")
+            if raw_seeds is not None:
+                if not isinstance(raw_seeds, list):
+                    raise ValueError("seeds must be a list")
+                raw_seeds, repaired_seed_ids = _deduplicate_manual_seed_records(raw_seeds)
+                if repaired_seed_ids:
+                    logger.warning("Repairing duplicate submitted seed IDs: %s", repaired_seed_ids)
+                current_seeds = _normalize_manual_seed_records(
+                    memory, raw_seeds, normalized_needles
+                )
+            if current_seeds and not normalized_needles:
+                raise ValueError("A seed requires an owning needle")
+            # Only fork after all validation/projection has succeeded. A
+            # rejected drag must not leave an empty draft Planning selected.
+            previous_planning_id = active_planning_id(memory)
+            planning_id = fork_planning_run(agent, reason=str(data.get("reason") or "needle_position_only"))
+            created_new_planning = str(planning_id) != str(previous_planning_id or "")
+            invalidate_planning_dependents(
+                memory,
+                reason=str(data.get("reason") or "needle_position_only"),
+            )
+            planning_id = str(memory.retrieve("manual_planning_id") or planning_id or uuid4().hex)
+            next_version = current_version + 1
             # Keep seeds and geometry coherent for later explicit replanning,
             # restore, reload, and session switching.
+            memory.store("manual_planning_id", planning_id)
             memory.store("manual_seeds", current_seeds)
             memory.store("manual_needles", normalized_needles)
             memory.store("manual_plan_active", True)
+            memory.store("manual_plan_version", next_version)
             memory.store("manual_geometry_only", True)
             reason = str(data.get("reason") or "needle_position_only")
+            grouped_seeds: Dict[str, list] = {}
+            for seed in current_seeds:
+                grouped_seeds.setdefault(str(seed["trajectory_id"]), []).append(seed)
+            serialized_plan = []
+            for needle_item in normalized_needles:
+                trajectory_id = str(needle_item.get("trajectory_id") or needle_item.get("id") or "")
+                seed_items = grouped_seeds.get(trajectory_id, [])
+                serialized_plan.append({
+                    "trajectory_id": trajectory_id,
+                    "needle_id": str(needle_item.get("id") or trajectory_id),
+                    "trajectory": {
+                        "id": trajectory_id,
+                        "points": needle_item.get("points") or [],
+                    },
+                    "seeds": [
+                        {
+                            "id": seed["id"],
+                            "position": seed["position"],
+                            "direction": seed["direction"],
+                            "trajectory_id": trajectory_id,
+                        }
+                        for seed in seed_items
+                    ],
+                    "num_seeds": len(seed_items),
+                })
+            memory.store("seed_plan", serialized_plan)
+            memory.store("seed_plan_serialized", serialized_plan)
+            memory.store("total_seeds", len(current_seeds))
+            artifact_status = _mark_manual_dependents_stale(
+                memory,
+                reason=reason,
+                planning_version=next_version,
+            )
             try:
                 from web.surgical_guide import invalidate_surgical_guides
                 invalidate_surgical_guides(agent, f"manual needle geometry updated: {reason}")
             except ImportError:
                 pass
+            publish_planning_run(agent, None, status="draft")
             event = _append_ui_event(session_id, {
                 "type": "manual.needle.position_only",
                 "label": reason,
                 "detail": {
                     "needle_count": len(normalized_needles),
+                    "planning_id": planning_id,
+                    "planning_version": next_version,
+                    "seed_count": len(current_seeds),
+                    "artifacts_stale": True,
                     "dose_recomputed": False,
                 },
             })
@@ -2978,12 +3395,22 @@ def register_planning_routes(
             )
             return jsonify({
                 "success": True,
+                "session_id": session_id,
+                "case_id": session_id,
+                "planning_id": planning_id,
+                "planning_version": next_version,
                 "needles": normalized_needles,
                 "seeds": current_seeds,
+                "artifact_status": artifact_status,
                 "dose_recomputed": False,
                 "event": event,
             })
         except _server_support.ManualNeedleSafetyError as exc:
+            if created_new_planning:
+                try:
+                    mark_planning_run(agent, planning_id, "failed", error=str(exc))
+                except Exception:
+                    logger.warning("Unable to roll back rejected manual planning run %s", planning_id, exc_info=True)
             logger.warning("Position-only needle update rejected: %s", exc)
             return jsonify({
                 "success": False,
@@ -2992,6 +3419,11 @@ def register_planning_routes(
                 "rejected_needle_ids": exc.rejected_needle_ids,
             }), 422
         except Exception as exc:
+            if created_new_planning:
+                try:
+                    mark_planning_run(agent, planning_id, "failed", error=str(exc))
+                except Exception:
+                    logger.warning("Unable to roll back failed manual planning run %s", planning_id, exc_info=True)
             logger.exception("Position-only needle update failed")
             return jsonify({"success": False, "error": str(exc)}), 422
 
@@ -3018,9 +3450,10 @@ def register_planning_routes(
 
         memory = agent.memory
         current = _current_planning_snapshot(agent)
-        needles = data.get("needles")
-        if not isinstance(needles, list) or not needles:
-            needles = list(current.get("needles") or [])
+        try:
+            needles = _submitted_manual_needles(data, current.get("needles"))
+        except ValueError as exc:
+            return jsonify({"success": False, "error": str(exc)}), 400
         if not needles and raw_seeds:
             return jsonify({"success": False, "error": "A seed requires an owning needle"}), 400
 
@@ -3042,9 +3475,18 @@ def register_planning_routes(
                 }), 409
 
         reason = str(data.get("reason") or "seed_geometry")
+        previous_planning_id = active_planning_id(memory)
+        planning_id = None
+        created_new_planning = False
         try:
+            raw_seeds, repaired_seed_ids = _deduplicate_manual_seed_records(raw_seeds)
+            if repaired_seed_ids:
+                logger.warning("Repairing duplicate submitted seed IDs: %s", repaired_seed_ids)
             normalized_seeds = _normalize_manual_seed_records(memory, raw_seeds, needles)
-            planning_id = str(memory.retrieve("manual_planning_id") or uuid4().hex)
+            planning_id = fork_planning_run(agent, reason=reason)
+            created_new_planning = str(planning_id) != str(previous_planning_id or "")
+            invalidate_planning_dependents(memory, reason=reason)
+            planning_id = str(memory.retrieve("manual_planning_id") or planning_id or uuid4().hex)
             next_version = current_version + 1
             memory.store("manual_planning_id", planning_id)
             memory.store("manual_plan_active", True)
@@ -3090,6 +3532,7 @@ def register_planning_routes(
                 invalidate_surgical_guides(agent, f"seed geometry updated: {reason}")
             except ImportError:
                 pass
+            publish_planning_run(agent, None, status="draft")
             event = _append_ui_event(session_id, {
                 "type": f"manual.seed.{reason}",
                 "label": reason,
@@ -3113,6 +3556,11 @@ def register_planning_routes(
                 "event": event,
             })
         except Exception as exc:
+            if created_new_planning and planning_id:
+                try:
+                    mark_planning_run(agent, planning_id, "failed", error=str(exc))
+                except Exception:
+                    logger.warning("Unable to roll back failed seed planning run %s", planning_id, exc_info=True)
             logger.warning("Manual seed geometry update rejected: %s", exc)
             return jsonify({"success": False, "error": str(exc)}), 422
 
@@ -3215,7 +3663,13 @@ def register_planning_routes(
             and baseline_dose is not None
             and baseline_dose_gy is not None
         )
+        previous_planning_id = active_planning_id(agent.memory)
+        planning_id = None
+        created_new_planning = False
         try:
+            planning_id = fork_planning_run(agent, reason="restore_algorithm_needle")
+            created_new_planning = str(planning_id) != str(previous_planning_id or "")
+            invalidate_planning_dependents(agent.memory, reason="restore_algorithm_needle")
             checkpoint_operation(
                 agent,
                 "running",
@@ -3272,6 +3726,8 @@ def register_planning_routes(
             result["restored_needle_id"] = needle_id
             result["needles"] = new_needles
             result["seeds"] = new_seeds
+            result["planning_id"] = planning_id
+            publish_planning_run(agent, result, status="completed")
             result["event"] = _append_ui_event(session_id, {
                 "type": "manual.needle.restore",
                 "label": f"Restored {needle_id} to algorithm baseline",
@@ -3279,6 +3735,11 @@ def register_planning_routes(
             })
             return jsonify(result)
         except Exception as exc:
+            if created_new_planning and planning_id:
+                try:
+                    mark_planning_run(agent, planning_id, "failed", error=str(exc))
+                except Exception:
+                    logger.warning("Unable to roll back failed needle restore run %s", planning_id, exc_info=True)
             checkpoint_operation(
                 agent,
                 "interrupted",
@@ -4077,7 +4538,10 @@ def register_planning_routes(
                             "timestamp": int(time.time() * 1000),
                             "id": task.user_message_id,
                             "request_id": task.request_id,
-                            "message_kind": "user",
+                            "message_kind": "user_message",
+                            "turn_sequence": 0,
+                            "response_language": str(getattr(task, "response_language", "") or "")[:8],
+                            "trace_language": str(getattr(task, "response_language", "") or "")[:8],
                         })
                     store.save_snapshot_patch(
                         owner["id"],
@@ -4587,6 +5051,9 @@ def register_planning_routes(
                         "id": message_id or f"assistant-{request_id}",
                         "request_id": request_id,
                         "message_kind": "assistant_final",
+                        "turn_sequence": 2,
+                        "response_language": str(getattr(task, "response_language", "") or "")[:8],
+                        "trace_language": str(getattr(task, "response_language", "") or "")[:8],
                         "attachments": [],
                     }
                     messages.append(owner_message)

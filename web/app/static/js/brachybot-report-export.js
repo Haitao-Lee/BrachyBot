@@ -284,7 +284,11 @@ function _scheduleReportAutoSave() {
 function _reportAutoSave() {
     try {
         const f = window.reportForm;
-        f.editedFields = Array.from(f.editedFields);
+        if (typeof activeSessionId !== 'undefined' && activeSessionId) {
+            f.sessionId = String(activeSessionId);
+        }
+        f.updatedAt = Date.now();
+        f.editedFields = Array.from(f.editedFields || []);
         f.editedFields = new Set(f.editedFields);
         const t = document.getElementById('reportAutoSaveText');
         if (t) t.textContent = 'Auto-save: ' + new Date().toLocaleTimeString();
@@ -298,9 +302,23 @@ function flushActiveReportState() {
         _reportAutoSaveTimer = null;
     }
     if (window.reportForm) _reportAutoSave();
-    if (window.Report && Report.persist && typeof Report.persist.flush === 'function') {
-        Report.persist.flush();
+    // _reportAutoSave schedules the durable workspace write. During a case
+    // transition the caller performs the old-case write immediately; cancel
+    // the delayed timer before activeSessionId changes.
+    if (typeof window.cancelScheduledWorkspaceSave === 'function') {
+        window.cancelScheduledWorkspaceSave();
     }
+    const writes = [];
+    if (typeof window.persistWorkspace === 'function') {
+        // This is an explicit old-session flush. It must be allowed while the
+        // background hydration flag is still set and must complete before the
+        // transition changes activeSessionId.
+        writes.push(Promise.resolve(window.persistWorkspace('report.flush', { allowDuringRestore: true })));
+    }
+    if (window.Report && Report.persist && typeof Report.persist.flush === 'function') {
+        try { writes.push(Promise.resolve(Report.persist.flush())); } catch (_) {}
+    }
+    return Promise.allSettled(writes);
 }
 window.flushActiveReportState = flushActiveReportState;
 function _newEmptyReportForm() {

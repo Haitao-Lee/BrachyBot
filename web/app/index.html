@@ -45,12 +45,12 @@
     <script src="static/js/prism-bash.min.js?v=2" onerror="console.error('Failed to load prism-bash.min.js')"></script>
     <script src="static/js/prism-json.min.js?v=2" onerror="console.error('Failed to load prism-json.min.js')"></script>
     <script src="static/js/three.min.js?v=2" onerror="console.error('Failed to load three.min.js')"></script>
-    <script src="static/js/OrbitControls.js?v=3" onerror="console.error('Failed to load OrbitControls.js')"></script>
+    <script src="static/js/OrbitControls.js?v=7" onerror="console.error('Failed to load OrbitControls.js')"></script>
     <script src="static/js/html2canvas.min.js?v=2" onerror="console.error('Failed to load html2canvas.min.js')"></script>
     <link rel="stylesheet" href="static/css/brachybot-theme-layout.css?v=11">
     <link rel="stylesheet" href="static/css/brachybot-chat-status.css?v=12">
     <link rel="stylesheet" href="static/css/brachybot-panels-viewers.css?v=11">
-    <link rel="stylesheet" href="static/css/brachybot-report-controls.css?v=9">
+    <link rel="stylesheet" href="static/css/brachybot-report-controls.css?v=10">
     <link rel="stylesheet" href="static/css/brachybot-responsive.css?v=4">
     <link rel="stylesheet" href="static/css/brachybot-auth.css?v=6">
     <link rel="stylesheet" href="static/css/brachybot-data-export.css?v=1">
@@ -859,6 +859,7 @@
                         <div class="guide-parameter-grid guide-select-grid">
                             <label><span data-i18n-zh="导向针道（不选表示全部）" data-i18n-en="Guided needles (empty means all)">Guided needles (empty means all)</span><select id="guideNeedleSelection" multiple size="4" aria-label="Needles included in puncture guide"></select></label>
                             <label><span data-i18n-zh="已保存导板版本" data-i18n-en="Saved guide version">Saved guide version</span><select id="guideVersionSelect" aria-label="Saved puncture guide version"></select><button class="btn btn-outline guide-inline-button" type="button" onclick="loadSelectedSurgicalGuideVersion()" data-i18n-zh="显示所选版本" data-i18n-en="Show Selected Version">Show Selected Version</button></label>
+                            <label><span data-i18n-zh="导板来源规划" data-i18n-en="Source Planning">Source Planning</span><select id="surgicalGuidePlanningSelect" aria-label="Planning used to generate the guide"></select></label>
                         </div>
                         <div class="guide-validation-row">
                             <input id="guideStlValidationFile" type="file" accept=".stl,model/stl" hidden>
@@ -1246,7 +1247,7 @@
                                 <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><circle cx="12" cy="12" r="10"/></svg>
                                 <span>No CT data</span>
                             </div>
-                            <canvas id="sliceCanvasAxial" style="display:none;max-width:100%;max-height:100%;"></canvas>
+                            <canvas id="sliceCanvasAxial" style="display:none;"></canvas>
                             <canvas id="crosshairCanvasAxial" style="position:absolute;inset:0;pointer-events:none;display:none;z-index:8;"></canvas>
                             <canvas id="annotationCanvasAxial" style="position:absolute;inset:0;pointer-events:none;display:none;z-index:9;"></canvas>
                             <canvas id="labelOverlay_Axial" style="position:absolute;pointer-events:none;display:none;opacity:0.6;"></canvas>
@@ -1288,7 +1289,7 @@
                                 <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><circle cx="12" cy="12" r="10"/></svg>
                                 <span>No CT data</span>
                             </div>
-                            <canvas id="sliceCanvasSagittal" style="display:none;max-width:100%;max-height:100%;"></canvas>
+                            <canvas id="sliceCanvasSagittal" style="display:none;"></canvas>
                             <canvas id="crosshairCanvasSagittal" style="position:absolute;inset:0;pointer-events:none;display:none;z-index:8;"></canvas>
                             <canvas id="annotationCanvasSagittal" style="position:absolute;inset:0;pointer-events:none;display:none;z-index:9;"></canvas>
                             <canvas id="labelOverlay_Sagittal" style="position:absolute;pointer-events:none;display:none;opacity:0.6;"></canvas>
@@ -1330,7 +1331,7 @@
                                 <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><circle cx="12" cy="12" r="10"/></svg>
                                 <span>No CT data</span>
                             </div>
-                            <canvas id="sliceCanvasCoronal" style="display:none;max-width:100%;max-height:100%;"></canvas>
+                            <canvas id="sliceCanvasCoronal" style="display:none;"></canvas>
                             <canvas id="crosshairCanvasCoronal" style="position:absolute;inset:0;pointer-events:none;display:none;z-index:8;"></canvas>
                             <canvas id="annotationCanvasCoronal" style="position:absolute;inset:0;pointer-events:none;display:none;z-index:9;"></canvas>
                             <canvas id="labelOverlay_Coronal" style="position:absolute;pointer-events:none;display:none;opacity:0.6;"></canvas>
@@ -1457,19 +1458,19 @@
 -->
 <script src="static/js/brachybot-chat-core.js?v=13"></script>
 <script src="static/js/brachybot-chat-todo.js?v=17"></script>
-<script src="static/js/brachybot-ui-api.js?v=27"></script>
+<script src="static/js/brachybot-ui-api.js?v=30"></script>
 <script src="static/js/brachybot-auth.js?v=9"></script>
-<script src="static/js/brachybot-viewer-volume.js?v=20"></script>
-<script src="static/js/brachybot-viewer-layout.js?v=12"></script>
-<script src="static/js/brachybot-3d-manual.js?v=31"></script>
-<script src="static/js/brachybot-manual-annotation.js?v=10"></script>
+<script src="static/js/brachybot-viewer-volume.js?v=21"></script>
+<script src="static/js/brachybot-viewer-layout.js?v=13"></script>
+<script src="static/js/brachybot-3d-manual.js?v=39"></script>
+<script src="static/js/brachybot-manual-annotation.js?v=11"></script>
 <script src="static/js/brachybot-surgical-guide.js?v=9"></script>
-    <script src="static/js/brachybot-dvh-planning.js?v=13"></script>
+    <script src="static/js/brachybot-dvh-planning.js?v=14"></script>
 <script src="static/js/brachybot-report-shell.js?v=14"></script>
-<script src="static/js/brachybot-report-editor.js?v=13"></script>
-<script src="static/js/brachybot-workspace.js?v=19"></script>
+<script src="static/js/brachybot-report-editor.js?v=14"></script>
+<script src="static/js/brachybot-workspace.js?v=22"></script>
 <script src="static/js/brachybot-session-cache.js?v=2"></script>
-<script src="static/js/brachybot-report-export.js?v=13"></script>
+<script src="static/js/brachybot-report-export.js?v=15"></script>
 <script src="static/js/brachybot-data-export.js?v=2"></script>
 </body>
 </html>

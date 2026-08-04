@@ -1,5 +1,8 @@
 function _syncTrajectoryChildren() {
     if (!dataTreeState?.planning) return;
+    dataTreeState.planning.trajectories = _dedupeManualTrajectories(
+        dataTreeState.planning.trajectories || [],
+    );
     const grouped = {};
     (dataTreeState.planning.seeds || []).forEach(seed => {
         const tid = seed.trajectory_id || 'manual_traj_1';
@@ -130,6 +133,8 @@ async function _confirmNeedleReplan(needleId) {
 }
 
 function _manualPayload(options = {}) {
+    dataTreeState.planning.needles = _dedupeManualNeedles(dataTreeState.planning.needles || []);
+    dataTreeState.planning.seeds = _dedupeManualSeeds(dataTreeState.planning.seeds || []);
     _syncSeedsOverlayFromDataTree();
     const payload = {
         session_id: _activeApiSessionId(),
@@ -153,8 +158,52 @@ function _manualPayload(options = {}) {
         payload.previous_needles = _cloneNeedleGeometry(
             options.previousNeedles || _manualDoseBaselineNeedles()
         );
+        if (options.previousSnapshot) payload.previous_snapshot = options.previousSnapshot;
     }
     return payload;
+}
+
+async function _confirmSeedReplan(seedId) {
+    if (typeof _confirmAction !== 'function') return true;
+    return _confirmAction(
+        `粒子 ${seedId} 已移动，是否按新位置重新计算剂量和 DVH？`,
+        `Seed ${seedId} has moved. Recalculate the dose and DVH for the new position?`,
+        {
+            yesZh: '重新计算',
+            yesEn: 'Recalculate',
+            noZh: '仅保存位置',
+            noEn: 'Save position only',
+            titleZh: '粒子位置已改变',
+            titleEn: 'Seed position changed',
+        },
+    );
+}
+
+function _dedupeManualSeeds(seeds) {
+    const byId = new Map();
+    (Array.isArray(seeds) ? seeds : []).forEach(seed => {
+        const id = String(seed?.id || '').trim();
+        if (id) byId.set(id, seed);
+    });
+    return [...byId.values()];
+}
+
+function _dedupeManualNeedles(needles) {
+    const byId = new Map();
+    (Array.isArray(needles) ? needles : []).forEach(needle => {
+        const id = String(needle?.id || '').trim();
+        if (id) byId.set(id, needle);
+    });
+    return [...byId.values()];
+}
+
+function _dedupeManualTrajectories(trajectories) {
+    const byId = new Map();
+    (Array.isArray(trajectories) ? trajectories : []).forEach(trajectory => {
+        const id = String(trajectory?.id || '').trim();
+        if (id) byId.set(id, trajectory);
+    });
+    return [...byId.values()];
 }
 
 function _cloneManualSeeds(seeds = dataTreeState?.planning?.seeds || []) {
@@ -166,8 +215,127 @@ function _cloneManualSeeds(seeds = dataTreeState?.planning?.seeds || []) {
     }));
 }
 
+function _cloneManualNeedles(needles = dataTreeState?.planning?.needles || []) {
+    return _dedupeManualNeedles(needles).map(needle => ({
+        ...needle,
+        points: (needle.points || []).map(point => _vec3Array(point)),
+        trajectory_id: needle.trajectory_id,
+    }));
+}
+
+function _manualText(zh, en) {
+    if (typeof window._t === 'function') return window._t(zh, en);
+    return String(window._i18nLang || '').toLowerCase().startsWith('zh') ? zh : en;
+}
+
+function _cloneManualPlanningSnapshot() {
+    return {
+        needles: _cloneManualNeedles(),
+        seeds: _cloneManualSeeds(),
+        trajectories: (dataTreeState?.planning?.trajectories || []).map(trajectory => ({
+            ...trajectory,
+            entry: trajectory.entry ? _vec3Array(trajectory.entry) : trajectory.entry,
+            target: trajectory.target ? _vec3Array(trajectory.target) : trajectory.target,
+            seeds: [],
+        })),
+        activeNeedleId: manualPlanningState.activeNeedleId,
+    };
+}
+
+function _removeManualSceneObjects() {
+    Object.entries(scene3D?.meshes || {}).forEach(([id, mesh]) => {
+        const type = mesh?.userData?.type;
+        if (type !== 'seed' && type !== 'needle') return;
+        scene3D.scene?.remove(mesh);
+        mesh.geometry?.dispose?.();
+        if (Array.isArray(mesh.material)) mesh.material.forEach(material => material?.dispose?.());
+        else mesh.material?.dispose?.();
+        delete scene3D.meshes[id];
+    });
+    if (typeof _removeNeedleHandles === 'function') {
+        (dataTreeState?.planning?.needles || []).forEach(needle => _removeNeedleHandles(needle.id));
+    }
+}
+
+function _restoreManualPlanningSnapshot(snapshot) {
+    if (!snapshot) return;
+    _removeManualSceneObjects();
+    dataTreeState.planning.needles = _cloneManualNeedles(snapshot.needles || []);
+    dataTreeState.planning.seeds = _cloneManualSeeds(_dedupeManualSeeds(snapshot.seeds || []));
+    dataTreeState.planning.trajectories = (snapshot.trajectories || []).map(trajectory => ({
+        ...trajectory,
+        entry: trajectory.entry ? _vec3Array(trajectory.entry) : trajectory.entry,
+        target: trajectory.target ? _vec3Array(trajectory.target) : trajectory.target,
+        seeds: [],
+    }));
+    manualPlanningState.activeNeedleId = snapshot.activeNeedleId || null;
+    dataTreeState.planning.needles.forEach(needle => {
+        _upsertSceneMesh(needle.id, _makeNeedleMesh(needle));
+        _syncNeedleHandles(needle);
+    });
+    dataTreeState.planning.seeds.forEach(seed => _upsertSceneMesh(seed.id, _makeSeedMesh(seed)));
+    _syncSeedsOverlayFromDataTree();
+    renderDataTree();
+    if (scene3D.requestRender) scene3D.requestRender(3);
+}
+
 function _applyAuthoritativeManualSeeds(data) {
     if (!data || !Array.isArray(data.seeds)) return;
+    if (Array.isArray(data.needles)) {
+        const previousNeedles = new Map(
+            (dataTreeState.planning.needles || []).map(needle => [String(needle.id), needle]),
+        );
+        const authoritativeNeedleIds = new Set(data.needles.map(needle => String(needle.id)));
+        Object.entries(scene3D?.meshes || {}).forEach(([id, mesh]) => {
+            if (mesh?.userData?.type === 'needle' && !authoritativeNeedleIds.has(String(id))) {
+                scene3D.scene?.remove(mesh);
+                mesh.geometry?.dispose?.();
+                if (Array.isArray(mesh.material)) mesh.material.forEach(material => material?.dispose?.());
+                else mesh.material?.dispose?.();
+                delete scene3D.meshes[id];
+                if (typeof _removeNeedleHandles === 'function') _removeNeedleHandles(id);
+            }
+        });
+        dataTreeState.planning.needles = _dedupeManualNeedles(data.needles).map(needle => {
+            const old = previousNeedles.get(String(needle.id)) || {};
+            return {
+                ...old,
+                ...needle,
+                id: String(needle.id || old.id),
+                points: (needle.points || old.points || []).map(point => _vec3Array(point)),
+                trajectory_id: needle.trajectory_id || old.trajectory_id || needle.id,
+                visible: needle.visible !== false,
+                visible2D: needle.visible2D ?? old.visible2D ?? true,
+                visible3D: needle.visible3D ?? old.visible3D ?? true,
+                opacity: Number.isFinite(Number(needle.opacity)) ? Number(needle.opacity) : (old.opacity ?? 0.75),
+                color: needle.color || old.color || '#ff2266',
+            };
+        });
+        const previousTrajectories = new Map(
+            (dataTreeState.planning.trajectories || []).map(trajectory => [String(trajectory.id), trajectory]),
+        );
+        dataTreeState.planning.trajectories = dataTreeState.planning.needles.map((needle, index) => {
+            const trajectoryId = String(needle.trajectory_id || needle.id);
+            const old = previousTrajectories.get(trajectoryId) || {};
+            return {
+                ...old,
+                id: trajectoryId,
+                index: old.index ?? index,
+                entry: needle.points[1],
+                target: needle.points[0],
+                visible: old.visible !== false,
+                visible2D: old.visible2D !== false,
+                visible3D: old.visible3D !== false,
+                opacity: old.opacity ?? 0.8,
+                color: old.color || '#88ccff',
+                seeds: [],
+            };
+        });
+        dataTreeState.planning.needles.forEach(needle => {
+            _upsertSceneMesh(needle.id, _makeNeedleMesh(needle));
+            _syncNeedleHandles(needle);
+        });
+    }
     const previousAppearance = new Map(
         (dataTreeState.planning.seeds || []).map(seed => [String(seed.id), seed]),
     );
@@ -181,7 +349,7 @@ function _applyAuthoritativeManualSeeds(data) {
             delete scene3D.meshes[id];
         }
     });
-    dataTreeState.planning.seeds = data.seeds.map(seed => {
+    dataTreeState.planning.seeds = _dedupeManualSeeds(data.seeds).map(seed => {
         const old = previousAppearance.get(String(seed.id)) || {};
         const position = _vec3Array(seed.position || seed.pos);
         return {
@@ -200,20 +368,27 @@ function _applyAuthoritativeManualSeeds(data) {
             color: seed.color || old.color || '#ffcc00',
         };
     });
+    _syncManualObjectCounters();
     dataTreeState.planning.seeds.forEach(seed => _upsertSceneMesh(seed.id, _makeSeedMesh(seed)));
     manualPlanningState.planningId = data.planning_id || manualPlanningState.planningId;
     manualPlanningState.planningVersion = Number(data.planning_version ?? manualPlanningState.planningVersion ?? 0);
     manualPlanningState.artifactStatus = { ...(data.artifact_status || {}) };
     dataTreeState.planning.id = manualPlanningState.planningId;
+    dataTreeState.planning.activePlanningId = manualPlanningState.planningId;
+    dataTreeState.planning.status = data.planning_status || 'draft';
     dataTreeState.planning.version = manualPlanningState.planningVersion;
+    dataTreeState.planning.dataVersion = manualPlanningState.planningVersion;
     dataTreeState.planning.artifactStatus = { ...manualPlanningState.artifactStatus };
+    if (typeof window.refreshPlanningRunCatalog === 'function') {
+        void window.refreshPlanningRunCatalog({ sessionId: _activeApiSessionId(), silent: true });
+    }
     _syncSeedsOverlayFromDataTree();
     if (typeof window.applyDataTreeViewVisibility === 'function') window.applyDataTreeViewVisibility();
     renderDataTree();
     if (scene3D.requestRender) scene3D.requestRender(3);
 }
 
-async function _commitManualSeeds(reason, rollbackSeeds) {
+async function _commitManualSeeds(reason, rollbackSeeds, rollbackNeedles = null) {
     const ownerSessionId = _activeApiSessionId();
     const payload = _manualPayload();
     const response = await fetch(API + '/manual_planning/update_seeds', {
@@ -234,6 +409,7 @@ async function _commitManualSeeds(reason, rollbackSeeds) {
         if (sameSession && Array.isArray(rollbackSeeds)) {
             _applyAuthoritativeManualSeeds({
                 seeds: rollbackSeeds,
+                needles: Array.isArray(rollbackNeedles) ? rollbackNeedles : payload.needles,
                 planning_id: payload.planning_id,
                 planning_version: payload.planning_version,
                 artifact_status: manualPlanningState.artifactStatus,
@@ -252,36 +428,46 @@ async function _commitManualSeeds(reason, rollbackSeeds) {
     return data;
 }
 
-async function _persistNeedleGeometryOnly() {
+async function _persistNeedleGeometryOnly(options = {}) {
     const payload = _manualPayload();
     const res = await fetch(API + '/manual_planning/update_geometry', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
             session_id: payload.session_id,
+            planning_id: payload.planning_id,
+            expected_version: payload.planning_version,
+            seeds: payload.seeds,
             needles: payload.needles,
-            reason: 'needle_position_only',
+            reason: options.reason || 'needle_position_only',
         }),
     });
     const data = await res.json().catch(() => null);
     if (!res.ok || !data || !data.success) {
+        if (data && Array.isArray(data.seeds) && Array.isArray(data.needles)) {
+            _applyAuthoritativeManualSeeds(data);
+        } else if (options.rollbackSnapshot) {
+            _restoreManualPlanningSnapshot(options.rollbackSnapshot);
+        } else if (Array.isArray(options.rollbackNeedles)) {
+            _restoreManualNeedles(options.rollbackNeedles);
+        }
         const error = new Error((data && data.error) || `HTTP ${res.status}`);
         error.code = data && data.code;
+        error.authoritative = data;
         throw error;
     }
-    // Keep the browser and workspace snapshots on the same world geometry.
-    const byId = new Map((data.needles || []).map((needle) => [String(needle.id), needle]));
-    for (const needle of dataTreeState?.planning?.needles || []) {
-        const saved = byId.get(String(needle.id));
-        if (saved) needle.points = saved.points.map((point) => _vec3Array(point));
-    }
+    _applyAuthoritativeManualSeeds(data);
     _syncSeedsOverlayFromDataTree();
     manualPlanningState.lastDoseNeedles = _cloneNeedleGeometry(data.needles);
     if (typeof scheduleWorkspaceSave === 'function') scheduleWorkspaceSave('manual.needle.position_only');
     return data;
 }
 
-function addManualNeedle() {
+async function addManualNeedle() {
+    if (manualPlanningState.needleMutationRunning) return null;
+    manualPlanningState.needleMutationRunning = true;
+    const rollback = _cloneManualPlanningSnapshot();
+    _setManualDoseProgress('running', _manualText('正在保存新增针道…', 'Saving the new needle geometry...'));
     init3DScene();
     const center = new THREE.Vector3(..._planningCenterWorld());
     // Direction of the new needle. Prefer an existing planned needle's
@@ -305,8 +491,7 @@ function addManualNeedle() {
     }
     if (dir.length() < 1e-6) dir.set(0, 0, 1);
     dir.normalize();
-    manualPlanningState.needleCounter += 1;
-    const id = `needle_manual_${manualPlanningState.needleCounter}`;
+    const id = _allocateManualObjectId('needle');
     const trajId = `manual_traj_${manualPlanningState.needleCounter}`;
     // Keep the same [deep, external] point convention as the automatic
     // planner (points[0] = intrabody/deep target, points[1] = shallow skin
@@ -322,31 +507,65 @@ function addManualNeedle() {
         opacity: 0.75,
         color: '#ff2266',
     };
-    dataTreeState.planning.needles.push(needle);
-    dataTreeState.planning.trajectories.push({
-        id: trajId,
-        index: dataTreeState.planning.trajectories.length,
-        entry: needle.points[1],
-        target: needle.points[0],
-        visible: true,
-        opacity: 0.8,
-        color: '#88ccff',
-        seeds: [],
-    });
-    dataTreeState.planning.trajectoriesLoaded = true;
-    manualPlanningState.activeNeedleId = id;
-    _upsertSceneMesh(id, _makeNeedleMesh(needle));
-    _syncNeedleHandles(needle);
-    _syncSeedsOverlayFromDataTree();
-    renderDataTree();
-    // Adding a needle must not change the user's current 3D view. The user
-    // can explicitly press Fit/Reset when the new object needs framing.
-    if (scene3D.requestRender) scene3D.requestRender(4);
-    addChat('system', `Manual needle added: ${id}. Drag the two endpoint spheres in 3D, then add seeds or recompute dose.`);
-    reportUIEvent('manual.needle.add', id, { points: needle.points });
+    try {
+        dataTreeState.planning.needles.push(needle);
+        dataTreeState.planning.trajectories.push({
+            id: trajId,
+            index: dataTreeState.planning.trajectories.length,
+            entry: needle.points[1],
+            target: needle.points[0],
+            visible: true,
+            opacity: 0.8,
+            color: '#88ccff',
+            seeds: [],
+        });
+        dataTreeState.planning.trajectoriesLoaded = true;
+        manualPlanningState.activeNeedleId = id;
+        _upsertSceneMesh(id, _makeNeedleMesh(needle));
+        _syncNeedleHandles(needle);
+        _syncSeedsOverlayFromDataTree();
+        renderDataTree();
+        // Adding a needle must not change the user's current 3D view. The user
+        // can explicitly press Fit/Reset when the new object needs framing.
+        if (scene3D.requestRender) scene3D.requestRender(4);
+        await _persistNeedleGeometryOnly({
+            reason: 'needle_add',
+            rollbackNeedles: rollback.needles,
+            rollbackSnapshot: rollback,
+        });
+        _setManualDoseProgress('done', _manualText(
+            `已添加针道 ${id}。Dose、DVH、报告和手术导板已标记为需要更新。`,
+            `Needle ${id} added. Dose, DVH, report, and Surgical Guide are now stale.`,
+        ));
+        addChat('system', _manualText(
+            `已添加针道 ${id}。可拖动两个端点调整位置，然后添加粒子或重新计算剂量。`,
+            `Needle ${id} added. Drag its endpoints, add seeds, or recompute dose.`,
+        ));
+        reportUIEvent('manual.needle.add', id, {
+            points: needle.points,
+            planning_version: manualPlanningState.planningVersion,
+        });
+        return dataTreeState.planning.needles.find(item => item.id === id) || needle;
+    } catch (error) {
+        _restoreManualPlanningSnapshot(rollback);
+        _setManualDoseProgress('error', _manualText(
+            `新增针道失败：${error.message}`,
+            `Needle creation failed: ${error.message}`,
+        ));
+        addChat('error', _manualText(
+            `新增针道失败，已恢复到上一次已保存的规划。${error.message}`,
+            `Needle creation failed; the last saved plan was restored. ${error.message}`,
+        ));
+        return null;
+    } finally {
+        manualPlanningState.needleMutationRunning = false;
+    }
 }
 
 async function addManualSeed() {
+    if (manualPlanningState.seedMutationRunning) return null;
+    manualPlanningState.seedMutationRunning = true;
+    _setManualDoseProgress('running', _manualText('正在保存新增粒子…', 'Saving the new seed...'));
     init3DScene();
     let needle = dataTreeState.planning.needles.find(n => n.id === manualPlanningState.activeNeedleId);
     if (!needle && dataTreeState.planning.needles.length > 0) {
@@ -354,8 +573,13 @@ async function addManualSeed() {
         manualPlanningState.activeNeedleId = needle.id;
     }
     if (!needle) {
-        addManualNeedle();
-        needle = dataTreeState.planning.needles[dataTreeState.planning.needles.length - 1];
+        needle = await addManualNeedle();
+        if (!needle) {
+            manualPlanningState.seedMutationRunning = false;
+            _setManualDoseProgress('error', _manualText('无法添加粒子：没有可用的针道。', 'Seed cannot be added: no usable needle is available.'));
+            return null;
+        }
+        needle = dataTreeState.planning.needles.find(item => item.id === manualPlanningState.activeNeedleId) || needle;
     }
     const p0 = new THREE.Vector3(..._vec3Array(needle.points[0]));
     const p1 = new THREE.Vector3(..._vec3Array(needle.points[1]));
@@ -373,9 +597,9 @@ async function addManualSeed() {
         : 0.5 + spread * Math.ceil(existing / 2);
     const clampedFrac = Math.max(0.18, Math.min(0.82, frac));
     const pos = new THREE.Vector3().lerpVectors(p1, p0, clampedFrac);
-    manualPlanningState.seedCounter += 1;
+    const seedId = _allocateManualObjectId('seed');
     const seed = {
-        id: `seed_manual_${manualPlanningState.seedCounter}`,
+        id: seedId,
         position: [pos.x, pos.y, pos.z],
         direction: [dir.x, dir.y, dir.z],
         trajectory_id: needle.trajectory_id,
@@ -391,8 +615,23 @@ async function addManualSeed() {
     _syncSeedsOverlayFromDataTree();
     renderDataTree();
     reportUIEvent('manual.seed.add', seed.id, { position: seed.position, trajectory_id: seed.trajectory_id });
-    await _commitManualSeeds('add', rollbackSeeds);
-    await recomputeManualDose('seed_add');
+    try {
+        await _commitManualSeeds('add', rollbackSeeds);
+        scheduleManualDoseRecompute('seed_add');
+        return seed;
+    } catch (error) {
+        _setManualDoseProgress('error', _manualText(
+            `新增粒子失败：${error.message}`,
+            `Seed creation failed: ${error.message}`,
+        ));
+        addChat('error', _manualText(
+            `新增粒子失败，已恢复到上一次已保存的粒子布局。${error.message}`,
+            `Seed creation failed; the last saved seed layout was restored. ${error.message}`,
+        ));
+        return null;
+    } finally {
+        manualPlanningState.seedMutationRunning = false;
+    }
 }
 
 function _setManualDoseProgress(stateName, text) {
@@ -410,7 +649,7 @@ function _setManualDoseProgress(stateName, text) {
         body.className = 'chat-event-content';
         const title = document.createElement('span');
         title.className = 'manual-dose-progress-title';
-        title.textContent = 'Progress';
+        title.textContent = _manualText('进度', 'Progress');
         const message = document.createElement('span');
         message.className = 'chat-event-text';
         const timestamp = document.createElement('time');
@@ -482,24 +721,48 @@ window.clearManualDoseProgressPresentation = function clearManualDoseProgressPre
     row.remove();
 };
 
+function recoverOrphanedManualDoseProgress() {
+    const row = document.getElementById('manualDoseProgress');
+    if (!row || !row.classList.contains('is-running')) return;
+    // A progress row cannot survive a document reload with a live Promise.
+    // Treat it as interrupted instead of presenting an unbounded spinner.
+    if (!manualPlanningState.doseRecomputeRunning
+        && !manualPlanningState.doseRecomputeTimer
+        && !manualPlanningState.doseRecomputeScheduledPromise) {
+        _setManualDoseProgress('error', _manualText(
+            '上一轮剂量重算的浏览器连接已中断；修改仍已保存，请重新计算剂量。',
+            'The previous dose update was interrupted by the browser; the edit is saved, so retry dose calculation.',
+        ));
+    }
+}
+
+setTimeout(recoverOrphanedManualDoseProgress, 0);
+
 async function _runManualDoseJob(job) {
     const { payload, wasDoseTextureEnabled } = job;
     const jobSessionId = String(payload.session_id || '');
     const requestSequence = ++manualPlanningState.doseRecomputeSequence;
     _setManualDoseProgress(
         'running',
-        payload.reproject_seeds ? 'Replanning with the latest needle geometry...' : 'Recomputing the AI dose...'
+        payload.reproject_seeds
+            ? _manualText('正在使用最新针道几何重新规划…', 'Replanning with the latest needle geometry...')
+            : _manualText('正在重新计算 AI 剂量…', 'Recomputing the AI dose...')
     );
     if (!payload.seeds.length) {
-        _setManualDoseProgress('error', 'Dose recomputation stopped: no manual seeds are available.');
-        addChat('error', 'No manual seeds available. Add at least one seed before recomputing dose.');
+        _setManualDoseProgress('error', _manualText('剂量重算已停止：当前没有手动粒子。', 'Dose recomputation stopped: no manual seeds are available.'));
+        addChat('error', _manualText('当前没有可用于重算的手动粒子，请先添加至少一颗粒子。', 'No manual seeds available. Add at least one seed before recomputing dose.'));
         return null;
     }
+    const doseController = typeof AbortController === 'function' ? new AbortController() : null;
+    const doseTimeout = setTimeout(() => {
+        if (doseController) doseController.abort();
+    }, 120000);
     try {
         const res = await fetch(API + '/manual_planning/update', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: _monitorRequestHeaders(),
             body: JSON.stringify(payload),
+            ...(doseController ? { signal: doseController.signal } : {}),
         });
         const data = await res.json().catch(() => null);
         if (!res.ok || !data || !data.success) {
@@ -523,40 +786,69 @@ async function _runManualDoseJob(job) {
         // made a one-needle edit slower than a complete plan. The compact
         // refresh keeps the authoritative DoseUNet result while updating only
         // metrics, DVH, slices, and the already existing dose texture.
-        await _refreshManualDoseViews(data, wasDoseTextureEnabled);
+        // The backend response is the authoritative commit boundary.  Do not
+        // keep the manual-planning progress row running while three slice
+        // canvases, dose textures, and any missing overlay metadata hydrate.
+        // Those viewer updates are session-fenced and continue in the
+        // background so the user can keep editing the current plan.
+        await _refreshManualDoseViews(data, wasDoseTextureEnabled, { background: true });
         const m = data.metrics || {};
         const v100 = Number.isFinite(m.v100) ? `${(m.v100 * 100).toFixed(1)}%` : '--';
         const d90 = Number.isFinite(m.d90) ? `${m.d90.toFixed(1)} Gy` : '--';
         if (payload.reproject_seeds) {
             manualPlanningState.lastDoseNeedles = _cloneNeedleGeometry(payload.needles);
         }
-        _setManualDoseProgress('done', `Replanning complete: ${data.total_seeds} seeds, V100=${v100}, D90=${d90}.`);
-        addChat('system', `Manual AI dose updated: ${data.total_seeds} seeds, V100=${v100}, D90=${d90}.`);
+        _setManualDoseProgress('done', _manualText(
+            `重新规划完成：${data.total_seeds} 颗粒子，V100=${v100}，D90=${d90}。`,
+            `Replanning complete: ${data.total_seeds} seeds, V100=${v100}, D90=${d90}.`,
+        ));
+        addChat('system', _manualText(
+            `手动剂量已更新：${data.total_seeds} 颗粒子，V100=${v100}，D90=${d90}。`,
+            `Manual AI dose updated: ${data.total_seeds} seeds, V100=${v100}, D90=${d90}.`,
+        ));
         if (data.advice && data.advice.advice && trainingMonitorState.active) {
-            addChat('system', 'Monitor advice: ' + data.advice.advice.slice(0, 2).join(' '));
+            addChat('system', _manualText(
+                '监测建议：' + data.advice.advice.slice(0, 2).join(' '),
+                'Monitor advice: ' + data.advice.advice.slice(0, 2).join(' '),
+            ));
         }
         return data;
     } catch (e) {
         if (jobSessionId !== String(_activeApiSessionId() || '')) return null;
+        if (e?.name === 'AbortError') {
+            e.code = 'manual_dose_timeout';
+            e.message = _manualText(
+                '剂量重算超过 120 秒仍未返回；修改已保存，请稍后重试更新剂量。',
+                'Dose recomputation exceeded 120 seconds; the edit was saved. Retry the dose update when ready.',
+            );
+        }
         if (e && e.code === 'manual_needle_intersects_obstacle' && payload.reproject_seeds) {
             // The server validates the same world-coordinate segment used for
             // DoseUNet. Restore the last accepted geometry instead of leaving
             // an unsafe drag visible after the request is rejected.
-            _restoreManualNeedles(payload.previous_needles);
+            if (payload.previous_snapshot) _restoreManualPlanningSnapshot(payload.previous_snapshot);
+            else _restoreManualNeedles(payload.previous_needles);
         }
         if (!manualPlanningState.doseRecomputeQueued) {
-            _setManualDoseProgress('error', `Replanning failed: ${e.message}`);
-            addChat('error', `Manual AI dose failed: ${e.message}`);
+            _setManualDoseProgress('error', _manualText(`重新规划失败：${e.message}`, `Replanning failed: ${e.message}`));
+            addChat('error', _manualText(`手动 AI 剂量计算失败：${e.message}`, `Manual AI dose failed: ${e.message}`));
         }
         return null;
+    } finally {
+        clearTimeout(doseTimeout);
     }
 }
 
 async function recomputeManualDose(reason = 'manual_update', options = {}) {
+    if (manualPlanningState.doseRecomputeTimer) {
+        clearTimeout(manualPlanningState.doseRecomputeTimer);
+        manualPlanningState.doseRecomputeTimer = null;
+        manualPlanningState.doseRecomputeOwnerSessionId = null;
+    }
     const payload = _manualPayload(options);
     payload.reason = reason;
     if (!payload.seeds.length) {
-        addChat('error', 'No manual seeds available. Add at least one seed before recomputing dose.');
+        addChat('error', _manualText('当前没有可用于重算的手动粒子，请先添加至少一颗粒子。', 'No manual seeds available. Add at least one seed before recomputing dose.'));
         return null;
     }
     const wasDoseTextureEnabled = !!(state && state.doseTexture && state.doseTexture.enabled);
@@ -567,7 +859,10 @@ async function recomputeManualDose(reason = 'manual_update', options = {}) {
         // repainting the scene with an older drag.
         manualPlanningState.doseRecomputeSequence += 1;
         manualPlanningState.doseRecomputeQueued = true;
-        _setManualDoseProgress('queued', 'A newer needle position is queued; finishing the current calculation first...');
+        _setManualDoseProgress('queued', _manualText(
+            '检测到更新的针道位置；当前计算完成后将处理最新位置…',
+            'A newer needle position is queued; finishing the current calculation first...',
+        ));
         return manualPlanningState._doseRecomputePromise || null;
     }
     manualPlanningState.doseRecomputeRunning = true;
@@ -590,6 +885,54 @@ async function recomputeManualDose(reason = 'manual_update', options = {}) {
     return manualPlanningState._doseRecomputePromise;
 }
 
+function cancelScheduledManualDoseRecompute() {
+    if (manualPlanningState.doseRecomputeTimer) {
+        clearTimeout(manualPlanningState.doseRecomputeTimer);
+        manualPlanningState.doseRecomputeTimer = null;
+    }
+    manualPlanningState.doseRecomputeOwnerSessionId = null;
+    manualPlanningState.doseRecomputeScheduledPromise = null;
+}
+window.cancelScheduledManualDoseRecompute = cancelScheduledManualDoseRecompute;
+
+function scheduleManualDoseRecompute(reason = 'manual_update', delayMs = 800) {
+    cancelScheduledManualDoseRecompute();
+    const ownerSessionId = String(_activeApiSessionId() || '');
+    manualPlanningState.doseRecomputeOwnerSessionId = ownerSessionId;
+    _setManualDoseProgress('queued', _manualText(
+        '已保存修改，稍后统一更新剂量和 DVH…',
+        'Changes saved; dose and DVH will update shortly...',
+    ));
+    manualPlanningState.doseRecomputeScheduledPromise = new Promise(resolve => {
+        manualPlanningState.doseRecomputeTimer = setTimeout(async () => {
+            manualPlanningState.doseRecomputeTimer = null;
+            if (ownerSessionId !== String(_activeApiSessionId() || '')) {
+                manualPlanningState.doseRecomputeOwnerSessionId = null;
+                resolve(null);
+                return;
+            }
+            try {
+                resolve(await recomputeManualDose(reason));
+            } catch (error) {
+                _setManualDoseProgress('error', _manualText(
+                    `剂量更新失败：${error.message}`,
+                    `Dose update failed: ${error.message}`,
+                ));
+                addChat('error', _manualText(
+                    `剂量更新失败：${error.message}`,
+                    `Dose update failed: ${error.message}`,
+                ));
+                resolve(null);
+            } finally {
+                manualPlanningState.doseRecomputeOwnerSessionId = null;
+                manualPlanningState.doseRecomputeScheduledPromise = null;
+            }
+        }, Math.max(0, Number(delayMs) || 0));
+    });
+    return manualPlanningState.doseRecomputeScheduledPromise;
+}
+window.scheduleManualDoseRecompute = scheduleManualDoseRecompute;
+
 function _projectPointOntoNeedle(position, needle) {
     const points = (needle?.points || []).map(point => _vec3Array(point));
     if (points.length < 2) return _vec3Array(position);
@@ -601,8 +944,16 @@ function _projectPointOntoNeedle(position, needle) {
         const end = new THREE.Vector3(...points[index + 1]);
         const segment = new THREE.Vector3().subVectors(end, start);
         const lengthSquared = segment.lengthSq();
+        const segmentLength = Math.sqrt(lengthSquared);
+        const seedLength = Math.max(
+            0.1,
+            Number(document.getElementById('seedLength')?.value || needle.seed_length || 4.5),
+        );
+        const endClearance = segmentLength > 1e-8
+            ? Math.min(0.49, (seedLength / 2) / segmentLength)
+            : 0;
         const parameter = lengthSquared > 1e-8
-            ? Math.max(0, Math.min(1, raw.clone().sub(start).dot(segment) / lengthSquared))
+            ? Math.max(endClearance, Math.min(1 - endClearance, raw.clone().sub(start).dot(segment) / lengthSquared))
             : 0;
         const projected = start.clone().add(segment.multiplyScalar(parameter));
         const distance = projected.distanceToSquared(raw);
@@ -641,10 +992,24 @@ async function onManualSeedEdited(seedId, position, rollbackSeeds = null, option
         dose_recomputed: options.skipDoseRecompute !== true,
     });
     await _commitManualSeeds('move', rollback);
-    // The operator may choose not to pay the AI dose recompute cost after a
-    // seed slide; the geometry is already committed either way.
+    // The geometry is committed to a child Draft Planning first.  Recompute
+    // is an explicit operator decision, so dragging a seed never silently
+    // launches an expensive AI job or changes the visible plan underneath
+    // the user.
     if (options.skipDoseRecompute !== true) {
-        await recomputeManualDose('seed_drag');
+        const shouldReplan = await _confirmSeedReplan(seedId);
+        if (shouldReplan) {
+            await recomputeManualDose('seed_drag');
+        } else {
+            const message = typeof window._t === 'function'
+                ? window._t(
+                    `已保存 ${seedId} 的位置，尚未重新计算剂量。`,
+                    `Saved ${seedId} position. Dose recalculation was not started.`,
+                )
+                : `Saved ${seedId} position. Dose recalculation was not started.`;
+            addChat('system', message);
+            _setManualDoseProgress('done', message);
+        }
     }
 }
 
@@ -654,6 +1019,7 @@ async function onManualNeedleHandleEdited(handle) {
     const needle = dataTreeState.planning.needles.find(n => n.id === needleId);
     if (!needle || pointIndex === undefined) return;
     const previousNeedles = _manualDoseBaselineNeedles();
+    const previousSnapshot = _cloneManualPlanningSnapshot();
     needle.points[pointIndex] = [handle.position.x, handle.position.y, handle.position.z];
     // Point 0 is the intrabody endpoint. Keep it physically attached to the
     // deepest seed by moving that seed with the endpoint; otherwise a valid
@@ -665,7 +1031,33 @@ async function onManualNeedleHandleEdited(handle) {
     renderDataTree();
     reportUIEvent('manual.needle.drag', needleId, { point_index: pointIndex, points: needle.points });
     const hasSeeds = dataTreeState.planning.seeds.some(s => s.trajectory_id === needle.trajectory_id);
-    if (!hasSeeds) return;
+    if (!hasSeeds) {
+        try {
+            await _persistNeedleGeometryOnly({
+                reason: 'needle_drag',
+                rollbackNeedles: previousNeedles,
+                rollbackSnapshot: previousSnapshot,
+            });
+            _setManualDoseProgress('done', _manualText(
+                `已保存 ${needleId} 的针道位置；添加粒子后可重新计算剂量。`,
+                `${needleId} position saved; add seeds before recalculating dose.`,
+            ));
+            addChat('system', _manualText(
+                `已保存 ${needleId} 的针道位置。当前没有粒子，因此暂不启动剂量重算。`,
+                `${needleId} position saved. Dose recomputation is deferred until seeds are present.`,
+            ));
+        } catch (error) {
+            _setManualDoseProgress('error', _manualText(
+                `保存 ${needleId} 失败：${error.message}`,
+                `Could not save ${needleId}: ${error.message}`,
+            ));
+            addChat('error', _manualText(
+                `针道位置保存失败，已恢复上一次规划。${error.message}`,
+                `Needle position was not saved; the previous plan was restored. ${error.message}`,
+            ));
+        }
+        return true;
+    }
 
     // Endpoint dragging is a geometry edit, not consent to launch a costly
     // AI replan. Coalesce repeated drags while the prompt is open and use the
@@ -677,7 +1069,10 @@ async function onManualNeedleHandleEdited(handle) {
         if (manualPlanningState.needleReplanPrompt !== prompt) return false;
         manualPlanningState.needleReplanPrompt = null;
         if (!shouldReplan) {
-            await _persistNeedleGeometryOnly();
+            await _persistNeedleGeometryOnly({
+                rollbackNeedles: previousNeedles,
+                rollbackSnapshot: previousSnapshot,
+            });
             const kept = typeof window._t === 'function'
                 ? window._t(`已保留 ${needleId} 的当前位置，未触发重新规划。`, `Needle ${needleId} position kept. Replanning skipped.`)
                 : `Needle ${needleId} position kept. Replanning skipped.`;
@@ -687,6 +1082,7 @@ async function onManualNeedleHandleEdited(handle) {
         await recomputeManualDose('needle_drag', {
             reprojectSeeds: true,
             previousNeedles: prompt.previousNeedles,
+            previousSnapshot,
         });
         return true;
     })().catch(error => {
@@ -701,7 +1097,7 @@ async function onManualNeedleHandleEdited(handle) {
     return prompt.promise;
 }
 
-async function _refreshManualDoseViews(data, wasDoseTextureEnabled) {
+async function _refreshManualDoseViews(data, wasDoseTextureEnabled, options = {}) {
     const metrics = data?.metrics || {};
     manualPlanningState.planningId = data?.planning_id || manualPlanningState.planningId;
     manualPlanningState.planningVersion = Number(
@@ -709,8 +1105,14 @@ async function _refreshManualDoseViews(data, wasDoseTextureEnabled) {
     );
     manualPlanningState.artifactStatus = { ...(data?.artifact_status || manualPlanningState.artifactStatus || {}) };
     dataTreeState.planning.id = manualPlanningState.planningId;
+    dataTreeState.planning.activePlanningId = manualPlanningState.planningId;
+    dataTreeState.planning.status = data?.planning_status || 'completed';
     dataTreeState.planning.version = manualPlanningState.planningVersion;
+    dataTreeState.planning.dataVersion = manualPlanningState.planningVersion;
     dataTreeState.planning.artifactStatus = { ...manualPlanningState.artifactStatus };
+    if (typeof window.refreshPlanningRunCatalog === 'function') {
+        void window.refreshPlanningRunCatalog({ sessionId: _activeApiSessionId(), silent: true });
+    }
     if (typeof updateMetrics === 'function') updateMetrics(metrics);
     if (typeof updateOARTable === 'function') updateOARTable(metrics.oar_metrics || {});
     if (typeof updateSeeds === 'function' && Array.isArray(data?.seeds)) updateSeeds(data.seeds);
@@ -734,19 +1136,58 @@ async function _refreshManualDoseViews(data, wasDoseTextureEnabled) {
     }
     if (typeof renderDataTree === 'function') renderDataTree();
 
-    // Dose overlay loading fetches only metadata and redraws the current
-    // slices; it does not reconstruct OAR/CTV meshes.
-    state.doseOverlay = null;
-    if (typeof loadDoseOverlay === 'function') await loadDoseOverlay();
-    if (typeof loadAllSlices === 'function' && state.ctLoaded) await loadAllSlices();
-
-    if (wasDoseTextureEnabled && typeof setDoseTextureMode === 'function') {
-        try { await setDoseTextureMode(true, { silent: true }); } catch (error) {
-            console.warn('[manual dose] dose texture refresh failed:', error);
-        }
-    }
-    if (typeof forceRender3DViewer === 'function') forceRender3DViewer();
     if (typeof scheduleWorkspaceSave === 'function') scheduleWorkspaceSave('manual.dose.incremental');
+
+    // Dose overlay loading fetches only metadata and redraws the current
+    // slices; it does not reconstruct OAR/CTV meshes.  It can nevertheless
+    // involve several network/render passes on a cold workspace.  Keep it out
+    // of the mutation response path, while fencing every repaint to the case
+    // that produced this dose result.
+    const ownerSessionId = String(_activeApiSessionId() || '');
+    const refreshViewer = async () => {
+        if (ownerSessionId !== String(_activeApiSessionId() || '')) return;
+        state.doseOverlay = null;
+        if (typeof invalidateDoseOverlayRenderCache === 'function') {
+            invalidateDoseOverlayRenderCache();
+        }
+        if (typeof updateDoseColorbars === 'function') updateDoseColorbars(false);
+        if (typeof refreshAllViewerCanvases === 'function') {
+            refreshAllViewerCanvases('manual-dose-refresh-start');
+        }
+        if (typeof loadDoseOverlay === 'function') await loadDoseOverlay();
+        if (ownerSessionId !== String(_activeApiSessionId() || '')) return;
+        if (typeof loadAllSlices === 'function' && state.ctLoaded) await loadAllSlices();
+
+        if (wasDoseTextureEnabled && typeof setDoseTextureMode === 'function') {
+            try { await setDoseTextureMode(true, { silent: true }); } catch (error) {
+                console.warn('[manual dose] dose texture refresh failed:', error);
+            }
+        }
+        if (ownerSessionId === String(_activeApiSessionId() || '')
+            && typeof forceRender3DViewer === 'function') {
+            forceRender3DViewer();
+        }
+    };
+
+    if (options.background) {
+        const refreshPromise = Promise.resolve()
+            .then(refreshViewer)
+            .catch(error => {
+                if (ownerSessionId === String(_activeApiSessionId() || '')) {
+                    console.warn('[manual dose] background viewer refresh failed:', error);
+                    addChat('error', _manualText(
+                        `鍓傞噺宸蹭繚瀛橈紝浣嗘煋鑹插櫒鍒锋柊澶辫触锛?{error.message}`,
+                        `Dose was saved, but the viewer refresh failed: ${error.message}`,
+                    ));
+                }
+                return null;
+            });
+        // Keep a diagnostic handle without making it part of the request
+        // lifecycle or allowing a later Session to await an old case.
+        manualPlanningState.backgroundDoseViewerRefresh = refreshPromise;
+        return;
+    }
+    await refreshViewer();
 }
 
 function _manualUiPosition(rawPosition) {
@@ -786,6 +1227,88 @@ async function moveManualSeedFromUi(value) {
 
     // Reuse the manual drag pathway so chat commands preserve the established 3D world-mm coordinates.
     return onManualSeedEdited(seedId, { x: position[0], y: position[1], z: position[2] });
+}
+
+function clearTrainingMonitorLocal(ownerSessionId = null, ownerRunId = null) {
+    if (typeof trainingMonitorState === 'undefined') return false;
+    const sessionMatches = !ownerSessionId || String(trainingMonitorState.sessionId || '') === String(ownerSessionId);
+    const runMatches = !ownerRunId || String(trainingMonitorState.runId || '') === String(ownerRunId);
+    if (!sessionMatches || !runMatches) return false;
+    if (typeof _clearMonitorFeedbackTimer === 'function') _clearMonitorFeedbackTimer();
+    trainingMonitorState.active = false;
+    trainingMonitorState.phase = 'inactive';
+    trainingMonitorState.runId = null;
+    trainingMonitorState.goal = '';
+    trainingMonitorState.pendingFeedback = [];
+    trainingMonitorState.feedbackTimer = null;
+    trainingMonitorState.screenshotGalleryContext = null;
+    trainingMonitorState.lastFeedbackAt = 0;
+    trainingMonitorState.lastScreenshotAt = 0;
+    if (typeof window.setTrainingMonitorPhase === 'function') window.setTrainingMonitorPhase('inactive');
+    else if (typeof window.setMonitorPresentation === 'function') window.setMonitorPresentation('inactive');
+    else document.body.classList.remove('monitor-active');
+    return true;
+}
+
+function _monitorRequestHeaders() {
+    const headers = { 'Content-Type': 'application/json' };
+    const csrfToken = window.brachybotAuth?.csrfToken;
+    if (csrfToken) headers['X-CSRF-Token'] = csrfToken;
+    return headers;
+}
+
+// Close a case-owned monitor without creating a chat error. This is used by
+// Session transitions and pagehide, where the browser cannot wait for a final
+// advice report. The backend endpoint is idempotent, so an old run after a
+// server restart is a normal already-closed outcome.
+function releaseTrainingMonitorForSession(sessionId, reason = 'session_switch', options = {}) {
+    const sid = String(sessionId || '').trim();
+    if (!sid) return Promise.resolve({ success: true, already_stopped: true });
+    const localOwns = typeof trainingMonitorState !== 'undefined'
+        && String(trainingMonitorState.sessionId || '') === sid;
+    const runId = String(options.runId || (localOwns ? trainingMonitorState.runId || '' : '')).trim();
+    if (!options.skipLocal) clearTrainingMonitorLocal(sid, runId || null);
+    if (!runId && !options.forceRequest) return Promise.resolve({ success: true, already_stopped: true });
+    const language = options.language
+        || (typeof window.monitorConversationLanguage === 'function'
+            ? window.monitorConversationLanguage(sid)
+            : (window._i18nLang || 'en'));
+    const body = JSON.stringify({
+        session_id: sid,
+        monitor_run_id: runId || null,
+        language,
+        auto_close: true,
+        silent: true,
+        reason,
+    });
+    try {
+        return fetch(API + '/training/stop', {
+            method: 'POST',
+            headers: _monitorRequestHeaders(),
+            body,
+            keepalive: options.keepAlive !== false,
+        }).then(async response => {
+            const data = await response.json().catch(() => ({}));
+            return response.ok && data?.success !== false
+                ? data
+                : { success: false, error: data?.error || `HTTP ${response.status}` };
+        }).catch(error => ({ success: false, localOnly: true, error: error?.message || 'monitor close deferred' }));
+    } catch (error) {
+        return Promise.resolve({ success: false, localOnly: true, error: error?.message || 'monitor close deferred' });
+    }
+}
+window.clearTrainingMonitorLocal = clearTrainingMonitorLocal;
+window.releaseTrainingMonitorForSession = releaseTrainingMonitorForSession;
+
+if (!window.__brachybotMonitorPageLifecycleHook) {
+    window.__brachybotMonitorPageLifecycleHook = true;
+    window.addEventListener('pagehide', () => {
+        const sid = typeof _activeApiSessionId === 'function' ? _activeApiSessionId() : '';
+        if (!sid || typeof trainingMonitorState === 'undefined' || !trainingMonitorState.runId) return;
+        // keepalive lets the close request reach the server during refresh or
+        // tab/window close; no UI work or error message is emitted here.
+        void releaseTrainingMonitorForSession(sid, 'pagehide', { keepAlive: true });
+    });
 }
 
 async function startTrainingMode(goal = 'Monitor planning workflow') {
@@ -831,7 +1354,7 @@ async function startTrainingMode(goal = 'Monitor planning workflow') {
     try {
         const res = await fetch(API + '/training/start', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: _monitorRequestHeaders(),
             body: JSON.stringify({
                 session_id: trainingMonitorState.sessionId,
                 goal,
@@ -845,7 +1368,14 @@ async function startTrainingMode(goal = 'Monitor planning workflow') {
         // on the global monitor presentation for whichever case is now open.
         if (trainingMonitorState.runId !== runId
             || trainingMonitorState.sessionId !== startSessionId
-            || _activeApiSessionId() !== startSessionId) return data;
+            || _activeApiSessionId() !== startSessionId) {
+            void releaseTrainingMonitorForSession(startSessionId, 'late_start_after_session_leave', {
+                runId,
+                skipLocal: true,
+                forceRequest: true,
+            });
+            return data;
+        }
         trainingMonitorState.runId = data.monitor_run_id || runId;
         if (typeof window.setTrainingMonitorPhase === 'function') {
             window.setTrainingMonitorPhase('active');
@@ -914,11 +1444,17 @@ async function stopTrainingMode() {
     }
     // In-flight checkpoint callbacks see the inactive flag and stop before
     // appending a late screenshot. Release the context so the next run starts
-    // cleanly.
+    // cleanly. Bound the request so cold-case hydration cannot leave the
+    // entire UI in monitor-stopping indefinitely.
+    const stopController = typeof AbortController === 'function'
+        ? new AbortController()
+        : null;
+    const stopTimeout = setTimeout(() => stopController?.abort(), 8000);
     try {
         const res = await fetch(API + '/training/stop', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: _monitorRequestHeaders(),
+            signal: stopController?.signal,
             body: JSON.stringify({
                 session_id: stopSessionId,
                 language,
@@ -926,23 +1462,22 @@ async function stopTrainingMode() {
             }),
         });
         const data = await res.json().catch(() => null);
-        if (!res.ok || !data || !data.success) throw new Error((data && data.error) || `HTTP ${res.status}`);
+        const serverError = String(data?.error || '').toLowerCase();
+        const reportsClosedRun = /no longer active|not active|already stopped|already closed|run not found/.test(serverError);
+        const alreadyClosed = !!(data && (
+            data.already_stopped || data.no_active_run || data.run_mismatch || reportsClosedRun
+        ))
+            && (res.ok || res.status === 404 || res.status === 409);
+        if ((!res.ok && !alreadyClosed) || !data || (!data.success && !alreadyClosed)) {
+            throw new Error((data && data.error) || `HTTP ${res.status}`);
+        }
         const ownsRun = trainingMonitorState.runId === stopRunId
             && trainingMonitorState.sessionId === stopSessionId;
-        if (ownsRun) {
-            if (typeof window.setTrainingMonitorPhase === 'function') {
-                window.setTrainingMonitorPhase('inactive');
-            } else if (typeof window.setMonitorPresentation === 'function') {
-                trainingMonitorState.active = false;
-                window.setMonitorPresentation('inactive');
-            } else {
-                trainingMonitorState.active = false;
-                document.body.classList.remove('monitor-active');
-            }
-        }
+        const screenshotContext = trainingMonitorState.screenshotGalleryContext;
+        if (ownsRun) clearTrainingMonitorLocal(stopSessionId, stopRunId);
+        if (alreadyClosed) return data;
         const localizedAdvice = data.localized_advice || data.advice;
         const fallbackPrefix = language === 'zh' ? '规划监测总结' : 'Planning monitoring summary';
-        const screenshotContext = trainingMonitorState.screenshotGalleryContext;
         addChat(
             'bot-response',
             data.summary || _formatAdviceReport(localizedAdvice, fallbackPrefix, language),
@@ -969,23 +1504,42 @@ async function stopTrainingMode() {
         }
         return data;
     } catch (e) {
-        // The stop request was not acknowledged. Keep the monitor visibly
-        // active because the backend may still be collecting this run.
-        if (trainingMonitorState.runId === stopRunId
+        // The stop request was not acknowledged. Close the local run so a
+        // transport failure cannot leave a permanent monitor spinner.
+        const ownsRun = trainingMonitorState.runId === stopRunId
             && trainingMonitorState.sessionId === stopSessionId
-            && _activeApiSessionId() === stopSessionId) {
+            && _activeApiSessionId() === stopSessionId;
+        if (ownsRun) {
             if (typeof window.setTrainingMonitorPhase === 'function') {
-                window.setTrainingMonitorPhase('active');
+                window.setTrainingMonitorPhase('inactive');
             } else {
-                trainingMonitorState.active = true;
-                window.setMonitorPresentation?.('active');
+                trainingMonitorState.active = false;
+                window.setMonitorPresentation?.('inactive');
             }
+            trainingMonitorState.runId = null;
+            trainingMonitorState.screenshotGalleryContext = null;
+            trainingMonitorState.lastFeedbackAt = 0;
+            trainingMonitorState.lastScreenshotAt = 0;
+            if (typeof _clearMonitorFeedbackTimer === 'function') _clearMonitorFeedbackTimer();
+            trainingMonitorState.pendingFeedback = [];
         }
+        const timedOut = e?.name === 'AbortError';
         const failed = language === 'zh'
-            ? `监测模式停止失败：${e.message}`
-            : `Monitor mode failed to stop: ${e.message}`;
-        addChat('error', failed, true, Date.now(), false, stopSessionId);
-        return null;
+            ? (timedOut
+                ? '监测已在本地结束，但服务器总结请求超时；本轮记录将在下次同步时恢复。'
+                : `监测结束请求未确认，已退出本地监测状态：${e.message}`)
+            : (timedOut
+                ? 'Monitoring ended locally, but the server summary request timed out; the run will be reconciled on the next sync.'
+                : `Monitoring ended locally, but the server did not acknowledge the stop request: ${e.message}`);
+        addChat('error', failed, true, Date.now(), false, stopSessionId, {
+            requestId: `monitor-${stopRunId}`,
+            messageId: `assistant-monitor-${stopRunId}-stop-error`,
+            messageKind: 'monitor_status',
+            responseLanguage: language,
+        });
+        return { success: false, localOnly: true, timedOut, error: e?.message || 'stop request failed' };
+    } finally {
+        clearTimeout(stopTimeout);
     }
 }
 
@@ -1123,8 +1677,11 @@ function init3DScene() {
     scene3D.camera.position.set(0, 0, 300);
 
     scene3D.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
-    scene3D.renderer.setSize(w, h);
-    scene3D.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    scene3D.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    scene3D.renderer.setSize(w, h, false);
+    scene3D.renderer.domElement.style.width = '100%';
+    scene3D.renderer.domElement.style.height = '100%';
+    scene3D.renderer.domElement.style.display = 'block';
     scene3D.renderer.shadowMap.enabled = false;
     scene3D.renderer.setClearColor(0x000000, 0);
     canvas.appendChild(scene3D.renderer.domElement);
@@ -1267,6 +1824,38 @@ function init3DScene() {
     let renderFrameId = 0;
     let pendingFrames = 0;
     let drawingFrame = false;
+    let viewer3DSize = { cssWidth: 0, cssHeight: 0, dpr: 0, pixelWidth: 0, pixelHeight: 0 };
+
+    // Keep CSS layout pixels, camera aspect, and WebGL drawing-buffer pixels
+    // in one place. Mixing these coordinate systems after a resize caused
+    // the zoom-out crop/stretch bug on high-DPI displays.
+    function syncViewer3DSize() {
+        if (!scene3D.renderer || !scene3D.camera || !canvas) return null;
+        const rect = typeof canvas.getBoundingClientRect === 'function'
+            ? canvas.getBoundingClientRect() : null;
+        const cssWidth = Math.max(1, Math.floor(rect?.width || canvas.clientWidth || 0));
+        const cssHeight = Math.max(1, Math.floor(rect?.height || canvas.clientHeight || 0));
+        if (cssWidth < 10 || cssHeight < 10) return null;
+        const dpr = Math.min(window.devicePixelRatio || 1, 2);
+        const pixelWidth = Math.max(1, Math.round(cssWidth * dpr));
+        const pixelHeight = Math.max(1, Math.round(cssHeight * dpr));
+        const changed = viewer3DSize.cssWidth !== cssWidth
+            || viewer3DSize.cssHeight !== cssHeight
+            || Math.abs(viewer3DSize.dpr - dpr) > 1e-6
+            || scene3D.renderer.domElement.width !== pixelWidth
+            || scene3D.renderer.domElement.height !== pixelHeight;
+        if (changed) {
+            scene3D.renderer.setPixelRatio(dpr);
+            scene3D.renderer.setSize(cssWidth, cssHeight, false);
+            scene3D.camera.aspect = cssWidth / cssHeight;
+            scene3D.camera.updateProjectionMatrix();
+            viewer3DSize = { cssWidth, cssHeight, dpr, pixelWidth, pixelHeight };
+        }
+        scene3D.renderer.domElement.style.width = '100%';
+        scene3D.renderer.domElement.style.height = '100%';
+        scene3D.renderer.domElement.style.display = 'block';
+        return { ...viewer3DSize, changed };
+    }
 
     function requestRender(frameBudget = 2) {
         pendingFrames = Math.max(pendingFrames, Math.max(1, frameBudget));
@@ -1279,38 +1868,49 @@ function init3DScene() {
         renderFrameId = 0;
         if (document.hidden || !scene3D.renderer || scene3D.contextLost) return;
         drawingFrame = true;
+
+        // Resize and projection must be current before OrbitControls consumes
+        // pointer deltas. A stale layout size changes rotation speed after a
+        // panel resize, browser zoom, or fullscreen transition.
+        const geometry = syncViewer3DSize();
+        if (!geometry) {
+            drawingFrame = false;
+            if (pendingFrames > 0) setTimeout(() => requestRender(1), 50);
+            return;
+        }
         const controlsChanged = scene3D.controls.update();
 
-        // Sync axes orientation with main camera
-        axesGroup.rotation.copy(scene3D.camera.rotation);
+        // Quaternion copy avoids Euler angle wrapping at +/- PI in the axes
+        // helper, which otherwise makes the orientation indicator jump.
+        axesGroup.quaternion.copy(scene3D.camera.quaternion);
 
         // BUG FIX 2026-06-17 (3D viewer empty after planning):
         // If the canvas was 0×0 at init time (panel not visible),
         // the renderer viewport is still 0×0 even after the panel
         // becomes visible. Detect dimension changes and re-size.
-        const curW = canvas.clientWidth || 400;
-        const curH = canvas.clientHeight || 300;
-        if (scene3D.renderer && (scene3D.renderer.domElement.width !== curW * Math.min(window.devicePixelRatio, 2)
-            || scene3D.renderer.domElement.height !== curH * Math.min(window.devicePixelRatio, 2))) {
-            scene3D.camera.aspect = curW / curH;
-            scene3D.camera.updateProjectionMatrix();
-            scene3D.renderer.setSize(curW, curH);
-        }
+        const { pixelWidth, pixelHeight, dpr, cssWidth, cssHeight } = geometry;
 
         // Render main scene
+        scene3D.renderer.setViewport(0, 0, pixelWidth, pixelHeight);
+        scene3D.renderer.setScissor(0, 0, pixelWidth, pixelHeight);
+        scene3D.renderer.setScissorTest(false);
+        scene3D.renderer.autoClear = true;
         scene3D.renderer.render(scene3D.scene, scene3D.camera);
 
         // Render axes in bottom-left corner (transparent background)
-        const w = canvas.clientWidth, h = canvas.clientHeight;
-        const size = Math.min(100, Math.min(w, h) * 0.2);
-        scene3D.renderer.setViewport(8, 8, size, size);
-        scene3D.renderer.setScissor(8, 8, size, size);
+        const axisSizeCss = Math.min(100, Math.min(cssWidth, cssHeight) * 0.2);
+        const axisX = Math.round(8 * dpr);
+        const axisY = Math.round(8 * dpr);
+        const axisSize = Math.max(1, Math.round(axisSizeCss * dpr));
+        scene3D.renderer.setViewport(axisX, axisY, axisSize, axisSize);
+        scene3D.renderer.setScissor(axisX, axisY, axisSize, axisSize);
         scene3D.renderer.setScissorTest(true);
         scene3D.renderer.autoClear = false;
         scene3D.renderer.render(axesScene, axesCamera);
         scene3D.renderer.autoClear = true;
         scene3D.renderer.setScissorTest(false);
-        scene3D.renderer.setViewport(0, 0, w, h);
+        scene3D.renderer.setViewport(0, 0, pixelWidth, pixelHeight);
+        scene3D.renderer.setScissor(0, 0, pixelWidth, pixelHeight);
 
         drawingFrame = false;
         pendingFrames = Math.max(0, pendingFrames - 1);
@@ -1318,16 +1918,10 @@ function init3DScene() {
     }
 
     function resizeViewer3D() {
-        if (!scene3D.renderer || !scene3D.camera) return false;
-        const rect = canvas.getBoundingClientRect();
-        const newW = Math.floor(rect.width || canvas.clientWidth);
-        const newH = Math.floor(rect.height || canvas.clientHeight);
-        if (newW < 10 || newH < 10) return false;
-        scene3D.camera.aspect = newW / newH;
-        scene3D.camera.updateProjectionMatrix();
-        scene3D.renderer.setSize(newW, newH, false);
+        const geometry = syncViewer3DSize();
+        if (!geometry) return false;
         requestRender(2);
-        return true;
+        return !!geometry;
     }
 
     // Called by layout/fullscreen restoration after the DOM has settled. It
@@ -2102,6 +2696,38 @@ function addMeshToScene(meshData) {
     if (scene3D.requestRender) scene3D.requestRender(4);
 }
 
+// Single entry point for every non-pointer camera change. Keeping position,
+// target, up, quaternion, and projection in one transaction prevents stale
+// OrbitControls deltas from being applied to a newly focused scene.
+function sync3DCameraPose({ position, target, quaternion, up, near, far, aspect, fov, zoom, saveState = false } = {}) {
+    if (typeof scene3D === 'undefined' || !scene3D?.camera || !scene3D?.controls) return false;
+    const camera = scene3D.camera;
+    const controls = scene3D.controls;
+    if (target) controls.target.copy(target);
+    if (position) camera.position.copy(position);
+    if (up) camera.up.copy(up).normalize();
+    if (quaternion) {
+        camera.quaternion.copy(quaternion).normalize();
+    } else if (position && target) {
+        // This is the only place where a target-facing quaternion is built.
+        // Pointer rotation never calls lookAt, so crossing a pole remains
+        // continuous instead of choosing the opposite roll.
+        camera.lookAt(controls.target);
+    }
+    if (Number.isFinite(near)) camera.near = Math.max(0.001, Number(near));
+    if (Number.isFinite(far)) camera.far = Math.max(camera.near + 1, Number(far));
+    if (Number.isFinite(aspect) && aspect > 0) camera.aspect = Number(aspect);
+    if (Number.isFinite(fov) && camera.isPerspectiveCamera) camera.fov = Number(fov);
+    if (Number.isFinite(zoom) && camera.zoom !== undefined) camera.zoom = Math.max(0.001, Number(zoom));
+    camera.updateProjectionMatrix();
+    if (typeof controls.syncExternalState === 'function') controls.syncExternalState();
+    else controls.update();
+    if (saveState && typeof controls.saveState === 'function') controls.saveState();
+    scene3D.requestRender?.(8);
+    return true;
+}
+window.sync3DCameraPose = sync3DCameraPose;
+
 function fitCameraToScene() {
     if (!scene3D.camera || !scene3D.controls) return;
     const box = new THREE.Box3();
@@ -2121,10 +2747,14 @@ function fitCameraToScene() {
     if (scene3D.skinMesh && scene3D.skinMesh.visible !== false) box.expandByObject(scene3D.skinMesh);
     if (box.isEmpty()) {
         // Default view for empty scene
-        scene3D.camera.position.set(200, 150, 200);
-        scene3D.controls.target.set(0, 0, 0);
-        scene3D.controls.update();
-        if (scene3D.requestRender) scene3D.requestRender(4);
+        sync3DCameraPose({
+            position: new THREE.Vector3(200, 150, 200),
+            target: new THREE.Vector3(0, 0, 0),
+            up: new THREE.Vector3(0, 1, 0),
+            near: 0.1,
+            far: 5000,
+            saveState: true,
+        });
         return;
     }
     const center = new THREE.Vector3();
@@ -2134,13 +2764,14 @@ function fitCameraToScene() {
     const maxDim = Math.max(size.x, size.y, size.z) || 1;
     const dist = maxDim * 1.8;
     // 3D Slicer-like default view angle (slightly from top-right)
-    scene3D.controls.target.copy(center);
-    scene3D.camera.position.set(center.x + dist * 0.5, center.y + dist * 0.5, center.z + dist * 0.5);
-    scene3D.camera.near = dist * 0.005;
-    scene3D.camera.far = dist * 20;
-    scene3D.camera.updateProjectionMatrix();
-    scene3D.controls.update();
-    if (scene3D.requestRender) scene3D.requestRender(8);
+    sync3DCameraPose({
+        position: new THREE.Vector3(center.x + dist * 0.5, center.y + dist * 0.5, center.z + dist * 0.5),
+        target: center,
+        up: new THREE.Vector3(0, 1, 0),
+        near: dist * 0.005,
+        far: dist * 20,
+        saveState: true,
+    });
 }
 
 // Temporarily frame a small set of seeds for a monitor evidence screenshot.
@@ -2162,9 +2793,12 @@ function focusPlanningSeedsForScreenshot(seedIds) {
     const saved = {
         position: scene3D.camera.position.clone(),
         quaternion: scene3D.camera.quaternion.clone(),
+        up: scene3D.camera.up.clone(),
         target: scene3D.controls.target.clone(),
         near: scene3D.camera.near,
         far: scene3D.camera.far,
+        aspect: scene3D.camera.aspect,
+        fov: scene3D.camera.fov,
         zoom: scene3D.camera.zoom,
         meshStates: meshes.map(mesh => {
             const meshState = { mesh, scale: mesh.scale.clone(), materials: [] };
@@ -2214,22 +2848,18 @@ function focusPlanningSeedsForScreenshot(seedIds) {
     if (viewDirection.lengthSq() < 1e-8) viewDirection.set(0, 0, 1);
     viewDirection.normalize();
     const distance = maxDim * 4.0;
-    scene3D.camera.position.copy(center).add(viewDirection.multiplyScalar(distance));
-    scene3D.camera.near = Math.max(0.05, distance / 1000);
-    scene3D.camera.far = Math.max(saved.far, distance * 20);
-    scene3D.camera.lookAt(center);
-    scene3D.controls.target.copy(center);
-    scene3D.camera.updateProjectionMatrix();
-    scene3D.controls.update();
-    if (scene3D.requestRender) scene3D.requestRender(8);
+    sync3DCameraPose({
+        position: center.clone().add(viewDirection.multiplyScalar(distance)),
+        target: center,
+        up: new THREE.Vector3(0, 1, 0),
+        near: Math.max(0.05, distance / 1000),
+        far: Math.max(saved.far, distance * 20),
+        aspect: saved.aspect,
+        fov: saved.fov,
+        zoom: saved.zoom,
+    });
 
     return () => {
-        scene3D.camera.position.copy(saved.position);
-        scene3D.camera.quaternion.copy(saved.quaternion);
-        scene3D.camera.near = saved.near;
-        scene3D.camera.far = saved.far;
-        if (typeof saved.zoom === 'number') scene3D.camera.zoom = saved.zoom;
-        scene3D.controls.target.copy(saved.target);
         saved.meshStates.forEach(meshState => {
             meshState.mesh.scale.copy(meshState.scale);
             meshState.materials.forEach(savedMaterial => {
@@ -2241,9 +2871,17 @@ function focusPlanningSeedsForScreenshot(seedIds) {
                 savedMaterial.material.needsUpdate = true;
             });
         });
-        scene3D.camera.updateProjectionMatrix();
-        scene3D.controls.update();
-        if (scene3D.requestRender) scene3D.requestRender(8);
+        sync3DCameraPose({
+            position: saved.position,
+            target: saved.target,
+            quaternion: saved.quaternion,
+            up: saved.up,
+            near: saved.near,
+            far: saved.far,
+            aspect: saved.aspect,
+            fov: saved.fov,
+            zoom: saved.zoom,
+        });
     };
 }
 window.focusPlanningSeedsForScreenshot = focusPlanningSeedsForScreenshot;
@@ -2276,9 +2914,12 @@ function focusPlanningObjectsForScreenshot(objectIds, options = {}) {
     const saved = {
         position: scene3D.camera.position.clone(),
         quaternion: scene3D.camera.quaternion.clone(),
+        up: scene3D.camera.up.clone(),
         target: scene3D.controls.target.clone(),
         near: scene3D.camera.near,
         far: scene3D.camera.far,
+        aspect: scene3D.camera.aspect,
+        fov: scene3D.camera.fov,
         zoom: scene3D.camera.zoom,
         meshes: entries.map(([id, mesh]) => ({
             id,
@@ -2331,22 +2972,18 @@ function focusPlanningObjectsForScreenshot(objectIds, options = {}) {
     viewDirection.normalize();
     const padding = Math.max(0.1, Number(options.padding || 0.35));
     const distance = maxDim * (2.8 + padding * 2.5);
-    scene3D.camera.position.copy(center).add(viewDirection.multiplyScalar(distance));
-    scene3D.camera.near = Math.max(0.05, distance / 1000);
-    scene3D.camera.far = Math.max(saved.far, distance * 20);
-    scene3D.camera.lookAt(center);
-    scene3D.controls.target.copy(center);
-    scene3D.camera.updateProjectionMatrix();
-    scene3D.controls.update();
-    scene3D.requestRender?.(8);
+    sync3DCameraPose({
+        position: center.clone().add(viewDirection.multiplyScalar(distance)),
+        target: center,
+        up: new THREE.Vector3(0, 1, 0),
+        near: Math.max(0.05, distance / 1000),
+        far: Math.max(saved.far, distance * 20),
+        aspect: saved.aspect,
+        fov: saved.fov,
+        zoom: saved.zoom,
+    });
 
     return () => {
-        scene3D.camera.position.copy(saved.position);
-        scene3D.camera.quaternion.copy(saved.quaternion);
-        scene3D.camera.near = saved.near;
-        scene3D.camera.far = saved.far;
-        if (typeof saved.zoom === 'number') scene3D.camera.zoom = saved.zoom;
-        scene3D.controls.target.copy(saved.target);
         saved.meshes.forEach(meshState => {
             const mesh = meshState.mesh;
             if (!mesh) return;
@@ -2361,9 +2998,17 @@ function focusPlanningObjectsForScreenshot(objectIds, options = {}) {
                 savedMaterial.material.needsUpdate = true;
             });
         });
-        scene3D.camera.updateProjectionMatrix();
-        scene3D.controls.update();
-        scene3D.requestRender?.(8);
+        sync3DCameraPose({
+            position: saved.position,
+            target: saved.target,
+            quaternion: saved.quaternion,
+            up: saved.up,
+            near: saved.near,
+            far: saved.far,
+            aspect: saved.aspect,
+            fov: saved.fov,
+            zoom: saved.zoom,
+        });
     };
 }
 window.focusPlanningObjectsForScreenshot = focusPlanningObjectsForScreenshot;
@@ -2453,11 +3098,7 @@ function forceRender3DViewer() {
             if (!scene3D.renderer || !scene3D.camera) return;
             if (scene3D.contextLost) return;
             _repair3DSceneVisibility();
-            const w = canvas.clientWidth || 400;
-            const h = canvas.clientHeight || 300;
-            scene3D.camera.aspect = w / h;
-            scene3D.camera.updateProjectionMatrix();
-            scene3D.renderer.setSize(w, h);
+            scene3D.resize?.();
             // Re-hide the "No data" placeholder if meshes are present
             const placeholder = canvas.querySelector('.viewer-no-data');
             if (placeholder && Object.keys(scene3D.meshes).length > 0) {
@@ -2470,9 +3111,7 @@ function forceRender3DViewer() {
                     const w2 = canvas.clientWidth || 400;
                     const h2 = canvas.clientHeight || 300;
                     if (w2 > 10 && h2 > 10) {
-                        scene3D.camera.aspect = w2 / h2;
-                        scene3D.camera.updateProjectionMatrix();
-                        scene3D.renderer.setSize(w2, h2);
+                        scene3D.resize?.();
                         if (scene3D.requestRender) scene3D.requestRender(4);
                     }
                 }, 300);
@@ -2556,6 +3195,48 @@ async function toggle3DSkin(on) {
 
 // ==================== SEED & NEEDLE 3D VISUALIZATION ====================
 
+function _syncManualObjectCounters() {
+    // Counters are UI conveniences, not the source of truth. A restored plan
+    // may already contain manual objects while the page-level counters are
+    // still at zero, so derive the next suffix from authoritative Data Tree
+    // records before creating a new object.
+    if (typeof manualPlanningState === 'undefined' || typeof dataTreeState === 'undefined') return;
+    const planning = dataTreeState?.planning || {};
+    planning.needles = _dedupeManualNeedles(planning.needles || []);
+    planning.seeds = _dedupeManualSeeds(planning.seeds || []);
+    const maxSuffix = (items, prefix) => (Array.isArray(items) ? items : []).reduce((max, item) => {
+        const id = String(item?.id || '');
+        if (!id.startsWith(prefix)) return max;
+        const suffix = id.slice(prefix.length);
+        return /^\\d+$/.test(suffix) ? Math.max(max, Number(suffix) || 0) : max;
+    }, 0);
+    manualPlanningState.needleCounter = Math.max(
+        Number(manualPlanningState.needleCounter) || 0,
+        maxSuffix(planning.needles, 'needle_manual_'),
+    );
+    manualPlanningState.seedCounter = Math.max(
+        Number(manualPlanningState.seedCounter) || 0,
+        maxSuffix(planning.seeds, 'seed_manual_'),
+    );
+}
+
+function _allocateManualObjectId(kind) {
+    _syncManualObjectCounters();
+    const planning = dataTreeState?.planning || {};
+    const collection = kind === 'needle' ? planning.needles : planning.seeds;
+    const prefix = kind === 'needle' ? 'needle_manual_' : 'seed_manual_';
+    const counterKey = kind === 'needle' ? 'needleCounter' : 'seedCounter';
+    const used = new Set((Array.isArray(collection) ? collection : []).map(item => String(item?.id || '')));
+    let counter = Number(manualPlanningState[counterKey]) || 0;
+    let id = '';
+    do {
+        counter += 1;
+        id = `${prefix}${counter}`;
+    } while (used.has(id));
+    manualPlanningState[counterKey] = counter;
+    return id;
+}
+
 function _normalizeTrajectoryId(tid) {
     if (tid === null || tid === undefined || tid === '') return 'unassigned';
     if (typeof tid === 'number' && Number.isFinite(tid)) return `traj_${tid + 1}`;
@@ -2632,7 +3313,7 @@ async function loadSeeds3D() {
         const savedNeedleAppearance = new Map(
             (dataTreeState.planning.needles || []).map(needle => [String(needle.id), needle]),
         );
-        dataTreeState.planning.seeds = data.seeds.map(seed => {
+        dataTreeState.planning.seeds = _dedupeManualSeeds(data.seeds).map(seed => {
             const saved = savedSeedAppearance.get(String(seed.id)) || {};
             const position = _vec3Array(seed.position || seed.pos);
             return {
@@ -2654,6 +3335,7 @@ async function loadSeeds3D() {
                 color: saved.color || '#ffcc00',
             };
         });
+        _syncManualObjectCounters();
 
         dataTreeState.planning.needles = data.needles.map(needle => ({
             id: needle.id,
@@ -2948,6 +3630,34 @@ async function loadDoseIsosurface(threshold = 1.0, color = 0x00ff88, requestScop
 // Uses config/default_params.json → display_3d.iso_dose_values_gy for
 // absolute Gy thresholds (e.g. [50, 100, 145, 200, 300] Gy).
 // These are the actual dose levels the user sees in the 3D viewer.
+function clearDosePlanningMeshes() {
+    // The helper can run during early workspace hydration, before the viewer
+    // module has declared its global scene object. Keep cleanup idempotent in
+    // that phase instead of turning a harmless stale-dose cleanup into a
+    // ReferenceError.
+    const scene = typeof scene3D !== 'undefined' ? scene3D : null;
+    const meshes = scene?.meshes || {};
+    Object.keys(meshes).forEach(id => {
+        if (!String(id).startsWith('dose_iso_')) return;
+        try {
+            const mesh = meshes[id];
+            scene?.scene?.remove(mesh);
+            mesh?.geometry?.dispose?.();
+            if (Array.isArray(mesh?.material)) mesh.material.forEach(material => material?.dispose?.());
+            else mesh?.material?.dispose?.();
+        } catch (_) {}
+        delete scene3D.meshes[id];
+    });
+    if (typeof dataTreeState !== 'undefined' && dataTreeState.planning) {
+        dataTreeState.planning.doseLevels = [];
+        dataTreeState.planning.meshes = (dataTreeState.planning.meshes || [])
+            .filter(mesh => !String(mesh?.id || '').startsWith('dose_iso_'));
+    }
+    if (typeof renderDataTree === 'function') renderDataTree();
+    scene?.requestRender?.(2);
+}
+window.clearDosePlanningMeshes = clearDosePlanningMeshes;
+
 async function loadAllIsoSurfaces(options = {}) {
     const requestScope = _capturePlanningSceneScope();
     // Dose iso metadata and 2D contours are useful without creating
@@ -2984,22 +3694,11 @@ async function loadAllIsoSurfaces(options = {}) {
     const opacities = display3d.iso_surface_opacities || [0.15, 0.25, 0.35, 0.45];
     const rxGy = _getCurrentPrescriptionGy();
 
-    // Wipe any prior isosurface meshes
-    Object.keys(scene3D.meshes || {}).forEach(id => {
-        if (id.startsWith('dose_iso_')) {
-            try {
-                scene3D.scene.remove(scene3D.meshes[id]);
-                scene3D.meshes[id].geometry.dispose();
-                scene3D.meshes[id].material.dispose();
-            } catch (_) {}
-            delete scene3D.meshes[id];
-        }
-    });
+    // Wipe any prior isosurface meshes while preserving the independent
+    // presentation state of levels that are rebuilt below.
     const priorLevels = new Map((dataTreeState?.planning?.doseLevels || [])
         .map(level => [Number(level?.threshold), level]));
-    if (dataTreeState && dataTreeState.planning) {
-        dataTreeState.planning.doseLevels = [];
-    }
+    clearDosePlanningMeshes();
 
     // Convert relative multipliers → Gy (e.g. 1.0×120=120, 1.5×120=180)
     for (let i = 0; i < relValues.length; i++) {
@@ -4480,27 +5179,59 @@ function removeSeed3D(seedId) {
 }
 
 function clearPlanningVisualization() {
+    if (typeof clearDoseOverlayRuntime === 'function') {
+        clearDoseOverlayRuntime();
+    }
     if (typeof window.invalidateSurgicalGuidePresentation === 'function') {
         // Regenerated needle geometry invalidates the sleeve axes of an old
         // guide. It must disappear rather than look clinically current.
         window.invalidateSurgicalGuidePresentation();
     }
-    // Clear 3D meshes
-    Object.keys(scene3D.meshes).forEach(id => {
+    // Clear 3D meshes. Planning activation can happen before the WebGL scene
+    // has been created during a cold restore, so cleanup must remain safe and
+    // idempotent in that order as well.
+    const scene = typeof scene3D !== 'undefined' ? scene3D : null;
+    const meshes = scene?.meshes || {};
+    Object.keys(meshes).forEach(id => {
         if (id.startsWith('seed_') || id.startsWith('needle_') || id.startsWith('dose_iso_')) {
-            scene3D.scene.remove(scene3D.meshes[id]);
-            if (scene3D.meshes[id].geometry) scene3D.meshes[id].geometry.dispose();
-            if (scene3D.meshes[id].material) scene3D.meshes[id].material.dispose();
-            delete scene3D.meshes[id];
+            const mesh = meshes[id];
+            scene?.scene?.remove(mesh);
+            if (mesh?.geometry) mesh.geometry.dispose();
+            if (mesh?.material) mesh.material.dispose();
+            delete meshes[id];
         }
     });
     // Clear dataTreeState
+    dataTreeState.planning.trajectories = [];
+    dataTreeState.planning.trajectoriesLoaded = false;
     dataTreeState.planning.seeds = [];
     dataTreeState.planning.needles = [];
     dataTreeState.planning.doseLevels = [];
     dataTreeState.planning.meshes = [];
+    dataTreeState.planning.doseOverlay = null;
+    dataTreeState.planning.dvh = null;
+    dataTreeState.planning.artifactStatus = {};
     dataTreeState.seeds.loaded = false;
     dataTreeState.needles.loaded = false;
+    dataTreeState.dose.loaded = false;
+    if (typeof state !== 'undefined') {
+        state.seeds = [];
+        state.trajectories = [];
+        state.seedsOverlay = null;
+        state.doseOverlay = null;
+        state.dvhData = null;
+    }
+
+    // Plotly owns DOM nodes and event handlers outside the planning mesh
+    // registry. Destroy the chart instance here as part of the same planning
+    // transition, otherwise an old run's DVH can remain visible until the
+    // asynchronous refresh finishes (or reappear if that refresh is pending).
+    const dvhElement = document.getElementById('dvhChart');
+    if (dvhElement && typeof Plotly !== 'undefined' && typeof Plotly.purge === 'function') {
+        try { Plotly.purge(dvhElement); } catch (_) {}
+    } else if (dvhElement) {
+        dvhElement.replaceChildren();
+    }
 
     // Clear dose contour cache and canvases
     Object.keys(_doseContourCache).forEach(key => delete _doseContourCache[key]);
@@ -4537,6 +5268,7 @@ async function deleteSeed3D(seedId) {
 
     const rollbackSeeds = _cloneManualSeeds();
     dataTreeState.planning.seeds = dataTreeState.planning.seeds.filter(item => item.id !== seedId);
+    removeSeed3D(seedId);
     _syncSeedsOverlayFromDataTree();
     renderDataTree();
     try {
@@ -4552,9 +5284,7 @@ async function deleteSeed3D(seedId) {
             )
             : `Seed ${seedId} deleted.`;
         addChat('system', message);
-        if (dataTreeState.planning.seeds.length > 0) {
-            await recomputeManualDose('seed_delete');
-        }
+        if (dataTreeState.planning.seeds.length > 0) scheduleManualDoseRecompute('seed_delete');
         return true;
     } catch (error) {
         const message = typeof window._t === 'function'
@@ -4565,33 +5295,84 @@ async function deleteSeed3D(seedId) {
     }
 }
 
-// Delete a needle from 3D scene and data tree
-function deleteNeedle3D(needleId) {
-    const mesh = scene3D.meshes[needleId];
-    if (mesh) {
-        scene3D.scene.remove(mesh);
-        if (mesh.geometry) mesh.geometry.dispose();
-        if (mesh.material) mesh.material.dispose();
-        delete scene3D.meshes[needleId];
+// Delete a needle through the same authoritative transaction as seed edits.
+async function deleteNeedle3D(needleId) {
+    const needle = dataTreeState.planning.needles.find(item => item.id === needleId);
+    if (!needle || manualPlanningState.needleMutationRunning) return false;
+    const confirmed = typeof _confirmAction === 'function'
+        ? await _confirmAction(
+            `删除针道 ${needleId} 及其粒子？删除后剂量、DVH、报告和手术导板需要更新。`,
+            `Delete needle ${needleId} and its seeds? Dose, DVH, report, and Surgical Guide will need updating.`,
+            {
+                yesZh: '删除针道',
+                yesEn: 'Delete needle',
+                noZh: '取消',
+                noEn: 'Cancel',
+                titleZh: '删除针道',
+                titleEn: 'Delete needle',
+            },
+        )
+        : false;
+    if (!confirmed) return false;
+
+    manualPlanningState.needleMutationRunning = true;
+    const rollback = _cloneManualPlanningSnapshot();
+    _setManualDoseProgress('running', _manualText('正在保存删除的针道…', 'Saving the needle deletion...'));
+    try {
+        const trajId = needle.trajectory_id;
+        const mesh = scene3D.meshes[needleId];
+        if (mesh) {
+            scene3D.scene.remove(mesh);
+            mesh.geometry?.dispose?.();
+            if (Array.isArray(mesh.material)) mesh.material.forEach(material => material?.dispose?.());
+            else mesh.material?.dispose?.();
+            delete scene3D.meshes[needleId];
+        }
+        if (typeof _removeNeedleHandles === 'function') _removeNeedleHandles(needleId);
+        dataTreeState.planning.needles = dataTreeState.planning.needles.filter(item => item.id !== needleId);
+        if (trajId) {
+            dataTreeState.planning.seeds
+                .filter(seed => seed.trajectory_id === trajId)
+                .forEach(seed => removeSeed3D(seed.id));
+            dataTreeState.planning.seeds = dataTreeState.planning.seeds.filter(seed => seed.trajectory_id !== trajId);
+            dataTreeState.planning.trajectories = dataTreeState.planning.trajectories.filter(item => item.id !== trajId);
+        }
+        if (manualPlanningState.activeNeedleId === needleId) {
+            manualPlanningState.activeNeedleId = dataTreeState.planning.needles.at(-1)?.id || null;
+        }
+        _syncSeedsOverlayFromDataTree();
+        renderDataTree();
+        await _commitManualSeeds('needle_delete', rollback.seeds, rollback.needles);
+        reportUIEvent('manual.needle.delete', needleId, {
+            trajectory_id: trajId,
+            remaining_needles: dataTreeState.planning.needles.length,
+            remaining_seeds: dataTreeState.planning.seeds.length,
+            planning_version: manualPlanningState.planningVersion,
+        });
+        _setManualDoseProgress('done', _manualText(
+            `已删除针道 ${needleId}。相关剂量、DVH、报告和手术导板已标记为需要更新。`,
+            `Needle ${needleId} deleted. Related dose, DVH, report, and Surgical Guide are now stale.`,
+        ));
+        addChat('system', _manualText(
+            `已删除针道 ${needleId} 及其所属粒子。`,
+            `Needle ${needleId} and its seeds were deleted.`,
+        ));
+        if (dataTreeState.planning.seeds.length > 0) scheduleManualDoseRecompute('needle_delete');
+        return true;
+    } catch (error) {
+        _restoreManualPlanningSnapshot(rollback);
+        _setManualDoseProgress('error', _manualText(
+            `删除针道失败：${error.message}`,
+            `Needle deletion failed: ${error.message}`,
+        ));
+        addChat('error', _manualText(
+            `删除针道失败，已恢复到上一次已保存的规划。${error.message}`,
+            `Needle deletion failed; the last saved plan was restored. ${error.message}`,
+        ));
+        return false;
+    } finally {
+        manualPlanningState.needleMutationRunning = false;
     }
-    if (typeof _removeNeedleHandles === 'function') _removeNeedleHandles(needleId);
-    // Remove from dataTreeState
-    const needle = dataTreeState.planning.needles.find(n => n.id === needleId);
-    const trajId = needle?.trajectory_id;
-    dataTreeState.planning.needles = dataTreeState.planning.needles.filter(n => n.id !== needleId);
-    if (trajId) {
-        dataTreeState.planning.seeds
-            .filter(s => s.trajectory_id === trajId)
-            .forEach(s => removeSeed3D(s.id));
-        dataTreeState.planning.seeds = dataTreeState.planning.seeds.filter(s => s.trajectory_id !== trajId);
-        dataTreeState.planning.trajectories = dataTreeState.planning.trajectories.filter(t => t.id !== trajId);
-    }
-    renderDataTree();
-    addChat('system', `Deleted needle ${needleId}`);
-    _syncSeedsOverlayFromDataTree();
-    reportUIEvent('manual.needle.delete', needleId, {});
-    if (typeof scheduleWorkspaceSave === 'function') scheduleWorkspaceSave('manual.needle.delete');
-    if (dataTreeState.planning.seeds.length > 0) recomputeManualDose('needle_delete');
 }
 
 // Show dose at seed position

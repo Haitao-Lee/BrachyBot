@@ -731,6 +731,168 @@ window._debugBrachy = function() {
     return { canvas, scene3D, activePanel, dvhEl };
 };
 
+let _planningRunCatalogPromise = null;
+
+function _planningRunSessionId() {
+    return String(
+        (typeof activeSessionId !== 'undefined' && activeSessionId)
+        || (typeof state !== 'undefined' && state.sessionId)
+        || '',
+    );
+}
+
+function _planningRunHeaders(sessionId) {
+    return sessionId ? { 'X-BrachyBot-Session': sessionId } : {};
+}
+
+/**
+ * Refresh only the compact Planning registry.  Clinical arrays remain behind
+ * /planning/results; this endpoint is intentionally cheap enough to call on
+ * every case restore and after an activation.
+ */
+async function refreshPlanningRunCatalog(options = {}) {
+    const sessionId = String(options.sessionId || _planningRunSessionId());
+    if (!sessionId) return [];
+    if (_planningRunCatalogPromise && _planningRunCatalogPromise.sessionId === sessionId) {
+        return _planningRunCatalogPromise.promise;
+    }
+    const promise = (async () => {
+        try {
+            const response = await fetch(API + '/planning/runs', {
+                headers: _planningRunHeaders(sessionId),
+            });
+            if (response.status === 202) return [];
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok || payload.success !== true) {
+                throw new Error(payload.error || `Planning registry request failed (${response.status})`);
+            }
+            if (String(_planningRunSessionId()) !== sessionId) return [];
+            const planning = (typeof dataTreeState !== 'undefined' && dataTreeState.planning)
+                ? dataTreeState.planning : null;
+            if (planning) {
+                planning.runs = Array.isArray(payload.runs) ? payload.runs : [];
+                planning.activePlanningId = payload.active_planning_id || planning.id || null;
+                if (planning.activePlanningId) planning.id = planning.activePlanningId;
+            }
+            if (typeof window.refreshSurgicalGuidePlanningOptions === 'function') {
+                window.refreshSurgicalGuidePlanningOptions(
+                    Array.isArray(payload.runs) ? payload.runs : [],
+                    payload.active_planning_id || null,
+                );
+            }
+            if (typeof renderDataTree === 'function') renderDataTree();
+            return planning?.runs || [];
+        } catch (error) {
+            if (!options.silent) console.warn('[planning runs] catalog:', error);
+            return [];
+        } finally {
+            if (_planningRunCatalogPromise?.promise === promise) _planningRunCatalogPromise = null;
+        }
+    })();
+    _planningRunCatalogPromise = { sessionId, promise };
+    return promise;
+}
+
+async function _postPlanningRunActivation(sessionId, planningId) {
+    const url = API + '/planning/runs/' + encodeURIComponent(String(planningId)) + '/activate';
+    for (let attempt = 0; attempt < 120; attempt += 1) {
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: { ..._planningRunHeaders(sessionId), 'Content-Type': 'application/json' },
+            body: '{}',
+        });
+        if (response.status !== 202) {
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok || payload.success !== true) {
+                throw new Error(payload.error || `Planning activation failed (${response.status})`);
+            }
+            return payload;
+        }
+        const pending = await response.json().catch(() => ({}));
+        await new Promise(resolve => setTimeout(resolve, Math.max(
+            100, Math.min(1000, Number(pending.retry_after_ms || 300)),
+        )));
+        if (_planningRunSessionId() !== sessionId) throw new Error('Planning activation was cancelled after session switch');
+    }
+    throw new Error('Planning activation timed out while the case was restoring');
+}
+
+async function activatePlanningRun(planningId, options = {}) {
+    const sessionId = String(options.sessionId || _planningRunSessionId());
+    const target = String(planningId || '');
+    if (!sessionId || !target) return false;
+    const current = String(dataTreeState?.planning?.id || '');
+    if (current === target && options.force !== true) {
+        await refreshPlanningRunCatalog({ sessionId, silent: true });
+        return true;
+    }
+    const zh = typeof window._i18nLang === 'string' && window._i18nLang === 'zh';
+    const busyText = zh ? '正在恢复所选 Planning…' : 'Restoring selected Planning…';
+    try {
+        if (typeof showToast === 'function') showToast(busyText, 'info');
+        // Flush the currently displayed report before changing the active
+        // aliases. Report text, figures and references are scoped by
+        // planning_id; waiting here prevents the old run from being saved
+        // under the newly selected run after the activation response.
+        if (typeof window.captureReportForPlanning === 'function') {
+            window.captureReportForPlanning();
+        }
+        if (typeof window.flushActiveReportState === 'function') {
+            await Promise.resolve(window.flushActiveReportState());
+        }
+        const payload = await _postPlanningRunActivation(sessionId, target);
+        if (_planningRunSessionId() !== sessionId) return false;
+        // Remove the previous run's geometry before the new result arrives.
+        // This prevents old seeds/needles/dose from being visible during the
+        // short metadata-to-array gap and also makes a no-dose run honest.
+        if (typeof clearPlanningVisualization === 'function') clearPlanningVisualization();
+        if (typeof dataTreeState !== 'undefined' && dataTreeState.planning) {
+            dataTreeState.planning.id = target;
+            dataTreeState.planning.activePlanningId = target;
+            dataTreeState.planning.artifactStatus = {};
+        }
+        if (typeof window.restoreReportForPlanning === 'function') {
+            window.restoreReportForPlanning(target, { persist: false });
+        }
+        if (typeof refreshPlanningUI === 'function') {
+            await refreshPlanningUI({
+                sessionId,
+                retryPending: true,
+                resetPlanVisuals: true,
+                preserveViewerState: true,
+                switchToViewers: false,
+                backgroundRestore: true,
+                autoGenerateGuide: false,
+            });
+        }
+        await refreshPlanningRunCatalog({ sessionId, force: true, silent: true });
+        if (typeof window.ensureSurgicalGuideForCurrentPlan === 'function') {
+            await window.ensureSurgicalGuideForCurrentPlan({ sessionId });
+        }
+        if (typeof renderDataTree === 'function') renderDataTree();
+        if (typeof window.scheduleWorkspaceSave === 'function') {
+            window.scheduleWorkspaceSave('planning.run.activated');
+        }
+        if (typeof showToast === 'function') {
+            showToast(zh ? `已恢复 ${payload.planning?.label || target}` : `Restored ${payload.planning?.label || target}`, 'success');
+        }
+        return true;
+    } catch (error) {
+        console.error('[planning runs] activation:', error);
+        if (typeof showToast === 'function') showToast(
+            zh ? `恢复 Planning 失败：${error.message}` : `Planning restore failed: ${error.message}`,
+            'error',
+        );
+        return false;
+    }
+}
+
+window.refreshPlanningRunCatalog = refreshPlanningRunCatalog;
+window.activatePlanningRun = activatePlanningRun;
+window.activatePlanningRunFromTree = function activatePlanningRunFromTree(planningId) {
+    return activatePlanningRun(planningId, { userInitiated: true });
+};
+
 async function refreshPlanningUI(options = {}) {
     uiDebugLog('[refreshPlanningUI] CALLED, ctLoaded:', state.ctLoaded, 'stack:', new Error().stack?.split('\n').slice(1,3).join(' | '));
     const generation = ++_refreshGeneration;
@@ -739,6 +901,13 @@ async function refreshPlanningUI(options = {}) {
         || ((typeof activeSessionId !== 'undefined' && activeSessionId) ? activeSessionId : state.sessionId)
         || '',
     );
+    // The registry is deliberately cheap and must be available even when a
+    // draft Planning has no dose yet.  Do this independently of the clinical
+    // result request so the Data Tree can expose Planning_0/Planning_1 during
+    // the first cold restore as well as after a normal refresh.
+    if (expectedSessionId && typeof refreshPlanningRunCatalog === 'function') {
+        void refreshPlanningRunCatalog({ sessionId: expectedSessionId, silent: true });
+    }
     const isCurrentCase = () => {
         if (generation !== _refreshGeneration) return false;
         const selected = (typeof activeSessionId !== 'undefined' && activeSessionId)
@@ -755,6 +924,10 @@ async function refreshPlanningUI(options = {}) {
             _refreshDebounce = null;
             if (!isCurrentCase()) return resolve();
             try {
+                if (options.resetPlanVisuals === true
+                    && typeof clearPlanningVisualization === 'function') {
+                    clearPlanningVisualization();
+                }
                 const ctrl = new AbortController();
                 _refreshInflight = ctrl;
                 const timer = setTimeout(function(){ ctrl.abort(); }, options.retryPending === true ? 240000 : 30000);
@@ -794,11 +967,31 @@ async function refreshPlanningUI(options = {}) {
                 _refreshInflight = null;
                 if (!isCurrentCase()) return resolve();
                 if (!data || !data.success) { console.warn('[refreshPlanningUI] data not success:', data); return resolve(); }
+                if (typeof dataTreeState !== 'undefined' && dataTreeState.planning) {
+                    dataTreeState.planning.id = data.planning_id || null;
+                    dataTreeState.planning.activePlanningId = data.planning_id || null;
+                    dataTreeState.planning.label = data.planning_label || null;
+                    dataTreeState.planning.status = data.planning_status || null;
+                    dataTreeState.planning.dataVersion = Number(data.planning_data_version || 0);
+                    dataTreeState.planning.artifactStatus = data.artifact_status || {};
+                }
+                if (typeof manualPlanningState !== 'undefined') {
+                    manualPlanningState.planningId = data.planning_id || manualPlanningState.planningId || null;
+                    manualPlanningState.artifactStatus = { ...(data.artifact_status || {}) };
+                }
+                // The registry is compact and independent from the clinical
+                // result payload.  Refresh it in parallel so the Data Tree
+                // exposes Planning_0/Planning_1 without delaying dose, DVH or
+                // mask painting.
+                void refreshPlanningRunCatalog({ sessionId: expectedSessionId, silent: true });
                 uiDebugLog('[refreshPlanningUI] data received, has_dose:', data.has_dose, 'seeds:', data.seeds?.length, 'has_dvh:', !!data.dvh, 'dvh_keys:', data.dvh ? Object.keys(data.dvh).length : 0, 'metrics_keys:', data.metrics ? Object.keys(data.metrics).length : 0);
 
                 // 1. Metrics cards (V100, D90, etc.) + summary
-                if (data.metrics && Object.keys(data.metrics).length > 0) {
-                    updateMetrics(data.metrics);
+                const hasMetrics = !!(data.metrics && Object.keys(data.metrics).length > 0);
+                if (hasMetrics) updateMetrics(data.metrics);
+                else {
+                    state.metrics = {};
+                    try { updateMetrics({}); } catch (_) {}
                 }
                 // Merge top-level planning fields into state.metrics so
                 // reportAutoFill and other consumers can read them.
@@ -832,6 +1025,32 @@ async function refreshPlanningUI(options = {}) {
                     if (typeof renderDataTree === 'function') renderDataTree();
                 } else {
                     console.warn('[refreshPlanningUI] NO DVH data received');
+                    state.dvhData = null;
+                    const dvhElement = document.getElementById('dvhChart');
+                    if (dvhElement && typeof Plotly !== 'undefined' && typeof Plotly.purge === 'function') {
+                        try { Plotly.purge(dvhElement); } catch (_) {}
+                    } else if (dvhElement) {
+                        dvhElement.replaceChildren();
+                    }
+                    if (typeof reconcileDataTreeVisualNodes === 'function') reconcileDataTreeVisualNodes();
+                    if (typeof renderDataTree === 'function') renderDataTree();
+                }
+
+                // A geometry-only draft has no valid dose grid. Remove only
+                // dose presentation here; seeds and needles are still real
+                // draft data and must remain visible for further editing.
+                if (!data.has_dose) {
+                    if (typeof clearDoseOverlayRuntime === 'function') clearDoseOverlayRuntime();
+                    if (typeof clearDosePlanningMeshes === 'function') clearDosePlanningMeshes();
+                    if (typeof dataTreeState !== 'undefined' && dataTreeState.planning) {
+                        dataTreeState.planning.doseOverlay = null;
+                        dataTreeState.planning.doseLevels = [];
+                    }
+                    if (typeof dataTreeState !== 'undefined' && dataTreeState.dose) {
+                        dataTreeState.dose.loaded = false;
+                    }
+                    if (typeof reconcileDataTreeVisualNodes === 'function') reconcileDataTreeVisualNodes();
+                    if (typeof renderDataTree === 'function') renderDataTree();
                 }
 
         // 1b. Refresh image metadata once, bound to the selected case. The
@@ -1125,21 +1344,42 @@ async function refreshPlanningUI(options = {}) {
             const _savedCamera = scene3D.camera && scene3D.controls ? {
                 position: scene3D.camera.position.clone(),
                 quaternion: scene3D.camera.quaternion.clone(),
+                up: scene3D.camera.up.clone(),
                 near: scene3D.camera.near,
                 far: scene3D.camera.far,
                 aspect: scene3D.camera.aspect,
+                fov: scene3D.camera.fov,
+                zoom: scene3D.camera.zoom,
                 target: scene3D.controls.target.clone(),
             } : null;
             const _restoreCamera = () => {
                 if (!_savedCamera || !scene3D.camera || !scene3D.controls) return;
-                scene3D.camera.position.copy(_savedCamera.position);
-                scene3D.camera.quaternion.copy(_savedCamera.quaternion);
-                scene3D.camera.near = _savedCamera.near;
-                scene3D.camera.far = _savedCamera.far;
-                scene3D.camera.aspect = _savedCamera.aspect;
-                scene3D.controls.target.copy(_savedCamera.target);
-                scene3D.camera.updateProjectionMatrix();
-                scene3D.controls.update();
+                const pose = {
+                    position: _savedCamera.position,
+                    target: _savedCamera.target,
+                    quaternion: _savedCamera.quaternion,
+                    up: _savedCamera.up,
+                    near: _savedCamera.near,
+                    far: _savedCamera.far,
+                    aspect: _savedCamera.aspect,
+                    fov: _savedCamera.fov,
+                    zoom: _savedCamera.zoom,
+                };
+                if (typeof window.sync3DCameraPose === 'function') {
+                    window.sync3DCameraPose(pose);
+                } else {
+                    scene3D.camera.position.copy(_savedCamera.position);
+                    scene3D.camera.quaternion.copy(_savedCamera.quaternion);
+                    scene3D.camera.up.copy(_savedCamera.up);
+                    scene3D.camera.near = _savedCamera.near;
+                    scene3D.camera.far = _savedCamera.far;
+                    scene3D.camera.aspect = _savedCamera.aspect;
+                    scene3D.camera.fov = _savedCamera.fov;
+                    scene3D.camera.zoom = _savedCamera.zoom;
+                    scene3D.controls.target.copy(_savedCamera.target);
+                    scene3D.camera.updateProjectionMatrix();
+                    scene3D.controls.syncExternalState?.();
+                }
             };
             const _savedVis = {};
             try {
@@ -1163,10 +1403,32 @@ async function refreshPlanningUI(options = {}) {
                     const size = box.getSize(new THREE.Vector3());
                     const maxDim = Math.max(size.x, size.y, size.z);
                     const dist = Math.max(maxDim * 1.75, 1.0);
-                    scene3D.controls.target.copy(center);
-                    scene3D.camera.position.set(center.x + dist * 0.6, center.y + dist * 0.4, center.z + dist * 0.7);
-                    scene3D.camera.updateProjectionMatrix();
-                    scene3D.controls.update();
+                    const position = new THREE.Vector3(
+                        center.x + dist * 0.6,
+                        center.y + dist * 0.4,
+                        center.z + dist * 0.7,
+                    );
+                    const pose = {
+                        position,
+                        target: center,
+                        up: new THREE.Vector3(0, 1, 0),
+                        near: Math.max(0.1, dist * 0.002),
+                        far: Math.max(2000, dist * 20),
+                        aspect: scene3D.camera.aspect,
+                        fov: scene3D.camera.fov,
+                        zoom: scene3D.camera.zoom,
+                    };
+                    if (typeof window.sync3DCameraPose === 'function') {
+                        window.sync3DCameraPose(pose);
+                    } else {
+                        scene3D.controls.target.copy(center);
+                        scene3D.camera.position.copy(position);
+                        scene3D.camera.up.copy(pose.up);
+                        scene3D.camera.near = pose.near;
+                        scene3D.camera.far = pose.far;
+                        scene3D.camera.updateProjectionMatrix();
+                        scene3D.controls.syncExternalState?.();
+                    }
                     await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
                     scene3D.renderer.render(scene3D.scene, scene3D.camera);
                     await new Promise(r => requestAnimationFrame(r));
@@ -1289,6 +1551,10 @@ async function refreshPlanningUI(options = {}) {
                 if (typeof _updateReportPreview === 'function') _updateReportPreview();
             } catch (e) { console.warn('[Report] 2D/DVH re-capture failed:', e); }
         }
+        // Figure replacement happens outside the report editor's input
+        // handlers. Persist the final planning figures together with the
+        // narrative generated from the same planning response.
+        try { if (typeof _scheduleReportAutoSave === 'function') _scheduleReportAutoSave(); } catch (_) {}
 
         // 7. 3D viewer force-re-size + camera-fit. The previous version
         //    called `render3D()` (a LEGACY function that does

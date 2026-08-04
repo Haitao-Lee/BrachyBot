@@ -316,6 +316,10 @@ task_manager = TaskManager()
 _UI_BRIDGE_LOCK = threading.Lock()
 _UI_BRIDGE_MAX_EVENTS = int(os.environ.get("BRACHYBOT_UI_BRIDGE_MAX_EVENTS", "500"))
 _UI_BRIDGE: Dict[str, Dict[str, Any]] = {}
+_MONITOR_STALE_SECONDS = max(
+    60.0,
+    float(os.environ.get("BRACHYBOT_MONITOR_STALE_SECONDS", "1800")),
+)
 
 
 def _ui_session_id(session_id: Optional[str] = None) -> str:
@@ -333,11 +337,89 @@ def _ui_bucket(session_id: Optional[str] = None) -> Dict[str, Any]:
                 "active": False,
                 "goal": "",
                 "started_at": None,
+                "last_activity_at": None,
                 "stopped_at": None,
                 "events": [],
                 "feedback": [],
             },
         })
+
+
+def _close_stale_training_snapshot(
+    training: Optional[Dict[str, Any]],
+    *,
+    reason: str = "server_restart_or_workspace_restore",
+) -> Dict[str, Any]:
+    """Return a durable Monitor record with no live browser subscription.
+
+    ``training.active`` is persisted as part of the UI bridge so the event
+    history survives a reload. It is not a lease: after a process restart,
+    cache eviction, or a browser that disappeared without ``pagehide``, the
+    old browser cannot still be receiving events. Treating that bit as a live
+    subscription caused stale Monitor buttons and false stop errors.
+    """
+    snapshot = dict(training or {})
+    if not snapshot.get("active"):
+        return snapshot
+    now = time.time()
+    old_run_id = str(snapshot.get("run_id") or snapshot.get("runId") or "").strip()
+    snapshot["active"] = False
+    snapshot["phase"] = "inactive"
+    snapshot["run_id"] = None
+    snapshot["last_run_id"] = old_run_id or snapshot.get("last_run_id")
+    snapshot["stopped_at"] = snapshot.get("stopped_at") or now
+    snapshot["closed_reason"] = reason
+    snapshot["auto_closed"] = True
+    snapshot["last_activity_at"] = now
+    return snapshot
+
+
+def _training_is_stale(training: Optional[Dict[str, Any]], now: Optional[float] = None) -> bool:
+    """Identify an abandoned live Monitor as a bounded server-side fallback."""
+    if not isinstance(training, dict) or not training.get("active"):
+        return False
+    timestamp = training.get("last_activity_at") or training.get("started_at")
+    try:
+        age = (time.time() if now is None else float(now)) - float(timestamp)
+    except (TypeError, ValueError):
+        return False
+    return age > _MONITOR_STALE_SECONDS
+
+
+def _ui_bridge_snapshot(session_id: Optional[str] = None) -> Dict[str, Any]:
+    """Copy one case-owned UI bridge without exposing mutable live state."""
+    bucket = _ui_bucket(session_id)
+    with _UI_BRIDGE_LOCK:
+        return {
+            "state": dict(bucket.get("state") or {}),
+            "events": list(bucket.get("events") or []),
+            "training": dict(bucket.get("training") or {}),
+            "updated_at": bucket.get("updated_at"),
+        }
+
+
+def _close_live_training_snapshots(
+    *,
+    reason: str = "server_shutdown",
+) -> list[tuple[str, str]]:
+    """Close all in-process Monitor leases during an orderly server stop.
+
+    The bridge is durable history, not a process-wide subscription registry.
+    This helper makes shutdown semantics explicit and idempotent; startup
+    hydration still applies the same rule for an ungraceful crash.
+    """
+    closed: list[tuple[str, str]] = []
+    now = time.time()
+    with _UI_BRIDGE_LOCK:
+        for session_id, bucket in _UI_BRIDGE.items():
+            training = bucket.get("training") or {}
+            if not training.get("active"):
+                continue
+            run_id = str(training.get("run_id") or training.get("runId") or "").strip()
+            bucket["training"] = _close_stale_training_snapshot(training, reason=reason)
+            bucket["updated_at"] = now
+            closed.append((str(session_id), run_id))
+    return closed
 
 
 def _drop_ui_bucket(session_id: Optional[str]) -> None:
@@ -367,6 +449,7 @@ def _append_ui_event(
         training = bucket.setdefault("training", {})
         if training.get("active") and include_in_training:
             training.setdefault("events", []).append(item)
+            training["last_activity_at"] = item["ts"]
     return item
 
 
@@ -500,7 +583,11 @@ def _segment_segment_distance(
     return math.sqrt(sum(value * value for value in delta))
 
 
-def _latest_plan_snapshot(agent) -> Dict[str, Any]:
+def _latest_plan_snapshot(
+    agent,
+    *,
+    validate_obstacles: bool = True,
+) -> Dict[str, Any]:
     if agent is None or not hasattr(agent, "memory"):
         return {}
     metrics = agent.memory.retrieve("dose_metrics") or agent.memory.retrieve("metrics") or {}
@@ -727,7 +814,7 @@ def _latest_plan_snapshot(agent) -> Dict[str, Any]:
                 })
 
     obstacle_hits = []
-    if needle_entries:
+    if needle_entries and validate_obstacles:
         try:
             from tool_factory.seed_plan.planning_pipeline import (
                 _merge_embedded_hard_obstacles,
@@ -828,9 +915,36 @@ def _source_backed_target_context(agent) -> Dict[str, Any]:
         return {}
 
 
-def _build_plan_advice(agent, session_id: Optional[str] = None) -> Dict[str, Any]:
+def _build_plan_advice(
+    agent,
+    session_id: Optional[str] = None,
+    *,
+    fast: bool = False,
+) -> Dict[str, Any]:
     """Create deterministic planning advice from current metrics and UI events."""
-    snapshot = _latest_plan_snapshot(agent)
+    if agent is None or not hasattr(agent, "memory"):
+        # Monitor stop/advice is a control-plane action and may race the
+        # background hydration of a newly opened case.  Return a useful,
+        # explicitly pending result instead of forcing callers to wait for CT
+        # and planning arrays or raising an opaque 500 error.
+        return {
+            "metrics": {},
+            "strengths": [],
+            "issues": [],
+            "advice": [
+                "Case resources are still loading; detailed planning metrics will be available when hydration completes.",
+            ],
+            "artifact_status": {},
+            "hydration_pending": True,
+        }
+    # Stopping Monitor is a control-plane action.  CT/OAR segment intersection
+    # checks can scan millions of voxels and must not keep the UI in
+    # ``monitor-stopping`` while the final chat message is being assembled.
+    # The full geometry pass remains available to the advice endpoint and
+    # subsequent quality checks.
+    snapshot = _latest_plan_snapshot(agent, validate_obstacles=not fast)
+    if fast:
+        snapshot["geometry_validation"] = "deferred"
     metrics = snapshot.get("metrics", {}) or {}
     events = list((_ui_bucket(session_id).get("events") or [])[-80:])
     advice: list = []
@@ -1086,6 +1200,8 @@ def _localize_monitor_text(text: Any, language: str = "en") -> str:
     }
     if raw in exact:
         return exact[raw]
+    if raw.startswith("Case resources are still loading;"):
+        return "病例资源仍在后台加载；加载完成后将提供详细规划指标。"
     match = re.fullmatch(r"CTV V100 is ([0-9.]+)%; compare it with the applicable site-specific guidance or confirmed case protocol target\.", raw)
     if match:
         return f"CTV V100 为 {match.group(1)}%；请与适用的部位特异性指南或已确认的病例方案目标比较。"
@@ -1500,6 +1616,28 @@ def _safe_float_list(values: Any, length: int = 3, default: Optional[list] = Non
         return list(default)
 
 
+def _manual_grid_array(value: Any, shape: Iterable[int], *, label: str = "array"):
+    """Return a persisted manual-planning array in canonical Z/Y/X order.
+
+    Workspace artifacts may be stored either as a shaped volume or as a flat
+    buffer.  The image grid is authoritative; accepting a same-sized flat
+    buffer here prevents hydration from reintroducing a shape mismatch into
+    needle safety and dose evaluation.
+    """
+    import numpy as np
+
+    expected = tuple(int(item) for item in shape)
+    array = np.asarray(value)
+    if tuple(array.shape) == expected:
+        return array
+    expected_size = int(np.prod(expected, dtype=np.int64))
+    if int(array.size) == expected_size:
+        return array.reshape(expected)
+    raise ValueError(
+        f"{label} shape {tuple(array.shape)} does not match the image grid {expected}."
+    )
+
+
 class ManualNeedleSafetyError(ValueError):
     """Raised when a manual needle would cross a hard Data Tree obstacle."""
 
@@ -1738,7 +1876,13 @@ def _compute_manual_ai_dose(
     if ct_image is None or ct_data is None:
         raise ValueError("No CT image loaded")
 
-    original_shape = tuple(int(v) for v in np.asarray(ct_data).shape)
+    # Workspace hydration may serialize CT arrays as a flat artifact to save
+    # metadata overhead.  All downstream planning and safety code operates on
+    # the canonical NumPy Z/Y/X grid, so derive the shape from the authoritative
+    # SimpleITK image and reshape same-sized persisted arrays before using them.
+    ct_grid_shape = tuple(int(v) for v in reversed(ct_image.GetSize()))
+    _manual_grid_array(ct_data, ct_grid_shape, label="CT data")
+    original_shape = ct_grid_shape
 
     def _mask_array(*keys, shape=original_shape):
         for key in keys:
@@ -1746,9 +1890,7 @@ def _compute_manual_ai_dose(
             if arr is None:
                 continue
             try:
-                arr_np = np.asarray(arr)
-                if arr_np.shape == shape:
-                    return arr_np
+                return _manual_grid_array(arr, shape, label=key)
             except Exception:
                 continue
         return None
@@ -3372,6 +3514,8 @@ def _monitor_activity_label_clean(key: str, language: str = "en") -> str:
         "segmentation.step": ("\u5206\u5272\u6b65\u9aa4", "Segmentation steps"),
         "manual.needle.drag": ("\u624b\u52a8\u9488\u9053\u62d6\u62fd", "Manual needle drags"),
         "manual.needle.position_only": ("\u624b\u52a8\u9488\u9053\u4f4d\u7f6e\u8c03\u6574", "Manual needle position updates"),
+        "manual.needle.add": ("\u624b\u52a8\u6dfb\u52a0\u9488\u9053", "Manual needle additions"),
+        "manual.needle.delete": ("\u624b\u52a8\u5220\u9664\u9488\u9053", "Manual needle deletions"),
         "manual.seed.drag": ("\u624b\u52a8\u7c92\u5b50\u62d6\u62fd", "Manual seed drags"),
         "manual.seed.add": ("\u624b\u52a8\u6dfb\u52a0\u7c92\u5b50", "Manual seed additions"),
         "manual.seed.delete": ("\u624b\u52a8\u5220\u9664\u7c92\u5b50", "Manual seed deletions"),

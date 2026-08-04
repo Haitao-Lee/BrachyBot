@@ -542,11 +542,11 @@ function _queueMonitorFeedback(message, type, label, ownerSessionId, ownerRunId)
 }
 
 function monitorConversationLanguage(sessionId = trainingMonitorState.sessionId) {
-    if (window._i18nLang) return window._i18nLang;
     if (typeof window.conversationLanguageForSession === 'function') {
-        return window.conversationLanguageForSession(sessionId);
+        const conversation = window.conversationLanguageForSession(sessionId);
+        if (conversation === 'zh' || conversation === 'en') return conversation;
     }
-    return window._responseLanguage || 'en';
+    return window._responseLanguage || window._i18nLang || 'en';
 }
 window.monitorConversationLanguage = monitorConversationLanguage;
 
@@ -643,6 +643,34 @@ function setTrainingMonitorPhase(phase) {
 }
 window.setTrainingMonitorPhase = setTrainingMonitorPhase;
 
+function restoreTrainingMonitorSnapshot(training, sessionId) {
+    const snapshot = training && typeof training === 'object' ? training : {};
+    const staleRunId = snapshot.run_id || snapshot.runId || null;
+    trainingMonitorState.runId = staleRunId;
+    trainingMonitorState.language = snapshot.language || monitorConversationLanguage(sessionId);
+    trainingMonitorState.goal = snapshot.goal || '';
+    trainingMonitorState.sessionId = sessionId;
+    if (snapshot.active) {
+        // Hydration restores history, never a live subscription. The browser
+        // or server may have restarted since this run was recorded.
+        trainingMonitorState.active = false;
+        trainingMonitorState.phase = 'inactive';
+        trainingMonitorState.runId = null;
+        trainingMonitorState.pendingFeedback = [];
+        trainingMonitorState.screenshotGalleryContext = null;
+        setTrainingMonitorPhase('inactive');
+        if (typeof window.releaseTrainingMonitorForSession === 'function') {
+            void window.releaseTrainingMonitorForSession(
+                sessionId,
+                'ui_state_restore',
+                { runId: staleRunId, skipLocal: true },
+            );
+        }
+    } else {
+        setTrainingMonitorPhase('inactive');
+    }
+}
+
 var manualPlanningState = {
     activeNeedleId: null,
     seedCounter: 0,
@@ -654,6 +682,16 @@ var manualPlanningState = {
     // Keep the last accepted geometry separate from the live drag preview.
     lastDoseNeedles: [],
     needleReplanPrompt: null,
+    // Coalesce rapid edits before the expensive dose/DVH request. The owner
+    // session fence prevents a timer from firing after a case switch.
+    doseRecomputeTimer: null,
+    doseRecomputeOwnerSessionId: null,
+    doseRecomputeScheduledPromise: null,
+    doseRecomputeRunning: false,
+    doseRecomputeQueued: false,
+    doseRecomputeSequence: 0,
+    _doseRecomputePromise: null,
+    _doseRecomputeJob: null,
 };
 
 function _activeApiSessionId() {
@@ -955,11 +993,10 @@ function instrumentUIControls() {
     const urlParams = new URLSearchParams(window.location.search);
     const keyFromUrl = urlParams.get('api_key');
     if (keyFromUrl) {
-        // A deployment key may be supplied in the URL for convenience. It is
-        // persisted to localStorage so a copied workstation retains the
-        // credential across reloads and tab closings, matching the operator's
-        // preference for a remembered key on this deployment.
-        localStorage.setItem('BRACHYBOT_API_KEY', keyFromUrl);
+        // A deployment key may be supplied in the URL for convenience. Keep
+        // it scoped to this browser session; credentials must not survive a
+        // deleted case or leak into a later session through persistent storage.
+        sessionStorage.setItem('BRACHYBOT_API_KEY', keyFromUrl);
         window.BRACHYBOT_API_KEY = keyFromUrl;
         // Clean URL without reload
         const cleanUrl = window.location.pathname;
@@ -968,8 +1005,8 @@ function instrumentUIControls() {
     window.setBrachyBotApiKey = function setBrachyBotApiKey(key) {
         const value = String(key || '').trim();
         window.BRACHYBOT_API_KEY = value;
-        if (value) localStorage.setItem('BRACHYBOT_API_KEY', value);
-        else localStorage.removeItem('BRACHYBOT_API_KEY');
+        if (value) sessionStorage.setItem('BRACHYBOT_API_KEY', value);
+        else sessionStorage.removeItem('BRACHYBOT_API_KEY');
     };
     window.fetch = function brachybotFetch(input, init) {
         // The deployment key is persisted in localStorage so the operator's
@@ -1701,6 +1738,7 @@ function clearClientWorkspace(options = {}) {
     try { window.clearCaseScopedProgressPresentation?.(); } catch (_) {}
     try { window.clearManualDoseProgressPresentation?.(); } catch (_) {}
     try { window.clearManualWorkflowProgressPresentation?.(); } catch (_) {}
+    try { window.cancelScheduledManualDoseRecompute?.(); } catch (_) {}
     // Invalidate asynchronous 3D mesh fetches before removing current-case
     // objects. A late response from the previous session may still complete,
     // but it is no longer allowed to add geometry to the new case.
@@ -2451,11 +2489,7 @@ async function _restoreActiveSessionWorkspace(options = {}) {
                 const uiData = await uiResponse.json();
                 const training = uiData.training || {};
                 restoredTraining = training;
-                trainingMonitorState.runId = training.run_id || null;
-                trainingMonitorState.language = training.language || monitorConversationLanguage(sessionAtStart);
-                trainingMonitorState.goal = training.goal || '';
-                trainingMonitorState.sessionId = sessionAtStart;
-                setTrainingMonitorPhase(training.active ? 'active' : 'inactive');
+                restoreTrainingMonitorSnapshot(training, sessionAtStart);
             }
         } catch (error) {
             console.debug('[session restore] UI state unavailable:', error);
@@ -2463,11 +2497,7 @@ async function _restoreActiveSessionWorkspace(options = {}) {
     } else {
         const training = workspace?.ui?.bridge?.training || workspace?.ui?.state?.training || {};
         restoredTraining = training;
-        trainingMonitorState.runId = training.run_id || training.runId || null;
-        trainingMonitorState.language = training.language || monitorConversationLanguage(sessionAtStart);
-        trainingMonitorState.goal = training.goal || '';
-        trainingMonitorState.sessionId = sessionAtStart;
-        setTrainingMonitorPhase(training.active ? 'active' : 'inactive');
+        restoreTrainingMonitorSnapshot(training, sessionAtStart);
     }
     // A Finish Monitoring request may return after a session switch. The
     // server keeps the final summary on the case bridge, so restore it as a
@@ -2588,7 +2618,13 @@ async function _restoreActiveSessionWorkspace(options = {}) {
     const hasPlanning = [
         'dose_metrics', 'dose_distribution', 'dose_distribution_gy',
         'seed_plan', 'seed_plan_serialized', 'manual_planning_preview',
-    ].some(key => storedKeys.has(key));
+    ].some(key => storedKeys.has(key))
+        // A geometry-only draft has no dose/metrics keys by design, but it is
+        // still a real Planning that must appear in the Data Tree after a
+        // server restart. The compact registry and namespaced snapshots are
+        // the durable source for this case.
+        || storedKeys.has('planning_runs')
+        || Array.from(storedKeys).some(key => String(key).startsWith('planning_run:'));
 
     // These tasks depend on the CT being present in the current Agent. They
     // are created after ctTask resolves below; starting them here races the

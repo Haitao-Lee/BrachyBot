@@ -91,6 +91,8 @@
 
 			this.target0 = this.target.clone();
 			this.position0 = this.object.position.clone();
+			this.quaternion0 = this.object.quaternion.clone();
+			this.up0 = this.object.up.clone();
 			this.zoom0 = this.object.zoom; // the target DOM element for key events
 
 			this._domElementKeyEvents = null; //
@@ -120,6 +122,8 @@
 
 				scope.target0.copy( scope.target );
 				scope.position0.copy( scope.object.position );
+				scope.quaternion0.copy( scope.object.quaternion );
+				scope.up0.copy( scope.object.up );
 				scope.zoom0 = scope.object.zoom;
 
 			};
@@ -128,10 +132,12 @@
 
 				scope.target.copy( scope.target0 );
 				scope.object.position.copy( scope.position0 );
+				scope.object.quaternion.copy( scope.quaternion0 );
+				scope.object.up.copy( scope.up0 );
 				scope.object.zoom = scope.zoom0;
 				scope.object.updateProjectionMatrix();
-				scope.dispatchEvent( _changeEvent );
-				scope.update();
+				if ( typeof scope.syncExternalState === 'function' ) scope.syncExternalState();
+				else scope.update();
 				state = STATE.NONE;
 
 			}; // this method is exposed, but perhaps it would be better if we can make it private...
@@ -144,6 +150,7 @@
 				const quat = new THREE.Quaternion().setFromUnitVectors( object.up, new THREE.Vector3( 0, 1, 0 ) );
 				const quatInverse = quat.clone().invert();
 				const lastPosition = new THREE.Vector3();
+				const lastTarget = new THREE.Vector3();
 				const lastQuaternion = new THREE.Quaternion();
 				const twoPI = 2 * Math.PI;
 				// Free-orbit pole handling. OrbitControls recomputes the
@@ -154,9 +161,20 @@
 				// (skipping the recompute) so the orbit continues to any angle.
 				const _sphericalCarry = new THREE.Spherical();
 				let _carryAcrossPole = false;
+				let _carryPoleParity = 0;
 				return function update() {
 
 					const position = scope.object.position;
+					// Fit/reset/report capture may reposition the camera outside the
+					// pointer interaction. Never interpret that as a continuation of
+					// the previous unwrapped orbit.
+					if ( _carryAcrossPole && (
+						position.distanceToSquared( lastPosition ) > 1e-10 ||
+						scope.target.distanceToSquared( lastTarget ) > 1e-10
+					) ) {
+						_carryAcrossPole = false;
+						_carryPoleParity = 0;
+					}
 					offset.copy( position ).sub( scope.target ); // rotate offset to "y-axis-is-up" space
 
 					offset.applyQuaternion( quat ); // angle from z-axis around y-axis
@@ -208,33 +226,43 @@
 
 					} // restrict phi to be between desired limits
 
-					// Free-orbit pole crossing. OrbitControls natively clamps phi
-					// to [0, PI]; a drag reaching the top/bottom pole stops there
-					// and can only be reversed. Allow the camera to roll over the
-					// pole instead: when phi crosses 0 (top) or PI (bottom), map it
-					// to the opposite hemisphere (phi -> PI - phi for the top pole,
-					// phi -> 2PI - phi for the bottom pole) while flipping theta.
-					// This keeps the orbit direction continuous so the scene can be
-					// viewed from any angle. Once crossing is active, the spherical
-					// coords are carried across frames (the position-based recompute
-					// would otherwise lose the azimuth exactly at the pole).
-					if ( spherical.phi < 0 ) {
-						// Crossed the top pole (phi negative).
-						spherical.phi = Math.PI - spherical.phi; // e.g. -eps -> PI+eps... use PI + phi to stay in range
-						spherical.theta += Math.PI;
+					// Free-orbit pole crossing. OrbitControls normally clamps phi to
+					// [0, PI]. That is safe, but it makes a drag reaching a pole stop
+					// and reverse. This viewer intentionally permits a complete orbit,
+					// so reflect the angle into the canonical hemisphere and rotate the
+					// azimuth by PI for every odd pole crossing.
+					//
+					// The old top-pole branch used `PI - phi` for a negative phi. For
+					// phi=-eps that produced PI+eps and was immediately clamped to PI,
+					// which caused the visible 180-degree camera jump reported in the
+					// viewer. Keep the unwrapped phi in the carry state: storing only
+					// the reflected angle loses which pole was crossed on the next drag
+					// frame and can reintroduce a jump after a second crossing.
+					const rawPhi = spherical.phi;
+					const wrappedPhi = ( ( rawPhi % twoPI ) + twoPI ) % twoPI;
+					const poleParity = Math.abs( Math.floor( rawPhi / Math.PI ) ) % 2;
+					if ( wrappedPhi > Math.PI ) {
+						spherical.phi = twoPI - wrappedPhi;
+					} else {
+						spherical.phi = wrappedPhi;
+					}
+
+					if ( rawPhi < 0 || rawPhi > Math.PI ) {
+						// Remove the previous pole offset before applying the parity
+						// for the current unwrapped angle. This supports repeated pole
+						// crossings and simultaneous azimuth rotation.
+						if ( _carryAcrossPole ) spherical.theta -= _carryPoleParity * Math.PI;
+						spherical.theta += poleParity * Math.PI;
 						_carryAcrossPole = true;
+						_carryPoleParity = poleParity;
 						_sphericalCarry.theta = spherical.theta;
-						_sphericalCarry.phi = spherical.phi;
-						_sphericalCarry.radius = spherical.radius;
-					} else if ( spherical.phi > Math.PI ) {
-						// Crossed the bottom pole (phi beyond PI).
-						spherical.phi = 2 * Math.PI - spherical.phi;
-						spherical.theta += Math.PI;
-						_carryAcrossPole = true;
-						_sphericalCarry.theta = spherical.theta;
-						_sphericalCarry.phi = spherical.phi;
+						_sphericalCarry.phi = rawPhi;
 						_sphericalCarry.radius = spherical.radius;
 					} else if ( _carryAcrossPole ) {
+						// Returning to the canonical interval removes the last pole
+						// offset before normal position-based spherical reconstruction.
+						spherical.theta -= _carryPoleParity * Math.PI;
+						_carryPoleParity = 0;
 						_carryAcrossPole = false;
 					}
 					spherical.phi = Math.max( scope.minPolarAngle, Math.min( scope.maxPolarAngle, spherical.phi ) );
@@ -280,6 +308,7 @@
 
 						scope.dispatchEvent( _changeEvent );
 						lastPosition.copy( scope.object.position );
+						lastTarget.copy( scope.target );
 						lastQuaternion.copy( scope.object.quaternion );
 						zoomChanged = false;
 						return true;
@@ -291,6 +320,187 @@
 				};
 
 			}();
+
+			// Replace the legacy spherical update above with a continuous
+			// trackball-style update. The old implementation is kept only as
+			// historical context in this vendored file; this assignment is the
+			// active path used by the viewer.
+			this.update = function () {
+
+				const offset = new THREE.Vector3();
+				const orbitUp = new THREE.Vector3();
+				const worldUp = new THREE.Vector3( 0, 1, 0 );
+				const right = new THREE.Vector3();
+				const yawQuaternion = new THREE.Quaternion();
+				const pitchQuaternion = new THREE.Quaternion();
+				const lastPosition = new THREE.Vector3();
+				const lastTarget = new THREE.Vector3();
+				const lastUp = new THREE.Vector3();
+				const lastQuaternion = new THREE.Quaternion();
+				let initialized = false;
+
+				// Do not reconstruct an orientation from spherical coordinates.
+				// atan2 loses azimuth at a pole and lookAt then chooses the other
+				// valid roll, which is the visible 180-degree jump. Applying small
+				// rotations to both the camera offset and its up vector preserves a
+				// continuous orientation through either pole.
+				return function update() {
+
+					const position = scope.object.position;
+					offset.copy( position ).sub( scope.target );
+					orbitUp.copy( scope.object.up ).normalize();
+
+					if ( scope.autoRotate && state === STATE.NONE ) {
+
+						rotateLeft( getAutoRotationAngle() );
+
+					}
+
+					let yaw = sphericalDelta.theta;
+					let pitch = sphericalDelta.phi;
+
+					if ( scope.enableDamping === true ) {
+
+						yaw *= scope.dampingFactor;
+						pitch *= scope.dampingFactor;
+
+					}
+
+					if ( Math.abs( yaw ) > 0 ) {
+
+						yawQuaternion.setFromAxisAngle( worldUp, yaw );
+						offset.applyQuaternion( yawQuaternion );
+						orbitUp.applyQuaternion( yawQuaternion );
+						scope.object.quaternion.premultiply( yawQuaternion ).normalize();
+
+					}
+
+					if ( Math.abs( pitch ) > 0 ) {
+
+						// Derive pitch from the camera's local X axis. A forward/up
+						// cross product becomes singular at either pole and was the
+						// source of the visible 180-degree rotation jump.
+						right.set( 1, 0, 0 ).applyQuaternion( scope.object.quaternion ).normalize();
+
+						if ( right.lengthSq() > 1e-12 ) {
+
+							right.normalize();
+							pitchQuaternion.setFromAxisAngle( right, pitch );
+							offset.applyQuaternion( pitchQuaternion );
+							orbitUp.applyQuaternion( pitchQuaternion );
+							scope.object.quaternion.premultiply( pitchQuaternion ).normalize();
+
+						}
+
+					}
+
+					// A bounded client stops at its configured polar boundary. The
+					// BrachyBot viewer intentionally uses [0, PI], so free orbiting
+					// remains possible and never needs a pole reflection.
+					const radiusBeforeScale = offset.length();
+					if ( radiusBeforeScale > 1e-12 && ( scope.minPolarAngle > 0 || scope.maxPolarAngle < Math.PI ) ) {
+
+						const polar = Math.acos( Math.max( - 1, Math.min( 1, offset.y / radiusBeforeScale ) ) );
+
+						if ( polar < scope.minPolarAngle || polar > scope.maxPolarAngle ) {
+
+							if ( Math.abs( pitch ) > 0 && right.lengthSq() > 1e-12 ) {
+
+							pitchQuaternion.invert();
+							offset.applyQuaternion( pitchQuaternion );
+							orbitUp.applyQuaternion( pitchQuaternion );
+							scope.object.quaternion.premultiply( pitchQuaternion ).normalize();
+
+							}
+
+						}
+
+					}
+
+					const limitedRadius = Math.max( scope.minDistance, Math.min( scope.maxDistance, radiusBeforeScale * scale ) );
+
+					if ( radiusBeforeScale > 1e-12 ) {
+
+						offset.multiplyScalar( limitedRadius / radiusBeforeScale );
+
+					}
+
+					if ( scope.enableDamping === true ) {
+
+						scope.target.addScaledVector( panOffset, scope.dampingFactor );
+
+					} else {
+
+						scope.target.add( panOffset );
+
+					}
+
+					position.copy( scope.target ).add( offset );
+					scope.object.up.copy( orbitUp ).normalize();
+					// Keep the camera quaternion accumulated above. Calling lookAt here
+					// would reconstruct a roll at the pole and can flip the scene by PI.
+
+					// Keep the public angle accessors useful for diagnostics. These
+					// values are observational and no longer drive the orbit state.
+					spherical.setFromVector3( offset );
+
+					if ( scope.enableDamping === true ) {
+
+						sphericalDelta.theta *= 1 - scope.dampingFactor;
+						sphericalDelta.phi *= 1 - scope.dampingFactor;
+						panOffset.multiplyScalar( 1 - scope.dampingFactor );
+
+					} else {
+
+						sphericalDelta.set( 0, 0, 0 );
+						panOffset.set( 0, 0, 0 );
+
+					}
+
+					scale = 1;
+					const changed = !initialized
+						|| zoomChanged
+						|| lastPosition.distanceToSquared( scope.object.position ) > EPS
+						|| lastTarget.distanceToSquared( scope.target ) > EPS
+						|| lastUp.distanceToSquared( scope.object.up ) > EPS
+						|| 8 * ( 1 - lastQuaternion.dot( scope.object.quaternion ) ) > EPS;
+
+					if ( changed ) {
+
+						scope.dispatchEvent( _changeEvent );
+						lastPosition.copy( scope.object.position );
+						lastTarget.copy( scope.target );
+						lastUp.copy( scope.object.up );
+						lastQuaternion.copy( scope.object.quaternion );
+						zoomChanged = false;
+						initialized = true;
+						return true;
+
+					}
+
+					return false;
+
+				};
+
+			}();
+
+			// Re-baseline after Fit, Focus, report capture, or workspace restore.
+			// External pose changes must not inherit pointer deltas from the old
+			// gesture or let the next frame rebuild a pole orientation.
+			this.syncExternalState = function () {
+
+				sphericalDelta.set( 0, 0, 0 );
+				panOffset.set( 0, 0, 0 );
+				scale = 1;
+				zoomChanged = false;
+				state = STATE.NONE;
+				if ( scope.object.quaternion.lengthSq() > 1e-12 ) scope.object.quaternion.normalize();
+				if ( scope.object.up.lengthSq() < 1e-12 ) scope.object.up.set( 0, 1, 0 );
+				else scope.object.up.normalize();
+				scope.update();
+				return scope;
+
+			};
 
 			this.dispose = function () {
 
@@ -355,6 +565,16 @@
 
 			}
 
+			function getElementSize() {
+
+				const rect = scope.domElement?.getBoundingClientRect?.();
+				return {
+					width: Math.max( 1, rect?.width || scope.domElement?.clientWidth || 1 ),
+					height: Math.max( 1, rect?.height || scope.domElement?.clientHeight || 1 ),
+				};
+
+			}
+
 			function rotateLeft( angle ) {
 
 				sphericalDelta.theta -= angle;
@@ -410,7 +630,8 @@
 				const offset = new THREE.Vector3();
 				return function pan( deltaX, deltaY ) {
 
-					const element = scope.domElement;
+						const element = scope.domElement;
+						const size = getElementSize();
 
 					if ( scope.object.isPerspectiveCamera ) {
 
@@ -421,14 +642,14 @@
 
 						targetDistance *= Math.tan( scope.object.fov / 2 * Math.PI / 180.0 ); // we use only clientHeight here so aspect ratio does not distort speed
 
-						panLeft( 2 * deltaX * targetDistance / element.clientHeight, scope.object.matrix );
-						panUp( 2 * deltaY * targetDistance / element.clientHeight, scope.object.matrix );
+						panLeft( 2 * deltaX * targetDistance / size.height, scope.object.matrix );
+						panUp( 2 * deltaY * targetDistance / size.height, scope.object.matrix );
 
 					} else if ( scope.object.isOrthographicCamera ) {
 
 						// orthographic
-						panLeft( deltaX * ( scope.object.right - scope.object.left ) / scope.object.zoom / element.clientWidth, scope.object.matrix );
-						panUp( deltaY * ( scope.object.top - scope.object.bottom ) / scope.object.zoom / element.clientHeight, scope.object.matrix );
+						panLeft( deltaX * ( scope.object.right - scope.object.left ) / scope.object.zoom / size.width, scope.object.matrix );
+						panUp( deltaY * ( scope.object.top - scope.object.bottom ) / scope.object.zoom / size.height, scope.object.matrix );
 
 					} else {
 
@@ -509,10 +730,10 @@
 
 				rotateEnd.set( event.clientX, event.clientY );
 				rotateDelta.subVectors( rotateEnd, rotateStart ).multiplyScalar( scope.rotateSpeed );
-				const element = scope.domElement;
-				rotateLeft( 2 * Math.PI * rotateDelta.x / element.clientHeight ); // yes, height
+				const size = getElementSize();
+				rotateLeft( 2 * Math.PI * rotateDelta.x / size.height );
 
-				rotateUp( 2 * Math.PI * rotateDelta.y / element.clientHeight );
+				rotateUp( 2 * Math.PI * rotateDelta.y / size.height );
 				rotateStart.copy( rotateEnd );
 				scope.update();
 
@@ -675,10 +896,10 @@
 				}
 
 				rotateDelta.subVectors( rotateEnd, rotateStart ).multiplyScalar( scope.rotateSpeed );
-				const element = scope.domElement;
-				rotateLeft( 2 * Math.PI * rotateDelta.x / element.clientHeight ); // yes, height
+				const size = getElementSize();
+				rotateLeft( 2 * Math.PI * rotateDelta.x / size.height );
 
-				rotateUp( 2 * Math.PI * rotateDelta.y / element.clientHeight );
+				rotateUp( 2 * Math.PI * rotateDelta.y / size.height );
 				rotateStart.copy( rotateEnd );
 
 			}

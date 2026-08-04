@@ -281,6 +281,7 @@ def guide_version_summaries(agent: Any) -> List[Dict[str, Any]]:
             continue
         summaries.append({
             "version": int(item.get("version") or 0),
+            "planning_id": item.get("planning_id"),
             "label": str(item.get("label") or "Puncture guide"),
             "status": str(item.get("status") or "unknown"),
             "selected_needle_ids": list(item.get("selected_needle_ids") or []),
@@ -315,6 +316,12 @@ def save_guide_version(agent: Any, state: Mapping[str, Any]) -> Dict[str, Any]:
         raise SurgicalGuideError("Agent is unavailable")
     current = dict(state)
     current["created_at"] = float(__import__("time").time())
+    try:
+        from web.planning_runs import active_planning_id
+        current["planning_id"] = active_planning_id(agent.memory)
+    except Exception:
+        # Guide persistence remains usable in the standalone tool runtime.
+        current.setdefault("planning_id", None)
     history = [dict(item) for item in (agent.memory.retrieve("surgical_guide_versions") or []) if isinstance(item, Mapping)]
     previous = agent.memory.retrieve("surgical_guide")
     # Upgrade path for the original single-guide representation: preserve an
@@ -1132,7 +1139,16 @@ def generate_surgical_guide(
     version = int(reuse_version) if reuse_version else (
         int(prior.get("version", 0)) + 1 if isinstance(prior, Mapping) else 1
     )
-    planning_id = str(memory.retrieve("manual_planning_id") or "")
+    # The guide belongs to the currently displayed Planning, including
+    # algorithm-generated runs that do not have a manual planning id.  Keep
+    # the legacy manual key only as a fallback for old sessions.
+    try:
+        from web.planning_runs import active_planning_id
+        planning_id = str(active_planning_id(memory) or "")
+    except Exception:
+        planning_id = ""
+    if not planning_id:
+        planning_id = str(memory.retrieve("manual_planning_id") or "")
     planning_version = int(memory.retrieve("manual_plan_version") or 0)
     path_checks = _planned_path_deviation(paths)
     # The guide covers the current displayed needle paths, but its validity

@@ -1380,12 +1380,35 @@ function fitCameraToDoseSurfaceScene() {
     box.getSize(size);
     const maxDim = Math.max(size.x, size.y, size.z, 40);
     const dist = maxDim * 2.4;
-    scene3D.controls.target.copy(center);
-    scene3D.camera.position.set(center.x + dist * 0.45, center.y - dist * 1.05, center.z + dist * 0.55);
-    scene3D.camera.near = Math.max(0.1, dist * 0.002);
-    scene3D.camera.far = dist * 25;
-    scene3D.camera.updateProjectionMatrix();
-    scene3D.controls.update();
+    const position = new THREE.Vector3(
+        center.x + dist * 0.45,
+        center.y - dist * 1.05,
+        center.z + dist * 0.55,
+    );
+    const pose = {
+        position,
+        target: center,
+        up: new THREE.Vector3(0, 1, 0),
+        near: Math.max(0.1, dist * 0.002),
+        far: dist * 25,
+        aspect: scene3D.camera.aspect,
+        fov: scene3D.camera.fov,
+        zoom: scene3D.camera.zoom,
+        saveState: true,
+    };
+    if (typeof window.sync3DCameraPose === 'function') {
+        window.sync3DCameraPose(pose);
+    } else {
+        // Compatibility fallback for a partially loaded legacy page. Keep the
+        // same full pose transaction even when the central helper is absent.
+        scene3D.controls.target.copy(center);
+        scene3D.camera.position.copy(position);
+        scene3D.camera.up.copy(pose.up);
+        scene3D.camera.near = pose.near;
+        scene3D.camera.far = pose.far;
+        scene3D.camera.updateProjectionMatrix();
+        scene3D.controls.syncExternalState?.();
+    }
 }
 
 async function setDoseTextureMode(enabled, opts = {}) {

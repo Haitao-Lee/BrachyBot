@@ -118,6 +118,49 @@ def test_chat_snapshot_patches_are_append_only(tmp_path):
     assert [message["content"] for message in messages] == ["first", "answer"]
 
 
+def test_report_snapshot_does_not_let_older_blank_form_erase_narrative(tmp_path):
+    store = WorkspaceStore(tmp_path / "runtime")
+    user = store.create_user("report_owner", "hash")
+    case = store.create_session(user["id"], "Report case")
+    rich = {
+        "version": 3,
+        "updatedAt": 200,
+        "interpretation": "Generated dose interpretation",
+        "safety": "Review OAR dose",
+        "figures": [{"axis": "dvh", "_cacheKey": "figure-1"}],
+    }
+    blank = {"version": 3, "updatedAt": 100, "interpretation": "", "safety": "", "figures": []}
+    store.save_snapshot_patch(user["id"], case.id, {"report": {"form": rich}})
+    store.save_snapshot_patch(user["id"], case.id, {"report": {"form": blank}})
+    form = store.load_snapshot(user["id"], case.id)["report"]["form"]
+    assert form["interpretation"] == rich["interpretation"]
+    assert form["figures"] == rich["figures"]
+
+    reset = {"version": 3, "updatedAt": 300, "interpretation": "", "safety": "", "figures": []}
+    store.save_snapshot_patch(user["id"], case.id, {"report": {"form": reset}})
+    assert store.load_snapshot(user["id"], case.id)["report"]["form"]["interpretation"] == ""
+
+
+def test_legacy_direct_report_form_is_canonicalized_without_losing_text(tmp_path):
+    store = WorkspaceStore(tmp_path / "runtime")
+    user = store.create_user("legacy_report_owner", "hash")
+    case = store.create_session(user["id"], "Legacy report case")
+    rich = {
+        "version": 3,
+        "updatedAt": 200,
+        "interpretation": "Persisted legacy narrative",
+        "figures": [{"axis": "axial", "_cacheKey": "legacy-figure"}],
+    }
+    store.save_snapshot_patch(user["id"], case.id, {"report": rich})
+    store.save_snapshot_patch(user["id"], case.id, {
+        "report": {"form": {"version": 3, "updatedAt": 100, "interpretation": ""}},
+    })
+    report = store.load_snapshot(user["id"], case.id)["report"]
+    assert report["form"]["interpretation"] == "Persisted legacy narrative"
+    assert report["form"]["figures"] == rich["figures"]
+    assert "interpretation" not in report
+
+
 def test_chat_snapshot_updates_merge_by_stable_message_identity(tmp_path):
     """Screenshot, Trace, and final text updates must remain one reply."""
     store = WorkspaceStore(tmp_path / "runtime")
