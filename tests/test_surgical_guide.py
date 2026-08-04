@@ -65,6 +65,8 @@ def test_guide_is_watertight_and_stl_round_trips():
     assert guide["status"] == "ready"
     assert guide["validation"]["watertight"] is True
     assert guide["validation"]["source_needle_count"] == 1
+    assert guide["auxiliary_holes"]["enabled"] is True
+    assert guide["auxiliary_holes"]["realized_count"] > 0
     assert guide["needle_paths"][0]["guide_centerline_deviation_mm"] == 0.0
     assert guide["validation"]["geometry_resolution_mm"] == 1.0
     payload = mesh_to_ascii_stl(guide["vertices"], guide["faces"])

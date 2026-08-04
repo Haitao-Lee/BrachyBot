@@ -241,13 +241,25 @@ def normalize_guide_parameters(raw: Optional[Mapping[str, Any]] = None) -> Dict[
         "auxiliary_hole_first_offset_mm",
         "auxiliary_hole_ring_spacing_mm",
     }
+    legacy_parameter_names = {
+        "skin_threshold_hu",
+        "skin_clearance_mm",
+        "plate_thickness_mm",
+        "patch_margin_mm",
+        "channel_radius_mm",
+        "sleeve_outer_radius_mm",
+        "sleeve_outward_mm",
+        "sleeve_inward_mm",
+    }
     # Parameter snapshots created before auxiliary holes existed must continue
     # to reproduce their original guide. New UI/tool requests include at least
-    # the enable flag, so this compatibility rule does not disable the new
-    # default path and prevents an old custom sleeve geometry from failing a
-    # validation rule it never requested.
-    legacy_without_auxiliary_parameters = bool(raw) and not bool(
-        auxiliary_parameter_names.intersection(raw.keys())
+    # the enable flag, while a new partial request such as only changing the
+    # grid resolution should still use the new default. The compatibility rule
+    # therefore requires an old manufacturing parameter, not merely any raw
+    # parameter, and never overrides an explicit auxiliary-hole field.
+    legacy_without_auxiliary_parameters = bool(
+        legacy_parameter_names.intersection(raw.keys())
+        and not auxiliary_parameter_names.intersection(raw.keys())
     )
     params = dict(DEFAULT_GUIDE_PARAMETERS)
     for name, default in DEFAULT_GUIDE_PARAMETERS.items():
