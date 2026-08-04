@@ -77,6 +77,64 @@ def test_runtime_python_venv_symlink_is_not_resolved():
     assert adapter._runtime_python.__name__ == "_runtime_python"
 
 
+def test_empty_nnunet_mask_reports_honest_diagnostic(monkeypatch, tmp_path):
+    """When the pancreatic nnU-Net runs but finds no tumor label, the CTV
+    wrapper must say the model RAN and which structures it found — not fall back
+    to the generic 'model not installed' guess."""
+    import tool_factory.CTV_seg as ctv
+    from tool_factory import ToolResult
+    from tool_factory.CTV_seg.pancreatic_tumor_nnunet import NNUNetPancreaticTumorTool
+
+    image = sitk.GetImageFromArray(
+        np.zeros((4, 4, 4), dtype=np.int16).astype(np.int16)
+    )
+
+    class _FakeNNUNet(NNUNetPancreaticTumorTool):
+        def _execute(self, **kwargs):
+            result_array = np.zeros((4, 4, 4), dtype=np.uint8)
+            result_array[0:2, 0:2, 0:2] = 4  # pancreas only, no tumor label 1
+            result_array[2:4, 2:4, 2:4] = 3  # vein
+            return ToolResult(
+                success=True,
+                data=(result_array == 1).astype(np.uint8),
+                metadata={
+                    "label_counts": {
+                        "pancreatic tumor": 0,
+                        "artery": 0,
+                        "vein": int(np.sum(result_array == 3)),
+                        "pancreas": int(np.sum(result_array == 4)),
+                    },
+                },
+            )
+
+    monkeypatch.setattr(ctv, "TOOL_REGISTRY", {**ctv.TOOL_REGISTRY, "nnunet_pancreatic": _FakeNNUNet})
+    result = ctv.CTVSegmentationTool()._execute(
+        image=image, tumor_type="nnunet_pancreatic"
+    )
+
+    assert result.success is False
+    assert "did NOT detect any tumor region" in result.error
+    assert "vein" in result.error
+    assert "pancreas" in result.error
+    assert "model is not installed" not in result.error
+
+
+def test_empty_manual_label_reports_check_message(tmp_path):
+    """An empty (background-only) manual CTV label should tell the user to
+    check the label file, not blame the model."""
+    from tool_factory.CTV_seg import CTVSegmentationTool
+
+    label = sitk.GetImageFromArray(np.zeros((4, 4, 4), dtype=np.uint8))
+    label_path = tmp_path / "empty_manual_ctv.nii.gz"
+    sitk.WriteImage(label, str(label_path))
+
+    result = CTVSegmentationTool()._execute(label_path=str(label_path))
+
+    assert result.success is False
+    assert "label is empty" in result.error
+    assert "label file" in result.error
+
+
 def test_biomedparse_missing_runtime_fails_closed(monkeypatch, tmp_path):
     import tool_factory.CTV_seg.biomedparse_v2 as adapter
 

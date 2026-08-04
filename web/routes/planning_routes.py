@@ -3265,7 +3265,6 @@ def register_planning_routes(
                         "seeds": list(current.get("seeds") or []),
                         "needles": list(current.get("needles") or []),
                     }), 409
-
             ct_image = memory.retrieve("ct_image")
             if ct_image is None:
                 raise ValueError("No CT image loaded")
