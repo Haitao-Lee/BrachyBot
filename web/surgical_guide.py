@@ -233,6 +233,22 @@ def _finite_integer(value: Any, name: str, lower: float, upper: float) -> float:
 def normalize_guide_parameters(raw: Optional[Mapping[str, Any]] = None) -> Dict[str, Any]:
     """Validate guide parameters without silently changing requested geometry."""
     raw = raw if isinstance(raw, Mapping) else {}
+    auxiliary_parameter_names = {
+        "auxiliary_holes_enabled",
+        "auxiliary_hole_radius_mm",
+        "auxiliary_hole_ring_count",
+        "auxiliary_holes_per_ring",
+        "auxiliary_hole_first_offset_mm",
+        "auxiliary_hole_ring_spacing_mm",
+    }
+    # Parameter snapshots created before auxiliary holes existed must continue
+    # to reproduce their original guide. New UI/tool requests include at least
+    # the enable flag, so this compatibility rule does not disable the new
+    # default path and prevents an old custom sleeve geometry from failing a
+    # validation rule it never requested.
+    legacy_without_auxiliary_parameters = bool(raw) and not bool(
+        auxiliary_parameter_names.intersection(raw.keys())
+    )
     params = dict(DEFAULT_GUIDE_PARAMETERS)
     for name, default in DEFAULT_GUIDE_PARAMETERS.items():
         if isinstance(default, bool):
@@ -243,6 +259,8 @@ def normalize_guide_parameters(raw: Optional[Mapping[str, Any]] = None) -> Dict[
             params[name] = _finite_integer(raw.get(name, default), name, lower, upper)
         else:
             params[name] = _finite_float(raw.get(name, default), name, lower, upper)
+    if legacy_without_auxiliary_parameters:
+        params["auxiliary_holes_enabled"] = False
     if params["sleeve_outer_radius_mm"] <= params["channel_radius_mm"] + 0.35:
         raise SurgicalGuideError(
             "sleeve_outer_radius_mm must exceed channel_radius_mm by at least 0.35 mm"
