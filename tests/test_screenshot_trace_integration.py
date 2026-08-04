@@ -142,5 +142,6 @@ def test_user_visible_screenshot_language_prefers_global_ui_language():
     chat = _source("web/app/static/js/brachybot-chat-todo.js")
 
     assert "const raw = window._i18nLang || (" in ui_api
-    assert "response_language: window._i18nLang || (" in chat
+    assert "response_language: turnIdentity.responseLanguage" in chat
+    assert "conversationLanguageForSession(turnSessionId)" in chat
     assert "trace_summary_i18n" in _source("tool_factory/ui_screenshot/__init__.py")

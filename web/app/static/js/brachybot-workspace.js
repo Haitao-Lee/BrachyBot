@@ -337,6 +337,9 @@
         clearTimeout(saveTimer);
         saveTimer = null;
     }
+    // Session transitions cancel the pending timer before the active case
+    // changes, so a delayed report save cannot target the new case.
+    window.cancelScheduledWorkspaceSave = clearScheduledWorkspaceSave;
 
     function invalidateDeferredWorkspaceRestore() {
         // A mesh or chart restore may deliberately run after asynchronous
@@ -493,6 +496,11 @@
         return {
             camera_position: numberArray(camera.position),
             camera_quaternion: camera.quaternion ? [camera.quaternion.x, camera.quaternion.y, camera.quaternion.z, camera.quaternion.w] : null,
+            camera_up: numberArray(camera.up),
+            camera_near: Number.isFinite(camera.near) ? camera.near : null,
+            camera_far: Number.isFinite(camera.far) ? camera.far : null,
+            camera_aspect: Number.isFinite(camera.aspect) ? camera.aspect : null,
+            camera_fov: Number.isFinite(camera.fov) ? camera.fov : null,
             camera_zoom: Number.isFinite(camera.zoom) ? camera.zoom : null,
             camera_target: numberArray(scene3D.controls?.target),
             display_mode: typeof state !== 'undefined' ? state.doseTexture?.enabled ? 'dose_surface' : 'normal_surface' : null,
@@ -584,8 +592,19 @@
         });
     }
 
+    function activeReportPlanningId() {
+        const planning = typeof dataTreeState !== 'undefined' ? dataTreeState?.planning : null;
+        return String(
+            planning?.activePlanningId
+            || planning?.id
+            || window.__reportWorkspaceActivePlanningId
+            || '__unassigned__',
+        );
+    }
+
     function reportState() {
         if (!window.reportForm) return {};
+        const planningId = activeReportPlanningId();
         // IndexedDB remains the fast local cache, but server-owned report
         // figures make restart and another browser deterministic. Uploads are
         // deliberately fire-and-forget and never delay chat/session changes.
@@ -597,6 +616,7 @@
             });
         }
         const form = jsonClone(window.reportForm);
+        if (form && activeSessionId) form.sessionId = String(activeSessionId);
         // Offload large base64 figure data URLs into IndexedDB so they
         // don't bloat every persistWorkspace payload (200 KB – 1 MB).
         if (form && Array.isArray(form.figures) && window.SessionCache && activeSessionId) {
@@ -604,7 +624,7 @@
             for (let i = 0; i < form.figures.length; i++) {
                 const f = form.figures[i];
                 if (f && f.dataUrl && f.dataUrl.length > 10000) {
-                    const cacheKey = `report_fig_${i}_${f.title || ''}`.replace(/[^a-zA-Z0-9_-]/g, '_');
+                    const cacheKey = `report_fig_${planningId}_${i}_${f.title || ''}`.replace(/[^a-zA-Z0-9_-]/g, '_');
                     try {
                         const enc = new TextEncoder();
                         void window.SessionCache.put(sid, 'report', cacheKey, enc.encode(f.dataUrl).buffer).catch(function(){});
@@ -614,13 +634,109 @@
                 }
             }
         }
-        return {
+        const section = {
             form: form,
             sources: window.Report?.sources?._map ? Array.from(window.Report.sources._map.entries()) : [],
             audit: jsonClone(window.__reportWorkspaceAudit || []),
             snapshots: jsonClone(window.__reportWorkspaceSnapshots || []),
             collapsed: jsonClone(window._reportCollapsed || {}),
         };
+        // A report belongs to one immutable Planning run. Keep the legacy
+        // top-level fields for old clients, but also maintain a per-run map so
+        // switching Planning never shows the previous run's narrative or
+        // screenshots under the newly selected dose/needles.
+        const byPlanning = (window.__reportWorkspaceByPlanning
+            && typeof window.__reportWorkspaceByPlanning === 'object')
+            ? window.__reportWorkspaceByPlanning
+            : {};
+        byPlanning[planningId] = section;
+        window.__reportWorkspaceByPlanning = byPlanning;
+        window.__reportWorkspaceActivePlanningId = planningId;
+        return {
+            ...section,
+            active_planning_id: planningId === '__unassigned__' ? null : planningId,
+            by_planning_id: byPlanning,
+        };
+    }
+
+    function _reportNarrativeLength(form) {
+        if (!form || typeof form !== 'object') return 0;
+        return ['interpretation', 'safety', 'qaNotes'].reduce((total, key) => {
+            const value = form[key];
+            return total + (typeof value === 'string' ? value.trim().length : 0);
+        }, 0);
+    }
+
+    function _reportContentScore(form) {
+        if (!form || typeof form !== 'object') return 0;
+        let score = _reportNarrativeLength(form);
+        const textPaths = [
+            ['case', 'patientId'], ['case', 'tumorType'], ['case', 'plannerName'],
+            ['study', 'diagnosis'], ['study', 'clinicalHistory'], ['study', 'priorTreatment'],
+            ['segmentation', 'ctvModelName'], ['segmentation', 'oarModelName'],
+        ];
+        textPaths.forEach(([parent, key]) => {
+            const value = form[parent]?.[key];
+            if (typeof value === 'string') score += value.trim().length;
+        });
+        ['references', 'figures', 'oarDose'].forEach(key => {
+            if (Array.isArray(form[key])) score += form[key].length * 32;
+        });
+        Object.values(form.metrics || {}).forEach(value => {
+            if (value !== null && value !== undefined && value !== '') score += 8;
+        });
+        Object.values(form.planning || {}).forEach(value => {
+            if (value !== null && value !== undefined && value !== '') score += 4;
+        });
+        return score;
+    }
+
+    // Older workspaces stored the form directly under `report`, while newer
+    // snapshots use `report.form` so audit/source metadata can live beside it.
+    // Normalize both shapes before restoring; otherwise a legacy report can
+    // keep its cached figures but silently lose every text field on a switch.
+    const REPORT_FORM_KEYS = new Set([
+        'version', 'language', 'templateKey', 'sessionId', 'updatedAt', 'updated_at',
+        'hospital', 'patient', 'study', 'case', 'imaging', 'segmentation',
+        'planning', 'metrics', 'oarDose', 'interpretation', 'safety', 'qaNotes',
+        'references', 'figures', 'signature', 'editedFields',
+    ]);
+
+    function reportFormFromSnapshot(reportSection) {
+        if (!reportSection || typeof reportSection !== 'object') return null;
+        if (reportSection.form && typeof reportSection.form === 'object'
+            && !Array.isArray(reportSection.form)) {
+            return reportSection.form;
+        }
+        const hasDirectFormField = Object.keys(reportSection).some(key => REPORT_FORM_KEYS.has(key));
+        return hasDirectFormField ? reportSection : null;
+    }
+
+    function reportSectionForPlanning(reportSection, planningId) {
+        if (!reportSection || typeof reportSection !== 'object') return null;
+        const target = String(planningId || '');
+        const byPlanning = reportSection.by_planning_id || reportSection.byPlanning;
+        if (target && byPlanning && typeof byPlanning === 'object') {
+            const selected = byPlanning[target];
+            if (selected && typeof selected === 'object') return selected;
+            // A known Planning map is authoritative. Do not fall back to the
+            // previous run's top-level report when a newly-created Planning
+            // has not received its own report yet.
+            return null;
+        }
+        return reportSection;
+    }
+
+    function _preservePopulatedReport(current, saved, options) {
+        if (!options?.preserveClinicalData || !current || !saved) return false;
+        if (current.sessionId && String(current.sessionId) !== String(activeSessionId || '')) return false;
+        const currentUpdated = Number(current.updatedAt || current.updated_at || 0);
+        const savedUpdated = Number(saved.updatedAt || saved.updated_at || 0);
+        if (currentUpdated > savedUpdated && _reportContentScore(current) >= _reportContentScore(saved)) return true;
+        // A background planning refresh may fill the report after a shell
+        // snapshot was read. Never let that snapshot erase generated text.
+        return _reportNarrativeLength(current) > 0 && _reportNarrativeLength(saved) === 0
+            && _reportContentScore(current) > _reportContentScore(saved);
     }
 
     function renderRecoveryNotice(operation) {
@@ -949,12 +1065,60 @@
         const applyScene = () => {
             if (!scene || typeof scene3D === 'undefined' || !scene3D?.camera) return;
             const camera = scene3D.camera;
-            if (Array.isArray(scene.camera_position) && scene.camera_position.length === 3) camera.position.fromArray(scene.camera_position);
-            if (Array.isArray(scene.camera_quaternion) && scene.camera_quaternion.length === 4) camera.quaternion.fromArray(scene.camera_quaternion);
-            if (Number.isFinite(scene.camera_zoom)) camera.zoom = scene.camera_zoom;
-            if (Array.isArray(scene.camera_target) && scene.camera_target.length === 3 && scene3D.controls?.target) scene3D.controls.target.fromArray(scene.camera_target);
-            camera.updateProjectionMatrix?.();
-            scene3D.controls?.update?.();
+            const three = typeof THREE !== 'undefined' ? THREE : null;
+            const positionValues = Array.isArray(scene.camera_position) && scene.camera_position.length === 3
+                ? scene.camera_position : null;
+            const quaternionValues = Array.isArray(scene.camera_quaternion) && scene.camera_quaternion.length === 4
+                ? scene.camera_quaternion : null;
+            const upValues = Array.isArray(scene.camera_up) && scene.camera_up.length === 3
+                ? scene.camera_up : null;
+            const targetValues = Array.isArray(scene.camera_target) && scene.camera_target.length === 3
+                ? scene.camera_target : null;
+            const position = positionValues && three?.Vector3
+                ? new three.Vector3().fromArray(positionValues) : positionValues;
+            const quaternion = quaternionValues && three?.Quaternion
+                ? new three.Quaternion().fromArray(quaternionValues) : quaternionValues;
+            const up = upValues && three?.Vector3
+                ? new three.Vector3().fromArray(upValues) : upValues;
+            const target = targetValues && three?.Vector3
+                ? new three.Vector3().fromArray(targetValues) : targetValues;
+            if (typeof window.sync3DCameraPose === 'function' && (position || quaternion || target)) {
+                window.sync3DCameraPose({
+                    position,
+                    target,
+                    quaternion,
+                    up,
+                    near: scene.camera_near,
+                    far: scene.camera_far,
+                    aspect: scene.camera_aspect,
+                    fov: scene.camera_fov,
+                    zoom: scene.camera_zoom,
+                });
+            } else {
+                if (position) {
+                    if (three?.Vector3 && typeof camera.position?.copy === 'function') camera.position.copy(position);
+                    else camera.position?.fromArray?.(positionValues || position);
+                }
+                if (quaternion) {
+                    if (three?.Quaternion && typeof camera.quaternion?.copy === 'function') camera.quaternion.copy(quaternion);
+                    else camera.quaternion?.fromArray?.(quaternionValues || quaternion);
+                }
+                if (up) {
+                    if (three?.Vector3 && typeof camera.up?.copy === 'function') camera.up.copy(up);
+                    else camera.up?.fromArray?.(upValues || up);
+                }
+                if (target && scene3D.controls?.target) {
+                    if (three?.Vector3 && typeof scene3D.controls.target.copy === 'function') scene3D.controls.target.copy(target);
+                    else scene3D.controls.target.fromArray?.(targetValues || target);
+                }
+                if (Number.isFinite(scene.camera_zoom)) camera.zoom = scene.camera_zoom;
+                if (Number.isFinite(scene.camera_near)) camera.near = scene.camera_near;
+                if (Number.isFinite(scene.camera_far)) camera.far = scene.camera_far;
+                if (Number.isFinite(scene.camera_aspect)) camera.aspect = scene.camera_aspect;
+                if (Number.isFinite(scene.camera_fov)) camera.fov = scene.camera_fov;
+                camera.updateProjectionMatrix?.();
+                scene3D.controls?.syncExternalState?.();
+            }
             scene3D.requestRender?.(4);
         };
         // Mesh reconstruction is asynchronous. Applying twice restores the
@@ -986,8 +1150,8 @@
         }
     }
 
-    function hydrateReportFigureAssets(snapshot, sessionId, restoreGeneration, attempt = 0) {
-        const report = snapshot?.report?.form;
+    function hydrateReportFigureAssets(snapshot, sessionId, restoreGeneration, attempt = 0, targetForm = null) {
+        const report = targetForm || reportFormFromSnapshot(snapshot?.report);
         if (!report || !Array.isArray(report.figures)) return;
         const pending = report.figures.filter(f => f && f._cacheKey && !f.dataUrl);
         if (!pending.length) return;
@@ -996,7 +1160,7 @@
         // harmless startup race into permanently missing report figures.
         if (!window.SessionCache) {
             if (attempt < 5) {
-                setTimeout(() => hydrateReportFigureAssets(snapshot, sessionId, restoreGeneration, attempt + 1), 250 * (attempt + 1));
+                setTimeout(() => hydrateReportFigureAssets(snapshot, sessionId, restoreGeneration, attempt + 1, report), 250 * (attempt + 1));
             }
             return;
         }
@@ -1021,12 +1185,55 @@
             });
             const recovered = results.filter(Boolean).length;
             if (!recovered && attempt < 5) {
-                setTimeout(() => hydrateReportFigureAssets(snapshot, sessionId, restoreGeneration, attempt + 1), 350 * (attempt + 1));
+                setTimeout(() => hydrateReportFigureAssets(snapshot, sessionId, restoreGeneration, attempt + 1, report), 350 * (attempt + 1));
                 return;
             }
             try { renderReportEditor(); } catch (_) {}
             try { _updateReportPreview(); } catch (_) {}
         });
+    }
+
+    function restoreReportForPlanning(planningId, options = {}) {
+        const target = String(planningId || '');
+        const byPlanning = window.__reportWorkspaceByPlanning
+            && typeof window.__reportWorkspaceByPlanning === 'object'
+            ? window.__reportWorkspaceByPlanning
+            : {};
+        const section = target ? byPlanning[target] : null;
+        const report = reportFormFromSnapshot(section);
+        if (report && typeof report === 'object') {
+            const restored = jsonClone(report);
+            restored.editedFields = new Set(restored.editedFields || []);
+            restored.sessionId = String(activeSessionId || restored.sessionId || '');
+            window.reportForm = restored;
+            window.__reportWorkspaceActivePlanningId = target;
+            if (window.Report?.sources?._map && Array.isArray(section?.sources)) {
+                window.Report.sources._map = new Map(section.sources);
+            }
+            window.__reportWorkspaceAudit = Array.isArray(section?.audit) ? section.audit : [];
+            window.__reportWorkspaceSnapshots = Array.isArray(section?.snapshots) ? section.snapshots : [];
+            window._reportCollapsed = section?.collapsed || {};
+            hydrateReportFigureAssets(
+                { report: section },
+                String(activeSessionId || ''),
+                workspaceRestoreGeneration,
+                0,
+                window.reportForm,
+            );
+        } else if (typeof _newEmptyReportForm === 'function') {
+            // A newly created Planning has no report yet. Do not leave the
+            // previous run's text visible next to the new dose/needle set.
+            window.reportForm = _newEmptyReportForm();
+            window.reportForm.sessionId = String(activeSessionId || '');
+            window.__reportWorkspaceActivePlanningId = target || null;
+            window.__reportWorkspaceAudit = [];
+            window.__reportWorkspaceSnapshots = [];
+            window._reportCollapsed = {};
+        }
+        try { if (typeof renderReportEditor === 'function') renderReportEditor(); } catch (_) {}
+        try { if (typeof _updateReportPreview === 'function') _updateReportPreview(); } catch (_) {}
+        if (options.persist !== false) scheduleWorkspaceSave('planning.report.restored');
+        return !!report;
     }
 
     async function applyWorkspaceSnapshot(snapshot, options = {}) {
@@ -1094,29 +1301,101 @@
                     || window.conversationLanguageForSession?.(sessionId)
                     || window._i18nLang
                     || 'en';
-                const monitorPhase = trainingMonitorState.active ? 'active' : 'inactive';
-                if (typeof window.setTrainingMonitorPhase === 'function') {
-                    window.setTrainingMonitorPhase(monitorPhase);
+                const restoredMonitorRunId = trainingMonitorState.runId;
+                const restoredMonitorWasActive = !!trainingMonitorState.active;
+                // A durable snapshot may outlive the browser/server process
+                // that created the run. It is history, not proof of a live
+                // monitor subscription. End it silently and never resurrect
+                // the global monitor presentation during hydration.
+                if (restoredMonitorWasActive) {
+                    trainingMonitorState.active = false;
+                    trainingMonitorState.phase = 'inactive';
+                    trainingMonitorState.runId = null;
+                    trainingMonitorState.pendingFeedback = [];
+                    trainingMonitorState.screenshotGalleryContext = null;
+                    if (typeof window.setTrainingMonitorPhase === 'function') {
+                        window.setTrainingMonitorPhase('inactive');
+                    } else if (typeof window.setMonitorPresentation === 'function') {
+                        window.setMonitorPresentation('inactive');
+                    } else {
+                        document.body.classList.remove('monitor-active');
+                    }
+                    if (typeof window.releaseTrainingMonitorForSession === 'function') {
+                        void window.releaseTrainingMonitorForSession(
+                            sessionId,
+                            'workspace_restore',
+                            { runId: restoredMonitorRunId, skipLocal: true },
+                        );
+                    }
+                } else if (typeof window.setTrainingMonitorPhase === 'function') {
+                    window.setTrainingMonitorPhase('inactive');
                 } else if (typeof window.setMonitorPresentation === 'function') {
-                    window.setMonitorPresentation(monitorPhase);
+                    window.setMonitorPresentation('inactive');
                 } else {
-                    document.body.classList.toggle('monitor-active', !!trainingMonitorState.active);
+                    document.body.classList.remove('monitor-active');
                 }
             }
-            const report = snapshot.report && snapshot.report.form;
+            const reportSection = snapshot.report && typeof snapshot.report === 'object'
+                ? snapshot.report : null;
+            const savedTreePlanning = uiState.data_tree?.planning || {};
+            const targetPlanningId = String(
+                savedTreePlanning.activePlanningId
+                || savedTreePlanning.id
+                || reportSection?.active_planning_id
+                || '',
+            );
+            if (reportSection?.by_planning_id && typeof reportSection.by_planning_id === 'object') {
+                window.__reportWorkspaceByPlanning = Object.assign(
+                    {},
+                    window.__reportWorkspaceByPlanning || {},
+                    reportSection.by_planning_id,
+                );
+            }
+            const selectedReportSection = reportSectionForPlanning(reportSection, targetPlanningId);
+            const report = reportFormFromSnapshot(selectedReportSection);
             if (report && typeof report === 'object') {
-                report.editedFields = new Set(report.editedFields || []);
-                window.reportForm = report;
-                hydrateReportFigureAssets(snapshot, sessionId, restoreGeneration);
-                const storedSources = snapshot.report?.sources;
+                const keepCurrentReport = _preservePopulatedReport(window.reportForm, report, options);
+                if (!keepCurrentReport) {
+                    report.editedFields = new Set(report.editedFields || []);
+                    report.sessionId = sessionId;
+                    window.reportForm = report;
+                }
+                const targetReport = keepCurrentReport ? window.reportForm : report;
+                // Keep cache metadata from the control-plane snapshot attached
+                // to the populated form when that form is newer. This lets the
+                // image hydrate without replacing its narrative fields.
+                if (keepCurrentReport && Array.isArray(report.figures) && Array.isArray(targetReport.figures)) {
+                    report.figures.forEach(savedFigure => {
+                        if (!savedFigure?._cacheKey) return;
+                        const targetFigure = targetReport.figures.find(candidate =>
+                            candidate && (candidate.id && savedFigure.id
+                                ? candidate.id === savedFigure.id
+                                : (candidate.axis || candidate.title || '') === (savedFigure.axis || savedFigure.title || ''))
+                        );
+                        if (targetFigure && !targetFigure.dataUrl) targetFigure._cacheKey = savedFigure._cacheKey;
+                    });
+                }
+                if (targetPlanningId) window.__reportWorkspaceActivePlanningId = targetPlanningId;
+                if (targetPlanningId && selectedReportSection) {
+                    window.__reportWorkspaceByPlanning = window.__reportWorkspaceByPlanning || {};
+                    window.__reportWorkspaceByPlanning[targetPlanningId] = selectedReportSection;
+                }
+                hydrateReportFigureAssets({ report: selectedReportSection }, sessionId, restoreGeneration, 0, targetReport);
+                const storedSources = selectedReportSection?.sources;
                 if (window.Report?.sources?._map && Array.isArray(storedSources)) {
                     window.Report.sources._map = new Map(storedSources);
                 }
-                window.__reportWorkspaceAudit = Array.isArray(snapshot.report?.audit) ? snapshot.report.audit : [];
-                window.__reportWorkspaceSnapshots = Array.isArray(snapshot.report?.snapshots) ? snapshot.report.snapshots : [];
-                window._reportCollapsed = snapshot.report?.collapsed || {};
+                window.__reportWorkspaceAudit = Array.isArray(selectedReportSection?.audit) ? selectedReportSection.audit : [];
+                window.__reportWorkspaceSnapshots = Array.isArray(selectedReportSection?.snapshots) ? selectedReportSection.snapshots : [];
+                window._reportCollapsed = selectedReportSection?.collapsed || {};
                 try { renderReportEditor(); } catch (_) {}
                 try { _updateReportPreview(); } catch (_) {}
+            } else if (targetPlanningId && reportSection?.by_planning_id) {
+                // Keep a newly-created or geometry-only Planning visually
+                // honest: it has no report until its own dose/guide results
+                // are generated. Never leave the previous run's text in the
+                // editor merely because the selected run has no entry yet.
+                restoreReportForPlanning(targetPlanningId, { persist: false });
             }
             const chat = snapshot.chat || {};
             if (sessionId !== String(activeSessionId || '')) return false;
@@ -1209,8 +1488,8 @@
         }
     }
 
-    async function persistWorkspace(reason) {
-        if (restoring || !window.brachybotAuth?.user || !activeSessionId) return;
+    async function persistWorkspace(reason, options = {}) {
+        if ((restoring && !options.allowDuringRestore) || !window.brachybotAuth?.user || !activeSessionId) return false;
         const ownerSessionId = String(activeSessionId);
         const ownerRevision = sessionRevisions[ownerSessionId] ?? revision;
         const payload = {
@@ -1238,20 +1517,30 @@
                 if (data?.code === 'stale_workspace' && ownerSessionId === String(activeSessionId || '')) {
                     console.debug('[workspace] stale save skipped; authoritative snapshot will refresh the revision');
                 }
-                return;
+                return false;
             }
             if (data?.success) {
                 sessionRevisions[ownerSessionId] = data.revision;
                 if (ownerSessionId === String(activeSessionId || '')) revision = data.revision;
             }
+            return !!data?.success;
         } catch (error) {
             console.debug('[workspace] save deferred:', error);
+            return false;
         }
     }
 
     function scheduleWorkspaceSave(reason) {
         clearScheduledWorkspaceSave();
-        saveTimer = setTimeout(() => persistWorkspace(reason || 'ui.changed'), 700);
+        const ownerSessionId = String(activeSessionId || '');
+        saveTimer = setTimeout(() => {
+            saveTimer = null;
+            // The transition path flushes the old case explicitly. A timer
+            // that outlives that transition must never serialize the new case
+            // using the old case's report/chat payload.
+            if (!ownerSessionId || ownerSessionId !== String(activeSessionId || '')) return;
+            void persistWorkspace(reason || 'ui.changed');
+        }, 700);
     }
 
     async function prepareSessionChange() {
@@ -1525,11 +1814,14 @@
             const createStartedAt = workspaceNow();
             if (!await prepareSessionChange()) return { success: false, cancelled: true };
             const previousSessionId = String(activeSessionId || '');
-            if (typeof flushActiveReportState === 'function') flushActiveReportState();
-            // Persistence is case-scoped and already captures the old active
-            // id synchronously. Do not make creating an empty case wait for a
-            // potentially slow disk/GPU snapshot of the previous case.
-            void persistWorkspace('session.switching');
+            if (previousSessionId && typeof window.releaseTrainingMonitorForSession === 'function') {
+                void window.releaseTrainingMonitorForSession(previousSessionId, 'new_session', { forceRequest: true });
+            }
+            if (typeof flushActiveReportState === 'function') {
+                await Promise.resolve(flushActiveReportState());
+            } else {
+                await persistWorkspace('session.switching');
+            }
             // Paint a genuinely empty case on the next animation frame instead
             // of holding the previous transcript and viewer until the server
             // has allocated an id. The temporary id cannot reach a clinical
@@ -1645,8 +1937,14 @@
                 return { success: false, cancelled: true };
             }
             const previousSessionId = activeSessionId;
-            if (typeof flushActiveReportState === 'function') flushActiveReportState();
-            void persistWorkspace('session.switching').catch(error => console.debug('[workspace] persist before switch deferred:', error));
+            if (previousSessionId && typeof window.releaseTrainingMonitorForSession === 'function') {
+                void window.releaseTrainingMonitorForSession(previousSessionId, 'session_switch', { forceRequest: true });
+            }
+            if (typeof flushActiveReportState === 'function') {
+                await Promise.resolve(flushActiveReportState());
+            } else {
+                await persistWorkspace('session.switching');
+            }
             if (typeof window.brachybotAuth?.releaseLease === 'function') {
                 void window.brachybotAuth.releaseLease(previousSessionId).catch(error => console.debug('[workspace] lease release deferred:', error));
             }
@@ -1796,6 +2094,9 @@
         // The old active-session path used runWorkspaceTransition which could
         // silently reject (busy) and leave the user with no visible feedback.
         const removedSession = sessions[id];
+        if (typeof window.releaseTrainingMonitorForSession === 'function') {
+            void window.releaseTrainingMonitorForSession(id, 'session_deleted', { forceRequest: true });
+        }
         // Inactive cases are deliberately independent from the active
         // clinical task. They are removed from the optimistic sidebar and
         // deleted in the background without prepareSessionChange().
@@ -1946,6 +2247,17 @@
     window.scheduleWorkspaceSave = scheduleWorkspaceSave;
     window.persistWorkspace = persistWorkspace;
     window.applyWorkspaceSnapshot = applyWorkspaceSnapshot;
+    window.captureReportForPlanning = function captureReportForPlanning() {
+        // reportState() performs the same lightweight cache/upload handling as
+        // normal workspace persistence and records the current form under the
+        // currently displayed Planning ID. The explicit flush performed by a
+        // Planning switch then persists that map before the backend changes
+        // the active aliases.
+        if (!window.reportForm) return null;
+        const section = reportState();
+        return section?.active_planning_id || null;
+    };
+    window.restoreReportForPlanning = restoreReportForPlanning;
     window.applyChatSnapshotFast = applyChatSnapshotFast;
     window.clearDeletedSessionBrowserData = clearDeletedSessionBrowserData;
     window.updateRecycleBinCount = updateRecycleBinCount;

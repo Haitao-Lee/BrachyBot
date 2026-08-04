@@ -809,9 +809,13 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
                 camera: scene3D.camera,
                 controls: scene3D.controls,
                 position: scene3D.camera.position.clone(),
+                quaternion: scene3D.camera.quaternion.clone(),
+                up: scene3D.camera.up.clone(),
                 near: scene3D.camera.near,
                 far: scene3D.camera.far,
                 aspect: scene3D.camera.aspect,
+                fov: scene3D.camera.fov,
+                zoom: scene3D.camera.zoom,
                 target: scene3D.controls.target.clone(),
             } : null;
             _restoreFigure1State = () => {
@@ -846,18 +850,36 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
                 if (isCurrentCapture() && _savedCamera
                     && scene3D.camera === _savedCamera.camera
                     && scene3D.controls === _savedCamera.controls) {
-                    _savedCamera.camera.position.copy(_savedCamera.position);
-                    _savedCamera.camera.near = _savedCamera.near;
-                    _savedCamera.camera.far = _savedCamera.far;
-                    _savedCamera.camera.aspect = _savedCamera.aspect;
-                    _savedCamera.controls.target.copy(_savedCamera.target);
-                    _savedCamera.camera.updateProjectionMatrix();
-                    _savedCamera.controls.update();
+                    if (typeof window.sync3DCameraPose === 'function') {
+                        window.sync3DCameraPose({
+                            position: _savedCamera.position,
+                            target: _savedCamera.target,
+                            quaternion: _savedCamera.quaternion,
+                            up: _savedCamera.up,
+                            near: _savedCamera.near,
+                            far: _savedCamera.far,
+                            aspect: _savedCamera.aspect,
+                            fov: _savedCamera.fov,
+                            zoom: _savedCamera.zoom,
+                        });
+                    } else {
+                        _savedCamera.camera.position.copy(_savedCamera.position);
+                        _savedCamera.camera.quaternion.copy(_savedCamera.quaternion);
+                        _savedCamera.camera.up.copy(_savedCamera.up);
+                        _savedCamera.controls.target.copy(_savedCamera.target);
+                        _savedCamera.camera.near = _savedCamera.near;
+                        _savedCamera.camera.far = _savedCamera.far;
+                        _savedCamera.camera.aspect = _savedCamera.aspect;
+                        _savedCamera.camera.fov = _savedCamera.fov;
+                        _savedCamera.camera.zoom = _savedCamera.zoom;
+                        _savedCamera.camera.updateProjectionMatrix();
+                        _savedCamera.controls.syncExternalState?.();
+                    }
                 } else if (isCurrentCapture() && scene3D.controls) {
                     // A report capture may not have a saved camera only when
                     // the viewer was not initialized. Never fit implicitly;
                     // Fit/Reset are explicit user actions.
-                    scene3D.controls.update();
+                    scene3D.controls.syncExternalState?.();
                 }
                 if (isCurrentCapture()) forceRender3DViewer();
             };
@@ -932,12 +954,16 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
                 const dir = mode === 'detail'
                     ? new THREE.Vector3(0.55, -0.25, 0.8).normalize()
                     : new THREE.Vector3(0.35, -0.55, 0.76).normalize();
-                scene3D.controls.target.copy(center);
-                scene3D.camera.position.copy(center.clone().add(dir.multiplyScalar(dist)));
-                scene3D.camera.near = Math.max(0.1, dist / 100);
-                scene3D.camera.far = Math.max(2000, dist * 20);
-                scene3D.camera.updateProjectionMatrix();
-                scene3D.controls.update();
+                window.sync3DCameraPose?.({
+                    position: center.clone().add(dir.multiplyScalar(dist)),
+                    target: center,
+                    up: new THREE.Vector3(0, 1, 0),
+                    near: Math.max(0.1, dist / 100),
+                    far: Math.max(2000, dist * 20),
+                    aspect: scene3D.camera.aspect,
+                    fov: scene3D.camera.fov,
+                    zoom: scene3D.camera.zoom,
+                });
             }
 
             // Helper: render and capture 3D canvas
@@ -954,12 +980,14 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
                     console.warn('[Report] 3D canvas has no drawable size for', label);
                     return null;
                 }
-                renderer.setSize(width, height, false);
+                // Keep the live renderer buffer and CSS geometry authoritative.
+                // Resizing it to capture dimensions changes the next interactive
+                // frame's aspect/DPR and was a source of zoom distortion.
+                scene3D.resize?.();
                 renderer.setViewport(0, 0, renderer.domElement.width, renderer.domElement.height);
                 renderer.setScissorTest(false);
                 renderer.setRenderTarget(null);
                 renderer.autoClear = true;
-                scene3D.camera.aspect = width / height;
                 scene3D.camera.updateProjectionMatrix();
                 scene3D.scene.updateMatrixWorld(true);
                 scene3D.camera.updateMatrixWorld(true);
@@ -1230,9 +1258,12 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
                     controls: scene3D.controls,
                     position: scene3D.camera.position.clone(),
                     quaternion: scene3D.camera.quaternion.clone(),
+                    up: scene3D.camera.up.clone(),
                     near: scene3D.camera.near,
                     far: scene3D.camera.far,
                     aspect: scene3D.camera.aspect,
+                    fov: scene3D.camera.fov,
+                    zoom: scene3D.camera.zoom,
                     target: scene3D.controls.target.clone(),
                 } : null;
                 const savedVis = {};
@@ -1260,14 +1291,31 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
                     if (isCurrentCapture() && savedCamera
                         && scene3D.camera === savedCamera.camera
                         && scene3D.controls === savedCamera.controls) {
-                        savedCamera.camera.position.copy(savedCamera.position);
-                        savedCamera.camera.quaternion.copy(savedCamera.quaternion);
-                        savedCamera.camera.near = savedCamera.near;
-                        savedCamera.camera.far = savedCamera.far;
-                        savedCamera.camera.aspect = savedCamera.aspect;
-                        savedCamera.controls.target.copy(savedCamera.target);
-                        savedCamera.camera.updateProjectionMatrix();
-                        savedCamera.controls.update();
+                        if (typeof window.sync3DCameraPose === 'function') {
+                            window.sync3DCameraPose({
+                                position: savedCamera.position,
+                                target: savedCamera.target,
+                                quaternion: savedCamera.quaternion,
+                                up: savedCamera.up,
+                                near: savedCamera.near,
+                                far: savedCamera.far,
+                                aspect: savedCamera.aspect,
+                                fov: savedCamera.fov,
+                                zoom: savedCamera.zoom,
+                            });
+                        } else {
+                            savedCamera.camera.position.copy(savedCamera.position);
+                            savedCamera.camera.quaternion.copy(savedCamera.quaternion);
+                            savedCamera.camera.up.copy(savedCamera.up);
+                            savedCamera.controls.target.copy(savedCamera.target);
+                            savedCamera.camera.near = savedCamera.near;
+                            savedCamera.camera.far = savedCamera.far;
+                            savedCamera.camera.aspect = savedCamera.aspect;
+                            savedCamera.camera.fov = savedCamera.fov;
+                            savedCamera.camera.zoom = savedCamera.zoom;
+                            savedCamera.camera.updateProjectionMatrix();
+                            savedCamera.controls.syncExternalState?.();
+                        }
                     }
                     if (isCurrentCapture()) forceRender3DViewer();
                 };
@@ -1326,12 +1374,16 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
                     const fov = (scene3D.camera.fov || 45) * Math.PI / 180;
                     const dist = (maxDim * 1.2) / (2 * Math.tan(fov / 2));
                     const dir = new THREE.Vector3(0.5, -0.25, 0.82).normalize();
-                    scene3D.controls.target.copy(center);
-                    scene3D.camera.position.copy(center.clone().add(dir.multiplyScalar(dist)));
-                    scene3D.camera.near = Math.max(0.1, dist / 100);
-                    scene3D.camera.far = Math.max(2000, dist * 20);
-                    scene3D.camera.updateProjectionMatrix();
-                    scene3D.controls.update();
+                    window.sync3DCameraPose?.({
+                        position: center.clone().add(dir.multiplyScalar(dist)),
+                        target: center,
+                        up: new THREE.Vector3(0, 1, 0),
+                        near: Math.max(0.1, dist / 100),
+                        far: Math.max(2000, dist * 20),
+                        aspect: scene3D.camera.aspect,
+                        fov: scene3D.camera.fov,
+                        zoom: scene3D.camera.zoom,
+                    });
                     // A WebGL canvas can contain a valid-looking, very large
                     // PNG even when the last frame was cleared to black. Force
                     // two committed frames and reject captures with no lit
@@ -1344,12 +1396,11 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
                         const width = canvas.clientWidth || canvas.width;
                         const height = canvas.clientHeight || canvas.height;
                         if (!width || !height) return null;
-                        renderer.setSize(width, height, false);
+                        scene3D.resize?.();
                         renderer.setViewport(0, 0, canvas.width, canvas.height);
                         renderer.setScissorTest(false);
                         renderer.setRenderTarget(null);
                         renderer.autoClear = true;
-                        scene3D.camera.aspect = width / height;
                         scene3D.camera.updateProjectionMatrix();
                         scene3D.scene.updateMatrixWorld(true);
                         scene3D.camera.updateMatrixWorld(true);

@@ -1075,16 +1075,26 @@ def _world_segment_hits_obstacle(
         if start.size != 3 or end.size != 3 or not np.all(np.isfinite(start + end)):
             return True
         reference_shape = tuple(int(value) for value in reversed(ct_image.GetSize()))
-        ctv = None if ctv_mask is None else np.asarray(ctv_mask)
-        oar = None if oar_mask is None else np.asarray(oar_mask)
+        def _canonical_mask(mask, label):
+            if mask is None:
+                return None
+            array = np.asarray(mask)
+            if tuple(array.shape) == reference_shape:
+                return array
+            logger.error(
+                "[needle_safety] %s shape %s does not match CT grid %s; refusing unsafe mask",
+                label, tuple(array.shape), reference_shape,
+            )
+            return None
+
+        ctv = _canonical_mask(ctv_mask, "CTV")
+        oar = _canonical_mask(oar_mask, "OAR")
+        if ctv_mask is not None and ctv is None:
+            return True
+        if oar_mask is not None and oar is None:
+            return True
         if ctv is None and oar is None:
             logger.error("[needle_safety] No original-grid masks available for final needle validation")
-            return True
-        if ctv is not None and tuple(ctv.shape) != reference_shape:
-            logger.error("[needle_safety] CTV shape %s does not match CT shape %s", ctv.shape, reference_shape)
-            return True
-        if oar is not None and tuple(oar.shape) != reference_shape:
-            logger.error("[needle_safety] OAR shape %s does not match CT shape %s", oar.shape, reference_shape)
             return True
 
         distance = float(np.linalg.norm(end - start))
@@ -1677,21 +1687,76 @@ class PlanningPipelineTool(BaseTool):
         # Get mode
         mode = kwargs.get("mode", "rule_based")
 
-        # Route to the requested step
-        if step == "full":
-            return self._run_full_pipeline(ct_image, ctv_mask, oar_mask, ref_direc, mode, agent_config, agent, step_callback=step_callback)
-        elif step == "trajectory_init":
-            return self._step_trajectory_init(ct_image, ctv_mask, oar_mask, ref_direc, agent_config, agent)
-        elif step == "trajectory_refine":
-            return self._step_trajectory_refine(ct_image, ctv_mask, oar_mask, agent_config, agent)
-        elif step == "seed_planning":
-            return self._step_seed_planning(ct_image, ctv_mask, oar_mask, mode, agent_config, agent)
-        elif step == "dose_calc":
-            return self._step_dose_calc(ct_image, ctv_mask, oar_mask, agent_config, agent)
-        elif step == "dose_eval":
-            return self._step_dose_eval(ctv_mask, oar_mask, agent)
-        else:
-            return ToolResult(success=False, error=f"Unknown step: '{step}'. Valid steps: trajectory_init, trajectory_refine, seed_planning, dose_calc, dose_eval, full")
+        # Reserve a new immutable planning run before any pipeline stage
+        # starts overwriting the legacy active aliases.  ``full`` is always a
+        # new user-requested plan.  Stepwise manual planning reuses the run
+        # while it is still running, then starts a new run when the previous
+        # run is already completed.
+        planning_id = None
+        try:
+            from web.planning_runs import begin_planning_run
+
+            planning_id = begin_planning_run(
+                agent,
+                step=str(step),
+                force_new=str(step) == "full",
+                input_revision={
+                    "ct_path": kwargs.get("ct_image_path") or agent.memory.retrieve("ct_path"),
+                    "ctv_path": kwargs.get("ctv_mask_path") or agent.memory.retrieve("ctv_path"),
+                    "oar_path": kwargs.get("oar_mask_path") or agent.memory.retrieve("oar_path"),
+                    "tumor_type": agent.memory.retrieve("tumor_type_used"),
+                    "dose_scale_gy": agent.memory.retrieve("dose_scale_gy"),
+                },
+            )
+        except Exception as exc:
+            logger.warning("[planning] unable to reserve planning run: %s", exc)
+
+        # Route to the requested step.  A thrown exception is different from a
+        # normal failed ToolResult, but it must have the same Planning lifecycle:
+        # the reserved run is marked failed and the previous completed run is
+        # restored before the exception reaches the chat/task layer.
+        result = None
+        try:
+            if step == "full":
+                result = self._run_full_pipeline(ct_image, ctv_mask, oar_mask, ref_direc, mode, agent_config, agent, step_callback=step_callback)
+            elif step == "trajectory_init":
+                result = self._step_trajectory_init(ct_image, ctv_mask, oar_mask, ref_direc, agent_config, agent)
+            elif step == "trajectory_refine":
+                result = self._step_trajectory_refine(ct_image, ctv_mask, oar_mask, agent_config, agent)
+            elif step == "seed_planning":
+                result = self._step_seed_planning(ct_image, ctv_mask, oar_mask, mode, agent_config, agent)
+            elif step == "dose_calc":
+                result = self._step_dose_calc(ct_image, ctv_mask, oar_mask, agent_config, agent)
+            elif step == "dose_eval":
+                result = self._step_dose_eval(ctv_mask, oar_mask, agent)
+            else:
+                result = ToolResult(success=False, error=f"Unknown step: '{step}'. Valid steps: trajectory_init, trajectory_refine, seed_planning, dose_calc, dose_eval, full")
+        except Exception as exc:
+            if planning_id:
+                try:
+                    from web.planning_runs import mark_planning_run
+                    mark_planning_run(agent, planning_id, "failed", error=str(exc))
+                except Exception:
+                    logger.warning("[planning] unable to restore after exception in run %s", planning_id, exc_info=True)
+            raise
+
+        if result is not None and planning_id:
+            result.metadata = dict(result.metadata or {})
+            result.metadata.setdefault("planning_id", planning_id)
+            result.metadata.setdefault("planning_label", "")
+            result.metadata.setdefault("planning_step", str(step))
+            if not result.success:
+                try:
+                    from web.planning_runs import mark_planning_run
+                    mark_planning_run(
+                        agent,
+                        planning_id,
+                        "failed",
+                        error=str(result.error or result.message or "Planning step failed"),
+                    )
+                except Exception:
+                    logger.warning("[planning] unable to mark failed run %s", planning_id, exc_info=True)
+        return result
 
     # ============================================================
     # Data loading helpers

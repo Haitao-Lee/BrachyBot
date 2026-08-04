@@ -468,10 +468,14 @@ def create_app(config: Optional[Dict] = None):
             bridge = ((hydrated_snapshot.get("ui") or {}).get("bridge") or {})
             if isinstance(bridge, dict):
                 bucket = _server_support._ui_bucket(resolved_session_id)
+                training = _server_support._close_stale_training_snapshot(
+                    bridge.get("training") or {},
+                    reason="server_restart_or_workspace_restore",
+                )
                 with _server_support._UI_BRIDGE_LOCK:
                     bucket["state"] = dict(bridge.get("state") or {})
                     bucket["events"] = list(bridge.get("events") or [])
-                    bucket["training"] = dict(bridge.get("training") or {})
+                    bucket["training"] = training
                     bucket["updated_at"] = bridge.get("updated_at") or time.time()
             agent.memory.set_persistence_callback(
                 lambda reason, owner=user["id"], case_id=resolved_session_id, current=agent:
@@ -1752,6 +1756,22 @@ def run_server(port: int = 8080, host: str = "127.0.0.1", config: Optional[Dict]
 
     def _cleanup():
         logger.info("[shutdown] Cleaning up background tasks...")
+        # Monitor is a case-owned live subscription. Close every in-process
+        # lease before the server exits so an orderly stop cannot leave the
+        # current browser showing an active monitor. Startup hydration also
+        # normalizes this state for crashes/forced termination.
+        try:
+            closed_monitors = _server_support._close_live_training_snapshots(
+                reason="server_shutdown",
+            )
+            if closed_monitors:
+                logger.info(
+                    "[shutdown] Closed %d live Monitor session(s): %s",
+                    len(closed_monitors),
+                    [session_id for session_id, _run_id in closed_monitors],
+                )
+        except Exception:
+            logger.warning("[shutdown] Unable to close live Monitor snapshots", exc_info=True)
         # Signal all background threads to stop
         _shutdown_event.set()
         # Kill any orphaned subprocesses (e.g. GPU manager)

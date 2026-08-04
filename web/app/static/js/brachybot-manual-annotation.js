@@ -1043,7 +1043,13 @@ function _syncLayerToSliceCanvas(axis, layerCanvas, zIndex) {
     layerCanvas.style.height = sh + 'px';
     layerCanvas.style.left = sx + 'px';
     layerCanvas.style.top = sy + 'px';
-    layerCanvas.style.transform = _viewerTransformString();
+    const transformHost = sliceCanvas._doseWrapper;
+    // The wrapper owns the slice transform when it exists. Applying another
+    // transform to a child layer would scale/rotate that overlay twice during
+    // zoom, which is visible as a distorted dose/mask image after resize.
+    layerCanvas.style.transform = transformHost && transformHost.contains?.(layerCanvas)
+        ? ''
+        : _viewerTransformString();
     layerCanvas.style.transformOrigin = 'center center';
     return true;
 }
@@ -1452,10 +1458,20 @@ function _projectPointerAlongNeedle2D(event, needle, view) {
         const dy = b.y - a.y;
         const norm2 = dx * dx + dy * dy;
         if (norm2 < 1e-8) continue;
-        const parameter = Math.max(0, Math.min(
-            1,
-            ((pointer.x - a.x) * dx + (pointer.y - a.y) * dy) / norm2,
-        ));
+        const rawParameter = ((pointer.x - a.x) * dx + (pointer.y - a.y) * dy) / norm2;
+        const worldLength = Math.hypot(
+            worldB[0] - worldA[0],
+            worldB[1] - worldA[1],
+            worldB[2] - worldA[2],
+        );
+        const seedLength = Math.max(
+            0.1,
+            Number(document.getElementById('seedLength')?.value || needle.seed_length || 4.5),
+        );
+        const clearance = worldLength > 1e-8
+            ? Math.min(0.49, (seedLength / 2) / worldLength)
+            : 0;
+        const parameter = Math.max(clearance, Math.min(1 - clearance, rawParameter));
         const projectedX = a.x + parameter * dx;
         const projectedY = a.y + parameter * dy;
         const distance = Math.hypot(pointer.x - projectedX, pointer.y - projectedY);
@@ -2095,39 +2111,33 @@ function applyViewerTransform() {
             transformTarget.style.transform = transform;
             transformTarget.style.transformOrigin = 'center center';
         }
+        const applyOverlayTransform = element => {
+            if (!element) return;
+            // A descendant of the transform host already inherits the exact
+            // same transform; applying it again causes non-uniform visual scale
+            // and layer drift when the viewer is zoomed or resized.
+            if (wrapper && element !== wrapper && wrapper.contains?.(element)) {
+                element.style.transform = '';
+                return;
+            }
+            element.style.transform = transform;
+            element.style.transformOrigin = 'center center';
+        };
         const annCanvas = getAnnotationCanvas(axis);
-        if (annCanvas) {
-            annCanvas.style.transform = transform;
-            annCanvas.style.transformOrigin = 'center center';
-        }
+        applyOverlayTransform(annCanvas);
         const crossCanvas = document.getElementById('crosshairCanvas' + capitalize(axis));
-        if (crossCanvas) {
-            crossCanvas.style.transform = transform;
-            crossCanvas.style.transformOrigin = 'center center';
-        }
+        applyOverlayTransform(crossCanvas);
         // Apply same transform to overlay div
         const overlayDiv = document.getElementById('labelOverlay_' + capitalize(axis));
-        if (overlayDiv) {
-            overlayDiv.style.transform = transform;
-            overlayDiv.style.transformOrigin = 'center center';
-        }
+        applyOverlayTransform(overlayDiv);
         // Apply same transform to dose overlay canvas (sibling of
         // slice canvas, NOT inside wrapper — must be explicit).
         const doseCanvas = document.getElementById('doseOverlayCanvas' + capitalize(axis));
-        if (doseCanvas) {
-            doseCanvas.style.transform = transform;
-            doseCanvas.style.transformOrigin = 'center center';
-        }
+        applyOverlayTransform(doseCanvas);
         const contourCanvas = document.getElementById('contourCanvas' + capitalize(axis));
-        if (contourCanvas) {
-            contourCanvas.style.transform = transform;
-            contourCanvas.style.transformOrigin = 'center center';
-        }
+        applyOverlayTransform(contourCanvas);
         const seedsCanvas = document.getElementById('seedsOverlayCanvas' + capitalize(axis));
-        if (seedsCanvas) {
-            seedsCanvas.style.transform = transform;
-            seedsCanvas.style.transformOrigin = 'center center';
-        }
+        applyOverlayTransform(seedsCanvas);
     });
 }
 

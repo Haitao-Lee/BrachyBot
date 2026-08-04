@@ -23,6 +23,104 @@ logger = logging.getLogger(__name__)
 
 _RUNTIME_CONTEXT_MARKER = "[BrachyBot runtime context: data only]"
 
+# Tool results are not interchangeable at the response boundary.  Evidence
+# tools may enrich an LLM synthesis, but their raw payloads are never a safe
+# assistant fallback: web pages contain arbitrary prose, HTML, prompts and
+# internal transport errors.  The allowlist below is deliberately closed so
+# a newly registered tool cannot accidentally become user-visible merely by
+# returning a string.
+_EVIDENCE_ONLY_TOOLS = frozenset({
+    "clinical_kb",
+    "web_search",
+    "web_fetch",
+    "web_access",
+    "fact_checker",
+    "source_verification",
+    "plan_reviewer",
+    "completeness_checker",
+    "safety_guardian",
+})
+_SAFE_TOOL_FALLBACKS = frozenset({
+    "ctv_segmentation",
+    "oar_segmentation",
+    "seed_segmentation",
+    "planning_pipeline",
+    "seed_planning",
+    "trajectory_planning",
+    "trajectory_init",
+    "trajectory_refine",
+    "dose_engine",
+    "dose_calc",
+    "dose_evaluation",
+    "query_metrics",
+    "surgical_guide",
+    "report_generator",
+    "report_auto_fill",
+    "ui_controller",
+    "ui_screenshot",
+    "ui_annotate",
+})
+_INTERNAL_FALLBACK_MARKERS = (
+    "requested screenshot:",
+    "the image will appear",
+    "tools executed. check the execution trace",
+    "[tool result:",
+    "<html",
+    "<!doctype",
+)
+
+
+def _fallback_tool_name(step: Dict) -> str:
+    return str(step.get("tool") or step.get("name") or "").strip().lower()
+
+
+def _is_safe_tool_fallback(step: Dict) -> bool:
+    """Return whether a tool step is allowed to supply a raw fallback."""
+    tool_name = _fallback_tool_name(step)
+    return tool_name in _SAFE_TOOL_FALLBACKS and tool_name not in _EVIDENCE_ONLY_TOOLS
+
+
+def _is_safe_accumulated_text(text: str) -> bool:
+    """Reject transport/debug text before it can become an assistant answer."""
+    normalized = str(text or "").strip().lower()
+    return bool(normalized) and not any(marker in normalized for marker in _INTERNAL_FALLBACK_MARKERS)
+
+
+def _tool_fallback_message(lang: str, has_failures: bool = False) -> str:
+    if lang == "zh":
+        if has_failures:
+            return "部分处理步骤未完成，且当前没有生成可展示的正式回复。请查看执行追踪中的错误，并重试或调整请求。"
+        return "相关检索或处理步骤已结束，但当前没有生成可展示的综合回复。请重新提问，或提供更明确的分析目标。"
+    if has_failures:
+        return "Some processing steps did not complete, and no user-facing answer was generated. Review the execution trace and retry or refine the request."
+    return "The requested retrieval or processing steps finished, but no user-facing synthesis was generated. Please retry with a more specific question."
+
+
+def _evidence_fallback_summary(step: Dict, lang: str, failed: bool = False) -> str:
+    """Return a metadata-only evidence summary, never the evidence body."""
+    tool_name = _fallback_tool_name(step)
+    if failed:
+        return (
+            "一个来源未能读取，其他检索结果仍可继续使用。"
+            if lang == "zh" else
+            "One source could not be retrieved; other search results remain usable."
+        )
+    result = str(step.get("result") or "")
+    urls = list(dict.fromkeys(re.findall(r"https?://[^\s)<>]+", result)))[:3]
+    count_match = re.search(r"(?:found|找到)\s*(\d+)", result, re.IGNORECASE)
+    count = count_match.group(1) if count_match else ""
+    if tool_name in {"web_search", "clinical_kb"}:
+        if lang == "zh":
+            suffix = f"，共 {count} 条" if count else ""
+            sources = f"来源：{', '.join(urls)}" if urls else ""
+            return f"已完成资料检索{suffix}。{sources}".strip("。") + "。"
+        suffix = f" ({count} result(s))" if count else ""
+        sources = f" Sources: {', '.join(urls)}" if urls else ""
+        return f"Evidence search completed{suffix}.{sources}".strip()
+    if lang == "zh":
+        return "已读取来源页面，但当前尚未生成综合回答。"
+    return "A source page was retrieved, but no synthesized answer was generated yet."
+
 
 def _tool_failure_reason(result) -> str:
     """Return a useful failure reason even for legacy tools that only set message."""
@@ -46,16 +144,24 @@ def _failed_steps_summary(steps: List[Dict]) -> Optional[str]:
     """
     failed = [
         s for s in (steps or [])
-        if s.get("type") == "tool" and s.get("status") == "error"
+        if s.get("type") == "tool"
+        and s.get("status") == "error"
+        and (_is_safe_tool_fallback(s) or _fallback_tool_name(s) in _EVIDENCE_ONLY_TOOLS)
     ]
     if not failed:
         return None
     lines = []
     for s in failed[:4]:
+        tool = _fallback_tool_name(s) or "tool"
+        if tool in _EVIDENCE_ONLY_TOOLS:
+            lines.append("- A source-verification step failed; do not treat that source as available.")
+            continue
         result = s.get("result")
         reason = _tool_failure_reason(result if result is not None else s)
-        tool = str(s.get("tool") or "tool").strip()
-        lines.append(f"- ❌ {tool}: {reason}" if tool else f"- ❌ {reason}")
+        # Keep safe business-tool errors useful, but do not expose long raw
+        # payloads or paths in an LLM steering message.
+        reason = re.sub(r"\s+", " ", reason).strip()[:240]
+        lines.append(f"- ❌ {tool}: {reason}")
     return "\n".join(lines)
 
 
@@ -85,12 +191,14 @@ def _is_placeholder_tool_response(text: str) -> bool:
     )
 
 
-def _collect_tool_fallback_text(steps: List[Dict], messages: List[Dict]) -> Tuple[List[str], List[str]]:
+def _collect_tool_fallback_text(
+    steps: List[Dict], messages: List[Dict], lang: str = "en"
+) -> Tuple[List[str], List[str]]:
     """Collect successful evidence and failure notes for empty-model fallbacks.
 
-    Current tool turns store results in ``role=tool`` messages, while older
-    turns also stored ``[Tool result: ...]`` user messages. Reading both
-    formats prevents one failed fetch from hiding a successful search.
+    Only explicitly allowlisted business tools may provide a raw fallback.
+    ``role=tool`` messages and legacy ``[Tool result: ...]`` messages are
+    internal model transport and are intentionally never parsed here.
     """
     successes: List[str] = []
     failures: List[str] = []
@@ -104,45 +212,42 @@ def _collect_tool_fallback_text(steps: List[Dict], messages: List[Dict]) -> Tupl
     for step in steps or []:
         if step.get("type") != "tool":
             continue
+        tool_name = _fallback_tool_name(step)
+        result = str(step.get("result") or "").strip()
+        if tool_name in _EVIDENCE_ONLY_TOOLS:
+            if step.get("status") == "error":
+                add_unique(failures, _evidence_fallback_summary(step, lang, failed=True))
+            elif not _is_placeholder_tool_response(result):
+                add_unique(successes, _evidence_fallback_summary(step, lang))
+            continue
+        # Unknown tools belong in the model context or Execution Trace only.
+        # This is the response-boundary allowlist.
+        if not _is_safe_tool_fallback(step):
+            continue
         # Frontend-action tools can carry model-only transport instructions.
         # They belong in the execution trace metadata, never in a fallback
         # assistant answer such as "Based on the available results".
         metadata = step.get("metadata") if isinstance(step.get("metadata"), dict) else {}
         if metadata.get("internal_only") or metadata.get("user_visible") is False:
             continue
-        result = str(step.get("result") or "").strip()
         if not result:
             continue
         if step.get("status") == "error":
             add_unique(failures, result)
-        elif step.get("tool") != "fact_checker" and not _is_placeholder_tool_response(result):
-            add_unique(successes, result)
-
-    # Only fall back to the LLM-facing role=tool digest when no display-
-    # formatted step result is available. Step results are user-presentable
-    # (language-aware digests); the role=tool content is an internal model
-    # digest and would leak raw debug text into the user's answer.
-    if successes:
-        return successes, failures
-
-    for msg in messages or []:
-        content = msg.get("content") if isinstance(msg, dict) else None
-        candidates = []
-        if msg.get("role") == "tool" and isinstance(content, str):
-            candidates.append(content)
-        elif msg.get("role") == "user" and isinstance(content, str) and "[Tool result:" in content:
-            match = re.search(r"\[Tool result:\s*(.+?)\]", content, re.DOTALL)
-            if match:
-                candidates.append(match.group(1))
-        for candidate in candidates:
-            candidate = str(candidate).strip()
-            if not candidate or _is_placeholder_tool_response(candidate):
-                continue
-            if re.match(r"^(?:error|exception|failed)\s*:", candidate, re.IGNORECASE):
-                add_unique(failures, candidate)
+        elif not _is_placeholder_tool_response(result):
+            if tool_name in {"ui_screenshot", "ui_annotate"}:
+                add_unique(
+                    successes,
+                    "已生成截图，可在当前回复中查看。"
+                    if lang == "zh" else
+                    "A screenshot was captured and attached to this reply.",
+                )
             else:
-                add_unique(successes, candidate)
+                add_unique(successes, result)
 
+    # Never parse role=tool or legacy tool-result messages.  They are model
+    # transport, not a typed user-facing message, and may contain raw web
+    # bodies, file paths, prompts or debug payloads.
     return successes, failures
 
 
@@ -959,19 +1064,26 @@ class LLMRuntimeMixin:
 
         if not final_response:
             if tools_executed:
-                tool_results_text, failure_notes = _collect_tool_fallback_text(steps, messages)
+                _fallback_lang = "zh" if str(getattr(self.memory, "user_lang", "en") or "en").lower().startswith("zh") else "en"
+                tool_results_text, failure_notes = _collect_tool_fallback_text(
+                    steps, messages, _fallback_lang
+                )
                 if tool_results_text:
-                    final_response = "Based on the available results:\n\n" + "\n\n".join(tool_results_text)
+                    prefix = "基于当前病例结果：\n\n" if _fallback_lang == "zh" else "Based on the current case results:\n\n"
+                    final_response = prefix + "\n\n".join(tool_results_text)
                 elif accumulated_text and len(accumulated_text) > 10:
-                    final_response = accumulated_text
-                    logger.info(f"Using accumulated_text as fallback: {len(final_response)} chars")
+                    # A partial provider stream may contain a tool prompt or a
+                    # web body.  Only accept it when it passes the same
+                    # response-boundary transport check.
+                    if _is_safe_accumulated_text(accumulated_text):
+                        final_response = accumulated_text
+                        logger.info(f"Using accumulated_text as fallback: {len(final_response)} chars")
+                    else:
+                        final_response = _tool_fallback_message(_fallback_lang, bool(failure_notes))
                 elif failure_notes:
-                    final_response = (
-                        "I could not retrieve the requested source content. The source may block automated access; "
-                        "please retry or provide another URL.\n\n" + "\n".join(failure_notes)
-                    )
+                    final_response = _tool_fallback_message(_fallback_lang, True)
                 else:
-                    final_response = "I completed the requested searches but could not retrieve detailed content. The sources may require browser access."
+                    final_response = _tool_fallback_message(_fallback_lang)
                     logger.warning(f"Tool result fallback: no results found in {len(messages)} messages")
             else:
                 final_response = "No response generated."
@@ -2523,52 +2635,21 @@ class LLMRuntimeMixin:
         # If final_response is still empty, try fallbacks
         if not final_response:
             _fb_lang = "zh" if str(getattr(self.memory, "user_lang", "en") or "en").lower().startswith("zh") else "en"
-            if accumulated_text:
+            if accumulated_text and not tools_executed and _is_safe_accumulated_text(accumulated_text):
                 final_response = accumulated_text
             elif tools_executed:
-                tool_results_text, failure_notes = _collect_tool_fallback_text(steps, messages)
+                tool_results_text, failure_notes = _collect_tool_fallback_text(
+                    steps, messages, _fb_lang
+                )
                 if tool_results_text:
-                    prefix = ("基于以下结果：\n\n" if _fb_lang == "zh" else "Based on the available results:\n\n")
+                    prefix = ("基于当前病例结果：\n\n" if _fb_lang == "zh" else "Based on the current case results:\n\n")
                     final_response = prefix + "\n\n".join(tool_results_text)
                 elif failure_notes:
-                    final_response = (
-                        ("部分请求来源未能获取，但其余工具已完成。请使用可用的来源链接并在需要时重试被拦截的链接。\n\n"
-                         if _fb_lang == "zh" else
-                         "I could not retrieve one or more requested sources, but the remaining tools completed. "
-                         "Please use the available source links and retry the blocked URL if needed.\n\n")
-                        + "\n".join(failure_notes)
-                    )
+                    final_response = _tool_fallback_message(_fb_lang, True)
                 else:
-                    # Honest, capability-aware fallback: never the empty
-                    # "tool executed" placeholder. If tools failed, say so and
-                    # guide the user toward what BrachyBot can actually do.
-                    fail_summary = _failed_steps_summary(steps)
-                    if fail_summary:
-                        final_response = (
-                            "Some of the requested operations could not be completed:\n\n"
-                            f"{fail_summary}\n\n"
-                            "I cannot continue with the part that failed. "
-                            "I can help with: loading/segmenting CT (CTV/OAR), generating a seed "
-                            "plan and dose, adjusting planning or puncture-guide parameters, "
-                            "generating a patient-specific puncture guide, or answering clinical "
-                            "questions. Tell me which one and I'll continue."
-                        )
-                    else:
-                        final_response = (
-                            "I could not complete that request automatically. "
-                            "I can help with: loading/segmenting CT (CTV/OAR), generating a seed "
-                            "plan and dose, adjusting planning or puncture-guide parameters, "
-                            "generating a patient-specific puncture guide, or answering clinical "
-                            "questions. Tell me which one and I'll continue."
-                        )
+                    final_response = _tool_fallback_message(_fb_lang)
             else:
-                final_response = (
-                    "I could not complete that request automatically. "
-                    "I can help with: loading/segmenting CT (CTV/OAR), generating a seed "
-                    "plan and dose, adjusting planning or puncture-guide parameters, "
-                    "generating a patient-specific puncture guide, or answering clinical "
-                    "questions. Tell me which one and I'll continue."
-                )
+                final_response = _tool_fallback_message(_fb_lang)
 
         ui_screenshot_response = _ui_screenshot_turn_response()
         if ui_screenshot_response is not None:

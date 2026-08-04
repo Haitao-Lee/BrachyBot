@@ -17,12 +17,15 @@ def read(relative: str) -> str:
 
 def test_chat_segmentation_completion_loads_labels_before_background_meshes():
     chat = read("web/app/static/js/brachybot-chat-todo.js")
+    viewer = read("web/app/static/js/brachybot-viewer-volume.js")
 
     assert "loadLabelVolumes({" in chat
     assert "forceFresh: true" in chat
     assert "reconcileSegmentationViewerState" in chat
-    assert "startSegmentationMeshPrewarm(" in chat
-    assert "data.tool === 'oar_segmentation' ? { allOAR: true } : {}" in chat
+    # The chat SSE path delegates mesh work to the session-bound hydration
+    # helper; the helper owns the non-blocking progressive reconstruction.
+    assert "startSegmentationMeshPrewarm(" in viewer
+    assert "normalizedKind" in viewer
 
 
 def test_full_oar_reconstruction_is_non_blocking_after_the_essential_meshes():
@@ -82,6 +85,21 @@ def test_planning_refresh_preserves_existing_tree_presentation_state():
     assert "visible: existing?.visible ?? true" in planning
 
 
+def test_planning_result_contract_exposes_run_identity_and_artifact_state():
+    """Every refreshed result must identify the run that owns its products."""
+    routes = read("web/routes/planning_routes.py")
+    result_block = routes.split("def api_planning_results", 1)[1].split(
+        "@app.route(\"/api/planning/runs\"", 1
+    )[0]
+    for required in (
+        '"planning_id": current_planning_id',
+        '"planning_label": active_run.get("label")',
+        '"planning_status": active_run.get("status")',
+        '"artifact_status": artifact_status',
+    ):
+        assert required in result_block
+
+
 def test_data_tree_has_independent_2d_and_3d_presentation_controls():
     """Visual nodes retain a master state plus independent MPR/3D controls."""
     viewer = read("web/app/static/js/brachybot-viewer-volume.js")
@@ -103,7 +121,7 @@ def test_data_tree_has_independent_2d_and_3d_presentation_controls():
         assert required in viewer
 
     assert "meshData.visible3D !== false" in manual
-    assert "visible2D: savedSeedAppearance" in manual
+    assert "visible2D: seed.visible2D ?? old.visible2D ?? true" in manual
     assert "visible2D !== false" in annotation
     assert "['visible', 'visible2D', 'visible3D', 'opacity', 'color', 'material', 'locked']" in workspace
 

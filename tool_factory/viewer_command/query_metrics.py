@@ -84,11 +84,21 @@ class QueryMetricsTool(BaseTool):
         if not metrics:
             return ToolResult(success=False, error="No metrics",
                             message="No dose metrics available. Run dose evaluation first.")
+        # Preserve the complete normalized dose contract. Older callers only
+        # received V100/V150/V200/D90, which made a follow-up dose question
+        # lose Dmean, D2, CI/HI, plan score, prescription, and OAR metrics.
         dose = {
-            "V100": metrics.get("v100", "N/A"),
-            "V150": metrics.get("v150", "N/A"),
-            "V200": metrics.get("v200", "N/A"),
-            "D90": metrics.get("d90", "N/A"),
+            "V100": metrics.get("v100", metrics.get("V100", "N/A")),
+            "V150": metrics.get("v150", metrics.get("V150", "N/A")),
+            "V200": metrics.get("v200", metrics.get("V200", "N/A")),
+            "D90": metrics.get("d90", metrics.get("D90", "N/A")),
+            "Dmean": metrics.get("dmean", metrics.get("Dmean", metrics.get("mean_dose", "N/A"))),
+            "D2": metrics.get("d2", metrics.get("D2", metrics.get("d2cc", metrics.get("D2cc", "N/A")))),
+            "CI": metrics.get("ci", metrics.get("CI", "N/A")),
+            "HI": metrics.get("hi", metrics.get("HI", "N/A")),
+            "plan_score": metrics.get("plan_score", metrics.get("score", "N/A")),
+            "prescription_gy": metrics.get("prescription_gy", metrics.get("prescribed_dose", "N/A")),
+            "oar_metrics": metrics.get("oar_metrics", {}),
         }
         return ToolResult(success=True, message=json.dumps(dose, indent=2), metadata=dose)
 

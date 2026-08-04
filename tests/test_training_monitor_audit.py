@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import time
 from uuid import uuid4
 
 
@@ -34,6 +35,44 @@ def test_training_lifecycle_event_is_not_counted_as_a_training_action():
         assert [item["type"] for item in bucket["training"]["events"]] == ["manual.dose"]
     finally:
         _drop_ui_bucket(session_id)
+
+
+def test_abandoned_monitor_snapshot_is_closed_without_mutating_input():
+    from web.server_support import (
+        _close_stale_training_snapshot,
+        _training_is_stale,
+    )
+
+    previous = {
+        "active": True,
+        "run_id": "old-run",
+        "started_at": time.time() - 3600,
+        "last_activity_at": time.time() - 3600,
+        "events": [{"type": "manual.seed.add"}],
+    }
+    assert _training_is_stale(previous, now=time.time())
+    closed = _close_stale_training_snapshot(previous, reason="test")
+    assert previous["active"] is True
+    assert closed["active"] is False
+    assert closed["run_id"] is None
+    assert closed["last_run_id"] == "old-run"
+    assert closed["closed_reason"] == "test"
+    assert closed["auto_closed"] is True
+
+
+def test_monitor_shutdown_and_start_paths_are_idempotent_and_stale_safe():
+    root = Path(__file__).resolve().parents[1]
+    support = (root / "web/server_support.py").read_text(encoding="utf-8")
+    routes = (root / "web/routes/planning_routes.py").read_text(encoding="utf-8")
+    server = (root / "web/server.py").read_text(encoding="utf-8")
+
+    assert "def _close_live_training_snapshots" in support
+    assert "reason=\"server_shutdown\"" in server
+    assert "_training_is_stale(previous)" in routes
+    assert "reason=\"monitor_timeout\"" in routes
+    assert '"last_activity_at": now' in routes
+    assert '"already_stopped": True' in routes
+    assert '"run_mismatch": True' in routes
 
 
 def test_training_monitor_frontend_handles_high_value_checkpoints_and_report_lifecycle():
@@ -91,7 +130,9 @@ def test_monitor_lifecycle_keeps_feedback_and_evidence_case_scoped():
     # A late /training/start response cannot restore its global visual state in
     # another selected session, and an empty interceptor attachment array must
     # not discard the gallery attachment built by the capture pipeline.
-    assert "|| _activeApiSessionId() !== startSessionId) return data;" in manual
+    assert "late_start_after_session_leave" in manual
+    assert "function releaseTrainingMonitorForSession" in manual
+    assert "window.addEventListener('pagehide'" in manual
     assert "Array.isArray(result.attachments) && result.attachments.length" in ui_api
     assert "monitorScreenshotContext.items || []" in ui_api
     # The perimeter transitions both in and out, while remaining entirely
@@ -100,8 +141,14 @@ def test_monitor_lifecycle_keeps_feedback_and_evidence_case_scoped():
     assert "pointer-events: none;" in css
     # UI telemetry must not hydrate a cold case just to answer a click.
     assert "agent = get_cached_agent(session_id) if monitor_run_matches" in routes
+    assert "def monitor_control_agent(session_id):" in routes
+    assert "return get_agent(session_id, _lightweight=True)" in routes
+    assert "agent = monitor_control_agent(session_id)" in routes
     assert "and request_run_id" in routes
     assert "A monitor run is already active for this case." in routes
+    assert '"already_stopped": True' in routes
+    assert '"auto_close"' in routes
+    assert "restoreTrainingMonitorSnapshot" in ui_api
 
 
 def test_monitor_seed_focus_restores_camera_and_mesh_state_after_capture():
@@ -116,6 +163,16 @@ def test_monitor_seed_focus_restores_camera_and_mesh_state_after_capture():
     assert "focusPlanningSeedsForScreenshot(options.focusSeedIds)" in ui_api
 
 
+def test_manual_artifact_status_is_projected_to_visible_data_tree_nodes():
+    root = Path(__file__).resolve().parents[1]
+    viewer = (root / "web/app/static/js/brachybot-viewer-volume.js").read_text(encoding="utf-8")
+
+    assert "const artifactStatus = dataTreeState.planning?.artifactStatus;" in viewer
+    assert "applyArtifactStatus(dataTreeState.planning?.doseOverlay, 'dose')" in viewer
+    assert "applyArtifactStatus(dataTreeState.planning?.dvh, 'dvh')" in viewer
+    assert "String(node.source || '').toLowerCase() === 'surgical_guide'" in viewer
+
+
 def test_manual_workflow_exposes_real_surgical_guide_actions():
     root = Path(__file__).resolve().parents[1]
     html = (root / "web/app/index.html").read_text(encoding="utf-8")
@@ -128,7 +185,7 @@ def test_manual_workflow_exposes_real_surgical_guide_actions():
     assert "/api/surgical-guides/generate" in guide
 
 
-def test_monitor_and_screenshots_prefer_global_ui_language():
+def test_monitor_and_screenshots_follow_conversation_language():
     root = Path(__file__).resolve().parents[1]
     chat_core = (root / "web/app/static/js/brachybot-chat-core.js").read_text(encoding="utf-8")
     ui_api = (root / "web/app/static/js/brachybot-ui-api.js").read_text(encoding="utf-8")
@@ -137,8 +194,8 @@ def test_monitor_and_screenshots_prefer_global_ui_language():
     assert "function detectConversationLanguage(text)" in chat_core
     assert "function conversationLanguageForSession" in chat_core
     assert "session.conversationLanguage = detectedLanguage" in chat_core
-    assert "if (window._i18nLang) return window._i18nLang;" in ui_api
-    assert "const raw = window._i18nLang || (" in ui_api
+    assert "const conversation = window.conversationLanguageForSession(sessionId);" in ui_api
+    assert "return window._responseLanguage || window._i18nLang || 'en';" in ui_api
     assert "const language = monitorConversationLanguage(ownerSessionId);" in ui_api
     assert "window.monitorConversationLanguage(startSessionId)" in manual
     assert "window.monitorConversationLanguage(stopSessionId)" in manual
@@ -177,6 +234,16 @@ def test_monitor_maps_manual_stages_to_their_own_viewer_checkpoint():
     assert _training_screenshot_for_event(None, None, dose_event, "stage")["target"] == "dose-overview"
     assert _training_screenshot_for_event(None, None, running_event, "stage") is None
     assert "Trajectory refinement completed" in _training_feedback_for_event(None, None, trajectory_event)
+
+    cold_needle_event = {
+        "type": "manual.needle.add",
+        "label": "Needle added",
+        "detail": {},
+        "language": "en",
+    }
+    cold_feedback = _training_feedback_for_event(None, None, cold_needle_event)
+    assert cold_feedback and "Needle edit recorded" in cold_feedback
+    assert _training_screenshot_for_event(None, None, cold_needle_event, cold_feedback)["target"] == "viewer-3d"
 
     class Memory:
         def __init__(self):

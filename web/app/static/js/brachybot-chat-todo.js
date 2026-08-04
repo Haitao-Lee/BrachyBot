@@ -1060,9 +1060,21 @@ function _buildTurnMeta(identity = {}) {
         requestId: String(identity.requestId || identity.request_id || ''),
         messageId: String(identity.messageId || identity.message_id || ''),
         messageKind: String(identity.messageKind || identity.message_kind || 'assistant_final'),
+        // Persist the semantic position inside a turn. This is the primary
+        // ordering contract for refresh/reconnect; the renderer does not need
+        // to infer Trace placement from write timing or title whitelists.
+        turnSequence: Number.isFinite(Number(identity.turnSequence ?? identity.turn_sequence))
+            ? Number(identity.turnSequence ?? identity.turn_sequence)
+            : (String(identity.messageKind || identity.message_kind || 'assistant_final') === 'execution_trace' ? 1 : 2),
+        replyToMessageId: String(identity.replyToMessageId || identity.reply_to_message_id || ''),
         attachments: Array.isArray(identity.attachments) ? identity.attachments : [],
         screenshotLayout: identity.screenshotLayout || identity.layout || 'auto',
         responseLanguage: identity.responseLanguage || window._responseLanguage || '',
+        traceLanguage: identity.traceLanguage
+            || identity.trace_language
+            || identity.responseLanguage
+            || window._responseLanguage
+            || '',
     };
 }
 
@@ -1347,15 +1359,19 @@ async function sendChat(prefill, options) {
     const turnAssistantMessageId = String(
         opts.assistantMessageId || opts.assistant_message_id || `assistant-${turnRequestId}`
     );
+    const detectedTurnLanguage = typeof detectConversationLanguage === 'function'
+        ? detectConversationLanguage(text)
+        : '';
     const turnIdentity = {
         requestId: turnRequestId,
         userMessageId: turnUserMessageId,
         messageId: turnAssistantMessageId,
-        responseLanguage: window._i18nLang
+        responseLanguage: detectedTurnLanguage
             || (typeof conversationLanguageForSession === 'function'
                 ? conversationLanguageForSession(turnSessionId)
                 : '')
             || window._responseLanguage
+            || window._i18nLang
             || '',
     };
     if (!opts.hiddenUserMessage && !isResumingTask && typeof addChat === 'function') {
@@ -1363,6 +1379,9 @@ async function sendChat(prefill, options) {
             requestId: turnRequestId,
             messageId: turnUserMessageId,
             messageKind: 'user_message',
+            turnSequence: 0,
+            responseLanguage: turnIdentity.responseLanguage,
+            traceLanguage: turnIdentity.responseLanguage,
         });
     }
     if (!opts.preserveLastUserMessage) {
@@ -1654,11 +1673,10 @@ async function sendChat(prefill, options) {
                         user_message_id: turnUserMessageId,
                         assistant_message_id: turnAssistantMessageId,
                         internal_followup: !!opts.internalFollowup,
-                        response_language: window._i18nLang || (
-                            typeof conversationLanguageForSession === 'function'
-                                ? conversationLanguageForSession(turnSessionId)
-                                : window._responseLanguage || ''
-                        ),
+                        response_language: turnIdentity.responseLanguage
+                            || window._responseLanguage
+                            || window._i18nLang
+                            || '',
                     }),
                     signal: turnAbortController ? turnAbortController.signal : undefined,
                 });
@@ -1777,6 +1795,11 @@ async function sendChat(prefill, options) {
                         // bug.
                         if (data.language && data.language.code) {
                             window._responseLanguage = data.language.code;
+                            turnIdentity.responseLanguage = data.language.code;
+                            turnIdentity.traceLanguage = data.language.code;
+                            if (chainEl) {
+                                chainEl.dataset.traceLanguage = data.language.code;
+                            }
                             if (typeof _setActiveTodoLang === 'function') {
                                 _setActiveTodoLang(effectiveUiLanguage());
                             }
@@ -1790,7 +1813,7 @@ async function sendChat(prefill, options) {
                     }
                     if (currentEvent === 'step' && data) {
                         const traced = reconcileOptimisticTraceStep(
-                            _traceStepForDisplay(data, turnSessionId),
+                            _traceStepForDisplay(data, turnSessionId, turnIdentity.responseLanguage),
                         );
                         const displayStep = traced.step;
                         const stepIndex = traced.index >= 0 ? traced.index : steps.length;
@@ -1806,7 +1829,7 @@ async function sendChat(prefill, options) {
                             if (thinkingEl && typeof removeThinkingIndicator === 'function') removeThinkingIndicator(thinkingEl);
                             const resumeStart = isResumingTask
                                 ? (window._caseChainStartedAt || {})[turnSessionId] : null;
-                            const r = createLiveThinkingChain(resumeStart, turnRequestId);
+                            const r = createLiveThinkingChain(resumeStart, turnRequestId, turnIdentity.responseLanguage);
                             chainEl = r.chainEl; stepsDiv = r.stepsDiv; headerEl = r.headerEl;
                             // Save the chain start time so a session-resume
                             // rebuild uses the original clock, not Date.now().
@@ -2084,6 +2107,17 @@ async function sendChat(prefill, options) {
                                         sessionId: turnSessionId,
                                         kind: segmentationKind,
                                         reason: 'chat-segmentation-complete',
+                                    }).then(() => {
+                                        // The label endpoint and mesh worker can
+                                        // complete in separate turns. Reconcile
+                                        // once more after both have published so a
+                                        // cold session cannot leave the Data Tree
+                                        // or MPR overlays one event behind.
+                                        if (String(activeSessionId || '') !== String(turnSessionId || '')) return;
+                                        window.reconcileSegmentationViewerState?.({
+                                            sessionId: turnSessionId,
+                                            reason: 'chat-segmentation-hydrated',
+                                        });
                                     }).catch(error => console.warn('[SSE-STEP] segmentation artifact hydration failed:', error));
                                 } else if (typeof loadLabelVolumes === 'function') {
                                     loadLabelVolumes({
@@ -2091,6 +2125,12 @@ async function sendChat(prefill, options) {
                                         forceFresh: true,
                                         preserveViewerState: true,
                                         resetPresentation: true,
+                                    }).then(() => {
+                                        if (String(activeSessionId || '') !== String(turnSessionId || '')) return;
+                                        window.reconcileSegmentationViewerState?.({
+                                            sessionId: turnSessionId,
+                                            reason: 'chat-labels-hydrated',
+                                        });
                                     }).catch(error => console.warn('[SSE-STEP] fallback label load failed:', error));
                                 }
                             }
@@ -2229,6 +2269,10 @@ async function sendChat(prefill, options) {
                     requestId: turnRequestId,
                     messageId: `trace-${turnRequestId}`,
                     messageKind: 'execution_trace',
+                    turnSequence: 1,
+                    replyToMessageId: turnAssistantMessageId,
+                    responseLanguage: turnIdentity.responseLanguage,
+                    traceLanguage: turnIdentity.responseLanguage,
                 });
             } catch (_) {}
             return;
@@ -2404,11 +2448,15 @@ async function sendChat(prefill, options) {
                 saveSessionMessage('bot-response', detachedResponse, null, Date.now(), turnSessionId, _buildTurnMeta(turnIdentity));
             }
             try {
-                saveSessionMessage('thinking', '', steps, Date.now(), turnSessionId, {
-                    requestId: turnRequestId,
-                    messageId: `trace-${turnRequestId}`,
-                    messageKind: 'execution_trace',
-                });
+            saveSessionMessage('thinking', '', steps, Date.now(), turnSessionId, {
+                requestId: turnRequestId,
+                messageId: `trace-${turnRequestId}`,
+                messageKind: 'execution_trace',
+                turnSequence: 1,
+                replyToMessageId: turnAssistantMessageId,
+                responseLanguage: turnIdentity.responseLanguage,
+                traceLanguage: turnIdentity.responseLanguage,
+            });
             } catch (_) {}
             return;
         }
@@ -2491,11 +2539,15 @@ async function sendChat(prefill, options) {
                 finalizeThinkingChain(chainEl, headerEl, steps);
             }
             try {
-                saveSessionMessage('thinking', '', steps, Date.now(), turnSessionId, {
-                    requestId: turnRequestId,
-                    messageId: `trace-${turnRequestId}`,
-                    messageKind: 'execution_trace',
-                });
+            saveSessionMessage('thinking', '', steps, Date.now(), turnSessionId, {
+                requestId: turnRequestId,
+                messageId: `trace-${turnRequestId}`,
+                messageKind: 'execution_trace',
+                turnSequence: 1,
+                replyToMessageId: turnAssistantMessageId,
+                responseLanguage: turnIdentity.responseLanguage,
+                traceLanguage: turnIdentity.responseLanguage,
+            });
             } catch (_) {}
             window._chatStreaming = false;
             setStreamingState(false);
@@ -2512,11 +2564,14 @@ async function sendChat(prefill, options) {
     }
 }
 
-function _traceStepForDisplay(step, sessionId) {
+function _traceStepForDisplay(step, sessionId, turnLanguage = '') {
     if (!step || typeof step !== 'object') return step;
     if (step.tool !== 'ui_screenshot') return step;
     const language = (
-        window._i18nLang
+        turnLanguage
+        || step.trace_language
+        || step.response_language
+        || window._i18nLang
         || (typeof conversationLanguageForSession === 'function'
             ? conversationLanguageForSession(sessionId)
             : '')

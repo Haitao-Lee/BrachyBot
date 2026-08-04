@@ -447,7 +447,7 @@ window.createChatIdentity = createChatIdentity;
 function normalizeSessionMessageIdentities(sessionId, messages) {
     const owner = String(sessionId || 'session');
     let activeRequestId = '';
-    return (Array.isArray(messages) ? messages : []).map((message, index) => {
+    const normalized = (Array.isArray(messages) ? messages : []).map((message, index) => {
         if (!message || typeof message !== 'object') return message;
         const record = message;
         if (record.type === 'user') {
@@ -477,6 +477,17 @@ function normalizeSessionMessageIdentities(sessionId, messages) {
                     ? 'assistant_final'
                     : record.type
         ));
+        const storedSequence = Number(record.turn_sequence ?? record.turnSequence);
+        if (Number.isFinite(storedSequence)) {
+            record.turn_sequence = storedSequence;
+        } else {
+            // Legacy snapshots predate the explicit turn contract. Infer a
+            // one-time compatibility value from the normalized message kind;
+            // all new writes persist turn_sequence at the source.
+            record.turn_sequence = record.message_kind === 'user_message' || record.type === 'user'
+                ? 0
+                : record.message_kind === 'execution_trace' || record.type === 'thinking' ? 1 : 2;
+        }
         if (!Array.isArray(record.attachments)) {
             record.attachments = Array.isArray(record.meta?.attachments)
                 ? record.meta.attachments.slice()
@@ -484,6 +495,49 @@ function normalizeSessionMessageIdentities(sessionId, messages) {
         }
         return record;
     });
+    // A turn is persisted by several independent writers: the browser saves
+    // the final bubble as soon as it arrives, while the Trace is saved when
+    // the stream is folded. Their write order is not the visual order. Group
+    // records by stable request_id and render each turn as user -> Trace ->
+    // assistant, without changing the order of separate turns.
+    const rank = record => {
+        const sequence = Number(record?.turn_sequence);
+        if (Number.isFinite(sequence)) return sequence;
+        const kind = String(record?.message_kind || '').toLowerCase();
+        const type = String(record?.type || '').toLowerCase();
+        if (type === 'user' || kind === 'user_message') return 0;
+        if (type === 'thinking' || kind === 'execution_trace') return 1;
+        if (type === 'bot' || type === 'bot-response' || kind === 'assistant_final') return 2;
+        return 3;
+    };
+    const groups = new Map();
+    normalized.forEach((record, index) => {
+        if (!record || typeof record !== 'object') return;
+        const requestId = String(
+            record.request_id
+            || record.id
+            || `orphan-${owner}-${index}`
+        );
+        let group = groups.get(requestId);
+        if (!group) {
+            group = { requestId, firstIndex: index, firstTimestamp: Number.POSITIVE_INFINITY, records: [] };
+            groups.set(requestId, group);
+        }
+        const timestamp = Number(record.timestamp || record.created_at || 0);
+        if (Number.isFinite(timestamp) && timestamp > 0) {
+            group.firstTimestamp = Math.min(group.firstTimestamp, timestamp);
+        }
+        group.records.push({ record, index });
+    });
+    return Array.from(groups.values())
+        .sort((left, right) => {
+            const leftTime = Number.isFinite(left.firstTimestamp) ? left.firstTimestamp : Number.POSITIVE_INFINITY;
+            const rightTime = Number.isFinite(right.firstTimestamp) ? right.firstTimestamp : Number.POSITIVE_INFINITY;
+            return (leftTime - rightTime) || (left.firstIndex - right.firstIndex);
+        })
+        .flatMap(group => group.records
+            .sort((left, right) => (rank(left.record) - rank(right.record)) || (left.index - right.index))
+            .map(item => item.record));
 }
 window.normalizeSessionMessageIdentities = normalizeSessionMessageIdentities;
 
@@ -624,12 +678,18 @@ function loadSessionChat(id) {
         }
         deduped.forEach(msg => {
             if (msg.type === 'thinking') {
+                const traceLanguage = msg.trace_language
+                    || msg.response_language
+                    || msg.meta?.traceLanguage
+                    || msg.meta?.responseLanguage
+                    || '';
                 const restoredSteps = typeof window._traceStepForDisplay === 'function'
-                    ? (msg.steps || []).map(step => window._traceStepForDisplay(step, id))
+                    ? (msg.steps || []).map(step => window._traceStepForDisplay(step, id, traceLanguage))
                     : msg.steps;
                 renderThinkingChain(restoredSteps, {
                     requestId: msg.request_id,
                     messageId: msg.id,
+                    traceLanguage,
                 });
             } else {
                 // fromSession=true tells addChat NOT to call
@@ -640,6 +700,10 @@ function loadSessionChat(id) {
                     messageId: msg.id,
                     attachments: msg.attachments || [],
                     messageKind: msg.message_kind,
+                    responseLanguage: msg.response_language
+                        || msg.meta?.responseLanguage
+                        || msg.meta?.traceLanguage
+                        || '',
                     layout: msg.meta?.screenshotLayout || 'auto',
                 });
             }
@@ -679,6 +743,20 @@ function saveSessionMessage(type, content, steps, timestamp, sessionId = activeS
     const messageKind = String(safeMeta.messageKind || safeMeta.message_kind || (
         type === 'thinking' ? 'execution_trace' : type === 'bot-response' ? 'assistant_final' : type
     ));
+    const explicitTurnSequence = Number(safeMeta.turnSequence ?? safeMeta.turn_sequence);
+    const turnSequence = Number.isFinite(explicitTurnSequence)
+        ? explicitTurnSequence
+        : (messageKind === 'user_message' || type === 'user'
+            ? 0
+            : messageKind === 'execution_trace' || type === 'thinking' ? 1 : 2);
+    const replyToMessageId = String(safeMeta.replyToMessageId || safeMeta.reply_to_message_id || '');
+    const traceLanguage = String(
+        safeMeta.traceLanguage
+        || safeMeta.trace_language
+        || safeMeta.responseLanguage
+        || safeMeta.response_language
+        || ''
+    );
     const existing = session.messages.find(message => {
         if (!message || typeof message !== 'object') return false;
         if (String(message.id || '') === messageId) return true;
@@ -709,10 +787,26 @@ function saveSessionMessage(type, content, steps, timestamp, sessionId = activeS
                 existing.attachments.push(item);
             });
         }
-        existing.timestamp = (typeof timestamp === 'number' && timestamp > 0) ? timestamp : Date.now();
+        // Attachments and late Trace updates must not move a turn to the
+        // bottom of the transcript. Keep the earliest durable timestamp for
+        // the record; normalizeSessionMessageIdentities will place the whole
+        // request next to its original user message on refresh.
+        const incomingTimestamp = (typeof timestamp === 'number' && timestamp > 0)
+            ? timestamp : Date.now();
+        const existingTimestamp = Number(existing.timestamp || 0);
+        existing.timestamp = existingTimestamp > 0
+            ? Math.min(existingTimestamp, incomingTimestamp)
+            : incomingTimestamp;
         existing.request_id = requestId || existing.request_id || '';
         existing.message_kind = messageKind || existing.message_kind;
+        existing.turn_sequence = turnSequence;
+        if (traceLanguage) {
+            existing.trace_language = traceLanguage;
+            existing.response_language = traceLanguage;
+        }
+        if (replyToMessageId) existing.reply_to_message_id = replyToMessageId;
         if (Object.keys(safeMeta).length) existing.meta = Object.assign({}, existing.meta || {}, safeMeta);
+        session.messages = normalizeSessionMessageIdentities(ownerSessionId, session.messages);
         saveSessions();
         if (ownerSessionId === String(activeSessionId || '')
             && window.__serverWorkspaceReady
@@ -735,8 +829,14 @@ function saveSessionMessage(type, content, steps, timestamp, sessionId = activeS
         id: messageId,
         request_id: requestId || createChatIdentity('request'),
         message_kind: messageKind,
+        turn_sequence: turnSequence,
         attachments,
     };
+    if (traceLanguage) {
+        msg.trace_language = traceLanguage;
+        msg.response_language = traceLanguage;
+    }
+    if (replyToMessageId) msg.reply_to_message_id = replyToMessageId;
     if (meta) msg.meta = safeMeta;
     session.messages.push(msg);
     if (type === 'user' && typeof _rememberChatCommand === 'function') {
@@ -753,6 +853,7 @@ function saveSessionMessage(type, content, steps, timestamp, sessionId = activeS
             renderSessionList();
         }
     }
+    session.messages = normalizeSessionMessageIdentities(ownerSessionId, session.messages);
     saveSessions();
     // Persist the transcript through the durable case workspace even when a
     // legacy caller reaches the old saveSessions binding directly.
@@ -1322,34 +1423,43 @@ const _CHAIN_I18N = {
         llm_call: 'LLM 调用',
         calling: '调用',
         user_input: '用户输入',
+        response_synthesis: '生成回复',
+        final_response: '最终回复',
         pending: '等待中',
         done: '完成',
         error: '错误',
+        stopped: '已停止',
     },
 };
-function _chainI18n(key) {
-    const lang = effectiveUiLanguage();
+function _normalizeTraceLanguage(value) {
+    const normalized = String(value || '').toLowerCase();
+    if (!normalized) return '';
+    return normalized.startsWith('zh') ? 'zh' : 'en';
+}
+
+function _chainI18n(key, languageOverride = '') {
+    const lang = _normalizeTraceLanguage(languageOverride) || effectiveUiLanguage();
     return (_CHAIN_I18N[lang] || _CHAIN_I18N.en)[key] || (_CHAIN_I18N.en[key] || key);
 }
 // Localize a step title: "LLM Call 1" → "LLM 调用 1", "Calling foo" → "调用 foo"
-function _localizeStepTitle(title) {
+function _localizeStepTitle(title, languageOverride = '') {
     if (!title) return '';
-    const lang = effectiveUiLanguage();
+    const lang = _normalizeTraceLanguage(languageOverride) || effectiveUiLanguage();
     if (lang === 'en') return title;
     // "LLM Call N" → "LLM 调用 N"
-    title = title.replace(/^LLM Call (\d+)/, _chainI18n('llm_call') + ' $1');
+    title = title.replace(/^LLM Call (\d+)/, _chainI18n('llm_call', lang) + ' $1');
     // "Calling tool_name" → "调用 tool_name"
-    title = title.replace(/^Calling /, _chainI18n('calling') + ' ');
+    title = title.replace(/^Calling /, _chainI18n('calling', lang) + ' ');
     // "User Input" → "用户输入"
-    title = title.replace(/^User Input$/, _chainI18n('user_input'));
-    title = title.replace(/^Response Synthesis$/, _chainI18n('response_synthesis'));
-    title = title.replace(/^Final Response$/, _chainI18n('final_response'));
+    title = title.replace(/^User Input$/, _chainI18n('user_input', lang));
+    title = title.replace(/^Response Synthesis$/, _chainI18n('response_synthesis', lang));
+    title = title.replace(/^Final Response$/, _chainI18n('final_response', lang));
     return title;
 }
 // Localize step status: "pending" → "等待中", "done" → "完成"
-function _localizeStepStatus(status) {
+function _localizeStepStatus(status, languageOverride = '') {
     if (!status) return '';
-    return _chainI18n(status) || status;
+    return _chainI18n(status, languageOverride) || status;
 }
 
 // Safe markdown renderer — uses the global `marked` (loaded from CDN) if
@@ -2072,6 +2182,13 @@ function renderThinkingChain(steps, identity = {}) {
     if (!container) return;
     const requestId = String(identity.requestId || identity.request_id || createChatIdentity('request'));
     const messageId = String(identity.messageId || identity.message_id || `trace-${requestId}`);
+    const traceLanguage = _normalizeTraceLanguage(
+        identity.traceLanguage
+        || identity.trace_language
+        || identity.responseLanguage
+        || identity.response_language
+        || ''
+    );
     const domPrefix = `trace_${_chatDomKey(messageId)}`;
     const totalSteps = steps ? steps.length : 0;
     const doneSteps = steps ? steps.filter(s => s.status === 'done').length : 0;
@@ -2092,14 +2209,15 @@ function renderThinkingChain(steps, identity = {}) {
     wrapper.dataset.requestId = requestId;
     wrapper.dataset.messageId = messageId;
     wrapper.dataset.live = '0';
+    if (traceLanguage) wrapper.dataset.traceLanguage = traceLanguage;
 
     const header = document.createElement('div');
     header.className = 'thinking-header';
     header.onclick = () => toggleThinkingChain(wrapper, steps);
     header.innerHTML = `
         <span class="thinking-toggle" id="${domPrefix}_toggle">&#9654;</span>
-        <span class="thinking-label">${escHtml(_chainI18n('header'))}</span>
-        <span class="thinking-count">${doneSteps}/${totalSteps}${escHtml(_chainI18n('steps_suffix'))}</span>
+        <span class="thinking-label">${escHtml(_chainI18n('header', traceLanguage))}</span>
+        <span class="thinking-count">${doneSteps}/${totalSteps}${escHtml(_chainI18n('steps_suffix', traceLanguage))}</span>
     `;
     wrapper.appendChild(header);
 
@@ -2136,8 +2254,8 @@ function renderThinkingChain(steps, identity = {}) {
             block.innerHTML =
                 '<div class="step-header" onclick="toggleStep(\'' + bodyDomId + '\')">' +
                     '<span class="step-icon ' + escHtml(step.type || '') + '">' + icon + '</span>' +
-                    '<span class="step-title">' + escHtml(_localizeStepTitle(step.title || '')) + '</span>' +
-                    '<span class="step-status ' + escHtml(step.status || '') + '">' + escHtml(_localizeStepStatus(step.status || '')) + '</span>' +
+                    '<span class="step-title">' + escHtml(_localizeStepTitle(step.title || '', traceLanguage)) + '</span>' +
+                    '<span class="step-status ' + escHtml(step.status || '') + '">' + escHtml(_localizeStepStatus(step.status || '', traceLanguage)) + '</span>' +
                 '</div>' +
                 '<div class="step-body" id="' + bodyDomId + '">' +
                     toolName + params + contentHtml + resultHtml +
@@ -2155,7 +2273,7 @@ function renderThinkingChain(steps, identity = {}) {
     scrollToBottom();
 }
 
-function createLiveThinkingChain(resumeStartTime, requestId = '') {
+function createLiveThinkingChain(resumeStartTime, requestId = '', traceLanguage = '') {
     const container = document.getElementById('chatMessages');
     if (!container) return { chainEl: null, stepsDiv: null, headerEl: null };
     const stableRequestId = String(requestId || createChatIdentity('request'));
@@ -2202,6 +2320,8 @@ function createLiveThinkingChain(resumeStartTime, requestId = '') {
     wrapper.dataset.requestId = stableRequestId;
     wrapper.dataset.messageId = messageId;
     wrapper.dataset.live = '1';
+    const normalizedTraceLanguage = _normalizeTraceLanguage(traceLanguage);
+    if (normalizedTraceLanguage) wrapper.dataset.traceLanguage = normalizedTraceLanguage;
 
     const startTime = Number(resumeStartTime) || Date.now();
 
@@ -2214,8 +2334,8 @@ function createLiveThinkingChain(resumeStartTime, requestId = '') {
     // usage-bar footer at the end of the response.
     header.innerHTML =
         '<span class="thinking-toggle expanded">&#9654;</span>' +
-        '<span class="thinking-label">' + escHtml(_chainI18n('thinking')) + '</span>' +
-        '<span class="thinking-count">0' + escHtml(_chainI18n('steps_suffix')) + '</span>' +
+        '<span class="thinking-label">' + escHtml(_chainI18n('thinking', normalizedTraceLanguage)) + '</span>' +
+        '<span class="thinking-count">0' + escHtml(_chainI18n('steps_suffix', normalizedTraceLanguage)) + '</span>' +
         '<span class="thinking-time" style="margin-left:auto;font-size:0.62rem;color:var(--text-dim);font-variant-numeric:tabular-nums;">0.0s</span>';
     header.onclick = () => toggleThinkingChain(wrapper, []);
     wrapper.appendChild(header);
@@ -2328,14 +2448,15 @@ function appendStepToChain(stepsDiv, step, idx) {
     const chainFinalized = stepsDiv.closest('[data-finalized]');
     const bodyExpanded = chainFinalized ? '' : ' expanded';
     const chainEl = stepsDiv.closest('.thinking-chain');
+    const traceLanguage = _normalizeTraceLanguage(chainEl?.dataset?.traceLanguage || '');
     const chainPrefix = chainEl?.id || `trace_${_chatDomKey(chainEl?.dataset?.requestId || 'live')}`;
     const stepDomId = `${chainPrefix}_step_${idx}`;
     const bodyDomId = `${stepDomId}_body`;
     const bodyHtml =
         '<div class="step-header" onclick="toggleStep(\'' + bodyDomId + '\')">' +
             '<span class="step-icon ' + escHtml(step.type || '') + '">' + icon + '</span>' +
-            '<span class="step-title">' + escHtml(_localizeStepTitle(step.title || '')) + '</span>' +
-            '<span class="step-status ' + escHtml(step.status || '') + '">' + escHtml(_localizeStepStatus(step.status || '')) + '</span>' +
+            '<span class="step-title">' + escHtml(_localizeStepTitle(step.title || '', traceLanguage)) + '</span>' +
+            '<span class="step-status ' + escHtml(step.status || '') + '">' + escHtml(_localizeStepStatus(step.status || '', traceLanguage)) + '</span>' +
         '</div>' +
         '<div class="step-body' + bodyExpanded + '" id="' + bodyDomId + '">' +
             toolName + params + contentHtml + resultHtml +
@@ -2366,6 +2487,9 @@ function appendStepToChain(stepsDiv, step, idx) {
 
 function updateChainHeader(headerEl, steps) {
     if (!headerEl) return;
+    const traceLanguage = _normalizeTraceLanguage(
+        headerEl.closest('.thinking-chain')?.dataset?.traceLanguage || ''
+    );
     const countEl = headerEl.querySelector('.thinking-count');
     // The backend emits several SSE events for one logical step (pending,
     // heartbeat/progress, then done). The trace renderer already deduplicates
@@ -2382,7 +2506,7 @@ function updateChainHeader(headerEl, steps) {
     });
     const logicalSteps = Array.from(unique.values());
     const doneSteps = logicalSteps.filter(s => s.status === 'done').length;
-    if (countEl) countEl.textContent = doneSteps + '/' + logicalSteps.length + _chainI18n('steps_suffix');
+    if (countEl) countEl.textContent = doneSteps + '/' + logicalSteps.length + _chainI18n('steps_suffix', traceLanguage);
 }
 
 function finalizeThinkingChain(chainEl, headerEl, steps) {
@@ -2393,8 +2517,9 @@ function finalizeThinkingChain(chainEl, headerEl, steps) {
     // the final response.
     chainEl.dataset.finalized = '1';
     chainEl.dataset.live = '0';
+    const traceLanguage = _normalizeTraceLanguage(chainEl.dataset.traceLanguage || '');
     const labelEl = headerEl && headerEl.querySelector('.thinking-label');
-    if (labelEl) labelEl.textContent = _chainI18n('header');
+    if (labelEl) labelEl.textContent = _chainI18n('header', traceLanguage);
     updateChainHeader(headerEl, steps);
     if (headerEl && headerEl._timer) {
         clearInterval(headerEl._timer);
@@ -2442,12 +2567,13 @@ function cancelThinkingChain(chainEl, headerEl) {
     }
     const labelEl = headerEl && headerEl.querySelector('.thinking-label');
     const countEl = headerEl && headerEl.querySelector('.thinking-count');
-    if (labelEl) labelEl.textContent = _chainI18n('header');
-    if (countEl) countEl.textContent = _chainI18n('stopped');
+    const traceLanguage = _normalizeTraceLanguage(chainEl.dataset.traceLanguage || '');
+    if (labelEl) labelEl.textContent = _chainI18n('header', traceLanguage);
+    if (countEl) countEl.textContent = _chainI18n('stopped', traceLanguage);
     // Pending step pills and their parent glow are the remaining animated
     // parts of the trace. Turn them into terminal error states before
     // collapsing the trace so expanding it later cannot restart motion.
-    const stoppedText = _chainI18n('stopped');
+    const stoppedText = _chainI18n('stopped', traceLanguage);
     chainEl.querySelectorAll('.step-status.pending').forEach(status => {
         status.classList.remove('pending');
         status.classList.add('error');

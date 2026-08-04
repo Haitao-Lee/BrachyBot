@@ -12195,3 +12195,55 @@ duplicate global-declaration comment in `brachybot-3d-manual.js` documents why
 - Playwright headless: full page loads with zero `pageerror`; all 13 viewer/data-tree functions registered; dose overlay repaints on axial/sagittal/coronal scroll.
 - End-to-end chat: "你好" → lightweight path ~0.6 s; provider-error path returns a friendly message with the technical reason.
 - Unit checks: `_detect_external_project_query` returns project-name-only query; `_changed_trajectory_ids` isolates a single dragged needle; `_compute_manual_ai_dose` no longer overwrites `seed_plan`.
+
+---
+
+## 2026-08-04 - Viewer camera stability and Monitor lifecycle hardening
+
+### Confirmed issues
+
+- The legacy spherical orbit update lost azimuth information near the polar
+  boundary. A continuous drag could therefore flip the 3D scene by 180 degrees.
+- Viewer resize and report capture paths could temporarily mix CSS size,
+  device-pixel size, camera aspect, and canvas transforms. The result was
+  apparent geometry distortion after zoom or a report capture.
+- A persisted active Monitor snapshot could be mistaken for a live run after a
+  session switch, browser refresh, or server restart. A late stop response then
+  surfaced an error even though the run had already ended on the server.
+
+### Resolution
+
+- `web/app/static/js/OrbitControls.js` now applies incremental quaternion
+  rotations around stable world/local axes and keeps the camera up vector and
+  target synchronized. The pole-singular spherical reconstruction is no longer
+  used by the active pointer path.
+- `web/app/static/js/brachybot-3d-manual.js` centralizes camera pose writes in
+  `sync3DCameraPose`, keeps renderer CSS/DPR dimensions aligned, and restores
+  complete camera state after fit, report capture, and workspace hydration.
+- `web/app/static/css/brachybot-report-controls.css` and the 2D render paths
+  preserve image aspect ratio and apply viewer transforms exactly once to the
+  slice and overlay layers.
+- `web/app/static/js/brachybot-workspace.js` and
+  `web/app/static/js/brachybot-ui-api.js` no longer resurrect an active Monitor
+  presentation from historical snapshots. Session transitions and deletion
+  close the previous case locally and asynchronously on the server.
+- `web/app/static/js/brachybot-3d-manual.js` sends a keepalive auto-close on
+  `pagehide`, handles late start responses, and treats an already-closed or
+  missing run as an idempotent success rather than a chat error.
+- `web/routes/planning_routes.py` makes Monitor start/stop stale-safe and
+  idempotent. `web/server_support.py` closes stale snapshots and
+  `web/server.py` closes in-memory runs during orderly shutdown; restart
+  hydration normalizes persisted active snapshots.
+- Report camera restoration retains a full-pose fallback for deployments that
+  do not load the shared camera synchronizer. Workspace camera restoration also
+  degrades safely in lightweight non-WebGL test environments.
+
+### Verification
+
+- Focused Viewer and Monitor regression tests: 16 passed.
+- Full Python suite: 467 passed, 2 skipped, 3 warnings.
+- Node syntax checks passed for OrbitControls, 3D manual planning, workspace,
+  UI API, layout, DVH planning, and report editor bundles.
+- Python compilation checks passed for `web/server.py`,
+  `web/server_support.py`, and `web/routes/planning_routes.py`.
+- Startup smoke test returned HTTP 200 and the server job stopped cleanly.

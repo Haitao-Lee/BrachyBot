@@ -104,6 +104,25 @@ function _planningVisualEntries() {
     return entries;
 }
 
+function _deduplicatePlanningRows() {
+    const planning = dataTreeState?.planning;
+    if (!planning) return;
+    const uniqueById = (items) => {
+        const byId = new Map();
+        (Array.isArray(items) ? items : []).forEach(item => {
+            const id = String(item?.id || '').trim();
+            if (id) byId.set(id, item);
+        });
+        return [...byId.values()];
+    };
+    planning.trajectories = uniqueById(planning.trajectories);
+    planning.seeds = uniqueById(planning.seeds);
+    planning.needles = uniqueById(planning.needles);
+    planning.trajectories.forEach(trajectory => {
+        trajectory.seeds = planning.seeds.filter(seed => _trajectoryContains(seed, trajectory));
+    });
+}
+
 function _trajectoryContains(item, trajectory) {
     const itemId = item?.trajectory_id ?? item?.trajectoryId;
     if (itemId === undefined || itemId === null) return false;
@@ -1833,6 +1852,17 @@ const dataTreeState = {
     // Planning state
     planning: {
         id: null,
+        // Planning is versioned at the session level.  ``runs`` contains
+        // compact registry rows; only the active run's clinical arrays are
+        // loaded into the fields below.  Switching a row performs an
+        // authenticated backend activation and then refreshes these fields,
+        // so the tree never pretends that an unloaded historical run is
+        // already present in the current Viewer scene.
+        activePlanningId: null,
+        runs: [],
+        label: null,
+        status: null,
+        dataVersion: 0,
         version: 0,
         visible: true,
         opacity: 1.0,
@@ -2053,6 +2083,37 @@ function reconcileDataTreeVisualNodes() {
         visible: annotation.visible !== false, opacity: annotation.opacity ?? 1,
         color: annotation.color || '#60a5fa', loaded: true,
     }, 'manual_annotation', 'annotations'));
+
+    // Manual edits are persisted as one authoritative artifact-status map on
+    // the planning snapshot. Project those statuses back onto the concrete
+    // Data Tree nodes so an old Dose/DVH/Guide is never presented as current
+    // merely because its binary/mesh payload is still visible. This is a
+    // one-way projection; it does not create placeholder data nodes.
+    const artifactStatus = dataTreeState.planning?.artifactStatus;
+    if (artifactStatus && typeof artifactStatus === 'object') {
+        const applyArtifactStatus = (node, key) => {
+            if (!node) return;
+            const status = String(artifactStatus[key] || '').toLowerCase();
+            if (['ready', 'stale', 'expired', 'loading', 'error'].includes(status)) {
+                node.status = status;
+            }
+        };
+        applyArtifactStatus(dataTreeState.dose, 'dose');
+        applyArtifactStatus(dataTreeState.planning?.doseOverlay, 'dose');
+        applyArtifactStatus(dataTreeState.planning?.dvh, 'dvh');
+        (dataTreeState.planning?.doseLevels || []).forEach(node => applyArtifactStatus(node, 'dose'));
+        (dataTreeState.planning?.meshes || []).forEach(node => {
+            if (String(node.source || '').toLowerCase() === 'surgical_guide') {
+                applyArtifactStatus(node, 'surgical_guide');
+            }
+        });
+        (dataTreeState.exportArtifacts || []).forEach(node => {
+            const type = String(node.dataType || node.type || '').toLowerCase();
+            if (type === 'report' || type === 'pdf') applyArtifactStatus(node, 'report');
+            if (type.includes('guide')) applyArtifactStatus(node, 'surgical_guide');
+            if (type === 'dvh') applyArtifactStatus(node, 'dvh');
+        });
+    }
 }
 
 window.ensureDataTreeNodeMetadata = ensureDataTreeNodeMetadata;
@@ -2470,6 +2531,10 @@ function renderDataTree() {
     const body = document.getElementById('dataTreeBody');
     if (!body) return;
 
+    // Stable IDs are the Data Tree/Viewer identity boundary. Repair legacy
+    // snapshots before rendering so one needle or seed cannot appear twice
+    // under different trajectory rows after hydration or a manual edit.
+    _deduplicatePlanningRows();
     reconcileDataTreeVisualNodes();
     // Catalog hydration is deliberately non-blocking. The active Session UI
     // renders immediately, then durable artifact rows arrive independently.
@@ -2818,6 +2883,20 @@ function renderDataTree() {
     const hasDoseOverlay = !!(state.doseOverlay && state.doseOverlay.shape);
     const hasPlanning = planningTrajectories.length > 0 || planningSeeds.length > 0 || planningNeedles.length > 0 || doseLevels.length > 0 || planningMeshes.length > 0 || hasDoseOverlay;
     const planningEntries = _planningVisualEntries();
+    const planningRuns = Array.isArray(dataTreeState.planning.runs)
+        ? dataTreeState.planning.runs : [];
+    const activePlanningId = String(
+        dataTreeState.planning.activePlanningId
+        || dataTreeState.planning.id
+        || planningRuns.find(run => run && run.visible)?.planning_id
+        || '',
+    );
+    const activePlanningRun = planningRuns.find(
+        run => String(run?.planning_id || '') === activePlanningId,
+    );
+    const historicalPlanningRuns = planningRuns.filter(
+        run => String(run?.planning_id || '') !== activePlanningId,
+    );
     const planningVis = planningEntries.length === 0 || planningEntries.some(item => item.visible !== false);
     const planningOp = planningEntries.length
         ? planningEntries.reduce((sum, item) => sum + Number(item.opacity ?? 0.7), 0) / planningEntries.length
@@ -2827,12 +2906,60 @@ function renderDataTree() {
         <div class="tree-group-header" onclick="toggleTreeGroup(this)" oncontextmenu="event.preventDefault();showGroupContextMenu(event.clientX,event.clientY,'planning')">
             <span class="arrow">&#9660;</span>
             <button class="eye-btn ${planningVis ? '' : 'hidden'}" onclick="event.stopPropagation();setGroupVisibility('planning', ${!planningVis})" title="Toggle all planning objects">${planningVis ? '&#128065;' : '&#128064;'}</button>
-            <span>Planning ${hasPlanning ? `(${planningEntries.length})` : ''}</span>
+            <span>Planning ${planningRuns.length ? `(${planningRuns.length})` : (hasPlanning ? `(${planningEntries.length})` : '')}</span>
             <span style="margin-left:auto;display:flex;align-items:center;gap:4px;">
                 <input type="range" class="opacity-slider" min="0" max="100" value="${Math.round(planningOp * 100)}" onclick="event.stopPropagation()" oninput="setGroupOpacity('planning', this.value)" title="Opacity for all planning objects">
             </span>
         </div>
         <div class="tree-group-items">`;
+
+    // Every Planning run has a stable backend identity. Historical rows are
+    // intentionally summary-only until activated; their geometry is loaded
+    // through the same session-scoped endpoints as the active run.
+    if (historicalPlanningRuns.length > 0) {
+        html += `<div class="tree-group" data-group="planning_history">
+            <div class="tree-group-header" onclick="toggleTreeGroup(this)">
+                <span class="arrow">&#9660;</span>
+                <span data-i18n-zh="历史规划" data-i18n-en="Planning history">Planning history</span>
+                <span style="margin-left:auto;color:var(--text-dim);font-size:0.62rem;">${historicalPlanningRuns.length}</span>
+            </div>
+            <div class="tree-group-items">`;
+        historicalPlanningRuns.forEach(run => {
+            const runId = String(run?.planning_id || '');
+            if (!runId) return;
+            const runLabel = String(run?.label || `Planning_${run?.sequence ?? 0}`);
+            const runStatus = String(run?.status || 'unknown');
+            const runInfo = [
+                runStatus,
+                run?.num_trajectories ? `${run.num_trajectories} trajectories` : '',
+                run?.total_seeds ? `${run.total_seeds} seeds` : '',
+            ].filter(Boolean).join(' · ');
+            const runArg = JSON.stringify(runId).replace(/</g, '\\u003c');
+            html += `<div class="tree-item planning-run-item" data-node-id="planning:${escHtml(runId)}" data-node-type="planning_run" data-status="${escHtml(runStatus)}"
+                onclick="activatePlanningRunFromTree(${runArg})"
+                oncontextmenu="event.preventDefault();event.stopPropagation();activatePlanningRunFromTree(${runArg})"
+                style="padding-left:1rem;cursor:pointer;">
+                <button class="eye-btn hidden" onclick="event.stopPropagation();activatePlanningRunFromTree(${runArg})" title="Restore this Planning">&#128064;</button>
+                <span style="color:#60a5fa;">&#9679;</span>
+                <span class="item-label">${escHtml(runLabel)}</span>
+                <span class="item-info">${escHtml(runInfo || 'saved')}</span>
+            </div>`;
+        });
+        html += `</div></div>`;
+    }
+
+    const shouldWrapActivePlanning = !!activePlanningRun;
+    if (shouldWrapActivePlanning) {
+        const activeLabel = String(activePlanningRun.label || `Planning_${activePlanningRun.sequence ?? 0}`);
+        html += `<div class="tree-group planning-active-run" data-group="planning_run_active">
+            <div class="tree-group-header" onclick="toggleTreeGroup(this)">
+                <span class="arrow">&#9660;</span>
+                <button class="eye-btn" onclick="event.stopPropagation();setGroupVisibility('planning', ${!planningVis})" title="Toggle active Planning">${planningVis ? '&#128065;' : '&#128064;'}</button>
+                <span class="item-label">${escHtml(activeLabel)}</span>
+                <span class="item-info">${escHtml(String(activePlanningRun.status || 'active'))}</span>
+            </div>
+            <div class="tree-group-items">`;
+    }
 
     // Trajectories group (parent of seeds) — only shown when the
     // server returned the new "trajectories" array. Without it, fall
@@ -3013,6 +3140,7 @@ function renderDataTree() {
         html += renderTreeItem('seeds', dataTreeState.seeds, state.seeds ? `${state.seeds.length} seeds` : '');
     }
 
+    if (shouldWrapActivePlanning) html += `</div></div>`; // close active Planning run
     html += `</div></div>`; // close Planning group
 
     const annotations = dataTreeState.annotations || [];

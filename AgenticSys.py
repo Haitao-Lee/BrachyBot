@@ -677,6 +677,12 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
         except ImportError as e:
             logger.warning(f"UIAnnotateTool not available: {e}")
 
+        try:
+            from tool_factory.viewer_command.query_metrics import QueryMetricsTool
+            self.registry.register(QueryMetricsTool())
+        except ImportError as e:
+            logger.warning(f"QueryMetricsTool not available: {e}")
+
         self.registry.register(CTVSegmentationTool())
         self.registry.register(CTVModelCatalogTool())
         self.registry.register(OARSegmentationTool())
@@ -1197,6 +1203,21 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
         radiation_volume = self.memory.retrieve("radiation_volume")
         dose_distribution = self.memory.retrieve("dose_distribution")
         seed_positions = self.memory.retrieve("seed_positions")
+
+        if tool_name == "query_metrics":
+            # Keep the fallback tool usable for callers that still route a
+            # non-deterministic status question through function calling. The
+            # local current-dose route normally bypasses this tool, but this
+            # injection ensures the tool reads the active case rather than
+            # returning an empty placeholder.
+            params.setdefault("metrics", self.memory.retrieve("dose_metrics") or self.memory.retrieve("metrics") or {})
+            params.setdefault("ctv_array", ctv_array)
+            params.setdefault("oar_array", oar_array)
+            params.setdefault("organ_names", self.memory.retrieve("organ_names") or {})
+            params.setdefault("ct_spacing", self.memory.retrieve("ct_spacing") or self.memory.retrieve("spacing") or [1, 1, 1])
+            params.setdefault("ct_data", self.memory.retrieve("ct_data"))
+            params.setdefault("seed_positions", seed_positions or [])
+            params.setdefault("total_seeds", self.memory.retrieve("total_seeds") or 0)
 
         if tool_name == "ctv_segmentation":
             # ALWAYS force-inject the LPI-oriented CT from memory.
@@ -2043,6 +2064,25 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
                 self.memory.store("dose_distribution", meta["dose_distribution"])
         elif tool_name == "trajectory_planning" and "trajectories" in meta:
             self.memory.store("trajectories", meta["trajectories"])
+
+        # Keep every planning invocation in its own session-owned run.  The
+        # active legacy aliases above remain available to existing consumers,
+        # while the run snapshot makes previous plans restorable without
+        # re-running the algorithm.  Stepwise manual planning stays in the
+        # same run until dose evaluation completes.
+        if tool_name == "planning_pipeline":
+            try:
+                from web.planning_runs import publish_planning_run
+
+                step_name = str(
+                    meta.get("step_executed")
+                    or meta.get("planning_step")
+                    or "full"
+                )
+                run_status = "completed" if step_name in {"full", "dose_eval"} else "running"
+                publish_planning_run(self, result, status=run_status)
+            except Exception:
+                logger.warning("[STORE] planning run snapshot failed", exc_info=True)
 
         # Update structured conversation state after every successful tool.
         # This drives the router's state-aware classification and the

@@ -56,6 +56,7 @@ def register_surgical_guide_routes(app, get_agent):
 
     def guide_metadata(agent: Any) -> Dict[str, Any]:
         from web.surgical_guide import _algorithm_planning_snapshot
+        from web.planning_runs import active_planning_id, list_planning_runs
 
         needles = available_guide_needles(agent)
         current = current_guide(agent)
@@ -71,6 +72,8 @@ def register_surgical_guide_routes(app, get_agent):
         )
         return {
             "versions": guide_version_summaries(agent),
+            "active_planning_id": active_planning_id(agent.memory),
+            "planning_options": list_planning_runs(agent.memory),
             "needle_options": needles,
             "can_generate": bool(needles),
             "current_plan_signature": signature,
@@ -101,6 +104,40 @@ def register_surgical_guide_routes(app, get_agent):
             store.schedule_agent_checkpoint(
                 user["id"], session_id, agent, reason,
             )
+
+    def publish_active_planning_guide(agent: Any) -> None:
+        """Persist guide changes inside the currently selected Planning run.
+
+        ``surgical_guide`` is still kept as the legacy active alias for the
+        existing viewer endpoints, but the immutable Planning snapshot must be
+        refreshed after generation/export or a restart would restore the old
+        guide state for that run.
+        """
+        try:
+            from web.planning_runs import (
+                active_planning_id,
+                list_planning_runs,
+                publish_planning_run,
+            )
+
+            planning_id = active_planning_id(agent.memory)
+            if not planning_id:
+                return
+            status = next(
+                (
+                    str(item.get("status") or "completed")
+                    for item in list_planning_runs(agent.memory)
+                    if str(item.get("planning_id") or "") == str(planning_id)
+                ),
+                "completed",
+            )
+            if status not in {"running", "draft", "completed"}:
+                status = "completed"
+            publish_planning_run(agent, None, status=status)
+        except Exception:
+            # Guide generation itself succeeded; a checkpoint retry can repair
+            # the optional run snapshot without turning a valid mesh into a 500.
+            logger.warning("Unable to publish guide into Planning snapshot", exc_info=True)
 
     @app.route("/api/surgical-guides", methods=["GET"])
     @require_api_key
@@ -139,6 +176,11 @@ def register_surgical_guide_routes(app, get_agent):
             if selected is not None and not isinstance(selected, list):
                 raise SurgicalGuideError("needle_ids must be a list when supplied")
             _store, _user, session_id = request_case_context()
+            requested_planning_id = str(data.get("planning_id") or "").strip()
+            if requested_planning_id:
+                from web.planning_runs import activate_planning_run, active_planning_id
+                if requested_planning_id != str(active_planning_id(agent.memory) or ""):
+                    activate_planning_run(agent, requested_planning_id)
             snapshot(agent, "surgical_guide.running", {
                 "state": "running",
                 "message": "Generating patient-specific puncture guide",
@@ -149,6 +191,7 @@ def register_surgical_guide_routes(app, get_agent):
                 agent,
                 generate_surgical_guide(agent, parameters, selected_needle_ids=selected),
             )
+            publish_active_planning_guide(agent)
             snapshot(agent, "surgical_guide.ready", {
                 "state": "ready",
                 "message": "Patient-specific puncture guide generated",
@@ -202,6 +245,7 @@ def register_surgical_guide_routes(app, get_agent):
             active = current_guide(agent)
             if int(active.get("version") or 0) == int(updated.get("version") or 0):
                 agent.memory.store("surgical_guide", updated)
+                publish_active_planning_guide(agent)
             snapshot(agent, "surgical_guide.export")
             return send_file(
                 io.BytesIO(payload), mimetype="model/stl", as_attachment=True,

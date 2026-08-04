@@ -521,6 +521,18 @@
     overflow: hidden;
 }
 
+/* Slice sizing is calculated in image space by viewer-layout.js. Browser
+   max-width/max-height constraints silently clamp only the base canvas while
+   its overlay layers keep their calculated dimensions, which distorts or
+   misaligns the scene after zoom/fullscreen changes. */
+.viewer-card-canvas > canvas[id^="sliceCanvas"] {
+    max-width: none;
+    max-height: none;
+    flex: 0 0 auto;
+    box-sizing: border-box;
+    transform-origin: center center;
+}
+
 .viewer-resize-h {
     height: 10px;
     cursor: row-resize;

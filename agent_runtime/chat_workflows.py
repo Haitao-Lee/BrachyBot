@@ -25,6 +25,7 @@ from plans.dose_pre.model_loader import (
     DOSE_MODEL_SCALE_GY,
     planning_dose_value_to_gy,
     planning_dose_value_to_model,
+    resolve_prescription_gy,
 )
 
 logger = logging.getLogger(__name__)
@@ -221,6 +222,203 @@ class ChatWorkflowMixin:
             return f"当前病例 Data Tree 中有 {count} 个 OAR 结构。它们是：{detail}。这是当前已加载的分割结果，不是临床指南推荐的 OAR 清单。"
         detail = ", ".join(labels)
         return f"The current case Data Tree contains {count} loaded OAR structures: {detail}. This is the loaded segmentation state, not a guideline-recommended OAR list."
+
+    @staticmethod
+    def _dose_fraction(value: Any) -> Optional[float]:
+        """Normalize a Vx value to the shared 0..1 planning contract."""
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            return None
+        if not np.isfinite(number) or number < 0:
+            return None
+        if number > 1.0 and number <= 100.0:
+            number /= 100.0
+        return number if 0.0 <= number <= 1.0 else None
+
+    def _current_dose_metrics(self) -> Dict[str, Any]:
+        """Return the newest complete local dose snapshot.
+
+        Planning and direct dose evaluation historically used both ``metrics``
+        and ``dose_metrics``. Some older snapshots also wrapped target values
+        under ``metrics -> CTV``. Normalize those shapes here so a read-only
+        question never needs to call the expensive dose tool again.
+        """
+        candidates = [
+            self.memory.retrieve("metrics") or {},
+            self.memory.retrieve("dose_metrics") or {},
+        ]
+        for raw in candidates:
+            if not isinstance(raw, dict) or not raw:
+                continue
+            data = dict(raw)
+            nested = data.get("metrics")
+            if isinstance(nested, dict):
+                target = nested.get("CTV") or nested.get("ctv")
+                if not isinstance(target, dict):
+                    for value in nested.values():
+                        if isinstance(value, dict) and str(value.get("type", "")).lower() == "target":
+                            target = value
+                            break
+                if isinstance(target, dict):
+                    merged = dict(data)
+                    merged.update(target)
+                    if not merged.get("oar_metrics"):
+                        merged["oar_metrics"] = {
+                            name: value for name, value in nested.items()
+                            if name not in {"CTV", "ctv"} and isinstance(value, dict)
+                        }
+                    data = merged
+            if any(key in data for key in ("v100", "V100", "d90", "D90", "oar_metrics")):
+                return data
+        return {}
+
+    def _build_current_dose_response(self, lang: str = "en") -> str:
+        """Answer a current-dose question from the active case only.
+
+        This intentionally does not consult clinical_kb, web_search, or
+        web_fetch. Standards questions remain on the evidence-backed route;
+        this method reports the actual dose/DVH snapshot already produced by
+        the current planning run.
+        """
+        metrics = self._current_dose_metrics()
+        if not metrics:
+            if lang == "zh":
+                return (
+                    "当前病例还没有可读取的剂量评估结果。请先完成剂量计算和 DVH 评估，"
+                    "然后再查询当前剂量。"
+                )
+            return "No completed dose/DVH result is available for the current case yet. Run dose evaluation before asking for the current dose."
+
+        plan_config = self.memory.retrieve("plan_config") or {}
+        try:
+            prescription = float(resolve_prescription_gy(plan_config, metrics))
+        except Exception:
+            prescription = float(
+                metrics.get("prescription_gy")
+                or metrics.get("prescribed_dose")
+                or DEFAULT_PRESCRIPTION_GY
+            )
+
+        def number(*keys: str) -> Optional[float]:
+            for key in keys:
+                value = metrics.get(key)
+                if value is not None:
+                    try:
+                        value = float(value)
+                    except (TypeError, ValueError):
+                        continue
+                    if np.isfinite(value):
+                        return value
+            return None
+
+        v100 = self._dose_fraction(metrics.get("v100", metrics.get("V100")))
+        v150 = self._dose_fraction(metrics.get("v150", metrics.get("V150")))
+        v200 = self._dose_fraction(metrics.get("v200", metrics.get("V200")))
+        d90 = number("d90", "D90")
+        dmean = number("dmean", "Dmean", "mean_dose")
+        d2 = number("d2", "D2", "d2cc", "D2cc")
+        ci = number("ci", "CI")
+        hi = number("hi", "HI")
+        score = number("plan_score", "score")
+
+        def fmt(value: Optional[float], suffix: str = "", digits: int = 2) -> str:
+            return f"{value:.{digits}f}{suffix}" if value is not None else "未提供"
+
+        oar_metrics = metrics.get("oar_metrics") or {}
+        ranked_oars = []
+        if isinstance(oar_metrics, dict):
+            for name, item in oar_metrics.items():
+                if not isinstance(item, dict):
+                    continue
+                dmax = item.get("dmax", item.get("max_dose"))
+                d2cc = item.get("d2cc", item.get("D2cc"))
+                try:
+                    dmax_value = float(dmax) if dmax is not None else None
+                except (TypeError, ValueError):
+                    dmax_value = None
+                try:
+                    d2cc_value = float(d2cc) if d2cc is not None else None
+                except (TypeError, ValueError):
+                    d2cc_value = None
+                if dmax_value is None and d2cc_value is None:
+                    continue
+                ranked_oars.append((
+                    max(dmax_value or 0.0, d2cc_value or 0.0),
+                    str(name).replace("_", " "),
+                    dmax_value,
+                    d2cc_value,
+                ))
+        ranked_oars.sort(key=lambda item: item[0], reverse=True)
+
+        if lang == "zh":
+            v100_text = fmt(v100 * 100 if v100 is not None else None, "%", 1)
+            v150_text = fmt(v150 * 100 if v150 is not None else None, "%", 1)
+            v200_text = fmt(v200 * 100 if v200 is not None else None, "%", 1)
+            ci_text = fmt(ci, "", 3)
+            hi_text = fmt(hi, "", 3)
+            score_text = fmt(score, "/100", 0)
+            lines = [
+                "## 当前病例剂量结果",
+                "",
+                "以下内容直接读取当前 Session 已保存的剂量和 DVH 结果。",
+                "",
+                "### CTV 剂量指标",
+                "",
+                f"- 处方剂量：{prescription:.1f} Gy",
+                f"- V100 / V150 / V200：{v100_text} / {v150_text} / {v200_text}",
+                f"- D90 / Dmean / D2：{fmt(d90)} / {fmt(dmean)} / {fmt(d2)} Gy",
+                f"- CI / HI：{ci_text} / {hi_text}",
+                f"- 计划评分：{score_text}",
+            ]
+            if ranked_oars:
+                lines.extend([
+                    "",
+                    "### 当前 OAR 剂量较高的结构",
+                    "",
+                    "| 结构 | Dmax (Gy) | D2cc (Gy) |",
+                    "|---|---:|---:|",
+                ])
+                for _, name, dmax_value, d2cc_value in ranked_oars[:5]:
+                    lines.append(
+                        f"| {name} | {fmt(dmax_value)} | {fmt(d2cc_value)} |"
+                    )
+            lines.extend(["", "### 当前结果解读", ""])
+            if v100 is not None:
+                lines.append(f"- CTV 的 V100 为 {v100 * 100:.1f}%，可直接作为当前覆盖情况的主要指标。")
+            if v200 is not None and v200 >= 0.30:
+                lines.append(f"- V200 为 {v200 * 100:.1f}%，且 D2 为 {fmt(d2)} Gy；建议在 2D/3D Viewer 中检查热点区域，并确认是否需要重新优化。")
+            elif d90 is not None:
+                lines.append(f"- D90 为 {d90:.2f} Gy；建议结合处方剂量、DVH 和 OAR 结果进行最终审核。")
+            lines.append("- 如需查询部位特异性的剂量标准或 OAR 限值，请单独提出“指南/标准/限值”查询；那会走证据检索流程。")
+            return "\n".join(lines)
+
+        lines = [
+            "## Current Case Dose Results",
+            "",
+            "Read directly from the dose/DVH snapshot saved in the active session.",
+            "",
+            "### CTV dose metrics",
+            "",
+            f"- Prescription: {prescription:.1f} Gy",
+            f"- V100 / V150 / V200: {fmt(v100 * 100 if v100 is not None else None, '%', 1)} / {fmt(v150 * 100 if v150 is not None else None, '%', 1)} / {fmt(v200 * 100 if v200 is not None else None, '%', 1)}",
+            f"- D90 / Dmean / D2: {fmt(d90)} / {fmt(dmean)} / {fmt(d2)} Gy",
+            f"- CI / HI: {fmt(ci, '', 3)} / {fmt(hi, '', 3)}",
+            f"- Plan score: {fmt(score, '/100', 0)}",
+        ]
+        if ranked_oars:
+            lines.extend(["", "### Highest current OAR dose structures", "", "| Structure | Dmax (Gy) | D2cc (Gy) |", "|---|---:|---:|"])
+            for _, name, dmax_value, d2cc_value in ranked_oars[:5]:
+                lines.append(f"| {name} | {fmt(dmax_value)} | {fmt(d2cc_value)} |")
+        lines.extend(["", "### Interpretation", ""])
+        if v100 is not None:
+            lines.append(f"- CTV V100 is {v100 * 100:.1f}%, the main current coverage indicator.")
+        if v200 is not None and v200 >= 0.30:
+            lines.append(f"- V200 is {v200 * 100:.1f}% and D2 is {fmt(d2)} Gy; inspect the hotspot in the 2D/3D Viewer before final approval.")
+        elif d90 is not None:
+            lines.append(f"- D90 is {d90:.2f} Gy; review it together with the prescription, DVH, and OAR results.")
+        lines.append("- Ask separately for site-specific dose standards or OAR limits when an evidence lookup is intended.")
+        return "\n".join(lines)
 
     def _build_3d_status_response(self, lang: str = "en") -> str:
         """Explain the current 3D state without inventing a rendering cause."""
@@ -539,7 +737,28 @@ class ChatWorkflowMixin:
     def chat(self, message: str) -> str:
         self._begin_turn(message)
         self.memory.add_message("user", message)
-        self.memory.user_lang = "zh" if re.search(r'[一-鿿]', message) else "en"
+        try:
+            from memory.language import detect as _detect_turn_language
+            _language = _detect_turn_language(message)
+            self.memory.user_lang = "zh" if _language.get("code") == "zh" else "en"
+        except Exception:
+            self.memory.user_lang = "zh" if re.search(r'[\u4e00-\u9fff]', message) else "en"
+        self._active_trace_language = self.memory.user_lang
+
+        # A current-case result question is a local read-only data query.
+        # Resolve it before the enhanced agent and generic LLM router so it
+        # cannot trigger clinical_kb/web_fetch or an unnecessary second LLM.
+        local_policy = classify_local_turn(
+            message,
+            pending_tumor_site=self._pending_tumor_site_clarification(),
+        )
+        self._active_turn_policy = local_policy
+        if local_policy.intent == "case_dose_query":
+            response = self._build_current_dose_response(self.memory.user_lang)
+            self.memory.add_message("assistant", response)
+            self._record_experience(message, response)
+            self._finish_turn(response)
+            return response
 
         if self.enhanced:
             self.enhanced.pre_task_hook(message)
@@ -552,10 +771,6 @@ class ChatWorkflowMixin:
             # behavior aligned with chat_with_trace/stream: a conversational
             # request must never receive a fabricated keyword-bot greeting
             # merely because the configured provider is unavailable.
-            local_policy = classify_local_turn(
-                message,
-                pending_tumor_site=self._pending_tumor_site_clarification(),
-            )
             if local_policy.intent == "small_talk":
                 response = self._llm_unavailable_message()
             else:
@@ -580,7 +795,13 @@ class ChatWorkflowMixin:
     def chat_with_trace(self, message: str) -> Dict[str, Any]:
         self._begin_turn(message)
         self.memory.add_message("user", message)
-        self.memory.user_lang = "zh" if re.search(r'[一-鿿]', message) else "en"
+        try:
+            from memory.language import detect as _detect_turn_language
+            _language = _detect_turn_language(message)
+            self.memory.user_lang = "zh" if _language.get("code") == "zh" else "en"
+        except Exception:
+            self.memory.user_lang = "zh" if re.search(r'[一-鿿]', message) else "en"
+        self._active_trace_language = self.memory.user_lang
         steps = []
         step_id = [0]
 
@@ -605,6 +826,24 @@ class ChatWorkflowMixin:
             pending_tumor_site=self._pending_tumor_site_clarification(),
         )
         self._active_turn_policy = local_policy
+
+        if local_policy.intent == "case_dose_query":
+            title = "当前病例剂量" if self.memory.user_lang == "zh" else "Current Case Dose"
+            content = (
+                "正在读取当前 Session 已保存的剂量和 DVH 结果..."
+                if self.memory.user_lang == "zh"
+                else "Reading the saved dose and DVH results from the active case..."
+            )
+            add_step("ui", title, content, status="done")
+            response = self._build_current_dose_response(self.memory.user_lang)
+            self.memory.add_message("assistant", response)
+            self._record_experience(message, response, steps)
+            self._finish_turn(response)
+            return {
+                "response": response,
+                "steps": steps,
+                "llm_meta": {"usage": {}, "latency_ms": 0, "llm_calls": 0, "route": "local_case_dose"},
+            }
 
         if self.enhanced:
             pre_ctx = self.enhanced.pre_task_hook(message)
@@ -1089,6 +1328,33 @@ class ChatWorkflowMixin:
             self.memory.add_message("assistant", response)
             self._finish_turn(response)
             llm_meta["route"] = "live_ui_state"
+            llm_meta["phase_timings_ms"] = dict(getattr(self, "_turn_timings", {}) or {})
+            yield from final_response_events({"response": response, "llm_meta": llm_meta})
+            yield yield_event("done", {"context": {"message_count": len(self.memory.conversation)}})
+            return
+
+        # A current-dose question is a read-only workspace query. Keep it
+        # ahead of direct tools and the LLM function-calling loop so it cannot
+        # drift into clinical_kb/web_fetch and return source-page text instead
+        # of the dose/DVH values already computed for this case.
+        if local_policy.intent == "case_dose_query":
+            state_step = add_step(
+                "ui",
+                _trace_text("当前病例剂量", "Current Case Dose"),
+                _trace_text(
+                    "正在读取当前 Session 已保存的剂量和 DVH 结果...",
+                    "Reading the saved dose and DVH results from the active case...",
+                ),
+                status="pending",
+            )
+            yield yield_event("step", state_step)
+            response = self._build_current_dose_response(self.memory.user_lang)
+            state_step["status"] = "done"
+            state_step["content"] = _trace_text("已读取当前剂量结果", "Current dose results loaded")
+            yield yield_event("step", state_step)
+            self.memory.add_message("assistant", response)
+            self._finish_turn(response)
+            llm_meta["route"] = "local_case_dose"
             llm_meta["phase_timings_ms"] = dict(getattr(self, "_turn_timings", {}) or {})
             yield from final_response_events({"response": response, "llm_meta": llm_meta})
             yield yield_event("done", {"context": {"message_count": len(self.memory.conversation)}})

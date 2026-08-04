@@ -25,12 +25,15 @@
     });
     const GUIDE_NEEDLE_SELECTION_ID = 'guideNeedleSelection';
     const GUIDE_VERSION_SELECTION_ID = 'guideVersionSelect';
+    const GUIDE_PLANNING_SELECTION_ID = 'surgicalGuidePlanningSelect';
     const GUIDE_STL_VALIDATION_FILE_ID = 'guideStlValidationFile';
     const GUIDE_STL_VALIDATION_STATUS_ID = 'guideStlValidationStatus';
     let guideLoadGeneration = 0;
     let lastGuideMetadata = {
         needle_options: [],
         versions: [],
+        planning_options: [],
+        activePlanningId: null,
         activeVersion: null,
         canGenerate: false,
         guideMatchesCurrentPlan: false,
@@ -235,10 +238,49 @@
         if (!control.value && control.options.length) control.selectedIndex = 0;
     }
 
+    function populatePlanningSelection(options = [], activePlanningId = null) {
+        const control = document.getElementById(GUIDE_PLANNING_SELECTION_ID);
+        if (!control) return;
+        const previous = String(control.value || '');
+        const desired = String(activePlanningId || previous || '');
+        control.replaceChildren();
+        const items = Array.isArray(options) ? options : [];
+        if (!items.length) {
+            const empty = document.createElement('option');
+            empty.value = '';
+            empty.disabled = true;
+            empty.selected = true;
+            empty.textContent = t('暂无可用规划', 'No Planning available');
+            control.append(empty);
+            control.disabled = true;
+            return;
+        }
+        control.disabled = false;
+        items.forEach(item => {
+            const id = String(item?.planning_id || '');
+            if (!id) return;
+            const sequence = Number.isFinite(Number(item?.sequence)) ? Number(item.sequence) : null;
+            const fallback = sequence === null ? id : `Planning_${sequence}`;
+            const label = String(item?.label || fallback);
+            const status = String(item?.status || '');
+            const suffix = status && status !== 'completed'
+                ? ` · ${status === 'running' ? t('运行中', 'running') : status === 'draft' ? t('草稿', 'draft') : status}`
+                : '';
+            const option = document.createElement('option');
+            option.value = id;
+            option.textContent = `${label}${suffix}`;
+            option.selected = id === desired;
+            control.append(option);
+        });
+        if (!control.value && control.options.length) control.selectedIndex = 0;
+    }
+
     function applyGuideMetadata(payload, activeGuide = null) {
         lastGuideMetadata = {
             needle_options: payload?.needle_options || [],
             versions: payload?.versions || [],
+            planning_options: payload?.planning_options || [],
+            activePlanningId: payload?.active_planning_id || null,
             activeVersion: activeGuide?.version || null,
             canGenerate: payload?.can_generate === true,
             guideMatchesCurrentPlan: payload?.guide_matches_current_plan === true,
@@ -246,6 +288,7 @@
         };
         populateNeedleSelection(lastGuideMetadata.needle_options);
         populateGuideVersions(lastGuideMetadata.versions, lastGuideMetadata.activeVersion);
+        populatePlanningSelection(lastGuideMetadata.planning_options, lastGuideMetadata.activePlanningId);
         const generate = document.getElementById('generateSurgicalGuideButton');
         if (generate && !generate.classList.contains('is-loading')) {
             generate.disabled = !lastGuideMetadata.canGenerate;
@@ -361,6 +404,7 @@
                 body: JSON.stringify({
                     parameters: guideParametersFromControls(),
                     needle_ids: selectedNeedleIds(),
+                    planning_id: document.getElementById(GUIDE_PLANNING_SELECTION_ID)?.value || null,
                 }),
             }, sessionId);
             if (sessionId !== activeSessionId()) return;
@@ -512,6 +556,11 @@
 
     window.getSurgicalGuideParameters = guideParametersFromControls;
     window.applySurgicalGuideParameters = applyGuideParameters;
+    window.refreshSurgicalGuidePlanningOptions = function refreshSurgicalGuidePlanningOptions(options = [], activePlanningId = null) {
+        lastGuideMetadata.planning_options = Array.isArray(options) ? options : [];
+        lastGuideMetadata.activePlanningId = activePlanningId || lastGuideMetadata.activePlanningId || null;
+        populatePlanningSelection(lastGuideMetadata.planning_options, lastGuideMetadata.activePlanningId);
+    };
     bindGuideControls();
     document.getElementById(GUIDE_STL_VALIDATION_FILE_ID)?.addEventListener('change', event => {
         const file = event.target?.files?.[0];
@@ -524,5 +573,6 @@
         if (generate && !generate.disabled) generate.textContent = t('生成导板', 'Generate guide');
         populateNeedleSelection(lastGuideMetadata.needle_options);
         populateGuideVersions(lastGuideMetadata.versions, lastGuideMetadata.activeVersion);
+        populatePlanningSelection(lastGuideMetadata.planning_options, lastGuideMetadata.activePlanningId);
     });
 }());

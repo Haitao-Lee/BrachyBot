@@ -890,6 +890,22 @@ class ToolResultPipeline:
     _UI_TOOLS = {"ui_controller", "ui_screenshot"}
     _PLANNING_TOOLS = {"planning_pipeline", "seed_planning", "trajectory_planning", "dose_engine", "dose_evaluation"}
     _WEB_TOOLS = {"web_search", "web_fetch", "web_access"}
+    # These tools provide evidence for synthesis, not a standalone answer.
+    # Their raw payloads may contain arbitrary web text or internal checking
+    # details and are therefore excluded from all raw fallbacks.
+    _EVIDENCE_ONLY_TOOLS = {
+        "clinical_kb", "web_search", "web_fetch", "web_access",
+        "fact_checker", "source_verification", "plan_reviewer",
+        "completeness_checker", "safety_guardian",
+    }
+    _SAFE_FALLBACK_TOOLS = {
+        "ctv_segmentation", "oar_segmentation", "seed_segmentation",
+        "planning_pipeline", "seed_planning", "trajectory_planning",
+        "trajectory_init", "trajectory_refine", "dose_engine", "dose_calc",
+        "dose_evaluation", "query_metrics", "surgical_guide",
+        "report_generator", "report_auto_fill", "ui_controller",
+        "ui_screenshot", "ui_annotate",
+    }
     _LOCALIZABLE_TOOLS = {"filesystem_browser", "shell_executor", "code_executor"}
 
     @staticmethod
@@ -1332,21 +1348,42 @@ class ToolResultPipeline:
         """Format all tool steps into a raw concatenated response (no LLM synthesis)."""
         parts = []
         errors = []
+        evidence_seen = False
         for s in steps:
             if s.get("type") != "tool":
                 continue
             tool = s.get("tool", "")
+            # ``format_steps`` is also used when synthesis is unavailable.
+            # Keep the same closed response allowlist here as in the LLM
+            # runtime; otherwise a web body could bypass the boundary.
+            if tool in ToolResultPipeline._EVIDENCE_ONLY_TOOLS or tool not in ToolResultPipeline._SAFE_FALLBACK_TOOLS:
+                if tool in ToolResultPipeline._EVIDENCE_ONLY_TOOLS:
+                    evidence_seen = True
+                continue
             status = s.get("status", "")
             result = s.get("result", "")
             if status == "error":
                 errors.append(f"❌ {tool}: {result}")
                 continue
             if result:
-                parts.append(result)
+                if tool == "ui_screenshot":
+                    parts.append(
+                        "已生成截图，可在当前回复中查看。"
+                        if lang == "zh" else
+                        "A screenshot was captured and attached to this reply."
+                    )
+                else:
+                    parts.append(result)
         if errors:
             parts.append(("## ⚠️ " + ("问题" if lang == "zh" else "Issues")) + "\n" + "\n".join(errors))
         if parts:
             return "\n\n".join(parts)
+        if evidence_seen:
+            return (
+                "相关检索已完成，但当前尚未生成综合回复。请重试或提出更明确的问题。"
+                if lang == "zh" else
+                "The requested evidence lookup finished, but no synthesized answer was generated. Please retry with a more specific question."
+            )
         # Never emit the empty "tool executed" placeholder: an empty step list
         # should read as a plain statement, not a pretend success.
         return ("没有执行任何操作。" if lang == "zh" else "No operation was executed.")
@@ -1368,9 +1405,32 @@ class ToolResultPipeline:
         if not formatted_results:
             return ""
 
-        # Build raw concatenation as fallback
-        raw_parts = [r["display"] for r in formatted_results if r.get("display")]
+        # Build a closed raw fallback. Evidence-only results remain available
+        # to the synthesis prompt below, but cannot be shown verbatim when the
+        # model is unavailable or returns an empty response.
+        safe_results = [
+            r for r in formatted_results
+            if r.get("display")
+            and r.get("tool", "") not in ToolResultPipeline._EVIDENCE_ONLY_TOOLS
+            and r.get("tool", "") in ToolResultPipeline._SAFE_FALLBACK_TOOLS
+        ]
+        raw_parts = [
+            (
+                "已生成截图，可在当前回复中查看。"
+                if lang == "zh" else
+                "A screenshot was captured and attached to this reply."
+            )
+            if r.get("tool", "") == "ui_screenshot"
+            else r["display"]
+            for r in safe_results
+        ]
         raw_fallback = "\n\n".join(raw_parts)
+        if not raw_fallback:
+            raw_fallback = (
+                "相关检索或处理步骤已结束，但当前没有生成可展示的综合回复。请重新提问，或提供更明确的分析目标。"
+                if lang == "zh" else
+                "The requested retrieval or processing steps finished, but no user-facing synthesis was generated. Please retry with a more specific question."
+            )
 
         if not brain_router:
             return raw_fallback

@@ -111,6 +111,31 @@ def test_session_restore_uses_corner_non_blocking_hydration_and_fresh_snapshot()
     assert "initial case has no clinical resources; hydration skipped" in ui_api
 
 
+def test_report_restore_does_not_erase_newer_generated_text():
+    workspace = read("web/app/static/js/brachybot-workspace.js")
+    report = read("web/app/static/js/brachybot-report-export.js")
+    assert "function _preservePopulatedReport" in workspace
+    assert "_reportNarrativeLength(current) > 0" in workspace
+    assert "const keepCurrentReport = _preservePopulatedReport" in workspace
+    assert "f.updatedAt = Date.now();" in report
+    assert "window.cancelScheduledWorkspaceSave" in report
+    assert "async function persistWorkspace(reason, options = {})" in workspace
+    assert "options.allowDuringRestore" in workspace
+    assert "window.persistWorkspace('report.flush', { allowDuringRestore: true })" in report
+    assert "await Promise.resolve(flushActiveReportState())" in workspace
+    assert "ownerSessionId !== String(activeSessionId || '')" in workspace
+    assert "function reportFormFromSnapshot" in workspace
+    assert "const reportSection = snapshot.report" in workspace
+
+
+def test_report_recapture_is_durably_scheduled_after_viewer_hydration():
+    planning = read("web/app/static/js/brachybot-dvh-planning.js")
+    store = read("web/workspace_store.py")
+    assert "_scheduleReportAutoSave" in planning
+    assert "def _merge_report_patch" in store
+    assert "elif key == \"report\":" in store
+
+
 def test_startup_and_session_switch_share_the_same_corner_resource_notice():
     workspace = read("web/app/static/js/brachybot-workspace.js")
     ui_api = read("web/app/static/js/brachybot-ui-api.js")
@@ -153,6 +178,22 @@ def test_planning_completion_refresh_is_not_tied_to_one_trace_shape():
     assert "reconcileDataTreeVisualNodes" in planning
 
 
+def test_geometry_only_planning_runs_are_restored_after_restart():
+    """A draft without dose keys still enters the cold-restore planning path."""
+    ui_api = read("web/app/static/js/brachybot-ui-api.js")
+    assert "storedKeys.has('planning_runs')" in ui_api
+    assert "String(key).startsWith('planning_run:')" in ui_api
+
+
+def test_planning_activation_clears_the_previous_dvh_instance():
+    """Switching runs cannot leave the previous Plotly chart on screen."""
+    manual = read("web/app/static/js/brachybot-3d-manual.js")
+    clear_block = manual.split("function clearPlanningVisualization()", 1)[1].split(
+        "// Delete a seed", 1
+    )[0]
+    assert "Plotly.purge(dvhElement)" in clear_block
+
+
 def test_final_chat_commit_separates_transcript_from_heavy_checkpoint():
     """The response is released after the small transcript write, not NPY I/O."""
     routes = read("web/routes/planning_routes.py")
@@ -184,7 +225,8 @@ def test_new_case_creation_avoids_empty_workspace_hydration_and_redundant_round_
     sessions = read("web/routes/session_routes.py")
     new_case = workspace.split("window.newChat =", 1)[1].split("window.switchSession =", 1)[0]
     assert "await loadServerSessions()" not in new_case
-    assert "void persistWorkspace('session.switching')" in new_case
+    assert "await Promise.resolve(flushActiveReportState())" in new_case
+    assert "void persistWorkspace('session.switching')" not in new_case
     assert "paintSessionShell(optimisticId, { blank: true })" in new_case
     assert "function paintSessionShell(sessionId, { clearWorkspace = true, blank = false } = {})" in workspace
     assert "if (blank)" in workspace
@@ -219,8 +261,8 @@ def test_workspace_transitions_publish_measurable_first_paint_and_restore_stages
     assert "restore.planning_dvh" in ui_api
     assert "restore.report_and_presentation" in ui_api
     assert "restore.fully_interactive" in ui_api
-    assert "brachybot-workspace.js?v=18" in index
-    assert "brachybot-ui-api.js?v=26" in index
+    assert "brachybot-workspace.js?v=22" in index
+    assert "brachybot-ui-api.js?v=30" in index
 
 
 def test_workspace_fetch_preserves_external_transition_abort_semantics():
@@ -353,7 +395,8 @@ def test_case_transitions_do_not_block_on_control_plane_cleanup():
         "window.deleteSession =", 1
     )[0]
     delete_block = workspace.split("window.deleteSession =", 1)[1]
-    assert "void persistWorkspace('session.switching')" in switch_block
+    assert "await Promise.resolve(flushActiveReportState())" in switch_block
+    assert "void persistWorkspace('session.switching')" not in switch_block
     assert "void window.brachybotAuth.releaseLease(previousSessionId)" in switch_block
     assert "await window.brachybotAuth.releaseLease(" not in switch_block
     assert "void window.brachybotAuth.acquireLease(activeSessionId)" in switch_block

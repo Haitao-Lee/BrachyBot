@@ -347,7 +347,14 @@ def _merge_chat_record(existing: Mapping[str, Any], incoming: Mapping[str, Any])
 
 
 def _merge_chat_records(existing: Any, incoming: Any) -> List[Any]:
-    """Merge durable chat records while preserving stable display order."""
+    """Merge durable chat records while preserving stable display order.
+
+    A browser turn writes its final answer and its execution trace from two
+    different completion callbacks. The trace can therefore arrive after the
+    answer even though it belongs between the user request and that answer.
+    Sort by request group and message role, rather than raw write timestamp,
+    so a refresh renders every Trace beside the correct response.
+    """
     merged: List[Any] = []
     positions: Dict[str, int] = {}
     for record in list(existing or []) + list(incoming or []):
@@ -361,19 +368,55 @@ def _merge_chat_records(existing: Any, incoming: Any) -> List[Any]:
         if isinstance(current, Mapping) and isinstance(record, Mapping):
             merged[position] = _merge_chat_record(current, record)
 
-    def sort_key(item: Any) -> Tuple[float, int]:
-        if isinstance(item, Mapping):
-            value = item.get("timestamp", item.get("created_at", 0))
-            try:
-                return float(value or 0), len(merged)
-            except (TypeError, ValueError):
-                pass
-        return 0.0, len(merged)
+    def role_rank(item: Any) -> int:
+        if not isinstance(item, Mapping):
+            return 3
+        try:
+            explicit_sequence = float(item.get("turn_sequence", item.get("turnSequence")))
+        except (TypeError, ValueError):
+            explicit_sequence = float("nan")
+        if math.isfinite(explicit_sequence):
+            return int(explicit_sequence)
+        kind = str(item.get("message_kind") or item.get("messageKind") or "").lower()
+        record_type = str(item.get("type") or "").lower()
+        if record_type == "user" or kind == "user_message":
+            return 0
+        if record_type == "thinking" or kind == "execution_trace":
+            return 1
+        if record_type in {"bot", "bot-response"} or kind == "assistant_final":
+            return 2
+        return 3
 
-    # Existing records are already ordered.  Stable sorting only moves a
-    # detached record into its timestamp position when it completed later.
-    ordered = sorted(enumerate(merged), key=lambda pair: (sort_key(pair[1])[0], pair[0]))
-    return [pair[1] for pair in ordered]
+    groups: Dict[str, Dict[str, Any]] = {}
+    for index, item in enumerate(merged):
+        if not isinstance(item, Mapping):
+            request_id = f"orphan-{index}"
+        else:
+            request_id = str(item.get("request_id") or item.get("requestId") or item.get("id") or f"orphan-{index}")
+        group = groups.setdefault(
+            request_id,
+            {"first_index": index, "first_timestamp": float("inf"), "records": []},
+        )
+        try:
+            timestamp = float(item.get("timestamp", item.get("created_at", 0)) or 0) if isinstance(item, Mapping) else 0
+        except (TypeError, ValueError):
+            timestamp = 0
+        if timestamp > 0:
+            group["first_timestamp"] = min(group["first_timestamp"], timestamp)
+        group["records"].append((index, item))
+
+    def group_sort_key(group: Dict[str, Any]) -> Tuple[float, int]:
+        timestamp = group["first_timestamp"]
+        return (timestamp if math.isfinite(timestamp) else float("inf"), group["first_index"])
+
+    ordered: List[Any] = []
+    for group in sorted(groups.values(), key=group_sort_key):
+        records = sorted(
+            group["records"],
+            key=lambda pair: (role_rank(pair[1]), pair[0]),
+        )
+        ordered.extend(item for _, item in records)
+    return ordered
 
 
 def _merge_chat_patch(current: Mapping[str, Any], incoming: Mapping[str, Any]) -> Dict[str, Any]:
@@ -387,6 +430,134 @@ def _merge_chat_patch(current: Mapping[str, Any], incoming: Mapping[str, Any]) -
     for key, value in incoming.items():
         if key not in {"messages", "execution_trace"}:
             result[key] = _safe_json(value)
+    return result
+
+
+def _report_narrative_length(form: Any) -> int:
+    if not isinstance(form, Mapping):
+        return 0
+    return sum(
+        len(str(form.get(key) or '').strip())
+        for key in ('interpretation', 'safety', 'qaNotes')
+    )
+
+
+def _report_content_score(form: Any) -> int:
+    if not isinstance(form, Mapping):
+        return 0
+    score = _report_narrative_length(form)
+    for parent, key in (
+        ('case', 'patientId'), ('case', 'tumorType'), ('case', 'plannerName'),
+        ('study', 'diagnosis'), ('study', 'clinicalHistory'), ('study', 'priorTreatment'),
+        ('segmentation', 'ctvModelName'), ('segmentation', 'oarModelName'),
+    ):
+        value = (form.get(parent) or {}).get(key) if isinstance(form.get(parent), Mapping) else None
+        if isinstance(value, str):
+            score += len(value.strip())
+    for key in ('references', 'figures', 'oarDose'):
+        if isinstance(form.get(key), list):
+            score += len(form[key]) * 32
+    for group, weight in (('metrics', 8), ('planning', 4)):
+        values = form.get(group) if isinstance(form.get(group), Mapping) else {}
+        score += sum(weight for value in values.values() if value not in (None, ''))
+    return score
+
+
+def _report_timestamp(form: Any) -> float:
+    if not isinstance(form, Mapping):
+        return 0.0
+    try:
+        value = float(form.get('updatedAt') or form.get('updated_at') or 0)
+    except (TypeError, ValueError):
+        return 0.0
+    return value if math.isfinite(value) else 0.0
+
+
+_REPORT_FORM_KEYS = frozenset({
+    "version", "language", "templateKey", "sessionId", "updatedAt", "updated_at",
+    "hospital", "patient", "study", "case", "imaging", "segmentation",
+    "planning", "metrics", "oarDose", "interpretation", "safety", "qaNotes",
+    "references", "figures", "signature", "editedFields",
+})
+
+
+def _report_form_from_section(section: Any) -> Tuple[Dict[str, Any], bool]:
+    """Return a report form from either the current or legacy snapshot shape."""
+    if not isinstance(section, Mapping):
+        return {}, False
+    nested = section.get("form")
+    if isinstance(nested, Mapping):
+        return dict(nested), True
+    direct = {key: value for key, value in section.items() if key in _REPORT_FORM_KEYS}
+    return direct, bool(direct)
+
+
+def _merge_report_patch(current: Mapping[str, Any], incoming: Mapping[str, Any]) -> Dict[str, Any]:
+    """Merge report metadata without allowing an older blank form to erase text.
+
+    Browser report saves are full-form snapshots.  A delayed shell restore can
+    therefore contain an empty/default form even though a newer planning
+    refresh has already generated narrative text.  ``updatedAt`` is emitted by
+    the browser on every durable report save; the content comparison keeps
+    older snapshots created before that field was introduced compatible.
+    """
+    current_section = dict(current or {})
+    incoming_section = dict(incoming or {})
+    old_form, old_has_form = _report_form_from_section(current_section)
+    new_form, new_has_form = _report_form_from_section(incoming_section)
+    result = {**current_section, **incoming_section}
+
+    # Reports are now partitioned by immutable Planning ID.  A browser can
+    # legitimately send a delayed checkpoint containing only the currently
+    # displayed run, so a shallow ``{**current, **incoming}`` merge would erase
+    # the other runs' narratives, references, audit trail, and figure metadata.
+    # Merge each run independently and keep the old entries that are absent from
+    # this patch.  The recursive call is safe because a per-run section does not
+    # normally contain another ``by_planning_id`` map; it also preserves the
+    # timestamp/content protection below for each run.
+    current_by_planning = current_section.get("by_planning_id")
+    incoming_by_planning = incoming_section.get("by_planning_id")
+    if isinstance(current_by_planning, Mapping) or isinstance(incoming_by_planning, Mapping):
+        merged_by_planning: Dict[str, Any] = {}
+        for planning_id in set(
+            (current_by_planning.keys() if isinstance(current_by_planning, Mapping) else ())
+        ) | set(
+            (incoming_by_planning.keys() if isinstance(incoming_by_planning, Mapping) else ())
+        ):
+            old_section = (
+                current_by_planning.get(planning_id)
+                if isinstance(current_by_planning, Mapping) else None
+            )
+            new_section = (
+                incoming_by_planning.get(planning_id)
+                if isinstance(incoming_by_planning, Mapping) else None
+            )
+            if isinstance(old_section, Mapping) and isinstance(new_section, Mapping):
+                merged_by_planning[str(planning_id)] = _merge_report_patch(old_section, new_section)
+            elif isinstance(new_section, Mapping):
+                merged_by_planning[str(planning_id)] = dict(new_section)
+            elif isinstance(old_section, Mapping):
+                merged_by_planning[str(planning_id)] = dict(old_section)
+        result["by_planning_id"] = merged_by_planning
+    if not new_has_form:
+        return result
+    old_time = _report_timestamp(old_form)
+    new_time = _report_timestamp(new_form)
+    old_score = _report_content_score(old_form)
+    new_score = _report_content_score(new_form)
+    keep_old = (
+        old_time > new_time and old_score >= new_score
+    ) or (
+        new_time <= old_time and old_score > new_score
+        and _report_narrative_length(old_form) > 0
+        and _report_narrative_length(new_form) == 0
+    )
+    # Store the canonical wrapper after a merge. Remove legacy direct-form
+    # fields so a later reader cannot choose two conflicting representations.
+    for key in _REPORT_FORM_KEYS:
+        result.pop(key, None)
+    result.pop("form", None)
+    result["form"] = dict(old_form if keep_old else new_form)
     return result
 
 
@@ -806,6 +977,8 @@ class WorkspaceStore:
                     # full array; shallow replacement would erase the newer
                     # Execution Trace and assistant response on restart.
                     snapshot[key] = _merge_chat_patch(current, safe_patch)
+                elif key == "report":
+                    snapshot[key] = _merge_report_patch(current, safe_patch)
                 else:
                     snapshot[key] = {**current, **safe_patch}
         snapshot["saved_at"] = _now()
