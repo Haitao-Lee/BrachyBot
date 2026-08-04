@@ -12292,3 +12292,42 @@ duplicate global-declaration comment in `brachybot-3d-manual.js` documents why
   for D95/CI/HI/GI.
 - Added regression coverage for report snapshot retention, awaited planning
   auto-fill, canonical pointer interaction, and the cached 3D resize path.
+
+## 2026-08-04 - Robust auxiliary puncture-hole geometry
+
+### Confirmed issues
+
+- The native guide already preserved the planned primary channels and outer
+  sleeves, but it did not provide the reference implementation's dense,
+  non-protruding alternate puncture paths around each entry.
+- Auxiliary-hole parameters were not part of the tool schema or guide controls,
+  so an operator could not choose the alternate-path pattern or see which
+  requested holes were realized in the physical mesh.
+- Applying a new auxiliary validation rule to old parameter snapshots would
+  have rejected otherwise valid legacy guides with custom sleeve dimensions.
+
+### Resolution
+
+- `web/surgical_guide.py` now subtracts auxiliary cylinders from the bare plate
+  first, fuses all primary sleeves second, and subtracts all primary bores last.
+  The auxiliary holes are parallel to their associated needle, pass only
+  through the plate, never create an external sleeve, and are constrained to
+  remain outside the primary sleeve wall.
+- The tool schema and Input panel expose enable/disable, hole diameter, ring
+  count, holes per ring, first-ring offset, and ring spacing. The generated
+  guide records requested, realized, skipped, ring, needle, trajectory, and
+  world-coordinate metadata for the actual mesh.
+- Legacy parameter snapshots that contain no auxiliary-hole fields retain the
+  pre-feature guide geometry; new UI/tool requests use the auxiliary-hole
+  default path explicitly.
+- The Data Tree guide metadata and generation notification expose the realized
+  auxiliary-hole count without creating separate fake viewer objects.
+
+### Verification
+
+- Remote guide regression: `26 passed, 3 warnings`.
+- Local Python compilation, JavaScript syntax check, and `git diff --check`
+  passed.
+- The focused tests cover watertight STL output, realized hole metadata,
+  disabled auxiliary holes, primary-sleeve wall validation, and legacy custom
+  parameter compatibility.
