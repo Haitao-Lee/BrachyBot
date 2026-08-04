@@ -843,6 +843,32 @@ body.workspace-transitioning #sessionList {
     color: var(--text-secondary);
 }
 
+.guide-subsection-heading {
+    margin-top: 10px;
+    padding-top: 8px;
+    border-top: 1px solid var(--border);
+    color: var(--text-secondary);
+    font-size: 0.59rem;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+}
+
+.guide-checkbox-field {
+    display: flex !important;
+    grid-template-rows: none !important;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    min-height: 28px;
+}
+
+.guide-checkbox-field input[type="checkbox"] {
+    width: 16px;
+    height: 16px;
+    flex: 0 0 auto;
+    accent-color: var(--primary);
+}
+
 .guide-input-unit {
     display: grid;
     grid-template-columns: minmax(0, 1fr) 24px;

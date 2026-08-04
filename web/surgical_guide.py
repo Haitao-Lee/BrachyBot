@@ -31,7 +31,7 @@ class SurgicalGuideError(ValueError):
     """A clinically meaningful guide-generation precondition failed."""
 
 
-DEFAULT_GUIDE_PARAMETERS: Dict[str, float] = {
+DEFAULT_GUIDE_PARAMETERS: Dict[str, Any] = {
     "skin_threshold_hu": -300.0,
     "skin_clearance_mm": 1.0,
     "plate_thickness_mm": 3.0,
@@ -40,6 +40,17 @@ DEFAULT_GUIDE_PARAMETERS: Dict[str, float] = {
     "sleeve_outer_radius_mm": 3.0,
     "sleeve_outward_mm": 8.0,
     "sleeve_inward_mm": 8.0,
+    # The reference guide's auxiliary-plan stage subtracts small catheter
+    # bores from the already-built implant.  These bores are parallel to the
+    # planned channel, flush with the plate, and never add an external sleeve.
+    # Two 12-hole rings provide a dense, printable set of alternate entry
+    # paths while leaving a clear wall around the primary channel.
+    "auxiliary_holes_enabled": True,
+    "auxiliary_hole_radius_mm": 0.45,
+    "auxiliary_hole_ring_count": 2.0,
+    "auxiliary_holes_per_ring": 12.0,
+    "auxiliary_hole_first_offset_mm": 4.0,
+    "auxiliary_hole_ring_spacing_mm": 3.0,
     # 0.35 mm resolution: a 1 mm grid made the ~2.2 mm guide channel collapse to
     # ~2 voxels (bore not visibly open, stepped surface). 0.35 mm keeps the
     # channel as a clear through-hole (~6 voxels) with a smooth printable
@@ -76,6 +87,11 @@ _PARAMETER_LIMITS = {
     "sleeve_outer_radius_mm": (1.0, 12.0),
     "sleeve_outward_mm": (1.0, 30.0),
     "sleeve_inward_mm": (1.0, 30.0),
+    "auxiliary_hole_radius_mm": (0.2, 1.5),
+    "auxiliary_hole_ring_count": (1.0, 4.0),
+    "auxiliary_holes_per_ring": (4.0, 24.0),
+    "auxiliary_hole_first_offset_mm": (2.0, 15.0),
+    "auxiliary_hole_ring_spacing_mm": (1.5, 10.0),
     "geometry_resolution_mm": (0.2, 2.0),
     "minimum_component_voxels": (1.0, 10000.0),
     "truncation_margin_mm": (0.0, 40.0),
@@ -95,6 +111,92 @@ class NeedleGuidePath:
     seed_count: int
 
 
+def _orthogonal_basis(direction: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+    """Return a stable right-handed basis perpendicular to a needle axis."""
+    axis = np.asarray(direction, dtype=np.float64).reshape(3)
+    norm = float(np.linalg.norm(axis))
+    if norm <= 1e-10:
+        raise SurgicalGuideError("Needle direction is zero")
+    axis = axis / norm
+    # Pick the cardinal vector least aligned with the needle so the projection
+    # remains well-conditioned for axial, sagittal, and coronal trajectories.
+    reference = min(
+        (np.array([1.0, 0.0, 0.0]), np.array([0.0, 1.0, 0.0]), np.array([0.0, 0.0, 1.0])),
+        key=lambda value: abs(float(np.dot(value, axis))),
+    )
+    first = reference - axis * float(np.dot(reference, axis))
+    first /= max(float(np.linalg.norm(first)), 1e-12)
+    second = np.cross(first, axis)
+    second /= max(float(np.linalg.norm(second)), 1e-12)
+    return first, second
+
+
+def _auxiliary_hole_specs(
+    paths: Sequence[NeedleGuidePath],
+    params: Mapping[str, Any],
+) -> List[Dict[str, Any]]:
+    """Build the non-protruding alternate puncture cylinders.
+
+    This is the native equivalent of the reference application's auxiliary
+    planning stage: each small cylinder is parallel to its main needle, is
+    centred at a radial offset around the entry axis, and is subtracted only
+    from the plate shell.  It never creates an outer sleeve and therefore
+    cannot replace, extend, or obstruct a primary guidance channel.
+    """
+    if not bool(params.get("auxiliary_holes_enabled", False)):
+        return []
+    ring_count = int(params["auxiliary_hole_ring_count"])
+    holes_per_ring = int(params["auxiliary_holes_per_ring"])
+    first_offset = float(params["auxiliary_hole_first_offset_mm"])
+    ring_spacing = float(params["auxiliary_hole_ring_spacing_mm"])
+    radius = float(params["auxiliary_hole_radius_mm"])
+    clearance = float(params["skin_clearance_mm"])
+    plate_thickness = float(params["plate_thickness_mm"])
+    primary_outer_radius = float(params["sleeve_outer_radius_mm"])
+    minimum_entry_clearance = primary_outer_radius + radius + 0.35
+    specs: List[Dict[str, Any]] = []
+    for path in paths:
+        inward = np.asarray(path.inward_direction, dtype=np.float64).reshape(3)
+        inward /= max(float(np.linalg.norm(inward)), 1e-12)
+        axis_a, axis_b = _orthogonal_basis(inward)
+        for ring_index in range(ring_count):
+            radial_offset = first_offset + ring_index * ring_spacing
+            # Stagger successive rings so the pattern remains dense without
+            # putting every hole on one radial spoke.
+            phase = (ring_index % 2) * (math.pi / holes_per_ring)
+            for hole_index in range(holes_per_ring):
+                angle = phase + 2.0 * math.pi * hole_index / holes_per_ring
+                offset_direction = math.cos(angle) * axis_a + math.sin(angle) * axis_b
+                center = np.asarray(path.entry, dtype=np.float64) + radial_offset * offset_direction
+                close_to_other_entry = any(
+                    other is not path
+                    and float(np.linalg.norm(center - np.asarray(other.entry, dtype=np.float64)))
+                    < minimum_entry_clearance
+                    for other in paths
+                )
+                item: Dict[str, Any] = {
+                    "id": f"aux_{path.needle_id}_{ring_index + 1}_{hole_index + 1}",
+                    "needle_id": path.needle_id,
+                    "trajectory_id": path.trajectory_id,
+                    "ring_index": ring_index + 1,
+                    "hole_index": hole_index + 1,
+                    "angle_degrees": math.degrees(angle) % 360.0,
+                    "radial_offset_mm": radial_offset,
+                    "radius_mm": radius,
+                    "center": center,
+                    "skipped": bool(close_to_other_entry),
+                    "skip_reason": "nearby_primary_channel" if close_to_other_entry else None,
+                }
+                # The cylinder extends a little beyond both faces of the
+                # plate.  The later mask operation intersects it with
+                # `plate_mask`, so these endpoints cannot cut body or sleeve
+                # material even on an oblique skin surface.
+                item["start"] = center - inward * (clearance + plate_thickness + 2.0)
+                item["end"] = center + inward * (clearance + 2.0)
+                specs.append(item)
+    return specs
+
+
 def _finite_float(value: Any, name: str, lower: float, upper: float) -> float:
     try:
         parsed = float(value)
@@ -105,17 +207,75 @@ def _finite_float(value: Any, name: str, lower: float, upper: float) -> float:
     return parsed
 
 
-def normalize_guide_parameters(raw: Optional[Mapping[str, Any]] = None) -> Dict[str, float]:
+def _finite_bool(value: Any, name: str) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)) and math.isfinite(float(value)):
+        if float(value) in (0.0, 1.0):
+            return bool(value)
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"true", "1", "yes", "on"}:
+            return True
+        if normalized in {"false", "0", "no", "off"}:
+            return False
+    raise SurgicalGuideError(f"{name} must be boolean")
+
+
+def _finite_integer(value: Any, name: str, lower: float, upper: float) -> float:
+    parsed = _finite_float(value, name, lower, upper)
+    rounded = round(parsed)
+    if abs(parsed - rounded) > 1e-6:
+        raise SurgicalGuideError(f"{name} must be an integer between {lower:g} and {upper:g}")
+    return float(rounded)
+
+
+def normalize_guide_parameters(raw: Optional[Mapping[str, Any]] = None) -> Dict[str, Any]:
     """Validate guide parameters without silently changing requested geometry."""
     raw = raw if isinstance(raw, Mapping) else {}
     params = dict(DEFAULT_GUIDE_PARAMETERS)
     for name, default in DEFAULT_GUIDE_PARAMETERS.items():
+        if isinstance(default, bool):
+            params[name] = _finite_bool(raw.get(name, default), name)
+            continue
         lower, upper = _PARAMETER_LIMITS[name]
-        params[name] = _finite_float(raw.get(name, default), name, lower, upper)
+        if name in {"auxiliary_hole_ring_count", "auxiliary_holes_per_ring"}:
+            params[name] = _finite_integer(raw.get(name, default), name, lower, upper)
+        else:
+            params[name] = _finite_float(raw.get(name, default), name, lower, upper)
     if params["sleeve_outer_radius_mm"] <= params["channel_radius_mm"] + 0.35:
         raise SurgicalGuideError(
             "sleeve_outer_radius_mm must exceed channel_radius_mm by at least 0.35 mm"
         )
+    if params["auxiliary_holes_enabled"]:
+        auxiliary_radius = float(params["auxiliary_hole_radius_mm"])
+        primary_outer_radius = float(params["sleeve_outer_radius_mm"])
+        minimum_primary_clearance = primary_outer_radius + auxiliary_radius + 0.35
+        if float(params["auxiliary_hole_first_offset_mm"]) < minimum_primary_clearance:
+            raise SurgicalGuideError(
+                "auxiliary_hole_first_offset_mm must leave at least 0.35 mm of wall "
+                "outside the primary sleeve"
+            )
+        if float(params["auxiliary_hole_ring_count"]) > 1:
+            if float(params["auxiliary_hole_ring_spacing_mm"]) < (2.0 * auxiliary_radius + 0.35):
+                raise SurgicalGuideError(
+                    "auxiliary_hole_ring_spacing_mm is too small for a printable wall"
+                )
+        ring_count = int(params["auxiliary_hole_ring_count"])
+        holes_per_ring = int(params["auxiliary_holes_per_ring"])
+        for ring in range(ring_count):
+            radius = float(params["auxiliary_hole_first_offset_mm"]) + ring * float(
+                params["auxiliary_hole_ring_spacing_mm"]
+            )
+            chord = 2.0 * radius * math.sin(math.pi / holes_per_ring)
+            if chord < (2.0 * auxiliary_radius + 0.35):
+                raise SurgicalGuideError(
+                    "auxiliary holes on a ring are too dense for a printable wall"
+                )
+            if radius + auxiliary_radius > float(params["patch_margin_mm"]):
+                raise SurgicalGuideError(
+                    "auxiliary hole rings must fit inside patch_margin_mm"
+                )
     return params
 
 
@@ -956,6 +1116,7 @@ def generate_surgical_guide(
     # record the truncation state so the caller can warn the operator.
     trunc_z_min, trunc_z_max = _truncated_boundary_slices(body)
     paths = _path_records(agent, body, selected_needle_ids)
+    auxiliary_specs = _auxiliary_hole_specs(paths, params)
     truncated_fov = bool(trunc_z_min or trunc_z_max)
 
     span_margin = (
@@ -1043,13 +1204,39 @@ def generate_surgical_guide(
             plate_voxel_indices = plate_voxel_indices[distance <= patch_radius_index]
             patch_mask[tuple(plate_voxel_indices.T)] = True
     solid = plate_mask & patch_mask
-    # Pass 1: union ALL sleeve cylinders first, so the plate and every sleeve
-    # form one merged solid before any bore is drilled. This is deliberately
-    # "all cylinders first, then drill all holes": if the bores were subtracted
-    # inside the same loop, a later needle's sleeve wall would re-enter an
-    # earlier needle's already-drilled channel and plug it. Sleeve and bore
-    # volumes are exact flat-ended cylinder SDFs, not voxel facets, so the
-    # merged solid has clean round walls.
+    # Pass 1: subtract every auxiliary hole from the bare plate first. This is
+    # deliberately done before adding any primary sleeve: the auxiliary holes
+    # are plate-only alternate paths, and their validated radial offset keeps
+    # them outside the primary sleeve wall. They therefore cannot be filled by
+    # or cut into the primary channel when the main geometry is fused below.
+    realized_auxiliary_specs: List[Dict[str, Any]] = []
+    for spec in auxiliary_specs:
+        if bool(spec.get("skipped")):
+            continue
+        hole_sdf, box = _cylinder_sdf_in_region(
+            ct_image, lower_xyz, body_crop.shape, spacing_xyz,
+            np.asarray(spec["start"], dtype=np.float64),
+            np.asarray(spec["end"], dtype=np.float64),
+            float(spec["radius_mm"]),
+        )
+        hole_mask = hole_sdf <= 0.0
+        removable = solid[box] & plate_mask[box] & hole_mask
+        if not bool(np.any(removable)):
+            # The requested alternate line can fall outside a sharply curved
+            # or truncated patch. Record it as skipped rather than silently
+            # claiming that a physical hole was generated.
+            spec["skipped"] = True
+            spec["skip_reason"] = "outside_plate_patch"
+            continue
+        solid[box] &= ~(plate_mask[box] & hole_mask)
+        realized_auxiliary_specs.append(spec)
+
+    # Pass 2: union ALL sleeve cylinders, so the plate and every primary
+    # sleeve form one merged solid before any primary bore is drilled. If the
+    # bores were subtracted inside this loop, a later needle's sleeve wall
+    # could re-enter an earlier needle's already-drilled channel and plug it.
+    # Sleeve and bore volumes are exact flat-ended cylinder SDFs, not voxel
+    # facets, so the merged solid has clean round walls.
     for path in paths:
         entry = path.entry
         sleeve_inner = entry - path.inward_direction * clearance
@@ -1065,7 +1252,7 @@ def generate_surgical_guide(
         # clearance offset before unioning.
         sleeve_mask = (sleeve_sdf <= 0.0) & (outside_distance[box] >= clearance)
         solid[box] |= sleeve_mask
-    # Pass 2: subtract every bore from the fully-unioned solid, so a
+    # Pass 3: subtract every primary bore from the fully-unioned solid, so a
     # neighbouring sleeve wall can never plug a channel, regardless of needle
     # spacing or crossing angle.
     for path in paths:
@@ -1151,6 +1338,41 @@ def generate_surgical_guide(
         planning_id = str(memory.retrieve("manual_planning_id") or "")
     planning_version = int(memory.retrieve("manual_plan_version") or 0)
     path_checks = _planned_path_deviation(paths)
+    auxiliary_holes = {
+        "enabled": bool(params.get("auxiliary_holes_enabled", False)),
+        "requested_count": len(auxiliary_specs),
+        "realized_count": len(realized_auxiliary_specs),
+        "skipped_count": len(auxiliary_specs) - len(realized_auxiliary_specs),
+        "ring_count": int(params["auxiliary_hole_ring_count"]),
+        "holes_per_ring": int(params["auxiliary_holes_per_ring"]),
+        "radius_mm": float(params["auxiliary_hole_radius_mm"]),
+        "first_offset_mm": float(params["auxiliary_hole_first_offset_mm"]),
+        "ring_spacing_mm": float(params["auxiliary_hole_ring_spacing_mm"]),
+        "through_plate_only": True,
+        "non_protruding": True,
+        "holes": [
+            {
+                "id": str(spec["id"]),
+                "needle_id": str(spec["needle_id"]),
+                "trajectory_id": str(spec["trajectory_id"]),
+                "ring_index": int(spec["ring_index"]),
+                "hole_index": int(spec["hole_index"]),
+                "angle_degrees": float(spec["angle_degrees"]),
+                "radial_offset_mm": float(spec["radial_offset_mm"]),
+                "center_world_mm": np.asarray(spec["center"], dtype=float).tolist(),
+            }
+            for spec in realized_auxiliary_specs
+        ],
+        "skipped": [
+            {
+                "id": str(spec["id"]),
+                "needle_id": str(spec["needle_id"]),
+                "reason": str(spec.get("skip_reason") or "not_realized"),
+            }
+            for spec in auxiliary_specs
+            if bool(spec.get("skipped"))
+        ],
+    }
     # The guide covers the current displayed needle paths, but its validity
     # signature must be stable against the algorithm baseline: a manual needle
     # added after generation must not hide this guide or disable its update
@@ -1171,11 +1393,17 @@ def generate_surgical_guide(
         "source_plan_signature": signature,
         "selected_needle_ids": [path.needle_id for path in paths],
         "needle_paths": path_checks,
+        "auxiliary_holes": auxiliary_holes,
         "vertices": vertices,
         "faces": faces,
         "validation": {
             **validation,
             "source_needle_count": len(paths),
+            "auxiliary_holes": {
+                key: value
+                for key, value in auxiliary_holes.items()
+                if key not in {"holes", "skipped"}
+            },
             "max_centerline_deviation_mm": 0.0,
             "skin_fit": "CT threshold surface with explicit clearance",
             "geometry_resolution_mm": params["geometry_resolution_mm"],

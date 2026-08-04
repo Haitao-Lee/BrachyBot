@@ -71,6 +71,50 @@ def test_guide_is_watertight_and_stl_round_trips():
     assert validate_exported_stl(payload)["watertight"] is True
 
 
+def test_auxiliary_holes_are_real_plate_only_alternate_paths():
+    """The reference-style auxiliary pattern is part of the exported guide.
+
+    Auxiliary holes are not viewer-only decorations: the generated solid must
+    report realized alternate bores, keep them associated with the source
+    needle, and mark them as plate-only/non-protruding geometry.
+    """
+    guide = generate_surgical_guide(_synthetic_agent(), {"geometry_resolution_mm": 0.5})
+    auxiliary = guide["auxiliary_holes"]
+    assert auxiliary["enabled"] is True
+    assert auxiliary["requested_count"] == 24
+    assert auxiliary["realized_count"] > 0
+    assert auxiliary["realized_count"] <= auxiliary["requested_count"]
+    assert auxiliary["through_plate_only"] is True
+    assert auxiliary["non_protruding"] is True
+    assert len(auxiliary["holes"]) == auxiliary["realized_count"]
+    assert {hole["needle_id"] for hole in auxiliary["holes"]} == {"needle_0"}
+    assert guide["validation"]["auxiliary_holes"]["realized_count"] == auxiliary["realized_count"]
+    assert guide["validation"]["watertight"] is True
+
+
+def test_auxiliary_holes_can_be_disabled_without_changing_primary_contract():
+    guide = generate_surgical_guide(_synthetic_agent(), {
+        "geometry_resolution_mm": 1.0,
+        "auxiliary_holes_enabled": False,
+    })
+    auxiliary = guide["auxiliary_holes"]
+    assert auxiliary["enabled"] is False
+    assert auxiliary["requested_count"] == 0
+    assert auxiliary["realized_count"] == 0
+    assert guide["validation"]["watertight"] is True
+
+
+def test_auxiliary_hole_parameters_enforce_primary_wall_and_ring_spacing():
+    with pytest.raises(ValueError, match="wall"):
+        normalize_guide_parameters({"auxiliary_hole_first_offset_mm": 2.0})
+    with pytest.raises(ValueError, match="dense|wall"):
+        normalize_guide_parameters({
+            "auxiliary_holes_per_ring": 24,
+            "auxiliary_hole_first_offset_mm": 2.2,
+            "auxiliary_hole_radius_mm": 1.0,
+        })
+
+
 def test_guide_rejects_missing_plan_geometry():
     agent = _synthetic_agent()
     agent.memory.store("algorithm_plan_snapshot", {"needles": [], "seeds": []})
