@@ -948,6 +948,36 @@ function _hadInFlightTask(sessionId) {
     return false;
 }
 
+function _isContinuationRequest(value) {
+    const text = String(value || '').trim().toLowerCase();
+    if (!text) return false;
+    return /^(?:\u7ee7\u7eed|\u7ee7\u7eed\u6267\u884c|\u7ee7\u7eed\u89c4\u5212|\u6062\u590d\u4efb\u52a1|\u6062\u590d\u89c4\u5212|continue|resume|resume task|resume planning|continue planning)$/.test(text);
+}
+
+function _taskContinuationMessage(sessionId, key) {
+    const chinese = _chatLanguageForSession(sessionId) === 'zh';
+    const messages = {
+        reconnecting: chinese
+            ? '\u6b63\u5728\u6062\u590d\u4e0a\u4e00\u4e2a\u672a\u5b8c\u6210\u7684\u4efb\u52a1\uff0c\u5c06\u7ee7\u7eed\u663e\u793a\u539f\u6709\u6267\u884c\u8fdb\u5ea6\u3002'
+            : 'The previous unfinished task is being resumed. Its original progress will continue here.',
+        completed: chinese
+            ? '\u4e0a\u4e00\u4e2a\u4efb\u52a1\u5df2\u5b8c\u6210\uff0c\u6211\u5df2\u52a0\u8f7d\u6700\u65b0\u7ed3\u679c\u3002'
+            : 'The previous task has already completed. The latest saved results have been loaded.',
+        unavailable: chinese
+            ? '\u4e0a\u4e00\u4e2a\u4efb\u52a1\u5df2\u4e0d\u5728\u670d\u52a1\u5668\u4e2d\u8fd0\u884c\uff08\u4f8b\u5982\u670d\u52a1\u5668\u91cd\u542f\u540e\uff09\u3002\u5df2\u4fdd\u7559\u5df2\u4fdd\u5b58\u7684\u75c5\u4f8b\u6570\u636e\uff0c\u8bf7\u91cd\u65b0\u6267\u884c\u672a\u5b8c\u6210\u7684\u6b65\u9aa4\u3002'
+            : 'The previous task is no longer running on the server, possibly after a restart. Saved case data is retained; rerun the unfinished step.',
+        running: chinese
+            ? '\u4e0a\u4e00\u4e2a\u4efb\u52a1\u4ecd\u5728\u8fd0\u884c\u4e2d\uff0c\u6b63\u5728\u6062\u590d\u5176\u5b9e\u65f6\u8fdb\u5ea6\u3002'
+            : 'The previous task is still running. Its live progress is being restored.',
+        none: chinese
+            ? '\u5f53\u524d\u6ca1\u6709\u53ef\u6062\u590d\u7684\u672a\u5b8c\u6210\u4efb\u52a1\u3002'
+            : 'There is no unfinished task available to resume for this case.',
+    };
+    return messages[key] || messages.none;
+}
+
+window._isContinuationRequest = _isContinuationRequest;
+
 function _chatLanguageForSession(sessionId) {
     return (typeof conversationLanguageForSession === 'function'
         ? conversationLanguageForSession(sessionId)
@@ -1338,6 +1368,37 @@ async function sendChat(prefill, options) {
         ? String(opts.resumeMessage || '')
         : (prefill != null ? prefill : (input ? input.value : '')).trim();
     if (!text && !isResumingTask) return;
+
+    // "Continue" is a case-control command, not a clinical knowledge
+    // question. Resolve it against the server-owned task first, even when
+    // this browser lost its SSE subscription during a case switch.
+    if (!isResumingTask && !opts.skipContinuationRecovery
+        && !opts.hiddenUserMessage && !opts.queuedTurn
+        && _isContinuationRequest(text)) {
+        const continuationSessionId = String(activeSessionId || '');
+        if (input) input.value = '';
+        if (continuationSessionId && typeof addChat === 'function') {
+            addChat('user', text, true, Date.now(), false, continuationSessionId);
+        }
+        const resumed = typeof window.resumeSessionChatTask === 'function'
+            ? await window.resumeSessionChatTask({ userInitiated: true })
+            : false;
+        const rawResumeState = window._lastChatTaskResumeState?.[continuationSessionId]?.status || 'none';
+        const resumeState = (rawResumeState === 'failed' || rawResumeState === 'cancelled')
+            ? 'unavailable'
+            : rawResumeState;
+        if (typeof addChat === 'function') {
+            addChat(
+                resumed ? 'system' : (resumeState === 'unavailable' ? 'error' : 'system'),
+                _taskContinuationMessage(continuationSessionId, resumed ? 'reconnecting' : resumeState),
+                true,
+                Date.now(),
+                false,
+                continuationSessionId,
+            );
+        }
+        return !!resumed;
+    }
     if (input && !opts.hiddenUserMessage && !isResumingTask) input.value = '';
 
     // EPHEMERAL START: lazily create a "New chat" session on the
@@ -1694,7 +1755,10 @@ async function sendChat(prefill, options) {
             } catch (_) { /* non-JSON error body */ }
             if (typeof addChat === 'function') addChat('error', errText, true, Date.now(), false, turnSessionId);
             setStreamingState(false);
-            return;
+            // Resume callers must be able to distinguish an HTTP failure
+            // from a successfully opened stream. A bare return is
+            // indistinguishable from success to resumeSessionChatTask().
+            return false;
         }
 
         const ctype = resp.headers.get('content-type') || '';
@@ -2659,9 +2723,22 @@ async function _buildDoseResultsFallback(userText, sessionId) {
     }
 }
 
-window.resumeSessionChatTask = async function resumeSessionChatTask() {
+window.resumeSessionChatTask = async function resumeSessionChatTask(options = {}) {
     const sessionId = activeSessionId;
-    if (!sessionId || window._chatTurnActive || window._chatStreaming) return false;
+    window._lastChatTaskResumeState = window._lastChatTaskResumeState || {};
+    const setResumeState = (status, details = {}) => {
+        if (!sessionId) return;
+        window._lastChatTaskResumeState[sessionId] = {
+            status: String(status || 'none'),
+            ...details,
+            at: Date.now(),
+        };
+    };
+    if (!sessionId) return false;
+    if (window._chatTurnActive || window._chatStreaming) {
+        setResumeState('running', { reason: 'local_stream_active' });
+        return false;
+    }
     window._sessionChatResumePromises = window._sessionChatResumePromises || {};
     if (window._sessionChatResumePromises[sessionId]) {
         return window._sessionChatResumePromises[sessionId];
@@ -2676,6 +2753,7 @@ window.resumeSessionChatTask = async function resumeSessionChatTask() {
             const staleTaskId = window._sessionChatTaskIds?.[sessionId]
                 || window._detachedChatTasks?.[sessionId]
                 || null;
+            const hadInFlight = !!staleTaskId && _hadInFlightTask(sessionId);
             delete window._detachedChatTasks[sessionId];
             delete window._sessionChatTaskIds[sessionId];
             _setCaseTaskState(sessionId, 'failed', null);
@@ -2683,7 +2761,8 @@ window.resumeSessionChatTask = async function resumeSessionChatTask() {
             // in-flight task for this case. After a server restart the browser
             // reloads; a completed or failed history task is not an actionable
             // loss and must not produce the "no longer running" notice.
-            if (staleTaskId && _hadInFlightTask(sessionId)) _addTaskRecoveryNotice(sessionId, staleTaskId, 'unavailable');
+            setResumeState('unavailable', { taskId: staleTaskId, reason: 'status_http_error' });
+            if (hadInFlight) _addTaskRecoveryNotice(sessionId, staleTaskId, 'unavailable');
             return false;
         }
         const payload = await response.json();
@@ -2697,7 +2776,14 @@ window.resumeSessionChatTask = async function resumeSessionChatTask() {
         if (!task || task.status !== 'running') {
             const staleTaskId = window._sessionChatTaskIds?.[sessionId]
                 || window._detachedChatTasks?.[sessionId]
+                || payload?.persisted?.task_id
+                || payload?.persisted?.last_task_id
                 || null;
+            const hadInFlight = !!staleTaskId && (
+                _hadInFlightTask(sessionId)
+                || String(payload?.persisted?.status || '') === 'running'
+                || String(payload?.persisted?.operation_state || '') === 'running'
+            );
             delete window._detachedChatTasks[sessionId];
             delete window._sessionChatTaskIds[sessionId];
             if (window._sessionChatTaskStatuses) window._sessionChatTaskStatuses[sessionId] = task?.status || 'idle';
@@ -2716,11 +2802,17 @@ window.resumeSessionChatTask = async function resumeSessionChatTask() {
                     console.warn('[chat] completed case refresh deferred:', error);
                 }
             }
+            window._lastChatTaskResumeState = window._lastChatTaskResumeState || {};
+            window._lastChatTaskResumeState[sessionId] = {
+                status: task?.status || (hadInFlight ? 'unavailable' : 'none'),
+                taskId: staleTaskId,
+                at: Date.now(),
+            };
             if (!task || task?.status === 'failed' || task?.status === 'cancelled') {
                 // Only warn when the browser actually had an in-flight task.
                 // A completed/failed history task on a freshly loaded page
                 // (e.g. after a server restart) is not an actionable loss.
-                if (staleTaskId && _hadInFlightTask(sessionId)) _addTaskRecoveryNotice(sessionId, staleTaskId, 'unavailable');
+                if (hadInFlight) _addTaskRecoveryNotice(sessionId, staleTaskId, 'unavailable');
             }
             if (typeof window.flushQueuedChatTurns === 'function') {
                 setTimeout(() => window.flushQueuedChatTurns(), 0);
@@ -2728,6 +2820,19 @@ window.resumeSessionChatTask = async function resumeSessionChatTask() {
             return false;
         }
         const taskId = task.task_id;
+        // Preserve the original wall-clock baseline when a detached task is
+        // replayed. Otherwise the restored trace looks as if it just started
+        // after a case switch even though the worker has been running longer.
+        if (Number.isFinite(Number(task.created_at)) && Number(task.created_at) > 0) {
+            window._caseChainStartedAt = window._caseChainStartedAt || {};
+            window._caseChainStartedAt[sessionId] = Number(task.created_at) * 1000;
+        }
+        window._lastChatTaskResumeState = window._lastChatTaskResumeState || {};
+        window._lastChatTaskResumeState[sessionId] = {
+            status: 'running',
+            taskId,
+            at: Date.now(),
+        };
         window._sessionChatTaskIds[sessionId] = taskId;
         window._sessionChatTaskStatuses = window._sessionChatTaskStatuses || {};
         window._sessionChatTaskStatuses[sessionId] = 'running';
@@ -2736,7 +2841,7 @@ window.resumeSessionChatTask = async function resumeSessionChatTask() {
         // after the status request so the second one cannot enter sendChat()
         // and accidentally stop the first replay stream.
         if (window._chatTurnActive || window._chatStreaming || activeSessionId !== sessionId) return false;
-        await sendChat(null, {
+        const replayResult = await sendChat(null, {
             resumeTaskId: taskId,
             resumeRequestId: task.request_id || taskId,
             requestId: task.request_id || taskId,
@@ -2746,9 +2851,17 @@ window.resumeSessionChatTask = async function resumeSessionChatTask() {
             skipIntentShortcuts: true,
             preserveLastUserMessage: true,
         });
+        if (replayResult === false) {
+            setResumeState('unavailable', { taskId, reason: 'replay_http_error' });
+            if (_hadInFlightTask(sessionId)) {
+                _addTaskRecoveryNotice(sessionId, taskId, 'unavailable');
+            }
+            return false;
+        }
         return true;
     } catch (error) {
         console.warn('[chat] task resume deferred:', error);
+        setResumeState('unavailable', { reason: 'status_request_failed' });
         return false;
     } finally {
         delete window._sessionChatResumePromises[sessionId];
