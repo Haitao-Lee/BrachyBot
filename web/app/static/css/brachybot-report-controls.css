@@ -203,11 +203,19 @@
 .ctx-menu {
     position: fixed;
     z-index: 9999;
+    box-sizing: border-box;
     background: var(--bg-elevated);
     border: 1px solid var(--border-hairline);
     border-radius: var(--radius-sm);
     padding: 5px 0;
     min-width: 180px;
+    max-width: calc(100vw - 16px);
+    max-height: calc(100vh - 16px);
+    max-height: calc(100dvh - 16px);
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
     box-shadow: var(--shadow-xl), var(--inset-top);
     backdrop-filter: blur(8px);
     -webkit-backdrop-filter: blur(8px);
@@ -218,7 +226,10 @@
     font-size: 0.7rem;
     color: var(--text);
     cursor: pointer;
-    white-space: nowrap;
+    white-space: normal;
+    line-height: 1.35;
+    min-height: 30px;
+    box-sizing: border-box;
     border-radius: 4px;
     margin: 0 4px;
     transition: all var(--t-fast) var(--ease);

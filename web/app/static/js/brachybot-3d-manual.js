@@ -2583,9 +2583,13 @@ function init3DScene() {
         // the Data Tree menu state is held in another script.
         window.__brachyContextMenuElement = menu;
 
-        const menuRect = menu.getBoundingClientRect();
-        if (menuRect.right > window.innerWidth) menu.style.left = (x - menuRect.width) + 'px';
-        if (menuRect.bottom > window.innerHeight) menu.style.top = (y - menuRect.height) + 'px';
+        if (typeof window.positionBrachyContextMenu === 'function') {
+            window.positionBrachyContextMenu(menu, x, y);
+        } else {
+            const menuRect = menu.getBoundingClientRect();
+            if (menuRect.right > window.innerWidth) menu.style.left = (x - menuRect.width) + 'px';
+            if (menuRect.bottom > window.innerHeight) menu.style.top = (y - menuRect.height) + 'px';
+        }
 
         setTimeout(() => {
             document.addEventListener('click', hideContextMenu, { once: true });

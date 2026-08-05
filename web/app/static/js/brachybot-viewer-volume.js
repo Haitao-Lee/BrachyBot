@@ -2315,6 +2315,61 @@ function classifyOrgan(organName) {
 // Context menu state
 let activeContextMenu = null;
 
+// All context menus are fixed to the viewport, so their coordinates must be
+// resolved after the menu has been mounted.  The old callers only flipped the
+// menu above/left when it crossed the right/bottom edge.  A tall menu opened
+// near the bottom could therefore still receive a negative top coordinate and
+// become partly unreachable.  Keep the measurement, flip, and final clamp in
+// one shared helper so Data Tree, 2D, and 3D menus follow the same rules.
+function positionBrachyContextMenu(menu, anchorX, anchorY) {
+    if (!menu) return;
+
+    const margin = 8;
+    const viewportWidth = Math.max(
+        1,
+        Number(document.documentElement?.clientWidth) || Number(window.innerWidth) || 1,
+    );
+    const viewportHeight = Math.max(
+        1,
+        Number(document.documentElement?.clientHeight) || Number(window.innerHeight) || 1,
+    );
+    const x = Number.isFinite(Number(anchorX)) ? Number(anchorX) : margin;
+    const y = Number.isFinite(Number(anchorY)) ? Number(anchorY) : margin;
+    const maxMenuHeight = Math.max(120, viewportHeight - margin * 2);
+
+    const previousVisibility = menu.style.visibility;
+    menu.style.visibility = 'hidden';
+    menu.style.left = '0px';
+    menu.style.top = '0px';
+    menu.style.maxHeight = `${maxMenuHeight}px`;
+    menu.style.overflowY = 'auto';
+    menu.style.overflowX = 'hidden';
+    menu.style.overscrollBehavior = 'contain';
+
+    let rect = menu.getBoundingClientRect();
+    const maxMenuWidth = Math.max(120, viewportWidth - margin * 2);
+    if (rect.width > maxMenuWidth) menu.style.maxWidth = `${maxMenuWidth}px`;
+    rect = menu.getBoundingClientRect();
+
+    const maxLeft = Math.max(margin, viewportWidth - rect.width - margin);
+    const maxTop = Math.max(margin, viewportHeight - rect.height - margin);
+    let left = x;
+    let top = y;
+    if (left + rect.width > viewportWidth - margin) left = x - rect.width;
+    if (top + rect.height > viewportHeight - margin) top = y - rect.height;
+
+    left = Math.min(Math.max(margin, left), maxLeft);
+    top = Math.min(Math.max(margin, top), maxTop);
+    menu.style.left = `${Math.round(left)}px`;
+    menu.style.top = `${Math.round(top)}px`;
+    menu.style.visibility = previousVisibility || 'visible';
+}
+
+// Other viewer modules are separate scripts and cannot access this file's
+// lexical helpers.  Expose only the positioning primitive as the shared
+// context-menu contract.
+window.positionBrachyContextMenu = positionBrachyContextMenu;
+
 // Context menus are transient UI, not state. A single capture-phase boundary
 // closes them for clicks, touch/pointer presses, Escape, scrolling, and case
 // switches. The old one-shot bubble listeners were bypassed by canvas and
@@ -2329,7 +2384,13 @@ if (!window.__brachyContextMenuDismissalBound) {
     document.addEventListener('keydown', event => {
         if (event.key === 'Escape') hideContextMenu();
     }, true);
-    document.addEventListener('scroll', () => hideContextMenu(), true);
+    document.addEventListener('scroll', event => {
+        const menu = activeContextMenu || window.__brachyContextMenuElement;
+        // Scrolling a long menu is an expected interaction.  Only scrolling
+        // outside the menu dismisses it.
+        if (menu && (event.target === menu || menu.contains?.(event.target))) return;
+        hideContextMenu();
+    }, true);
 }
 
 // Multi-select state (like Windows Explorer)
@@ -3687,9 +3748,7 @@ function showGroupContextMenu(x, y, category) {
     menu.innerHTML = items;
     document.body.appendChild(menu);
 
-    const rect = menu.getBoundingClientRect();
-    if (rect.right > window.innerWidth) menu.style.left = (x - rect.width) + 'px';
-    if (rect.bottom > window.innerHeight) menu.style.top = (y - rect.height) + 'px';
+    positionBrachyContextMenu(menu, x, y);
 
     setTimeout(() => {
         document.addEventListener('click', hideContextMenu, { once: true });
@@ -4451,6 +4510,7 @@ function showContextMenu(x, y) {
             <span class="ctx-icon">&#10005;</span> ${_dtText('清除选择', 'Clear selection')}</div>`;
         menu.innerHTML = items;
         document.body.appendChild(menu);
+        positionBrachyContextMenu(menu, x, y);
         activeContextMenu = menu;
         window.__brachyContextMenuElement = menu;
         return;
@@ -4519,9 +4579,7 @@ function showContextMenu(x, y) {
     menu.innerHTML = items;
     document.body.appendChild(menu);
 
-    const rect = menu.getBoundingClientRect();
-    if (rect.right > window.innerWidth) menu.style.left = (x - rect.width) + 'px';
-    if (rect.bottom > window.innerHeight) menu.style.top = (y - rect.height) + 'px';
+    positionBrachyContextMenu(menu, x, y);
 
     setTimeout(() => {
         document.addEventListener('click', hideContextMenu, { once: true });

@@ -1532,9 +1532,13 @@ function _showSeed2DContextMenu(event, seed) {
         </button>`;
     document.body.appendChild(menu);
     window.__brachyContextMenuElement = menu;
-    const rect = menu.getBoundingClientRect();
-    if (rect.right > window.innerWidth) menu.style.left = `${event.clientX - rect.width}px`;
-    if (rect.bottom > window.innerHeight) menu.style.top = `${event.clientY - rect.height}px`;
+    if (typeof window.positionBrachyContextMenu === 'function') {
+        window.positionBrachyContextMenu(menu, event.clientX, event.clientY);
+    } else {
+        const rect = menu.getBoundingClientRect();
+        if (rect.right > window.innerWidth) menu.style.left = `${event.clientX - rect.width}px`;
+        if (rect.bottom > window.innerHeight) menu.style.top = `${event.clientY - rect.height}px`;
+    }
     menu.querySelector('[data-delete-seed]')?.addEventListener('click', () => {
         if (typeof hideContextMenu === 'function') hideContextMenu();
         if (typeof deleteSeed3D === 'function') deleteSeed3D(seed.id);
