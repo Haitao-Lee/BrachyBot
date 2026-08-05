@@ -240,7 +240,13 @@
 .session-export-menu {
     position: fixed;
     z-index: 11900;
+    box-sizing: border-box;
     min-width: 190px;
+    max-width: calc(100vw - 16px);
+    max-height: calc(100vh - 16px);
+    max-height: calc(100dvh - 16px);
+    overflow: auto;
+    overscroll-behavior: contain;
     padding: 5px;
     border: 1px solid var(--border);
     border-radius: 7px;

@@ -483,9 +483,13 @@
             });
         };
         document.body.appendChild(menu);
-        const rect = menu.getBoundingClientRect();
-        if (rect.right > innerWidth) menu.style.left = `${Math.max(6, event.clientX - rect.width)}px`;
-        if (rect.bottom > innerHeight) menu.style.top = `${Math.max(6, event.clientY - rect.height)}px`;
+        if (typeof window.positionBrachyContextMenu === 'function') {
+            window.positionBrachyContextMenu(menu, event.clientX, event.clientY);
+        } else {
+            const rect = menu.getBoundingClientRect();
+            if (rect.right > innerWidth) menu.style.left = `${Math.max(6, event.clientX - rect.width)}px`;
+            if (rect.bottom > innerHeight) menu.style.top = `${Math.max(6, event.clientY - rect.height)}px`;
+        }
         setTimeout(() => document.addEventListener('pointerdown', () => menu.remove(), { once: true }), 0);
     }
 
