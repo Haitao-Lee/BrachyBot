@@ -1454,7 +1454,9 @@ async function _reconstructThresholdMask3D(id, silent = false) {
     const scope = _captureViewer3DRequestScope();
     const mask = state.maskLabels?.[id];
     if (!mask || !Number.isFinite(Number(mask.threshold))) {
-        if (!silent) addChat('error', 'The threshold mask is not available for 3D reconstruction.');
+        if (!silent) addChat('error', typeof _dtText === 'function'
+            ? _dtText('当前没有可用于 3D 重建的阈值掩膜。', 'The threshold mask is not available for 3D reconstruction.')
+            : 'The threshold mask is not available for 3D reconstruction.');
         return { success: false };
     }
     const loading = document.getElementById('loading3D');
@@ -1508,7 +1510,9 @@ async function _reconstructThresholdMask3D(id, silent = false) {
             mask.status = 'error';
             mask.error = error?.message || String(error);
             renderDataTree?.();
-            if (!silent) addChat('error', `3D threshold mask failed: ${error?.message || error}`);
+            if (!silent) addChat('error', typeof _dtText === 'function'
+                ? _dtText(`3D 阈值掩膜生成失败：${error?.message || error}`, `3D threshold mask failed: ${error?.message || error}`)
+                : `3D threshold mask failed: ${error?.message || error}`);
         }
         return { success: false, error: error?.message || String(error) };
     } finally {

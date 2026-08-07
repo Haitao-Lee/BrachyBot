@@ -1833,8 +1833,8 @@ async function applyThreshold() {
             ...existing,
             id,
             objectId: existing.objectId || 'mask:threshold',
-            name: existing.name || `Skin threshold ${normalizedThreshold} HU`,
-            label: existing.label || `Skin threshold ${normalizedThreshold} HU`,
+            name: existing.name || _dtText(`全身皮肤阈值 ${normalizedThreshold} HU`, `Skin threshold ${normalizedThreshold} HU`),
+            label: existing.label || _dtText(`全身皮肤阈值 ${normalizedThreshold} HU`, `Skin threshold ${normalizedThreshold} HU`),
             type: 'mask',
             source: 'viewer_threshold',
             kind: 'threshold',
@@ -1871,7 +1871,10 @@ async function applyThreshold() {
             delete state.maskLabels[id];
             renderDataTree();
             reloadOverlays();
-            addChat('error', 'The threshold produced an empty mask. Choose a lower or higher HU value.');
+            addChat('error', _dtText(
+                '当前阈值没有生成任何区域，请调整 HU 阈值后重试。',
+                'The threshold produced an empty mask. Choose a lower or higher HU value.',
+            ));
             return;
         }
         mask.voxelCount = voxelCount;
@@ -1896,7 +1899,10 @@ async function applyThreshold() {
             mask.error = error?.message || String(error);
         }
         renderDataTree();
-        addChat('error', `Threshold mask failed: ${error?.message || error}`);
+        addChat('error', _dtText(
+            `阈值掩膜生成失败：${error?.message || error}`,
+            `Threshold mask failed: ${error?.message || error}`,
+        ));
     } finally {
         if (generation === _thresholdApplyGeneration) _setThresholdApplyBusy(false);
     }
