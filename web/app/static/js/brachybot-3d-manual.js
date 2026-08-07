@@ -1687,6 +1687,11 @@ function init3DScene() {
     scene3D.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
     scene3D.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     scene3D.renderer.setSize(w, h, false);
+    // Keep opaque anatomy in the depth-tested opaque queue and sort the
+    // remaining transparent structures back-to-front. Without this explicit
+    // setting, a renderer state left by another capture path can make the
+    // order of overlapping semi-transparent meshes depend on insertion order.
+    scene3D.renderer.sortObjects = true;
     // Keep the WebGL drawing surface in the host's exact content rectangle.
     // Percentage-sized flex children can retain a stale layout size while a
     // viewer card is being resized, which makes the visible surface and the
@@ -1845,19 +1850,45 @@ function init3DScene() {
     let drawingFrame = false;
     let viewer3DSize = { cssWidth: 0, cssHeight: 0, dpr: 0, pixelWidth: 0, pixelHeight: 0 };
     let viewer3DSizeDirty = true;
+    const drawingBufferSize = new THREE.Vector2();
+
+    function readViewerDrawingBufferSize() {
+        if (scene3D.renderer?.getDrawingBufferSize) {
+            scene3D.renderer.getDrawingBufferSize(drawingBufferSize);
+            return {
+                width: Math.max(1, Math.round(drawingBufferSize.x || 0)),
+                height: Math.max(1, Math.round(drawingBufferSize.y || 0)),
+            };
+        }
+        return {
+            width: Math.max(1, Number(scene3D.renderer?.domElement?.width || 0)),
+            height: Math.max(1, Number(scene3D.renderer?.domElement?.height || 0)),
+        };
+    }
+
+    function lockRendererSurfaceToHost() {
+        const surface = scene3D.renderer?.domElement;
+        if (!surface) return;
+        // Three.js may leave a pixel-sized inline style behind when an older
+        // bundle called setSize(..., true). Use an important percentage rule
+        // at the renderer boundary so that stale bundles cannot leave a
+        // smaller WebGL surface inside the black host.
+        surface.style.position = 'absolute';
+        surface.style.setProperty('inset', '0', 'important');
+        surface.style.setProperty('width', '100%', 'important');
+        surface.style.setProperty('height', '100%', 'important');
+        surface.style.setProperty('max-width', 'none', 'important');
+        surface.style.setProperty('max-height', 'none', 'important');
+        surface.style.flex = 'none';
+        surface.style.boxSizing = 'border-box';
+        surface.style.display = 'block';
+    }
 
     // Keep CSS layout pixels, camera aspect, and WebGL drawing-buffer pixels
     // in one place. Mixing these coordinate systems after a resize caused
     // the zoom-out crop/stretch bug on high-DPI displays.
     function syncViewer3DSize({ force = false } = {}) {
         if (!scene3D.renderer || !scene3D.camera || !canvas) return null;
-        if (!force && !viewer3DSizeDirty
-            && viewer3DSize.pixelWidth > 0
-            && viewer3DSize.pixelHeight > 0
-            && scene3D.renderer.domElement.width === viewer3DSize.pixelWidth
-            && scene3D.renderer.domElement.height === viewer3DSize.pixelHeight) {
-            return { ...viewer3DSize, changed: false };
-        }
         const rect = typeof canvas.getBoundingClientRect === 'function'
             ? canvas.getBoundingClientRect() : null;
         // The rectangle is authoritative for the visible surface.  Reading
@@ -1867,18 +1898,47 @@ function init3DScene() {
         const cssHeight = Math.max(1, Math.floor(rect?.height || canvas.clientHeight || 0));
         if (cssWidth < 10 || cssHeight < 10) return null;
         const dpr = Math.min(window.devicePixelRatio || 1, 2);
-        const pixelWidth = Math.max(1, Math.round(cssWidth * dpr));
-        const pixelHeight = Math.max(1, Math.round(cssHeight * dpr));
+        lockRendererSurfaceToHost();
+        const currentBuffer = readViewerDrawingBufferSize();
+        const surfaceRect = scene3D.renderer.domElement.getBoundingClientRect?.();
+        const surfaceMatchesHost = !surfaceRect
+            || (Math.abs(surfaceRect.width - cssWidth) <= 1
+                && Math.abs(surfaceRect.height - cssHeight) <= 1);
+        const expectedPixelWidth = Math.max(1, Math.round(cssWidth * dpr));
+        const expectedPixelHeight = Math.max(1, Math.round(cssHeight * dpr));
+        if (!force && !viewer3DSizeDirty
+            && viewer3DSize.pixelWidth > 0
+            && viewer3DSize.pixelHeight > 0
+            && viewer3DSize.cssWidth === cssWidth
+            && viewer3DSize.cssHeight === cssHeight
+            && Math.abs(viewer3DSize.dpr - dpr) <= 1e-6
+            && currentBuffer.width === viewer3DSize.pixelWidth
+            && currentBuffer.height === viewer3DSize.pixelHeight
+            && surfaceMatchesHost) {
+            return { ...viewer3DSize, changed: false };
+        }
         const changed = viewer3DSize.cssWidth !== cssWidth
             || viewer3DSize.cssHeight !== cssHeight
             || Math.abs(viewer3DSize.dpr - dpr) > 1e-6
-            || scene3D.renderer.domElement.width !== pixelWidth
-            || scene3D.renderer.domElement.height !== pixelHeight;
+            || currentBuffer.width !== expectedPixelWidth
+            || currentBuffer.height !== expectedPixelHeight
+            || !surfaceMatchesHost;
         if (changed) {
             scene3D.renderer.setPixelRatio(dpr);
             scene3D.renderer.setSize(cssWidth, cssHeight, false);
-            viewer3DSize = { cssWidth, cssHeight, dpr, pixelWidth, pixelHeight };
         }
+        // Never infer viewport pixels from CSS pixels and DPR. Browser zoom,
+        // fractional DPR, and GPU limits can make the actual drawing buffer
+        // differ from that product. Viewport/scissor must use what WebGL
+        // really allocated or a smaller inner rectangle is painted.
+        const actualBuffer = readViewerDrawingBufferSize();
+        viewer3DSize = {
+            cssWidth,
+            cssHeight,
+            dpr,
+            pixelWidth: actualBuffer.width,
+            pixelHeight: actualBuffer.height,
+        };
         // The saved workspace pose may contain the aspect ratio of a previous
         // panel layout.  The DOM rectangle is authoritative for the current
         // frame, even when the drawing-buffer dimensions themselves did not
@@ -1892,16 +1952,7 @@ function init3DScene() {
             scene3D.camera.updateProjectionMatrix();
         }
         viewer3DSizeDirty = false;
-        scene3D.renderer.domElement.style.left = '0px';
-        scene3D.renderer.domElement.style.top = '0px';
-        // Keep the DOM surface attached to the host.  The drawing buffer is
-        // still sized explicitly above, but its CSS box must not retain a
-        // stale pixel width/height from an earlier layout.
-        scene3D.renderer.domElement.style.width = '100%';
-        scene3D.renderer.domElement.style.height = '100%';
-        scene3D.renderer.domElement.style.maxWidth = 'none';
-        scene3D.renderer.domElement.style.maxHeight = 'none';
-        scene3D.renderer.domElement.style.display = 'block';
+        lockRendererSurfaceToHost();
         return { ...viewer3DSize, changed };
     }
 
@@ -1974,7 +2025,9 @@ function init3DScene() {
         // If the canvas was 0×0 at init time (panel not visible),
         // the renderer viewport is still 0×0 even after the panel
         // becomes visible. Detect dimension changes and re-size.
-        const { pixelWidth, pixelHeight, dpr, cssWidth, cssHeight } = geometry;
+        const { pixelWidth, pixelHeight, cssWidth, cssHeight } = geometry;
+        const bufferScaleX = pixelWidth / Math.max(1, cssWidth);
+        const bufferScaleY = pixelHeight / Math.max(1, cssHeight);
 
         // Render main scene
         scene3D.renderer.setViewport(0, 0, pixelWidth, pixelHeight);
@@ -1985,9 +2038,9 @@ function init3DScene() {
 
         // Render axes in bottom-left corner (transparent background)
         const axisSizeCss = Math.min(100, Math.min(cssWidth, cssHeight) * 0.2);
-        const axisX = Math.round(8 * dpr);
-        const axisY = Math.round(8 * dpr);
-        const axisSize = Math.max(1, Math.round(axisSizeCss * dpr));
+        const axisX = Math.round(8 * bufferScaleX);
+        const axisY = Math.round(8 * bufferScaleY);
+        const axisSize = Math.max(1, Math.round(axisSizeCss * Math.min(bufferScaleX, bufferScaleY)));
         scene3D.renderer.setViewport(axisX, axisY, axisSize, axisSize);
         scene3D.renderer.setScissor(axisX, axisY, axisSize, axisSize);
         scene3D.renderer.setScissorTest(true);
@@ -2060,6 +2113,11 @@ function init3DScene() {
     };
     scene3D.renderer.domElement.addEventListener('pointerdown', markCameraInteraction, true);
     scene3D.renderer.domElement.addEventListener('mousedown', markCameraInteraction, true);
+    scene3D.renderer.domElement.addEventListener('wheel', markCameraInteraction, {
+        capture: true,
+        passive: true,
+    });
+    scene3D.controls.addEventListener('start', markCameraInteraction);
     scene3D.controls.addEventListener('change', () => requestRender(8));
     document.addEventListener('visibilitychange', () => {
         if (!document.hidden) requestRender(2);
@@ -2781,7 +2839,7 @@ function addMeshToScene(meshData) {
     // Clean surface rendering (like 3D Slicer polydata)
     const surfaceMat = new THREE.MeshPhysicalMaterial({
         color: color,
-        transparent: true,
+        transparent: opacity < 0.999,
         opacity: opacity,
         side: THREE.DoubleSide,
         roughness: 0.4,
@@ -3077,6 +3135,11 @@ function ensureCameraFitsVisibleScene({ forceCenter = false, reason = '' } = {})
     // frustum while the mesh is visibly pushed to one side. Recenter that
     // state only while the application still owns the camera; after pointer
     // interaction, preserve the deliberate pan/rotation.
+    // Once the user has rotated, panned, or zoomed, an out-of-frustum corner
+    // is an intentional close-up, not a request to snap back to Fit. This is
+    // especially important for wheel zoom in fullscreen, where a resize
+    // observer may run in the same event turn as OrbitControls.
+    if (cameraOwnsView && !hydrationCentering) return false;
     const shouldReframe = hydrationCentering || outside || (offCenter && !cameraOwnsView);
     if (!shouldReframe) return false;
 
@@ -3547,6 +3610,7 @@ async function toggle3DSkin(on) {
             geometry.computeVertexNormals();
             const mesh = new THREE.Mesh(geometry, new THREE.MeshPhongMaterial({
                 color: 0xcccccc, transparent: true, opacity: 0.15, side: THREE.DoubleSide,
+                depthWrite: false, depthTest: true,
             }));
             scene3D.scene.add(mesh);
             scene3D.skinMesh = mesh;
@@ -3814,6 +3878,8 @@ async function loadSeeds3D() {
                         color: 0xff2266, transparent: true, opacity: 0.9,
                         metalness: 0.1, roughness: 0.4,
                         emissive: 0x550011, emissiveIntensity: 0.6,
+                        depthWrite: false,
+                        depthTest: true,
                     });
                     tube = new THREE.Mesh(geo, mat);
                     // Position at midpoint
@@ -3830,6 +3896,8 @@ async function loadSeeds3D() {
                         color: 0xff2266, transparent: true, opacity: 0.9,
                         metalness: 0.1, roughness: 0.4,
                         emissive: 0x550011, emissiveIntensity: 0.6,
+                        depthWrite: false,
+                        depthTest: true,
                     });
                     tube = new THREE.Mesh(tubeGeometry, tubeMaterial);
                 }
@@ -3942,7 +4010,8 @@ async function loadDoseIsosurface(threshold = 1.0, color = 0x00ff88, requestScop
             side: THREE.DoubleSide,
             metalness: 0.1,
             roughness: 0.6,
-            depthWrite: true,
+            depthWrite: false,
+            depthTest: true,
         });
 
         const mesh = new THREE.Mesh(geometry, material);
