@@ -1668,18 +1668,33 @@ function init3DScene() {
     scene3D.scene = new THREE.Scene();
     // No background - use canvas CSS background (#000) for consistency with 2D viewers
 
-    // Fallback size if canvas not visible
-    const w = canvas.clientWidth || 400;
-    const h = canvas.clientHeight || 300;
+    // Measure the host itself. The host is a div with overlay children, not a
+    // drawing canvas; using a guessed size here can leave the first camera
+    // projection out of sync until a later resize event.
+    const hostRect = typeof canvas.getBoundingClientRect === 'function'
+        ? canvas.getBoundingClientRect() : null;
+    const w = Math.max(1, Math.floor(canvas.clientWidth || hostRect?.width || 400));
+    const h = Math.max(1, Math.floor(canvas.clientHeight || hostRect?.height || 300));
 
-    scene3D.camera = new THREE.PerspectiveCamera(50, w / h, 0.1, 5000);
+    scene3D.camera = new THREE.PerspectiveCamera(50, w / h, 0.01, 5000);
     scene3D.camera.position.set(0, 0, 300);
 
     scene3D.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
     scene3D.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     scene3D.renderer.setSize(w, h, false);
-    scene3D.renderer.domElement.style.width = '100%';
-    scene3D.renderer.domElement.style.height = '100%';
+    // Keep the WebGL drawing surface in the host's exact content rectangle.
+    // Percentage-sized flex children can retain a stale layout size while a
+    // viewer card is being resized, which makes the visible surface and the
+    // camera viewport disagree and clips geometry before the panel edge.
+    scene3D.renderer.domElement.style.position = 'absolute';
+    scene3D.renderer.domElement.style.left = '0px';
+    scene3D.renderer.domElement.style.top = '0px';
+    scene3D.renderer.domElement.style.width = `${w}px`;
+    scene3D.renderer.domElement.style.height = `${h}px`;
+    scene3D.renderer.domElement.style.maxWidth = 'none';
+    scene3D.renderer.domElement.style.maxHeight = 'none';
+    scene3D.renderer.domElement.style.flex = 'none';
+    scene3D.renderer.domElement.style.boxSizing = 'border-box';
     scene3D.renderer.domElement.style.display = 'block';
     scene3D.renderer.shadowMap.enabled = false;
     scene3D.renderer.setClearColor(0x000000, 0);
@@ -1840,8 +1855,11 @@ function init3DScene() {
         }
         const rect = typeof canvas.getBoundingClientRect === 'function'
             ? canvas.getBoundingClientRect() : null;
-        const cssWidth = Math.max(1, Math.floor(rect?.width || canvas.clientWidth || 0));
-        const cssHeight = Math.max(1, Math.floor(rect?.height || canvas.clientHeight || 0));
+        // clientWidth/clientHeight are the host content-box dimensions used by
+        // the absolute renderer surface. Fall back to the rect for test DOMs
+        // and hidden-layout transitions where client dimensions are absent.
+        const cssWidth = Math.max(1, Math.floor(canvas.clientWidth || rect?.width || 0));
+        const cssHeight = Math.max(1, Math.floor(canvas.clientHeight || rect?.height || 0));
         if (cssWidth < 10 || cssHeight < 10) return null;
         const dpr = Math.min(window.devicePixelRatio || 1, 2);
         const pixelWidth = Math.max(1, Math.round(cssWidth * dpr));
@@ -1859,8 +1877,12 @@ function init3DScene() {
             viewer3DSize = { cssWidth, cssHeight, dpr, pixelWidth, pixelHeight };
         }
         viewer3DSizeDirty = false;
-        scene3D.renderer.domElement.style.width = '100%';
-        scene3D.renderer.domElement.style.height = '100%';
+        scene3D.renderer.domElement.style.left = '0px';
+        scene3D.renderer.domElement.style.top = '0px';
+        scene3D.renderer.domElement.style.width = `${cssWidth}px`;
+        scene3D.renderer.domElement.style.height = `${cssHeight}px`;
+        scene3D.renderer.domElement.style.maxWidth = 'none';
+        scene3D.renderer.domElement.style.maxHeight = 'none';
         scene3D.renderer.domElement.style.display = 'block';
         return { ...viewer3DSize, changed };
     }
@@ -2760,7 +2782,12 @@ function sync3DCameraPose({ position, target, quaternion, up, near, far, aspect,
         // continuous instead of choosing the opposite roll.
         camera.lookAt(controls.target);
     }
-    if (Number.isFinite(near)) camera.near = Math.max(0.001, Number(near));
+    if (Number.isFinite(near)) {
+        // Persisted poses from older builds used a Fit-derived near plane.
+        // Reusing that value after a Session restore can clip foreground
+        // anatomy during zoom even though it is inside the visible panel.
+        camera.near = Math.max(0.01, Math.min(0.1, Number(near)));
+    }
     if (Number.isFinite(far)) camera.far = Math.max(camera.near + 1, Number(far));
     if (Number.isFinite(aspect) && aspect > 0) camera.aspect = Number(aspect);
     if (Number.isFinite(fov) && camera.isPerspectiveCamera) camera.fov = Number(fov);
@@ -2797,7 +2824,7 @@ function fitCameraToScene() {
             position: new THREE.Vector3(200, 150, 200),
             target: new THREE.Vector3(0, 0, 0),
             up: new THREE.Vector3(0, 1, 0),
-            near: 0.1,
+            near: 0.01,
             far: 5000,
             saveState: true,
         });
@@ -2808,14 +2835,36 @@ function fitCameraToScene() {
     const size = new THREE.Vector3();
     box.getSize(size);
     const maxDim = Math.max(size.x, size.y, size.z) || 1;
-    const dist = maxDim * 1.8;
-    // 3D Slicer-like default view angle (slightly from top-right)
+    const sphere = new THREE.Sphere();
+    box.getBoundingSphere(sphere);
+    const radius = Math.max(sphere.radius, maxDim * 0.5, 1);
+
+    // Fit the actual perspective frustum rather than using a fixed multiple
+    // of the longest box edge. The horizontal FOV changes with the viewer
+    // aspect ratio, so the old estimate could fit one axis while clipping the
+    // other even though black space was still visible in the panel.
+    const aspect = Math.max(0.1, Number(scene3D.camera.aspect) || 1);
+    const halfFovY = (Number(scene3D.camera.fov) || 50) * Math.PI / 360;
+    const halfFovX = Math.atan(Math.tan(halfFovY) * aspect);
+    const limitingHalfFov = Math.max(0.01, Math.min(halfFovX, halfFovY));
+    const fitDistance = radius / Math.sin(limitingHalfFov);
+    const minDistance = Number(scene3D.controls.minDistance) || 0;
+    const dist = Math.max(fitDistance * 1.12, minDistance * 1.05, maxDim * 0.8);
+    // 3D Slicer-like default view angle (slightly from top-right). Keep the
+    // direction normalized so the camera is exactly `dist` away from the
+    // fitted center; adding dist to each component would shorten the real
+    // distance to 0.866 * dist and reintroduce edge clipping.
+    const viewDirection = new THREE.Vector3(0.5, 0.5, 0.5).normalize();
     sync3DCameraPose({
-        position: new THREE.Vector3(center.x + dist * 0.5, center.y + dist * 0.5, center.z + dist * 0.5),
+        position: center.clone().add(viewDirection.multiplyScalar(dist)),
         target: center,
         up: new THREE.Vector3(0, 1, 0),
-        near: dist * 0.005,
-        far: dist * 20,
+        // A small near plane is intentional: after a user zooms into a large
+        // anatomy mesh, a near plane derived from the original Fit distance
+        // can slice away the foreground while the model is still well inside
+        // the visible panel.
+        near: 0.01,
+        far: Math.max(5000, dist + radius * 4),
         saveState: true,
     });
 }

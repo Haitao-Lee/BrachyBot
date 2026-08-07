@@ -10,7 +10,10 @@ def test_3d_renderer_uses_one_css_to_drawing_buffer_geometry_path():
     assert "function syncViewer3DSize({ force = false } = {})" in source
     assert "renderer.setPixelRatio(dpr)" in source
     assert "renderer.setSize(cssWidth, cssHeight, false)" in source
-    assert "renderer.domElement.style.width = '100%'" in source
+    assert "renderer.domElement.style.position = 'absolute'" in source
+    assert "renderer.domElement.style.width = `${cssWidth}px`" in source
+    assert "renderer.domElement.style.height = `${cssHeight}px`" in source
+    assert "canvas.clientWidth || rect?.width" in source
     assert "const { pixelWidth, pixelHeight, dpr, cssWidth, cssHeight } = geometry" in source
     assert "setViewport(0, 0, pixelWidth, pixelHeight)" in source
     assert "setScissor(0, 0, pixelWidth, pixelHeight)" in source
@@ -22,6 +25,12 @@ def test_3d_renderer_uses_one_css_to_drawing_buffer_geometry_path():
     assert "viewer3DSizeDirty" in source
     assert "axesGroup.quaternion.copy(scene3D.camera.quaternion)" in source
     assert "function sync3DCameraPose" in source
+    assert "const halfFovX = Math.atan(Math.tan(halfFovY) * aspect)" in source
+    assert "box.getBoundingSphere(sphere)" in source
+    assert "const viewDirection = new THREE.Vector3(0.5, 0.5, 0.5).normalize()" in source
+    assert "center.clone().add(viewDirection.multiplyScalar(dist))" in source
+    assert "near: 0.01" in source
+    assert "camera.near = Math.max(0.01, Math.min(0.1, Number(near)))" in source
 
 
 def test_force_render_reuses_the_same_resize_guard_without_replacing_camera_pose():
