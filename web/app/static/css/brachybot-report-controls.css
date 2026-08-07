@@ -504,7 +504,7 @@
 }
 
 .viewer-card-body {
-    flex: 1;
+    flex: 1 1 auto;
     display: flex;
     flex-direction: column;
     overflow: hidden;
@@ -704,7 +704,8 @@
     min-height: 0;
     min-width: 0;
     display: block;
-    flex: 1 1 0;
+    flex: 1 1 auto;
+    align-self: stretch;
     box-sizing: border-box;
     overflow: hidden;
 }
@@ -718,8 +719,12 @@
     height: 100%;
     min-width: 0;
     min-height: 0;
+    display: block;
+    flex: 1 1 auto;
+    align-self: stretch;
     overflow: hidden;
     box-sizing: border-box;
+    contain: layout paint;
 }
 
 /* The 3D host contains a WebGL surface plus independent HTML overlays. Keep

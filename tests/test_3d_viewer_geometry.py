@@ -48,7 +48,14 @@ def test_3d_renderer_uses_one_css_to_drawing_buffer_geometry_path():
     assert "depthWrite: opacity >= 0.999" in source
     assert "addEventListener('wheel', markCameraInteraction" in source
     assert "controls.addEventListener('start', markCameraInteraction)" in source
-    assert "if (cameraOwnsView && !hydrationCentering) return false" in source
+    assert "scene3D._cameraInteractionKind = 'programmatic'" in source
+    assert "const deliberateCloseup = cameraOwnsView" in source
+    assert "const hardClip = !validProjection || outside" in source
+    assert "reason: 'camera-rotation-guard'" in source
+    assert "function centerWorldGeometryForDepthSort(object)" in source
+    assert "window.centerWorldGeometryForDepthSort = centerWorldGeometryForDepthSort" in source
+    assert "worldGeometryCentered: true" in source
+    assert "depthWriteWhenTransparent" in source
 
 
 def test_force_render_reuses_the_same_resize_guard_without_replacing_camera_pose():
@@ -85,6 +92,34 @@ def test_3d_host_cannot_leave_a_smaller_inner_surface_after_flex_reflow():
     assert "inset: 0 !important;" in css
     assert "width: 100% !important;" in css
     assert "height: 100% !important;" in css
+    assert "align-self: stretch;" in css
+    assert "contain: layout paint;" in css
+
+
+def test_world_coordinate_surfaces_are_centered_before_transparent_sorting():
+    manual = (ROOT / "web/app/static/js/brachybot-3d-manual.js").read_text(encoding="utf-8")
+    layout = (ROOT / "web/app/static/js/brachybot-viewer-layout.js").read_text(encoding="utf-8")
+    guide = (ROOT / "web/app/static/js/brachybot-surgical-guide.js").read_text(encoding="utf-8")
+
+    add_mesh = manual.split("function addMeshToScene(meshData)", 1)[1].split(
+        "// Single entry point for every non-pointer camera change", 1
+    )[0]
+    assert "source === 'surgical_guide'" in add_mesh
+    assert "depthWrite: opacity >= 0.999 || depthWriteWhenTransparent" in add_mesh
+    assert "centerWorldGeometryForDepthSort(mesh);" in add_mesh
+    assert "source: 'surgical_guide'" in guide
+    assert "window.centerWorldGeometryForDepthSort?.(mesh);" in layout
+    assert "centerWorldGeometryForDepthSort(mesh);" in manual
+
+
+def test_rotation_guard_preserves_zoom_and_pan_closeups():
+    source = (ROOT / "web/app/static/js/brachybot-3d-manual.js").read_text(encoding="utf-8")
+    guard = source.split("const deliberateCloseup = cameraOwnsView", 1)[1].split(
+        "const shouldReframe", 1
+    )[0]
+    assert "interactionKind === 'zoom' || interactionKind === 'pan'" in guard
+    assert "hardClip" in guard
+    assert "camera-rotation-guard" in source
 
 
 def test_2d_zoom_applies_each_overlay_transform_once():
