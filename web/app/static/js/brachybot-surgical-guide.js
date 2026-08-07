@@ -16,7 +16,7 @@
         auxiliary_holes_per_ring: 12,
         auxiliary_hole_first_offset_mm: 4,
         auxiliary_hole_ring_spacing_mm: 3,
-        geometry_resolution_mm: 0.35,
+        geometry_resolution_mm: 0.2,
     });
     const GUIDE_CONTROLS = Object.freeze({
         skin_threshold_hu: 'guideSkinThreshold',
