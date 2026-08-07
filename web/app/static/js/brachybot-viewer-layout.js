@@ -1434,7 +1434,7 @@ function fitCameraToDoseSurfaceScene() {
         far: dist * 25,
         aspect: scene3D.camera.aspect,
         fov: scene3D.camera.fov,
-        zoom: scene3D.camera.zoom,
+        zoom: 1,
         saveState: true,
     };
     if (typeof window.sync3DCameraPose === 'function') {

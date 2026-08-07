@@ -29,6 +29,7 @@ def test_3d_renderer_uses_one_css_to_drawing_buffer_geometry_path():
     assert "box.getBoundingSphere(sphere)" in source
     assert "const viewDirection = new THREE.Vector3(0.5, 0.5, 0.5).normalize()" in source
     assert "center.clone().add(viewDirection.multiplyScalar(dist))" in source
+    assert "        zoom: 1," in source
     assert "near: 0.01" in source
     assert "camera.near = Math.max(0.01, Math.min(0.1, Number(near)))" in source
 
