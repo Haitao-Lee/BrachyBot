@@ -1079,7 +1079,7 @@ function _reconstructMask3D(id, silent = false) {
     const material = new THREE.MeshPhysicalMaterial({
         color, transparent: true, opacity,
         side: THREE.DoubleSide, roughness: 0.5, metalness: 0.1,
-        depthWrite: opacity > 0.001,
+        depthWrite: opacity >= 0.999,
     });
     const mesh = new THREE.Mesh(geometry, material);
     mesh.userData = { type: 'mask', id, source: 'mask' };
@@ -1138,7 +1138,7 @@ function applyMeshOpacity(mesh, opacity, visible = true) {
     _forEachMaterial(mesh, mat => {
         mat.transparent = op < 0.999;
         mat.opacity = op;
-        mat.depthWrite = op > 0.001;
+        mat.depthWrite = op >= 0.999;
         mat.needsUpdate = true;
     });
     applyMeshVisibility(mesh, visible, op);
@@ -1392,7 +1392,7 @@ async function _applyDoseTextureToMesh(id, mesh, requestScope = _captureViewer3D
         opacity,
         side: THREE.DoubleSide,
         shininess: 35,
-        depthWrite: opacity > 0.001,
+        depthWrite: opacity >= 0.999,
     });
     mesh.visible = visible && opacity > 0.001;
     surface.visible = mesh.visible;
@@ -1582,9 +1582,11 @@ async function setDoseTextureMode(enabled, opts = {}) {
             // Hide 3D colorbar when switching back to normal surface
             update3DColorbar(false);
         }
-        if (scene3D.renderer && scene3D.scene && scene3D.camera) {
-            scene3D.renderer.render(scene3D.scene, scene3D.camera);
-        }
+        // Keep all live-scene renders on the 3D scheduler.  Calling the raw
+        // renderer here can inherit the axes viewport/scissor from the last
+        // frame and paint only an inner rectangle of the viewer.
+        if (typeof scene3D.renderNow === 'function') scene3D.renderNow();
+        else if (scene3D.requestRender) scene3D.requestRender(2);
     } catch (e) {
         if (!_viewer3DRequestScopeIsCurrent(requestScope)) return { stale: true };
         console.warn('[DoseTexture] failed:', e);

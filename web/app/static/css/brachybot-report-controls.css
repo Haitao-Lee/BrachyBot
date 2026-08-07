@@ -509,6 +509,8 @@
     flex-direction: column;
     overflow: hidden;
     min-height: 0;
+    min-width: 0;
+    width: 100%;
 }
 .viewer-card-canvas {
     width: 100%;
@@ -696,11 +698,28 @@
 .viewer-no-data svg { opacity: 0.3; }
 
 .viewer-card-3d .viewer-card-canvas {
-    min-height: 200px;
+    position: relative;
+    width: 100%;
+    height: 100%;
+    min-height: 0;
     min-width: 0;
-    height: auto;
     display: block;
-    flex: 1 1 auto;
+    flex: 1 1 0;
+    box-sizing: border-box;
+    overflow: hidden;
+}
+
+/* The WebGL canvas is an absolute surface inside this host.  Keeping the
+   host's box explicit prevents flex/grid reflow from leaving a smaller stale
+   drawing rectangle inside the visible 3D card. */
+#canvas3D {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+    box-sizing: border-box;
 }
 
 /* The 3D host contains a WebGL surface plus independent HTML overlays. Keep
