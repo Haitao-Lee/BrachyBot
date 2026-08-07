@@ -295,7 +295,7 @@ def test_needle_render_scheduler_survives_mixed_static_asset_revisions():
     # index.html. A stale assertion here falsely reports a deployment bug and
     # hides whether the endpoint interaction bundle is really versioned.
     assert "brachybot-viewer-layout.js?v=19" in index
-    assert "brachybot-3d-manual.js?v=45" in index
+    assert "brachybot-3d-manual.js?v=46" in index
     assert "scene3D.requestRender(1)" in layout
     assert "scene3D.requestRender(2)" in layout
     assert "window.requestRender = requestRender;" in manual

@@ -1983,6 +1983,7 @@ function init3DScene() {
     window.requestRender = requestRender;
     scene3D._cameraUserInteracted = false;
     scene3D._cameraHydrationActive = false;
+    scene3D._cameraFitTimer = null;
     // A pointer on the actual OrbitControls surface means the operator owns
     // the camera now. Background mesh hydration may still finish, but it must
     // never recenter or resize a view the operator has already changed.
@@ -1990,6 +1991,8 @@ function init3DScene() {
         scene3D._cameraUserInteracted = true;
         scene3D._workspaceRestoreActive = false;
         scene3D._cameraHydrationActive = false;
+        if (scene3D._cameraFitTimer) clearTimeout(scene3D._cameraFitTimer);
+        scene3D._cameraFitTimer = null;
     };
     scene3D.renderer.domElement.addEventListener('pointerdown', markCameraInteraction, true);
     scene3D.renderer.domElement.addEventListener('mousedown', markCameraInteraction, true);
@@ -2812,6 +2815,26 @@ function addMeshToScene(meshData) {
 
     // Fit camera to all meshes (removed — only reset via explicit button click)
     if (scene3D.requestRender) scene3D.requestRender(4);
+    // Mesh hydration is incremental. A restore can finish with the first
+    // CTV/OAR mesh in the scene and add remaining anatomy later; debounce a fit
+    // over the live scene so the final mesh cannot remain stranded at one edge
+    // of the panel. Pointer interaction keeps ownership of the camera.
+    if ((scene3D._cameraHydrationActive === true || scene3D._workspaceRestoreActive === true)
+        && scene3D._cameraUserInteracted !== true) {
+        if (scene3D._cameraFitTimer) clearTimeout(scene3D._cameraFitTimer);
+        scene3D._cameraFitTimer = setTimeout(() => {
+            scene3D._cameraFitTimer = null;
+            if (scene3D._cameraUserInteracted === true) return;
+            try {
+                window.ensureCameraFitsVisibleScene?.({
+                    forceCenter: true,
+                    reason: 'mesh-hydration-batch',
+                });
+            } catch (error) {
+                console.warn('[3D camera] hydration mesh fit failed:', error);
+            }
+        }, 80);
+    }
 }
 
 // Single entry point for every non-pointer camera change. Keeping position,
@@ -2975,8 +2998,14 @@ function ensureCameraFitsVisibleScene({ forceCenter = false, reason = '' } = {})
     // hydration, or when the old pose actually clips the object. Do not
     // recenter a deliberate user pan during a normal resize.
     const offCenter = Math.abs(projectedCenterX) > 0.14 || Math.abs(projectedCenterY) > 0.14;
+    const cameraOwnsView = scene3D._cameraUserInteracted === true;
     const hydrationCentering = forceCenter || scene3D._workspaceRestoreActive === true;
-    if (!hydrationCentering && !outside) return false;
+    // A restored pose may leave all eight corners technically inside the
+    // frustum while the mesh is visibly pushed to one side. Recenter that
+    // state only while the application still owns the camera; after pointer
+    // interaction, preserve the deliberate pan/rotation.
+    const shouldReframe = hydrationCentering || outside || (offCenter && !cameraOwnsView);
+    if (!shouldReframe) return false;
 
     const center = box.getCenter(new THREE.Vector3());
     const sphere = box.getBoundingSphere(new THREE.Sphere());
@@ -2985,7 +3014,11 @@ function ensureCameraFitsVisibleScene({ forceCenter = false, reason = '' } = {})
     const aspect = Math.max(0.1, Number(camera.aspect) || 1);
     const halfFovX = Math.atan(Math.tan(halfFovY) * aspect);
     const limitingHalfFov = Math.max(0.01, Math.min(halfFovX, halfFovY));
-    const requiredDistance = radius / Math.sin(limitingHalfFov) * 1.18;
+    // OrbitControls uses PerspectiveCamera.zoom for wheel/right-button
+    // dollying in this build. Ignoring it lets a persisted zoomed-in pose clip
+    // the model even after the target is recentered.
+    const cameraZoom = Math.max(0.1, Math.min(Number(camera.zoom) || 1, 100));
+    const requiredDistance = radius * cameraZoom / Math.sin(limitingHalfFov) * 1.18;
     const minDistance = Number(scene3D.controls.minDistance) || 0;
     const direction = camera.position.clone().sub(scene3D.controls.target);
     if (direction.lengthSq() < 1e-8) direction.set(0.5, 0.5, 0.5);

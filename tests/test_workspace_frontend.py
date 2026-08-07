@@ -1286,7 +1286,11 @@ def test_restore_time_3d_camera_guard_reframes_stale_hydration_targets_without_t
     assert "project(camera)" in viewer
     assert "const offCenter = Math.abs(projectedCenterX) > 0.14" in viewer
     assert "const hydrationCentering = forceCenter || scene3D._workspaceRestoreActive === true;" in viewer
-    assert "if (!hydrationCentering && !outside) return false;" in viewer
+    assert "const cameraOwnsView = scene3D._cameraUserInteracted === true;" in viewer
+    assert "const shouldReframe = hydrationCentering || outside || (offCenter && !cameraOwnsView);" in viewer
+    assert "const cameraZoom = Math.max(0.1, Math.min(Number(camera.zoom) || 1, 100));" in viewer
+    assert "const requiredDistance = radius * cameraZoom / Math.sin(limitingHalfFov) * 1.18;" in viewer
+    assert "reason: 'mesh-hydration-batch'" in viewer
     assert "forceCenter: true" in workspace
     assert "reason: 'workspace-restore-settled'" in workspace
     assert "window.ensureCameraFitsVisibleScene = ensureCameraFitsVisibleScene;" in viewer
