@@ -1285,7 +1285,8 @@ def test_restore_time_3d_camera_guard_reframes_stale_hydration_targets_without_t
     assert "function ensureCameraFitsVisibleScene({ forceCenter = false, reason = '' } = {})" in viewer
     assert "project(camera)" in viewer
     assert "const offCenter = Math.abs(projectedCenterX) > 0.14" in viewer
-    assert "if (!forceCenter && !outside && !offCenter) return false;" in viewer
+    assert "const hydrationCentering = forceCenter || scene3D._workspaceRestoreActive === true;" in viewer
+    assert "if (!hydrationCentering && !outside) return false;" in viewer
     assert "forceCenter: true" in workspace
     assert "reason: 'workspace-restore-settled'" in workspace
     assert "window.ensureCameraFitsVisibleScene = ensureCameraFitsVisibleScene;" in viewer
