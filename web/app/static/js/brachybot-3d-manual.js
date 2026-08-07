@@ -2932,6 +2932,7 @@ function fitCameraToScene() {
         position: center.clone().add(viewDirection.multiplyScalar(dist)),
         target: center,
         up: new THREE.Vector3(0, 1, 0),
+        zoom: 1,
         // A small near plane is intentional: after a user zooms into a large
         // anatomy mesh, a near plane derived from the original Fit distance
         // can slice away the foreground while the model is still well inside
