@@ -276,7 +276,7 @@ def test_workspace_transitions_publish_measurable_first_paint_and_restore_stages
     assert "restore.report_and_presentation" in ui_api
     assert "restore.fully_interactive" in ui_api
     assert "brachybot-workspace.js?v=23" in index
-    assert "brachybot-ui-api.js?v=30" in index
+    assert "brachybot-ui-api.js?v=31" in index
 
 
 def test_workspace_fetch_preserves_external_transition_abort_semantics():
@@ -865,6 +865,14 @@ def test_tumor_type_selector_hides_model_implementation_from_the_user():
     assert "Whole-prostate target" in selector
     assert "refreshTumorTypeAvailability" in ui_api
     assert "capability_state" in ui_api
+    # The first probe can run before the authenticated SPA starts. It must be
+    # retried after login/key setup instead of leaving callable BiomedParse
+    # options permanently red after an initial 401.
+    assert "brachybot:auth-ready" in ui_api
+    assert "brachybot:api-key-changed" in ui_api
+    assert "credentials: 'same-origin'" in ui_api
+    auth = read("web/app/static/js/brachybot-auth.js")
+    assert "window.dispatchEvent(new Event('brachybot:auth-ready'))" in auth
     # The selector exposes only the user-facing operational distinction:
     # callable routes are green and unavailable routes are red. Validation
     # maturity remains in the explanatory help text, not a third option color.
