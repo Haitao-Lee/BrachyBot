@@ -695,7 +695,28 @@
 }
 .viewer-no-data svg { opacity: 0.3; }
 
-.viewer-card-3d .viewer-card-canvas { min-height: 200px; }
+.viewer-card-3d .viewer-card-canvas {
+    min-height: 200px;
+    min-width: 0;
+    height: auto;
+    display: block;
+    flex: 1 1 auto;
+}
+
+/* The 3D host contains a WebGL surface plus independent HTML overlays. Keep
+   the renderer out of flex sizing so the camera viewport always matches the
+   visible host rectangle, including after card resizing/fullscreen changes. */
+#canvas3D > canvas:not(.colorbarCanvas) {
+    position: absolute;
+    inset: 0;
+    display: block;
+    flex: none;
+    width: 100%;
+    height: 100%;
+    max-width: none;
+    max-height: none;
+    box-sizing: border-box;
+}
 
 .loading-overlay {
     position: absolute;

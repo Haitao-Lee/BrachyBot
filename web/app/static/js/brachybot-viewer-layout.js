@@ -144,7 +144,13 @@ function _installViewerGeometryObserver() {
     const panel = document.getElementById('viewersPanel');
     if (!panel || panel._geometryObserver || typeof ResizeObserver === 'undefined') return;
     panel._geometryObserver = new ResizeObserver(() => syncViewerGeometry());
-    panel._geometryObserver.observe(panel);
+    // The panel itself does not resize when a child card is changed by the
+    // horizontal handle. Observe the 3D card and its actual canvas host too;
+    // this keeps the WebGL drawing buffer and camera aspect synchronized with
+    // the rectangle the user can see.
+    [panel, panel.querySelector('#viewer3d'), panel.querySelector('#canvas3D')]
+        .filter(Boolean)
+        .forEach(element => panel._geometryObserver.observe(element));
 }
 
 // Width resize (horizontal layout only): sync all viewer widths proportionally
