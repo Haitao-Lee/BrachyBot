@@ -3047,7 +3047,7 @@ function renderDataTree() {
                 ? Number(mask.voxelCount)
                 : (mask.voxels ? mask.voxels.size : 0);
             html += renderTreeItem(id, state_, mask.loading
-                ? _dtText('Building...', 'Building...')
+                ? _dtText('生成中...', 'Building...')
                 : `${voxelCount} vox`);
         });
         html += `</div></div>`;
