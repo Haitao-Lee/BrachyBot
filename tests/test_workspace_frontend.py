@@ -1293,7 +1293,7 @@ def test_restore_time_3d_camera_guard_reframes_stale_hydration_targets_without_t
     assert "(hardClip && !deliberateCloseup)" in viewer
     assert "const cameraZoom = Math.max(0.1, Math.min(Number(camera.zoom) || 1, 100));" in viewer
     assert "const requiredDistance = radius * cameraZoom / Math.sin(limitingHalfFov) * 1.18;" in viewer
-    assert "reason: 'mesh-hydration-batch'" in viewer
+    assert "window.scheduleCameraFitForSceneMutation?.('mesh-hydration-batch');" in viewer
     assert "scene3D._cameraFitTimer = setTimeout" in viewer
     assert "forceCenter: true" in workspace
     assert "reason: 'workspace-restore-settled'" in workspace
