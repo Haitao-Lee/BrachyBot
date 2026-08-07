@@ -84,6 +84,7 @@ GUIDE_BORE_MARGIN_MM = 0.4
 # sleeve edges, plate edges, and the skin-facing surface remain untouched.
 BORE_WALL_PROJECTION_TOLERANCE_FACTOR = 1.25
 BORE_WALL_PROJECTION_MIN_TOLERANCE_MM = 0.2
+BORE_WALL_POLICY = "analytic_cylindrical_projection_after_mesh_smoothing"
 
 _PARAMETER_LIMITS = {
     "skin_threshold_hu": (-800.0, 100.0),
@@ -433,6 +434,15 @@ def planning_signature(snapshot: Mapping[str, Any]) -> str:
     }
     encoded = json.dumps(compact, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
+def guide_bore_quality_ready(state: Any) -> bool:
+    """Return whether a persisted guide has the printable circular-wall QA."""
+    if not isinstance(state, Mapping):
+        return False
+    validation = state.get("validation")
+    quality = validation.get("bore_quality") if isinstance(validation, Mapping) else None
+    return isinstance(quality, Mapping) and quality.get("wall_policy") == BORE_WALL_POLICY
 
 
 def invalidate_surgical_guides(agent: Any, reason: str) -> bool:
@@ -1188,7 +1198,7 @@ def _project_bore_walls(
     primary = [item for item in reports if item["kind"] == "primary"]
     auxiliary = [item for item in reports if item["kind"] == "auxiliary"]
     return result.astype(np.float32), {
-        "wall_policy": "analytic_cylindrical_projection_after_mesh_smoothing",
+        "wall_policy": BORE_WALL_POLICY,
         "tolerance_mm": tolerance,
         "projected_vertex_count": len(projected_indices),
         "primary": primary,
