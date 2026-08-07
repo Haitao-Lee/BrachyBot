@@ -984,21 +984,13 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
                 // Resizing it to capture dimensions changes the next interactive
                 // frame's aspect/DPR and was a source of zoom distortion.
                 scene3D.resize?.();
-                renderer.setViewport(0, 0, renderer.domElement.width, renderer.domElement.height);
-                renderer.setScissorTest(false);
-                renderer.setRenderTarget(null);
-                renderer.autoClear = true;
-                scene3D.camera.updateProjectionMatrix();
-                scene3D.scene.updateMatrixWorld(true);
-                scene3D.camera.updateMatrixWorld(true);
-                renderer.clear(true, true, true);
-                renderer.render(scene3D.scene, scene3D.camera);
+                scene3D.renderNow?.();
                 await _waitFrames(2);
                 if (!isCurrentCapture()) return null;
                 // Render once more after the browser has committed visibility,
                 // material, and camera changes. This avoids intermittent black
                 // captures when the report is generated during reconstruction.
-                renderer.render(scene3D.scene, scene3D.camera);
+                scene3D.renderNow?.();
                 try {
                     const gl = renderer.getContext?.();
                     if (gl && renderer.domElement.width > 0 && renderer.domElement.height > 0) {
@@ -1397,18 +1389,10 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
                         const height = canvas.clientHeight || canvas.height;
                         if (!width || !height) return null;
                         scene3D.resize?.();
-                        renderer.setViewport(0, 0, canvas.width, canvas.height);
-                        renderer.setScissorTest(false);
-                        renderer.setRenderTarget(null);
-                        renderer.autoClear = true;
-                        scene3D.camera.updateProjectionMatrix();
-                        scene3D.scene.updateMatrixWorld(true);
-                        scene3D.camera.updateMatrixWorld(true);
-                        renderer.clear(true, true, true);
-                        renderer.render(scene3D.scene, scene3D.camera);
+                        scene3D.renderNow?.();
                         await _waitFrames(2);
                         if (!isCurrentCapture()) return null;
-                        renderer.render(scene3D.scene, scene3D.camera);
+                        scene3D.renderNow?.();
                         try {
                             const gl = renderer.getContext?.();
                             if (gl && canvas.width > 0 && canvas.height > 0) {

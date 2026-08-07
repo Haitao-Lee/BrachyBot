@@ -10,15 +10,22 @@ def test_3d_renderer_uses_one_css_to_drawing_buffer_geometry_path():
     assert "function syncViewer3DSize({ force = false } = {})" in source
     assert "renderer.setPixelRatio(dpr)" in source
     assert "renderer.setSize(cssWidth, cssHeight, false)" in source
+    assert "scene3D.renderer.sortObjects = true" in source
+    assert "function readViewerDrawingBufferSize()" in source
+    assert "getDrawingBufferSize(drawingBufferSize)" in source
+    assert "const actualBuffer = readViewerDrawingBufferSize()" in source
+    assert "lockRendererSurfaceToHost()" in source
+    assert "surfaceMatchesHost" in source
     assert "renderer.domElement.style.position = 'absolute'" in source
     assert "renderer.domElement.style.width = '100%'" in source
     assert "renderer.domElement.style.height = '100%'" in source
     assert "rect?.width || canvas.clientWidth" in source
     assert "rect?.height || canvas.clientHeight" in source
-    assert "const { pixelWidth, pixelHeight, dpr, cssWidth, cssHeight } = geometry" in source
+    assert "const { pixelWidth, pixelHeight, cssWidth, cssHeight } = geometry" in source
     assert "setViewport(0, 0, pixelWidth, pixelHeight)" in source
     assert "setScissor(0, 0, pixelWidth, pixelHeight)" in source
-    assert "const axisSize = Math.max(1, Math.round(axisSizeCss * dpr))" in source
+    assert "const bufferScaleX = pixelWidth / Math.max(1, cssWidth)" in source
+    assert "const axisSize = Math.max(1, Math.round(axisSizeCss * Math.min(bufferScaleX, bufferScaleY)))" in source
     # A CSS-sized viewport must not be used after a high-DPI renderer is
     # configured; it would crop the scene when the viewer card is resized.
     assert "setViewport(0, 0, w, h)" not in source
@@ -39,6 +46,9 @@ def test_3d_renderer_uses_one_css_to_drawing_buffer_geometry_path():
     assert "scene3D.renderNow = renderSceneNow" in source
     assert "scene3D._cameraHasVisibleFrame = false" in source
     assert "depthWrite: opacity >= 0.999" in source
+    assert "addEventListener('wheel', markCameraInteraction" in source
+    assert "controls.addEventListener('start', markCameraInteraction)" in source
+    assert "if (cameraOwnsView && !hydrationCentering) return false" in source
 
 
 def test_force_render_reuses_the_same_resize_guard_without_replacing_camera_pose():
@@ -58,6 +68,9 @@ def test_external_live_scene_renders_use_the_shared_renderer_scheduler():
     assert "scene3D.renderer.render(scene3D.scene, scene3D.camera)" not in layout
     assert planning.count("scene3D.renderer.render(scene3D.scene, scene3D.camera)") == 0
     assert planning.count("typeof scene3D.renderNow === 'function'") >= 2
+    report = (ROOT / "web/app/static/js/brachybot-report-editor.js").read_text(encoding="utf-8")
+    assert "scene3D.renderNow?.()" in report
+    assert "renderer.render(scene3D.scene, scene3D.camera)" not in report
 
 
 def test_3d_host_cannot_leave_a_smaller_inner_surface_after_flex_reflow():
@@ -69,6 +82,9 @@ def test_3d_host_cannot_leave_a_smaller_inner_surface_after_flex_reflow():
     assert "overflow: hidden;" in css
     assert ".viewer-card-body" in css
     assert "min-width: 0;" in css
+    assert "inset: 0 !important;" in css
+    assert "width: 100% !important;" in css
+    assert "height: 100% !important;" in css
 
 
 def test_2d_zoom_applies_each_overlay_transform_once():

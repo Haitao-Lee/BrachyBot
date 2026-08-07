@@ -1077,9 +1077,10 @@ function _reconstructMask3D(id, silent = false) {
     geometry.setIndex(indices);
     geometry.computeVertexNormals();
     const material = new THREE.MeshPhysicalMaterial({
-        color, transparent: true, opacity,
+        color, transparent: opacity < 0.999, opacity,
         side: THREE.DoubleSide, roughness: 0.5, metalness: 0.1,
         depthWrite: opacity >= 0.999,
+        depthTest: true,
     });
     const mesh = new THREE.Mesh(geometry, material);
     mesh.userData = { type: 'mask', id, source: 'mask' };
@@ -1704,12 +1705,14 @@ function _makeNeedleMesh(needle) {
     const geo = new THREE.CylinderGeometry(0.22, 0.22, length, 10);
     const mat = new THREE.MeshPhysicalMaterial({
         color: 0xff2266,
-        transparent: true,
+        transparent: (needle.opacity ?? 0.75) < 0.999,
         opacity: needle.opacity ?? 0.75,
         metalness: 0.1,
         roughness: 0.4,
         emissive: 0x550011,
         emissiveIntensity: 0.45,
+        depthWrite: (needle.opacity ?? 0.75) >= 0.999,
+        depthTest: true,
     });
     const mesh = new THREE.Mesh(geo, mat);
     mesh.position.copy(new THREE.Vector3().addVectors(points[0], points[1]).multiplyScalar(0.5));
