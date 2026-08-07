@@ -41,6 +41,35 @@ _UPLOADED_LABEL_SOURCES = {
     "manual_upload",
 }
 
+# Marching cubes needs a background sample on every side of a volume to close
+# a surface that touches the CT acquisition boundary. Without this one-voxel
+# guard, a mask that reaches z=0/z=max produces an open, volume-sized cut face;
+# in the WebGL viewer that looks like a screen-aligned inner rectangle and can
+# also make the surface bounds used for camera fitting incomplete. The padding
+# is only for surface extraction. The planning mask and all physical
+# coordinates remain unchanged.
+_MESH_BOUNDARY_PADDING_VOXELS = 1
+
+
+def _pad_surface_volume(volume, fill_value=0):
+    """Pad a 3-D scalar/label volume for a closed marching-cubes surface.
+
+    Return the padded array and the number of padded voxels in array order
+    (z, y, x). The caller subtracts ``padding * spacing`` from marching-cubes
+    vertices before converting them to patient world coordinates.
+    """
+    array = np.asarray(volume)
+    if array.ndim != 3 or _MESH_BOUNDARY_PADDING_VOXELS <= 0:
+        return array, np.zeros(3, dtype=np.float64)
+    pad = int(_MESH_BOUNDARY_PADDING_VOXELS)
+    padded = np.pad(
+        array,
+        ((pad, pad), (pad, pad), (pad, pad)),
+        mode="constant",
+        constant_values=fill_value,
+    )
+    return padded, np.full(3, float(pad), dtype=np.float64)
+
 
 def _viewer_label_array(agent, array_key, path_key, source, reference_image, target_shape):
     """Return one label volume on the current CT grid for every viewer path.
@@ -1353,10 +1382,15 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
                 mask = binary_closing(mask, iterations=2).astype(np.uint8)
                 mask = binary_fill_holes(mask).astype(np.uint8)
 
+            # Add a guard voxel before distance transforms. This closes masks
+            # touching the acquisition boundary without changing the physical
+            # mask used by planning.
+            mask_for_surface, surface_padding_zyx = _pad_surface_volume(mask)
+
             # Use distance transform for smooth surface
             from scipy.ndimage import distance_transform_edt
-            dist_out = distance_transform_edt(1 - mask)
-            dist_in = distance_transform_edt(mask)
+            dist_out = distance_transform_edt(1 - mask_for_surface)
+            dist_in = distance_transform_edt(mask_for_surface)
             smooth_field = dist_out - dist_in
 
             spacing = agent.memory.retrieve("ct_spacing") or (0.68, 0.68, 5.0)
@@ -1366,6 +1400,7 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
             vertices, faces, normals, values = measure.marching_cubes(
                 smooth_field, level=0.0, spacing=spacing_zyx, allow_degenerate=False
             )
+            vertices -= surface_padding_zyx * np.asarray(spacing_zyx, dtype=np.float64)
 
             # Smooth mesh
             vertices = _laplacian_smooth(vertices, faces, iterations=5, factor=0.4)
@@ -1440,6 +1475,7 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
             cache_key = (
                 source, label_id, str(smoothing_key), label_faithful,
                 mask_shape_key, total_voxels, mask_digest,
+                "surface_boundary_padding_v1",
             )
             with _MESH_CACHE_LOCK:
                 cached = _MESH_CACHE.get(cache_key)
@@ -1475,11 +1511,14 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
                     binary_mask = binary_closing(binary_mask, iterations=2).astype(np.uint8)
                     binary_mask = binary_fill_holes(binary_mask).astype(np.uint8)
 
-            # Gaussian smoothing on distance transform for smoother surface
-            # This creates a continuous scalar field from the binary mask
+            # Gaussian smoothing on distance transform for smoother surface.
+            # Pad only the extraction field so masks that touch the CT
+            # acquisition boundary receive a closed cap instead of an open
+            # rectangular cut face. The original planning mask is untouched.
+            binary_for_surface, surface_padding_zyx = _pad_surface_volume(binary_mask)
             from scipy.ndimage import distance_transform_edt
-            dist_out = distance_transform_edt(1 - binary_mask)
-            dist_in = distance_transform_edt(binary_mask)
+            dist_out = distance_transform_edt(1 - binary_for_surface)
+            dist_in = distance_transform_edt(binary_for_surface)
             smooth_field = dist_out - dist_in  # Positive inside, negative outside
 
             # Get spacing, origin, direction from CT data
@@ -1497,6 +1536,7 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
             vertices, faces, normals, values = measure.marching_cubes(
                 smooth_field, level=0.0, spacing=spacing_zyx, allow_degenerate=False
             )
+            vertices -= surface_padding_zyx * np.asarray(spacing_zyx, dtype=np.float64)
 
             # Mesh smoothing also moves a boundary.  Preserve the voxel-faithful
             # hard-obstacle surface so it remains consistent with trajectory
@@ -1546,6 +1586,7 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
                 "label_id": label_id,
                 "source": source,
                 "geometry_mode": "label_faithful" if label_faithful else "presentation_smoothed",
+                "surface_boundary_padding_voxels": int(_MESH_BOUNDARY_PADDING_VOXELS),
                 "cached": False,
             }
             with _MESH_CACHE_LOCK:
@@ -1619,7 +1660,21 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
             if level <= data_min or level >= data_max:
                 level = (data_min + data_max) / 2.0
 
-            vertices, faces, _, _ = measure.marching_cubes(ct_sub, level=level, spacing=sub_spacing, allow_degenerate=False)
+            # Treat the outside of the acquired CT as air for the skin
+            # surface. Padding prevents marching cubes from leaving an open
+            # cap at the first/last slice, which otherwise appears as an
+            # artificial rectangular clipping boundary in 3D.
+            outside_value = min(data_min, level - 1.0)
+            ct_for_surface, surface_padding_zyx = _pad_surface_volume(
+                ct_sub, fill_value=outside_value
+            )
+            vertices, faces, _, _ = measure.marching_cubes(
+                ct_for_surface,
+                level=level,
+                spacing=sub_spacing,
+                allow_degenerate=False,
+            )
+            vertices -= surface_padding_zyx * np.asarray(sub_spacing, dtype=np.float64)
 
             # Smooth jagged marching-cubes surface
             vertices = _laplacian_smooth(vertices, faces, iterations=2, factor=0.2)
@@ -1643,6 +1698,7 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
                 "vertex_count": len(vertices),
                 "face_count": len(faces),
                 "threshold": threshold,
+                "surface_boundary_padding_voxels": int(_MESH_BOUNDARY_PADDING_VOXELS),
             })
         except Exception as e:
             logger.error(f"CT skin reconstruction failed: {e}")

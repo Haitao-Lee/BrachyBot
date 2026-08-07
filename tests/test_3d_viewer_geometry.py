@@ -14,7 +14,8 @@ def test_3d_renderer_uses_one_css_to_drawing_buffer_geometry_path():
     assert "function readViewerDrawingBufferSize()" in source
     assert "getDrawingBufferSize(drawingBufferSize)" in source
     assert "const actualBuffer = readViewerDrawingBufferSize()" in source
-    assert "lockRendererSurfaceToHost()" in source
+    assert "lockRendererSurfaceToHost({ cssWidth, cssHeight })" in source
+    assert "A no-argument call is a guard-only operation" in source
     assert "surfaceMatchesHost" in source
     assert "renderer.domElement.style.position = 'absolute'" in source
     assert "renderer.domElement.style.width = '100%'" in source
@@ -56,6 +57,13 @@ def test_3d_renderer_uses_one_css_to_drawing_buffer_geometry_path():
     assert "window.centerWorldGeometryForDepthSort = centerWorldGeometryForDepthSort" in source
     assert "worldGeometryCentered: true" in source
     assert "depthWriteWhenTransparent" in source
+    assert "function scheduleCameraFitForSceneMutation(reason = 'scene-mutation')" in source
+    assert "window.scheduleCameraFitForSceneMutation = scheduleCameraFitForSceneMutation" in source
+    assert "reason: 'camera-rotation-guard'" in source
+    assert "quaternion: preserveQuaternion" in source
+    assert "surgical_guide: 20" in source
+    assert "seed: 40" in source
+    assert "tube.renderOrder = 30" in source
 
 
 def test_force_render_reuses_the_same_resize_guard_without_replacing_camera_pose():
@@ -109,6 +117,8 @@ def test_world_coordinate_surfaces_are_centered_before_transparent_sorting():
     assert "centerWorldGeometryForDepthSort(mesh);" in add_mesh
     assert "source: 'surgical_guide'" in guide
     assert "window.centerWorldGeometryForDepthSort?.(mesh);" in layout
+    assert "window.scheduleCameraFitForSceneMutation?.('manual-mask-loaded');" in layout
+    assert "renderRole: 'planning_needle'" in layout
     assert "centerWorldGeometryForDepthSort(mesh);" in manual
 
 

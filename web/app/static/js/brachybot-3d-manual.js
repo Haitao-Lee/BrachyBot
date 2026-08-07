@@ -1668,23 +1668,11 @@ function init3DScene() {
     scene3D.scene = new THREE.Scene();
     // No background - use canvas CSS background (#000) for consistency with 2D viewers
 
-    // Measure the host itself. The host is a div with overlay children, not a
-    // drawing canvas; using a guessed size here can leave the first camera
-    // projection out of sync until a later resize event.
-    const hostRect = typeof canvas.getBoundingClientRect === 'function'
-        ? canvas.getBoundingClientRect() : null;
-    // The bounding rectangle is the visible CSS surface.  `clientWidth` can
-    // describe the flex item's layout box before transforms/browser zoom are
-    // applied, while WebGL is painted into the visible rectangle.  Preferring
-    // the rectangle prevents a smaller stale drawing surface from appearing
-    // as an unexplained inner clipping box.
-    const w = Math.max(1, Math.floor(hostRect?.width || canvas.clientWidth || 400));
-    const h = Math.max(1, Math.floor(hostRect?.height || canvas.clientHeight || 300));
-
-    // The host is a flex child with overlay elements.  Make its own box a
-    // real stretchable drawing region before measuring the renderer; otherwise
-    // a late flex pass can leave the WebGL surface constrained by an old
-    // intrinsic size even though the viewer card has already grown.
+    // The host is a flex child with overlay elements. Establish its stretch
+    // contract before measuring it. Measuring first is unsafe during session
+    // hydration/fullscreen transitions: the first layout pass can report the
+    // old intrinsic 320x240 box, and a renderer created from that value then
+    // leaves a smaller black rectangle inside the visible card.
     canvas.style.setProperty('display', 'block', 'important');
     canvas.style.setProperty('width', '100%', 'important');
     canvas.style.setProperty('height', '100%', 'important');
@@ -1692,6 +1680,14 @@ function init3DScene() {
     canvas.style.setProperty('min-height', '0', 'important');
     canvas.style.setProperty('align-self', 'stretch', 'important');
     canvas.style.setProperty('flex', '1 1 auto', 'important');
+
+    // Measure the visible host only after its layout contract is in place.
+    // The bounding rectangle is authoritative; clientWidth/clientHeight are
+    // fallbacks for a hidden panel whose layout is not measurable yet.
+    const hostRect = typeof canvas.getBoundingClientRect === 'function'
+        ? canvas.getBoundingClientRect() : null;
+    const w = Math.max(1, Math.floor(hostRect?.width || canvas.clientWidth || 400));
+    const h = Math.max(1, Math.floor(hostRect?.height || canvas.clientHeight || 300));
 
     scene3D.camera = new THREE.PerspectiveCamera(50, w / h, 0.01, 5000);
     scene3D.camera.position.set(0, 0, 300);
@@ -1894,16 +1890,21 @@ function init3DScene() {
         // aspect ratio.  Percentage values remain the initial fallback.
         const width = Number(cssWidth);
         const height = Number(cssHeight);
-        surface.style.setProperty(
-            'width',
-            width > 0 ? `${Math.round(width)}px` : '100%',
-            'important',
-        );
-        surface.style.setProperty(
-            'height',
-            height > 0 ? `${Math.round(height)}px` : '100%',
-            'important',
-        );
+        // A no-argument call is a guard-only operation.  Do not reset an
+        // already measured pixel size to 100% here: doing so before the next
+        // layout read made CSS geometry and the WebGL drawing buffer compete
+        // on every frame, which produced an apparent inner viewport after a
+        // resize or fullscreen transition.
+        if (width > 0) {
+            surface.style.setProperty('width', `${Math.round(width)}px`, 'important');
+        } else if (!surface.style.width) {
+            surface.style.setProperty('width', '100%', 'important');
+        }
+        if (height > 0) {
+            surface.style.setProperty('height', `${Math.round(height)}px`, 'important');
+        } else if (!surface.style.height) {
+            surface.style.setProperty('height', '100%', 'important');
+        }
         surface.style.setProperty('max-width', 'none', 'important');
         surface.style.setProperty('max-height', 'none', 'important');
         surface.style.flex = 'none';
@@ -1925,7 +1926,10 @@ function init3DScene() {
         const cssHeight = Math.max(1, Math.floor(rect?.height || canvas.clientHeight || 0));
         if (cssWidth < 10 || cssHeight < 10) return null;
         const dpr = Math.min(window.devicePixelRatio || 1, 2);
-        lockRendererSurfaceToHost();
+        // Keep the surface tied to this measurement before checking its
+        // rectangle.  This is intentionally explicit; a guard-only call must
+        // never undo the last measured pixel dimensions.
+        lockRendererSurfaceToHost({ cssWidth, cssHeight });
         const currentBuffer = readViewerDrawingBufferSize();
         const surfaceRect = scene3D.renderer.domElement.getBoundingClientRect?.();
         const surfaceMatchesHost = !surfaceRect
@@ -2149,6 +2153,7 @@ function init3DScene() {
     scene3D._cameraUserInteracted = false;
     scene3D._cameraHydrationActive = false;
     scene3D._cameraFitTimer = null;
+    scene3D._cameraMutationGeneration = 0;
     scene3D._cameraHasVisibleFrame = false;
     scene3D._cameraInteractionKind = 'programmatic';
     scene3D._cameraFitGuardActive = false;
@@ -2171,6 +2176,7 @@ function init3DScene() {
         scene3D._cameraHydrationActive = false;
         if (scene3D._cameraFitTimer) clearTimeout(scene3D._cameraFitTimer);
         scene3D._cameraFitTimer = null;
+        scene3D._cameraMutationGeneration = Number(scene3D._cameraMutationGeneration || 0) + 1;
     };
     scene3D.renderer.domElement.addEventListener('pointerdown', markCameraInteraction, true);
     scene3D.renderer.domElement.addEventListener('mousedown', markCameraInteraction, true);
@@ -2976,6 +2982,24 @@ function addMeshToScene(meshData) {
         depthWriteWhenTransparent,
         renderRole: source === 'surgical_guide' ? 'physical_guide_surface' : source,
     };
+    // Keep all planning artifacts in an explicit depth layer. The guide is
+    // rendered after translucent anatomy and before needles/seeds; its depth
+    // write therefore occludes a path behind a real guide wall while leaving a
+    // path visible through an actual bore. The fallback mapping also protects
+    // meshes restored from older sessions that arrive through this generic
+    // path rather than loadSeeds3D().
+    const renderOrderBySource = {
+        dose: 6,
+        dose_isosurface: 6,
+        surgical_guide: 20,
+        needle: 30,
+        needles: 30,
+        seed: 40,
+        seeds: 40,
+    };
+    if (Object.prototype.hasOwnProperty.call(renderOrderBySource, source)) {
+        mesh.renderOrder = renderOrderBySource[source];
+    }
     centerWorldGeometryForDepthSort(mesh);
 
     scene3D.scene.add(mesh);
@@ -3056,30 +3080,12 @@ function addMeshToScene(meshData) {
             .catch(e => console.warn('[addMeshToScene] dose remap failed:', e));
     }
 
-    // Fit camera to all meshes (removed — only reset via explicit button click)
     if (scene3D.requestRender) scene3D.requestRender(4);
-    // Mesh hydration is incremental. A restore can finish with the first
-    // CTV/OAR mesh in the scene and add remaining anatomy later; debounce a fit
-    // over the live scene so the final mesh cannot remain stranded at one edge
-    // of the panel. Pointer interaction keeps ownership of the camera.
-    if ((scene3D._cameraHasVisibleFrame !== true
-        || scene3D._cameraHydrationActive === true
-        || scene3D._workspaceRestoreActive === true)
-        && scene3D._cameraUserInteracted !== true) {
-        if (scene3D._cameraFitTimer) clearTimeout(scene3D._cameraFitTimer);
-        scene3D._cameraFitTimer = setTimeout(() => {
-            scene3D._cameraFitTimer = null;
-            if (scene3D._cameraUserInteracted === true) return;
-            try {
-                window.ensureCameraFitsVisibleScene?.({
-                    forceCenter: true,
-                    reason: 'mesh-hydration-batch',
-                });
-            } catch (error) {
-                console.warn('[3D camera] hydration mesh fit failed:', error);
-            }
-        }, 80);
-    }
+    // Mesh hydration is incremental. Always debounce against the complete
+    // live scene while the application owns the camera; otherwise a late OAR,
+    // dose surface, needle, or guide can remain outside the frame even though
+    // the first CTV mesh was fitted successfully.
+    window.scheduleCameraFitForSceneMutation?.('mesh-hydration-batch');
 }
 
 // Single entry point for every non-pointer camera change. Keeping position,
@@ -3287,9 +3293,17 @@ function ensureCameraFitsVisibleScene({ forceCenter = false, reason = '' } = {})
     const distance = hydrationCentering
         ? Math.max(requiredDistance, minDistance * 1.05)
         : Math.max(requiredDistance, currentDistance || 0);
+    // During a live rotation, preserve the accumulated quaternion. Rebuilding
+    // it with lookAt while the pointer is crossing a pole is exactly the
+    // orientation discontinuity that used to produce a sudden 180-degree
+    // jump. Hydration/Fit is allowed to establish a fresh orientation.
+    const preserveQuaternion = cameraOwnsView && !hydrationCentering
+        ? camera.quaternion.clone()
+        : null;
     sync3DCameraPose({
         position: center.clone().add(direction.multiplyScalar(distance)),
         target: center,
+        quaternion: preserveQuaternion,
         up: camera.up.clone(),
         near: 0.01,
         far: Math.max(5000, distance + radius * 4),
@@ -3313,6 +3327,43 @@ function ensureCameraFitsVisibleScene({ forceCenter = false, reason = '' } = {})
     return true;
 }
 window.ensureCameraFitsVisibleScene = ensureCameraFitsVisibleScene;
+
+// A scene is hydrated in several independent requests (CTV/OAR, planning
+// geometry, dose surfaces and guide). Fitting only the first response leaves
+// the remaining objects clipped at one side of the viewport. This helper is
+// the single mutation boundary for all those paths. It never takes ownership
+// away from a user who has already rotated, panned, or zoomed the camera.
+function scheduleCameraFitForSceneMutation(reason = 'scene-mutation') {
+    if (typeof scene3D === 'undefined' || !scene3D?.initialized) return false;
+    if (scene3D._cameraUserInteracted === true
+        && scene3D._workspaceRestoreActive !== true) {
+        scene3D.requestRender?.(2);
+        return false;
+    }
+    if (scene3D._cameraFitTimer) clearTimeout(scene3D._cameraFitTimer);
+    const generation = Number(scene3D._cameraMutationGeneration || 0) + 1;
+    scene3D._cameraMutationGeneration = generation;
+    scene3D._cameraFitTimer = setTimeout(() => {
+        scene3D._cameraFitTimer = null;
+        if (generation !== Number(scene3D._cameraMutationGeneration || 0)) return;
+        if (scene3D._cameraUserInteracted === true
+            && scene3D._workspaceRestoreActive !== true) {
+            scene3D.requestRender?.(2);
+            return;
+        }
+        try {
+            const forceCenter = scene3D._cameraHasVisibleFrame !== true
+                || scene3D._workspaceRestoreActive === true
+                || scene3D._cameraHydrationActive === true;
+            window.ensureCameraFitsVisibleScene?.({ forceCenter, reason });
+        } catch (error) {
+            console.warn('[3D camera] scene mutation fit failed:', error);
+        }
+    }, 140);
+    scene3D.requestRender?.(2);
+    return true;
+}
+window.scheduleCameraFitForSceneMutation = scheduleCameraFitForSceneMutation;
 
 // Temporarily frame a small set of seeds for a monitor evidence screenshot.
 // This is deliberately separate from Fit: monitoring must restore the user's
@@ -3739,10 +3790,12 @@ async function toggle3DSkin(on) {
                 type: 'skin',
                 source: 'skin',
                 depthWriteWhenTransparent: false,
+                renderRole: 'anatomy_surface',
             };
             centerWorldGeometryForDepthSort(mesh);
             scene3D.scene.add(mesh);
             scene3D.skinMesh = mesh;
+            window.scheduleCameraFitForSceneMutation?.('skin-surface-loaded');
             if (typeof state !== 'undefined' && state.doseTexture?.enabled &&
                 typeof _prepareDoseTextureSceneVisibility === 'function') {
                 _prepareDoseTextureSceneVisibility();
@@ -3956,10 +4009,17 @@ async function loadSeeds3D() {
             const geometry = new THREE.CylinderGeometry(seedRadius, seedRadius, seedLength, 16);
             const material = new THREE.MeshPhysicalMaterial({
                 color: 0xe6e64d,  // Zhiyuan yellow: RGB(230, 230, 77)
+                // Keep seeds in the transparent planning layer so the guide
+                // can write its physical wall depth before seeds/needles are
+                // drawn. Opacity is still one; this only controls queueing.
+                transparent: true,
+                opacity: 1,
                 metalness: 0.5,
                 roughness: 0.3,
                 emissive: 0x332200,
                 emissiveIntensity: 0.5,
+                depthWrite: true,
+                depthTest: true,
             });
             const mesh = new THREE.Mesh(geometry, material);
 
@@ -3969,7 +4029,13 @@ async function loadSeeds3D() {
             mesh.setRotationFromQuaternion(quaternion);
             mesh.position.copy(pos);
 
-            mesh.userData = { type: 'seed', id: seed.id, trajectoryId: _normalizeTrajectoryId(seed.trajectory_id) };
+            mesh.renderOrder = 40;
+            mesh.userData = {
+                type: 'seed',
+                id: seed.id,
+                trajectoryId: _normalizeTrajectoryId(seed.trajectory_id),
+                renderRole: 'planning_seed',
+            };
             scene3D.scene.add(mesh);
             scene3D.meshes[seed.id] = mesh;
         });
@@ -4011,6 +4077,7 @@ async function loadSeeds3D() {
                         depthTest: true,
                     });
                     tube = new THREE.Mesh(geo, mat);
+                    tube.renderOrder = 30;
                     // Position at midpoint
                     const mid = new THREE.Vector3().addVectors(points[0], points[1]).multiplyScalar(0.5);
                     tube.position.copy(mid);
@@ -4029,12 +4096,14 @@ async function loadSeeds3D() {
                         depthTest: true,
                     });
                     tube = new THREE.Mesh(tubeGeometry, tubeMaterial);
+                    tube.renderOrder = 30;
                 }
                 tube.userData = {
                     type: 'needle',
                     id: needle.id,
                     trajectoryId: _normalizeTrajectoryId(needle.trajectory_id),
                     depthWriteWhenTransparent: false,
+                    renderRole: 'planning_needle',
                 };
                 // Multi-point TubeGeometry contains world coordinates.  The
                 // two-point cylinder is already local and centered, so the
@@ -4055,11 +4124,13 @@ async function loadSeeds3D() {
                 const lineGeo = new THREE.BufferGeometry().setFromPoints(points);
                 const lineMat = new THREE.LineBasicMaterial({ color: 0xff2266, linewidth: 2 });
                 const line = new THREE.Line(lineGeo, lineMat);
+                line.renderOrder = 30;
                 line.userData = {
                     type: 'needle',
                     id: needle.id,
                     trajectoryId: _normalizeTrajectoryId(needle.trajectory_id),
                     depthWriteWhenTransparent: false,
+                    renderRole: 'planning_needle',
                 };
                 centerWorldGeometryForDepthSort(line);
                 scene3D.scene.add(line);
@@ -4105,6 +4176,7 @@ async function loadSeeds3D() {
         });
 
         uiDebugLog(`[loadSeeds3D] Added ${data.seeds.length} seeds + ${data.needles.length} needles to 3D scene (total meshes: ${Object.keys(scene3D.meshes).length})`);
+        window.scheduleCameraFitForSceneMutation?.('planning-geometry-loaded');
 
         return { seeds: data.seeds.length, needles: data.needles.length };
     } catch (e) {
@@ -4164,7 +4236,9 @@ async function loadDoseIsosurface(threshold = 1.0, color = 0x00ff88, requestScop
             type: 'dose_isosurface',
             threshold: threshold,
             depthWriteWhenTransparent: false,
+            renderRole: 'dose_surface',
         };
+        mesh.renderOrder = 6;
         centerWorldGeometryForDepthSort(mesh);
         scene3D.scene.add(mesh);
         scene3D.meshes[existingId] = mesh;
@@ -4205,6 +4279,7 @@ async function loadDoseIsosurface(threshold = 1.0, color = 0x00ff88, requestScop
             });
         }
         renderDataTree();
+        window.scheduleCameraFitForSceneMutation?.('dose-isosurface-loaded');
 
         return { vertices: data.vertex_count, faces: data.face_count, threshold };
     } catch (e) {

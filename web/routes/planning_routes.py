@@ -63,6 +63,27 @@ except ImportError:  # pragma: no cover - supports `python web/server.py`.
 
 logger = logging.getLogger(__name__)
 
+# Marching cubes needs an outside background sample when a dose isosurface
+# touches the planning-grid boundary.  The padding is used only while
+# extracting the display surface; dose values, grid geometry, and all
+# planning calculations remain on the original array.
+_DOSE_SURFACE_BOUNDARY_PADDING_VOXELS = 1
+
+
+def _pad_dose_surface_volume(volume, fill_value):
+    """Pad a dose grid for a closed display isosurface and return the offset."""
+    array = np.asarray(volume)
+    pad = int(_DOSE_SURFACE_BOUNDARY_PADDING_VOXELS)
+    if array.ndim != 3 or pad <= 0:
+        return array, np.zeros(3, dtype=np.float64)
+    padded = np.pad(
+        array,
+        ((pad, pad), (pad, pad), (pad, pad)),
+        mode="constant",
+        constant_values=fill_value,
+    )
+    return padded, np.full(3, float(pad), dtype=np.float64)
+
 
 def _saved_dose_scale_gy(agent) -> float:
     """Return the calibration owned by the current plan/session."""
@@ -2169,10 +2190,22 @@ def register_planning_routes(
                                 "face_count": 0, "threshold": threshold, "dose_range": [data_min, data_max],
                                 "dose_units": DOSE_MODEL_UNITS, "dose_scale_gy": dose_scale_gy})
 
-            # Use resampled_ct spacing (z,y,x -> x,y,z for marching cubes)
+            # Use resampled_ct spacing (z,y,x -> x,y,z for marching cubes).
+            # Pad only the extraction field so an isosurface that touches the
+            # planning grid gets a closed outside cap instead of a hard
+            # rectangular cut face in the 3D viewer.
             spacing_zyx = tuple(float(s) for s in spacing[::-1])
-
-            vertices, faces, _, _ = measure.marching_cubes(dose_np, level=level, spacing=spacing_zyx, allow_degenerate=False)
+            dose_for_surface, surface_padding_zyx = _pad_dose_surface_volume(
+                dose_np,
+                fill_value=data_min,
+            )
+            vertices, faces, _, _ = measure.marching_cubes(
+                dose_for_surface,
+                level=level,
+                spacing=spacing_zyx,
+                allow_degenerate=False,
+            )
+            vertices -= surface_padding_zyx * np.asarray(spacing_zyx, dtype=np.float64)
 
             # Transform from planning grid voxel coords to world coords
             origin_xyz = np.array(origin[:3], dtype=np.float64)
@@ -2196,6 +2229,7 @@ def register_planning_routes(
                 "dose_range": [data_min, data_max],
                 "dose_units": DOSE_MODEL_UNITS,
                 "dose_scale_gy": dose_scale_gy,
+                "surface_boundary_padding_voxels": int(_DOSE_SURFACE_BOUNDARY_PADDING_VOXELS),
             })
         except Exception as e:
             logger.error(f"Dose isosurface failed: {e}")
