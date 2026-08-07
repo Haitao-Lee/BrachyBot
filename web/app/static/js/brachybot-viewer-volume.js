@@ -1176,7 +1176,17 @@ function renderSliceFromVolume(axis, sliceIndex) {
                         if (!_maskVisibleInTarget(mask)) continue;
                         if (mask.movedTo === 'ctv' && !(isDataTreeNodeVisible2D(dataTreeState.ctv) && state.viewerSettings.showCTV)) continue;
                         if (mask.movedTo === 'oar' && !(isDataTreeNodeVisible2D(dataTreeState.oar) && state.viewerSettings.showOAR)) continue;
-                        if (!mask.voxels || !mask.voxels.has(flatKeyBase)) continue;
+                        // Threshold masks are represented by their source
+                        // metadata instead of millions of string voxel keys.
+                        // Evaluate them against the already loaded HU volume
+                        // for the current pixel; hand-drawn masks continue to
+                        // use their explicit voxel Set.
+                        const thresholdMask = mask.kind === 'threshold'
+                            && Number.isFinite(Number(mask.threshold));
+                        const maskHit = thresholdMask
+                            ? !!(volumeData && volumeData[flatIdx] > Number(mask.threshold))
+                            : !!(mask.voxels && mask.voxels.has(flatKeyBase));
+                        if (!maskHit) continue;
                         const hex = mask.color || '#8b5cf6';
                         const mr = parseInt(hex.slice(1, 3), 16) || 139;
                         const mg = parseInt(hex.slice(3, 5), 16) || 92;
@@ -1745,50 +1755,150 @@ async function syncViewerState() {
     }
 }
 
-function applyThreshold() {
+let _thresholdApplyGeneration = 0;
+
+function _setThresholdApplyBusy(active, message = '') {
+    const button = document.getElementById('viewerThresholdApply');
+    if (!button) return;
+    button.setAttribute('aria-busy', active ? 'true' : 'false');
+    button.disabled = !!active;
+    if (message) button.title = message;
+}
+
+function _yieldViewerWork() {
+    return new Promise(resolve => {
+        // Two scheduling turns are intentional: the first lets the browser
+        // paint the busy state, the second prevents a large CT scan from
+        // monopolising the main thread immediately after the click.
+        const raf = typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function'
+            ? window.requestAnimationFrame.bind(window)
+            : callback => setTimeout(callback, 0);
+        raf(() => setTimeout(resolve, 0));
+    });
+}
+
+async function _countThresholdVoxels(threshold, generation) {
+    if (!volumeData || !volumeShape) return 0;
+    const source = volumeData;
+    let count = 0;
+    const chunkSize = 250000;
+    for (let start = 0; start < source.length; start += chunkSize) {
+        if (generation !== _thresholdApplyGeneration || source !== volumeData) return null;
+        const end = Math.min(source.length, start + chunkSize);
+        for (let index = start; index < end; index += 1) {
+            if (source[index] > threshold) count += 1;
+        }
+        if (end < source.length) await _yieldViewerWork();
+    }
+    return count;
+}
+
+async function applyThreshold() {
+    const generation = ++_thresholdApplyGeneration;
     const raw = document.getElementById('viewerThreshold')?.value?.trim() || '';
     const threshold = raw === '' ? null : Number(raw);
-    state.viewerSettings.threshold = Number.isFinite(threshold) ? threshold : null;
-    if (state.ctLoaded) {
-        clearSliceCache();
-        loadAllSlices();
-    }
-    // Create (or update) a threshold mask in the Data Tree Segmentation group.
-    // The mask is display-only: it never feeds dose/planning.
-    if (Number.isFinite(threshold) && volumeData && volumeShape) {
-        const [Z, Y, X] = volumeShape;
-        const sliceSize = Y * X;
-        const voxels = new Set();
-        for (let z = 0; z < Z; z++) {
-            for (let y = 0; y < Y; y++) {
-                const base = z * sliceSize + y * X;
-                for (let x = 0; x < X; x++) {
-                    if (volumeData[base + x] > threshold) {
-                        voxels.add(`${x},${y},${z}`);
-                    }
-                }
-            }
+    const normalizedThreshold = Number.isFinite(threshold) ? threshold : null;
+    state.viewerSettings.threshold = normalizedThreshold;
+    _setThresholdApplyBusy(true, normalizedThreshold === null ? 'Clearing threshold mask...' : 'Building threshold mask...');
+
+    try {
+        await _yieldViewerWork();
+        if (generation !== _thresholdApplyGeneration) return;
+
+        if (state.ctLoaded) {
+            clearSliceCache();
         }
-        if (!state.maskLabels) state.maskLabels = {};
+
         const id = 'mask_threshold';
-        const existing = state.maskLabels[id];
-        state.maskLabels[id] = {
-            name: existing ? existing.name : `Threshold ${threshold} HU`,
-            color: existing ? existing.color : '#8b5cf6',
-            voxels,
-            visible: existing ? existing.visible !== false : true,
-            visible2D: existing ? existing.visible2D !== false : true,
-            visible3D: existing ? existing.visible3D !== false : true,
-            opacity: existing ? existing.opacity : 0.5,
+        if (normalizedThreshold === null || !volumeData || !volumeShape) {
+            if (state.maskLabels?.[id] && typeof deleteDataTreeMask === 'function') {
+                deleteDataTreeMask(id);
+            } else if (state.maskLabels) {
+                delete state.maskLabels[id];
+                renderDataTree();
+            }
+            await loadAllSlices();
+            _scheduleDataTreeSave('mask.threshold.clear');
+            return;
+        }
+
+        // A threshold mask is a real, case-owned visual data node, but its
+        // voxels are derived from the immutable CT. Storing the threshold and
+        // count rather than millions of `"x,y,z"` strings keeps Apply,
+        // persistence, and session hydration responsive without changing the
+        // actual 2D mask semantics.
+        if (!state.maskLabels) state.maskLabels = {};
+        const existing = state.maskLabels[id] || {};
+        const mask = state.maskLabels[id] = {
+            ...existing,
+            id,
+            objectId: existing.objectId || 'mask:threshold',
+            name: existing.name || `Skin threshold ${normalizedThreshold} HU`,
+            label: existing.label || `Skin threshold ${normalizedThreshold} HU`,
+            type: 'mask',
+            source: 'viewer_threshold',
+            kind: 'threshold',
+            threshold: normalizedThreshold,
+            voxels: null,
+            voxelCount: null,
+            status: 'loading',
+            loading: true,
+            error: null,
+            color: existing.color || '#8b5cf6',
+            visible: existing.visible !== false,
+            visible2D: existing.visible2D !== false,
+            visible3D: existing.visible3D !== false,
+            opacity: typeof existing.opacity === 'number' ? existing.opacity : 0.5,
             axis: 'axial',
+            sessionId: _viewerDataSessionId(),
         };
-        if (voxels.size === 0) {
+        // Start the real 3D surface request immediately. It is independent of
+        // the metadata count and runs while the count yields to the browser.
+        const reconstruction = typeof reconstructOrgan3D === 'function'
+            ? reconstructOrgan3D(id)
+            : Promise.resolve(null);
+        renderDataTree();
+        // Render after the node exists so the current CT slice can use the
+        // same threshold metadata as the Data Tree and 3D reconstruction.
+        // The 3D request is already in flight while the three MPR planes
+        // yield between paints.
+        await loadAllSlices();
+        requestViewerVisualRefresh('mask-threshold-start');
+        _scheduleDataTreeSave('mask.threshold.start');
+        const voxelCount = await _countThresholdVoxels(normalizedThreshold, generation);
+        if (generation !== _thresholdApplyGeneration || voxelCount === null) return;
+        if (voxelCount === 0) {
             delete state.maskLabels[id];
+            renderDataTree();
+            reloadOverlays();
+            addChat('error', 'The threshold produced an empty mask. Choose a lower or higher HU value.');
+            return;
+        }
+        mask.voxelCount = voxelCount;
+        mask.status = 'ready';
+        mask.loading = false;
+        renderDataTree();
+        _scheduleDataTreeSave('mask.threshold.ready');
+        await reconstruction;
+        if (generation === _thresholdApplyGeneration) {
+            const hasMesh = typeof scene3D !== 'undefined' && !!scene3D?.meshes?.[id];
+            mask.status = hasMesh ? 'ready' : (mask.status || 'ready');
+            mask.loading = false;
+            renderDataTree();
+            _scheduleDataTreeSave('mask.threshold.mesh');
+        }
+    } catch (error) {
+        if (generation !== _thresholdApplyGeneration) return;
+        const mask = state.maskLabels?.mask_threshold;
+        if (mask) {
+            mask.loading = false;
+            mask.status = 'error';
+            mask.error = error?.message || String(error);
         }
         renderDataTree();
-        reloadOverlays();
-        requestViewerVisualRefresh('mask-threshold');
-        _scheduleDataTreeSave('mask.threshold');
+        addChat('error', `Threshold mask failed: ${error?.message || error}`);
+    } finally {
+        if (generation === _thresholdApplyGeneration) _setThresholdApplyBusy(false);
     }
 }
 
@@ -2913,21 +3023,26 @@ function renderDataTree() {
             </div>
             <div class="tree-group-items">`;
         masks.forEach(([id, mask]) => {
-            const state_ = ensureDataTreeNodeMetadata({
-                id,
-                objectId: id,
-                label: mask.name || id,
-                type: 'mask',
-                source: 'mask',
-                parentId: 'masks',
-                loaded: true,
-                visible: mask.visible !== false,
-                visible2D: mask.visible2D !== false,
-                visible3D: mask.visible3D !== false,
-                opacity: typeof mask.opacity === 'number' ? mask.opacity : 0.6,
-                color: mask.color || '#8b5cf6',
-            }, 'mask', 'masks');
-            html += renderTreeItem(id, state_, `${mask.voxels ? mask.voxels.size : 0} vox`);
+            // Mutate the durable mask object itself so the identity/status
+            // contract survives a refresh and session hydration; passing a
+            // throwaway object here made the row look correct while its
+            // session/case/version metadata remained absent from the saved
+            // state.
+            const state_ = ensureDataTreeNodeMetadata(mask, 'mask', 'masks');
+            state_.label = mask.name || mask.label || id;
+            state_.source = mask.source || 'mask';
+            state_.loaded = !mask.loading && mask.status !== 'error';
+            state_.visible = mask.visible !== false;
+            state_.visible2D = mask.visible2D !== false;
+            state_.visible3D = mask.visible3D !== false;
+            state_.opacity = typeof mask.opacity === 'number' ? mask.opacity : 0.6;
+            state_.color = mask.color || '#8b5cf6';
+            const voxelCount = Number.isFinite(Number(mask.voxelCount))
+                ? Number(mask.voxelCount)
+                : (mask.voxels ? mask.voxels.size : 0);
+            html += renderTreeItem(id, state_, mask.loading
+                ? _dtText('Building...', 'Building...')
+                : `${voxelCount} vox`);
         });
         html += `</div></div>`;
     }
