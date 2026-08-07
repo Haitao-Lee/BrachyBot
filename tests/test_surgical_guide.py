@@ -8,7 +8,9 @@ import SimpleITK as sitk
 
 from tool_factory.surgical_guide import SurgicalGuideTool
 from web.surgical_guide import (
+    BORE_WALL_POLICY,
     generate_surgical_guide,
+    guide_bore_quality_ready,
     _filter_components,
     guide_state_for_version,
     guide_version_summaries,
@@ -423,7 +425,8 @@ def test_exported_primary_and_auxiliary_bore_walls_keep_exact_circular_radius():
         "auxiliary_holes_enabled": True,
     })
     quality = guide["validation"]["bore_quality"]
-    assert quality["wall_policy"] == "analytic_cylindrical_projection_after_mesh_smoothing"
+    assert quality["wall_policy"] == BORE_WALL_POLICY
+    assert guide_bore_quality_ready(guide) is True
     assert quality["projected_vertex_count"] > 0
     assert quality["primary"]
     assert all(item["projected_vertex_count"] > 0 for item in quality["primary"])
@@ -434,6 +437,10 @@ def test_exported_primary_and_auxiliary_bore_walls_keep_exact_circular_radius():
     payload = mesh_to_ascii_stl(guide["vertices"], guide["faces"])
     exported = validate_exported_stl(payload)
     assert exported["watertight"] is True
+
+
+def test_legacy_guide_without_bore_quality_must_be_regenerated_before_export():
+    assert guide_bore_quality_ready({"status": "ready", "validation": {}}) is False
 
 
 def test_guide_oblique_needle_does_not_penetrate_skin_after_trim():

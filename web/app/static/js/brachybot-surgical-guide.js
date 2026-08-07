@@ -356,6 +356,11 @@
         }
     }
 
+    function hasPrintableBoreQuality(guide) {
+        return guide?.validation?.bore_quality?.wall_policy
+            === 'analytic_cylindrical_projection_after_mesh_smoothing';
+    }
+
     function removeGuideMesh() {
         if (typeof scene3D === 'undefined' || !scene3D?.meshes?.[GUIDE_ID]) return;
         const mesh = scene3D.meshes[GUIDE_ID];
@@ -427,6 +432,17 @@
             const suffix = Number.isInteger(version) && version > 0 ? `?version=${encodeURIComponent(version)}` : '';
             const payload = await guideFetch(`/api/surgical-guides/mesh${suffix}`, {}, sessionId);
             if (generation !== guideLoadGeneration || sessionId !== activeSessionId()) return false;
+            if (payload.guide && !hasPrintableBoreQuality(payload.guide)) {
+                applyGuideMetadata(payload, { ...payload.guide, status: 'stale' });
+                removeGuideMesh();
+                if (options.userInitiated) {
+                    notify(t(
+                        '当前导板由旧几何流程生成，请重新生成后再导出 STL。',
+                        'This guide uses the older geometry pipeline. Regenerate it before STL export.',
+                    ), 'warning');
+                }
+                return false;
+            }
             // A guide whose plan signature still matches the current needle
             // geometry is valid regardless of its stored status. The status
             // can be flipped to "stale" by operations unrelated to guide
@@ -439,7 +455,12 @@
                 removeGuideMesh();
                 return false;
             }
-            applyGuideMetadata(payload, payload.guide);
+            applyGuideMetadata(
+                payload,
+                payload.guide && hasPrintableBoreQuality(payload.guide)
+                    ? payload.guide
+                    : payload.guide ? { ...payload.guide, status: 'stale' } : null,
+            );
             return addGuideMesh(payload.guide);
         } catch (error) {
             // A new or partially restored case normally has no guide. Do not
@@ -464,7 +485,12 @@
                 }),
             }, sessionId);
             if (sessionId !== activeSessionId()) return;
-            applyGuideMetadata(payload, payload.guide);
+            applyGuideMetadata(
+                payload,
+                payload.guide && payload.guide_requires_regeneration
+                    ? { ...payload.guide, status: 'stale' }
+                    : payload.guide,
+            );
             addGuideMesh(payload.guide);
             window.scheduleWorkspaceSave?.('surgical_guide.generated');
             const completed = t(
