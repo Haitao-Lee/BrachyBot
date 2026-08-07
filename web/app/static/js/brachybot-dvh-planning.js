@@ -1451,7 +1451,8 @@ async function refreshPlanningUI(options = {}) {
                         scene3D.controls.syncExternalState?.();
                     }
                     await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
-                    scene3D.renderer.render(scene3D.scene, scene3D.camera);
+                    if (typeof scene3D.renderNow === 'function') scene3D.renderNow();
+                    else scene3D.requestRender?.(2);
                     await new Promise(r => requestAnimationFrame(r));
                     const c = document.querySelector('#canvas3D canvas');
                     if (c) _replaceOrCreate('3d_ctv', _ctvTitle, _ctvCap, c.toDataURL('image/png'));
@@ -1468,7 +1469,8 @@ async function refreshPlanningUI(options = {}) {
             // 4f-2b. Seeds overview capture
             _restoreCamera();
             await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
-            scene3D.renderer.render(scene3D.scene, scene3D.camera);
+            if (typeof scene3D.renderNow === 'function') scene3D.renderNow();
+            else scene3D.requestRender?.(2);
             await new Promise(r => requestAnimationFrame(r));
             const c2 = document.querySelector('#canvas3D canvas');
             if (c2) _replaceOrCreate('3d_seeds', _seedTitle, _seedCap, c2.toDataURL('image/png'));

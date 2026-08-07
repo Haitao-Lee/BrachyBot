@@ -1673,8 +1673,13 @@ function init3DScene() {
     // projection out of sync until a later resize event.
     const hostRect = typeof canvas.getBoundingClientRect === 'function'
         ? canvas.getBoundingClientRect() : null;
-    const w = Math.max(1, Math.floor(canvas.clientWidth || hostRect?.width || 400));
-    const h = Math.max(1, Math.floor(canvas.clientHeight || hostRect?.height || 300));
+    // The bounding rectangle is the visible CSS surface.  `clientWidth` can
+    // describe the flex item's layout box before transforms/browser zoom are
+    // applied, while WebGL is painted into the visible rectangle.  Preferring
+    // the rectangle prevents a smaller stale drawing surface from appearing
+    // as an unexplained inner clipping box.
+    const w = Math.max(1, Math.floor(hostRect?.width || canvas.clientWidth || 400));
+    const h = Math.max(1, Math.floor(hostRect?.height || canvas.clientHeight || 300));
 
     scene3D.camera = new THREE.PerspectiveCamera(50, w / h, 0.01, 5000);
     scene3D.camera.position.set(0, 0, 300);
@@ -1689,8 +1694,8 @@ function init3DScene() {
     scene3D.renderer.domElement.style.position = 'absolute';
     scene3D.renderer.domElement.style.left = '0px';
     scene3D.renderer.domElement.style.top = '0px';
-    scene3D.renderer.domElement.style.width = `${w}px`;
-    scene3D.renderer.domElement.style.height = `${h}px`;
+    scene3D.renderer.domElement.style.width = '100%';
+    scene3D.renderer.domElement.style.height = '100%';
     scene3D.renderer.domElement.style.maxWidth = 'none';
     scene3D.renderer.domElement.style.maxHeight = 'none';
     scene3D.renderer.domElement.style.flex = 'none';
@@ -1855,11 +1860,11 @@ function init3DScene() {
         }
         const rect = typeof canvas.getBoundingClientRect === 'function'
             ? canvas.getBoundingClientRect() : null;
-        // clientWidth/clientHeight are the host content-box dimensions used by
-        // the absolute renderer surface. Fall back to the rect for test DOMs
-        // and hidden-layout transitions where client dimensions are absent.
-        const cssWidth = Math.max(1, Math.floor(canvas.clientWidth || rect?.width || 0));
-        const cssHeight = Math.max(1, Math.floor(canvas.clientHeight || rect?.height || 0));
+        // The rectangle is authoritative for the visible surface.  Reading
+        // clientWidth first can leave the WebGL canvas smaller than its host
+        // after a flex resize, browser zoom, or fullscreen transition.
+        const cssWidth = Math.max(1, Math.floor(rect?.width || canvas.clientWidth || 0));
+        const cssHeight = Math.max(1, Math.floor(rect?.height || canvas.clientHeight || 0));
         if (cssWidth < 10 || cssHeight < 10) return null;
         const dpr = Math.min(window.devicePixelRatio || 1, 2);
         const pixelWidth = Math.max(1, Math.round(cssWidth * dpr));
@@ -1889,12 +1894,47 @@ function init3DScene() {
         viewer3DSizeDirty = false;
         scene3D.renderer.domElement.style.left = '0px';
         scene3D.renderer.domElement.style.top = '0px';
-        scene3D.renderer.domElement.style.width = `${cssWidth}px`;
-        scene3D.renderer.domElement.style.height = `${cssHeight}px`;
+        // Keep the DOM surface attached to the host.  The drawing buffer is
+        // still sized explicitly above, but its CSS box must not retain a
+        // stale pixel width/height from an earlier layout.
+        scene3D.renderer.domElement.style.width = '100%';
+        scene3D.renderer.domElement.style.height = '100%';
         scene3D.renderer.domElement.style.maxWidth = 'none';
         scene3D.renderer.domElement.style.maxHeight = 'none';
         scene3D.renderer.domElement.style.display = 'block';
         return { ...viewer3DSize, changed };
+    }
+
+    function updateCameraClipRange() {
+        if (!scene3D.camera) return false;
+        const box = new THREE.Box3();
+        const expandVisible = object => {
+            if (!object || object.visible === false) return;
+            const surface = typeof getMeshSurface === 'function' ? getMeshSurface(object) : object;
+            if (surface && surface.visible === false) return;
+            box.expandByObject(object);
+        };
+        Object.values(scene3D.meshes || {}).forEach(expandVisible);
+        expandVisible(scene3D.skinMesh);
+        if (box.isEmpty()) return false;
+
+        const center = box.getCenter(new THREE.Vector3());
+        const sphere = box.getBoundingSphere(new THREE.Sphere());
+        const radius = Math.max(Number(sphere.radius) || 1, 1);
+        const distance = scene3D.camera.position.distanceTo(center);
+        const desiredNear = 0.01;
+        const desiredFar = Math.max(5000, distance + radius * 4);
+        let changed = false;
+        if (Math.abs(scene3D.camera.near - desiredNear) > 1e-6) {
+            scene3D.camera.near = desiredNear;
+            changed = true;
+        }
+        if (!Number.isFinite(scene3D.camera.far) || scene3D.camera.far < desiredFar) {
+            scene3D.camera.far = desiredFar;
+            changed = true;
+        }
+        if (changed) scene3D.camera.updateProjectionMatrix();
+        return changed;
     }
 
     function requestRender(frameBudget = 2) {
@@ -1919,6 +1959,12 @@ function init3DScene() {
             return;
         }
         const controlsChanged = scene3D.controls.update();
+
+        // A restored camera can carry a far plane from a smaller previous
+        // scene.  That produces a hard, screen-aligned crop even though the
+        // mesh is inside the current camera target.  Keep clipping planes
+        // derived from the live visible bounds without changing the pose.
+        updateCameraClipRange();
 
         // Quaternion copy avoids Euler angle wrapping at +/- PI in the axes
         // helper, which otherwise makes the orientation indicator jump.
@@ -1957,6 +2003,21 @@ function init3DScene() {
         if (controlsChanged || pendingFrames > 0) requestRender(pendingFrames || 1);
     }
 
+    // Render the live 3D scene immediately while restoring the exact renderer
+    // state used by the normal scheduler.  Report captures and dose-mode
+    // transitions used to call renderer.render directly after the axes pass,
+    // which allowed a stale scissor/viewport to paint only an inner rectangle.
+    function renderSceneNow() {
+        if (document.hidden || !scene3D.renderer || !scene3D.camera || scene3D.contextLost) return false;
+        if (drawingFrame) {
+            pendingFrames = Math.max(pendingFrames, 2);
+            return false;
+        }
+        pendingFrames = Math.max(pendingFrames, 1);
+        drawFrame();
+        return true;
+    }
+
     function resizeViewer3D() {
         const geometry = syncViewer3DSize({ force: true });
         if (!geometry) return false;
@@ -1974,7 +2035,9 @@ function init3DScene() {
     // Called by layout/fullscreen restoration after the DOM has settled. It
     // updates renderer geometry only; the camera pose remains user-controlled.
     scene3D.resize = resizeViewer3D;
+    scene3D.renderNow = renderSceneNow;
     window.resizeViewer3D = resizeViewer3D;
+    window.render3DSceneNow = renderSceneNow;
     scene3D.requestRender = requestRender;
     // Compatibility bridge for a tab that briefly mixes static asset
     // revisions during a deployment. Older viewer-layout helpers resolved
@@ -1984,6 +2047,7 @@ function init3DScene() {
     scene3D._cameraUserInteracted = false;
     scene3D._cameraHydrationActive = false;
     scene3D._cameraFitTimer = null;
+    scene3D._cameraHasVisibleFrame = false;
     // A pointer on the actual OrbitControls surface means the operator owns
     // the camera now. Background mesh hydration may still finish, but it must
     // never recenter or resize a view the operator has already changed.
@@ -2724,7 +2788,11 @@ function addMeshToScene(meshData) {
         metalness: 0.1,
         clearcoat: 0.3,
         clearcoatRoughness: 0.2,
-        depthWrite: opacity > 0.001,
+        // Transparent anatomical surfaces must not write an opaque depth
+        // layer.  Keeping depth testing while disabling depth writes avoids
+        // order-dependent rectangular-looking occlusion when many OAR meshes
+        // overlap after a camera move.
+        depthWrite: opacity >= 0.999,
         depthTest: true,
     });
     const mesh = new THREE.Mesh(geometry, surfaceMat);
@@ -2819,7 +2887,9 @@ function addMeshToScene(meshData) {
     // CTV/OAR mesh in the scene and add remaining anatomy later; debounce a fit
     // over the live scene so the final mesh cannot remain stranded at one edge
     // of the panel. Pointer interaction keeps ownership of the camera.
-    if ((scene3D._cameraHydrationActive === true || scene3D._workspaceRestoreActive === true)
+    if ((scene3D._cameraHasVisibleFrame !== true
+        || scene3D._cameraHydrationActive === true
+        || scene3D._workspaceRestoreActive === true)
         && scene3D._cameraUserInteracted !== true) {
         if (scene3D._cameraFitTimer) clearTimeout(scene3D._cameraFitTimer);
         scene3D._cameraFitTimer = setTimeout(() => {
@@ -2901,6 +2971,7 @@ function fitCameraToScene() {
             far: 5000,
             saveState: true,
         });
+        scene3D._cameraHasVisibleFrame = false;
         return;
     }
     const center = new THREE.Vector3();
@@ -2941,6 +3012,7 @@ function fitCameraToScene() {
         far: Math.max(5000, dist + radius * 4),
         saveState: true,
     });
+    scene3D._cameraHasVisibleFrame = true;
 }
 
 // Restore-time camera guard. A saved pose can be perfectly valid for the old
@@ -3039,6 +3111,7 @@ function ensureCameraFitsVisibleScene({ forceCenter = false, reason = '' } = {})
         far: Math.max(5000, distance + radius * 4),
         saveState: true,
     });
+    scene3D._cameraHasVisibleFrame = true;
     try { window.scheduleWorkspaceSave?.('viewer.3d.camera-fit-after-restore'); } catch (_) {}
     if (hydrationCentering || outside || offCenter) {
         try {
