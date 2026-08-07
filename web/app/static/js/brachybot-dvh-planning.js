@@ -1270,6 +1270,12 @@ async function refreshPlanningUI(options = {}) {
                     try { if (typeof renderDataTree === 'function') renderDataTree(); } catch (_) {}
                     try { if (typeof forceRender3DViewer === 'function') forceRender3DViewer(); } catch (_) {}
                 }
+                // Hydrated meshes (especially the guide) can extend beyond a
+                // pose captured with the previous canvas aspect ratio. Correct
+                // only genuinely clipped scenes; preserve normal user views.
+                try { window.ensureCameraFitsVisibleScene?.(); } catch (error) {
+                    console.warn('[3D auto-load] camera fit guard:', error);
+                }
                 await backgroundReportPromise.catch(() => {});
                 if (!isCurrentCase()) return;
                 const hasReportFigures = Array.isArray(window.reportForm?.figures)
@@ -1302,6 +1308,9 @@ async function refreshPlanningUI(options = {}) {
             try { if (typeof reconcileDataTreeVisualNodes === 'function') reconcileDataTreeVisualNodes(); } catch (_) {}
             try { if (typeof renderDataTree === 'function') renderDataTree(); } catch (_) {}
             try { if (typeof forceRender3DViewer === 'function') forceRender3DViewer(); } catch (_) {}
+        }
+        try { window.ensureCameraFitsVisibleScene?.(); } catch (error) {
+            console.warn('[3D auto-load] camera fit guard:', error);
         }
         try {
             if (typeof reportAutoFill === 'function') {

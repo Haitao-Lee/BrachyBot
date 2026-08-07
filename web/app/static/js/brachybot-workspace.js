@@ -749,6 +749,39 @@
             && _reportContentScore(current) > _reportContentScore(saved);
     }
 
+    function _mergePersistedQualityAssessment(target, saved) {
+        if (!target || !saved || typeof saved !== 'object') return false;
+        const savedMetrics = saved.metrics;
+        if (!savedMetrics || typeof savedMetrics !== 'object') return false;
+        const targetMetrics = target.qualityAssessment?.metrics;
+        if (!target.qualityAssessment || typeof target.qualityAssessment !== 'object') {
+            target.qualityAssessment = jsonClone(saved);
+            return true;
+        }
+        if (!targetMetrics || typeof targetMetrics !== 'object') {
+            target.qualityAssessment.metrics = jsonClone(savedMetrics);
+            return true;
+        }
+        let changed = false;
+        Object.entries(savedMetrics).forEach(([key, savedRow]) => {
+            if (!savedRow || typeof savedRow !== 'object') return;
+            const targetRow = targetMetrics[key];
+            const savedValue = savedRow.value == null || savedRow.value === '' ? null : Number(savedRow.value);
+            const targetValue = targetRow?.value == null || targetRow.value === '' ? null : Number(targetRow.value);
+            const sameValue = (Number.isFinite(savedValue) ? savedValue : null)
+                === (Number.isFinite(targetValue) ? targetValue : null);
+            if (!targetRow || sameValue) {
+                targetMetrics[key] = { ...(targetRow || {}), ...jsonClone(savedRow) };
+                changed = true;
+            }
+        });
+        if (saved.language && !target.qualityAssessment.language) {
+            target.qualityAssessment.language = saved.language;
+            changed = true;
+        }
+        return changed;
+    }
+
     function renderRecoveryNotice(operation) {
         bindWorkspaceNoticeControls();
         const target = document.getElementById('workspaceRecoveryNotice');
@@ -1116,7 +1149,11 @@
                     up,
                     near: scene.camera_near,
                     far: scene.camera_far,
-                    aspect: scene.camera_aspect,
+                    // The persisted aspect belongs to the old panel
+                    // rectangle. The 3D renderer re-applies the current DOM
+                    // aspect during resize; restoring this stale value here
+                    // was the source of restart-time top/right clipping.
+                    aspect: undefined,
                     fov: scene.camera_fov,
                     zoom: scene.camera_zoom,
                 });
@@ -1152,6 +1189,14 @@
         applyScene();
         scheduleDeferredWorkspaceRestore(generation, applyScene, 450);
         scheduleDeferredWorkspaceRestore(generation, applyScene, 1200);
+        // Meshes may finish after the saved pose has been re-applied. Run the
+        // non-destructive frustum guard after both layout and hydration settle.
+        scheduleDeferredWorkspaceRestore(generation, () => {
+            try { window.ensureCameraFitsVisibleScene?.(); } catch (_) {}
+        }, 1800);
+        scheduleDeferredWorkspaceRestore(generation, () => {
+            try { window.ensureCameraFitsVisibleScene?.(); } catch (_) {}
+        }, 3000);
 
         const applyDvh = () => {
             const chart = document.getElementById('dvhChart');
@@ -1239,6 +1284,9 @@
             window.__reportWorkspaceAudit = Array.isArray(section?.audit) ? section.audit : [];
             window.__reportWorkspaceSnapshots = Array.isArray(section?.snapshots) ? section.snapshots : [];
             window._reportCollapsed = section?.collapsed || {};
+            if (typeof window.syncReportQualityAssessment === 'function') {
+                window.syncReportQualityAssessment(window.reportForm, { preserveStored: true });
+            }
             hydrateReportFigureAssets(
                 { report: section },
                 String(activeSessionId || ''),
@@ -1388,9 +1436,17 @@
                     window.reportForm = report;
                 }
                 const targetReport = keepCurrentReport ? window.reportForm : report;
+                if (keepCurrentReport) {
+                    // The current form may already contain hydrated narrative
+                    // text, while the control-plane snapshot is the authority
+                    // for the selected Planning's quality cells. Merge only
+                    // rows whose metric value still matches; never mix one
+                    // Planning run's assessment into another run.
+                    _mergePersistedQualityAssessment(targetReport, report.qualityAssessment);
+                }
                 const previousQualityTimestamp = Number(targetReport?.qualityAssessment?.generatedAt || 0);
                 if (typeof window.syncReportQualityAssessment === 'function') {
-                    window.syncReportQualityAssessment(targetReport);
+                    window.syncReportQualityAssessment(targetReport, { preserveStored: true });
                     qualityAssessmentNeedsPersist = Number(targetReport?.qualityAssessment?.generatedAt || 0)
                         !== previousQualityTimestamp;
                 }

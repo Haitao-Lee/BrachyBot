@@ -55,6 +55,36 @@ def register_surgical_guide_routes(app, get_agent):
     def current_guide(agent: Any, version: Any = None) -> Dict[str, Any]:
         return guide_state_for_version(agent, version)
 
+    def workspace_data_pending(agent):
+        """Keep a cold-session restore from being mistaken for no guide."""
+        if agent is None:
+            return jsonify({
+                "success": False,
+                "pending": True,
+                "code": "workspace_agent_initializing",
+                "message": "Case resources are being initialized.",
+                "retry_after_ms": 250,
+            }), 202
+        hydration_error = str(getattr(agent, "_workspace_hydration_error", "") or "")
+        if hydration_error:
+            return jsonify({
+                "success": False,
+                "pending": False,
+                "code": "workspace_hydration_failed",
+                "phase": getattr(agent, "_workspace_hydration_phase", "failed"),
+                "error": hydration_error,
+            }), 409
+        if not getattr(agent, "_workspace_data_ready", True):
+            return jsonify({
+                "success": False,
+                "pending": True,
+                "code": "workspace_hydration_pending",
+                "message": "Case resources are still loading.",
+                "phase": getattr(agent, "_workspace_hydration_phase", "artifacts"),
+                "retry_after_ms": 250,
+            }), 202
+        return None
+
     def guide_metadata(agent: Any) -> Dict[str, Any]:
         from web.surgical_guide import _algorithm_planning_snapshot
         from web.planning_runs import active_planning_id, list_planning_runs
@@ -150,6 +180,9 @@ def register_surgical_guide_routes(app, get_agent):
         try:
             _store, _user, _session_id = request_case_context()
             agent = get_agent()
+            pending = workspace_data_pending(agent)
+            if pending is not None:
+                return pending
             return jsonify({"success": True, **guide_public_payload(current_guide(agent)), **guide_metadata(agent)})
         except Exception as exc:
             return jsonify({"success": False, "error": str(exc)}), 400
@@ -161,6 +194,9 @@ def register_surgical_guide_routes(app, get_agent):
         try:
             _store, _user, _session_id = request_case_context()
             agent = get_agent()
+            pending = workspace_data_pending(agent)
+            if pending is not None:
+                return pending
             state = current_guide(agent, request.args.get("version"))
             return jsonify({"success": True, **guide_public_payload(state, include_mesh=True), **guide_metadata(agent)})
         except Exception as exc:

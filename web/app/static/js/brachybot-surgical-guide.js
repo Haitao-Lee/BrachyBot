@@ -409,16 +409,32 @@
         return true;
     }
 
-    async function guideFetch(url, options = {}, sessionId = activeSessionId()) {
+    async function guideFetch(url, options = {}, sessionId = activeSessionId(), attempt = 0) {
+        const {
+            retryPending = false,
+            maxPendingRetries = 240,
+            ...fetchOptions
+        } = options || {};
         const response = await fetch(url, {
             credentials: 'same-origin',
-            ...options,
+            ...fetchOptions,
             headers: {
-                ...(options.headers || {}),
+                ...(fetchOptions.headers || {}),
                 ...(sessionId ? { 'X-BrachyBot-Session': sessionId } : {}),
             },
         });
         const payload = await response.json().catch(() => ({}));
+        if (response.status === 202 && payload.pending && retryPending
+            && attempt < Number(maxPendingRetries)) {
+            const delayMs = Math.max(100, Math.min(1000, Number(payload.retry_after_ms) || 250));
+            await new Promise(resolve => setTimeout(resolve, delayMs));
+            if (sessionId !== activeSessionId()) return { success: false, pending: true, session_changed: true };
+            return guideFetch(url, {
+                ...fetchOptions,
+                retryPending,
+                maxPendingRetries,
+            }, sessionId, attempt + 1);
+        }
         if (!response.ok || payload.success === false) throw new Error(payload.error || `Guide request failed: HTTP ${response.status}`);
         return payload;
     }
@@ -430,27 +446,39 @@
         try {
             const version = Number(options.version);
             const suffix = Number.isInteger(version) && version > 0 ? `?version=${encodeURIComponent(version)}` : '';
-            const payload = await guideFetch(`/api/surgical-guides/mesh${suffix}`, {}, sessionId);
+            const payload = await guideFetch(`/api/surgical-guides/mesh${suffix}`, {
+                retryPending: true,
+            }, sessionId);
             if (generation !== guideLoadGeneration || sessionId !== activeSessionId()) return false;
-            if (payload.guide && !hasPrintableBoreQuality(payload.guide)) {
-                applyGuideMetadata(payload, { ...payload.guide, status: 'stale' });
-                removeGuideMesh();
-                if (options.userInitiated) {
-                    notify(t(
-                        '当前导板由旧几何流程生成，请重新生成后再导出 STL。',
-                        'This guide uses the older geometry pipeline. Regenerate it before STL export.',
-                    ), 'warning');
-                }
-                return false;
+            if (payload?.pending) return false;
+            const printableGuide = hasPrintableBoreQuality(payload.guide);
+            const displayGuide = payload.guide && printableGuide
+                ? payload.guide
+                : payload.guide
+                    ? { ...payload.guide, status: 'stale', requires_regeneration: true }
+                    : null;
+            if (payload.guide && !printableGuide && options.userInitiated) {
+                notify(t(
+                    '当前导板由旧几何流程生成，请重新生成后再导出 STL。',
+                    'This guide uses the older geometry pipeline. Regenerate it before STL export.',
+                ), 'warning');
             }
+            // Older persisted guides may not have bore_quality metadata, but
+            // their mesh is still a real result for this Planning. Keep it in
+            // the Data Tree and Viewer as stale/read-only instead of deleting
+            // it during restart hydration. STL export remains blocked until a
+            // regenerated guide passes the cylindrical-wall QA check.
+            const planMatches = payload.guide_matches_current_plan === true
+                || (!!payload.current_plan_signature
+                    && String(payload.guide?.source_plan_signature || '')
+                        === String(payload.current_plan_signature));
             // A guide whose plan signature still matches the current needle
             // geometry is valid regardless of its stored status. The status
             // can be flipped to "stale" by operations unrelated to guide
             // geometry (e.g. reclassifying an OAR in the Data Tree), which
             // must not hide an otherwise valid guide. `guide_matches_current_plan`
             // is the authoritative validity signal.
-            if (!payload.available || !payload.guide
-                || (payload.guide?.status !== 'ready' && payload.guide_matches_current_plan !== true)) {
+            if (!payload.available || !payload.guide || !planMatches) {
                 applyGuideMetadata(payload);
                 removeGuideMesh();
                 return false;
@@ -461,7 +489,7 @@
                     ? payload.guide
                     : payload.guide ? { ...payload.guide, status: 'stale' } : null,
             );
-            return addGuideMesh(payload.guide);
+            return addGuideMesh(displayGuide);
         } catch (error) {
             // A new or partially restored case normally has no guide. Do not
             // surface a failure notification while its other assets hydrate.
@@ -539,8 +567,11 @@
         const sessionId = String(options.sessionId || activeSessionId());
         if (!sessionId || sessionId !== activeSessionId()) return false;
         try {
-            const payload = await guideFetch('/api/surgical-guides', {}, sessionId);
+            const payload = await guideFetch('/api/surgical-guides', {
+                retryPending: true,
+            }, sessionId);
             if (sessionId !== activeSessionId()) return false;
+            if (payload?.pending) return false;
             applyGuideMetadata(payload, payload.guide);
             // Load the existing guide when it matches the current plan's needle
             // geometry. Signature match is the authoritative validity signal;
@@ -548,8 +579,13 @@
             // geometry (e.g. an OAR reclassification), which must not hide the
             // guide. Only fall through to (re)generation when the geometry
             // genuinely changed or no guide exists.
-            if (payload.available && payload.guide
-                && payload.guide_matches_current_plan === true) {
+            const planMatches = payload.available && payload.guide && (
+                payload.guide_matches_current_plan === true
+                || (!!payload.current_plan_signature
+                    && String(payload.guide.source_plan_signature || '')
+                        === String(payload.current_plan_signature))
+            );
+            if (planMatches) {
                 return window.loadSurgicalGuideMesh({ sessionId });
             }
             if (options.autoGenerate !== true || payload.can_generate !== true) return false;
