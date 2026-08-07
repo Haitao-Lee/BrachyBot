@@ -1981,6 +1981,18 @@ function init3DScene() {
     // requestRender from the global scope; keep that call safe until every
     // open tab has reloaded the current scene-owned scheduler.
     window.requestRender = requestRender;
+    scene3D._cameraUserInteracted = false;
+    scene3D._cameraHydrationActive = false;
+    // A pointer on the actual OrbitControls surface means the operator owns
+    // the camera now. Background mesh hydration may still finish, but it must
+    // never recenter or resize a view the operator has already changed.
+    const markCameraInteraction = () => {
+        scene3D._cameraUserInteracted = true;
+        scene3D._workspaceRestoreActive = false;
+        scene3D._cameraHydrationActive = false;
+    };
+    scene3D.renderer.domElement.addEventListener('pointerdown', markCameraInteraction, true);
+    scene3D.renderer.domElement.addEventListener('mousedown', markCameraInteraction, true);
     scene3D.controls.addEventListener('change', () => requestRender(8));
     document.addEventListener('visibilitychange', () => {
         if (!document.hidden) requestRender(2);
@@ -2909,9 +2921,11 @@ function fitCameraToScene() {
 
 // Restore-time camera guard. A saved pose can be perfectly valid for the old
 // canvas aspect ratio but clip newly hydrated meshes after a restart or panel
-// resize. Unlike Fit/Reset, this function changes the camera only when a
-// visible scene corner is actually outside the current perspective frustum.
-function ensureCameraFitsVisibleScene() {
+// resize. `forceCenter` is reserved for the workspace hydration pass: it
+// rebuilds the presentation from the live scene bounds instead of trusting a
+// camera target captured before the meshes existed. Normal resize/interaction
+// calls remain non-destructive and only correct genuine clipping.
+function ensureCameraFitsVisibleScene({ forceCenter = false, reason = '' } = {}) {
     if (!scene3D?.camera || !scene3D?.controls || !scene3D?.initialized) return false;
     const camera = scene3D.camera;
     if (!camera.isPerspectiveCamera) return false;
@@ -2941,14 +2955,28 @@ function ensureCameraFitsVisibleScene() {
         [max.x, min.y, min.z], [max.x, min.y, max.z],
         [max.x, max.y, min.z], [max.x, max.y, max.z],
     ];
-    const outside = corners.some(values => {
-        const projected = new THREE.Vector3(...values).project(camera);
-        return ![projected.x, projected.y, projected.z].every(Number.isFinite)
-            || projected.x < -0.96 || projected.x > 0.96
-            || projected.y < -0.96 || projected.y > 0.96
-            || projected.z < -1 || projected.z > 1;
-    });
-    if (!outside) return false;
+    const projected = corners.map(values => new THREE.Vector3(...values).project(camera));
+    const validProjection = projected.every(point =>
+        [point.x, point.y, point.z].every(Number.isFinite));
+    if (!validProjection) forceCenter = true;
+    const projectedMinX = Math.min(...projected.map(point => point.x));
+    const projectedMaxX = Math.max(...projected.map(point => point.x));
+    const projectedMinY = Math.min(...projected.map(point => point.y));
+    const projectedMaxY = Math.max(...projected.map(point => point.y));
+    const projectedCenterX = (projectedMinX + projectedMaxX) / 2;
+    const projectedCenterY = (projectedMinY + projectedMaxY) / 2;
+    const outside = !validProjection || projected.some(point =>
+        point.x < -0.96 || point.x > 0.96
+        || point.y < -0.96 || point.y > 0.96
+        || point.z < -1 || point.z > 1);
+    // A stale target can place the whole object inside the frustum but far to
+    // one side (the visible symptom is a large black region and only half of
+    // the anatomy at the opposite edge). Treat that as invalid only during
+    // hydration, or when the old pose actually clips the object. Do not
+    // recenter a deliberate user pan during a normal resize.
+    const offCenter = Math.abs(projectedCenterX) > 0.14 || Math.abs(projectedCenterY) > 0.14;
+    const hydrationCentering = forceCenter || scene3D._workspaceRestoreActive === true;
+    if (!hydrationCentering && !outside) return false;
 
     const center = box.getCenter(new THREE.Vector3());
     const sphere = box.getBoundingSphere(new THREE.Sphere());
@@ -2958,11 +2986,17 @@ function ensureCameraFitsVisibleScene() {
     const halfFovX = Math.atan(Math.tan(halfFovY) * aspect);
     const limitingHalfFov = Math.max(0.01, Math.min(halfFovX, halfFovY));
     const requiredDistance = radius / Math.sin(limitingHalfFov) * 1.18;
+    const minDistance = Number(scene3D.controls.minDistance) || 0;
     const direction = camera.position.clone().sub(scene3D.controls.target);
     if (direction.lengthSq() < 1e-8) direction.set(0.5, 0.5, 0.5);
     direction.normalize();
     const currentDistance = camera.position.distanceTo(scene3D.controls.target);
-    const distance = Math.max(requiredDistance, currentDistance || 0);
+    // A hydration pose may contain a distance from a different mesh set and
+    // panel aspect. Recompute a stable distance in that case; preserving it
+    // is appropriate only for the non-destructive clipping guard.
+    const distance = hydrationCentering
+        ? Math.max(requiredDistance, minDistance * 1.05)
+        : Math.max(requiredDistance, currentDistance || 0);
     sync3DCameraPose({
         position: center.clone().add(direction.multiplyScalar(distance)),
         target: center,
@@ -2972,6 +3006,17 @@ function ensureCameraFitsVisibleScene() {
         saveState: true,
     });
     try { window.scheduleWorkspaceSave?.('viewer.3d.camera-fit-after-restore'); } catch (_) {}
+    if (hydrationCentering || outside || offCenter) {
+        try {
+            console.debug('[3D camera] reframed visible scene', {
+                forceCenter,
+                reason,
+                outside,
+                offCenter,
+                projectedCenter: [projectedCenterX, projectedCenterY],
+            });
+        } catch (_) {}
+    }
     return true;
 }
 window.ensureCameraFitsVisibleScene = ensureCameraFitsVisibleScene;
@@ -4268,8 +4313,26 @@ async function prewarmSegmentationMeshes(kind = 'all', opts = {}) {
         }
 
         await Promise.all(promises);
+        // The all-OAR restore is deliberately progressive. Reframe once the
+        // last batch has arrived, but only while this restore still owns the
+        // camera. A pointer interaction cancels the ownership immediately.
+        if (opts.reframeCamera === true
+            && scene3D?._cameraHydrationActive === true
+            && scene3D?._cameraUserInteracted !== true) {
+            try {
+                window.ensureCameraFitsVisibleScene?.({
+                    forceCenter: true,
+                    reason: 'segmentation-mesh-prewarm-complete',
+                });
+            } catch (error) {
+                console.warn('[3D auto-load] final progressive camera fit:', error);
+            }
+        }
         // Fit removed — camera only resets on explicit button click
     } finally {
+        if (opts.reframeCamera === true && scene3D?._cameraHydrationActive === true) {
+            scene3D._cameraHydrationActive = false;
+        }
         _segmentationMeshPrewarm.activeRuns = Math.max(0, _segmentationMeshPrewarm.activeRuns - 1);
         if (_segmentationMeshPrewarm.activeRuns === 0) {
             setTimeout(() => {
@@ -4295,13 +4358,18 @@ async function loadCTVAndObstacleMeshes() {
     // OAR meshes are then constructed in the background, so every structure
     // ultimately has a real 3D scene object without making an already-finished
     // plan appear to hang for the duration of fifty mesh requests.
+    init3DScene();
+    scene3D._cameraHydrationActive = scene3D._cameraUserInteracted !== true;
     await prewarmSegmentationMeshes('all', { showStatus: false, batchSize: 3 });
     if (oarLabelData) {
         startSegmentationMeshPrewarm('all', {
             allOAR: true,
             showStatus: false,
             batchSize: 3,
+            reframeCamera: true,
         });
+    } else {
+        scene3D._cameraHydrationActive = false;
     }
     uiDebugLog(`[loadCTVAndObstacle] Meshes ready. Total scene meshes: ${Object.keys(scene3D.meshes).length}`);
 }

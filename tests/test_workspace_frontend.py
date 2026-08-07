@@ -275,7 +275,7 @@ def test_workspace_transitions_publish_measurable_first_paint_and_restore_stages
     assert "restore.planning_dvh" in ui_api
     assert "restore.report_and_presentation" in ui_api
     assert "restore.fully_interactive" in ui_api
-    assert "brachybot-workspace.js?v=24" in index
+    assert "brachybot-workspace.js?v=25" in index
     assert "brachybot-ui-api.js?v=31" in index
 
 
@@ -1278,13 +1278,16 @@ def test_surgical_guide_restore_waits_for_hydration_and_publishes_tool_results()
     assert "Older persisted guides may not have bore_quality metadata" in guide
 
 
-def test_restore_time_3d_camera_guard_only_corrects_actual_frustum_clipping():
+def test_restore_time_3d_camera_guard_reframes_stale_hydration_targets_without_touching_user_pan():
     viewer = read("web/app/static/js/brachybot-3d-manual.js")
     workspace = read("web/app/static/js/brachybot-workspace.js")
     planning = read("web/app/static/js/brachybot-dvh-planning.js")
-    assert "function ensureCameraFitsVisibleScene()" in viewer
+    assert "function ensureCameraFitsVisibleScene({ forceCenter = false, reason = '' } = {})" in viewer
     assert "project(camera)" in viewer
-    assert "if (!outside) return false;" in viewer
+    assert "const offCenter = Math.abs(projectedCenterX) > 0.14" in viewer
+    assert "if (!forceCenter && !outside && !offCenter) return false;" in viewer
+    assert "forceCenter: true" in workspace
+    assert "reason: 'workspace-restore-settled'" in workspace
     assert "window.ensureCameraFitsVisibleScene = ensureCameraFitsVisibleScene;" in viewer
     assert "const actualAspect = cssWidth / cssHeight;" in viewer
     assert "aspect: undefined" in workspace
