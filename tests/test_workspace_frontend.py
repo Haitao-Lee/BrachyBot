@@ -1293,5 +1293,6 @@ def test_restore_time_3d_camera_guard_reframes_stale_hydration_targets_without_t
     assert "const actualAspect = cssWidth / cssHeight;" in viewer
     assert "aspect: undefined" in workspace
     assert "viewer.3d.camera-fit-after-restore" in viewer
-    assert "window.ensureCameraFitsVisibleScene?.()" in workspace
-    assert planning.count("window.ensureCameraFitsVisibleScene?.()") >= 2
+    assert "window.ensureCameraFitsVisibleScene?.({" in workspace
+    assert "reason: 'planning-mesh-hydration-complete'" in planning
+    assert "reason: 'planning-mesh-load-complete'" in planning
