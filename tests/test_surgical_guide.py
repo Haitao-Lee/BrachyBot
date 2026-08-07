@@ -410,6 +410,32 @@ def test_guide_channel_is_clean_flat_cylinder_with_open_through_hole():
     assert int(rim.sum()) >= 3, "channel rim must be present on the outer face"
 
 
+def test_exported_primary_and_auxiliary_bore_walls_keep_exact_circular_radius():
+    """Manufacturing STL wall vertices must not inherit smoothing error.
+
+    The guide remains a Marching-Cubes mesh for reliable watertight topology,
+    but the cylindrical needle interfaces are projected back to their analytic
+    radii before export.  This regression protects the actual STL geometry,
+    rather than only the Viewer preview.
+    """
+    guide = generate_surgical_guide(_synthetic_agent(), {
+        "geometry_resolution_mm": 1.0,
+        "auxiliary_holes_enabled": True,
+    })
+    quality = guide["validation"]["bore_quality"]
+    assert quality["wall_policy"] == "analytic_cylindrical_projection_after_mesh_smoothing"
+    assert quality["projected_vertex_count"] > 0
+    assert quality["primary"]
+    assert all(item["projected_vertex_count"] > 0 for item in quality["primary"])
+    assert all(item["max_radius_error_after_mm"] < 1e-5 for item in quality["primary"])
+    assert quality["auxiliary"]
+    assert all(item["projected_vertex_count"] > 0 for item in quality["auxiliary"])
+    assert all(item["max_radius_error_after_mm"] < 1e-5 for item in quality["auxiliary"])
+    payload = mesh_to_ascii_stl(guide["vertices"], guide["faces"])
+    exported = validate_exported_stl(payload)
+    assert exported["watertight"] is True
+
+
 def test_guide_oblique_needle_does_not_penetrate_skin_after_trim():
     """An angled needle must not leave sleeve material inside the skin.
 
