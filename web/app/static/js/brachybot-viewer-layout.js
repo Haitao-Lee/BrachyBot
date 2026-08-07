@@ -636,6 +636,8 @@ function renderSliceToCanvas(axis, sliceData) {
     }
 }
 
+let _sliceRenderGeneration = 0;
+
 function _yieldViewerPaint() {
     return new Promise(resolve => {
         const raf = typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function'
@@ -647,15 +649,18 @@ function _yieldViewerPaint() {
 
 async function loadAllSlices() {
     if (!state.ctPath) return;
+    const generation = ++_sliceRenderGeneration;
 
     // Use volume-based rendering for instant response
     if (volumeData && volumeShape) {
         for (const axis of ['axial', 'sagittal', 'coronal']) {
+            if (generation !== _sliceRenderGeneration) return;
             renderSliceFromVolume(axis, state.slices[axis]);
             // Let the browser paint the active spinner and the completed
             // plane before the next expensive MPR pass. This also keeps
             // threshold/overlay changes responsive on large CT volumes.
             await _yieldViewerPaint();
+            if (generation !== _sliceRenderGeneration) return;
         }
         return;
     }
