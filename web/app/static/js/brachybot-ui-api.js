@@ -1007,6 +1007,10 @@ function instrumentUIControls() {
         window.BRACHYBOT_API_KEY = value;
         if (value) sessionStorage.setItem('BRACHYBOT_API_KEY', value);
         else sessionStorage.removeItem('BRACHYBOT_API_KEY');
+        // Capability probes can run before the auth overlay is submitted.
+        // Notify the UI so protected, read-only probes are retried as soon as
+        // the deployment key becomes available.
+        window.dispatchEvent(new Event('brachybot:api-key-changed'));
     };
     window.fetch = function brachybotFetch(input, init) {
         // The deployment key is persisted in localStorage so the operator's
@@ -1476,7 +1480,9 @@ async function refreshTumorTypeAvailability() {
         // Include the optional research catalog so a configured BiomedParse
         // runtime can mark the corresponding tumor type as actionable. The
         // catalog is not rendered as model-brand text in the selector.
-        const response = await fetch(API + '/ctv/models?include_experimental=1');
+        const response = await fetch(API + '/ctv/models?include_experimental=1', {
+            credentials: 'same-origin',
+        });
         const payload = await response.json();
         if (!response.ok || !payload?.success) throw new Error(payload?.error || `HTTP ${response.status}`);
         const capabilities = new Map();
@@ -1555,6 +1561,16 @@ function updateTumorTypeSelector(value) {
 window.updateTumorTypeSelector = updateTumorTypeSelector;
 window.refreshTumorTypeAvailability = refreshTumorTypeAvailability;
 window.addEventListener('i18nchange', _syncTumorTypeSelectorAppearance);
+// The first probe intentionally runs before the auth overlay is resolved.
+// Retry after session authentication (or deployment-key entry) so a 401 from
+// that early probe cannot leave every optional tumor type red for the rest of
+// the page lifetime.
+window.addEventListener('brachybot:auth-ready', () => {
+    void refreshTumorTypeAvailability();
+});
+window.addEventListener('brachybot:api-key-changed', () => {
+    void refreshTumorTypeAvailability();
+});
 setTimeout(refreshTumorTypeAvailability, 0);
 
 function clearViewerCanvases() {

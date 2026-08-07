@@ -568,6 +568,7 @@
             const data = await request(`/api/auth/${mode}`, { username, password }, true);
             state.user = data.user;
             state.csrfToken = data.csrf_token;
+            window.dispatchEvent(new Event('brachybot:auth-ready'));
             persistRememberFlag(username);
             setStatusKey('signed_in', false);
             setVisible(false);
@@ -676,6 +677,7 @@
             const data = await response.json();
             state.user = data.user;
             state.csrfToken = data.csrf_token;
+            window.dispatchEvent(new Event('brachybot:auth-ready'));
             window.brachybotAuth = api;
             setVisible(false);
             renderAccount();
