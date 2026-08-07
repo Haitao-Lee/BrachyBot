@@ -1681,6 +1681,18 @@ function init3DScene() {
     const w = Math.max(1, Math.floor(hostRect?.width || canvas.clientWidth || 400));
     const h = Math.max(1, Math.floor(hostRect?.height || canvas.clientHeight || 300));
 
+    // The host is a flex child with overlay elements.  Make its own box a
+    // real stretchable drawing region before measuring the renderer; otherwise
+    // a late flex pass can leave the WebGL surface constrained by an old
+    // intrinsic size even though the viewer card has already grown.
+    canvas.style.setProperty('display', 'block', 'important');
+    canvas.style.setProperty('width', '100%', 'important');
+    canvas.style.setProperty('height', '100%', 'important');
+    canvas.style.setProperty('min-width', '0', 'important');
+    canvas.style.setProperty('min-height', '0', 'important');
+    canvas.style.setProperty('align-self', 'stretch', 'important');
+    canvas.style.setProperty('flex', '1 1 auto', 'important');
+
     scene3D.camera = new THREE.PerspectiveCamera(50, w / h, 0.01, 5000);
     scene3D.camera.position.set(0, 0, 300);
 
@@ -1866,7 +1878,7 @@ function init3DScene() {
         };
     }
 
-    function lockRendererSurfaceToHost() {
+    function lockRendererSurfaceToHost({ cssWidth = 0, cssHeight = 0 } = {}) {
         const surface = scene3D.renderer?.domElement;
         if (!surface) return;
         // Three.js may leave a pixel-sized inline style behind when an older
@@ -1875,8 +1887,23 @@ function init3DScene() {
         // smaller WebGL surface inside the black host.
         surface.style.position = 'absolute';
         surface.style.setProperty('inset', '0', 'important');
-        surface.style.setProperty('width', '100%', 'important');
-        surface.style.setProperty('height', '100%', 'important');
+        // Use explicit pixels after every measurement.  A percentage-sized
+        // WebGL canvas can resolve against a stale flex item's containing box
+        // for one layout pass, leaving an apparently smaller drawing surface
+        // inside the black host even though the camera uses the full host
+        // aspect ratio.  Percentage values remain the initial fallback.
+        const width = Number(cssWidth);
+        const height = Number(cssHeight);
+        surface.style.setProperty(
+            'width',
+            width > 0 ? `${Math.round(width)}px` : '100%',
+            'important',
+        );
+        surface.style.setProperty(
+            'height',
+            height > 0 ? `${Math.round(height)}px` : '100%',
+            'important',
+        );
         surface.style.setProperty('max-width', 'none', 'important');
         surface.style.setProperty('max-height', 'none', 'important');
         surface.style.flex = 'none';
@@ -1927,6 +1954,11 @@ function init3DScene() {
             scene3D.renderer.setPixelRatio(dpr);
             scene3D.renderer.setSize(cssWidth, cssHeight, false);
         }
+        // setSize(false) updates the drawing buffer but stylesheet rules may
+        // still win over Three.js' inline CSS dimensions.  Pin the visible
+        // surface to the same measured host rectangle before checking the
+        // final drawing buffer and rendering.
+        lockRendererSurfaceToHost({ cssWidth, cssHeight });
         // Never infer viewport pixels from CSS pixels and DPR. Browser zoom,
         // fractional DPR, and GPU limits can make the actual drawing buffer
         // differ from that product. Viewport/scissor must use what WebGL
@@ -1952,7 +1984,7 @@ function init3DScene() {
             scene3D.camera.updateProjectionMatrix();
         }
         viewer3DSizeDirty = false;
-        lockRendererSurfaceToHost();
+        lockRendererSurfaceToHost({ cssWidth, cssHeight });
         return { ...viewer3DSize, changed };
     }
 
@@ -2010,6 +2042,23 @@ function init3DScene() {
             return;
         }
         const controlsChanged = scene3D.controls.update();
+
+        // A rotation can move a saved or user-adjusted pose far enough that
+        // one side of the scene crosses the perspective frustum.  Preserve
+        // deliberate zoom/pan close-ups, but back the camera out when a
+        // rotation genuinely clips the visible scene.  This runs before the
+        // render, so the user never sees the transient half-model frame that
+        // used to look like an inner viewport boundary.
+        if (scene3D._cameraUserInteracted === true
+            && scene3D._cameraInteractionKind === 'rotate'
+            && !scene3D._cameraFitGuardActive) {
+            scene3D._cameraFitGuardActive = true;
+            try {
+                ensureCameraFitsVisibleScene?.({ reason: 'camera-rotation-guard' });
+            } finally {
+                scene3D._cameraFitGuardActive = false;
+            }
+        }
 
         // A restored camera can carry a far plane from a smaller previous
         // scene.  That produces a hard, screen-aligned crop even though the
@@ -2101,10 +2150,22 @@ function init3DScene() {
     scene3D._cameraHydrationActive = false;
     scene3D._cameraFitTimer = null;
     scene3D._cameraHasVisibleFrame = false;
+    scene3D._cameraInteractionKind = 'programmatic';
+    scene3D._cameraFitGuardActive = false;
     // A pointer on the actual OrbitControls surface means the operator owns
     // the camera now. Background mesh hydration may still finish, but it must
     // never recenter or resize a view the operator has already changed.
-    const markCameraInteraction = () => {
+    const markCameraInteraction = (event = null) => {
+        const eventType = String(event?.type || '');
+        let kind = scene3D._cameraInteractionKind || 'unknown';
+        if (eventType === 'wheel') {
+            kind = 'zoom';
+        } else if (event && (eventType === 'pointerdown' || eventType === 'mousedown')) {
+            if (event.button === 0) kind = 'rotate';
+            else if (event.button === 1) kind = 'pan';
+            else if (event.button === 2) kind = 'zoom';
+        }
+        scene3D._cameraInteractionKind = kind;
         scene3D._cameraUserInteracted = true;
         scene3D._workspaceRestoreActive = false;
         scene3D._cameraHydrationActive = false;
@@ -2782,6 +2843,47 @@ function init3DScene() {
 
 }
 
+// Backend surface endpoints are expressed in patient world coordinates.
+// Keeping those large coordinates in BufferGeometry while leaving the
+// Object3D at (0, 0, 0) makes Three.js sort transparent objects by the wrong
+// depth: the guide, needles and anatomical surfaces all appear to originate
+// from the same point.  Recenter the geometry once and put that center on the
+// Object3D so bounding boxes, transparent sorting, ray intersections and
+// camera fitting all use the same world-space transform.
+function centerWorldGeometryForDepthSort(object) {
+    const geometry = object?.geometry;
+    const position = geometry?.attributes?.position;
+    if (!geometry || !position || object.userData?.worldGeometryCentered === true) return false;
+    if (object.rotation && (
+        Math.abs(object.rotation.x) > 1e-8
+        || Math.abs(object.rotation.y) > 1e-8
+        || Math.abs(object.rotation.z) > 1e-8
+    )) return false;
+    if (object.scale && (
+        Math.abs(object.scale.x - 1) > 1e-8
+        || Math.abs(object.scale.y - 1) > 1e-8
+        || Math.abs(object.scale.z - 1) > 1e-8
+    )) return false;
+
+    geometry.computeBoundingBox();
+    const center = geometry.boundingBox?.getCenter(new THREE.Vector3());
+    if (!center || ![center.x, center.y, center.z].every(Number.isFinite)) return false;
+    const previousPosition = object.position?.clone?.() || new THREE.Vector3();
+    geometry.translate(-center.x, -center.y, -center.z);
+    if (object.position?.copy) object.position.copy(previousPosition).add(center);
+    geometry.computeBoundingBox();
+    geometry.computeBoundingSphere();
+    object.userData = {
+        ...(object.userData || {}),
+        worldGeometryCentered: true,
+        worldGeometryCenter: [center.x, center.y, center.z],
+    };
+    object.updateMatrixWorld?.(true);
+    return true;
+}
+
+window.centerWorldGeometryForDepthSort = centerWorldGeometryForDepthSort;
+
 function addMeshToScene(meshData) {
     init3DScene();
     const id = meshData.organ_id || meshData.source || 'mesh_' + Date.now();
@@ -2837,6 +2939,12 @@ function addMeshToScene(meshData) {
     }
 
     // Clean surface rendering (like 3D Slicer polydata)
+    const source = meshData.source || 'mesh';
+    // A transparent surgical guide is still a physical boundary.  It must
+    // write depth so a needle behind the guide is occluded, while the guide
+    // itself remains alpha blended.  Anatomical overlays and dose surfaces
+    // continue to use the non-writing transparent policy.
+    const depthWriteWhenTransparent = source === 'surgical_guide';
     const surfaceMat = new THREE.MeshPhysicalMaterial({
         color: color,
         transparent: opacity < 0.999,
@@ -2850,7 +2958,7 @@ function addMeshToScene(meshData) {
         // layer.  Keeping depth testing while disabling depth writes avoids
         // order-dependent rectangular-looking occlusion when many OAR meshes
         // overlap after a camera move.
-        depthWrite: opacity >= 0.999,
+        depthWrite: opacity >= 0.999 || depthWriteWhenTransparent,
         depthTest: true,
     });
     const mesh = new THREE.Mesh(geometry, surfaceMat);
@@ -2859,7 +2967,16 @@ function addMeshToScene(meshData) {
     // as soon as its real geometry finishes loading.
     const visible = meshData.visible !== false && meshData.visible3D !== false;
     mesh.visible = visible && opacity > 0.001;
-    mesh.userData = { type: 'mesh', id, source: meshData.source || 'mesh', labelId: meshData.label_id, organId: id };
+    mesh.userData = {
+        type: 'mesh',
+        id,
+        source,
+        labelId: meshData.label_id,
+        organId: id,
+        depthWriteWhenTransparent,
+        renderRole: source === 'surgical_guide' ? 'physical_guide_surface' : source,
+    };
+    centerWorldGeometryForDepthSort(mesh);
 
     scene3D.scene.add(mesh);
     scene3D.meshes[id] = mesh;
@@ -3131,16 +3248,20 @@ function ensureCameraFitsVisibleScene({ forceCenter = false, reason = '' } = {})
     const offCenter = Math.abs(projectedCenterX) > 0.14 || Math.abs(projectedCenterY) > 0.14;
     const cameraOwnsView = scene3D._cameraUserInteracted === true;
     const hydrationCentering = forceCenter || scene3D._workspaceRestoreActive === true;
-    // A restored pose may leave all eight corners technically inside the
-    // frustum while the mesh is visibly pushed to one side. Recenter that
-    // state only while the application still owns the camera; after pointer
-    // interaction, preserve the deliberate pan/rotation.
-    // Once the user has rotated, panned, or zoomed, an out-of-frustum corner
-    // is an intentional close-up, not a request to snap back to Fit. This is
-    // especially important for wheel zoom in fullscreen, where a resize
-    // observer may run in the same event turn as OrbitControls.
-    if (cameraOwnsView && !hydrationCentering) return false;
-    const shouldReframe = hydrationCentering || outside || (offCenter && !cameraOwnsView);
+    const interactionKind = String(scene3D._cameraInteractionKind || 'unknown');
+    const deliberateCloseup = cameraOwnsView
+        && (interactionKind === 'zoom' || interactionKind === 'pan');
+    // A wheel zoom or a pan is an intentional close-up/offset and must not
+    // snap back.  Rotation is different: the operator expects the complete
+    // model to remain inspectable while orbiting, so a real frustum crossing
+    // is corrected by increasing distance without changing the view
+    // direction.  This distinction fixes the half-model jump without
+    // breaking fullscreen zoom.
+    const hardClip = !validProjection || outside;
+    if (cameraOwnsView && !hydrationCentering && !hardClip) return false;
+    const shouldReframe = hydrationCentering
+        || (hardClip && !deliberateCloseup)
+        || (offCenter && !cameraOwnsView);
     if (!shouldReframe) return false;
 
     const center = box.getCenter(new THREE.Vector3());
@@ -3176,12 +3297,14 @@ function ensureCameraFitsVisibleScene({ forceCenter = false, reason = '' } = {})
     });
     scene3D._cameraHasVisibleFrame = true;
     try { window.scheduleWorkspaceSave?.('viewer.3d.camera-fit-after-restore'); } catch (_) {}
-    if (hydrationCentering || outside || offCenter) {
+    if (hydrationCentering || hardClip || offCenter) {
         try {
             console.debug('[3D camera] reframed visible scene', {
                 forceCenter,
                 reason,
                 outside,
+                interactionKind,
+                deliberateCloseup,
                 offCenter,
                 projectedCenter: [projectedCenterX, projectedCenterY],
             });
@@ -3612,6 +3735,12 @@ async function toggle3DSkin(on) {
                 color: 0xcccccc, transparent: true, opacity: 0.15, side: THREE.DoubleSide,
                 depthWrite: false, depthTest: true,
             }));
+            mesh.userData = {
+                type: 'skin',
+                source: 'skin',
+                depthWriteWhenTransparent: false,
+            };
+            centerWorldGeometryForDepthSort(mesh);
             scene3D.scene.add(mesh);
             scene3D.skinMesh = mesh;
             if (typeof state !== 'undefined' && state.doseTexture?.enabled &&
@@ -3901,7 +4030,17 @@ async function loadSeeds3D() {
                     });
                     tube = new THREE.Mesh(tubeGeometry, tubeMaterial);
                 }
-                tube.userData = { type: 'needle', id: needle.id, trajectoryId: _normalizeTrajectoryId(needle.trajectory_id) };
+                tube.userData = {
+                    type: 'needle',
+                    id: needle.id,
+                    trajectoryId: _normalizeTrajectoryId(needle.trajectory_id),
+                    depthWriteWhenTransparent: false,
+                };
+                // Multi-point TubeGeometry contains world coordinates.  The
+                // two-point cylinder is already local and centered, so the
+                // helper is harmless there and gives both paths the same
+                // sorting metadata.
+                centerWorldGeometryForDepthSort(tube);
                 scene3D.scene.add(tube);
                 scene3D.meshes[needle.id] = tube;
                 if (typeof _syncNeedleHandles === 'function') _syncNeedleHandles({
@@ -3916,7 +4055,13 @@ async function loadSeeds3D() {
                 const lineGeo = new THREE.BufferGeometry().setFromPoints(points);
                 const lineMat = new THREE.LineBasicMaterial({ color: 0xff2266, linewidth: 2 });
                 const line = new THREE.Line(lineGeo, lineMat);
-                line.userData = { type: 'needle', id: needle.id, trajectoryId: _normalizeTrajectoryId(needle.trajectory_id) };
+                line.userData = {
+                    type: 'needle',
+                    id: needle.id,
+                    trajectoryId: _normalizeTrajectoryId(needle.trajectory_id),
+                    depthWriteWhenTransparent: false,
+                };
+                centerWorldGeometryForDepthSort(line);
                 scene3D.scene.add(line);
                 scene3D.meshes[needle.id] = line;
                 if (typeof _syncNeedleHandles === 'function') _syncNeedleHandles({
@@ -4015,7 +4160,12 @@ async function loadDoseIsosurface(threshold = 1.0, color = 0x00ff88, requestScop
         });
 
         const mesh = new THREE.Mesh(geometry, material);
-        mesh.userData = { type: 'dose_isosurface', threshold: threshold };
+        mesh.userData = {
+            type: 'dose_isosurface',
+            threshold: threshold,
+            depthWriteWhenTransparent: false,
+        };
+        centerWorldGeometryForDepthSort(mesh);
         scene3D.scene.add(mesh);
         scene3D.meshes[existingId] = mesh;
 

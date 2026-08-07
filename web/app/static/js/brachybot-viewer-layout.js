@@ -1084,6 +1084,10 @@ function _reconstructMask3D(id, silent = false) {
     });
     const mesh = new THREE.Mesh(geometry, material);
     mesh.userData = { type: 'mask', id, source: 'mask' };
+    // This client-side mask is built directly in patient world coordinates.
+    // Recenter it before insertion so transparent depth sorting and scene
+    // bounds use the actual mask center instead of the global origin.
+    window.centerWorldGeometryForDepthSort?.(mesh);
 
     if (typeof init3DScene === 'function') init3DScene();
     if (scene3D.meshes[id]) {
@@ -1139,7 +1143,11 @@ function applyMeshOpacity(mesh, opacity, visible = true) {
     _forEachMaterial(mesh, mat => {
         mat.transparent = op < 0.999;
         mat.opacity = op;
-        mat.depthWrite = op >= 0.999;
+        // Surgical Guide is translucent for inspection, but remains a real
+        // physical boundary.  Preserve its depth-writing policy when the
+        // Data Tree opacity control changes; otherwise a guide that is
+        // transparent in the UI would let a needle behind it render on top.
+        mat.depthWrite = op >= 0.999 || mesh.userData?.depthWriteWhenTransparent === true;
         mat.needsUpdate = true;
     });
     applyMeshVisibility(mesh, visible, op);
