@@ -28,6 +28,7 @@ def test_threshold_apply_is_chunked_and_has_busy_feedback():
     assert "await _yieldViewerWork()" in volume
     assert "kind: 'threshold'" in volume
     assert "await _yieldViewerPaint()" in layout
+    assert "_sliceRenderGeneration" in layout
 
 
 def test_threshold_mask_is_a_data_tree_mask_and_not_a_planning_mesh():
