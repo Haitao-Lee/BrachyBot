@@ -1121,6 +1121,14 @@
     }
 
     function restoreSceneView(scene, dvh, generation) {
+        // Mark the camera as restore-owned until the hydrated scene has had a
+        // chance to replace the old mesh set. The saved target is still
+        // applied first so a valid user view is preserved, but the delayed
+        // guard can reframe a stale target around the live objects.
+        if (typeof scene3D !== 'undefined' && scene3D) {
+            scene3D._workspaceRestoreActive = true;
+            scene3D._cameraUserInteracted = false;
+        }
         const applyScene = () => {
             if (!scene || typeof scene3D === 'undefined' || !scene3D?.camera) return;
             const camera = scene3D.camera;
@@ -1192,10 +1200,27 @@
         // Meshes may finish after the saved pose has been re-applied. Run the
         // non-destructive frustum guard after both layout and hydration settle.
         scheduleDeferredWorkspaceRestore(generation, () => {
-            try { window.ensureCameraFitsVisibleScene?.(); } catch (_) {}
+            try {
+                if (typeof scene3D === 'undefined' || scene3D?._cameraUserInteracted !== true) {
+                    window.ensureCameraFitsVisibleScene?.({
+                        forceCenter: true,
+                        reason: 'workspace-restore-layout',
+                    });
+                }
+            } catch (_) {}
         }, 1800);
         scheduleDeferredWorkspaceRestore(generation, () => {
-            try { window.ensureCameraFitsVisibleScene?.(); } catch (_) {}
+            try {
+                if (typeof scene3D === 'undefined' || scene3D?._cameraUserInteracted !== true) {
+                    window.ensureCameraFitsVisibleScene?.({
+                        forceCenter: true,
+                        reason: 'workspace-restore-settled',
+                    });
+                }
+            } catch (_) {}
+            if (typeof scene3D !== 'undefined' && scene3D) {
+                scene3D._workspaceRestoreActive = false;
+            }
         }, 3000);
 
         const applyDvh = () => {

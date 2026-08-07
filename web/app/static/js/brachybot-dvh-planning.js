@@ -1273,7 +1273,13 @@ async function refreshPlanningUI(options = {}) {
                 // Hydrated meshes (especially the guide) can extend beyond a
                 // pose captured with the previous canvas aspect ratio. Correct
                 // only genuinely clipped scenes; preserve normal user views.
-                try { window.ensureCameraFitsVisibleScene?.(); } catch (error) {
+                try {
+                    window.ensureCameraFitsVisibleScene?.({
+                        forceCenter: scene3D?._workspaceRestoreActive === true
+                            && scene3D?._cameraUserInteracted !== true,
+                        reason: 'planning-mesh-hydration-complete',
+                    });
+                } catch (error) {
                     console.warn('[3D auto-load] camera fit guard:', error);
                 }
                 await backgroundReportPromise.catch(() => {});
@@ -1309,7 +1315,13 @@ async function refreshPlanningUI(options = {}) {
             try { if (typeof renderDataTree === 'function') renderDataTree(); } catch (_) {}
             try { if (typeof forceRender3DViewer === 'function') forceRender3DViewer(); } catch (_) {}
         }
-        try { window.ensureCameraFitsVisibleScene?.(); } catch (error) {
+        try {
+            window.ensureCameraFitsVisibleScene?.({
+                forceCenter: scene3D?._workspaceRestoreActive === true
+                    && scene3D?._cameraUserInteracted !== true,
+                reason: 'planning-mesh-load-complete',
+            });
+        } catch (error) {
             console.warn('[3D auto-load] camera fit guard:', error);
         }
         try {
