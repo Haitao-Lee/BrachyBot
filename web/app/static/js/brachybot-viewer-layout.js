@@ -1099,6 +1099,7 @@ function _reconstructMask3D(id, silent = false) {
     scene3D.scene.add(mesh);
     scene3D.meshes[id] = mesh;
     if (typeof window.applyDataTreeViewVisibility === 'function') window.applyDataTreeViewVisibility();
+    window.scheduleCameraFitForSceneMutation?.('manual-mask-loaded');
     if (scene3D.requestRender) scene3D.requestRender(4);
     if (!silent) switchPanel('viewers', document.querySelectorAll('.panel-tab')[2]);
     return { vertices: positions.length / 3, faces: indices.length / 3 };
@@ -1690,15 +1691,28 @@ function _makeSeedMesh(seed) {
     const geometry = new THREE.CylinderGeometry(radius, radius, length, 16);
     const material = new THREE.MeshPhysicalMaterial({
         color: 0xe6e64d,
+        // Use the transparent planning queue even at opacity 1 so the
+        // Surgical Guide depth pass runs before seeds and needles. The
+        // physical seed remains fully opaque and depth-writing.
+        transparent: true,
+        opacity: 1,
         metalness: 0.5,
         roughness: 0.3,
         emissive: 0x332200,
         emissiveIntensity: 0.5,
+        depthWrite: true,
+        depthTest: true,
     });
     const mesh = new THREE.Mesh(geometry, material);
     mesh.setRotationFromQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir));
     mesh.position.copy(pos);
-    mesh.userData = { type: 'seed', id: seed.id, trajectoryId: _normalizeTrajectoryId(seed.trajectory_id) };
+    mesh.renderOrder = 40;
+    mesh.userData = {
+        type: 'seed',
+        id: seed.id,
+        trajectoryId: _normalizeTrajectoryId(seed.trajectory_id),
+        renderRole: 'planning_seed',
+    };
     return mesh;
 }
 
@@ -1723,9 +1737,16 @@ function _makeNeedleMesh(needle) {
         depthTest: true,
     });
     const mesh = new THREE.Mesh(geo, mat);
+    mesh.renderOrder = 30;
     mesh.position.copy(new THREE.Vector3().addVectors(points[0], points[1]).multiplyScalar(0.5));
     mesh.setRotationFromQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir));
-    mesh.userData = { type: 'needle', id: needle.id, trajectoryId: _normalizeTrajectoryId(needle.trajectory_id) };
+    mesh.userData = {
+        type: 'needle',
+        id: needle.id,
+        trajectoryId: _normalizeTrajectoryId(needle.trajectory_id),
+        depthWriteWhenTransparent: false,
+        renderRole: 'planning_needle',
+    };
     return mesh;
 }
 
