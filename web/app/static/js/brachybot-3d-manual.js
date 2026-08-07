@@ -1872,9 +1872,19 @@ function init3DScene() {
         if (changed) {
             scene3D.renderer.setPixelRatio(dpr);
             scene3D.renderer.setSize(cssWidth, cssHeight, false);
-            scene3D.camera.aspect = cssWidth / cssHeight;
-            scene3D.camera.updateProjectionMatrix();
             viewer3DSize = { cssWidth, cssHeight, dpr, pixelWidth, pixelHeight };
+        }
+        // The saved workspace pose may contain the aspect ratio of a previous
+        // panel layout.  The DOM rectangle is authoritative for the current
+        // frame, even when the drawing-buffer dimensions themselves did not
+        // change.  Without this unconditional correction, a restart could
+        // restore a stale aspect and crop the top/right of an otherwise valid
+        // mesh while zooming out.
+        const actualAspect = cssWidth / cssHeight;
+        if (!Number.isFinite(scene3D.camera.aspect)
+            || Math.abs(scene3D.camera.aspect - actualAspect) > 1e-6) {
+            scene3D.camera.aspect = actualAspect;
+            scene3D.camera.updateProjectionMatrix();
         }
         viewer3DSizeDirty = false;
         scene3D.renderer.domElement.style.left = '0px';
@@ -1950,6 +1960,13 @@ function init3DScene() {
     function resizeViewer3D() {
         const geometry = syncViewer3DSize({ force: true });
         if (!geometry) return false;
+        if (scene3D.initialized && geometry.changed) {
+            // A panel resize can make a previously valid saved pose clip the
+            // scene. The guard is non-destructive when the scene already fits.
+            setTimeout(() => {
+                try { ensureCameraFitsVisibleScene?.(); } catch (_) {}
+            }, 0);
+        }
         requestRender(2);
         return !!geometry;
     }
@@ -2889,6 +2906,75 @@ function fitCameraToScene() {
         saveState: true,
     });
 }
+
+// Restore-time camera guard. A saved pose can be perfectly valid for the old
+// canvas aspect ratio but clip newly hydrated meshes after a restart or panel
+// resize. Unlike Fit/Reset, this function changes the camera only when a
+// visible scene corner is actually outside the current perspective frustum.
+function ensureCameraFitsVisibleScene() {
+    if (!scene3D?.camera || !scene3D?.controls || !scene3D?.initialized) return false;
+    const camera = scene3D.camera;
+    if (!camera.isPerspectiveCamera) return false;
+    scene3D.resize?.();
+    scene3D.scene?.updateMatrixWorld?.(true);
+
+    const box = new THREE.Box3();
+    const expandVisible = object => {
+        if (!object || object.visible === false) return;
+        const surface = typeof getMeshSurface === 'function' ? getMeshSurface(object) : object;
+        if (surface && surface.visible === false) return;
+        box.expandByObject(object);
+    };
+    Object.values(scene3D.meshes || {}).forEach(expandVisible);
+    expandVisible(scene3D.skinMesh);
+    if (box.isEmpty()
+        || ![box.min.x, box.min.y, box.min.z, box.max.x, box.max.y, box.max.z].every(Number.isFinite)) {
+        return false;
+    }
+
+    camera.updateMatrixWorld(true);
+    camera.updateProjectionMatrix();
+    const { min, max } = box;
+    const corners = [
+        [min.x, min.y, min.z], [min.x, min.y, max.z],
+        [min.x, max.y, min.z], [min.x, max.y, max.z],
+        [max.x, min.y, min.z], [max.x, min.y, max.z],
+        [max.x, max.y, min.z], [max.x, max.y, max.z],
+    ];
+    const outside = corners.some(values => {
+        const projected = new THREE.Vector3(...values).project(camera);
+        return ![projected.x, projected.y, projected.z].every(Number.isFinite)
+            || projected.x < -0.96 || projected.x > 0.96
+            || projected.y < -0.96 || projected.y > 0.96
+            || projected.z < -1 || projected.z > 1;
+    });
+    if (!outside) return false;
+
+    const center = box.getCenter(new THREE.Vector3());
+    const sphere = box.getBoundingSphere(new THREE.Sphere());
+    const radius = Math.max(Number(sphere.radius) || 1, 1);
+    const halfFovY = (Number(camera.fov) || 50) * Math.PI / 360;
+    const aspect = Math.max(0.1, Number(camera.aspect) || 1);
+    const halfFovX = Math.atan(Math.tan(halfFovY) * aspect);
+    const limitingHalfFov = Math.max(0.01, Math.min(halfFovX, halfFovY));
+    const requiredDistance = radius / Math.sin(limitingHalfFov) * 1.18;
+    const direction = camera.position.clone().sub(scene3D.controls.target);
+    if (direction.lengthSq() < 1e-8) direction.set(0.5, 0.5, 0.5);
+    direction.normalize();
+    const currentDistance = camera.position.distanceTo(scene3D.controls.target);
+    const distance = Math.max(requiredDistance, currentDistance || 0);
+    sync3DCameraPose({
+        position: center.clone().add(direction.multiplyScalar(distance)),
+        target: center,
+        up: camera.up.clone(),
+        near: 0.01,
+        far: Math.max(5000, distance + radius * 4),
+        saveState: true,
+    });
+    try { window.scheduleWorkspaceSave?.('viewer.3d.camera-fit-after-restore'); } catch (_) {}
+    return true;
+}
+window.ensureCameraFitsVisibleScene = ensureCameraFitsVisibleScene;
 
 // Temporarily frame a small set of seeds for a monitor evidence screenshot.
 // This is deliberately separate from Fit: monitoring must restore the user's

@@ -151,6 +151,17 @@ class SurgicalGuideTool(BaseTool):
                     selected_needle_ids=kwargs.get("needle_ids"),
                 ),
             )
+            # Chat/tool-driven generation bypasses the HTTP route. Publish the
+            # immutable guide into the active Planning snapshot as well as the
+            # legacy active alias, otherwise a restart restores needles/seeds
+            # but silently loses the guide mesh.
+            try:
+                from web.planning_runs import publish_planning_run
+                publish_planning_run(agent, None, status="completed")
+            except Exception:
+                # Guide generation already succeeded; the workspace checkpoint
+                # can retry this optional snapshot publication.
+                pass
             return ToolResult(
                 success=True,
                 message=(

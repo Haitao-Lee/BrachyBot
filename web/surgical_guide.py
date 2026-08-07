@@ -1003,7 +1003,11 @@ def _mesh_from_mask(
     field = _ndi.gaussian_filter(mask.astype(np.float64), sigma=blur_sigma)
     padded = np.pad(field, 1, mode="constant", constant_values=0.0)
     vertices_zyx, faces, _, _ = measure.marching_cubes(
-        padded, level=0.5, spacing=spacing_zyx, allow_degenerate=False
+        padded,
+        level=0.5,
+        spacing=spacing_zyx,
+        allow_degenerate=False,
+        method="lewiner",
     )
     # Remove the one-voxel padding and transform local physical coordinates
     # through the CT direction matrix.  The local origin crossed SimpleITK's
@@ -1483,6 +1487,17 @@ def generate_surgical_guide(
             "surface around the target, or move the needle entries away from the "
             "scan boundary."
         )
+    # Marching Cubes is topologically correct for ordinary binary volumes,
+    # but a thin plate intersected by several closely spaced bores can still
+    # contain one-voxel diagonal cracks at ambiguous voxel configurations.
+    # Keep the first pass unchanged for maximum geometric fidelity, and only
+    # use the repair pass if the extracted mesh actually fails the strict
+    # edge-closure check below.
+    mesh_repair: Dict[str, Any] = {
+        "attempted": False,
+        "method": None,
+        "initial_open_or_nonmanifold_edges": 0,
+    }
     vertices, faces = _mesh_from_mask(solid, ct_image, lower_xyz, spacing_xyz)
     # Marching Cubes and the global Taubin pass are retained for the plate and
     # sleeve topology, but the clinically relevant needle interfaces must be
@@ -1496,9 +1511,84 @@ def generate_surgical_guide(
     )
     validation = mesh_validation(vertices, faces)
     if not validation.get("watertight"):
-        raise SurgicalGuideError(
-            "Generated guide mesh is not watertight; adjust guide parameters or verify CT skin coverage"
+        mesh_repair["attempted"] = True
+        mesh_repair["method"] = "restricted_voxel_closing_and_bore_recut"
+        mesh_repair["initial_open_or_nonmanifold_edges"] = int(
+            validation.get("open_or_nonmanifold_edges") or 0
         )
+
+        # Close only one-voxel topology cracks. The result is constrained back
+        # to the real lateral skin shell, then every known bore is cut again.
+        # Re-cutting is essential: a closing operation must never fill a main
+        # needle channel or an auxiliary alternate puncture hole.
+        repaired_solid = ndimage.binary_closing(
+            solid,
+            structure=ndimage.generate_binary_structure(3, 1),
+            iterations=1,
+        )
+        repaired_solid &= (~body_crop) & (outside_distance >= clearance)
+
+        for spec in realized_auxiliary_specs:
+            hole_sdf, box = _cylinder_sdf_in_region(
+                ct_image,
+                lower_xyz,
+                body_crop.shape,
+                spacing_xyz,
+                np.asarray(spec["start"], dtype=np.float64),
+                np.asarray(spec["end"], dtype=np.float64),
+                float(spec["radius_mm"]),
+            )
+            repaired_solid[box] &= ~(hole_sdf <= 0.0)
+        for path in paths:
+            sleeve_inner = path.entry - path.inward_direction * clearance
+            sleeve_outer = sleeve_inner - path.inward_direction * (
+                plate_thickness + params["sleeve_outward_mm"]
+            )
+            bore_sdf, box = _cylinder_sdf_in_region(
+                ct_image,
+                lower_xyz,
+                body_crop.shape,
+                spacing_xyz,
+                sleeve_inner,
+                sleeve_outer,
+                params["channel_radius_mm"] + GUIDE_BORE_MARGIN_MM,
+            )
+            repaired_solid[box] &= ~(bore_sdf <= 0.0)
+        repaired_solid = _filter_components(
+            repaired_solid,
+            int(params["minimum_component_voxels"]),
+        )
+
+        if bool(np.any(repaired_solid)):
+            repaired_vertices, repaired_faces = _mesh_from_mask(
+                repaired_solid,
+                ct_image,
+                lower_xyz,
+                spacing_xyz,
+            )
+            repaired_vertices, repaired_bore_quality = _project_bore_walls(
+                repaired_vertices,
+                paths,
+                realized_auxiliary_specs,
+                params,
+            )
+            repaired_validation = mesh_validation(repaired_vertices, repaired_faces)
+            if repaired_validation.get("watertight"):
+                vertices = repaired_vertices
+                faces = repaired_faces
+                bore_quality = repaired_bore_quality
+                validation = repaired_validation
+                mesh_repair["repaired_open_or_nonmanifold_edges"] = int(
+                    validation.get("open_or_nonmanifold_edges") or 0
+                )
+
+        if not validation.get("watertight"):
+            raise SurgicalGuideError(
+                "Generated guide mesh is not watertight after topology repair "
+                f"(open/non-manifold edges: {int(validation.get('open_or_nonmanifold_edges') or 0)}); "
+                "adjust guide parameters or verify CT skin coverage"
+            )
+    validation["mesh_repair"] = mesh_repair
     snapshot = _current_planning_snapshot(agent)
     prior = memory.retrieve("surgical_guide")
     signature = planning_signature(_algorithm_planning_snapshot(agent))

@@ -1245,3 +1245,49 @@ def test_monitor_and_guide_controls_have_explicit_runtime_fallbacks():
     assert "No planned needles available" in guide
     assert "capability === 'loading' && selected?.value === 'nnunet_pancreatic'" in ui_api
     assert "_syncTumorTypeSelectorAppearance();" in ui_api
+
+
+def test_report_restore_preserves_quality_cells_and_keeps_section_order():
+    report = read("web/app/static/js/brachybot-report-export.js")
+    block = report.split("function _updateReportPreview()", 1)[1].split(
+        "function _hpMetricRow", 1
+    )[0]
+    assert "const reportTotalPages = 5;" in block
+    assert block.index("s.section2") < block.index("s.section3") < block.index("s.section4")
+    for key in ("aD95.reference", "aCI.reference", "aHI.reference", "aGI.reference", "aScore.reference"):
+        assert key in block
+    assert "options.preserveStored !== false" in report
+
+    workspace = read("web/app/static/js/brachybot-workspace.js")
+    assert "_mergePersistedQualityAssessment" in workspace
+    assert "syncReportQualityAssessment(targetReport, { preserveStored: true })" in workspace
+    assert "syncReportQualityAssessment(window.reportForm, { preserveStored: true })" in workspace
+
+
+def test_surgical_guide_restore_waits_for_hydration_and_publishes_tool_results():
+    routes = read("web/routes/surgical_guide_routes.py")
+    guide = read("web/app/static/js/brachybot-surgical-guide.js")
+    tool = read("tool_factory/surgical_guide/__init__.py")
+    assert "workspace_hydration_pending" in routes
+    assert "pending = workspace_data_pending(agent)" in routes
+    assert "retryPending: true" in guide
+    assert "maxPendingRetries = 240" in guide
+    assert "publish_planning_run(agent, None, status=\"completed\")" in tool
+    assert "requires_regeneration: true" in guide
+    assert "source_plan_signature" in guide
+    assert "Older persisted guides may not have bore_quality metadata" in guide
+
+
+def test_restore_time_3d_camera_guard_only_corrects_actual_frustum_clipping():
+    viewer = read("web/app/static/js/brachybot-3d-manual.js")
+    workspace = read("web/app/static/js/brachybot-workspace.js")
+    planning = read("web/app/static/js/brachybot-dvh-planning.js")
+    assert "function ensureCameraFitsVisibleScene()" in viewer
+    assert "project(camera)" in viewer
+    assert "if (!outside) return false;" in viewer
+    assert "window.ensureCameraFitsVisibleScene = ensureCameraFitsVisibleScene;" in viewer
+    assert "const actualAspect = cssWidth / cssHeight;" in viewer
+    assert "aspect: undefined" in workspace
+    assert "viewer.3d.camera-fit-after-restore" in viewer
+    assert "window.ensureCameraFitsVisibleScene?.()" in workspace
+    assert planning.count("window.ensureCameraFitsVisibleScene?.()") >= 2
