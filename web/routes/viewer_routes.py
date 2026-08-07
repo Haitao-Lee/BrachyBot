@@ -1200,7 +1200,12 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
     @rate_limit
     def api_viewer_threshold():
         """Apply threshold segmentation and return mask."""
-        agent = get_agent()
+        # This route only reads the already hydrated CT volume. Constructing a
+        # full LLM agent here made a simple threshold/3D action wait behind
+        # unrelated planning state and could leave the browser without a
+        # responsive transition. Use the lightweight agent path just like the
+        # label-mesh routes.
+        agent = get_agent(_lightweight=True)
         if agent is None:
             return jsonify({"error": "Agent not available"}), 500
 
@@ -1560,7 +1565,12 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
     @rate_limit
     def api_viewer_3d_skin():
         """Generate CT skin mesh using isosurface (marching cubes at skin threshold)."""
-        agent = get_agent()
+        # This route only reads the already hydrated CT volume. Constructing a
+        # full LLM agent here made a simple threshold/3D action wait behind
+        # unrelated planning state and could leave the browser without a
+        # responsive transition. Use the lightweight agent path just like the
+        # label-mesh routes.
+        agent = get_agent(_lightweight=True)
         if agent is None:
             return jsonify({"error": "Agent not available"}), 500
 
@@ -1569,6 +1579,18 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
 
         ct_data = agent.memory.retrieve("ct_data")
         if ct_data is None:
+            # Lightweight agent construction intentionally returns before the
+            # CT sidecar is decoded. The browser must be able to start the
+            # request without turning this normal hydration window into a
+            # permanent mask failure.
+            hydration_phase = str(getattr(agent, "_workspace_hydration_phase", "") or "")
+            if getattr(agent, "_workspace_hydration_in_progress", False) or hydration_phase not in {"", "ready", "error"}:
+                return jsonify({
+                    "success": False,
+                    "pending": True,
+                    "retry_after_ms": 300,
+                    "error": "CT volume is still loading",
+                }), 202
             return jsonify({"error": "No CT loaded"}), 400
 
         try:

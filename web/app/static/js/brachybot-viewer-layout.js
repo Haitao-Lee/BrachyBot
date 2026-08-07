@@ -636,14 +636,27 @@ function renderSliceToCanvas(axis, sliceData) {
     }
 }
 
+function _yieldViewerPaint() {
+    return new Promise(resolve => {
+        const raf = typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function'
+            ? window.requestAnimationFrame.bind(window)
+            : callback => setTimeout(callback, 0);
+        raf(() => setTimeout(resolve, 0));
+    });
+}
+
 async function loadAllSlices() {
     if (!state.ctPath) return;
 
     // Use volume-based rendering for instant response
     if (volumeData && volumeShape) {
-        ['axial', 'sagittal', 'coronal'].forEach(axis => {
+        for (const axis of ['axial', 'sagittal', 'coronal']) {
             renderSliceFromVolume(axis, state.slices[axis]);
-        });
+            // Let the browser paint the active spinner and the completed
+            // plane before the next expensive MPR pass. This also keeps
+            // threshold/overlay changes responsive on large CT volumes.
+            await _yieldViewerPaint();
+        }
         return;
     }
 
@@ -779,6 +792,19 @@ async function reconstruct3D() {
         //    surfaces, not just an iso-contour.
         await loadCTVAndObstacleMeshes();
         if (!_viewer3DRequestScopeIsCurrent(requestScope)) return { stale: true };
+
+        // Threshold/manual masks are independent Data Tree segmentation
+        // nodes. Reconstruct every persisted threshold mask when the user
+        // presses the toolbar 3D button so it cannot silently remain a 2D-only
+        // transient overlay.
+        const thresholdMasks = Object.keys(state.maskLabels || {})
+            .filter(maskId => state.maskLabels[maskId]?.kind === 'threshold');
+        for (const maskId of thresholdMasks) {
+            if (!_viewer3DRequestScopeIsCurrent(requestScope)) return { stale: true };
+            try { await reconstructOrgan3D(maskId, true); } catch (error) {
+                console.warn('[viewer] threshold mask reconstruction skipped:', error);
+            }
+        }
 
         // 2) For planning runs, also reconstruct seeds, needles,
         //    and iso surfaces. The user can disable any of these
@@ -939,8 +965,12 @@ async function reconstructOrgan3D(id, silent = false) {
                 else { const m = c.match(/(\d+)/g); color = m ? (parseInt(m[0]) << 16 | parseInt(m[1]) << 8 | parseInt(m[2])) : 0x0ea5e9; }
             } else { color = 0x0ea5e9; }
         } else if (id.startsWith('mask_')) {
-            // Manual/threshold masks are local voxel sets; reconstruct them
-            // on the client as a merged voxel cube mesh.
+            const mask = state.maskLabels?.[id];
+            if (mask?.kind === 'threshold' && Number.isFinite(Number(mask.threshold))) {
+                return _reconstructThresholdMask3D(id, silent);
+            }
+            // Hand-drawn masks remain local voxel sets and use the existing
+            // client reconstruction path.
             return _reconstructMask3D(id, silent);
         } else {
             return;
@@ -1414,6 +1444,78 @@ function fitCameraToDoseSurfaceScene() {
         scene3D.camera.far = pose.far;
         scene3D.camera.updateProjectionMatrix();
         scene3D.controls.syncExternalState?.();
+    }
+}
+
+// Threshold masks represent a real CT-derived surface. Reuse the server's
+// marching-cubes implementation instead of creating one cube per voxel in
+// the browser; this keeps large whole-body masks smooth and interactive.
+async function _reconstructThresholdMask3D(id, silent = false) {
+    const scope = _captureViewer3DRequestScope();
+    const mask = state.maskLabels?.[id];
+    if (!mask || !Number.isFinite(Number(mask.threshold))) {
+        if (!silent) addChat('error', 'The threshold mask is not available for 3D reconstruction.');
+        return { success: false };
+    }
+    const loading = document.getElementById('loading3D');
+    if (loading) {
+        loading.classList.add('active');
+        loading.setAttribute('aria-hidden', 'false');
+    }
+    mask.loading = true;
+    mask.status = 'loading';
+    renderDataTree?.();
+    try {
+        let res = null;
+        let data = null;
+        const maxPendingAttempts = 40;
+        for (let attempt = 0; attempt <= maxPendingAttempts; attempt += 1) {
+            if (!_viewer3DRequestScopeIsCurrent(scope)) return { stale: true };
+            res = await fetch(API + '/viewer/3d_skin', {
+                method: 'POST',
+                headers: _viewer3DRequestHeaders(scope, { 'Content-Type': 'application/json' }),
+                body: JSON.stringify({ threshold: Number(mask.threshold) }),
+            });
+            data = await res.json().catch(() => ({}));
+            if (!(res.status === 202 && data.pending)) break;
+            if (attempt >= maxPendingAttempts) {
+                throw new Error(data.error || 'CT volume is still loading');
+            }
+            await new Promise(resolve => setTimeout(resolve, Number(data.retry_after_ms) || 300));
+        }
+        if (!res?.ok || !data?.success) throw new Error(data?.error || `HTTP ${res?.status || 500}`);
+        if (!_viewer3DRequestScopeIsCurrent(scope)) return { stale: true };
+        const color = String(mask.color || '#8b5cf6').replace('#', '');
+        data.color = Number.parseInt(color, 16) || 0x8b5cf6;
+        data.organ_id = id;
+        data.label = mask.label || mask.name || 'Threshold mask';
+        data.source = 'mask';
+        data.visible = mask.visible !== false;
+        data.visible2D = mask.visible2D !== false;
+        data.visible3D = mask.visible3D !== false;
+        data.opacity = typeof mask.opacity === 'number' ? mask.opacity : 0.5;
+        data.object_id = mask.objectId || 'mask:threshold';
+        _safeRender3DMesh(data);
+        mask.loading = false;
+        mask.status = 'ready';
+        mask.meshLoaded = true;
+        renderDataTree?.();
+        if (!silent) switchPanel('viewers', document.querySelectorAll('.panel-tab')[2]);
+        return { success: true, vertex_count: data.vertex_count, face_count: data.face_count };
+    } catch (error) {
+        if (_viewer3DRequestScopeIsCurrent(scope)) {
+            mask.loading = false;
+            mask.status = 'error';
+            mask.error = error?.message || String(error);
+            renderDataTree?.();
+            if (!silent) addChat('error', `3D threshold mask failed: ${error?.message || error}`);
+        }
+        return { success: false, error: error?.message || String(error) };
+    } finally {
+        if (loading && _viewer3DRequestScopeIsCurrent(scope)) {
+            loading.classList.remove('active');
+            loading.setAttribute('aria-hidden', 'true');
+        }
     }
 }
 

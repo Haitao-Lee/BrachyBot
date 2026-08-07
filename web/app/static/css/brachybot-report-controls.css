@@ -796,6 +796,10 @@
     box-shadow: 0 0 0 2px rgba(79, 124, 255, 0.10), 0 1px 4px rgba(79, 124, 255, 0.18);
     flex-shrink: 0;
 }
+.threshold-apply-spinner { display: none; width: 12px; height: 12px; border-width: 1.5px; }
+#viewerThresholdApply[aria-busy="true"] { cursor: wait; opacity: 0.82; }
+#viewerThresholdApply[aria-busy="true"] .threshold-apply-spinner { display: inline-block; }
+#viewerThresholdApply[aria-busy="true"] .threshold-apply-label { opacity: 0.72; }
 .upload-progress-text { font-size: 0.75rem; color: var(--text); }
 .upload-progress-filename {
     font-size: 0.66rem;

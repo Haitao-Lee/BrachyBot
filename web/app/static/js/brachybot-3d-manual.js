@@ -2707,12 +2707,33 @@ function addMeshToScene(meshData) {
     scene3D.meshes[id] = mesh;
     uiDebugLog('[addMeshToScene] Added mesh:', id, 'vertices:', meshData.vertex_count, 'total meshes:', Object.keys(scene3D.meshes).length);
 
-    // Mirror this mesh into the data tree so the user can see all 3D
-    // meshes (CTV/OAR/dose/etc.) listed with their own visibility toggle.
-    // Without this, the data tree was empty after 3D reconstruction and
-    // the user had no way to know what was actually loaded into the
-    // viewer.
-    if (dataTreeState && dataTreeState.planning) {
+    // Threshold/manual masks are owned by state.maskLabels, not by the
+    // Planning result. Keep the 3D object and the mask Data Tree node in
+    // sync, but never leak it into Planning -> 3D meshes.
+    const isMaskMesh = String(meshData.source || '') === 'mask' || String(id).startsWith('mask_');
+    if (isMaskMesh) {
+        const mask = typeof state !== 'undefined' ? state.maskLabels?.[id] : null;
+        if (mask) {
+            mask.objectId = meshData.object_id || mask.objectId || `mask:${id}`;
+            mask.meshLoaded = true;
+            mask.loading = false;
+            mask.status = 'ready';
+            mask.error = null;
+            mask.dataVersion = Number(meshData.data_version || mask.dataVersion || 0);
+        }
+        if (dataTreeState?.planning?.meshes) {
+            dataTreeState.planning.meshes = dataTreeState.planning.meshes.filter(item => item.id !== id);
+        }
+        if (typeof renderDataTree === 'function') renderDataTree();
+        if (typeof window.applyDataTreeViewVisibility === 'function') {
+            window.applyDataTreeViewVisibility();
+        }
+    } else if (dataTreeState && dataTreeState.planning) {
+        // Mirror this mesh into the data tree so the user can see all 3D
+        // meshes (CTV/OAR/dose/etc.) listed with their own visibility toggle.
+        // Without this, the data tree was empty after 3D reconstruction and
+        // the user had no way to know what was actually loaded into the
+        // viewer.
         const colorHex = typeof color === 'number'
             ? '#' + color.toString(16).padStart(6, '0')
             : (typeof color === 'string' ? color : '#0ea5e9');
@@ -3243,6 +3264,20 @@ function toggle3DWireframe(on) {
 }
 
 async function toggle3DSkin(on) {
+    // A threshold-derived skin is a first-class Data Tree mask. Keep the
+    // legacy checkbox compatible, but route it through the same stable node
+    // rather than creating an unmanaged `scene3D.skinMesh` object.
+    const thresholdMask = state?.maskLabels?.mask_threshold;
+    if (thresholdMask?.kind === 'threshold') {
+        thresholdMask.visible3D = !!on;
+        thresholdMask.visible = !!on;
+        if (on && !scene3D.meshes.mask_threshold && typeof reconstructOrgan3D === 'function') {
+            await reconstructOrgan3D('mask_threshold', true);
+        }
+        if (typeof window.applyDataTreeViewVisibility === 'function') window.applyDataTreeViewVisibility();
+        if (typeof renderDataTree === 'function') renderDataTree();
+        return;
+    }
     if (!on) {
         if (scene3D.skinMesh) {
             scene3D.scene.remove(scene3D.skinMesh);
