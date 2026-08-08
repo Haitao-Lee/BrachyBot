@@ -72,9 +72,9 @@
   "display_3d": {
     "_comment": "Default 3D viewer rendering settings. Used by addMeshToScene and the data tree when the user has not overridden via the meshOpacity3D slider. Compatible with the data tree's per-mesh visibility + opacity controls.",
     "default_opacity": 0.7,
-    "ctv_color": "#ff4444",
-    "oar_non_traversable_color": "#fb923c",
-    "oar_traversable_color": "#0ea5e9",
+    "ctv_color": "#ff304c",
+    "oar_non_traversable_color": "#e58a48",
+    "oar_traversable_color": "#3ccb8f",
     "seed_color": "#facc15",
     "needle_color": "#a855f7",
     "iso_surface_colors": ["#7dd3fc", "#22c55e", "#facc15", "#f97316"],

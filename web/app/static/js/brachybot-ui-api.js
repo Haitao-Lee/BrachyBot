@@ -1631,6 +1631,8 @@ function resetAllState(options = {}) {
     ctvLabelData = null;
     oarLabelData = null;
     labelColorLUT = {};
+    ctvLabelColorLUT = {};
+    oarLabelColorLUT = {};
     organMetaFromServer = {};
     window._ctvLabelMap = {};
 

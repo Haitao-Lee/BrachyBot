@@ -747,9 +747,9 @@ async function _get3DConfig() {
     // Hard-coded fallback matching default_params.json
     _3dConfigCache = {
         default_opacity: 0.7,
-        ctv_color: '#ff4444',
-        oar_non_traversable_color: '#fb923c',
-        oar_traversable_color: '#0ea5e9',
+        ctv_color: '#ff304c',
+        oar_non_traversable_color: '#e58a48',
+        oar_traversable_color: '#3ccb8f',
         seed_color: '#facc15',
         needle_color: '#a855f7',
         seed_opacity: 0.95,
@@ -940,9 +940,11 @@ async function reconstructOrgan3D(id, silent = false) {
                         const data = await res.json();
                         if (!_viewer3DRequestScopeIsCurrent(requestScope)) return { stale: true };
                         if (data.success && data.vertex_count > 0) {
-                            // Use same color as data tree (from labelColorLUT)
-                            const c = labelColorLUT[labelIds[i]];
-                            data.color = c ? (c[0] << 16 | c[1] << 8 | c[2]) : 0xff6b6b;
+                            // CTV has a dedicated namespace because OAR masks
+                            // commonly reuse label 1. The primary target must
+                            // therefore remain the same vivid red in 2D/3D.
+                            const c = ctvLabelColorLUT[labelIds[i]];
+                            data.color = c ? (c[0] << 16 | c[1] << 8 | c[2]) : 0xff304c;
                             data.organ_id = `ctv_${labelIds[i]}`;  // Use same ID as data tree
                             _safeRender3DMesh(data);
                             successCount++;
@@ -967,8 +969,8 @@ async function reconstructOrgan3D(id, silent = false) {
             // but 'oar' for display source when label > 1 so
             // addMeshToScene uses OAR opacity config.
             source = 'ctv';
-            const c = labelColorLUT[label_id];
-            color = c ? (c[0] << 16 | c[1] << 8 | c[2]) : 0xff6b6b;
+            const c = ctvLabelColorLUT[label_id];
+            color = c ? (c[0] << 16 | c[1] << 8 | c[2]) : 0xff304c;
         } else if (id.startsWith('organ_')) {
             label_id = parseInt(id.replace('organ_', ''));
             source = 'oar';
