@@ -187,7 +187,7 @@ async function reportAutoFill(options = {}) {
     if (!isCurrentCase()) return { stale: true };
     // Rebuild from the metrics/source fingerprint. A forced rebuild here can
     // erase durable Reference/Status cells while planning context hydrates.
-    syncReportQualityAssessment(f);
+    syncReportQualityAssessment(f, { preserveStored: true });
     _setReportStatus('Auto-filled from NIfTI + planning', 'ok');
     renderReportEditor(); _updateReportPreview(); _scheduleReportAutoSave();
     return { stale: false };
@@ -287,6 +287,10 @@ function _scheduleReportAutoSave() {
 function _reportAutoSave() {
     try {
         const f = window.reportForm;
+        // Quality rows are durable report content. Materialize the same
+        // Reference/Status values shown in Preview before the workspace
+        // serializer clones the form, including during a fast Session switch.
+        syncReportQualityAssessment(f, { preserveStored: true });
         if (typeof activeSessionId !== 'undefined' && activeSessionId) {
             f.sessionId = String(activeSessionId);
         }
@@ -662,6 +666,7 @@ function syncReportQualityAssessment(form, options = {}) {
     const metricsMatch = _qualityAssessmentMatchesMetrics(previous, form);
     const hasStoredRows = _hasStoredQualityAssessment(previous);
     const hasSourceContext = _reportHasSourceContext(form);
+    const fingerprintMatches = previous?.inputFingerprint === inputFingerprint;
     const unchanged = previous
         && (previous.version === 1 || previous.version === 2)
         && previous.language === language
@@ -679,7 +684,13 @@ function syncReportQualityAssessment(form, options = {}) {
         && options.refreshCriteria !== true
         && hasStoredRows
         && metricsMatch
-        && previous.language === language) return previous;
+        && previous.language === language
+        // During partial hydration the current form may temporarily lack the
+        // saved prescription rationale. Preserve the durable rows then. Once
+        // source context is available, however, a changed fingerprint means
+        // those rows belong to an older/incomplete assessment and must be
+        // rebuilt from the current criteria.
+        && (!hasSourceContext || fingerprintMatches)) return previous;
 
     const metrics = {};
     metricKeys.forEach(key => {
@@ -689,6 +700,7 @@ function syncReportQualityAssessment(form, options = {}) {
         const preservePreviousRow = options.preserveStored !== false
             && options.refreshCriteria !== true
             && previous?.language === language
+            && (!hasSourceContext || fingerprintMatches)
             && _hasStoredMetricAssessment(previousRow)
             && _normalizedReportMetricValue(previousRow.value) === value;
         metrics[key] = preservePreviousRow
@@ -823,9 +835,21 @@ function _updateReportPreview() {
     const aGI = _storedMetricAssessment(f, 'gi') || _defaultMetricAssessment(f, 'gi', f.metrics.gi);
     const aScore = _storedMetricAssessment(f, 'score') || _defaultMetricAssessment(f, 'score', f.metrics.score);
     const notAssessed = f.language === 'zh' ? '未评估' : 'Not assessed';
+    const targetSection = s.sectionTargetPrescription || s.section4;
+    const qualitySection = s.sectionPlanQuality || s.section2;
+    const oarSection = s.sectionOarDose || s.section3;
+    const interpretationSection = s.sectionClinicalInterpretation || s.section5;
     let p2 = `<div class="report-page">
-        <div class="hp-running-header"><span>${escHtml(s.confidentiality)}</span><span class="right">${escHtml(s.section2)}</span></div>
-        <h2 class="hp-section-title">${escHtml(s.section2)}${secondaryTitle('Plan Quality Assessment')}</h2>
+        <div class="hp-running-header"><span>${escHtml(s.confidentiality)}</span><span class="right">${escHtml(targetSection)} · ${escHtml(qualitySection)}</span></div>
+        <h2 class="hp-section-title">${escHtml(targetSection)}${secondaryTitle('Target & Prescription')}</h2>
+        <div class="hp-section-body">
+            <p class="no-indent"><span class="hp-key">${t('technique')}：</span>${_renderInlineMd(f.planning.technique) || ND}</p>
+            <p class="no-indent"><span class="hp-key">${t('prescriptionDose')}：</span>${f.planning.prescriptionGy !== null ? f.planning.prescriptionGy + ' ' + U.Gy : ND}；
+                <span class="hp-key">${t('totalSeeds')}：</span>${f.planning.totalSeeds !== null ? f.planning.totalSeeds + seedsUnit : ND}；
+                <span class="hp-key">${t('totalActivity')}：</span>${unitMBq(f.planning.totalActivityMBq)}；
+                <span class="hp-key">${t('trajectories')}：</span>${f.planning.trajectoryCount !== null ? f.planning.trajectoryCount + trajUnit : ND}</p>
+        </div>
+        <h2 class="hp-section-title">${escHtml(qualitySection)}${secondaryTitle('Plan Quality Assessment')}</h2>
         <div class="hp-section-body">
             <table class="hp-table">
                 <thead><tr><th style="width:25%">${t('metric')}</th><th style="width:18%">${t('value')}</th><th>${t('reference')}</th><th>${t('status')}</th></tr></thead>
@@ -852,9 +876,9 @@ function _updateReportPreview() {
 
     // ============== PAGE 3: OAR Dose ==============
     let p3 = `<div class="report-page">
-        <div class="hp-running-header"><span>${escHtml(s.confidentiality)}</span><span class="right">${escHtml(s.section3)}</span></div>`;
+        <div class="hp-running-header"><span>${escHtml(s.confidentiality)}</span><span class="right">${escHtml(oarSection)}</span></div>`;
     if (f.oarDose && f.oarDose.length > 0) {
-        p3 += `<h2 class="hp-section-title">${escHtml(s.section3)}${secondaryTitle('OAR Dose')}</h2>
+        p3 += `<h2 class="hp-section-title">${escHtml(oarSection)}${secondaryTitle('OAR Dose')}</h2>
         <div class="hp-section-body">
             <p class="no-indent">${escHtml(f.language === 'zh'
                 ? '以下 OAR 数值为观测结果；请依据当前部位适用指南或已确认的病例方案进行临床判读，软件不依据默认值自动给出通过或超限结论。'
@@ -880,25 +904,20 @@ function _updateReportPreview() {
         const noOarDose = f.language === 'zh'
             ? '当前病例尚无可用的危及器官剂量结果。完成剂量计算后，此处将自动显示器官剂量指标与来源支持的限值评估。'
             : 'No organ-at-risk dose results are available for this case. After dose calculation, this section will show organ dose metrics and source-backed limit assessments.';
-        p3 += `<h2 class="hp-section-title">${escHtml(s.section3)}${secondaryTitle('OAR Dose')}</h2>
+        p3 += `<h2 class="hp-section-title">${escHtml(oarSection)}${secondaryTitle('OAR Dose')}</h2>
         <div class="hp-section-body"><p class="no-indent">${escHtml(noOarDose)}</p></div>`;
     }
     p3 += `${pageFooter(3)}</div>`;
 
-    // ============== PAGE 4: Target + Prescription + Interpretation ==============
+    // ============== PAGE 4: Clinical Interpretation ==============
     let p4 = `<div class="report-page">
-        <div class="hp-running-header"><span>${escHtml(s.confidentiality)}</span><span class="right">${escHtml(s.section4)}</span></div>
-        <h2 class="hp-section-title">${escHtml(s.section4)}${secondaryTitle('Target & Prescription')}</h2>
-        <div class="hp-section-body">
-            <p class="no-indent"><span class="hp-key">${t('technique')}：</span>${_renderInlineMd(f.planning.technique) || ND}</p>
-            <p class="no-indent"><span class="hp-key">${t('prescriptionDose')}：</span>${f.planning.prescriptionGy !== null ? f.planning.prescriptionGy + ' ' + U.Gy : ND}；
-                <span class="hp-key">${t('totalSeeds')}：</span>${f.planning.totalSeeds !== null ? f.planning.totalSeeds + seedsUnit : ND}；
-                <span class="hp-key">${t('totalActivity')}：</span>${unitMBq(f.planning.totalActivityMBq)}；
-                <span class="hp-key">${t('trajectories')}：</span>${f.planning.trajectoryCount !== null ? f.planning.trajectoryCount + trajUnit : ND}</p>
-        </div>`;
+        <div class="hp-running-header"><span>${escHtml(s.confidentiality)}</span><span class="right">${escHtml(interpretationSection)}</span></div>`;
     if (f.interpretation) {
-        p4 += `<h2 class="hp-section-title">${escHtml(s.section5)}${secondaryTitle('Clinical Interpretation')}</h2>
+        p4 += `<h2 class="hp-section-title">${escHtml(interpretationSection)}${secondaryTitle('Clinical Interpretation')}</h2>
         <div class="hp-section-body">${_renderMarkdown(f.interpretation)}</div>`;
+    } else {
+        p4 += `<h2 class="hp-section-title">${escHtml(interpretationSection)}${secondaryTitle('Clinical Interpretation')}</h2>
+        <div class="hp-section-body"><p class="no-indent">${escHtml(ND)}</p></div>`;
     }
     p4 += `${pageFooter(4)}</div>`;
 
@@ -1092,7 +1111,7 @@ function exportReportHTML() {
 
 function exportReportMarkdown() {
     const f = window.reportForm;
-    syncReportQualityAssessment(f);
+    syncReportQualityAssessment(f, { preserveStored: true });
     const s = (typeof REPORT_STRINGS !== 'undefined') ? REPORT_STRINGS[f.language] : null;
     const lines = [];
     lines.push(`# ${s.reportTitle}`);
@@ -1104,7 +1123,15 @@ function exportReportMarkdown() {
     lines.push(`- **${s.id}**: ${f.patient.id || f.case.patientId || '—'}`);
     lines.push(`- **${s.diagnosis}**: ${f.study.diagnosis || '—'}`);
     lines.push('');
-    lines.push(`## ${s.section2}`);
+    const targetSection = s.sectionTargetPrescription || s.section4;
+    const qualitySection = s.sectionPlanQuality || s.section2;
+    lines.push(`## ${targetSection}`);
+    lines.push(`- **${s.technique}**: ${f.planning.technique || '—'}`);
+    lines.push(`- **${s.prescriptionDose}**: ${f.planning.prescriptionGy !== null ? `${f.planning.prescriptionGy} Gy` : '—'}`);
+    lines.push(`- **${s.totalSeeds}**: ${f.planning.totalSeeds !== null ? f.planning.totalSeeds : '—'}`);
+    lines.push(`- **${s.trajectories}**: ${f.planning.trajectoryCount !== null ? f.planning.trajectoryCount : '—'}`);
+    lines.push('');
+    lines.push(`## ${qualitySection}`);
     if (f.metrics.v100 !== null) {
         const assessment = _sourceBackedMetricAssessment(f, 'v100', f.metrics.v100);
         lines.push(`| V100 | ${f.metrics.v100.toFixed(1)} % | ${assessment.reference} | ${assessment.statusText} |`);

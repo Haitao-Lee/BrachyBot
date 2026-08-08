@@ -498,7 +498,10 @@ async function loadLabelVolumes(options = {}) {
                     // reusing that entry would silently wrap IDs and make the
                     // Data Tree disagree with the 2D overlay. Only the
                     // explicitly versioned uint16 format is safe to restore.
-                    const cacheFormatCurrent = Number(hdr.formatVersion || 0) >= 3;
+                    // v4 replaces the saturated HSV label colors with the
+                    // shared Slicer-style palette. Do not resurrect an old
+                    // color LUT from IndexedDB after deployment.
+                    const cacheFormatCurrent = Number(hdr.formatVersion || 0) >= 4;
                     const oarEncodingCurrent = !hasOAR || oarBytesPerVoxel === 2;
                     if (shapeZ > 0 && shapeY > 0 && shapeX > 0
                             && cacheFormatCurrent && oarEncodingCurrent) {
@@ -573,7 +576,7 @@ async function loadLabelVolumes(options = {}) {
             // Async cache write
             if (sid && window.SessionCache) {
                 const hdr = JSON.stringify({
-                    formatVersion: 3,
+                    formatVersion: 4,
                     z: shapeZ, y: shapeY, x: shapeX,
                     hasCTV: hasCTV, hasOAR: hasOAR,
                     ctvSize: ctvSize, oarSize: oarSize,
@@ -609,16 +612,9 @@ async function loadLabelVolumes(options = {}) {
     }
 
     // --- post-processing (shared by cache and fetch paths) ---
-    // Override CTV label 1 (tumor) color: bright pink
-    if (labelColorLUT[1]) labelColorLUT[1] = [255, 105, 180];
-    // Override OAR labels whose golden-ratio HSV hue lands near red
-    if (labelColorLUT[5])  labelColorLUT[5]  = [46, 180, 140];
-    if (labelColorLUT[8])  labelColorLUT[8]  = [200, 130, 180];
-    if (labelColorLUT[13]) labelColorLUT[13] = [60, 160, 210];
-    if (labelColorLUT[21]) labelColorLUT[21] = [140, 90, 200];
-    if (labelColorLUT[34]) labelColorLUT[34] = [100, 150, 200];
-    if (labelColorLUT[55]) labelColorLUT[55] = [200, 120, 80];
-    if (labelColorLUT[89]) labelColorLUT[89] = [120, 180, 110];
+    // The backend LUT is the single color source for Data Tree, 2D overlays
+    // and 3D meshes. Per-label overrides here previously made the OAR tree
+    // disagree with the 2D viewer whenever CTV and OAR reused a numeric ID.
 
     const sliceSize = shapeY * shapeX;
     ctvLabelData = null;
@@ -1949,10 +1945,14 @@ function reloadOverlays() {
 }
 
 /******** DATA TREE ********/
+const DEFAULT_CTV_STRUCTURE_COLOR = '#f2a692';
+const DEFAULT_OAR_STRUCTURE_COLOR = '#8cacd9';
+const DEFAULT_NON_TRAVERSABLE_COLOR = '#cfa386';
+const DEFAULT_TRAVERSABLE_COLOR = '#87bea8';
 const dataTreeState = {
     ct:       { visible: true, opacity: 1.0, color: '#888', loaded: false, label: 'CT Image' },
-    ctv:      { visible: true, opacity: 0.7, color: '#ef4444', loaded: false, label: 'CTV Mask' },
-    oar:      { visible: true, opacity: 0.5, color: '#22c55e', loaded: false, label: 'All OARs' },
+    ctv:      { visible: true, opacity: 0.7, color: DEFAULT_CTV_STRUCTURE_COLOR, loaded: false, label: 'CTV Mask' },
+    oar:      { visible: true, opacity: 0.5, color: DEFAULT_OAR_STRUCTURE_COLOR, loaded: false, label: 'All OARs' },
     // Provenance controls whether previous user-edited categories may be
     // carried across a mask replacement. Uploaded unknown labels start as
     // numbered traversable OARs; they must not inherit an old ontology.
@@ -2398,9 +2398,9 @@ window.syncSceneAppearanceFromDataTree = syncSceneAppearanceFromDataTree;
 
 // Organ categories for constraint-based planning
 const ORGAN_CATEGORIES = {
-    ctv:              { label: 'CTV', icon: '🎯', color: '#ef4444' },
-    non_traversable:  { label: 'Non-traversable', icon: '🚫', color: '#f97316' },
-    traversable:      { label: 'Traversable', icon: '✅', color: '#22c55e' },
+    ctv:              { label: 'CTV', icon: '🎯', color: DEFAULT_CTV_STRUCTURE_COLOR },
+    non_traversable:  { label: 'Non-traversable', icon: '🚫', color: DEFAULT_NON_TRAVERSABLE_COLOR },
+    traversable:      { label: 'Traversable', icon: '✅', color: DEFAULT_TRAVERSABLE_COLOR },
 };
 
 // Default category classification by organ name keywords
@@ -2536,12 +2536,16 @@ function getSelectableIds() {
     return ids;
 }
 
-// Predefined colors for organs
+// Low-saturation, 3D-Slicer-inspired fallback colors. The backend LUT remains
+// authoritative; this table covers manual/imported structures while metadata
+// is still arriving and uses the same ordering as server_support.py.
 const ORGAN_COLORS = [
-    '#22c55e', '#06b6d4', '#8b5cf6', '#f59e0b', '#ef4444',
-    '#ec4899', '#14b8a6', '#f97316', '#6366f1', '#84cc16',
-    '#e11d48', '#0ea5e9', '#a855f7', '#eab308', '#10b981',
-    '#d946ef', '#0891b2', '#7c3aed', '#ca8a04', '#059669',
+    '#f2a692', '#8cacd9', '#bc9ccc', '#e8c484', '#87bea8', '#da9ab1',
+    '#a6bc7f', '#91b8c3', '#cfa386', '#aaa6d1', '#e5b078', '#7fb4be',
+    '#c6919b', '#95be8b', '#b8a4c9', '#e1a089', '#82a4cd', '#c9b577',
+    '#86c2b8', '#d397c4', '#adbb95', '#969eca', '#dbb999', '#8bb99b',
+    '#c49eb2', '#a0b7d3', '#dfaa97', '#b7b57f', '#89afb4', '#cc9784',
+    '#9cc5b1', '#be9ac6',
 ];
 
 function updateOrganList(organData, source = '') {
@@ -2849,8 +2853,16 @@ function renderDataTree() {
             };
             ctvSubLabels.push(item);
         };
-        nonTravLabels.forEach(labelId => addCtvSubLabel(labelId, 'non_traversable', '#f97316'));
-        otherLabels.forEach(labelId => addCtvSubLabel(labelId, 'traversable', '#22c55e'));
+        nonTravLabels.forEach((labelId, index) => addCtvSubLabel(
+            labelId,
+            'non_traversable',
+            ORGAN_COLORS[(labelId + index) % ORGAN_COLORS.length],
+        ));
+        otherLabels.forEach((labelId, index) => addCtvSubLabel(
+            labelId,
+            'traversable',
+            ORGAN_COLORS[(labelId + index + 7) % ORGAN_COLORS.length],
+        ));
 
         // CTV group header (like OAR)
         const ctvVis = dataTreeState.ctv.visible;
@@ -2875,10 +2887,11 @@ function renderDataTree() {
                 const volumeText = count > 0 && voxelVolumeCm3
                     ? `${(count * voxelVolumeCm3).toFixed(1)} cm³`
                     : '';
-                // Tumor color: bright pink (#ff69b4) instead of blue (too close to dose)
+                // Use the shared structure palette so the Data Tree swatch,
+                // 2D label and reconstructed mesh remain identical.
                 const tumorColor = labelColorLUT[labelId]
                     ? `rgb(${labelColorLUT[labelId].join(',')})`
-                    : '#ff69b4';
+                    : ORGAN_COLORS[(labelId - 1) % ORGAN_COLORS.length];
                 const { objectId, current } = ctvAppearanceFor(labelId);
                 // Preserve a user-renamed label; only fall back to the default
                 // when no custom label was assigned.
@@ -2957,7 +2970,7 @@ function renderDataTree() {
         const oarStatus = ensureDataTreeNodeMetadata({
             id: 'oar_status', label: _dtText('尚未生成 OAR 分割', 'OAR segmentation not generated yet'), loaded: false,
             status: dataTreeState.oar.loading ? 'loading' : 'not_generated',
-            visible: false, opacity: 0.5, color: '#22c55e',
+            visible: false, opacity: 0.5, color: DEFAULT_OAR_STRUCTURE_COLOR,
             contextActions: [],
         }, 'status', 'oar');
         html += renderTreeItem('oar_status', oarStatus,
@@ -3414,7 +3427,7 @@ function openColorPicker(id, swatchEl) {
     else if (id.startsWith('ctv_')) {
         // CTV sub-labels (tumor, artery, vein, pancreas, etc.)
         if (!dataTreeState.ctvLabels) dataTreeState.ctvLabels = {};
-        if (!dataTreeState.ctvLabels[id]) dataTreeState.ctvLabels[id] = { visible: true, opacity: 0.7, color: '#ef4444' };
+        if (!dataTreeState.ctvLabels[id]) dataTreeState.ctvLabels[id] = { visible: true, opacity: 0.7, color: DEFAULT_CTV_STRUCTURE_COLOR };
         itemState = dataTreeState.ctvLabels[id];
     } else if (id.startsWith('seed_')) {
         itemState = dataTreeState.planning.seeds.find(s => s.id === id);
@@ -4734,7 +4747,7 @@ function batchToggleVisibility(visible) {
         // CTV sub-labels
         else if (id.startsWith('ctv_')) {
             if (!dataTreeState.ctvLabels) dataTreeState.ctvLabels = {};
-            if (!dataTreeState.ctvLabels[id]) dataTreeState.ctvLabels[id] = { visible: true, opacity: 0.7, color: '#ef4444' };
+            if (!dataTreeState.ctvLabels[id]) dataTreeState.ctvLabels[id] = { visible: true, opacity: 0.7, color: DEFAULT_CTV_STRUCTURE_COLOR };
             dataTreeState.ctvLabels[id].visible = visible;
             const mesh = scene3D.meshes[id];
             if (mesh) applyMeshVisibility(mesh, visible, dataTreeState.ctvLabels[id].opacity ?? dataTreeState.ctv.opacity ?? 0.7);
@@ -4960,7 +4973,7 @@ function batchSetOpacity(opacity) {
             if (!dataTreeState.ctv.labelOpacities) dataTreeState.ctv.labelOpacities = {};
             dataTreeState.ctv.labelOpacities[labelId] = opacity;
             if (!dataTreeState.ctvLabels) dataTreeState.ctvLabels = {};
-            if (!dataTreeState.ctvLabels[id]) dataTreeState.ctvLabels[id] = { visible: true, opacity, color: '#ef4444' };
+            if (!dataTreeState.ctvLabels[id]) dataTreeState.ctvLabels[id] = { visible: true, opacity, color: DEFAULT_CTV_STRUCTURE_COLOR };
             dataTreeState.ctvLabels[id].opacity = opacity;
             applyMeshOpacity(scene3D.meshes[id], opacity, dataTreeState.ctvLabels[id].visible !== false);
         } else if (id.startsWith('seed_')) {
@@ -5290,8 +5303,8 @@ function setGroupOpacityValue(category, percentValue) {
 }
 
 function getGroupDisplayColor(category) {
-    if (category === 'ctv') return dataTreeState.ctv.color || '#ef4444';
-    if (category === 'oar') return dataTreeState.oar.color || '#22c55e';
+    if (category === 'ctv') return dataTreeState.ctv.color || DEFAULT_CTV_STRUCTURE_COLOR;
+    if (category === 'oar') return dataTreeState.oar.color || DEFAULT_OAR_STRUCTURE_COLOR;
     if (category === 'planning') return dataTreeState.planning.color || '#60a5fa';
     const entries = category === 'planning_seeds'
         ? _planningItems('seeds')
@@ -5403,7 +5416,7 @@ function toggleDataVisibility(id) {
     if (id.startsWith('ctv_')) {
         if (!dataTreeState.ctvLabels) dataTreeState.ctvLabels = {};
         if (!dataTreeState.ctvLabels[id]) {
-            dataTreeState.ctvLabels[id] = { visible: true, opacity: 0.7, color: '#ef4444' };
+            dataTreeState.ctvLabels[id] = { visible: true, opacity: 0.7, color: DEFAULT_CTV_STRUCTURE_COLOR };
         }
         dataTreeState.ctvLabels[id].visible = !dataTreeState.ctvLabels[id].visible;
         // Also toggle 3D mesh visibility
@@ -5618,7 +5631,7 @@ function setDataOpacity(id, value) {
     if (id.startsWith('ctv_')) {
         if (!dataTreeState.ctvLabels) dataTreeState.ctvLabels = {};
         if (!dataTreeState.ctvLabels[id]) {
-            dataTreeState.ctvLabels[id] = { visible: true, opacity: opacity, color: '#ef4444' };
+            dataTreeState.ctvLabels[id] = { visible: true, opacity: opacity, color: DEFAULT_CTV_STRUCTURE_COLOR };
         } else {
             dataTreeState.ctvLabels[id].opacity = opacity;
         }
@@ -5861,8 +5874,8 @@ async function moveSelectedMasks(classification, objectIds = null) {
         mask.movedTo = classification === 'ctv' ? 'ctv' : 'oar';
         // Inherit the target structure's default color so the move is obvious.
         mask.color = classification === 'ctv'
-            ? (dataTreeState.ctv.color || '#ef4444')
-            : (dataTreeState.oar.color || '#22c55e');
+            ? (dataTreeState.ctv.color || DEFAULT_CTV_STRUCTURE_COLOR)
+            : (dataTreeState.oar.color || DEFAULT_OAR_STRUCTURE_COLOR);
     }
     renderDataTree();
     reloadOverlays();

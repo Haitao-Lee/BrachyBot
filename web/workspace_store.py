@@ -478,6 +478,44 @@ def _quality_row_has_display(row: Any) -> bool:
                 or str(row.get('statusText') or '').strip())
 
 
+def _quality_row_specificity(row: Any) -> int:
+    """Rank source-backed report rows above hydration placeholders.
+
+    A delayed browser snapshot can legitimately contain ``Not assessed`` and
+    ``See cited case criteria`` while prescription sources are still loading.
+    Those strings are displayable, but they must never replace a previously
+    persisted numeric criterion and its pass/review decision.
+    """
+    if not isinstance(row, Mapping):
+        return -1
+    reference = str(row.get('reference') or '').strip()
+    status = str(row.get('statusText') or '').strip()
+    generic_references = {
+        '', '—', '-', 'See cited case criteria', '见病例引用标准',
+        'Not defined by current source', '当前来源未定义',
+    }
+    generic_statuses = {'', 'Not assessed', '未评估'}
+    score = 0
+    if reference not in generic_references:
+        score += 4
+    elif reference:
+        score += 1
+    if status not in generic_statuses:
+        score += 4
+    elif status:
+        score += 1
+    if str(row.get('statusClass') or '').strip():
+        score += 2
+    return score
+
+
+def _quality_assessment_specificity(quality: Any) -> int:
+    """Return the combined information rank for one assessment snapshot."""
+    if not isinstance(quality, Mapping) or not isinstance(quality.get('metrics'), Mapping):
+        return -1
+    return sum(_quality_row_specificity(row) for row in quality['metrics'].values())
+
+
 def _quality_row_matches_value(row: Any, metrics: Mapping[str, Any]) -> bool:
     if not isinstance(row, Mapping):
         return False
@@ -525,6 +563,7 @@ def _merge_report_quality_assessment(
         selected['_metric_key'] = key
         if not _quality_row_matches_value(selected, metrics):
             selected = {}
+        selected_specificity = _quality_row_specificity(selected)
         for candidate in candidates:
             candidate_row = candidate.get('metrics', {}).get(key) if isinstance(candidate.get('metrics'), Mapping) else None
             if not _quality_row_has_display(candidate_row):
@@ -533,15 +572,24 @@ def _merge_report_quality_assessment(
             candidate_with_key['_metric_key'] = key
             if not _quality_row_matches_value(candidate_with_key, metrics):
                 continue
-            # Prefer the base/new row, but fill any missing display field from
-            # the older durable row instead of replacing a current value.
+            candidate_specificity = _quality_row_specificity(candidate_row)
+            if candidate_specificity > selected_specificity:
+                # Prefer the most informative row, even when it is older. This
+                # prevents a partial-hydration placeholder from erasing a saved
+                # source-backed criterion for the same metric value.
+                selected = dict(candidate_row)
+                selected_specificity = candidate_specificity
+                continue
+            # Equal or less-specific candidates may only fill absent fields.
             for field in ('reference', 'statusText', 'statusClass'):
                 current = selected.get(field)
                 if current in (None, '') and candidate_row.get(field) not in (None, ''):
                     selected[field] = candidate_row.get(field)
             if selected.get('value') in (None, '') and 'value' in candidate_row:
                 selected['value'] = candidate_row.get('value')
-            break
+            # Continue through every matching snapshot. The first candidate is
+            # often the newer generic base row; stopping there prevents an
+            # older, source-backed row from ever being considered.
         selected.pop('_metric_key', None)
         if selected:
             rows[key] = selected
@@ -551,22 +599,21 @@ def _merge_report_quality_assessment(
     if not rows:
         return result
     quality['metrics'] = rows
-    # If the retained base had no usable rows, keep the metadata from the
-    # first complete candidate as well, including its input fingerprint.
+    # Keep metadata, especially inputFingerprint, from the assessment whose
+    # rows supplied the most information. Without that provenance the browser
+    # would immediately treat restored specific rows as stale and replace them
+    # with hydration placeholders during its next synchronization pass.
     base_rows = base_quality.get('metrics') if isinstance(base_quality, Mapping) else None
     base_has_display = (
         isinstance(base_rows, Mapping)
         and any(_quality_row_has_display(row) for row in base_rows.values())
     )
-    if not base_has_display:
-        for candidate in candidates:
-            candidate_rows = candidate.get('metrics') if isinstance(candidate, Mapping) else None
-            if isinstance(candidate_rows, Mapping) and any(
-                _quality_row_has_display(row) for row in candidate_rows.values()
-            ):
-                quality = {**dict(candidate), **quality}
-                quality['metrics'] = rows
-                break
+    best_candidate = max(candidates, key=_quality_assessment_specificity)
+    best_specificity = _quality_assessment_specificity(best_candidate)
+    base_specificity = _quality_assessment_specificity(base_quality)
+    if not base_has_display or best_specificity > base_specificity:
+        quality = {**quality, **dict(best_candidate)}
+        quality['metrics'] = rows
     result['qualityAssessment'] = quality
     return result
 

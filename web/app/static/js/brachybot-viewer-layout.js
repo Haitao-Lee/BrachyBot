@@ -113,12 +113,16 @@ function _clearViewerResizeOverrides(panel) {
 
 function syncViewerGeometry({ resetPositions = false, settleMs = 0 } = {}) {
     const generation = ++_viewerGeometrySync.generation;
-    if (_viewerGeometrySync.timer) {
+    // A ResizeObserver callback may arrive between the immediate fullscreen
+    // pass and its delayed settle pass. Do not let that harmless callback
+    // cancel the settle measurement; only another explicit settled layout
+    // transition supersedes it.
+    if (_viewerGeometrySync.timer && settleMs > 0) {
         clearTimeout(_viewerGeometrySync.timer);
         _viewerGeometrySync.timer = null;
     }
-    const render = () => {
-        if (generation !== _viewerGeometrySync.generation) return;
+    const render = (acceptNewerGeneration = false) => {
+        if (!acceptNewerGeneration && generation !== _viewerGeometrySync.generation) return;
         if (resetPositions) {
             ['axial', 'sagittal', 'coronal'].forEach(axis => {
                 [
@@ -131,11 +135,16 @@ function syncViewerGeometry({ resetPositions = false, settleMs = 0 } = {}) {
         ['axial', 'sagittal', 'coronal'].forEach(axis => resizeCanvas(axis));
         if (typeof window.resizeViewer3D === 'function') window.resizeViewer3D();
     };
-    const schedule = () => requestAnimationFrame(() => requestAnimationFrame(render));
+    const schedule = (acceptNewerGeneration = false) => requestAnimationFrame(() =>
+        requestAnimationFrame(() => render(acceptNewerGeneration)));
+    // Measure once immediately so fullscreen never displays a stretched old
+    // frame, then once more after flex/grid layout has fully settled.
+    schedule();
     if (settleMs > 0) {
-        _viewerGeometrySync.timer = setTimeout(schedule, settleMs);
-    } else {
-        schedule();
+        _viewerGeometrySync.timer = setTimeout(() => {
+            _viewerGeometrySync.timer = null;
+            schedule(true);
+        }, settleMs);
     }
 }
 window.syncViewerGeometry = syncViewerGeometry;

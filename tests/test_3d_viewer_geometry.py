@@ -14,21 +14,24 @@ def test_3d_renderer_uses_one_css_to_drawing_buffer_geometry_path():
     assert "function readViewerDrawingBufferSize()" in source
     assert "getDrawingBufferSize(drawingBufferSize)" in source
     assert "const actualBuffer = readViewerDrawingBufferSize()" in source
-    assert "lockRendererSurfaceToHost({ cssWidth, cssHeight })" in source
-    assert "A no-argument call is a guard-only operation" in source
+    assert "lockRendererSurfaceToHost()" in source
+    assert "surface.style.setProperty('width', '100%', 'important')" in source
+    assert "surface.style.setProperty('height', '100%', 'important')" in source
     assert "surfaceMatchesHost" in source
     assert "renderer.domElement.style.position = 'absolute'" in source
     assert "renderer.domElement.style.width = '100%'" in source
     assert "renderer.domElement.style.height = '100%'" in source
     assert "rect?.width || canvas.clientWidth" in source
     assert "rect?.height || canvas.clientHeight" in source
-    assert "const { pixelWidth, pixelHeight, cssWidth, cssHeight } = geometry" in source
-    assert "setViewport(0, 0, pixelWidth, pixelHeight)" in source
-    assert "setScissor(0, 0, pixelWidth, pixelHeight)" in source
-    assert "const bufferScaleX = pixelWidth / Math.max(1, cssWidth)" in source
-    assert "const axisSize = Math.max(1, Math.round(axisSizeCss * Math.min(bufferScaleX, bufferScaleY)))" in source
-    # A CSS-sized viewport must not be used after a high-DPI renderer is
-    # configured; it would crop the scene when the viewer card is resized.
+    assert "const { cssWidth, cssHeight } = geometry" in source
+    assert "setViewport(0, 0, cssWidth, cssHeight)" in source
+    assert "setScissor(0, 0, cssWidth, cssHeight)" in source
+    assert "setViewport(0, 0, pixelWidth, pixelHeight)" not in source
+    assert "setScissor(0, 0, pixelWidth, pixelHeight)" not in source
+    assert "const bufferScaleX = pixelWidth / Math.max(1, cssWidth)" not in source
+    assert "const axisSize = Math.max(1, Math.round(axisSizeCss))" in source
+    # Three.js applies renderer.pixelRatio to viewport coordinates internally,
+    # so viewport/scissor values must remain in CSS pixels.
     assert "setViewport(0, 0, w, h)" not in source
     assert source.index("const geometry = syncViewer3DSize()") < source.index("const controlsChanged = scene3D.controls.update()")
     assert "viewer3DSizeDirty" in source
@@ -50,16 +53,15 @@ def test_3d_renderer_uses_one_css_to_drawing_buffer_geometry_path():
     assert "addEventListener('wheel', markCameraInteraction" in source
     assert "controls.addEventListener('start', markCameraInteraction)" in source
     assert "scene3D._cameraInteractionKind = 'programmatic'" in source
-    assert "const deliberateCloseup = cameraOwnsView" in source
     assert "const hardClip = !validProjection || outside" in source
-    assert "reason: 'camera-rotation-guard'" in source
+    assert "if (cameraOwnsView && !hydrationCentering) return false" in source
+    assert "camera-rotation-guard" not in source
     assert "function centerWorldGeometryForDepthSort(object)" in source
     assert "window.centerWorldGeometryForDepthSort = centerWorldGeometryForDepthSort" in source
     assert "worldGeometryCentered: true" in source
     assert "depthWriteWhenTransparent" in source
     assert "function scheduleCameraFitForSceneMutation(reason = 'scene-mutation')" in source
     assert "window.scheduleCameraFitForSceneMutation = scheduleCameraFitForSceneMutation" in source
-    assert "reason: 'camera-rotation-guard'" in source
     assert "quaternion: preserveQuaternion" in source
     assert "surgical_guide: 20" in source
     assert "seed: 40" in source
@@ -101,7 +103,9 @@ def test_3d_host_cannot_leave_a_smaller_inner_surface_after_flex_reflow():
     assert "width: 100% !important;" in css
     assert "height: 100% !important;" in css
     assert "align-self: stretch;" in css
-    assert "contain: layout paint;" in css
+    assert "contain: layout paint;" not in css
+    assert ".viewers-panel.viewer-fullscreen-active" in css
+    assert "height: auto !important;" in css
 
 
 def test_world_coordinate_surfaces_are_centered_before_transparent_sorting():
@@ -122,14 +126,14 @@ def test_world_coordinate_surfaces_are_centered_before_transparent_sorting():
     assert "centerWorldGeometryForDepthSort(mesh);" in manual
 
 
-def test_rotation_guard_preserves_zoom_and_pan_closeups():
+def test_user_owned_camera_is_never_reframed_by_click_or_resize():
     source = (ROOT / "web/app/static/js/brachybot-3d-manual.js").read_text(encoding="utf-8")
-    guard = source.split("const deliberateCloseup = cameraOwnsView", 1)[1].split(
-        "const shouldReframe", 1
+    resize = source.split("function resizeViewer3D()", 1)[1].split(
+        "scene3D.resize = resizeViewer3D", 1
     )[0]
-    assert "interactionKind === 'zoom' || interactionKind === 'pan'" in guard
-    assert "hardClip" in guard
-    assert "camera-rotation-guard" in source
+    assert "if (cameraOwnsView && !hydrationCentering) return false" in source
+    assert "ensureCameraFitsVisibleScene" not in resize
+    assert "camera-rotation-guard" not in source
 
 
 def test_2d_zoom_applies_each_overlay_transform_once():

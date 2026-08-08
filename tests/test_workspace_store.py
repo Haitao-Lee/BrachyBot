@@ -262,6 +262,68 @@ def test_newer_incomplete_report_snapshot_cannot_erase_quality_columns(tmp_path)
     assert restored["qualityAssessment"]["metrics"]["d90"]["reference"] == "See cited case criteria"
 
 
+def test_generic_hydration_rows_cannot_replace_specific_quality_assessment(tmp_path):
+    store = WorkspaceStore(tmp_path / "runtime")
+    user = store.create_user("specific_quality_owner", "hash")
+    case = store.create_session(user["id"], "Specific quality case")
+    specific = {
+        "version": 3,
+        "updatedAt": 200,
+        "metrics": {"v100": 91.23, "d90": 122.55},
+        "qualityAssessment": {
+            "version": 2,
+            "language": "en",
+            "inputFingerprint": "source-backed-plan",
+            "metrics": {
+                "v100": {
+                    "value": 91.23,
+                    "reference": "Pancreatic site criterion: V100 >= 90%",
+                    "statusText": "Meets cited criterion",
+                    "statusClass": "ok",
+                },
+                "d90": {
+                    "value": 122.55,
+                    "reference": "Prescription reference: 120 Gy",
+                    "statusText": "Review with current protocol",
+                    "statusClass": "warn",
+                },
+            },
+        },
+    }
+    store.save_snapshot_patch(user["id"], case.id, {"report": {"form": specific}})
+
+    delayed_hydration = {
+        "version": 3,
+        "updatedAt": 300,
+        "metrics": {"v100": 91.23, "d90": 122.55},
+        "qualityAssessment": {
+            "version": 2,
+            "language": "en",
+            "metrics": {
+                "v100": {
+                    "value": 91.23,
+                    "reference": "See cited case criteria",
+                    "statusText": "Not assessed",
+                },
+                "d90": {
+                    "value": 122.55,
+                    "reference": "See cited case criteria",
+                    "statusText": "Not assessed",
+                },
+            },
+        },
+    }
+    store.save_snapshot_patch(user["id"], case.id, {"report": {"form": delayed_hydration}})
+
+    rows = store.load_snapshot(user["id"], case.id)["report"]["form"]["qualityAssessment"]["metrics"]
+    assert rows["v100"]["reference"] == "Pancreatic site criterion: V100 >= 90%"
+    assert rows["v100"]["statusText"] == "Meets cited criterion"
+    assert rows["d90"]["reference"] == "Prescription reference: 120 Gy"
+    assert rows["d90"]["statusText"] == "Review with current protocol"
+    assessment = store.load_snapshot(user["id"], case.id)["report"]["form"]["qualityAssessment"]
+    assert assessment["inputFingerprint"] == "source-backed-plan"
+
+
 def test_chat_snapshot_updates_merge_by_stable_message_identity(tmp_path):
     """Screenshot, Trace, and final text updates must remain one reply."""
     store = WorkspaceStore(tmp_path / "runtime")

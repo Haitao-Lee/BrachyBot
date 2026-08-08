@@ -447,6 +447,12 @@
     transform: translateY(-1px);
 }
 
+.viewers-panel.viewer-fullscreen-active {
+    padding: 0 !important;
+    gap: 0 !important;
+    overflow: hidden !important;
+}
+
 .viewers-row.viewer-resized { flex: 0 0 var(--resize-h, auto) !important; }
 .viewer-card.viewer-resized { flex: 0 0 var(--resize-h, auto) !important; }
 .viewer-card-3d.viewer-resized { flex: 0 0 var(--resize-h, auto) !important; }
@@ -454,7 +460,7 @@
 
 .viewer-card.fullscreen {
     position: absolute !important;
-    top: 0; left: 0; right: 0; bottom: 0;
+    inset: 0 !important;
     z-index: 100;
     border-radius: 0;
     flex: none !important;
@@ -463,9 +469,27 @@
     min-height: 0 !important;
     border-color: var(--primary);
     box-shadow: 0 0 0 1px var(--primary), var(--shadow-xl);
+    box-sizing: border-box;
+    margin: 0 !important;
+    transform: none !important;
+    transition: none !important;
 }
-.viewer-card.fullscreen .viewer-card-body { flex: 1; min-height: 0; overflow: hidden; }
-.viewer-card.fullscreen .viewer-card-canvas { width: 100%; height: 100%; min-height: 0 !important; }
+.viewer-card.fullscreen:hover { transform: none !important; }
+.viewer-card.fullscreen .viewer-card-body {
+    flex: 1 1 0;
+    width: 100%;
+    height: auto;
+    min-height: 0;
+    min-width: 0;
+    overflow: hidden;
+}
+.viewer-card.fullscreen .viewer-card-canvas {
+    flex: 1 1 0;
+    width: 100%;
+    height: auto !important;
+    min-height: 0 !important;
+    min-width: 0 !important;
+}
 
 .viewer-card-header {
     padding: 0.45rem 0.75rem;
@@ -700,11 +724,11 @@
 .viewer-card-3d .viewer-card-canvas {
     position: relative;
     width: 100%;
-    height: 100%;
+    height: auto;
     min-height: 0;
     min-width: 0;
     display: block;
-    flex: 1 1 auto;
+    flex: 1 1 0;
     align-self: stretch;
     box-sizing: border-box;
     overflow: hidden;
@@ -716,15 +740,17 @@
 #canvas3D {
     position: relative;
     width: 100%;
-    height: 100%;
+    height: auto;
     min-width: 0;
     min-height: 0;
     display: block;
-    flex: 1 1 auto;
+    flex: 1 1 0;
     align-self: stretch;
     overflow: hidden;
     box-sizing: border-box;
-    contain: layout paint;
+    margin: 0;
+    padding: 0;
+    border: 0;
 }
 
 /* The 3D host contains a WebGL surface plus independent HTML overlays. Keep

@@ -3176,10 +3176,12 @@ function toggleViewerFullscreen(view) {
     const card = document.getElementById('viewer' + capitalize(view));
     if (!card) return;
     const panel = document.getElementById('viewersPanel');
+    if (!panel) return;
 
     if (card.classList.contains('fullscreen')) {
         // Restore
         card.classList.remove('fullscreen');
+        panel.classList.remove('viewer-fullscreen-active');
         card.querySelector('.viewer-card-expand-btn').innerHTML = '&#9974;';
         // Restore only elements hidden by this fullscreen action. This keeps
         // intentional layout visibility state intact after the restore.
@@ -3192,10 +3194,11 @@ function toggleViewerFullscreen(view) {
         card.style.right = ''; card.style.bottom = ''; card.style.zIndex = '';
         card.style.width = ''; card.style.height = ''; card.style.flex = '';
         if (typeof window.syncViewerGeometry === 'function') {
-            window.syncViewerGeometry({ resetPositions: true, settleMs: 100 });
+            window.syncViewerGeometry({ resetPositions: true, settleMs: 160 });
         }
     } else {
         // Enter fullscreen
+        panel.classList.add('viewer-fullscreen-active');
         card.classList.add('fullscreen');
         card.querySelector('.viewer-card-expand-btn').innerHTML = '&#10006;';
         // Hide all siblings (handles both flat and .viewers-row layouts)
@@ -3220,7 +3223,7 @@ function toggleViewerFullscreen(view) {
             }
         });
         if (typeof window.syncViewerGeometry === 'function') {
-            window.syncViewerGeometry({ resetPositions: true, settleMs: 100 });
+            window.syncViewerGeometry({ resetPositions: true, settleMs: 160 });
         }
     }
 }

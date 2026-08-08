@@ -2495,19 +2495,37 @@ def _compute_manual_ai_dose(
     }
 
 
-import colorsys
+_SLICER_STRUCTURE_COLORS = (
+    (242, 166, 146), (140, 172, 217), (188, 156, 204), (232, 196, 132),
+    (135, 190, 168), (218, 154, 177), (166, 188, 127), (145, 184, 195),
+    (207, 163, 134), (170, 166, 209), (229, 176, 120), (127, 180, 190),
+    (198, 145, 155), (149, 190, 139), (184, 164, 201), (225, 160, 137),
+    (130, 164, 205), (201, 181, 119), (134, 194, 184), (211, 151, 196),
+    (173, 187, 149), (150, 158, 202), (219, 185, 153), (139, 185, 155),
+    (196, 158, 178), (160, 183, 211), (223, 170, 151), (183, 181, 127),
+    (137, 175, 180), (204, 151, 132), (156, 197, 177), (190, 154, 198),
+)
+
 
 def _label_color(label_id: int) -> tuple:
-    """Generate visually distinct color for organ label using golden-ratio HSV.
+    """Return a stable, low-saturation 3D-Slicer-inspired structure color.
 
-    Provides unique colors for 57+ organs without modulo collision.
+    Adjacent anatomical labels receive deliberately different pastel hues.
+    Labels beyond the base table use a small deterministic luminance variant,
+    retaining readability on black viewer backgrounds without reverting to
+    harsh primary RGB colors.
     """
-    golden_ratio = 0.618033988749895
-    h = (label_id * golden_ratio) % 1.0
-    s = 0.65 + (label_id % 3) * 0.12  # 0.65/0.77/0.89
-    v = 0.85 + (label_id % 2) * 0.10   # 0.85/0.95
-    r, g, b = colorsys.hsv_to_rgb(h, s, v)
-    return (int(r * 255), int(g * 255), int(b * 255))
+    ordinal = max(0, abs(int(label_id)) - 1)
+    base = _SLICER_STRUCTURE_COLORS[ordinal % len(_SLICER_STRUCTURE_COLORS)]
+    cycle = ordinal // len(_SLICER_STRUCTURE_COLORS)
+    if cycle == 0:
+        return base
+    variant = cycle % 4
+    if variant in (1, 3):
+        blend = 0.10 if variant == 1 else 0.18
+        return tuple(int(round(channel + (255 - channel) * blend)) for channel in base)
+    factor = 0.90 if variant == 2 else 0.82
+    return tuple(int(round(channel * factor)) for channel in base)
 
 
 _rate_limit_cleanup_counter = 0

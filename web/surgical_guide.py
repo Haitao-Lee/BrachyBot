@@ -937,36 +937,66 @@ def _resample_mask_to_local_grid(
     source_spacing_zyx: Sequence[float],
     target_spacing_mm: float,
 ) -> Tuple[np.ndarray, Tuple[float, float, float]]:
-    """Nearest-neighbour resample a label mask on an exact physical lattice.
+    """Resample a skin mask through a physical signed-distance field.
 
-    ``ndimage.zoom`` chooses a convenient output shape but can subtly change
-    the effective spacing.  The guide's bores and plate thickness are physical
-    dimensions, so explicit source coordinates are used instead.  This keeps
-    a requested 1.0 mm guide grid exactly 1.0 mm in every world direction.
+    Nearest-neighbour label interpolation preserves every thick-slice CT step
+    and merely magnifies it on the fine guide grid. Interpolating a signed
+    distance field instead reconstructs the zero-level skin surface between
+    source slices while keeping the requested world-space lattice exact. The
+    result remains boolean because later plate, sleeve and bore CSG is
+    intentionally performed on a watertight binary solid.
     """
     from scipy import ndimage
 
-    source = np.asarray(mask, dtype=np.uint8)
+    source = np.asarray(mask, dtype=bool)
     if source.ndim != 3 or min(source.shape) < 2:
         raise SurgicalGuideError("Guide crop is too small for physical resampling")
     source_spacing = np.asarray(source_spacing_zyx, dtype=np.float64)
     target_spacing = np.full(3, float(target_spacing_mm), dtype=np.float64)
+    if np.any(source_spacing <= 0.0) or np.any(target_spacing <= 0.0):
+        raise SurgicalGuideError("Guide spacing must be positive in every axis")
+
+    # Positive values are outside the patient and negative values are inside.
+    # Distances are measured in millimetres, so anisotropic CT slices contribute
+    # their real physical thickness instead of being treated as unit voxels.
+    outside_distance = ndimage.distance_transform_edt(
+        ~source,
+        sampling=tuple(float(value) for value in source_spacing),
+    )
+    inside_distance = ndimage.distance_transform_edt(
+        source,
+        sampling=tuple(float(value) for value in source_spacing),
+    )
+    signed_distance = (outside_distance - inside_distance).astype(np.float32, copy=False)
+
     extent = (np.asarray(source.shape, dtype=np.float64) - 1.0) * source_spacing
     target_shape = np.floor(extent / target_spacing + 1e-8).astype(np.int64) + 1
     target_shape = np.maximum(target_shape, 2)
     axes = [
-        np.arange(int(target_shape[axis]), dtype=np.float64) * target_spacing[axis] / source_spacing[axis]
+        np.arange(int(target_shape[axis]), dtype=np.float32)
+        * np.float32(target_spacing[axis] / source_spacing[axis])
         for axis in range(3)
     ]
-    coordinates = np.meshgrid(*axes, indexing="ij")
-    sampled = ndimage.map_coordinates(
-        source,
-        coordinates,
-        order=0,
-        mode="nearest",
-        prefilter=False,
-    )
-    return sampled.astype(bool), tuple(float(value) for value in target_spacing)
+    sampled_mask = np.empty(tuple(int(value) for value in target_shape), dtype=bool)
+
+    # Sampling the complete coordinate volume at 0.2 mm can temporarily use
+    # several gigabytes. Process z slabs with a bounded point count so guide
+    # detail does not trade away server responsiveness.
+    plane_points = max(1, int(target_shape[1]) * int(target_shape[2]))
+    slab_depth = max(1, min(int(target_shape[0]), 4_000_000 // plane_points))
+    for z_start in range(0, int(target_shape[0]), slab_depth):
+        z_stop = min(int(target_shape[0]), z_start + slab_depth)
+        coordinates = np.meshgrid(axes[0][z_start:z_stop], axes[1], axes[2], indexing="ij")
+        sampled_distance = ndimage.map_coordinates(
+            signed_distance,
+            coordinates,
+            order=1,
+            mode="nearest",
+            prefilter=False,
+        )
+        sampled_mask[z_start:z_stop] = sampled_distance <= 0.0
+
+    return sampled_mask, tuple(float(value) for value in target_spacing)
 
 
 def _mesh_from_mask(
@@ -1326,9 +1356,9 @@ def generate_surgical_guide(
     source_spacing_zyx = tuple(
         float(value) for value in np.asarray(ct_image.GetSpacing(), dtype=np.float64)[::-1]
     )
-    # Model local printable geometry on the requested isotropic physical grid.
-    # The CT is never globally resampled or written back; only the bounded
-    # guide patch is sampled for SDF booleans and STL extraction.
+    # Reconstruct the local skin zero-level surface on the requested isotropic
+    # physical grid. The CT is never globally resampled or written back; only
+    # the bounded guide patch is sampled for CSG and STL extraction.
     body_crop, spacing_zyx = _resample_mask_to_local_grid(
         body_crop,
         source_spacing_zyx,
@@ -1685,7 +1715,8 @@ def generate_surgical_guide(
                 if key not in {"holes", "skipped"}
             },
             "max_centerline_deviation_mm": 0.0,
-            "skin_fit": "CT threshold surface with explicit clearance",
+            "skin_fit": "Physical signed-distance skin surface with explicit clearance",
+            "skin_surface_interpolation": "physical_signed_distance_linear",
             "geometry_resolution_mm": params["geometry_resolution_mm"],
             "bore_quality": bore_quality,
             "finite_fov": {
