@@ -132,6 +132,39 @@ def _is_current_case_dose_query(message: str) -> bool:
     )
 
 
+def _is_current_image_metadata_query(message: str) -> bool:
+    """Identify a request for technical metadata of the loaded image.
+
+    This is intentionally narrower than a generic image-analysis request. It
+    only handles requests that ask about the uploaded/current image itself,
+    such as dimensions, spacing, origin, direction, or voxel values. Clinical
+    interpretation and segmentation continue through the normal guarded path.
+    """
+    text = str(message or "").strip().lower()
+    if not text:
+        return False
+    image_terms = (
+        "ct", "image", "uploaded image", "scan", "nifti", "nii",
+        "\u56fe\u50cf", "\u5f71\u50cf", "\u4e0a\u4f20", "\u533b\u5b66\u5f71\u50cf",
+    )
+    detail_terms = (
+        "metadata", "details", "information", "technical", "dimensions",
+        "spacing", "voxel", "origin", "direction", "pixel", "header",
+        "\u8be6\u7ec6\u4fe1\u606f", "\u5143\u6570\u636e", "\u6280\u672f\u4fe1\u606f",
+        "\u5c3a\u5bf8", "\u4f53\u7d20", "\u4f53\u7d20\u95f4\u8ddd", "\u539f\u70b9", "\u65b9\u5411",
+        "\u67e5\u770b\u56fe\u50cf", "\u67e5\u770b\u5f71\u50cf",
+    )
+    analysis_terms = (
+        "analyze the uploaded image", "analyze this image",
+        "\u5206\u6790\u4e00\u4e0b\u6211\u4e0a\u4f20\u7684\u56fe\u50cf",
+        "\u5206\u6790\u4e0a\u4f20\u7684\u56fe\u50cf",
+    )
+    return (
+        (any(term in text for term in image_terms) and any(term in text for term in detail_terms))
+        or any(term in text for term in analysis_terms)
+    )
+
+
 def classify_local_turn(message: str, pending_tumor_site: bool = False) -> LocalTurnPolicy:
     """Classify a turn without an LLM, using conservative intent boundaries."""
     text = str(message or "").strip()
@@ -156,6 +189,19 @@ def classify_local_turn(message: str, pending_tumor_site: bool = False) -> Local
     if _is_current_case_dose_query(text):
         return LocalTurnPolicy(
             "case_dose_query",
+            "low",
+            False,
+            False,
+            False,
+            frozenset(),
+        )
+
+    # Technical image metadata is a local read-only workspace query. Do this
+    # before the interrogative branch so it cannot drift into doc_reader or a
+    # knowledge search that returns only a generic completion message.
+    if _is_current_image_metadata_query(text):
+        return LocalTurnPolicy(
+            "image_metadata_query",
             "low",
             False,
             False,

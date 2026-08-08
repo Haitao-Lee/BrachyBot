@@ -72,20 +72,43 @@ Supported formats:
         if not result.success:
             return result
         data = dict(result.data or {})
+        # Keep structured metadata at the ToolResult boundary as well as in
+        # the legacy data payload.  The LLM/runtime pipeline reads the former,
+        # while older callers still read ``data["metadata"]``.
+        nested_metadata = data.get("metadata")
+        metadata = dict(nested_metadata) if isinstance(nested_metadata, dict) else {}
+        if isinstance(result.metadata, dict):
+            metadata.update(result.metadata)
         if action == "metadata":
             data["content"] = ""
             return ToolResult(
                 success=True,
                 data=data,
                 message="Document metadata extracted",
+                display=result.display,
+                metadata=metadata,
+                execution_time=result.execution_time,
             )
         if action == "summary":
             data["content"] = self._extractive_summary(data.get("content", ""))
+            metadata["summary_type"] = "extractive_preview"
             data.setdefault("metadata", {})["summary_type"] = "extractive_preview"
             return ToolResult(
                 success=True,
                 data=data,
                 message="Extractive document summary generated",
+                display=result.display,
+                metadata=metadata,
+                execution_time=result.execution_time,
+            )
+        if metadata and not result.metadata:
+            return ToolResult(
+                success=True,
+                data=data,
+                message=result.message,
+                display=result.display,
+                metadata=metadata,
+                execution_time=result.execution_time,
             )
         return result
 
@@ -381,15 +404,96 @@ Supported formats:
             ext = Path(file_path).suffix.lower()
 
             if ext in ['.nii', '.gz']:
+                # SimpleITK is a core BrachyBot dependency and preserves the
+                # physical geometry used by the planning/viewer pipeline.
+                # Nibabel remains a fallback for installations that only have
+                # the lightweight document-reading dependencies installed.
                 try:
-                    import nibabel as nib
-                    img = nib.load(file_path)
+                    import SimpleITK as sitk
+                    import numpy as np
+
+                    img = sitk.ReadImage(file_path)
                     metadata["format"] = "NIfTI"
-                    metadata["shape"] = list(img.shape)
-                    metadata["spacing"] = list(img.header.get_zooms())
-                    metadata["dtype"] = str(img.get_data_dtype())
-                except Exception as exc:
-                    logger.warning("Failed to read NIfTI metadata for %s: %s", file_path, exc)
+                    size_xyz = [int(value) for value in img.GetSize()]
+                    spacing_xyz = [float(value) for value in img.GetSpacing()]
+                    origin_xyz = [float(value) for value in img.GetOrigin()]
+                    direction = [float(value) for value in img.GetDirection()]
+                    direction_matrix = [
+                        direction[row * 3:(row + 1) * 3]
+                        for row in range(3)
+                    ]
+                    metadata.update({
+                        "dimension": int(img.GetDimension()),
+                        "size_xyz": size_xyz,
+                        "shape": size_xyz,
+                        "shape_xyz": size_xyz,
+                        "array_shape_zyx": list(reversed(size_xyz)),
+                        "spacing": spacing_xyz,
+                        "spacing_mm_xyz": spacing_xyz,
+                        "origin_mm_xyz": origin_xyz,
+                        "direction": direction,
+                        "direction_matrix": direction_matrix,
+                        "coordinate_system": "SimpleITK physical LPS",
+                        "pixel_type": img.GetPixelIDTypeAsString(),
+                        "components_per_pixel": int(img.GetNumberOfComponentsPerPixel()),
+                    })
+
+                    # These summary statistics are useful for an uploaded CT
+                    # and bounded to scalar finite values for JSON transport.
+                    array = np.asarray(sitk.GetArrayViewFromImage(img))
+                    if array.size:
+                        finite = array[np.isfinite(array)] if np.issubdtype(array.dtype, np.inexact) else array.reshape(-1)
+                        if finite.size:
+                            metadata["value_min"] = float(np.min(finite))
+                            metadata["value_max"] = float(np.max(finite))
+                            metadata["value_mean"] = float(np.mean(finite, dtype=np.float64))
+                    metadata["voxel_count"] = int(np.prod(size_xyz, dtype=np.int64))
+                    metadata["physical_extent_mm_xyz"] = [
+                        float(size_xyz[index] * spacing_xyz[index])
+                        for index in range(3)
+                    ]
+                except Exception as sitk_exc:
+                    logger.warning(
+                        "SimpleITK failed to read NIfTI metadata for %s: %s",
+                        file_path,
+                        sitk_exc,
+                    )
+                    try:
+                        import nibabel as nib
+                        import numpy as np
+
+                        img = nib.load(file_path)
+                        affine = np.asarray(img.affine, dtype=np.float64)
+                        matrix = affine[:3, :3]
+                        spacing_xyz = np.linalg.norm(matrix, axis=0)
+                        safe_spacing = np.where(spacing_xyz > 0, spacing_xyz, 1.0)
+                        direction_matrix = matrix / safe_spacing
+                        metadata["format"] = "NIfTI"
+                        metadata.update({
+                            "dimension": int(len(img.shape)),
+                            "size_xyz": [int(value) for value in img.shape],
+                            "shape": [int(value) for value in img.shape],
+                            "shape_xyz": [int(value) for value in img.shape],
+                            "array_shape_zyx": [int(value) for value in reversed(img.shape)],
+                            "spacing": [float(value) for value in spacing_xyz],
+                            "spacing_mm_xyz": [float(value) for value in spacing_xyz],
+                            "origin_mm_xyz": [float(value) for value in affine[:3, 3]],
+                            "direction_matrix": direction_matrix.tolist(),
+                            "coordinate_system": "NIfTI affine (RAS)",
+                            "pixel_type": str(img.get_data_dtype()),
+                            "components_per_pixel": 1,
+                            "voxel_count": int(np.prod(img.shape, dtype=np.int64)),
+                            "physical_extent_mm_xyz": [
+                                float(int(img.shape[index]) * spacing_xyz[index])
+                                for index in range(min(3, len(img.shape)))
+                            ],
+                        })
+                    except Exception as nib_exc:
+                        logger.warning(
+                            "Nibabel fallback failed to read NIfTI metadata for %s: %s",
+                            file_path,
+                            nib_exc,
+                        )
 
             elif ext in ['.mhd', '.raw']:
                 try:
@@ -397,7 +501,12 @@ Supported formats:
                     img = sitk.ReadImage(file_path)
                     metadata["format"] = "MetaImage"
                     metadata["shape"] = list(img.GetSize())
+                    metadata["size_xyz"] = list(img.GetSize())
                     metadata["spacing"] = list(img.GetSpacing())
+                    metadata["spacing_mm_xyz"] = list(img.GetSpacing())
+                    metadata["origin_mm_xyz"] = list(img.GetOrigin())
+                    metadata["direction"] = list(img.GetDirection())
+                    metadata["pixel_type"] = img.GetPixelIDTypeAsString()
                 except Exception as exc:
                     logger.warning("Failed to read MetaImage metadata for %s: %s", file_path, exc)
 
@@ -411,10 +520,16 @@ Supported formats:
                 except Exception as exc:
                     logger.warning("Failed to read image metadata for %s: %s", file_path, exc)
 
+            image_metadata = metadata if metadata.get("format") else None
             return ToolResult(
                 success=True,
                 data={"content": f"Image file: {metadata.get('format', 'Unknown')}", "metadata": metadata},
-                message=f"Got image info: {metadata.get('format', 'Unknown')}",
+                message=(
+                    f"Got image info: {metadata.get('format', 'Unknown')}"
+                    if image_metadata is None
+                    else f"Image metadata read: {metadata.get('format', 'Unknown')}"
+                ),
+                metadata=image_metadata or {},
             )
 
         except Exception as e:

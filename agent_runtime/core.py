@@ -890,6 +890,7 @@ class ToolResultPipeline:
     _UI_TOOLS = {"ui_controller", "ui_screenshot"}
     _PLANNING_TOOLS = {"planning_pipeline", "seed_planning", "trajectory_planning", "dose_engine", "dose_evaluation"}
     _WEB_TOOLS = {"web_search", "web_fetch", "web_access"}
+    _DOCUMENT_TOOLS = {"doc_reader"}
     # These tools provide evidence for synthesis, not a standalone answer.
     # Their raw payloads may contain arbitrary web text or internal checking
     # details and are therefore excluded from all raw fallbacks.
@@ -904,7 +905,7 @@ class ToolResultPipeline:
         "trajectory_init", "trajectory_refine", "dose_engine", "dose_calc",
         "dose_evaluation", "query_metrics", "surgical_guide",
         "report_generator", "report_auto_fill", "ui_controller",
-        "ui_screenshot", "ui_annotate",
+        "ui_screenshot", "ui_annotate", "doc_reader",
     }
     _LOCALIZABLE_TOOLS = {"filesystem_browser", "shell_executor", "code_executor"}
 
@@ -919,6 +920,8 @@ class ToolResultPipeline:
 
         Priority: result.display > auto-generated from metadata > result.message > generic
         """
+        if not result.success and lang == "zh" and tool_name in ToolResultPipeline._DOCUMENT_TOOLS:
+            return f"\u8bfb\u53d6\u6587\u4ef6\u5143\u6570\u636e\u5931\u8d25\uff1a{result.error}"
         if not result.success:
             return f"Error: {result.error}" if lang == "en" else f"错误: {result.error}"
 
@@ -935,6 +938,8 @@ class ToolResultPipeline:
             return ToolResultPipeline._format_analysis(tool_name, result, meta, lang)
         if tool_name in ToolResultPipeline._UI_TOOLS:
             return ToolResultPipeline._format_ui(tool_name, result, meta, lang)
+        if tool_name in ToolResultPipeline._DOCUMENT_TOOLS:
+            return ToolResultPipeline._format_document(result, meta, lang)
         if tool_name in ToolResultPipeline._PLANNING_TOOLS:
             return ToolResultPipeline._format_planning(tool_name, result, meta, lang)
         if tool_name in ToolResultPipeline._WEB_TOOLS:
@@ -956,6 +961,145 @@ class ToolResultPipeline:
             msg = msg.replace("File info for ", "文件信息: ")
             msg = msg.replace("Filesystem browse failed: ", "文件浏览失败: ")
         return msg
+
+    @staticmethod
+    def _format_document(result, meta: dict, lang: str) -> str:
+        """Format document-reader metadata without discarding structured fields.
+
+        NIfTI is a medical image, not a text document.  A generic
+        ``result.message`` such as "metadata extracted" is therefore not a
+        useful answer.  Keep this formatter deliberately deterministic so the
+        user-visible response contains the same geometry that the viewer and
+        planning pipeline use.
+        """
+        data = result.data if isinstance(result.data, dict) else {}
+        nested = data.get("metadata") if isinstance(data.get("metadata"), dict) else {}
+        values = dict(nested)
+        values.update(meta or {})
+        if not values:
+            return result.message or "Document metadata extracted."
+
+        # Text/document metadata may also reach this formatter. Do not label
+        # a plain Markdown or PDF file as a CT image when it has no geometry.
+        has_geometry = any(
+            key in values
+            for key in ("size_xyz", "shape", "spacing", "spacing_mm_xyz", "origin_mm_xyz")
+        )
+        image_format = str(values.get("format") or "").lower()
+        if not has_geometry and image_format not in {"nifti", "metaimage", "image"}:
+            return (
+                "\u6587\u4ef6\u5143\u6570\u636e\u5df2\u63d0\u53d6\u3002"
+                if lang == "zh"
+                else (result.message or "Document metadata extracted.")
+            )
+
+        def _vector(key: str, fallback: str = "") -> str:
+            value = values.get(key)
+            if not isinstance(value, (list, tuple)):
+                return fallback
+            formatted = []
+            for item in value:
+                try:
+                    number = float(item)
+                    formatted.append(f"{number:.4g}")
+                except (TypeError, ValueError):
+                    formatted.append(str(item))
+            return " x ".join(formatted)
+
+        def _number(key: str, digits: int = 3) -> str:
+            value = values.get(key)
+            try:
+                return f"{float(value):.{digits}f}"
+            except (TypeError, ValueError):
+                return "-"
+
+        file_name = str(values.get("file") or "-")
+        image_format = str(values.get("format") or "-")
+        size_xyz = _vector("size_xyz") or _vector("shape") or "-"
+        array_shape = _vector("array_shape_zyx") or "-"
+        spacing = _vector("spacing_mm_xyz") or _vector("spacing") or "-"
+        origin = _vector("origin_mm_xyz") or "-"
+        physical_extent = _vector("physical_extent_mm_xyz") or "-"
+        pixel_type = str(values.get("pixel_type") or values.get("dtype") or "-")
+        coordinate_system = str(values.get("coordinate_system") or "-")
+        value_range = "-"
+        if values.get("value_min") is not None and values.get("value_max") is not None:
+            value_range = f"{_number('value_min')} to {_number('value_max')}"
+        mean_value = _number("value_mean")
+        voxel_count = values.get("voxel_count")
+        try:
+            voxel_count_text = f"{int(voxel_count):,}"
+        except (TypeError, ValueError):
+            voxel_count_text = "-"
+
+        if lang == "zh":
+            lines = [
+                "## \u5f53\u524d CT \u56fe\u50cf\u6280\u672f\u4fe1\u606f",
+                "",
+                "| \u53c2\u6570 | \u5b9e\u9645\u503c |",
+                "|---|---|",
+                f"| \u6587\u4ef6 | {file_name} |",
+                f"| \u683c\u5f0f | {image_format} |",
+                f"| \u4f53\u6570\u5c3a\u5bf8 (X x Y x Z) | {size_xyz} |",
+                f"| \u6570\u7ec4\u5f62\u72b6 (Z x Y x X) | {array_shape} |",
+                f"| \u4f53\u7d20\u95f4\u8ddd (mm, X/Y/Z) | {spacing} |",
+                f"| \u7269\u7406\u8303\u56f4 (mm, X/Y/Z) | {physical_extent} |",
+                f"| \u539f\u70b9 (mm, X/Y/Z) | {origin} |",
+                f"| \u50cf\u7d20\u7c7b\u578b | {pixel_type} |",
+                f"| \u4f53\u7d20\u6570 | {voxel_count_text} |",
+                f"| \u6570\u503c\u8303\u56f4 | {value_range} |",
+                f"| \u5e73\u5747\u503c | {mean_value} |",
+                f"| \u5f53\u524d\u5750\u6807\u7cfb | {coordinate_system} |",
+            ]
+            window_width = values.get("window_width")
+            window_center = values.get("window_center")
+            if window_width is not None or window_center is not None:
+                lines.append(
+                    f"| \u7a97\u5bbd / \u7a97\u4f4d | {window_width if window_width is not None else '-'} / {window_center if window_center is not None else '-'} |"
+                )
+            lines.extend(["", "\u65b9\u5411\u77e9\u9635 (3 x 3):"])
+        else:
+            lines = [
+                "## Current CT Image Technical Metadata",
+                "",
+                "| Parameter | Value |",
+                "|---|---|",
+                f"| File | {file_name} |",
+                f"| Format | {image_format} |",
+                f"| Image size (X x Y x Z) | {size_xyz} |",
+                f"| Array shape (Z x Y x X) | {array_shape} |",
+                f"| Voxel spacing (mm, X/Y/Z) | {spacing} |",
+                f"| Physical extent (mm, X/Y/Z) | {physical_extent} |",
+                f"| Origin (mm, X/Y/Z) | {origin} |",
+                f"| Pixel type | {pixel_type} |",
+                f"| Voxel count | {voxel_count_text} |",
+                f"| Value range | {value_range} |",
+                f"| Mean value | {mean_value} |",
+                f"| Coordinate system | {coordinate_system} |",
+            ]
+            window_width = values.get("window_width")
+            window_center = values.get("window_center")
+            if window_width is not None or window_center is not None:
+                lines.append(
+                    f"| Window width / level | {window_width if window_width is not None else '-'} / {window_center if window_center is not None else '-'} |"
+                )
+            lines.extend(["", "Direction matrix (3 x 3):"])
+
+        direction_matrix = values.get("direction_matrix")
+        if not isinstance(direction_matrix, (list, tuple)):
+            direction = values.get("direction")
+            if isinstance(direction, (list, tuple)) and len(direction) == 9:
+                direction_matrix = [direction[row * 3:(row + 1) * 3] for row in range(3)]
+        if isinstance(direction_matrix, (list, tuple)):
+            lines.append("```text")
+            for row in direction_matrix[:3]:
+                lines.append("  " + "  ".join(str(item) for item in row[:3]))
+            lines.append("```")
+        if lang == "zh":
+            lines.append("\n\u4ee5\u4e0a\u662f\u5f53\u524d Session \u4e2d\u5df2\u52a0\u8f7d CT \u7684\u6280\u672f\u5143\u6570\u636e\uff0c\u4e0d\u4ee3\u8868\u5f71\u50cf\u8bca\u65ad\u3002")
+        else:
+            lines.append("\nThese are technical metadata for the CT loaded in the current Session; they are not a radiological diagnosis.")
+        return "\n".join(lines)
 
     @staticmethod
     def _format_segmentation(tool_name: str, result, meta: dict, lang: str) -> str:
