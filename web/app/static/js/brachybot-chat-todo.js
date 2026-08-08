@@ -924,6 +924,94 @@ window._sessionChatRecoveryNotices = window._sessionChatRecoveryNotices || {};
 window._chatTurnGeneration = Number(window._chatTurnGeneration || 0);
 window._activeChatTurnGeneration = Number(window._activeChatTurnGeneration || 0);
 window._sessionPlanningRefreshTimers = window._sessionPlanningRefreshTimers || {};
+window._chatSessionReadinessSubmission = window._chatSessionReadinessSubmission || null;
+
+function _setChatSessionReadinessUi(active, language = '') {
+    const input = document.getElementById('chatInput');
+    const button = document.getElementById('chatSendBtn');
+    const zh = language === 'zh'
+        || (typeof detectConversationLanguage === 'function'
+            && detectConversationLanguage(input?.value || '') === 'zh');
+    document.body.classList.toggle('chat-session-awaiting', !!active);
+    if (input) {
+        if (active) {
+            input.dataset.readinessReadonly = input.readOnly ? '1' : '0';
+            input.dataset.readinessPlaceholder = input.placeholder || '';
+            input.readOnly = true;
+            input.placeholder = zh ? '正在创建会话…' : 'Creating case...';
+        } else {
+            input.readOnly = input.dataset.readinessReadonly === '1';
+            if (Object.prototype.hasOwnProperty.call(input.dataset, 'readinessPlaceholder')) {
+                input.placeholder = input.dataset.readinessPlaceholder;
+            }
+            delete input.dataset.readinessReadonly;
+            delete input.dataset.readinessPlaceholder;
+        }
+    }
+    if (button) {
+        // The send control can be replaced while the chat panel is restored.
+        // Keep the readiness state on whichever concrete element is active,
+        // while also supporting lightweight DOM implementations used by the
+        // runtime regression harness.
+        const buttonState = button.dataset || (button.dataset = {});
+        if (active) {
+            if (!Object.prototype.hasOwnProperty.call(buttonState, 'readinessDisabled')) {
+                buttonState.readinessDisabled = button.disabled ? '1' : '0';
+            }
+            button.disabled = true;
+        } else {
+            button.disabled = buttonState.readinessDisabled === '1';
+            delete buttonState.readinessDisabled;
+        }
+        button.classList.toggle('session-awaiting', !!active);
+        if (active) button.title = zh ? '正在创建会话' : 'Creating case';
+        else if (!button.classList.contains('streaming')) button.title = zh ? '发送' : 'Send';
+    }
+}
+
+async function _submitWhenSessionReady(text, opts, input) {
+    const normalized = String(text || '').trim();
+    if (!normalized) return false;
+    const existing = window._chatSessionReadinessSubmission;
+    if (existing) {
+        // Repeated Enter/click events during the same transition represent
+        // one user intent. Reuse the existing promise instead of creating a
+        // second user bubble, request ID, task, or pending Execution Trace.
+        return existing.promise;
+    }
+    const language = typeof detectConversationLanguage === 'function'
+        ? detectConversationLanguage(normalized)
+        : '';
+    if (input) input.value = '';
+    _setChatSessionReadinessUi(true, language);
+    const record = { text: normalized, promise: null };
+    record.promise = (async () => {
+        try {
+            const sessionId = await window.awaitActiveSessionReady();
+            if (!sessionId) throw new Error('No active case is available.');
+        } catch (error) {
+            if (input && !input.value) input.value = normalized;
+            const zh = language === 'zh';
+            const message = zh
+                ? `新会话尚未创建成功，消息未发送：${error?.message || '未知错误'}`
+                : `The new case could not be created, so the message was not sent: ${error?.message || 'Unknown error'}`;
+            if (typeof addChat === 'function' && activeSessionId && sessions?.[activeSessionId]) {
+                addChat('error', message, true, Date.now(), false, activeSessionId);
+            }
+            return false;
+        } finally {
+            if (window._chatSessionReadinessSubmission === record) {
+                window._chatSessionReadinessSubmission = null;
+                _setChatSessionReadinessUi(false, language);
+            }
+        }
+        return sendChat(normalized, Object.assign({}, opts, {
+            sessionReadinessResolved: true,
+        }));
+    })();
+    window._chatSessionReadinessSubmission = record;
+    return record.promise;
+}
 
 function _setCaseTaskState(sessionId, status, taskId = undefined) {
     const key = String(sessionId || '');
@@ -1369,6 +1457,19 @@ async function sendChat(prefill, options) {
         : (prefill != null ? prefill : (input ? input.value : '')).trim();
     if (!text && !isResumingTask) return;
 
+    // Session creation/switching is a control-plane transaction. Never make
+    // an optimistic browser shell a clinical request owner. The first submit
+    // waits for the durable ID; repeated submits share that same promise.
+    if (!isResumingTask && !opts.sessionReadinessResolved
+        && typeof window.awaitActiveSessionReady === 'function') {
+        const readiness = typeof window.activeSessionReadiness === 'function'
+            ? window.activeSessionReadiness()
+            : null;
+        if (!readiness?.ready) {
+            return _submitWhenSessionReady(text, opts, input);
+        }
+    }
+
     // "Continue" is a case-control command, not a clinical knowledge
     // question. Resolve it against the server-owned task first, even when
     // this browser lost its SSE subscription during a case switch.
@@ -1406,7 +1507,12 @@ async function sendChat(prefill, options) {
     // no session is active and the chat area shows the welcome
     // message. This avoids leaking the previous session into a
     // fresh page load.
-    try { if (!isResumingTask && typeof ensurePendingSession === 'function') ensurePendingSession(); } catch (_) {}
+    // The durable workspace bridge owns Session allocation. Keep the legacy
+    // local helper only for standalone builds that do not expose that bridge.
+    try {
+        if (!isResumingTask && !window.__serverWorkspaceReady
+            && typeof ensurePendingSession === 'function') ensurePendingSession();
+    } catch (_) {}
     const turnSessionId = String(activeSessionId || '');
     const turnRequestId = String(
         opts.requestId

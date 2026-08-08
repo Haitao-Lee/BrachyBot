@@ -1497,6 +1497,24 @@
     animation: pulse-stop 1.5s ease-in-out infinite;
 }
 .chat-send.streaming:hover { background: var(--danger); }
+body.chat-session-awaiting .chat-input-row {
+    opacity: 0.78;
+}
+.chat-send.session-awaiting {
+    cursor: progress;
+    position: relative;
+    color: transparent;
+}
+.chat-send.session-awaiting::after {
+    content: '';
+    width: 0.9rem;
+    height: 0.9rem;
+    border: 2px solid rgba(255, 255, 255, 0.38);
+    border-top-color: #fff;
+    border-radius: 50%;
+    animation: chat-session-spin 0.75s linear infinite;
+}
+@keyframes chat-session-spin { to { transform: rotate(360deg); } }
 @keyframes pulse-stop { 0%, 100% { opacity: 1; } 50% { opacity: 0.75; } }
 
 .chat-hint {

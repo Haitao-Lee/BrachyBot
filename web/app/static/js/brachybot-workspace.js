@@ -8,6 +8,7 @@
     let saveTimer = null;
     let restoring = false;
     let workspaceTransition = null;
+    let pendingSessionCreationId = null;
     let pendingSwitchSessionId = null;
     let _switchAbortController = null;
     let workspaceTransitionGeneration = 0;
@@ -377,6 +378,53 @@
         sidebar.setAttribute('aria-busy', active ? 'true' : 'false');
     }
 
+    function activeSessionReadiness() {
+        const sessionId = String(activeSessionId || '');
+        const entry = sessionId && typeof sessions !== 'undefined'
+            ? sessions?.[sessionId]
+            : null;
+        const pending = !!entry?.pending
+            || (!!pendingSessionCreationId && pendingSessionCreationId === sessionId);
+        return {
+            sessionId,
+            ready: !!sessionId && !!entry && !pending && !workspaceTransition,
+            pending,
+            transitioning: !!workspaceTransition,
+        };
+    }
+
+    // Chat, uploads, and other case-owned mutations must wait until the
+    // control plane has returned a durable Session ID. The optimistic shell
+    // is presentation-only and must never be sent in X-BrachyBot-Session.
+    window.activeSessionReadiness = activeSessionReadiness;
+    window.awaitActiveSessionReady = async function awaitActiveSessionReady() {
+        let transition = workspaceTransition;
+        if (transition) {
+            const result = await transition;
+            if (!result?.success) {
+                throw new Error(result?.error || 'The case transition did not complete.');
+            }
+        }
+        let readiness = activeSessionReadiness();
+        if (readiness.ready) return readiness.sessionId;
+
+        // A completely empty account can reach the chat input before a case
+        // exists. Allocate it through the same durable creation path instead
+        // of reviving the legacy browser-only session generator.
+        const createCase = window['newChat'];
+        if (!readiness.sessionId && typeof createCase === 'function') {
+            const created = await createCase();
+            if (!created?.success) {
+                throw new Error(created?.error || 'Unable to create a case.');
+            }
+            transition = workspaceTransition;
+            if (transition) await transition;
+            readiness = activeSessionReadiness();
+            if (readiness.ready) return readiness.sessionId;
+        }
+        throw new Error('The selected case is not ready.');
+    };
+
     function cancelTransitionUi() {
         document.body.classList.remove('workspace-hydrating');
         window.setWorkspaceHydrationState?.(false);
@@ -428,8 +476,13 @@
                 if (workspaceTransitionGeneration === transitionGeneration) {
                     workspaceTransitionGeneration += 1;
                 }
-                setWorkspaceTransitionState(false);
                 workspaceTransition = null;
+                setWorkspaceTransitionState(false);
+                try {
+                    window.dispatchEvent(new CustomEvent('brachybot:session-readiness', {
+                        detail: activeSessionReadiness(),
+                    }));
+                } catch (_) {}
                 recordWorkspacePerformance('transition.finished', {
                     sessionId: String(activeSessionId || ''),
                     startedAt: transitionStartedAt,
@@ -1012,7 +1065,7 @@
         // presentation fields are copied so a legacy snapshot cannot repaint
         // the new CTV/OAR LUT, while custom colors remain authoritative.
         window.migrateLegacyStructurePalette?.(savedTree);
-        ['ct', 'ctv', 'oar', 'dose', 'seeds', 'needles'].forEach(key => {
+        ['ct', 'ctv', 'oar', 'skin', 'dose', 'seeds', 'needles'].forEach(key => {
             copyDisplayProperties(dataTreeState[key], savedTree[key]);
         });
         if (savedTree.planning && dataTreeState.planning) {
@@ -1112,7 +1165,7 @@
                     ? jsonClone(value)
                     : value;
             });
-            ['ct', 'ctv', 'oar', 'dose', 'seeds', 'needles'].forEach(key => {
+            ['ct', 'ctv', 'oar', 'skin', 'dose', 'seeds', 'needles'].forEach(key => {
                 if (!Object.prototype.hasOwnProperty.call(savedTree, key)) return;
                 const savedGroup = savedTree[key];
                 if (!savedGroup || typeof savedGroup !== 'object') return;
@@ -1966,15 +2019,24 @@
             if (previousSessionId && typeof window.releaseTrainingMonitorForSession === 'function') {
                 void window.releaseTrainingMonitorForSession(previousSessionId, 'new_session', { forceRequest: true });
             }
+            // Capture the old case payload synchronously, but do not make the
+            // new-case first paint wait behind a large snapshot/checkpoint
+            // lock. persistWorkspace binds both payload and request header to
+            // previousSessionId before its first await, so this write cannot
+            // leak into the new case even when it finishes later.
+            let previousCaseFlush = null;
             if (typeof flushActiveReportState === 'function') {
-                await Promise.resolve(flushActiveReportState());
+                previousCaseFlush = Promise.resolve(flushActiveReportState());
             } else {
-                await persistWorkspace('session.switching');
+                previousCaseFlush = Promise.resolve(persistWorkspace('session.switching'));
             }
+            void previousCaseFlush.catch(error => {
+                console.debug('[workspace] previous case flush deferred:', error);
+            });
             // Paint a genuinely empty case on the next animation frame instead
             // of holding the previous transcript and viewer until the server
             // has allocated an id. The temporary id cannot reach a clinical
-            // endpoint because workspace transitions keep controls disabled.
+            // endpoint because every mutation awaits activeSessionReadiness.
             const optimisticId = `pending-${Date.now()}-${Math.random().toString(16).slice(2)}`;
             sessions[optimisticId] = {
                 id: optimisticId,
@@ -1985,6 +2047,7 @@
                 pending: true,
                 recoveryStatus: 'clean',
             };
+            pendingSessionCreationId = optimisticId;
             // New cases are an empty control-plane shell.  Do not show an
             // opening-case resource spinner and do not schedule hydration;
             // the old case's server task remains detached and case-owned.
@@ -1997,10 +2060,18 @@
                 if (typeof requestAnimationFrame === 'function') requestAnimationFrame(resolve);
                 else setTimeout(resolve, 0);
             });
-            const response = await workspaceFetch('/api/sessions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: 'New case' }) }, 5000);
+            let response;
+            try {
+                response = await workspaceFetch('/api/sessions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: 'New case' }) }, 5000);
+            } catch (error) {
+                delete sessions[optimisticId];
+                if (pendingSessionCreationId === optimisticId) pendingSessionCreationId = null;
+                throw error;
+            }
             const data = await response.json();
             if (!response.ok) {
                 delete sessions[optimisticId];
+                if (pendingSessionCreationId === optimisticId) pendingSessionCreationId = null;
                 // Do not paint the previous shell — its chat, viewer, and
                 // report are still in the DOM.  Just revert the active id
                 // and sidebar highlight.
@@ -2018,6 +2089,7 @@
             }
             const createdSession = data.session;
             delete sessions[optimisticId];
+            if (pendingSessionCreationId === optimisticId) pendingSessionCreationId = null;
             if (createdSession?.id) {
                 // The create endpoint returns the authoritative session entry.
                 // Upsert it before rendering so the sidebar reacts immediately

@@ -355,6 +355,29 @@ class ExportService:
                 },
             ))
 
+        skin_surface = memory.retrieve("skin_surface")
+        skin_mask = memory.retrieve("skin_surface_mask")
+        if isinstance(skin_surface, Mapping) and skin_mask is not None:
+            skin_array = np.asarray(skin_mask)
+            if skin_array.ndim == 3 and np.count_nonzero(skin_array):
+                objects.append(ExportObject(
+                    str(skin_surface.get("object_id") or "skin_surface:guide"),
+                    "group:structures:skin",
+                    str(skin_surface.get("label") or "Guide skin surface"),
+                    "skin_surface",
+                    "Structures/Skin",
+                    (NIFTI, STL),
+                    "nifti",
+                    {
+                        "data_tree_node_id": str(
+                            skin_surface.get("data_tree_node_id") or "skin_surface"
+                        ),
+                        "voxel_count": int(np.count_nonzero(skin_array)),
+                        "source": str(skin_surface.get("source") or "surgical_guide"),
+                        "threshold_hu": skin_surface.get("threshold_hu"),
+                    },
+                ))
+
         needles = _normalized_needles(memory)
         seeds = _normalized_seeds(memory)
         for index, trajectory in enumerate(memory.retrieve("trajectories") or []):
@@ -534,6 +557,7 @@ class ExportService:
             "group:structures": (None, "Structures"),
             "group:structures:ctv": ("group:structures", "CTV"),
             "group:structures:oar": ("group:structures", "OAR"),
+            "group:structures:skin": ("group:structures", "Skin surface"),
             "group:planning": (None, "Planning"),
             "group:planning:trajectories": ("group:planning", "Trajectories"),
             "group:planning:needles": ("group:planning", "Needles"),
@@ -628,6 +652,14 @@ class ExportService:
                 _write_nifti(structure["mask"].astype(np.uint8), path, memory)
             else:
                 _write_mask_stl(structure["mask"], path, memory, item.name)
+        elif item.data_type == "skin_surface":
+            skin_mask = memory.retrieve("skin_surface_mask")
+            if skin_mask is None:
+                raise ExportError("The guide skin surface is no longer available")
+            if format_key == "nifti":
+                _write_nifti(np.asarray(skin_mask, dtype=np.uint8), path, memory)
+            else:
+                _write_mask_stl(skin_mask, path, memory, item.name)
         elif item.data_type == "needle":
             needle_id = item.metadata["needle_id"]
             records = [row for row in _normalized_needles(memory) if row["needle_id"] == needle_id]

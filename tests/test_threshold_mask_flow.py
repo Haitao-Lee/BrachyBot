@@ -54,3 +54,36 @@ def test_skin_surface_waits_for_background_ct_hydration():
     assert "), 202" in skin_route
     assert "maxPendingAttempts" in layout
     assert "data.pending" in layout
+
+
+def test_guide_skin_is_a_persisted_segmentation_sibling_with_2d_and_3d_views():
+    guide = read("web/surgical_guide.py")
+    routes = read("web/routes/viewer_routes.py")
+    volume = read("web/app/static/js/brachybot-viewer-volume.js")
+    layout = read("web/app/static/js/brachybot-viewer-layout.js")
+    manual = read("web/app/static/js/brachybot-3d-manual.js")
+    guide_ui = read("web/app/static/js/brachybot-surgical-guide.js")
+
+    assert 'agent.memory.store("skin_surface_mask", mask)' in guide
+    assert 'agent.memory.store("skin_surface", metadata)' in guide
+    assert '"/api/viewer/skin_surface_volume"' in routes
+    assert 'source == "guide"' in routes
+    assert "skin:     {" in volume
+    assert "opacity: 0.10" in volume
+    assert "Guide skin surface is a first-class segmentation sibling of CTV/OAR" in volume
+    assert "skinSurfaceData[flatIdx]" in volume
+    assert "neighborOffsets.some" in volume
+    assert "_reconstructGuideSkinSurface3D" in layout
+    assert "isSkinSurfaceMesh" in manual
+    assert "never leak it into Planning" in manual
+    assert "loadGuideSkinSurface" in guide_ui
+
+
+def test_guide_skin_presentation_is_session_restored_and_case_reset():
+    workspace = read("web/app/static/js/brachybot-workspace.js")
+    reset = read("web/app/static/js/brachybot-ui-api.js")
+    planning_runs = read("web/planning_runs.py")
+
+    assert "'ct', 'ctv', 'oar', 'skin', 'dose'" in workspace
+    assert "skinSurfaceData = null" in reset
+    assert '"skin_surface_mask"' in planning_runs

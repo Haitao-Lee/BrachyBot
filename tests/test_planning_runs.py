@@ -9,6 +9,7 @@ from web.planning_runs import (
     invalidate_planning_dependents,
     list_planning_runs,
     mark_planning_run,
+    publish_active_planning_state,
     publish_planning_run,
 )
 
@@ -113,3 +114,21 @@ def test_failed_new_run_restores_previous_visible_run():
     assert runs[0]["visible"] is True
     assert runs[1]["visible"] is False
     assert runs[1]["status"] == "failed"
+
+
+def test_artifact_snapshot_refresh_preserves_draft_status_and_skin_surface():
+    agent = _agent()
+    planning_id = begin_planning_run(agent, step="full", force_new=True)
+    agent.memory.store = lambda key, value: agent.memory.planning_results.__setitem__(key, value)
+    agent.memory.store("skin_surface", {"object_id": "skin_surface:guide", "data_version": 1})
+    agent.memory.store("skin_surface_mask", [[[1, 0], [0, 0]]])
+    publish_planning_run(agent, None, status="draft")
+
+    agent.memory.store("skin_surface", {"object_id": "skin_surface:guide", "data_version": 2})
+    assert publish_active_planning_state(agent) == planning_id
+
+    run = list_planning_runs(agent.memory)[0]
+    snapshot = agent.memory.retrieve(PLANNING_RUN_PREFIX + planning_id)
+    assert run["status"] == "draft"
+    assert snapshot["skin_surface"]["data_version"] == 2
+    assert snapshot["skin_surface_mask"] == [[[1, 0], [0, 0]]]

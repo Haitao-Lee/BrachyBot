@@ -70,6 +70,14 @@ DEFAULT_GUIDE_PARAMETERS: Dict[str, Any] = {
 # allowing repeated mesh generation to grow one case workspace without limit.
 MAX_SAVED_GUIDE_VERSIONS = 5
 
+# Stable identity for the exact CT-derived envelope used by guide generation.
+# The mask is persisted separately from the printable guide mesh because it is
+# also a first-class segmentation shown in the Data Tree and MPR viewers.
+GUIDE_SKIN_OBJECT_ID = "skin_surface:guide"
+GUIDE_SKIN_NODE_ID = "skin_surface"
+GUIDE_SKIN_DEFAULT_COLOR = "#f2a088"
+GUIDE_SKIN_DEFAULT_OPACITY = 0.10
+
 # Extra radial clearance subtracted around every channel bore, beyond the
 # nominal channel_radius. Without this, two nearby needle sleeves can merge and
 # the wall of one sleeve intrudes into the neighbouring channel, partially
@@ -717,6 +725,78 @@ def _body_mask(ct_array: np.ndarray, threshold: float) -> np.ndarray:
     candidate = ndimage.binary_closing(candidate, structure=np.ones((3, 3, 3)), iterations=1)
     candidate = ndimage.binary_fill_holes(candidate)
     return _largest_component(candidate)
+
+
+def store_guide_skin_surface(
+    agent: Any,
+    body: np.ndarray,
+    *,
+    ct_image: Any,
+    threshold_hu: float,
+) -> Dict[str, Any]:
+    """Persist the exact smoothed skin envelope consumed by guide CSG.
+
+    Keeping this result in session memory makes the Data Tree, 2D contour,
+    3D surface, guide QA, and later session hydration refer to one immutable
+    voxel result instead of independently thresholding CT in each viewer.
+    """
+    if agent is None or not hasattr(agent, "memory"):
+        raise SurgicalGuideError("Agent is unavailable")
+    mask = np.ascontiguousarray(np.asarray(body, dtype=np.uint8))
+    if mask.ndim != 3 or not bool(np.any(mask)):
+        raise SurgicalGuideError("The guide skin surface is empty")
+    previous = agent.memory.retrieve("skin_surface") or {}
+    try:
+        data_version = int(previous.get("data_version") or 0) + 1
+    except (AttributeError, TypeError, ValueError):
+        data_version = 1
+    try:
+        from web.planning_runs import active_planning_id
+        planning_id = active_planning_id(agent.memory)
+    except Exception:
+        planning_id = None
+    spacing = tuple(float(value) for value in ct_image.GetSpacing())
+    origin = tuple(float(value) for value in ct_image.GetOrigin())
+    direction = tuple(float(value) for value in ct_image.GetDirection())
+    metadata = {
+        "id": GUIDE_SKIN_NODE_ID,
+        "object_id": GUIDE_SKIN_OBJECT_ID,
+        "data_tree_node_id": GUIDE_SKIN_NODE_ID,
+        "label": "Guide skin surface",
+        "type": "skin_surface",
+        "data_type": "segmentation",
+        "source": "surgical_guide",
+        "status": "ready",
+        "planning_id": planning_id or None,
+        "data_version": data_version,
+        "threshold_hu": float(threshold_hu),
+        "voxel_count": int(np.count_nonzero(mask)),
+        "shape": [int(value) for value in mask.shape],
+        "spacing": list(spacing),
+        "origin": list(origin),
+        "direction": list(direction),
+        "coordinate_system": "SimpleITK physical patient-world coordinates (mm)",
+        "default_color": GUIDE_SKIN_DEFAULT_COLOR,
+        "default_opacity": GUIDE_SKIN_DEFAULT_OPACITY,
+        "visible_2d": True,
+        "visible_3d": True,
+    }
+    agent.memory.store("skin_surface_mask", mask)
+    agent.memory.store("skin_surface", metadata)
+    return metadata
+
+
+def skin_surface_public_payload(agent: Any) -> Dict[str, Any]:
+    """Return browser-safe metadata for the persisted guide skin surface."""
+    if agent is None or not hasattr(agent, "memory"):
+        return {"available": False}
+    metadata = agent.memory.retrieve("skin_surface")
+    mask = agent.memory.retrieve("skin_surface_mask")
+    if not isinstance(metadata, Mapping) or mask is None:
+        return {"available": False}
+    payload = dict(metadata)
+    payload["available"] = True
+    return payload
 
 
 def _truncated_boundary_slices(body: np.ndarray) -> Tuple[bool, bool]:
@@ -1475,6 +1555,15 @@ def generate_surgical_guide(
     body = _smooth_body_mask(body, source_spacing_zyx=tuple(
         float(value) for value in np.asarray(ct_image.GetSpacing(), dtype=np.float64)[::-1]
     ), sigma_mm=2.0)
+    # Persist before the expensive guide CSG begins. Even when a downstream
+    # manufacturability check rejects the guide mesh, the successfully derived
+    # skin segmentation remains available for inspection and parameter repair.
+    skin_surface = store_guide_skin_surface(
+        agent,
+        body,
+        ct_image=ct_image,
+        threshold_hu=params["skin_threshold_hu"],
+    )
     # Finite-FOV detection: if the body envelope is truncated by the CT scan
     # boundaries, the guide must only be built from real lateral skin. Entries
     # falling on a truncated flat plane are rejected inside _path_records;
@@ -1879,6 +1968,8 @@ def generate_surgical_guide(
         "parameters": params,
         "source_plan_signature": signature,
         "selected_needle_ids": [path.needle_id for path in paths],
+        "skin_surface_object_id": skin_surface["object_id"],
+        "skin_surface_data_version": skin_surface["data_version"],
         "needle_paths": path_checks,
         "auxiliary_holes": auxiliary_holes,
         "vertices": vertices,

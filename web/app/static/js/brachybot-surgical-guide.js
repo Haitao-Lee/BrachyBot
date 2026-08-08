@@ -451,6 +451,9 @@
             }, sessionId);
             if (generation !== guideLoadGeneration || sessionId !== activeSessionId()) return false;
             if (payload?.pending) return false;
+            if (payload?.skin_surface?.available && typeof window.loadGuideSkinSurface === 'function') {
+                void window.loadGuideSkinSurface({ sessionId });
+            }
             const printableGuide = hasPrintableBoreQuality(payload.guide);
             const displayGuide = payload.guide && printableGuide
                 ? payload.guide
@@ -520,6 +523,9 @@
                     : payload.guide,
             );
             addGuideMesh(payload.guide);
+            if (payload?.skin_surface?.available && typeof window.loadGuideSkinSurface === 'function') {
+                await window.loadGuideSkinSurface({ sessionId });
+            }
             window.scheduleWorkspaceSave?.('surgical_guide.generated');
             const completed = t(
                 `穿刺导板 v${payload.guide.version} 已生成`,
@@ -556,6 +562,12 @@
                 state: 'completed', version: payload.guide.version,
             });
         } catch (error) {
+            // Skin extraction precedes guide CSG and may have succeeded even
+            // when the printable mesh fails QA. Keep that real segmentation
+            // visible so the operator can inspect fit and repair parameters.
+            if (sessionId === activeSessionId() && typeof window.loadGuideSkinSurface === 'function') {
+                await window.loadGuideSkinSurface({ sessionId });
+            }
             if (!options.silent) notify(error.message, 'error');
             throw error;
         } finally {
@@ -572,6 +584,9 @@
             }, sessionId);
             if (sessionId !== activeSessionId()) return false;
             if (payload?.pending) return false;
+            if (payload?.skin_surface?.available && typeof window.loadGuideSkinSurface === 'function') {
+                void window.loadGuideSkinSurface({ sessionId });
+            }
             applyGuideMetadata(payload, payload.guide);
             // Load the existing guide when it matches the current plan's needle
             // geometry. Signature match is the authoritative validity signal;

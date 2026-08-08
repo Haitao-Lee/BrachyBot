@@ -239,7 +239,10 @@ def test_new_case_creation_avoids_empty_workspace_hydration_and_redundant_round_
     sessions = read("web/routes/session_routes.py")
     new_case = workspace.split("window.newChat =", 1)[1].split("window.switchSession =", 1)[0]
     assert "await loadServerSessions()" not in new_case
-    assert "await Promise.resolve(flushActiveReportState())" in new_case
+    assert "previousCaseFlush = Promise.resolve(flushActiveReportState())" in new_case
+    assert "void previousCaseFlush.catch" in new_case
+    assert "window.awaitActiveSessionReady" in workspace
+    assert "The optimistic shell" in workspace
     assert "void persistWorkspace('session.switching')" not in new_case
     assert "paintSessionShell(optimisticId, { blank: true })" in new_case
     assert "function paintSessionShell(sessionId, { clearWorkspace = true, blank = false } = {})" in workspace
@@ -275,8 +278,8 @@ def test_workspace_transitions_publish_measurable_first_paint_and_restore_stages
     assert "restore.planning_dvh" in ui_api
     assert "restore.report_and_presentation" in ui_api
     assert "restore.fully_interactive" in ui_api
-    assert "brachybot-workspace.js?v=27" in index
-    assert "brachybot-ui-api.js?v=33" in index
+    assert "brachybot-workspace.js?v=28" in index
+    assert "brachybot-ui-api.js?v=34" in index
 
 
 def test_workspace_fetch_preserves_external_transition_abort_semantics():
@@ -1280,7 +1283,7 @@ def test_surgical_guide_restore_waits_for_hydration_and_publishes_tool_results()
     assert "pending = workspace_data_pending(agent)" in routes
     assert "retryPending: true" in guide
     assert "maxPendingRetries = 240" in guide
-    assert "publish_planning_run(agent, None, status=\"completed\")" in tool
+    assert "publish_active_planning_state(agent)" in tool
     assert "requires_regeneration: true" in guide
     assert "source_plan_signature" in guide
     assert "Older persisted guides may not have bore_quality metadata" in guide

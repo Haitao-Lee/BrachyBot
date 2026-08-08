@@ -2975,6 +2975,7 @@ function addMeshToScene(meshData) {
     // meshes restored from older sessions that arrive through this generic
     // path rather than loadSeeds3D().
     const renderOrderBySource = {
+        skin_surface: 2,
         dose: 6,
         dose_isosurface: 6,
         surgical_guide: 20,
@@ -2996,7 +2997,26 @@ function addMeshToScene(meshData) {
     // Planning result. Keep the 3D object and the mask Data Tree node in
     // sync, but never leak it into Planning -> 3D meshes.
     const isMaskMesh = String(meshData.source || '') === 'mask' || String(id).startsWith('mask_');
-    if (isMaskMesh) {
+    const isSkinSurfaceMesh = String(meshData.source || '') === 'skin_surface'
+        || String(id) === 'skin_surface';
+    if (isSkinSurfaceMesh) {
+        const skin = dataTreeState?.skin;
+        if (skin) {
+            skin.objectId = meshData.object_id || skin.objectId || 'skin_surface:guide';
+            skin.nodeId = meshData.data_tree_node_id || skin.nodeId || 'skin_surface';
+            skin.meshLoaded = true;
+            skin.loading = false;
+            skin.loaded = true;
+            skin.status = 'ready';
+            skin.error = null;
+            skin.dataVersion = Number(meshData.data_version || skin.dataVersion || 1);
+        }
+        if (dataTreeState?.planning?.meshes) {
+            dataTreeState.planning.meshes = dataTreeState.planning.meshes.filter(item => item.id !== id);
+        }
+        renderDataTree?.();
+        window.applyDataTreeViewVisibility?.();
+    } else if (isMaskMesh) {
         const mask = typeof state !== 'undefined' ? state.maskLabels?.[id] : null;
         if (mask) {
             mask.objectId = meshData.object_id || mask.objectId || `mask:${id}`;
@@ -3720,6 +3740,19 @@ function toggle3DWireframe(on) {
 }
 
 async function toggle3DSkin(on) {
+    // The Surgical Guide skin envelope is the canonical skin object whenever
+    // it exists. Route the legacy toolbar checkbox through its Data Tree node
+    // so 2D/3D visibility, opacity, session restore, and guide QA stay aligned.
+    if (dataTreeState?.skin?.loaded) {
+        dataTreeState.skin.visible = true;
+        dataTreeState.skin.visible3D = !!on;
+        if (on && !scene3D.meshes.skin_surface && typeof reconstructOrgan3D === 'function') {
+            await reconstructOrgan3D('skin_surface', true);
+        }
+        window.applyDataTreeViewVisibility?.();
+        renderDataTree?.();
+        return;
+    }
     // A threshold-derived skin is a first-class Data Tree mask. Keep the
     // legacy checkbox compatible, but route it through the same stable node
     // rather than creating an unmanaged `scene3D.skinMesh` object.

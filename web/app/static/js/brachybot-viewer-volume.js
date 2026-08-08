@@ -220,6 +220,8 @@ function computeCTStats() {
 // Label volumes for client-side overlay rendering (3D Slicer style)
 let ctvLabelData = null;   // Uint8Array, shape (Z, Y, X)
 let oarLabelData = null;   // Uint8Array, shape (Z, Y, X)
+let skinSurfaceData = null;  // Uint8Array, exact guide body envelope (Z, Y, X)
+let skinSurfaceShape = null;
 let labelColorLUT = {};    // Legacy alias for the OAR LUT
 let ctvLabelColorLUT = {}; // CTV labels have their own namespace (label 1 is red)
 let oarLabelColorLUT = {}; // OAR label IDs may overlap CTV label IDs
@@ -783,6 +785,93 @@ async function loadLabelVolumes(options = {}) {
         return true;
 }
 
+/**
+ * Hydrate the exact skin envelope used by Surgical Guide generation.
+ *
+ * The binary volume remains outside the serialized UI snapshot; the backend
+ * is authoritative and the Data Tree stores only presentation/identity state.
+ */
+async function loadGuideSkinSurface(options = {}) {
+    const scope = _captureViewerDataScope(options.sessionId);
+    const retryAttempt = Number(options._retryAttempt || 0);
+    try {
+        const response = await fetch(API + '/viewer/skin_surface_volume', {
+            headers: _viewerDataHeaders(scope.sessionId),
+        });
+        if (response.status === 202) {
+            if (retryAttempt >= 80 || !_viewerDataScopeIsCurrent(scope)) return false;
+            const payload = await response.json().catch(() => ({}));
+            await new Promise(resolve => setTimeout(
+                resolve, Math.max(100, Math.min(1000, Number(payload.retry_after_ms) || 250)),
+            ));
+            return loadGuideSkinSurface({ ...options, _retryAttempt: retryAttempt + 1 });
+        }
+        if (response.status === 404) {
+            if (!_viewerDataScopeIsCurrent(scope)) return false;
+            skinSurfaceData = null;
+            skinSurfaceShape = null;
+            dataTreeState.skin.loaded = false;
+            dataTreeState.skin.status = 'not_generated';
+            const mesh = scene3D?.meshes?.skin_surface;
+            if (mesh) {
+                scene3D.scene?.remove(mesh);
+                mesh.geometry?.dispose?.();
+                mesh.material?.dispose?.();
+                delete scene3D.meshes.skin_surface;
+            }
+            renderDataTree?.();
+            loadAllSlices?.();
+            return false;
+        }
+        if (!response.ok) throw new Error(`Guide skin request failed: HTTP ${response.status}`);
+        const shape = [
+            Number(response.headers.get('X-Shape-Z')),
+            Number(response.headers.get('X-Shape-Y')),
+            Number(response.headers.get('X-Shape-X')),
+        ];
+        const buffer = await response.arrayBuffer();
+        if (!_viewerDataScopeIsCurrent(scope)) return false;
+        const expected = shape[0] * shape[1] * shape[2];
+        if (!shape.every(value => Number.isInteger(value) && value > 0)
+            || buffer.byteLength !== expected) {
+            throw new Error('Guide skin volume has invalid geometry');
+        }
+        skinSurfaceData = new Uint8Array(buffer);
+        skinSurfaceShape = shape;
+        const node = dataTreeState.skin;
+        node.id = 'skin_surface';
+        node.objectId = response.headers.get('X-Object-ID') || 'skin_surface:guide';
+        node.nodeId = response.headers.get('X-Data-Tree-Node-ID') || 'skin_surface';
+        node.planningId = response.headers.get('X-Planning-ID') || null;
+        node.dataVersion = Number(response.headers.get('X-Data-Version') || 1);
+        node.thresholdHu = Number(response.headers.get('X-Threshold-HU') || -300);
+        node.voxelCount = Number(response.headers.get('X-Voxel-Count') || 0);
+        node.loaded = true;
+        node.loading = false;
+        node.status = 'ready';
+        node.error = null;
+        ensureDataTreeNodeMetadata(node, 'skin_surface', 'segmentation');
+        renderDataTree?.();
+        loadAllSlices?.();
+        if (isDataTreeNodeVisible3D(node) && typeof reconstructOrgan3D === 'function') {
+            await reconstructOrgan3D('skin_surface', true);
+        }
+        window.scheduleWorkspaceSave?.('viewer.guide_skin_loaded');
+        return true;
+    } catch (error) {
+        if (_viewerDataScopeIsCurrent(scope)) {
+            dataTreeState.skin.loading = false;
+            dataTreeState.skin.status = 'error';
+            dataTreeState.skin.error = error?.message || String(error);
+            renderDataTree?.();
+        }
+        if (options.userInitiated) addChat?.('error', error?.message || String(error));
+        return false;
+    }
+}
+
+window.loadGuideSkinSurface = loadGuideSkinSurface;
+
 // Segmentation tools finish on the agent worker before every browser-facing
 // endpoint has necessarily observed the new label arrays. Keep one
 // session-scoped reconciliation job per result so CTV/OAR data reaches the
@@ -1133,11 +1222,12 @@ function renderSliceFromVolume(axis, sliceIndex) {
     const displayMode = state.viewerSettings.displayMode || 'ct';
     const isLabelOnly = displayMode === 'label';
     const hasMasks2d = Object.keys(state.maskLabels || {}).some(id => _maskVisibleInTarget(state.maskLabels[id]));
-    const showOverlay = (ctvLabelData || oarLabelData || hasMasks2d) &&
-                        (displayMode === 'overlay' || isLabelOnly || hasMasks2d) &&
+    const hasSkin2d = !!(skinSurfaceData && isDataTreeNodeVisible2D(dataTreeState.skin));
+    const showOverlay = (ctvLabelData || oarLabelData || hasMasks2d || hasSkin2d) &&
+                        (displayMode === 'overlay' || isLabelOnly || hasMasks2d || hasSkin2d) &&
                         (((isDataTreeNodeVisible2D(dataTreeState.ctv) && state.viewerSettings.showCTV)) ||
                          (isDataTreeNodeVisible2D(dataTreeState.oar) && state.viewerSettings.showOAR) ||
-                         hasMasks2d);
+                         hasMasks2d || hasSkin2d);
     const labelSliceSize = Y * X;
     const organOpacities = showOverlay ? (() => { const m = {}; dataTreeState.organs.forEach(o => { m[o.labelId] = o.opacity; }); return m; })() : {};
     const thresholdRaw = state.viewerSettings.threshold;
@@ -1176,6 +1266,24 @@ function renderSliceFromVolume(axis, sliceIndex) {
 
             if (showOverlay && flatIdx >= 0) {
                 let oR = 0, oG = 0, oB = 0, oA = 0;
+
+                // The guide skin is a filled 3D envelope, but MPR views show
+                // only its one-voxel contour so anatomy remains readable at
+                // the deliberately low default opacity.
+                if (hasSkin2d && skinSurfaceData.length > flatIdx && skinSurfaceData[flatIdx]) {
+                    const neighborOffsets = [-1, 1, -X, X, -labelSliceSize, labelSliceSize];
+                    const atBoundary = volX2 === 0 || volX2 === X - 1
+                        || volY2 === 0 || volY2 === Y - 1
+                        || volZ === 0 || volZ === Z - 1
+                        || neighborOffsets.some(offset => !skinSurfaceData[flatIdx + offset]);
+                    if (atBoundary) {
+                        const hex = dataTreeState.skin.color || '#f2a088';
+                        oR = parseInt(hex.slice(1, 3), 16) || 242;
+                        oG = parseInt(hex.slice(3, 5), 16) || 160;
+                        oB = parseInt(hex.slice(5, 7), 16) || 136;
+                        oA = Math.round(Number(dataTreeState.skin.opacity ?? 0.10) * 255);
+                    }
+                }
 
                 // Manual/threshold masks are the lowest overlay layer. Each
                 // visible mask paints its voxels with its own color/opacity.
@@ -1966,6 +2074,11 @@ const dataTreeState = {
     ct:       { visible: true, opacity: 1.0, color: '#888', loaded: false, label: 'CT Image' },
     ctv:      { visible: true, opacity: 0.7, color: DEFAULT_CTV_STRUCTURE_COLOR, loaded: false, label: 'CTV Mask' },
     oar:      { visible: true, opacity: 0.5, color: DEFAULT_OAR_STRUCTURE_COLOR, loaded: false, label: 'All OARs' },
+    skin:     {
+        id: 'skin_surface', objectId: 'skin_surface:guide', visible: true,
+        visible2D: true, visible3D: true, opacity: 0.10, color: '#f2a088',
+        loaded: false, label: 'Guide skin surface', status: 'not_generated',
+    },
     // Provenance controls whether previous user-edited categories may be
     // carried across a mask replacement. Uploaded unknown labels start as
     // numbered traversable OARs; they must not inherit an old ontology.
@@ -2152,6 +2265,7 @@ function reconcileDataTreeVisualNodes() {
         ['ct', dataTreeState.ct, 'image', null],
         ['ctv', dataTreeState.ctv, 'segmentation', 'segmentation'],
         ['oar', dataTreeState.oar, 'segmentation', 'segmentation'],
+        ['skin_surface', dataTreeState.skin, 'skin_surface', 'segmentation'],
         ['dose', dataTreeState.dose, 'dose', 'planning'],
         ['seeds', dataTreeState.seeds, 'seed_collection', 'planning'],
         ['needles', dataTreeState.needles, 'needle_collection', 'planning'],
@@ -2275,7 +2389,7 @@ function getDataTreeNodeSnapshot() {
             contextActions: Array.isArray(node.contextActions) ? [...node.contextActions] : [],
         });
     };
-    [dataTreeState.ct, dataTreeState.ctv, dataTreeState.oar,
+    [dataTreeState.ct, dataTreeState.ctv, dataTreeState.oar, dataTreeState.skin,
         dataTreeState.dose, dataTreeState.seeds, dataTreeState.needles,
         dataTreeState.planning, dataTreeState.planning?.doseOverlay,
         dataTreeState.planning?.dvh, ...Object.values(dataTreeState.ctvLabels || {}),
@@ -2352,6 +2466,7 @@ window.reconcileSegmentationViewerState = reconcileSegmentationViewerState;
 function getDataTreeAppearanceForMesh(id, mesh) {
     let item = null;
     if (id === 'ctv') item = dataTreeState.ctv;
+    else if (id === 'skin_surface') item = dataTreeState.skin;
     else if (id.startsWith('ctv_')) item = dataTreeState.ctvLabels?.[id] || dataTreeState.ctv;
     else if (id.startsWith('organ_')) item = dataTreeState.organs.find(organ => organ.id === id);
     else if (id.startsWith('seed_')) item = dataTreeState.planning.seeds.find(seed => seed.id === id);
@@ -2367,7 +2482,9 @@ function getDataTreeAppearanceForMesh(id, mesh) {
     // A category is a parent constraint. Child edits remain local in the
     // Data Tree, but a hidden CTV/OAR/Planning parent must hide every
     // descendant mesh, including meshes restored after a mode switch.
-    const parentVisible = id.startsWith('organ_')
+    const parentVisible = id === 'skin_surface'
+        ? dataTreeState.skin?.visible !== false
+        : id.startsWith('organ_')
         ? dataTreeState.oar?.visible !== false
         : (id === 'ctv' || id.startsWith('ctv_'))
             ? dataTreeState.ctv?.visible !== false
@@ -2890,13 +3007,14 @@ function renderDataTree() {
     const hasMultiLabelCtv = ctvLabels.length > 1;
 
     const hasSeg = dataTreeState.ctv.loaded || dataTreeState.organs.length > 0
+        || dataTreeState.skin.loaded
         || Object.keys(state.maskLabels || {}).length > 0;
     const maskCount = Object.keys(state.maskLabels || {}).length;
     const segCount = hasMultiLabelCtv ? ctvLabels.length : (dataTreeState.ctv.loaded ? 1 : 0);
     html += `<div class="tree-group">
         <div class="tree-group-header" onclick="toggleTreeGroup(this)" oncontextmenu="event.preventDefault();showGroupContextMenu(event.clientX,event.clientY,'segmentation')">
             <span class="arrow">&#9660;</span>
-            <span>Segmentation ${hasSeg ? `(${dataTreeState.organs.length + segCount + maskCount})` : ''}</span>
+            <span>Segmentation ${hasSeg ? `(${dataTreeState.organs.length + segCount + maskCount + (dataTreeState.skin.loaded ? 1 : 0)})` : ''}</span>
         </div>
         <div class="tree-group-items">`;
 
@@ -3071,6 +3189,18 @@ function renderDataTree() {
             ? _dtText('CTV 分割进行中…', 'CTV segmentation in progress...')
             : _dtText('尚未生成 CTV 分割', 'CTV segmentation not generated yet');
         html += renderTreeItem('ctv', { ...dataTreeState.ctv, loaded: dataTreeState.ctv.loading }, notGenText);
+    }
+
+    // Guide skin surface is a first-class segmentation sibling of CTV/OAR.
+    // It is the exact smoothed envelope consumed by guide generation, not a
+    // viewer-only threshold preview.
+    if (dataTreeState.skin.loaded || dataTreeState.skin.loading || dataTreeState.skin.status === 'error') {
+        const skinInfo = dataTreeState.skin.loading
+            ? _dtText('生成中...', 'Building...')
+            : dataTreeState.skin.status === 'error'
+                ? _dtText('生成失败', 'Failed')
+                : `${Number(dataTreeState.skin.voxelCount || 0).toLocaleString()} vox`;
+        html += renderTreeItem('skin_surface', dataTreeState.skin, skinInfo);
     }
 
     // OAR with sub-categories
@@ -4120,6 +4250,7 @@ function _dtStatusText(status) {
 
 function _findDataTreeNode(id) {
     if (id === 'ct') return dataTreeState.ct;
+    if (id === 'skin_surface') return dataTreeState.skin;
     if (id === 'dose' || id === 'dose_overlay') {
         return dataTreeState.planning?.doseOverlay || dataTreeState.dose;
     }
@@ -4143,6 +4274,7 @@ function _findDataTreeNode(id) {
 function _dataTreeObjectId(id, purpose = 'export') {
     const node = _findDataTreeNode(id);
     if (id === 'ct') return 'image:ct';
+    if (id === 'skin_surface') return String(node?.objectId || 'skin_surface:guide');
     if (id === 'dose' || id === 'dose_overlay') return 'dose:volume';
     if (id === 'dvh') return purpose === 'delete' ? 'dvh' : 'dvh:data';
     if (id === 'ctv') return String(
@@ -4176,6 +4308,7 @@ function _dataTreeGroupObjectIds(category) {
         return [
             ..._dataTreeGroupObjectIds('ctv'),
             ..._dataTreeGroupObjectIds('oar'),
+            ...(dataTreeState.skin.loaded ? [_dataTreeObjectId('skin_surface')] : []),
         ];
     }
     if (category === 'ctv') {
@@ -4953,6 +5086,7 @@ function _allDataTreeVisualNodes() {
         dataTreeState.ct,
         dataTreeState.ctv,
         dataTreeState.oar,
+        dataTreeState.skin,
         ...(Object.values(dataTreeState.ctvLabels || {})),
         ...(dataTreeState.organs || []),
         ...(Object.entries(state.maskLabels || {})).map(([maskId, mask]) => {
@@ -5034,6 +5168,7 @@ function _groupViewNodes(category) {
     if (category === 'segmentation') return [
         dataTreeState.ctv, ...Object.values(dataTreeState.ctvLabels || {}),
         dataTreeState.oar, ...(dataTreeState.organs || []),
+        dataTreeState.skin,
     ];
     if (category === 'ctv') return [dataTreeState.ctv, ...Object.values(dataTreeState.ctvLabels || {})];
     if (category === 'oar') return [dataTreeState.oar, ...(dataTreeState.organs || [])];
@@ -5224,6 +5359,7 @@ function setGroupVisibility(category, visible) {
         Object.values(dataTreeState.ctvLabels || {}).forEach(label => { label.visible = !!visible; });
         dataTreeState.oar.visible = !!visible;
         dataTreeState.organs.forEach(organ => { organ.visible = !!visible; });
+        dataTreeState.skin.visible = !!visible;
     } else if (category === 'planning') {
         dataTreeState.planning.visible = !!visible;
         _planningVisualEntries().forEach(item => { item.visible = visible; });
@@ -5337,7 +5473,18 @@ function setGroupOpacity(category, value) {
     // view state after their synchronous material updates complete.
     requestAnimationFrame(() => applyDataTreeViewVisibility());
     const opacity = parseInt(value) / 100;
-    if (category === 'planning' || category === 'planning_trajectories') {
+    if (category === 'segmentation') {
+        dataTreeState.ctv.opacity = opacity;
+        Object.values(dataTreeState.ctvLabels || {}).forEach(label => { label.opacity = opacity; });
+        dataTreeState.oar.opacity = opacity;
+        dataTreeState.organs.forEach(organ => { organ.opacity = opacity; });
+        dataTreeState.skin.opacity = opacity;
+        [
+            ...Object.keys(dataTreeState.ctvLabels || {}),
+            ...dataTreeState.organs.map(organ => organ.id),
+            'skin_surface',
+        ].forEach(id => applyMeshOpacity(scene3D.meshes[id], opacity, _findDataTreeNode(id)?.visible !== false));
+    } else if (category === 'planning' || category === 'planning_trajectories') {
         const trajectories = _planningItems('trajectories');
         const entries = category === 'planning'
             ? _planningVisualEntries()
@@ -5436,6 +5583,7 @@ function setGroupOpacityValue(category, percentValue) {
 }
 
 function getGroupDisplayColor(category) {
+    if (category === 'segmentation') return dataTreeState.skin.color || '#f2a088';
     if (category === 'ctv') return dataTreeState.ctv.color || DEFAULT_CTV_STRUCTURE_COLOR;
     if (category === 'oar') return dataTreeState.oar.color || DEFAULT_OAR_STRUCTURE_COLOR;
     if (category === 'planning') return dataTreeState.planning.color || '#60a5fa';
@@ -5456,7 +5604,16 @@ function setGroupColor(category, color) {
     const normalized = String(color || '').trim();
     if (!/^#[0-9a-f]{6}$/i.test(normalized)) return;
     let entries = [];
-    if (category === 'ctv') {
+    if (category === 'segmentation') {
+        dataTreeState.ctv.color = normalized;
+        dataTreeState.oar.color = normalized;
+        dataTreeState.skin.color = normalized;
+        entries = [
+            ...Object.entries(dataTreeState.ctvLabels || {}).map(([id, value]) => ({ id, value })),
+            ...dataTreeState.organs.map(value => ({ id: value.id, value })),
+            { id: 'skin_surface', value: dataTreeState.skin },
+        ];
+    } else if (category === 'ctv') {
         dataTreeState.ctv.color = normalized;
         entries = Object.entries(dataTreeState.ctvLabels || {}).map(([id, value]) => ({ id, value }));
     } else if (category === 'oar') {
@@ -5489,7 +5646,8 @@ function setGroupColor(category, color) {
             ? Number(value.labelId)
             : (/^ctv_(\d+)$/.test(String(id)) ? Number(String(id).slice(4)) : null);
         if (Number.isFinite(parsedLabelId)) {
-            const targetLut = category === 'ctv' ? ctvLabelColorLUT : oarLabelColorLUT;
+            const targetLut = category === 'ctv' || String(id).startsWith('ctv_')
+                ? ctvLabelColorLUT : oarLabelColorLUT;
             targetLut[parsedLabelId] = [
                 parseInt(normalized.slice(1, 3), 16),
                 parseInt(normalized.slice(3, 5), 16),
@@ -5870,6 +6028,8 @@ function setDataOpacity(id, value) {
     // Update CTV 3D mesh
     if (id === 'ctv') {
         applyMeshOpacity(scene3D.meshes['ctv'], opacity, dataTreeState[id].visible !== false);
+    } else if (id === 'skin_surface') {
+        applyMeshOpacity(scene3D.meshes.skin_surface, opacity, dataTreeState.skin.visible !== false);
     }
 
     if (state.ctLoaded) reloadOverlays();

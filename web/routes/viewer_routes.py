@@ -1611,6 +1611,56 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
             logger.error(f"3D mask reconstruction failed: {e}")
             return jsonify({"error": str(e)}), 500
 
+    @app.route("/api/viewer/skin_surface_volume", methods=["GET"])
+    @require_api_key
+    @rate_limit
+    def api_viewer_skin_surface_volume():
+        """Return the persisted guide skin segmentation in CT voxel order."""
+        agent = get_agent(_lightweight=True)
+        pending = workspace_data_pending(agent)
+        if pending is not None:
+            return pending
+        mask = agent.memory.retrieve("skin_surface_mask")
+        metadata = agent.memory.retrieve("skin_surface") or {}
+        if mask is None or not isinstance(metadata, dict):
+            return jsonify({
+                "success": False,
+                "available": False,
+                "error": "Guide skin surface is not available",
+            }), 404
+        try:
+            import numpy as np
+
+            volume = np.ascontiguousarray(np.asarray(mask, dtype=np.uint8))
+            ct_data = agent.memory.retrieve("ct_data")
+            if volume.ndim != 3 or (ct_data is not None and volume.shape != np.asarray(ct_data).shape):
+                return jsonify({
+                    "success": False,
+                    "available": False,
+                    "error": "Guide skin surface does not match the current CT geometry",
+                }), 409
+            raw = volume.tobytes(order="C")
+            response = Response(raw, mimetype="application/octet-stream")
+            if "gzip" in request.headers.get("Accept-Encoding", ""):
+                response.set_data(gzip.compress(raw, compresslevel=4))
+                response.headers["Content-Encoding"] = "gzip"
+            response.headers["X-Shape-Z"] = str(volume.shape[0])
+            response.headers["X-Shape-Y"] = str(volume.shape[1])
+            response.headers["X-Shape-X"] = str(volume.shape[2])
+            response.headers["X-Object-ID"] = str(metadata.get("object_id") or "skin_surface:guide")
+            response.headers["X-Data-Tree-Node-ID"] = str(metadata.get("data_tree_node_id") or "skin_surface")
+            response.headers["X-Data-Version"] = str(int(metadata.get("data_version") or 1))
+            response.headers["X-Planning-ID"] = str(metadata.get("planning_id") or "")
+            response.headers["X-Threshold-HU"] = str(float(metadata.get("threshold_hu") or -300.0))
+            response.headers["X-Voxel-Count"] = str(
+                int(metadata.get("voxel_count") or np.count_nonzero(volume))
+            )
+            response.headers["Cache-Control"] = "private, no-store"
+            return response
+        except Exception as exc:
+            logger.error("Guide skin volume failed: %s", exc)
+            return jsonify({"success": False, "error": str(exc)}), 500
+
     @app.route("/api/viewer/3d_skin", methods=["POST"])
     @require_api_key
     @rate_limit
@@ -1626,8 +1676,10 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
             return jsonify({"error": "Agent not available"}), 500
 
         data = request.get_json() or {}
+        source = str(data.get("source") or "threshold").strip().lower()
         threshold = data.get("threshold", -300)  # Default: skin surface at -300 HU
-
+        persisted_skin = agent.memory.retrieve("skin_surface_mask") if source == "guide" else None
+        skin_metadata = agent.memory.retrieve("skin_surface") or {}
         ct_data = agent.memory.retrieve("ct_data")
         if ct_data is None:
             # Lightweight agent construction intentionally returns before the
@@ -1656,25 +1708,40 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
             spacing_xyz = tuple(float(s) for s in spacing[:3])
             spacing_zyx = spacing_xyz[::-1]
 
-            # Subsample for faster mesh generation if volume is large
-            if ct_data.shape[0] > 64:
-                step = max(1, ct_data.shape[0] // 64)
-                ct_sub = ct_data[::step, ::step, ::step]
+            if source == "guide":
+                if persisted_skin is None or not isinstance(skin_metadata, dict):
+                    return jsonify({"success": False, "error": "Guide skin surface is not available"}), 404
+                surface_data = np.asarray(persisted_skin, dtype=np.uint8)
+                if surface_data.shape != np.asarray(ct_data).shape:
+                    return jsonify({
+                        "success": False,
+                        "error": "Guide skin surface does not match the current CT geometry",
+                    }), 409
+            else:
+                surface_data = np.asarray(ct_data)
+
+            # Preserve the exact guide envelope at full CT resolution. Manual
+            # threshold previews retain the existing bounded subsampling path.
+            if source != "guide" and surface_data.shape[0] > 64:
+                step = max(1, surface_data.shape[0] // 64)
+                ct_sub = surface_data[::step, ::step, ::step]
                 sub_spacing = (spacing_zyx[0] * step, spacing_zyx[1] * step, spacing_zyx[2] * step)
             else:
-                ct_sub = ct_data
+                ct_sub = surface_data
                 sub_spacing = spacing_zyx
 
             data_min, data_max = float(ct_sub.min()), float(ct_sub.max())
-            level = float(threshold)
+            level = 0.5 if source == "guide" else float(threshold)
             if level <= data_min or level >= data_max:
+                if source == "guide":
+                    return jsonify({"success": False, "error": "Guide skin surface is empty"}), 409
                 level = (data_min + data_max) / 2.0
 
             # Treat the outside of the acquired CT as air for the skin
             # surface. Padding prevents marching cubes from leaving an open
             # cap at the first/last slice, which otherwise appears as an
             # artificial rectangular clipping boundary in 3D.
-            outside_value = min(data_min, level - 1.0)
+            outside_value = 0.0 if source == "guide" else min(data_min, level - 1.0)
             ct_for_surface, surface_padding_zyx = _pad_surface_volume(
                 ct_sub, fill_value=outside_value
             )
@@ -1708,6 +1775,18 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
                 "vertex_count": len(vertices),
                 "face_count": len(faces),
                 "threshold": threshold,
+                "source": "skin_surface" if source == "guide" else "threshold",
+                "organ_id": "skin_surface" if source == "guide" else None,
+                "object_id": (
+                    skin_metadata.get("object_id", "skin_surface:guide")
+                    if source == "guide" else None
+                ),
+                "data_tree_node_id": (
+                    skin_metadata.get("data_tree_node_id", "skin_surface")
+                    if source == "guide" else None
+                ),
+                "planning_id": skin_metadata.get("planning_id") if source == "guide" else None,
+                "data_version": skin_metadata.get("data_version") if source == "guide" else None,
                 "surface_boundary_padding_voxels": int(_MESH_BOUNDARY_PADDING_VOXELS),
             })
         except Exception as e:
