@@ -603,7 +603,11 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
             return {"accept": False, "reason": f"error: {str(e)}"}
 
     def _load_tools(self):
-        from tool_factory.CTV_seg import CTVModelCatalogTool, CTVSegmentationTool
+        from tool_factory.CTV_seg import (
+            CTVModelCatalogTool,
+            CTVSegmentationTool,
+            BiomedParseV2GenericSegmentationTool,
+        )
         from tool_factory.OAR_seg import OARSegmentationTool
         from tool_factory.dose_engine import DoseEngineTool
         from tool_factory.dose_eval import DoseEvaluationTool
@@ -684,6 +688,9 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
             logger.warning(f"QueryMetricsTool not available: {e}")
 
         self.registry.register(CTVSegmentationTool())
+        # Open anatomy prompts are intentionally a separate tool.  They create
+        # a reviewable Data Tree mask and never silently become CTV or OAR.
+        self.registry.register(BiomedParseV2GenericSegmentationTool())
         self.registry.register(CTVModelCatalogTool())
         self.registry.register(OARSegmentationTool())
         self.registry.register(DoseEngineTool())
@@ -1245,6 +1252,11 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
                 oar_label_path = self.memory.retrieve("oar_path") or self.memory.retrieve("oar_mask_path")
                 if oar_label_path:
                     params["label_path"] = oar_label_path
+        elif tool_name == "biomedparse_segmentation":
+            # Open anatomy requests use the same canonical LPI CT as the
+            # dedicated CTV/OAR tools. The result remains an independent mask.
+            if ct_image is not None:
+                params["image"] = ct_image
         elif tool_name == "trajectory_planning":
             if "dose_image" not in params and ct_image is not None:
                 params["dose_image"] = ct_image
@@ -1451,6 +1463,16 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
                     "last_segmentation_target",
                     "ctv" if tool_name == "ctv_segmentation" else "oar",
                 )
+                if tool_name == "ctv_segmentation":
+                    self.memory.store("pending_clarification", None)
+            elif tool_name == "biomedparse_segmentation":
+                self._persist_generic_segmentation(metadata, result.data)
+                self.memory.store("last_segmentation_target", "generic")
+                self.memory.store("generic_segmentation_completed", True)
+                # An explicit open-anatomy request supersedes a prior
+                # tumor-site clarification; do not let a later bare site name
+                # resume an abandoned planning workflow.
+                self.memory.store("pending_clarification", None)
             if tool_name == "trajectory_planning" and metadata.get("trajectories") is not None:
                 # The trajectory tool itself generates paths, but the agent
                 # must still enforce the current Data Tree policy before any
@@ -1753,6 +1775,14 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
             r.success and len(m.get("organ_names", {})) > 0,
             "No organs detected"
         ),
+        "biomedparse_segmentation": lambda r, m: (
+            r.success and int(
+                m.get("voxel_count")
+                or (m.get("generic_mask") or {}).get("voxel_count")
+                or 0
+            ) > 0,
+            "BiomedParse returned an empty anatomy mask"
+        ),
         "code_executor": lambda r, m: (
             r.success and isinstance(r.data, dict) and not r.data.get("stderr", "").strip(),
             f"Code execution error: {(r.data or {}).get('stderr', '')[:200]}"
@@ -1805,7 +1835,7 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
                     else:
                         return ToolResult(success=False, error=f"File not found: {path}")
             # Store ct_path in memory for 3D reconstruction and other tools
-            if tool_name in ("ctv_segmentation", "oar_segmentation"):
+            if tool_name in ("ctv_segmentation", "oar_segmentation", "biomedparse_segmentation"):
                 self.memory.store("ct_path", params["image_path"])
 
         # Remove invalid mask paths — tools will fall back to agent memory
@@ -1956,6 +1986,75 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
 
         return sanitized
 
+    def _persist_generic_segmentation(self, metadata: Dict, data: Any) -> bool:
+        """Persist one open BiomedParse mask as a session-owned Data Tree item.
+
+        Generic masks intentionally live outside the CTV/OAR namespaces. They
+        keep their own binary voxel array and spatial metadata so the Viewer
+        can reconstruct the exact mask after refresh without rerunning the
+        model or guessing a clinical classification.
+        """
+        metadata = metadata if isinstance(metadata, dict) else {}
+        generic = metadata.get("generic_mask")
+        if not isinstance(generic, dict):
+            return False
+        mask_id = str(metadata.get("mask_id") or generic.get("mask_id") or "").strip()
+        if not mask_id:
+            return False
+        try:
+            array = np.asarray(data, dtype=np.uint8)
+        except Exception:
+            return False
+        if array.ndim != 3:
+            logger.warning("[STORE] generic BiomedParse mask has invalid rank: %s", array.shape)
+            return False
+        array = np.ascontiguousarray(array > 0, dtype=np.uint8)
+        voxel_count = int(np.count_nonzero(array))
+        if voxel_count <= 0:
+            logger.warning("[STORE] generic BiomedParse mask is empty: %s", mask_id)
+            return False
+
+        entry = dict(generic)
+        entry["mask_id"] = mask_id
+        entry["object_id"] = str(entry.get("object_id") or f"mask:{mask_id}")
+        entry["data_tree_node_id"] = str(entry.get("data_tree_node_id") or mask_id)
+        entry["session_id"] = str(entry.get("session_id") or self.memory.session_id)
+        entry["case_id"] = str(entry.get("case_id") or self.memory.retrieve("case_id") or self.memory.session_id)
+        entry["planning_id"] = entry.get("planning_id") or self.memory.retrieve("active_planning_id")
+        entry["shape"] = [int(value) for value in array.shape]
+        entry["voxel_count"] = voxel_count
+        spacing = entry.get("spacing") or self.memory.retrieve("ct_spacing") or (1.0, 1.0, 1.0)
+        entry["spacing"] = [float(value) for value in list(spacing)[:3]]
+        entry["origin"] = list(entry.get("origin") or self.memory.retrieve("ct_origin") or (0.0, 0.0, 0.0))
+        entry["direction"] = list(entry.get("direction") or self.memory.retrieve("ct_direction") or (1, 0, 0, 0, 1, 0, 0, 0, 1))
+        entry["volume_mm3"] = float(
+            metadata.get("volume_mm3")
+            or entry.get("volume_mm3")
+            or voxel_count * np.prod(entry["spacing"])
+        )
+        entry["status"] = "ready"
+        entry["error"] = None
+        entry["mask_array"] = array
+
+        existing = self.memory.retrieve("generic_segmentation_masks") or []
+        if not isinstance(existing, list):
+            existing = []
+        masks = []
+        replaced = False
+        for item in existing:
+            if not isinstance(item, dict):
+                continue
+            if str(item.get("mask_id") or "") == mask_id:
+                masks.append(entry)
+                replaced = True
+            else:
+                masks.append(item)
+        if not replaced:
+            masks.append(entry)
+        self.memory.store("generic_segmentation_masks", masks)
+        self.memory.store("generic_segmentation_latest", mask_id)
+        return True
+
     def _store_tool_result(self, tool_name: str, result):
         """Store tool result in memory based on tool type."""
         if not result.success:
@@ -2037,6 +2136,11 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
             self.memory.store("label_grid_orientation", meta.get("label_grid_orientation") or "LPI")
             from web.structure_service import replace_structure_source
             replace_structure_source(self.memory, "oar")
+        elif tool_name == "biomedparse_segmentation":
+            self._persist_generic_segmentation(meta, result.data)
+            self.memory.store("last_segmentation_target", "generic")
+            self.memory.store("generic_segmentation_completed", True)
+            self.memory.store("pending_clarification", None)
         elif tool_name == "dose_engine" and result.data is not None:
             self.memory.store("dose_distribution", result.data)
         elif tool_name == "planning_pipeline":
@@ -2092,6 +2196,8 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
             cs["ctv_segmented"] = True
         elif tool_name == "oar_segmentation":
             cs["oar_segmented"] = True
+        elif tool_name == "biomedparse_segmentation":
+            cs["generic_segmentation_completed"] = True
         elif tool_name == "planning_pipeline":
             cs["planning_completed"] = True
         if tool_name not in cs["last_tool_calls"]:

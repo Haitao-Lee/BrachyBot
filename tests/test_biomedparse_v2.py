@@ -420,3 +420,100 @@ def test_model_catalog_exposes_four_state_capability(monkeypatch, tmp_path):
     assert liver["space_alignment_passed"] is True
     assert liver["clinical_case_validation"] is False
     assert items["nnunet_pancreatic"]["capability_state"] == "unavailable"
+
+
+def test_generic_biomedparse_mask_is_an_independent_displayable_result(monkeypatch):
+    import tool_factory.CTV_seg.biomedparse_v2 as adapter
+
+    image = sitk.GetImageFromArray(np.zeros((3, 4, 5), dtype=np.int16))
+    image.SetSpacing((0.7, 0.8, 2.0))
+    mask = np.zeros((3, 4, 5), dtype=np.uint8)
+    mask[1, 1:3, 2:4] = 1
+    lpi_image = sitk.DICOMOrient(image, "LPI")
+    monkeypatch.setattr(
+        adapter,
+        "_run_prompt_inference",
+        lambda *_args, **_kwargs: (
+            {"available": True, "research_only": True},
+            lpi_image,
+            mask,
+            0.87,
+        ),
+    )
+
+    result = adapter.BiomedParseV2GenericSegmentationTool().execute(
+        image=image,
+        image_path="/case/ct.nii.gz",
+        target="shoulder joint",
+    )
+
+    assert result.success is True
+    assert result.metadata["generic_mask"]["kind"] == "generic_segmentation"
+    assert result.metadata["generic_mask"]["target"] == "shoulder joint"
+    assert result.metadata["generic_mask"]["research_only"] is True
+    assert "ctv_array" not in result.metadata
+    assert np.array_equal(result.data, mask)
+    assert "not classified as CTV or OAR" in result.message
+
+
+def test_generic_biomedparse_empty_mask_is_reported_honestly(monkeypatch):
+    import tool_factory.CTV_seg.biomedparse_v2 as adapter
+
+    image = sitk.GetImageFromArray(np.zeros((2, 3, 4), dtype=np.int16))
+    monkeypatch.setattr(
+        adapter,
+        "_run_prompt_inference",
+        lambda *_args, **_kwargs: (
+            {"available": True, "research_only": True},
+            image,
+            np.zeros((2, 3, 4), dtype=np.uint8),
+            0.12,
+        ),
+    )
+
+    result = adapter.BiomedParseV2GenericSegmentationTool().execute(
+        image=image,
+        target="liver",
+    )
+
+    assert result.success is False
+    assert "found no 'liver'" in result.error
+    assert "model is not installed" not in result.error
+
+
+def test_generic_biomedparse_result_persists_with_stable_session_metadata():
+    from AgenticSys import BrachyAgent
+
+    class Memory:
+        session_id = "generic-persist"
+
+        def __init__(self):
+            self.values = {"ct_spacing": (0.7, 0.8, 2.0)}
+
+        def retrieve(self, key, default=None):
+            return self.values.get(key, default)
+
+        def store(self, key, value):
+            self.values[key] = value
+
+    memory = Memory()
+    agent = type("AgentHarness", (), {"memory": memory})()
+    mask = np.zeros((2, 3, 4), dtype=np.uint8)
+    mask[1, 1, 2] = 1
+    metadata = {
+        "mask_id": "mask_bp_stable",
+        "generic_mask": {
+            "mask_id": "mask_bp_stable",
+            "target": "liver",
+            "kind": "generic_segmentation",
+            "spacing": [0.7, 0.8, 2.0],
+        },
+        "voxel_count": 1,
+    }
+
+    assert BrachyAgent._persist_generic_segmentation(agent, metadata, mask) is True
+    entry = memory.retrieve("generic_segmentation_masks")[0]
+    assert entry["session_id"] == "generic-persist"
+    assert entry["data_tree_node_id"] == "mask_bp_stable"
+    assert entry["status"] == "ready"
+    assert np.array_equal(entry["mask_array"], mask)

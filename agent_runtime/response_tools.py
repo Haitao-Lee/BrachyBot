@@ -54,6 +54,77 @@ class ResponseToolMixin:
         previous = self.memory.retrieve("last_segmentation_target")
         return previous if previous in {"ctv", "oar", "all"} else "all"
 
+    @staticmethod
+    def _open_segmentation_target(message: str) -> Optional[str]:
+        """Extract an explicit free-form anatomy target.
+
+        A bare anatomy request is deliberately distinct from CTV/OAR language:
+        ``segment the pancreas`` means a displayable anatomy mask, while
+        ``segment the pancreatic tumor`` remains the dedicated CTV workflow.
+        The returned prompt is concise and stable so repeated requests can
+        replace the same session-owned Data Tree node.
+        """
+        text = str(message or "").strip().lower()
+        if not re.search(
+            r"(?:\bsegment(?:ation)?\b|\b(?:outline|delineate|extract)\b|"
+            r"\u5206\u5272|\u52fe\u753b|\u52fe\u52d2|\u63d0\u53d6)",
+            text,
+            re.IGNORECASE,
+        ):
+            return None
+        # Clinical target and OAR requests must never be reinterpreted as an
+        # open mask, even when the sentence also contains a site name.
+        if re.search(
+            r"\b(?:ctv|oar|clinical\s+target\s+volume|tumou?r|lesion|"
+            r"organs?\s+at\s+risk)\b|"
+            r"\u9776\u533a|\u5371\u53ca\u5668\u5b98|\u80bf\u7624|\u75c5\u7076|\u75c5\u53d8",
+            text,
+            re.IGNORECASE,
+        ):
+            return None
+
+        aliases = (
+            ("shoulder joint", "shoulder joint"),
+            ("shoulder", "shoulder"),
+            ("liver", "liver"),
+            ("pancreas", "pancreas"),
+            ("kidney", "kidney"),
+            ("spleen", "spleen"),
+            ("heart", "heart"),
+            ("liver", "liver"),
+            ("\u80a9\u5173\u8282", "shoulder joint"),
+            ("\u80a9", "shoulder"),
+            ("\u809d\u810f", "liver"),
+            ("\u80f0\u817a", "pancreas"),
+            ("\u80be\u810f", "kidney"),
+            ("\u80be", "kidney"),
+            ("\u813e", "spleen"),
+            ("\u5fc3\u810f", "heart"),
+        )
+        for alias, prompt in aliases:
+            if alias in text:
+                return prompt
+
+        # Accept other explicit English anatomy names without allowing the
+        # surrounding command or CT filename to become the prompt.
+        match = re.search(
+            r"\b(?:segment(?:ation)?|outline|delineate|extract)\s+(?:the\s+)?"
+            r"([a-z][a-z0-9 -]{1,72}?)(?=\s+(?:from|in|on|of|for)\b|[?.!,;:]|$)",
+            text,
+            re.IGNORECASE,
+        )
+        if match:
+            candidate = re.sub(r"\s+", " ", match.group(1)).strip(" -")
+            if candidate and candidate not in {"ct", "ct image", "image"}:
+                return candidate
+        match = re.search(
+            r"(?:\u5206\u5272|\u52fe\u753b|\u52fe\u52d2|\u63d0\u53d6)"
+            r"(?:\u4e00\u4e0b|\u51fa|\u6211\u7684)?"
+            r"([\u3400-\u4dbf\u4e00-\u9fff]{2,16})",
+            text,
+        )
+        return match.group(1) if match else None
+
     def _normalize_ctv_tool_params(self, params: Dict) -> Dict:
         """Normalize legacy CTV site parameters before contract validation."""
         normalized = dict(params or {})
@@ -115,6 +186,7 @@ print(json.dumps(result))
         for unambiguous action commands.
         """
         msg = message.strip().lower()
+        generic_target = self._open_segmentation_target(message)
         ct_path = self.memory.retrieve("ct_path") or ""
         if not ct_path:
             ct_path = (self.memory.get_ui_state() or {}).get("ct_path", "")
@@ -126,6 +198,10 @@ print(json.dumps(result))
             self._map_tumor_type(requested_tumor_type)
             if requested_tumor_type else None
         )
+        # An explicit bare-anatomy request wins over a remembered tumor site.
+        # This is the key boundary between open masks and CTV planning.
+        if generic_target:
+            tumor_type = None
         if tumor_type not in self._SUPPORTED_AUTOMATIC_CTV_TYPES:
             tumor_type = None
 
@@ -209,8 +285,20 @@ print(json.dumps(result))
                 seen.add(action)
                 ordered_actions.append(action)
 
+        if generic_target:
+            # Remove any broad fallback that the legacy keyword detector might
+            # have added for the same sentence, then route exactly one generic
+            # mask request through BiomedParse.
+            ordered_actions = [
+                action for action in ordered_actions
+                if action not in {"segment_ctv", "segment_oar", "segment_all"}
+            ]
+            ordered_actions.insert(0, "segment_generic")
+
         # If no specific segment found but generic "segment" is present, add segment_all
-        has_specific_seg = 'segment_ctv' in seen or 'segment_oar' in seen
+        has_specific_seg = (
+            'segment_ctv' in seen or 'segment_oar' in seen or generic_target is not None
+        )
         if not has_specific_seg:
             for match in re.finditer(r'(分割|segment|再分)', msg, re.IGNORECASE):
                 start, end = match.span()
@@ -236,9 +324,11 @@ print(json.dumps(result))
                     ordered_actions.append('segment_ctv')
 
         if not ordered_actions:
-            # A clarification reply such as "pancreas" has no action verb. It
-            # becomes a CTV action only after the previous turn asked for a
-            # tumor site; a bare site in a new case must remain non-executing.
+            # A clarification reply such as "pancreas" has no action verb.
+            # Restore the complete action contract recorded by the previous
+            # turn instead of reducing every clarification to CTV only. This
+            # is what preserves "execute a full plan" across the two-turn
+            # tumor-site clarification flow.
             pending = self.memory.retrieve("pending_clarification") or {}
             if (
                 isinstance(pending, dict)
@@ -246,7 +336,14 @@ print(json.dumps(result))
                 and tumor_type
                 and ct_path
             ):
-                ordered_actions.append("segment_ctv")
+                requested_actions = pending.get("requested_actions")
+                if isinstance(requested_actions, (list, tuple)):
+                    ordered_actions.extend(
+                        action for action in requested_actions
+                        if action in {"segment_ctv", "segment_oar", "segment_all", "plan_full"}
+                    )
+                if not ordered_actions:
+                    ordered_actions.append("segment_ctv")
             else:
                 return None
 
@@ -262,9 +359,24 @@ print(json.dumps(result))
             # a prerequisite for safe behavior, so do not make it a hard
             # dependency of CTV ambiguity handling.
             if hasattr(self.memory, "store"):
+                requested_actions = [
+                    action for action in ordered_actions
+                    if action in {"segment_ctv", "segment_oar", "segment_all", "plan_full"}
+                ]
+                if not requested_actions:
+                    requested_actions = ["segment_ctv"]
                 self.memory.store(
                     "pending_clarification",
-                    {"kind": "tumor_site", "requested_tool": "ctv_segmentation"},
+                    {
+                        "kind": "tumor_site",
+                        "requested_tool": "ctv_segmentation",
+                        "requested_actions": requested_actions,
+                        "requested_workflow": (
+                            "clinical_planning"
+                            if "plan_full" in requested_actions
+                            else "segmentation"
+                        ),
+                    },
                 )
             return None
 
@@ -292,6 +404,16 @@ print(json.dumps(result))
                 if force_reexecution:
                     params["force_reexecution"] = True
                 tools.append({"id": "tool_direct_oar", "tool": "oar_segmentation", "params": params})
+            elif action == 'segment_generic' and ct_path and generic_target:
+                tools.append({
+                    "id": "tool_direct_biomedparse",
+                    "tool": "biomedparse_segmentation",
+                    "params": {
+                        "image_path": ct_path,
+                        "target": generic_target,
+                        "prompt": generic_target,
+                    },
+                })
             elif action == 'segment_all' and ct_path:
                 ctv_call = ctv_params()
                 oar_call = {"image_path": ct_path}
@@ -365,12 +487,15 @@ print(json.dumps(result))
                 tool_step["result"] = self._format_tool_result(tc['tool'], result, lang=_lang)
                 tool_step["metadata"] = result.metadata if result.success else {}
                 tool_step["data"] = result.data if result.success else {}
-                if tc["tool"] in ("ctv_segmentation", "oar_segmentation") and result.success:
+                if tc["tool"] in ("ctv_segmentation", "oar_segmentation", "biomedparse_segmentation") and result.success:
                     self.memory.store("pending_clarification", None)
-                    self.memory.store(
-                        "last_segmentation_target",
-                        "ctv" if tc["tool"] == "ctv_segmentation" else "oar",
-                    )
+                    if tc["tool"] == "biomedparse_segmentation":
+                        self.memory.store("last_segmentation_target", "generic")
+                    else:
+                        self.memory.store(
+                            "last_segmentation_target",
+                            "ctv" if tc["tool"] == "ctv_segmentation" else "oar",
+                        )
                 # Store tool call + result in conversation for context persistence
                 self.memory.add_message("assistant", f"[Called {tc['tool']}]")
                 _reason = result.error or result.message or "execution failed"

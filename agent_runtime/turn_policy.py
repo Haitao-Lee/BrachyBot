@@ -22,6 +22,7 @@ UI_TOOLS: FrozenSet[str] = frozenset({
 
 CLINICAL_TOOLS: FrozenSet[str] = frozenset({
     "ctv_model_catalog", "ctv_segmentation", "oar_segmentation",
+    "biomedparse_segmentation",
     "trajectory_init", "trajectory_refine", "trajectory_planning",
     "seed_planning", "seed_planning_rule_based", "seed_planning_rl",
     "dose_engine", "dose_evaluation", "planning_pipeline",
@@ -224,6 +225,7 @@ def classify_local_turn(message: str, pending_tumor_site: bool = False) -> Local
     # remain ASCII-safe even when deployed with a non-UTF-8 locale.
     segmentation = _contains_any(lower, (
         "ctv", "oar segmentation", "segment ctv", "segment oar", "segmentation",
+        "segment", "delineate", "outline", "extract", "\u52fe\u753b", "\u52fe\u52d2", "\u63d0\u53d6",
         "\u5206\u5272", "\u6267\u884cctv\u5206\u5272", "\u6267\u884coar\u5206\u5272",
         "\u9776\u533a", "\u5371\u53ca\u5668\u5b98", "\u80bf\u7624\u90e8\u4f4d",
     ))

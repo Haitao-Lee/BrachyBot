@@ -62,6 +62,46 @@ def test_generic_forced_repeat_routes_only_to_the_inherited_oar_scope():
     assert calls[0]["params"]["force_reexecution"] is True
 
 
+def test_open_anatomy_request_routes_to_generic_biomedparse_mask():
+    harness = _DirectHarness(_Memory({"ct_path": "/case/ct.nii"}))
+    calls = harness._detect_tool_request("\u8bf7\u5206\u5272\u809d\u810f")
+
+    assert [call["tool"] for call in calls] == ["biomedparse_segmentation"]
+    assert calls[0]["params"]["target"] == "liver"
+    assert calls[0]["params"]["prompt"] == "liver"
+
+
+def test_open_anatomy_request_does_not_override_ctv_workflow():
+    harness = _DirectHarness(
+        _Memory({"ct_path": "/case/ct.nii", "tumor_type_used": "nnunet_pancreatic"})
+    )
+    calls = harness._detect_tool_request("\u5206\u5272\u80f0\u817a\u80bf\u7624\u7684 CTV")
+
+    assert calls is None or all(call["tool"] != "biomedparse_segmentation" for call in calls)
+
+
+def test_tumor_site_clarification_restores_the_original_full_planning_workflow():
+    """A missing site must pause planning, not downgrade it to CTV only."""
+    harness = _DirectHarness(_Memory({"ct_path": "/case/ct.nii"}))
+
+    first = harness._detect_tool_request("\u8bf7\u6267\u884c\u653e\u5c04\u6027\u7c92\u5b50\u690d\u5165\u89c4\u5212")
+
+    assert first is None
+    pending = harness.memory.retrieve("pending_clarification")
+    assert pending["requested_actions"] == ["plan_full"]
+    assert pending["requested_workflow"] == "clinical_planning"
+
+    resumed = harness._detect_tool_request("\u80f0\u817a")
+
+    assert [call["tool"] for call in resumed] == [
+        "ctv_segmentation",
+        "oar_segmentation",
+        "planning_pipeline",
+        "surgical_guide",
+    ]
+    assert resumed[0]["params"]["tumor_type"] == "nnunet_pancreatic"
+
+
 def test_failed_direct_tool_is_not_marked_done():
     harness = _DirectHarness(_Memory())
     steps = []

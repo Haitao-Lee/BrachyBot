@@ -3633,6 +3633,7 @@ function _3dMeshIsVisible(mesh) {
 function _3dDataTreeNodeForMesh(id) {
     if (typeof dataTreeState === 'undefined' || !dataTreeState) return null;
     if (id === 'ctv') return dataTreeState.ctv || null;
+    if (id === 'skin_surface') return dataTreeState.skin || null;
     if (id.startsWith('ctv_')) return dataTreeState.ctvLabels?.[id] || dataTreeState.ctv || null;
     if (id.startsWith('organ_')) return (dataTreeState.organs || []).find(o => o.id === id) || dataTreeState.oar || null;
     if (id.startsWith('seed_')) return (dataTreeState.planning?.seeds || []).find(s => s.id === id) || dataTreeState.seeds || dataTreeState.planning || null;

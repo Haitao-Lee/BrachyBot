@@ -89,8 +89,8 @@ class SurgicalGuideTool(BaseTool):
                             "description": "Subtract dense, non-protruding alternate puncture holes around each primary channel.",
                         },
                         "auxiliary_hole_radius_mm": {
-                            "type": "number", "minimum": 0.2, "maximum": 1.5,
-                            "description": "Radius of each auxiliary alternate puncture hole.",
+                            "type": "number", "minimum": 0.3, "maximum": 6.4,
+                            "description": "Compatibility field; the physical auxiliary-hole radius is derived to equal the final primary bore radius.",
                         },
                         "auxiliary_hole_ring_count": {
                             "type": "integer", "minimum": 1, "maximum": 4,

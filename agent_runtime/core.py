@@ -885,7 +885,12 @@ class ToolResultPipeline:
     """
 
     # Tool name → display category mapping
-    _SEGMENTATION_TOOLS = {"ctv_segmentation", "oar_segmentation", "seed_segmentation"}
+    _SEGMENTATION_TOOLS = {
+        "ctv_segmentation",
+        "oar_segmentation",
+        "seed_segmentation",
+        "biomedparse_segmentation",
+    }
     _ANALYSIS_TOOLS = {"code_executor"}
     _UI_TOOLS = {"ui_controller", "ui_screenshot"}
     _PLANNING_TOOLS = {"planning_pipeline", "seed_planning", "trajectory_planning", "dose_engine", "dose_evaluation"}
@@ -901,6 +906,7 @@ class ToolResultPipeline:
     }
     _SAFE_FALLBACK_TOOLS = {
         "ctv_segmentation", "oar_segmentation", "seed_segmentation",
+        "biomedparse_segmentation",
         "planning_pipeline", "seed_planning", "trajectory_planning",
         "trajectory_init", "trajectory_refine", "dose_engine", "dose_calc",
         "dose_evaluation", "query_metrics", "surgical_guide",
@@ -1179,6 +1185,46 @@ class ToolResultPipeline:
                     f"| Organs segmented | {count} |",
                     "",
                     "✅ Results displayed in the Viewer panel.",
+                ]
+            return "\n".join(lines)
+        elif tool_name == "biomedparse_segmentation":
+            generic = meta.get("generic_mask") if isinstance(meta.get("generic_mask"), dict) else {}
+            target = str(meta.get("target") or generic.get("target") or "requested anatomy")
+            voxel_count = int(meta.get("voxel_count") or generic.get("voxel_count") or 0)
+            volume_mm3 = float(meta.get("volume_mm3") or generic.get("volume_mm3") or 0.0)
+            confidence = meta.get("object_existence_confidence")
+            confidence_text = "-"
+            try:
+                confidence_text = f"{float(confidence):.3f}"
+            except (TypeError, ValueError):
+                pass
+            if lang == "zh":
+                lines = [
+                    "## BiomedParse v2 开放式分割",
+                    "",
+                    "| 指标 | 数值 |",
+                    "|---|---|",
+                    f"| 目标 | {target} |",
+                    f"| 体素数 | {voxel_count:,} |",
+                    f"| 体积 | {volume_mm3 / 1000:.2f} cm³ |",
+                    f"| 模型置信度 | {confidence_text} |",
+                    "",
+                    "结果已作为独立 mask 加入 Data Tree，并可在 2D/3D Viewer 中显示。",
+                    "该结果是研究候选分割，不能自动视为 CTV、OAR 或临床确认轮廓。",
+                ]
+            else:
+                lines = [
+                    "## BiomedParse v2 Open Segmentation",
+                    "",
+                    "| Metric | Value |",
+                    "|---|---|",
+                    f"| Target | {target} |",
+                    f"| Voxels | {voxel_count:,} |",
+                    f"| Volume | {volume_mm3 / 1000:.2f} cm³ |",
+                    f"| Model confidence | {confidence_text} |",
+                    "",
+                    "The result was added as an independent mask in the Data Tree and can be shown in the 2D/3D Viewers.",
+                    "This is a research candidate mask; it is not automatically a CTV, OAR, or clinically approved contour.",
                 ]
             return "\n".join(lines)
         return result.message or f"{tool_name} completed."

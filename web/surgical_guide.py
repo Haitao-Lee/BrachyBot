@@ -46,10 +46,10 @@ DEFAULT_GUIDE_PARAMETERS: Dict[str, Any] = {
     # Two 12-hole rings provide a dense, printable set of alternate entry
     # paths while leaving a clear wall around the primary channel.
     "auxiliary_holes_enabled": True,
-    "auxiliary_hole_radius_mm": 0.45,
+    "auxiliary_hole_radius_mm": 1.3,
     "auxiliary_hole_ring_count": 2.0,
     "auxiliary_holes_per_ring": 12.0,
-    "auxiliary_hole_first_offset_mm": 4.0,
+    "auxiliary_hole_first_offset_mm": 6.0,
     "auxiliary_hole_ring_spacing_mm": 3.0,
     # 0.2 mm is the default manufacturing grid.  It gives the primary bore
     # enough radial samples for a smooth STL even before the analytic wall
@@ -91,6 +91,16 @@ GUIDE_BORE_MARGIN_MM = 0.4
 # enforce the same physical wall thickness.
 GUIDE_MINIMUM_WALL_MM = 0.35
 
+
+def _effective_primary_bore_radius_mm(params: Mapping[str, Any]) -> float:
+    """Return the physical primary-hole radius written to the STL.
+
+    The boolean CSG opens the nominal channel by GUIDE_BORE_MARGIN_MM.
+    Auxiliary holes must use this same final radius, rather than the smaller
+    legacy parameter, so every printed alternate path fits the same needle.
+    """
+    return float(params["channel_radius_mm"]) + GUIDE_BORE_MARGIN_MM
+
 # Marching Cubes produces a deliberately watertight mesh, but its vertices at
 # a cylindrical wall are still displaced slightly by voxelisation and by the
 # shrink-free surface smoothing pass.  The final wall projection below uses a
@@ -109,7 +119,9 @@ _PARAMETER_LIMITS = {
     "sleeve_outer_radius_mm": (1.0, 12.0),
     "sleeve_outward_mm": (1.0, 30.0),
     "sleeve_inward_mm": (1.0, 30.0),
-    "auxiliary_hole_radius_mm": (0.2, 1.5),
+    # Compatibility input only. The normalized value is derived from the
+    # final primary bore radius and may exceed the historical 1.5 mm limit.
+    "auxiliary_hole_radius_mm": (0.3, 6.4),
     "auxiliary_hole_ring_count": (1.0, 4.0),
     "auxiliary_holes_per_ring": (4.0, 24.0),
     "auxiliary_hole_first_offset_mm": (2.0, 15.0),
@@ -232,7 +244,9 @@ def _auxiliary_hole_specs(
     holes_per_ring = int(params["auxiliary_holes_per_ring"])
     first_offset = float(params["auxiliary_hole_first_offset_mm"])
     ring_spacing = float(params["auxiliary_hole_ring_spacing_mm"])
-    radius = float(params["auxiliary_hole_radius_mm"])
+    # Derive this again at the geometry boundary so direct callers and old
+    # saved parameter payloads cannot create a smaller auxiliary hole.
+    radius = _effective_primary_bore_radius_mm(params)
     clearance = float(params["skin_clearance_mm"])
     plate_thickness = float(params["plate_thickness_mm"])
     primary_outer_radius = float(params["sleeve_outer_radius_mm"])
@@ -387,7 +401,7 @@ def _finite_integer(value: Any, name: str, lower: float, upper: float) -> float:
 
 
 def normalize_guide_parameters(raw: Optional[Mapping[str, Any]] = None) -> Dict[str, Any]:
-    """Validate guide parameters without silently changing requested geometry."""
+    """Validate guide parameters and enforce one physical bore diameter."""
     raw = raw if isinstance(raw, Mapping) else {}
     auxiliary_parameter_names = {
         "auxiliary_holes_enabled",
@@ -412,7 +426,8 @@ def normalize_guide_parameters(raw: Optional[Mapping[str, Any]] = None) -> Dict[
     # the enable flag, while a new partial request such as only changing the
     # grid resolution should still use the new default. The compatibility rule
     # therefore requires an old manufacturing parameter, not merely any raw
-    # parameter, and never overrides an explicit auxiliary-hole field.
+    # parameter. The auxiliary radius is a derived manufacturing value, so an
+    # explicit legacy auxiliary-hole field cannot create a second diameter.
     legacy_without_auxiliary_parameters = bool(
         legacy_parameter_names.intersection(raw.keys())
         and not auxiliary_parameter_names.intersection(raw.keys())
@@ -429,6 +444,10 @@ def normalize_guide_parameters(raw: Optional[Mapping[str, Any]] = None) -> Dict[
             params[name] = _finite_float(raw.get(name, default), name, lower, upper)
     if legacy_without_auxiliary_parameters:
         params["auxiliary_holes_enabled"] = False
+    # The primary boolean bore is opened by GUIDE_BORE_MARGIN_MM. Persist that
+    # final radius as the canonical auxiliary radius so metadata, QA, and the
+    # exported STL all describe the same physical hole.
+    params["auxiliary_hole_radius_mm"] = _effective_primary_bore_radius_mm(params)
     if (
         params["sleeve_outer_radius_mm"]
         <= params["channel_radius_mm"] + GUIDE_MINIMUM_WALL_MM
@@ -437,7 +456,7 @@ def normalize_guide_parameters(raw: Optional[Mapping[str, Any]] = None) -> Dict[
             "sleeve_outer_radius_mm must exceed channel_radius_mm by at least 0.35 mm"
         )
     if params["auxiliary_holes_enabled"]:
-        auxiliary_radius = float(params["auxiliary_hole_radius_mm"])
+        auxiliary_radius = _effective_primary_bore_radius_mm(params)
         primary_outer_radius = float(params["sleeve_outer_radius_mm"])
         minimum_primary_clearance = (
             primary_outer_radius + auxiliary_radius + GUIDE_MINIMUM_WALL_MM
@@ -1440,7 +1459,7 @@ def _project_bore_walls(
             kind="primary",
             start=sleeve_inner,
             end=sleeve_outer,
-            radius=float(params["channel_radius_mm"]) + GUIDE_BORE_MARGIN_MM,
+            radius=_effective_primary_bore_radius_mm(params),
         )
 
     for spec in auxiliary_specs:
@@ -1718,7 +1737,7 @@ def generate_surgical_guide(
         bore_sdf, box = _cylinder_sdf_in_region(
             ct_image, lower_xyz, body_crop.shape, spacing_xyz,
             sleeve_inner, sleeve_outer,
-            params["channel_radius_mm"] + GUIDE_BORE_MARGIN_MM,
+            _effective_primary_bore_radius_mm(params),
         )
         solid[box] &= ~(bore_sdf <= 0.0)
     # Reject plate voxels that are backed by a truncated flat cap. When the
@@ -1821,7 +1840,7 @@ def generate_surgical_guide(
                 spacing_xyz,
                 sleeve_inner,
                 sleeve_outer,
-                params["channel_radius_mm"] + GUIDE_BORE_MARGIN_MM,
+                _effective_primary_bore_radius_mm(params),
             )
             repaired_solid[box] &= ~(bore_sdf <= 0.0)
         repaired_solid = _filter_components(
@@ -1906,6 +1925,11 @@ def generate_surgical_guide(
         "ring_count": int(params["auxiliary_hole_ring_count"]),
         "holes_per_ring": int(params["auxiliary_holes_per_ring"]),
         "radius_mm": float(params["auxiliary_hole_radius_mm"]),
+        "primary_bore_radius_mm": _effective_primary_bore_radius_mm(params),
+        "diameter_match": abs(
+            float(params["auxiliary_hole_radius_mm"])
+            - _effective_primary_bore_radius_mm(params)
+        ) <= 1e-6,
         "first_offset_mm": float(params["auxiliary_hole_first_offset_mm"]),
         "ring_spacing_mm": float(params["auxiliary_hole_ring_spacing_mm"]),
         "minimum_wall_mm": GUIDE_MINIMUM_WALL_MM,

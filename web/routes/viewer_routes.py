@@ -178,6 +178,36 @@ def _requires_label_faithful_mesh(agent, source: str, label_id: int) -> bool:
     return False
 
 
+def _generic_mask_entries(agent):
+    """Return JSON-safe metadata for session-owned open segmentation masks."""
+    raw = agent.memory.retrieve("generic_segmentation_masks") or []
+    entries = []
+    if not isinstance(raw, list):
+        return entries
+    for item in raw:
+        if not isinstance(item, dict) or not item.get("mask_id"):
+            continue
+        entry = dict(item)
+        # The binary payload is served separately so the catalogue stays fast
+        # and never leaks a multi-megabyte array into the JSON response.
+        entry.pop("mask_array", None)
+        entries.append(entry)
+    return entries
+
+
+def _generic_mask_entry(agent, mask_id):
+    wanted = str(mask_id or "").strip()
+    if not wanted:
+        return None
+    raw = agent.memory.retrieve("generic_segmentation_masks") or []
+    if not isinstance(raw, list):
+        return None
+    for item in raw:
+        if isinstance(item, dict) and str(item.get("mask_id") or "") == wanted:
+            return item
+    return None
+
+
 def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
     def request_case_context():
         """Resolve the case that originated this viewer request.
@@ -906,6 +936,63 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
             logger.error(traceback.format_exc())
             return jsonify({"error": str(e)}), 500
 
+    @app.route("/api/viewer/generic_masks", methods=["GET"])
+    @require_api_key
+    @rate_limit
+    def api_viewer_generic_masks():
+        """List open BiomedParse masks for the active session."""
+        agent = get_agent(_lightweight=True)
+        if agent is None:
+            return jsonify({"error": "Agent not available"}), 500
+        pending = workspace_data_pending(agent)
+        if pending is not None:
+            return pending
+        return jsonify({"success": True, "masks": _generic_mask_entries(agent)})
+
+    @app.route("/api/viewer/generic_mask_volume", methods=["GET"])
+    @require_api_key
+    @rate_limit
+    def api_viewer_generic_mask_volume():
+        """Return one persisted open mask as a session-scoped binary volume."""
+        agent = get_agent(_lightweight=True)
+        if agent is None:
+            return jsonify({"error": "Agent not available"}), 500
+        pending = workspace_data_pending(agent)
+        if pending is not None:
+            return pending
+        entry = _generic_mask_entry(agent, request.args.get("mask_id"))
+        if entry is None:
+            return jsonify({"success": False, "error": "Generic mask is not available"}), 404
+        try:
+            volume = np.ascontiguousarray(np.asarray(entry.get("mask_array"), dtype=np.uint8) > 0)
+            ct_data = agent.memory.retrieve("ct_data")
+            if volume.ndim != 3 or (ct_data is not None and volume.shape != np.asarray(ct_data).shape):
+                return jsonify({"success": False, "error": "Generic mask does not match the current CT geometry"}), 409
+            raw = volume.astype(np.uint8, copy=False).tobytes(order="C")
+            response = Response(raw, mimetype="application/octet-stream")
+            if "gzip" in request.headers.get("Accept-Encoding", ""):
+                response.set_data(gzip.compress(raw, compresslevel=4))
+                response.headers["Content-Encoding"] = "gzip"
+            shape = volume.shape
+            response.headers["X-Shape-Z"] = str(shape[0])
+            response.headers["X-Shape-Y"] = str(shape[1])
+            response.headers["X-Shape-X"] = str(shape[2])
+            response.headers["X-Mask-ID"] = str(entry.get("mask_id"))
+            response.headers["X-Object-ID"] = str(entry.get("object_id") or "")
+            response.headers["X-Data-Tree-Node-ID"] = str(entry.get("data_tree_node_id") or entry.get("mask_id"))
+            response.headers["X-Data-Version"] = str(entry.get("data_version") or 1)
+            response.headers["X-Session-ID"] = str(entry.get("session_id") or getattr(agent.memory, "session_id", ""))
+            response.headers["X-Spacing"] = json.dumps(entry.get("spacing") or agent.memory.retrieve("ct_spacing") or [1, 1, 1])
+            response.headers["X-Origin"] = json.dumps(entry.get("origin") or agent.memory.retrieve("ct_origin") or [0, 0, 0])
+            response.headers["X-Direction"] = json.dumps(entry.get("direction") or agent.memory.retrieve("ct_direction") or [1, 0, 0, 0, 1, 0, 0, 0, 1])
+            response.headers["X-Target"] = str(entry.get("target") or entry.get("label") or "")
+            response.headers["X-Voxel-Count"] = str(int(entry.get("voxel_count") or np.count_nonzero(volume)))
+            response.headers["Cache-Control"] = "private, no-store"
+            return response
+        except Exception as exc:
+            logger.error("Generic mask volume failed: %s", exc)
+            return jsonify({"success": False, "error": str(exc)}), 500
+
     @app.route("/api/viewer/overlay", methods=["POST"])
     @require_api_key
     @rate_limit
@@ -1456,8 +1543,11 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
         data = request.get_json() or {}
         label_id = data.get("label_id")
         source = data.get("source", "oar")  # "oar" or "ctv"
+        mask_id = str(data.get("mask_id") or "").strip()
 
-        if label_id is None:
+        if source == "generic" and not mask_id:
+            return jsonify({"error": "mask_id required for generic masks"}), 400
+        if source != "generic" and label_id is None:
             return jsonify({"error": "label_id required"}), 400
 
         try:
@@ -1466,30 +1556,44 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
             from skimage import measure
             from scipy.ndimage import binary_closing, binary_fill_holes, binary_dilation, gaussian_filter
 
-            if source == "ctv":
+            if source == "generic":
+                generic_entry = _generic_mask_entry(agent, mask_id)
+                if generic_entry is None or generic_entry.get("mask_array") is None:
+                    return jsonify({"error": "Generic mask data is not available"}), 404
+                mask_data = np.asarray(generic_entry["mask_array"], dtype=np.uint8)
+                label_faithful = True
+            elif source == "ctv":
                 mask_data = agent._get_label_array("ctv_array")
+                label_faithful = _requires_label_faithful_mesh(agent, source, int(label_id))
             else:
                 mask_data = agent._get_label_array("oar_array")
+                label_faithful = _requires_label_faithful_mesh(agent, source, int(label_id))
 
             if mask_data is None:
                 return jsonify({"error": f"No {source} mask data available"}), 400
 
             # Extract binary mask for this label
-            label_id = int(label_id)
-            label_faithful = _requires_label_faithful_mesh(agent, source, label_id)
+            if source != "generic":
+                label_id = int(label_id)
             try:
                 mask_shape_key = tuple(int(x) for x in getattr(mask_data, "shape", ()))
             except Exception:
                 mask_shape_key = ()
             smoothing_key = data.get("smoothing", 1)
-            binary_mask = (mask_data == label_id).astype(np.uint8)
+            binary_mask = (
+                (mask_data > 0).astype(np.uint8)
+                if source == "generic"
+                else (mask_data == label_id).astype(np.uint8)
+            )
 
             total_voxels = int(binary_mask.sum())
             if total_voxels == 0:
-                return jsonify({"error": f"Label {label_id} not found in mask"}), 400
+                missing = mask_id if source == "generic" else f"label {label_id}"
+                return jsonify({"error": f"{missing} not found in mask"}), 400
             mask_digest = hashlib.blake2b(binary_mask.tobytes(), digest_size=8).hexdigest()
             cache_key = (
-                source, label_id, str(smoothing_key), label_faithful,
+                source, mask_id if source == "generic" else label_id,
+                str(smoothing_key), label_faithful,
                 mask_shape_key, total_voxels, mask_digest,
                 "surface_boundary_padding_v1",
             )
@@ -1600,6 +1704,7 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
                 "vertex_count": len(vertices),
                 "face_count": len(faces),
                 "label_id": label_id,
+                "mask_id": mask_id if source == "generic" else None,
                 "source": source,
                 "geometry_mode": "label_faithful" if label_faithful else "presentation_smoothed",
                 "surface_boundary_padding_voxels": int(_MESH_BOUNDARY_PADDING_VOXELS),

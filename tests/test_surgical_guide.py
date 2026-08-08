@@ -266,7 +266,10 @@ def test_nearby_needles_generate_a_watertight_guide_with_auxiliary_holes():
 def test_auxiliary_hole_parameters_enforce_primary_wall_and_ring_spacing():
     defaults = normalize_guide_parameters()
     assert defaults["auxiliary_holes_enabled"] is True
-    assert defaults["auxiliary_hole_first_offset_mm"] == 4.0
+    assert defaults["auxiliary_hole_first_offset_mm"] == 6.0
+    assert defaults["auxiliary_hole_radius_mm"] == pytest.approx(
+        defaults["channel_radius_mm"] + 0.4
+    )
 
     legacy = normalize_guide_parameters({"sleeve_outer_radius_mm": 3.6})
     assert legacy["auxiliary_holes_enabled"] is False
@@ -279,6 +282,18 @@ def test_auxiliary_hole_parameters_enforce_primary_wall_and_ring_spacing():
             "auxiliary_hole_first_offset_mm": 2.2,
             "auxiliary_hole_radius_mm": 1.0,
         })
+
+
+def test_auxiliary_bore_diameter_matches_primary_exported_bore():
+    """A legacy auxiliary radius cannot produce a smaller physical hole."""
+    params = normalize_guide_parameters({
+        "channel_radius_mm": 0.9,
+        "auxiliary_hole_radius_mm": 0.45,
+    })
+    assert params["auxiliary_hole_radius_mm"] == pytest.approx(1.3)
+    assert params["auxiliary_hole_radius_mm"] == pytest.approx(
+        params["channel_radius_mm"] + 0.4
+    )
 
 
 def test_guide_rejects_missing_plan_geometry():
