@@ -17,7 +17,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 import SimpleITK as sitk
 
-from agent_runtime.core import PlanningPhase, resolve_reference_direction_input
+from agent_runtime.core import PlanningPhase, ToolResultPipeline, resolve_reference_direction_input
 from agent_runtime.contracts import RunStatus
 from agent_runtime.turn_policy import classify_local_turn
 from plans.dose_pre.model_loader import (
@@ -222,6 +222,144 @@ class ChatWorkflowMixin:
             return f"当前病例 Data Tree 中有 {count} 个 OAR 结构。它们是：{detail}。这是当前已加载的分割结果，不是临床指南推荐的 OAR 清单。"
         detail = ", ".join(labels)
         return f"The current case Data Tree contains {count} loaded OAR structures: {detail}. This is the loaded segmentation state, not a guideline-recommended OAR list."
+
+    def _current_image_metadata(self) -> Dict[str, Any]:
+        """Build technical metadata from the active Session's loaded CT.
+
+        The viewer and planning pipeline already keep the CT in memory. Read
+        that canonical state first so a chat query is fast and cannot inspect
+        a stale file from another Session. Only the display-safe file name is
+        returned; the absolute workspace path never enters the response.
+        """
+        image = self.memory.retrieve("ct_image")
+        if image is None:
+            image = self.memory.retrieve("ct_image_raw")
+        ct_data = self.memory.retrieve("ct_data")
+        ct_shape = self.memory.retrieve("ct_shape")
+        ct_spacing = self.memory.retrieve("ct_spacing")
+        ct_origin = self.memory.retrieve("ct_origin")
+        ct_direction = self.memory.retrieve("ct_direction")
+        ct_path = self.memory.retrieve("ct_path") or self.memory.retrieve("ct_source_path")
+
+        def _numbers(value: Any) -> List[float]:
+            if value is None:
+                return []
+            try:
+                return [float(item) for item in value]
+            except (TypeError, ValueError):
+                return []
+
+        size_xyz: List[int] = []
+        spacing_xyz = _numbers(ct_spacing)
+        origin_xyz = _numbers(ct_origin)
+        direction = _numbers(ct_direction)
+        pixel_type = "-"
+        components = 1
+
+        if image is not None and hasattr(image, "GetSize"):
+            try:
+                size_xyz = [int(item) for item in image.GetSize()]
+                spacing_xyz = [float(item) for item in image.GetSpacing()]
+                origin_xyz = [float(item) for item in image.GetOrigin()]
+                direction = [float(item) for item in image.GetDirection()]
+                pixel_type = image.GetPixelIDTypeAsString()
+                components = int(image.GetNumberOfComponentsPerPixel())
+            except Exception as exc:
+                logger.debug("Failed to read SimpleITK CT metadata from memory: %s", exc)
+
+        if not size_xyz and isinstance(ct_shape, (list, tuple)):
+            try:
+                shape_zyx = [int(item) for item in ct_shape]
+                size_xyz = list(reversed(shape_zyx))
+            except (TypeError, ValueError):
+                size_xyz = []
+
+        array = None
+        if isinstance(ct_data, np.ndarray):
+            array = ct_data
+        elif image is not None:
+            try:
+                array = np.asarray(sitk.GetArrayViewFromImage(image))
+            except Exception as exc:
+                logger.debug("Failed to read CT voxel statistics from memory: %s", exc)
+        if array is not None and array.size and not size_xyz:
+            size_xyz = [int(item) for item in reversed(array.shape[-3:])]
+
+        if not size_xyz:
+            return {}
+        if len(spacing_xyz) < 3:
+            spacing_xyz = (spacing_xyz + [1.0, 1.0, 1.0])[:3]
+        if len(origin_xyz) < 3:
+            origin_xyz = (origin_xyz + [0.0, 0.0, 0.0])[:3]
+        if len(direction) != 9:
+            direction = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]
+
+        metadata: Dict[str, Any] = {
+            "file": os.path.basename(str(ct_path)) if ct_path else "current CT",
+            "format": "NIfTI" if str(ct_path).lower().endswith((".nii", ".nii.gz")) else "Image",
+            "dimension": len(size_xyz),
+            "size_xyz": size_xyz,
+            "shape": size_xyz,
+            "shape_xyz": size_xyz,
+            "array_shape_zyx": list(reversed(size_xyz)),
+            "spacing": spacing_xyz,
+            "spacing_mm_xyz": spacing_xyz,
+            "origin_mm_xyz": origin_xyz,
+            "direction": direction,
+            "direction_matrix": [direction[index:index + 3] for index in range(0, 9, 3)],
+            "coordinate_system": "LPI viewer / SimpleITK physical LPS",
+            "pixel_type": pixel_type,
+            "components_per_pixel": components,
+            "voxel_count": int(np.prod(size_xyz, dtype=np.int64)),
+            "physical_extent_mm_xyz": [
+                float(size_xyz[index] * spacing_xyz[index]) for index in range(3)
+            ],
+        }
+
+        if array is not None and array.size:
+            try:
+                numeric = np.asarray(array)
+                finite = (
+                    numeric[np.isfinite(numeric)]
+                    if np.issubdtype(numeric.dtype, np.inexact)
+                    else numeric.reshape(-1)
+                )
+                if finite.size:
+                    metadata.update({
+                        "value_min": float(np.min(finite)),
+                        "value_max": float(np.max(finite)),
+                        "value_mean": float(np.mean(finite, dtype=np.float64)),
+                    })
+            except (TypeError, ValueError, OverflowError) as exc:
+                logger.debug("Failed to summarize current CT voxels: %s", exc)
+
+        for key, memory_key in (
+            ("window_center", "ct_window_center"),
+            ("window_width", "ct_window_width"),
+        ):
+            value = self.memory.retrieve(memory_key)
+            if value is not None:
+                metadata[key] = value
+        return metadata
+
+    def _build_current_image_metadata_response(self, lang: str = "en") -> str:
+        """Return a localized technical summary of the loaded CT image."""
+        metadata = self._current_image_metadata()
+        if not metadata:
+            if lang == "zh":
+                return "\u5f53\u524d Session \u5c1a\u672a\u52a0\u8f7d\u53ef\u8bfb\u53d6\u7684 CT \u56fe\u50cf\u3002\u8bf7\u5148\u5728 Input \u4e2d\u52a0\u8f7d CT \u6587\u4ef6\u3002"
+            return "No readable CT image is loaded in the current Session. Load a CT file from Input first."
+
+        # Reuse the same formatter as doc_reader so direct local reads and
+        # tool-backed reads have identical fields and language behavior.
+        result = SimpleNamespace(
+            success=True,
+            data={"metadata": metadata},
+            metadata=metadata,
+            display="",
+            message="Current CT metadata loaded",
+        )
+        return ToolResultPipeline._format_document(result, metadata, lang)
 
     @staticmethod
     def _dose_fraction(value: Any) -> Optional[float]:
@@ -760,6 +898,13 @@ class ChatWorkflowMixin:
             self._finish_turn(response)
             return response
 
+        if local_policy.intent == "image_metadata_query":
+            response = self._build_current_image_metadata_response(self.memory.user_lang)
+            self.memory.add_message("assistant", response)
+            self._record_experience(message, response)
+            self._finish_turn(response)
+            return response
+
         if self.enhanced:
             self.enhanced.pre_task_hook(message)
 
@@ -843,6 +988,24 @@ class ChatWorkflowMixin:
                 "response": response,
                 "steps": steps,
                 "llm_meta": {"usage": {}, "latency_ms": 0, "llm_calls": 0, "route": "local_case_dose"},
+            }
+
+        if local_policy.intent == "image_metadata_query":
+            title = "\u5f53\u524d CT \u5143\u6570\u636e" if self.memory.user_lang == "zh" else "Current CT Metadata"
+            content = (
+                "\u6b63\u5728\u8bfb\u53d6\u5f53\u524d Session \u4e2d\u5df2\u52a0\u8f7d\u7684 CT \u6280\u672f\u4fe1\u606f..."
+                if self.memory.user_lang == "zh"
+                else "Reading technical metadata from the CT loaded in the active Session..."
+            )
+            add_step("ui", title, content, status="done")
+            response = self._build_current_image_metadata_response(self.memory.user_lang)
+            self.memory.add_message("assistant", response)
+            self._record_experience(message, response, steps)
+            self._finish_turn(response)
+            return {
+                "response": response,
+                "steps": steps,
+                "llm_meta": {"usage": {}, "latency_ms": 0, "llm_calls": 0, "route": "local_image_metadata"},
             }
 
         if self.enhanced:
@@ -1310,6 +1473,32 @@ class ChatWorkflowMixin:
             )
             yield yield_event("step", local_route_step)
         self._turn_timings["router_ms"] = round((time.perf_counter() - _route_started) * 1000, 1)
+
+        # Technical image metadata is a local read-only query. Resolve it
+        # before any tool-calling loop so the chat answer uses the active
+        # Session's canonical CT object and never exposes raw tool logs.
+        if local_policy.intent == "image_metadata_query":
+            state_step = add_step(
+                "ui",
+                _trace_text("\u5f53\u524d CT \u5143\u6570\u636e", "Current CT Metadata"),
+                _trace_text(
+                    "\u6b63\u5728\u8bfb\u53d6\u5f53\u524d Session \u4e2d\u5df2\u52a0\u8f7d\u7684 CT \u6280\u672f\u4fe1\u606f...",
+                    "Reading technical metadata from the CT loaded in the active Session...",
+                ),
+                status="pending",
+            )
+            yield yield_event("step", state_step)
+            response = self._build_current_image_metadata_response(self.memory.user_lang)
+            state_step["status"] = "done"
+            state_step["content"] = _trace_text("\u5df2\u8bfb\u53d6 CT \u6280\u672f\u4fe1\u606f", "Current CT metadata loaded")
+            yield yield_event("step", state_step)
+            self.memory.add_message("assistant", response)
+            self._finish_turn(response)
+            llm_meta["route"] = "local_image_metadata"
+            llm_meta["phase_timings_ms"] = dict(getattr(self, "_turn_timings", {}) or {})
+            yield from final_response_events({"response": response, "llm_meta": llm_meta})
+            yield yield_event("done", {"context": {"message_count": len(self.memory.conversation)}})
+            return
 
         # A request for the number of currently loaded OARs is a local UI
         # state query. It reads the active case instead of searching the

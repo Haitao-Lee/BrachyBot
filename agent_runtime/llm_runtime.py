@@ -2309,7 +2309,15 @@ class LLMRuntimeMixin:
                             logger.info(f"[DRAIN-1] Yielding event: type={_evt_type}, tool={_evt_data.get('tool', '?')}, status={_evt_data.get('status', '?')}")
                             yield yield_event(_evt_type, _evt_data)
                         if result.success:
-                            result_text = result.message
+                            # Preserve structured tool output for the next
+                            # model turn. In particular, doc_reader metadata
+                            # contains the actual NIfTI geometry; result.message
+                            # is only a short execution acknowledgement.
+                            result_text = ToolResultPipeline.format(
+                                tool_name,
+                                result,
+                                lang=self.memory.user_lang,
+                            )
                             # Special handling for web_search - include actual results
                             if tool_name == "web_search" and hasattr(result, "data") and result.data:
                                 answer = result.data.get("answer", "")
