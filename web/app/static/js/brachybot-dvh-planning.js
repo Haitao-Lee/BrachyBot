@@ -2353,6 +2353,13 @@ const REPORT_STRINGS = {
         section7: '七、参考文献',
         section8: '八、声明',
         section9: '九、医师签名',
+        // Semantic section keys are independent from page/template layout.
+        // This prevents a renderer reorder from producing headings such as
+        // "4" immediately followed by "2".
+        sectionTargetPrescription: '二、靶区与处方',
+        sectionPlanQuality: '三、计划质量评估',
+        sectionOarDose: '四、危及器官剂量',
+        sectionClinicalInterpretation: '五、剂量学评估与临床解读',
         sectionN1: '影像学资料',
         sectionN2: '靶区勾画',
         sectionN3: '治疗计划',
@@ -2458,6 +2465,10 @@ const REPORT_STRINGS = {
         section7: '7. References',
         section8: '8. Disclaimer',
         section9: '9. Physician Signatures',
+        sectionTargetPrescription: '2. Target & Prescription',
+        sectionPlanQuality: '3. Plan Quality Assessment',
+        sectionOarDose: '4. Organ-at-Risk Dose',
+        sectionClinicalInterpretation: '5. Dosimetric Evaluation & Clinical Interpretation',
         sectionN1: 'Imaging Data',
         sectionN2: 'Target Delineation',
         sectionN3: 'Treatment Plan',

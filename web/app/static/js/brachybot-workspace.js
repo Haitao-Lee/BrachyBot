@@ -613,6 +613,12 @@
 
     function reportState() {
         if (!window.reportForm) return {};
+        // Persist the exact Reference/Status rows that are visible in the
+        // report. Preview rendering is not a durable boundary and may not have
+        // run before a fast Session switch or browser close.
+        if (typeof window.syncReportQualityAssessment === 'function') {
+            window.syncReportQualityAssessment(window.reportForm, { preserveStored: true });
+        }
         const planningId = activeReportPlanningId();
         // IndexedDB remains the fast local cache, but server-owned report
         // figures make restart and another browser deterministic. Uploads are
@@ -1129,8 +1135,13 @@
             scene3D._workspaceRestoreActive = true;
             scene3D._cameraUserInteracted = false;
         }
-        const applyScene = () => {
+        const applyScene = ({ initial = false } = {}) => {
             if (!scene || typeof scene3D === 'undefined' || !scene3D?.camera) return;
+            // The first application establishes the saved view. Later passes
+            // only compensate for asynchronous mesh/layout hydration. Once the
+            // operator has zoomed, panned, rotated, selected, or dragged in the
+            // live viewer, a delayed restore must never overwrite that pose.
+            if (!initial && scene3D._cameraUserInteracted === true) return;
             const camera = scene3D.camera;
             const three = typeof THREE !== 'undefined' ? THREE : null;
             const positionValues = Array.isArray(scene.camera_position) && scene.camera_position.length === 3
@@ -1194,9 +1205,9 @@
         };
         // Mesh reconstruction is asynchronous. Applying twice restores the
         // saved pose after geometry and renderer-resize work has settled.
-        applyScene();
-        scheduleDeferredWorkspaceRestore(generation, applyScene, 450);
-        scheduleDeferredWorkspaceRestore(generation, applyScene, 1200);
+        applyScene({ initial: true });
+        scheduleDeferredWorkspaceRestore(generation, () => applyScene(), 450);
+        scheduleDeferredWorkspaceRestore(generation, () => applyScene(), 1200);
         // Meshes may finish after the saved pose has been re-applied. Run the
         // non-destructive frustum guard after both layout and hydration settle.
         scheduleDeferredWorkspaceRestore(generation, () => {

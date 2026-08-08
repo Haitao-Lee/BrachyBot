@@ -1011,7 +1011,8 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
                         alpha = int(organ_opacities[str(label_int)] * 255)
                     else:
                         alpha = int(oar_opacity * 255)
-                    # Use golden-ratio HSV for visually distinct per-organ colors
+                    # Use the shared Slicer-style palette for the Data Tree,
+                    # 2D overlay and reconstructed 3D surface.
                     color = _label_color(label_int)
                     overlay[mask_slice == label] = [*color, alpha]
 

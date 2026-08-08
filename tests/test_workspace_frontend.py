@@ -275,8 +275,8 @@ def test_workspace_transitions_publish_measurable_first_paint_and_restore_stages
     assert "restore.planning_dvh" in ui_api
     assert "restore.report_and_presentation" in ui_api
     assert "restore.fully_interactive" in ui_api
-    assert "brachybot-workspace.js?v=25" in index
-    assert "brachybot-ui-api.js?v=31" in index
+    assert "brachybot-workspace.js?v=26" in index
+    assert "brachybot-ui-api.js?v=33" in index
 
 
 def test_workspace_fetch_preserves_external_transition_abort_semantics():
@@ -480,8 +480,8 @@ def test_uploaded_oar_mask_is_a_numbered_traversable_data_tree_source():
 def test_label_volume_cache_rejects_legacy_uint8_oar_entries():
     """Old caches must not wrap OAR IDs or omit stable structure IDs."""
     viewer = read("web/app/static/js/brachybot-viewer-volume.js")
-    assert "formatVersion: 3" in viewer
-    assert "Number(hdr.formatVersion || 0) >= 3" in viewer
+    assert "formatVersion: 4" in viewer
+    assert "Number(hdr.formatVersion || 0) >= 4" in viewer
     assert "oarBytesPerVoxel === 2" in viewer
     assert "ctvObjectMap" in viewer
     assert "organMeta" in viewer
@@ -1028,10 +1028,14 @@ def test_viewer_layout_restore_resynchronizes_all_viewer_geometry():
     manual_3d = read("web/app/static/js/brachybot-3d-manual.js")
 
     assert "function syncViewerGeometry" in layout
-    assert "requestAnimationFrame(() => requestAnimationFrame(render))" in layout
+    assert "requestAnimationFrame(() => render(acceptNewerGeneration))" in layout
+    assert "Measure once immediately" in layout
+    assert "schedule(true)" in layout
     assert "_clearViewerResizeOverrides(panel)" in layout
     assert "window.resizeViewer3D" in layout
-    assert "window.syncViewerGeometry({ resetPositions: true, settleMs: 100 })" in ui_api
+    assert "window.syncViewerGeometry({ resetPositions: true, settleMs: 160 })" in ui_api
+    assert "panel.classList.add('viewer-fullscreen-active')" in ui_api
+    assert "panel.classList.remove('viewer-fullscreen-active')" in ui_api
     assert "data-fullscreen-hidden=\"1\"" in ui_api
     assert "containerW < 1 || containerH < 1" in volume
     assert "scene3D.resize = resizeViewer3D" in manual_3d
@@ -1253,7 +1257,9 @@ def test_report_restore_preserves_quality_cells_and_keeps_section_order():
         "function _hpMetricRow", 1
     )[0]
     assert "const reportTotalPages = 5;" in block
-    assert block.index("s.section2") < block.index("s.section3") < block.index("s.section4")
+    assert block.index("secondaryTitle('Target & Prescription')") < block.index("secondaryTitle('Plan Quality Assessment')")
+    assert block.index("secondaryTitle('Plan Quality Assessment')") < block.index("secondaryTitle('OAR Dose')")
+    assert block.index("secondaryTitle('OAR Dose')") < block.index("secondaryTitle('Clinical Interpretation')")
     for key in ("aD95.reference", "aCI.reference", "aHI.reference", "aGI.reference", "aScore.reference"):
         assert key in block
     assert "options.preserveStored !== false" in report
@@ -1288,9 +1294,9 @@ def test_restore_time_3d_camera_guard_reframes_stale_hydration_targets_without_t
     assert "const hydrationCentering = forceCenter || scene3D._workspaceRestoreActive === true;" in viewer
     assert "const cameraOwnsView = scene3D._cameraUserInteracted === true;" in viewer
     assert "const hardClip = !validProjection || outside;" in viewer
-    assert "const deliberateCloseup = cameraOwnsView" in viewer
+    assert "const deliberateCloseup = cameraOwnsView" not in viewer
     assert "const shouldReframe = hydrationCentering" in viewer
-    assert "(hardClip && !deliberateCloseup)" in viewer
+    assert "if (cameraOwnsView && !hydrationCentering) return false;" in viewer
     assert "const cameraZoom = Math.max(0.1, Math.min(Number(camera.zoom) || 1, 100));" in viewer
     assert "const requiredDistance = radius * cameraZoom / Math.sin(limitingHalfFov) * 1.18;" in viewer
     assert "window.scheduleCameraFitForSceneMutation?.('mesh-hydration-batch');" in viewer
@@ -1302,5 +1308,7 @@ def test_restore_time_3d_camera_guard_reframes_stale_hydration_targets_without_t
     assert "aspect: undefined" in workspace
     assert "viewer.3d.camera-fit-after-restore" in viewer
     assert "window.ensureCameraFitsVisibleScene?.({" in workspace
+    assert "if (!initial && scene3D._cameraUserInteracted === true) return;" in workspace
+    assert "applyScene({ initial: true });" in workspace
     assert "reason: 'planning-mesh-hydration-complete'" in planning
     assert "reason: 'planning-mesh-load-complete'" in planning

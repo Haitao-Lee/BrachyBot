@@ -12,6 +12,7 @@ from web.surgical_guide import (
     generate_surgical_guide,
     guide_bore_quality_ready,
     _filter_components,
+    _resample_mask_to_local_grid,
     guide_state_for_version,
     guide_version_summaries,
     invalidate_surgical_guides,
@@ -78,6 +79,33 @@ def test_filter_components_removes_diagonal_spurs_before_meshing():
     assert not filtered[7, 7, 7]
     assert not filtered[7, 6, 7]
     assert not filtered[6, 7, 7]
+
+
+def test_skin_resampling_interpolates_thick_slice_contours_in_physical_space():
+    """Intermediate guide slices must not repeat nearest-neighbour CT steps."""
+    source = np.zeros((3, 24, 24), dtype=bool)
+    yy, xx = np.indices(source.shape[1:])
+    for z_index, center_x in enumerate((5.0, 11.0, 17.0)):
+        source[z_index] = (xx - center_x) ** 2 + (yy - 12.0) ** 2 <= 4.0 ** 2
+
+    resampled, spacing = _resample_mask_to_local_grid(
+        source,
+        source_spacing_zyx=(5.0, 1.0, 1.0),
+        target_spacing_mm=1.0,
+    )
+
+    assert spacing == (1.0, 1.0, 1.0)
+    assert resampled.shape[0] == 11
+    center_x_by_slice = []
+    for section in resampled:
+        occupied = np.argwhere(section)
+        center_x_by_slice.append(float(occupied[:, 1].mean()))
+    # A nearest-neighbour resample would expose only the three source centres.
+    # Signed-distance interpolation creates physically intermediate contours
+    # across each 5 mm source-slice interval.
+    rounded_centers = {round(value, 1) for value in center_x_by_slice}
+    assert len(rounded_centers) >= 7
+    assert center_x_by_slice == sorted(center_x_by_slice)
 
 
 def test_guide_is_watertight_and_stl_round_trips():
