@@ -15,6 +15,8 @@ import sys
 import threading
 import json
 import tempfile
+import hashlib
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
@@ -534,6 +536,282 @@ def _run_external_inference(
         )
 
 
+def _run_prompt_inference(
+    image: sitk.Image,
+    *,
+    prompt: str,
+    window: Tuple[float, float] = (400.0, 40.0),
+    slice_batch_size: int = 4,
+) -> Tuple[Dict[str, Any], sitk.Image, np.ndarray, float]:
+    """Run one text-guided BiomedParse inference on the canonical LPI grid.
+
+    Both the site-specific CTV adapter and the open segmentation tool use this
+    function. Keeping orientation, windowing, isolated-runtime selection, and
+    output conversion in one place prevents a generic mask from silently using
+    a different coordinate system than a CTV mask.
+    """
+    availability = _availability()
+    if not availability["available"]:
+        raise RuntimeError(
+            "BiomedParse v2 is not ready: "
+            + ", ".join(availability.get("missing") or [])
+        )
+
+    root = _repo_root()
+    if root is None:
+        raise RuntimeError("BIOMEDPARSE_ROOT is not configured")
+    checkpoint = _checkpoint_path(root)
+    text_assets = _text_assets_path(root)
+    lpi_image = sitk.DICOMOrient(image, "LPI")
+    normalised = _normalise_ct(
+        sitk.GetArrayFromImage(lpi_image),
+        window,
+    )
+    runtime_python_text = availability.get("runtime_python")
+    # Do not resolve a POSIX virtualenv symlink; the target interpreter would
+    # lose the isolated environment and its BiomedParse dependencies.
+    runtime_python = (
+        Path(runtime_python_text)
+        if runtime_python_text
+        else Path(sys.executable).resolve()
+    )
+    batch_size = max(1, int(slice_batch_size or 4))
+    if runtime_python != Path(sys.executable).resolve():
+        mask_array, confidence = _run_external_inference(
+            normalised=normalised,
+            root=root,
+            checkpoint=checkpoint,
+            text_assets=text_assets,
+            runtime_python=runtime_python,
+            prompt=prompt,
+            slice_batch_size=batch_size,
+        )
+    else:
+        runtime = _load_runtime(root, checkpoint, text_assets)
+        (
+            model,
+            device,
+            process_input,
+            process_output,
+            postprocess,
+            merge_masks,
+            torch,
+        ) = runtime
+        import torch.nn.functional as F
+
+        with _RUNTIME_LOCK, torch.inference_mode():
+            prepared, pad_width, padded_size, valid_axis = process_input(
+                normalised,
+                512,
+            )
+            prepared = prepared.to(device).int()
+            output = model(
+                {"image": prepared.unsqueeze(0), "text": [prompt]},
+                mode="eval",
+                slice_batch_size=batch_size,
+            )
+            predictions = output["predictions"]
+            mask_logits = predictions["pred_gmasks"]
+            mask_logits = F.interpolate(
+                mask_logits,
+                size=(512, 512),
+                mode="bicubic",
+                align_corners=False,
+                antialias=True,
+            )
+            masks = postprocess(mask_logits, predictions["object_existence"])
+            mask_volume = merge_masks(masks, [1])
+            mask_volume = process_output(
+                mask_volume,
+                pad_width,
+                padded_size,
+                valid_axis,
+            )
+            existence = predictions["object_existence"].sigmoid()
+            confidence = float(existence.max().detach().cpu().item())
+            mask_array = np.asarray(mask_volume, dtype=np.uint8)
+
+            # Release request-local tensors while retaining the cached model.
+            del prepared, output, predictions, mask_logits, masks, mask_volume
+
+    return availability, lpi_image, (np.asarray(mask_array) > 0).astype(np.uint8), confidence
+
+
+class BiomedParseV2GenericSegmentationTool(BaseTool):
+    """Segment an explicitly requested anatomy with the open v2 text prompt.
+
+    This tool is intentionally separate from ``ctv_segmentation`` and
+    ``oar_segmentation``. A free-form anatomy request is stored as an ordinary
+    displayable mask and never becomes a treatment target or an OAR by guess.
+    """
+
+    @property
+    def name(self) -> str:
+        return "biomedparse_segmentation"
+
+    @property
+    def description(self) -> str:
+        return (
+            "Open text-guided anatomy segmentation with the optional BiomedParse v2 "
+            "runtime. Use for an explicitly requested anatomy such as liver, pancreas "
+            "or shoulder joint when the request is not CTV or OAR segmentation. "
+            "The result is a research candidate mask for review, not a clinical contour."
+        )
+
+    @property
+    def input_schema(self) -> Dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "image": {
+                    "type": "object",
+                    "description": "Server-injected SimpleITK Image of the CT scan",
+                    "x-server-injected": True,
+                },
+                "image_path": {"type": "string"},
+                "target": {
+                    "type": "string",
+                    "description": "The anatomy to segment, for example liver or shoulder joint",
+                },
+                "prompt": {
+                    "type": "string",
+                    "description": "Optional text prompt; defaults to target",
+                },
+                "slice_batch_size": {"type": "integer", "minimum": 1, "default": 4},
+            },
+            "required": ["target"],
+        }
+
+    @property
+    def output_schema(self) -> Dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "mask": {"type": "array"},
+                "mask_id": {"type": "string"},
+                "voxel_count": {"type": "integer"},
+                "volume_mm3": {"type": "number"},
+                "research_only": {"type": "boolean"},
+            },
+        }
+
+    def _execute(self, **kwargs: Any) -> ToolResult:
+        image = kwargs.get("image")
+        image_path = kwargs.get("image_path")
+        target = str(kwargs.get("target") or "").strip()
+        prompt = str(kwargs.get("prompt") or target).strip()
+        prompt = re.sub(r"\s+", " ", prompt)[:160]
+        if not target or not prompt:
+            return ToolResult(
+                success=False,
+                error="An explicit anatomy target is required for open segmentation.",
+                metadata={"clarification_required": True},
+            )
+        prompt_lower = prompt.lower()
+        if re.search(
+            r"\b(?:ctv|oar|clinical target volume|organs? at risk)\b|"
+            r"\u9776\u533a|\u5371\u53ca\u5668\u5b98",
+            prompt_lower,
+        ):
+            return ToolResult(
+                success=False,
+                error=(
+                    "CTV and OAR requests must use their dedicated segmentation tools; "
+                    "open BiomedParse segmentation does not assign clinical structure type."
+                ),
+                metadata={"use_specific_tool": True, "target": target},
+            )
+        if image is None and image_path:
+            try:
+                image = sitk.ReadImage(str(image_path))
+            except Exception as exc:
+                return ToolResult(success=False, error=f"Unable to read CT image: {exc}")
+        if image is None:
+            return ToolResult(
+                success=False,
+                error="No CT image is loaded for open BiomedParse segmentation.",
+            )
+
+        availability: Dict[str, Any] = {}
+        try:
+            availability, lpi_image, mask_array, confidence = _run_prompt_inference(
+                image,
+                prompt=prompt,
+                window=(400.0, 40.0),
+                slice_batch_size=max(1, int(kwargs.get("slice_batch_size") or 4)),
+            )
+            voxel_count = int(np.count_nonzero(mask_array))
+            if voxel_count <= 0:
+                return ToolResult(
+                    success=False,
+                    error=(
+                        f"BiomedParse v2 completed inference but found no '{target}' "
+                        "in the current CT. Verify the scan coverage or use a manual mask."
+                    ),
+                    metadata={
+                        **availability,
+                        "target": target,
+                        "text_prompt": prompt,
+                        "object_existence_confidence": confidence,
+                    },
+                )
+
+            spacing = tuple(float(value) for value in lpi_image.GetSpacing())
+            volume_mm3 = float(voxel_count * spacing[0] * spacing[1] * spacing[2])
+            source_key = f"{image_path or 'memory'}|{target}|{prompt}"
+            mask_id = "mask_bp_" + hashlib.sha1(source_key.encode("utf-8")).hexdigest()[:16]
+            generic_mask = {
+                "mask_id": mask_id,
+                "object_id": f"mask:{mask_id}",
+                "data_tree_node_id": mask_id,
+                "target": target,
+                "label": target,
+                "name": target,
+                "source": "biomedparse_v2",
+                "kind": "generic_segmentation",
+                "text_prompt": prompt,
+                "shape": list(mask_array.shape),
+                "spacing": list(spacing),
+                "origin": list(lpi_image.GetOrigin()),
+                "direction": list(lpi_image.GetDirection()),
+                "voxel_count": voxel_count,
+                "volume_mm3": volume_mm3,
+                "object_existence_confidence": confidence,
+                "model_name": "BiomedParse v2",
+                "research_only": True,
+                "clinical_validation_status": "not_established",
+                "data_version": datetime.now(timezone.utc).isoformat(),
+            }
+            metadata = {
+                **availability,
+                "generic_mask": generic_mask,
+                "mask_id": mask_id,
+                "voxel_count": voxel_count,
+                "volume_mm3": volume_mm3,
+                "target": target,
+                "text_prompt": prompt,
+                "object_existence_confidence": confidence,
+                "model_name": "BiomedParse v2",
+                "research_only": True,
+            }
+            return ToolResult(
+                success=True,
+                data=mask_array,
+                message=(
+                    f"BiomedParse v2 produced a candidate mask for '{target}' "
+                    f"({volume_mm3:.1f} mm3). It was added to the Data Tree for review; "
+                    "it was not classified as CTV or OAR."
+                ),
+                metadata=metadata,
+            )
+        except Exception as exc:
+            return ToolResult(
+                success=False,
+                error=f"BiomedParse v2 could not segment '{target}': {exc}",
+                metadata={**availability, "target": target, "text_prompt": prompt},
+            )
+
+
 class BiomedParseV2CTVTool(BaseTool):
     """Generate research CTV candidates from BiomedParse v2 CT inference."""
 
@@ -744,6 +1022,7 @@ class BiomedParseV2CTVTool(BaseTool):
 __all__ = [
     "BIOMEDPARSE_MODEL_URL",
     "BIOMEDPARSE_REPOSITORY",
+    "BiomedParseV2GenericSegmentationTool",
     "BiomedParseV2CTVTool",
     "SITE_SPECS",
     "_validation_records",

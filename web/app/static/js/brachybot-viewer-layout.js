@@ -993,6 +993,39 @@ async function reconstructOrgan3D(id, silent = false) {
             if (mask?.kind === 'threshold' && Number.isFinite(Number(mask.threshold))) {
                 return _reconstructThresholdMask3D(id, silent);
             }
+            if (mask?.kind === 'generic_segmentation') {
+                // Generic BiomedParse masks are persisted server-side. Use
+                // the stable mask ID instead of the display name and keep the
+                // exact binary boundary so 3D matches the 2D overlay.
+                const genericColor = mask.color || '#f08a5d';
+                color = genericColor.startsWith('#')
+                    ? parseInt(genericColor.slice(1), 16)
+                    : 0xf08a5d;
+                source = 'generic';
+                const res = await fetch(API + '/viewer/3d_mask', {
+                    method: 'POST',
+                    headers: _viewer3DRequestHeaders(requestScope, { 'Content-Type': 'application/json' }),
+                    body: JSON.stringify({
+                        source,
+                        mask_id: mask.serverMaskId || mask.mask_id || id,
+                        smoothing: 1,
+                    }),
+                });
+                if (!res.ok) {
+                    const errData = await res.json().catch(() => ({}));
+                    throw new Error(errData.error || `HTTP ${res.status}`);
+                }
+                const data = await res.json();
+                if (!_viewer3DRequestScopeIsCurrent(requestScope)) return { stale: true };
+                if (data.success) {
+                    data.color = color;
+                    data.organ_id = id;
+                    state.mesh3D = data;
+                    _safeRender3DMesh(data);
+                    switchPanel('viewers', document.querySelectorAll('.panel-tab')[2]);
+                }
+                return data;
+            }
             // Hand-drawn masks remain local voxel sets and use the existing
             // client reconstruction path.
             return _reconstructMask3D(id, silent);

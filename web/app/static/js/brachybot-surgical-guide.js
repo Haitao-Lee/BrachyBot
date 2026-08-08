@@ -1,6 +1,9 @@
 /* Patient-specific puncture guide UI. Kept session-aware to prevent stale meshes. */
 (function surgicalGuideUI() {
     const GUIDE_ID = 'patient_specific_puncture_guide';
+    // The backend applies the same manufacturing margin to every primary
+    // bore. Auxiliary holes display and use that final diameter as well.
+    const GUIDE_BORE_MARGIN_MM = 0.4;
     const GUIDE_DEFAULTS = Object.freeze({
         skin_threshold_hu: -300,
         skin_clearance_mm: 1,
@@ -11,10 +14,10 @@
         sleeve_outward_mm: 8,
         sleeve_inward_mm: 8,
         auxiliary_holes_enabled: true,
-        auxiliary_hole_radius_mm: 0.45,
+        auxiliary_hole_radius_mm: 1.3,
         auxiliary_hole_ring_count: 2,
         auxiliary_holes_per_ring: 12,
-        auxiliary_hole_first_offset_mm: 4,
+        auxiliary_hole_first_offset_mm: 6,
         auxiliary_hole_ring_spacing_mm: 3,
         geometry_resolution_mm: 0.2,
     });
@@ -130,20 +133,23 @@
         // The clinical UI uses diameters because they are the manufactured
         // dimensions clinicians specify. The geometry service deliberately
         // receives radii, its internal primitive convention.
+        const channelRadius = numericControl(
+            GUIDE_CONTROLS.channel_diameter_mm,
+            GUIDE_DEFAULTS.channel_radius_mm * 2,
+        ) / 2;
         return {
             skin_threshold_hu: numericControl(GUIDE_CONTROLS.skin_threshold_hu, GUIDE_DEFAULTS.skin_threshold_hu),
             skin_clearance_mm: numericControl(GUIDE_CONTROLS.skin_clearance_mm, GUIDE_DEFAULTS.skin_clearance_mm),
             plate_thickness_mm: numericControl(GUIDE_CONTROLS.plate_thickness_mm, GUIDE_DEFAULTS.plate_thickness_mm),
             patch_margin_mm: numericControl(GUIDE_CONTROLS.patch_margin_mm, GUIDE_DEFAULTS.patch_margin_mm),
-            channel_radius_mm: numericControl(GUIDE_CONTROLS.channel_diameter_mm, GUIDE_DEFAULTS.channel_radius_mm * 2) / 2,
+            channel_radius_mm: channelRadius,
             sleeve_outer_radius_mm: numericControl(GUIDE_CONTROLS.sleeve_outer_diameter_mm, GUIDE_DEFAULTS.sleeve_outer_radius_mm * 2) / 2,
             sleeve_outward_mm: numericControl(GUIDE_CONTROLS.sleeve_outward_mm, GUIDE_DEFAULTS.sleeve_outward_mm),
             sleeve_inward_mm: numericControl(GUIDE_CONTROLS.sleeve_inward_mm, GUIDE_DEFAULTS.sleeve_inward_mm),
             auxiliary_holes_enabled: document.getElementById(GUIDE_CONTROLS.auxiliary_holes_enabled)?.checked !== false,
-            auxiliary_hole_radius_mm: numericControl(
-                GUIDE_CONTROLS.auxiliary_hole_diameter_mm,
-                GUIDE_DEFAULTS.auxiliary_hole_radius_mm * 2,
-            ) / 2,
+            // Retained for API compatibility. The service re-derives this
+            // value, and the UI keeps it equal to the final primary bore.
+            auxiliary_hole_radius_mm: channelRadius + GUIDE_BORE_MARGIN_MM,
             auxiliary_hole_ring_count: Math.round(numericControl(
                 GUIDE_CONTROLS.auxiliary_hole_ring_count,
                 GUIDE_DEFAULTS.auxiliary_hole_ring_count,
@@ -175,7 +181,8 @@
         setValue(GUIDE_CONTROLS.skin_clearance_mm, value('skin_clearance_mm', GUIDE_DEFAULTS.skin_clearance_mm));
         setValue(GUIDE_CONTROLS.plate_thickness_mm, value('plate_thickness_mm', GUIDE_DEFAULTS.plate_thickness_mm));
         setValue(GUIDE_CONTROLS.patch_margin_mm, value('patch_margin_mm', GUIDE_DEFAULTS.patch_margin_mm));
-        setValue(GUIDE_CONTROLS.channel_diameter_mm, value('channel_radius_mm', GUIDE_DEFAULTS.channel_radius_mm) * 2);
+        const channelRadius = value('channel_radius_mm', GUIDE_DEFAULTS.channel_radius_mm);
+        setValue(GUIDE_CONTROLS.channel_diameter_mm, channelRadius * 2);
         setValue(GUIDE_CONTROLS.sleeve_outer_diameter_mm, value('sleeve_outer_radius_mm', GUIDE_DEFAULTS.sleeve_outer_radius_mm) * 2);
         setValue(GUIDE_CONTROLS.sleeve_outward_mm, value('sleeve_outward_mm', GUIDE_DEFAULTS.sleeve_outward_mm));
         setValue(GUIDE_CONTROLS.sleeve_inward_mm, value('sleeve_inward_mm', GUIDE_DEFAULTS.sleeve_inward_mm));
@@ -187,7 +194,7 @@
         }
         setValue(
             GUIDE_CONTROLS.auxiliary_hole_diameter_mm,
-            value('auxiliary_hole_radius_mm', GUIDE_DEFAULTS.auxiliary_hole_radius_mm) * 2,
+            (channelRadius + GUIDE_BORE_MARGIN_MM) * 2,
         );
         setValue(GUIDE_CONTROLS.auxiliary_hole_ring_count, value(
             'auxiliary_hole_ring_count', GUIDE_DEFAULTS.auxiliary_hole_ring_count,
@@ -218,6 +225,18 @@
             control.addEventListener('input', saveParameters);
             control.addEventListener('change', saveParameters);
         });
+        const channelInput = document.getElementById(GUIDE_CONTROLS.channel_diameter_mm);
+        const auxiliaryInput = document.getElementById(GUIDE_CONTROLS.auxiliary_hole_diameter_mm);
+        const syncAuxiliaryDiameter = () => {
+            if (!channelInput || !auxiliaryInput) return;
+            const channelDiameter = Number(channelInput.value);
+            if (Number.isFinite(channelDiameter)) {
+                auxiliaryInput.value = String(channelDiameter + GUIDE_BORE_MARGIN_MM * 2);
+            }
+        };
+        channelInput?.addEventListener('input', syncAuxiliaryDiameter);
+        channelInput?.addEventListener('change', syncAuxiliaryDiameter);
+        syncAuxiliaryDiameter();
         const needleSelection = document.getElementById(GUIDE_NEEDLE_SELECTION_ID);
         if (needleSelection && needleSelection.dataset.surgicalGuideBound !== 'true') {
             needleSelection.dataset.surgicalGuideBound = 'true';

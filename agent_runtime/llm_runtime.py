@@ -44,6 +44,7 @@ _SAFE_TOOL_FALLBACKS = frozenset({
     "ctv_segmentation",
     "oar_segmentation",
     "seed_segmentation",
+    "biomedparse_segmentation",
     "planning_pipeline",
     "seed_planning",
     "trajectory_planning",
@@ -806,7 +807,7 @@ class LLMRuntimeMixin:
 
             # When CT is not loaded, block CT-dependent tool calls
             if _no_files_loaded and valid_tool_calls:
-                _ct_dependent = {"ctv_segmentation", "oar_segmentation", "seed_planning",
+                _ct_dependent = {"ctv_segmentation", "oar_segmentation", "biomedparse_segmentation", "seed_planning",
                                  "seed_segmentation", "trajectory_planning", "dose_engine",
                                  "dose_evaluation", "ui_inspector", "filesystem_browser"}
                 valid_tool_calls = [tc for tc in valid_tool_calls
@@ -853,9 +854,23 @@ class LLMRuntimeMixin:
                 # Pre-execution check: if ctv_segmentation is called without
                 # tumor_type, intercept and ask instead of running and failing.
                 if tool_name == "ctv_segmentation" and not params.get("tumor_type"):
+                    _pending_intent = getattr(getattr(self, "_active_turn_policy", None), "intent", "")
+                    _is_full_planning = _pending_intent in {"clinical_planning", "planning", "treatment_plan"}
+                    if not _is_full_planning:
+                        _is_full_planning = bool(re.search(
+                            r"(?:\u6267\u884c|\u5f00\u59cb|\u8fdb\u884c).{0,12}(?:\u653e\u5c04\u6027?\u7c92\u5b50|\u8fd1\u8ddd\u79bb).{0,12}\u89c4\u5212|"
+                            r"(?:brachytherapy|treatment)\s+(?:implant\s+)?plan|planning[_\s-]*pipeline",
+                            str(message or "").lower(),
+                            re.IGNORECASE,
+                        ))
                     self.memory.store(
                         "pending_clarification",
-                        {"kind": "tumor_site", "requested_tool": "ctv_segmentation"},
+                        {
+                            "kind": "tumor_site",
+                            "requested_tool": "ctv_segmentation",
+                            "requested_actions": ["plan_full"] if _is_full_planning else ["segment_ctv"],
+                            "requested_workflow": "clinical_planning" if _is_full_planning else "segmentation",
+                        },
                     )
                     logger.info("[TOOL-LOOP] ctv_segmentation missing tumor_type — intercepting")
                     if getattr(self, "run_ledger", None) is not None:
@@ -1988,7 +2003,7 @@ class LLMRuntimeMixin:
 
             # When CT is not loaded, block CT-dependent tool calls from text-parsed results
             if not ct_loaded and valid_tool_calls:
-                _ct_dependent = {"ctv_segmentation", "oar_segmentation", "seed_planning",
+                _ct_dependent = {"ctv_segmentation", "oar_segmentation", "biomedparse_segmentation", "seed_planning",
                                  "seed_segmentation", "trajectory_planning", "dose_engine",
                                  "dose_evaluation", "ui_inspector", "filesystem_browser"}
                 valid_tool_calls = [tc for tc in valid_tool_calls
@@ -2205,9 +2220,23 @@ class LLMRuntimeMixin:
                 # Pre-execution check: if ctv_segmentation is called without
                 # tumor_type, intercept and ask instead of running and failing.
                 if tool_name == "ctv_segmentation" and not params.get("tumor_type"):
+                    _pending_intent = getattr(getattr(self, "_active_turn_policy", None), "intent", "")
+                    _is_full_planning = _pending_intent in {"clinical_planning", "planning", "treatment_plan"}
+                    if not _is_full_planning:
+                        _is_full_planning = bool(re.search(
+                            r"(?:\u6267\u884c|\u5f00\u59cb|\u8fdb\u884c).{0,12}(?:\u653e\u5c04\u6027?\u7c92\u5b50|\u8fd1\u8ddd\u79bb).{0,12}\u89c4\u5212|"
+                            r"(?:brachytherapy|treatment)\s+(?:implant\s+)?plan|planning[_\s-]*pipeline",
+                            str(message or "").lower(),
+                            re.IGNORECASE,
+                        ))
                     self.memory.store(
                         "pending_clarification",
-                        {"kind": "tumor_site", "requested_tool": "ctv_segmentation"},
+                        {
+                            "kind": "tumor_site",
+                            "requested_tool": "ctv_segmentation",
+                            "requested_actions": ["plan_full"] if _is_full_planning else ["segment_ctv"],
+                            "requested_workflow": "clinical_planning" if _is_full_planning else "segmentation",
+                        },
                     )
                     logger.info("[TOOL-LOOP] ctv_segmentation missing tumor_type — intercepting")
                     if getattr(self, "run_ledger", None) is not None:
@@ -2291,7 +2320,7 @@ class LLMRuntimeMixin:
                             # _execute_tool_with_memory stores the successful
                             # result before returning, so it remains durable
                             # even if the SSE consumer disconnects here.
-                            if tool_name in ('ctv_segmentation', 'oar_segmentation') and 'image_path' in params:
+                            if tool_name in ('ctv_segmentation', 'oar_segmentation', 'biomedparse_segmentation') and 'image_path' in params:
                                 self.memory.store("ct_path", params['image_path'])
                         # Drain any sub-step events the tool emitted
                         # while running. The tool's callbacks are
@@ -2469,7 +2498,7 @@ class LLMRuntimeMixin:
                     break
 
                 # Also store ct_path for planning pipeline
-                if tool_name in ('ctv_segmentation', 'oar_segmentation') and 'image_path' in params:
+                if tool_name in ('ctv_segmentation', 'oar_segmentation', 'biomedparse_segmentation') and 'image_path' in params:
                     self.memory.store("ct_path", params['image_path'])
                     if self.memory.retrieve("ct_image") is None:
                         try:

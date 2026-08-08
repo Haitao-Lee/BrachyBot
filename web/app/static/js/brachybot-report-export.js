@@ -684,13 +684,7 @@ function syncReportQualityAssessment(form, options = {}) {
         && options.refreshCriteria !== true
         && hasStoredRows
         && metricsMatch
-        && previous.language === language
-        // During partial hydration the current form may temporarily lack the
-        // saved prescription rationale. Preserve the durable rows then. Once
-        // source context is available, however, a changed fingerprint means
-        // those rows belong to an older/incomplete assessment and must be
-        // rebuilt from the current criteria.
-        && (!hasSourceContext || fingerprintMatches)) return previous;
+        && previous.language === language) return previous;
 
     const metrics = {};
     metricKeys.forEach(key => {
@@ -700,7 +694,6 @@ function syncReportQualityAssessment(form, options = {}) {
         const preservePreviousRow = options.preserveStored !== false
             && options.refreshCriteria !== true
             && previous?.language === language
-            && (!hasSourceContext || fingerprintMatches)
             && _hasStoredMetricAssessment(previousRow)
             && _normalizedReportMetricValue(previousRow.value) === value;
         metrics[key] = preservePreviousRow

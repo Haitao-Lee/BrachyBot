@@ -33,7 +33,11 @@ from .covid_voco import VoCoCOVIDSegTool
 from .aorta_voco import VoCoAortaSegTool
 from .brats21_voco import VoCoBRATS21SegTool
 from .pancreatic_tumor_nnunet import NNUNetPancreaticTumorTool
-from .biomedparse_v2 import BiomedParseV2CTVTool, SITE_SPECS as BIOMEDPARSE_SITE_SPECS
+from .biomedparse_v2 import (
+    BiomedParseV2CTVTool,
+    BiomedParseV2GenericSegmentationTool,
+    SITE_SPECS as BIOMEDPARSE_SITE_SPECS,
+)
 from .model_catalog import CTVModelCatalogTool, catalog_with_local_status, filter_catalog
 
 # Removed VoCoProstateTool (was using wrong Amos-MR weights)

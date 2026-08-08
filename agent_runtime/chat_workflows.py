@@ -1565,7 +1565,7 @@ class ChatWorkflowMixin:
                 yield yield_event("step", step)
                 try:
                     # Store ct_path for downstream tools
-                    if tc['tool'] in ('ctv_segmentation', 'oar_segmentation') and 'image_path' in tc['params']:
+                    if tc['tool'] in ('ctv_segmentation', 'oar_segmentation', 'biomedparse_segmentation') and 'image_path' in tc['params']:
                         self.memory.store("ct_path", tc['params']['image_path'])
                         # Also load and store CT image if not already in memory
                         if self.memory.retrieve("ct_image") is None:
@@ -1610,8 +1610,11 @@ class ChatWorkflowMixin:
                         step["metadata"] = result.metadata if result.success else {}
                         yield yield_event("step", step)
                         if result.success:
-                            # After CTV/OAR seg, ensure ct_image is stored for downstream tools
-                            if tc['tool'] == 'ctv_segmentation' and 'image_path' in tc['params']:
+                            # After a segmentation tool, ensure ct_image is
+                            # stored for downstream tools and later Viewer
+                            # hydration. Generic BiomedParse masks use the
+                            # same canonical CT grid as CTV/OAR.
+                            if tc['tool'] in ('ctv_segmentation', 'biomedparse_segmentation') and 'image_path' in tc['params']:
                                 if self.memory.retrieve("ct_image") is None:
                                     try:
                                         import SimpleITK as sitk
@@ -1867,7 +1870,7 @@ class ChatWorkflowMixin:
         # Smart review decision based on tool usage and response complexity
         _high_value_tools = {
             "planning_pipeline", "seed_planning", "dose_evaluation", "dose_calc",
-            "ctv_segmentation", "oar_segmentation", "trajectory_planning",
+            "ctv_segmentation", "oar_segmentation", "biomedparse_segmentation", "trajectory_planning",
             "safety_validator", "clinical_kb"
         }
         _tools_called = {s.get("tool") for s in steps if s.get("type") == "tool"}
