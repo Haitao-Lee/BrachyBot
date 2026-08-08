@@ -9,10 +9,14 @@ import SimpleITK as sitk
 from tool_factory.surgical_guide import SurgicalGuideTool
 from web.surgical_guide import (
     BORE_WALL_POLICY,
+    GUIDE_MINIMUM_WALL_MM,
+    NeedleGuidePath,
+    _auxiliary_hole_specs,
     generate_surgical_guide,
     guide_bore_quality_ready,
     _filter_components,
     _resample_mask_to_local_grid,
+    _segment_distance_mm,
     guide_state_for_version,
     guide_version_summaries,
     invalidate_surgical_guides,
@@ -155,6 +159,96 @@ def test_auxiliary_holes_can_be_disabled_without_changing_primary_contract():
     assert auxiliary["requested_count"] == 0
     assert auxiliary["realized_count"] == 0
     assert guide["validation"]["watertight"] is True
+
+
+def test_cross_needle_auxiliary_holes_keep_a_printable_wall():
+    """Auxiliary patterns from nearby needles must never intersect each other."""
+    direction = np.array([1.0, 0.0, 0.0], dtype=np.float64)
+    paths = [
+        NeedleGuidePath(
+            needle_id="needle_0",
+            trajectory_id="traj_1",
+            target=np.array([32.0, 28.0, 32.0]),
+            external=np.array([-10.0, 28.0, 32.0]),
+            entry=np.array([10.0, 28.0, 32.0]),
+            inward_direction=direction,
+            seed_count=1,
+        ),
+        NeedleGuidePath(
+            needle_id="needle_1",
+            trajectory_id="traj_2",
+            target=np.array([32.0, 36.0, 32.0]),
+            external=np.array([-10.0, 36.0, 32.0]),
+            entry=np.array([10.0, 36.0, 32.0]),
+            inward_direction=direction,
+            seed_count=1,
+        ),
+    ]
+    params = normalize_guide_parameters({
+        "geometry_resolution_mm": 1.0,
+        "auxiliary_holes_enabled": True,
+    })
+
+    specs = _auxiliary_hole_specs(paths, params)
+    skipped = [item for item in specs if item.get("skipped")]
+    realized = [item for item in specs if not item.get("skipped")]
+
+    assert any(item.get("skip_reason") == "nearby_auxiliary_hole" for item in skipped)
+    assert {item["needle_id"] for item in realized} == {"needle_0", "needle_1"}
+    minimum_distance = (
+        2.0 * params["auxiliary_hole_radius_mm"] + GUIDE_MINIMUM_WALL_MM
+    )
+    for index, first in enumerate(realized):
+        for second in realized[index + 1:]:
+            distance = _segment_distance_mm(
+                first["start"], first["end"], second["start"], second["end"]
+            )
+            assert distance + 1e-6 >= minimum_distance
+
+
+def test_nearby_needles_generate_a_watertight_guide_with_auxiliary_holes():
+    """Conflicting optional holes are skipped before voxel CSG and meshing."""
+    agent = _synthetic_agent()
+    agent.memory.store("algorithm_plan_snapshot", {
+        "needles": [
+            {
+                "id": "needle_0",
+                "trajectory_id": "traj_1",
+                "points": [[32.0, 28.0, 32.0], [-10.0, 28.0, 32.0]],
+            },
+            {
+                "id": "needle_1",
+                "trajectory_id": "traj_2",
+                "points": [[32.0, 36.0, 32.0], [-10.0, 36.0, 32.0]],
+            },
+        ],
+        "seeds": [
+            {
+                "id": "seed_0",
+                "trajectory_id": "traj_1",
+                "position": [28.0, 28.0, 32.0],
+            },
+            {
+                "id": "seed_1",
+                "trajectory_id": "traj_2",
+                "position": [28.0, 36.0, 32.0],
+            },
+        ],
+    })
+
+    guide = generate_surgical_guide(agent, {
+        "geometry_resolution_mm": 1.0,
+        "auxiliary_holes_enabled": True,
+    })
+
+    assert guide["validation"]["watertight"] is True
+    assert guide["validation"]["open_edges"] == 0
+    assert guide["validation"]["nonmanifold_edges"] == 0
+    assert any(
+        item["reason"] == "nearby_auxiliary_hole"
+        for item in guide["auxiliary_holes"]["skipped"]
+    )
+    assert guide["auxiliary_holes"]["minimum_wall_mm"] == GUIDE_MINIMUM_WALL_MM
 
 
 def test_auxiliary_hole_parameters_enforce_primary_wall_and_ring_spacing():
