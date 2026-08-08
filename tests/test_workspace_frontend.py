@@ -275,7 +275,7 @@ def test_workspace_transitions_publish_measurable_first_paint_and_restore_stages
     assert "restore.planning_dvh" in ui_api
     assert "restore.report_and_presentation" in ui_api
     assert "restore.fully_interactive" in ui_api
-    assert "brachybot-workspace.js?v=26" in index
+    assert "brachybot-workspace.js?v=27" in index
     assert "brachybot-ui-api.js?v=33" in index
 
 
@@ -480,8 +480,10 @@ def test_uploaded_oar_mask_is_a_numbered_traversable_data_tree_source():
 def test_label_volume_cache_rejects_legacy_uint8_oar_entries():
     """Old caches must not wrap OAR IDs or omit stable structure IDs."""
     viewer = read("web/app/static/js/brachybot-viewer-volume.js")
-    assert "formatVersion: 4" in viewer
-    assert "Number(hdr.formatVersion || 0) >= 4" in viewer
+    # v5 keeps independent CTV/OAR color namespaces in addition to the
+    # uint16 OAR wire format introduced by v4.
+    assert "formatVersion: 5" in viewer
+    assert "Number(hdr.formatVersion || 0) >= 5" in viewer
     assert "oarBytesPerVoxel === 2" in viewer
     assert "ctvObjectMap" in viewer
     assert "organMeta" in viewer

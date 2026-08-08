@@ -2495,37 +2495,49 @@ def _compute_manual_ai_dose(
     }
 
 
+_CTV_PRIMARY_COLOR = (255, 48, 76)
+
+# The original Slicer-inspired table was intentionally pastel, but it became
+# difficult to scan once 50+ translucent structures overlapped. These colors
+# retain Slicer's anatomical hue variety while using enough chroma to remain
+# distinct in the Data Tree, on grayscale CT, and in the black 3D viewport.
+# Red is deliberately omitted because it is reserved for CTV.
 _SLICER_STRUCTURE_COLORS = (
-    (242, 166, 146), (140, 172, 217), (188, 156, 204), (232, 196, 132),
-    (135, 190, 168), (218, 154, 177), (166, 188, 127), (145, 184, 195),
-    (207, 163, 134), (170, 166, 209), (229, 176, 120), (127, 180, 190),
-    (198, 145, 155), (149, 190, 139), (184, 164, 201), (225, 160, 137),
-    (130, 164, 205), (201, 181, 119), (134, 194, 184), (211, 151, 196),
-    (173, 187, 149), (150, 158, 202), (219, 185, 153), (139, 185, 155),
-    (196, 158, 178), (160, 183, 211), (223, 170, 151), (183, 181, 127),
-    (137, 175, 180), (204, 151, 132), (156, 197, 177), (190, 154, 198),
+    (77, 157, 224), (60, 203, 143), (166, 109, 224), (242, 184, 75),
+    (45, 183, 196), (231, 122, 168), (127, 200, 67), (94, 143, 216),
+    (229, 138, 72), (139, 125, 219), (227, 198, 79), (56, 166, 165),
+    (214, 107, 120), (99, 184, 92), (180, 119, 209), (237, 155, 114),
+    (75, 136, 199), (199, 168, 63), (71, 185, 168), (213, 106, 182),
+    (147, 182, 87), (105, 120, 209), (217, 156, 90), (69, 168, 117),
+    (200, 120, 160), (95, 169, 216), (226, 129, 104), (171, 178, 72),
+    (78, 166, 184), (201, 111, 84), (100, 188, 146), (168, 108, 194),
 )
 
 
 def _label_color(label_id: int) -> tuple:
-    """Return a stable, low-saturation 3D-Slicer-inspired structure color.
+    """Return a stable, moderately saturated Slicer-inspired OAR color.
 
-    Adjacent anatomical labels receive deliberately different pastel hues.
-    Labels beyond the base table use a small deterministic luminance variant,
-    retaining readability on black viewer backgrounds without reverting to
-    harsh primary RGB colors.
+    Labels beyond the base table use a deterministic luminance variant that
+    preserves hue and chroma instead of blending the palette back toward gray.
     """
     ordinal = max(0, abs(int(label_id)) - 1)
     base = _SLICER_STRUCTURE_COLORS[ordinal % len(_SLICER_STRUCTURE_COLORS)]
     cycle = ordinal // len(_SLICER_STRUCTURE_COLORS)
     if cycle == 0:
         return base
-    variant = cycle % 4
-    if variant in (1, 3):
-        blend = 0.10 if variant == 1 else 0.18
-        return tuple(int(round(channel + (255 - channel) * blend)) for channel in base)
-    factor = 0.90 if variant == 2 else 0.82
-    return tuple(int(round(channel * factor)) for channel in base)
+    factor = (0.84, 1.08, 0.72, 0.94)[(cycle - 1) % 4]
+    return tuple(max(0, min(255, int(round(channel * factor)))) for channel in base)
+
+
+def _ctv_label_color(label_id: int) -> tuple:
+    """Keep the primary target unmistakably red and color auxiliaries safely."""
+    label = int(label_id)
+    if label == 1:
+        return _CTV_PRIMARY_COLOR
+    # Multi-label CTV models may also return vessels or adjacent anatomy. Shift
+    # those labels into the OAR palette rather than implying every auxiliary
+    # structure is part of the red target volume.
+    return _label_color(label + 10)
 
 
 _rate_limit_cleanup_counter = 0

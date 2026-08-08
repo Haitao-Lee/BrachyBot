@@ -1008,6 +1008,10 @@
 
     function applyDataTreePresentation(savedTree) {
         if (!savedTree || typeof savedTree !== 'object' || typeof dataTreeState === 'undefined') return;
+        // Upgrade only known application-default colors. This runs before any
+        // presentation fields are copied so a legacy snapshot cannot repaint
+        // the new CTV/OAR LUT, while custom colors remain authoritative.
+        window.migrateLegacyStructurePalette?.(savedTree);
         ['ct', 'ctv', 'oar', 'dose', 'seeds', 'needles'].forEach(key => {
             copyDisplayProperties(dataTreeState[key], savedTree[key]);
         });
@@ -1061,6 +1065,7 @@
             const saved = byId.get(String(organ.id)) || byLabel.get(String(organ.labelId));
             copyDisplayProperties(organ, saved);
         });
+        window.syncStructureColorLUTsFromTree?.(dataTreeState);
         // Mesh hydration can finish after this compact session snapshot. Apply
         // the per-view presentation now, and the mesh loader will reapply it
         // again when late geometry becomes available.
@@ -1089,6 +1094,7 @@
 
     function applyDataTreeSnapshot(savedTree) {
         if (!savedTree || typeof savedTree !== 'object' || typeof dataTreeState === 'undefined') return;
+        window.migrateLegacyStructurePalette?.(savedTree);
         const currentHasClinicalData = hasTreeClinicalData(dataTreeState);
         const savedHasClinicalData = hasTreeClinicalData(savedTree);
 

@@ -673,10 +673,10 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
 
     function _drawPlanLegend(ctx, x, y, w) {
         const items = [];
-        const ctvColor = dataTreeState.ctv?.color || '#f2a692';
+        const ctvColor = dataTreeState.ctv?.color || '#ff304c';
         items.push({ type: 'swatch', color: ctvColor, label: 'CTV / tumor' });
         const firstOar = (dataTreeState.organs || []).find(o => o.visible !== false) || dataTreeState.organs?.[0];
-        items.push({ type: 'swatch', color: firstOar?.color || dataTreeState.oar?.color || '#8cacd9', label: 'OAR surfaces' });
+        items.push({ type: 'swatch', color: firstOar?.color || dataTreeState.oar?.color || '#4d9de0', label: 'OAR surfaces' });
         items.push({ type: 'seed', color: dataTreeState.planning?.seeds?.[0]?.color || dataTreeState.seeds?.color || '#ffcc00', label: 'I-125 seeds' });
         items.push({ type: 'needle', color: dataTreeState.planning?.needles?.[0]?.color || dataTreeState.needles?.color || '#ff2266', label: 'Needle paths' });
         const doseCfg = typeof getDoseColorbarConfig === 'function'

@@ -32,6 +32,7 @@ _MESH_CACHE_LOCK = _server_support._MESH_CACHE_LOCK
 _MESH_CACHE_MAX_ITEMS = _server_support._MESH_CACHE_MAX_ITEMS
 _MESH_CACHE_ORDER = _server_support._MESH_CACHE_ORDER
 _label_color = _server_support._label_color
+_ctv_label_color = _server_support._ctv_label_color
 _validate_path = _server_support._validate_path
 
 _UPLOADED_LABEL_SOURCES = {
@@ -769,17 +770,23 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
                     else:
                         oar_object_map[target_label] = str(item["object_id"])
 
-            # Build color LUT for all labels
-            color_lut = {}
+            # CTV and OAR volumes may both use label 1. Keep independent LUTs
+            # so an OAR refresh cannot overwrite the primary target's red.
+            ctv_color_lut = {}
+            oar_color_lut = {}
             if ctv_array is not None:
                 # Add all CTV labels with distinct colors
                 for lid in np.unique(ctv_array):
                     if lid > 0:
-                        color_lut[int(lid)] = list(_label_color(int(lid)))
+                        ctv_color_lut[int(lid)] = list(_ctv_label_color(int(lid)))
             if oar_array is not None:
                 for lid in np.unique(oar_array):
                     if lid > 0:
-                        color_lut[int(lid)] = list(_label_color(int(lid)))
+                        oar_color_lut[int(lid)] = list(_label_color(int(lid)))
+
+            # Retain the legacy header for older clients. Current clients use
+            # the typed LUTs below and therefore tolerate overlapping IDs.
+            color_lut = {**ctv_color_lut, **oar_color_lut}
 
             # Build binary payload: ctv bytes + oar bytes
             payload = bytearray()
@@ -809,6 +816,8 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
             response.headers['X-Shape-Y'] = str(shape[1])
             response.headers['X-Shape-X'] = str(shape[2])
             response.headers['X-Color-LUT'] = _json.dumps(color_lut)
+            response.headers['X-CTV-Color-LUT'] = _json.dumps(ctv_color_lut)
+            response.headers['X-OAR-Color-LUT'] = _json.dumps(oar_color_lut)
             response.headers['X-Has-CTV'] = 'true' if ctv_array is not None else 'false'
             response.headers['X-Has-OAR'] = 'true' if oar_array is not None else 'false'
             response.headers['X-CTV-Size'] = str(ctv_offset)
@@ -874,7 +883,7 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
                     if lid_int > 0:
                         organ_meta[lid_int] = {
                             "name": organ_names.get(lid_int, f"OAR {lid_int}"),
-                            "color": color_lut.get(lid_int, [200, 200, 200]),
+                            "color": oar_color_lut.get(lid_int, [200, 200, 200]),
                             "object_id": oar_object_map.get(lid_int, f"structure:oar:{lid_int}"),
                             "voxels": int(
                                 organ_counts.get(lid_int)
@@ -996,7 +1005,7 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
                 # Always use per-label colors (consistent with data tree display)
                 for label in unique_ctv_labels:
                     label_int = int(label)
-                    color = _label_color(label_int)
+                    color = _ctv_label_color(label_int)
                     overlay[mask_slice == label] = [*color, alpha]
             else:
                 # OAR: per-organ colors with visibility/opacity filtering

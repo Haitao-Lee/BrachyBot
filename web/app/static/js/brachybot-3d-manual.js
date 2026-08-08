@@ -4645,7 +4645,7 @@ async function prewarmSegmentationMeshes(kind = 'all', opts = {}) {
     try {
         if (includeCTV && ctvLabelData) {
             for (const lid of ctvLabelIds) {
-                const c = labelColorLUT && labelColorLUT[lid];
+                const c = ctvLabelColorLUT && ctvLabelColorLUT[lid];
                 const ctvNode = dataTreeState.ctvLabels?.[`ctv_${lid}`] || dataTreeState.ctv || {};
                 promises.push(_fetchAndAddOrganMesh({
                     labelId: lid,
@@ -4679,7 +4679,7 @@ async function prewarmSegmentationMeshes(kind = 'all', opts = {}) {
                         source: 'oar',
                         organId: `organ_${lid}`,
                         label: (organ && (organ.label || organ.name)) || `OAR ${lid}`,
-                        color: _parseTreeColorValue(organ && organ.color, 0x8cacd9),
+                        color: _parseTreeColorValue(organ && organ.color, 0x4d9de0),
                         opacity: organ && typeof organ.opacity === 'number' ? organ.opacity : undefined,
                         visible2D: organ?.visible2D,
                         visible3D: organ?.visible3D,
