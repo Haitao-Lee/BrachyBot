@@ -69,6 +69,11 @@ deployment layout differs. It does not download weights or enable the model
 when the required checkout, checkpoint, or tokenizer assets are missing; the
 runtime availability endpoint remains the source of truth.
 
+When binding to a non-loopback address, also provide the deployment's normal
+API key or explicitly opt into the existing trusted-network development mode,
+for example `BRACHYBOT_ALLOW_INSECURE_REMOTE=1`. The launcher intentionally
+does not set that security-sensitive flag by default.
+
 The official model is loaded lazily on the first selected request and cached by
 checkout/checkpoint path. The model may use CUDA when available; this optional
 runtime is serialized during initialization and inference because Hydra is
