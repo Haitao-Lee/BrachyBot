@@ -4199,6 +4199,19 @@ async function loadSeeds3D() {
     }
 }
 
+function applyDoseCoverageAudit(level, audit) {
+    if (!level || !audit || typeof audit !== 'object') return level;
+    const coveragePct = Number(audit.coverage_percent);
+    level.coverageAudit = audit;
+    level.coveragePct = Number.isFinite(coveragePct) ? coveragePct : null;
+    level.coverageConsistent = audit.consistent;
+    if (audit.reported_metric === 'v100' && Number.isFinite(coveragePct)) {
+        const thresholdGy = Number(level.thresholdGy ?? audit.threshold_gy ?? level.threshold);
+        level.pctLabel = `${thresholdGy.toFixed(0)} Gy · V100 ${coveragePct.toFixed(1)}%`;
+    }
+    return level;
+}
+
 async function loadDoseIsosurface(threshold = 1.0, color = 0x00ff88, requestScope = null) {
     const scope = requestScope || _capturePlanningSceneScope();
     try {
@@ -4249,6 +4262,7 @@ async function loadDoseIsosurface(threshold = 1.0, color = 0x00ff88, requestScop
         mesh.userData = {
             type: 'dose_isosurface',
             threshold: threshold,
+            coverageAudit: data.coverage_audit || null,
             depthWriteWhenTransparent: false,
             renderRole: 'dose_surface',
         };
@@ -4280,8 +4294,10 @@ async function loadDoseIsosurface(threshold = 1.0, color = 0x00ff88, requestScop
         const rxGy = _getCurrentPrescriptionGy();
         const isAlreadyGy = threshold > 5;  // 1.0×/1.5×/2.0×/4.0× are all < 5; real Gy is 50+
         const absGy = isAlreadyGy ? threshold.toFixed(0) : (threshold * rxGy).toFixed(0);
-        if (!existingLevel && !window._suppressSingleIsoEntry) {
-            dataTreeState.planning.doseLevels.push({
+        if (existingLevel) {
+            applyDoseCoverageAudit(existingLevel, data.coverage_audit);
+        } else if (!window._suppressSingleIsoEntry) {
+            const levelEntry = {
                 threshold: threshold,
                 thresholdGy: parseFloat(absGy),
                 visible: true,
@@ -4290,12 +4306,19 @@ async function loadDoseIsosurface(threshold = 1.0, color = 0x00ff88, requestScop
                 opacity: 0.3,
                 color: '#' + color.toString(16).padStart(6, '0'),
                 pctLabel: `${absGy} Gy`,
-            });
+            };
+            applyDoseCoverageAudit(levelEntry, data.coverage_audit);
+            dataTreeState.planning.doseLevels.push(levelEntry);
         }
         renderDataTree();
         window.scheduleCameraFitForSceneMutation?.('dose-isosurface-loaded');
 
-        return { vertices: data.vertex_count, faces: data.face_count, threshold };
+        return {
+            vertices: data.vertex_count,
+            faces: data.face_count,
+            threshold,
+            coverageAudit: data.coverage_audit || null,
+        };
     } catch (e) {
         if (_planningSceneScopeIsCurrent(scope)) console.error('Dose isosurface failed:', e);
         return { error: e.message };
@@ -4388,6 +4411,7 @@ async function loadAllIsoSurfaces(options = {}) {
         const color = (r << 16) | (g << 8) | b;
         const opacity = (opacities[i] !== undefined) ? opacities[i] : 0.3;
         try {
+            let isoResult = null;
             if (reconstruct3d) {
                 uiDebugLog(`[IsoSurf] Loading ${v} Gy (color=${hexStr}, opacity=${opacity})...`);
                 // loadDoseIsosurface would push its own data-tree entry;
@@ -4397,7 +4421,7 @@ async function loadAllIsoSurfaces(options = {}) {
                 const _prevSuppress = window._suppressSingleIsoEntry;
                 window._suppressSingleIsoEntry = true;
                 try {
-                    await loadDoseIsosurface(v, color, requestScope);
+                    isoResult = await loadDoseIsosurface(v, color, requestScope);
                 } finally {
                     window._suppressSingleIsoEntry = _prevSuppress;
                 }
@@ -4412,7 +4436,7 @@ async function loadAllIsoSurfaces(options = {}) {
             if (dataTreeState && dataTreeState.planning) {
                 const existing = priorLevels.get(v);
                 if (!existing) {
-                    dataTreeState.planning.doseLevels.push({
+                    const levelEntry = {
                         threshold: v,
                         thresholdGy: parseFloat(absGy),
                         visible: true,
@@ -4421,7 +4445,9 @@ async function loadAllIsoSurfaces(options = {}) {
                         opacity,
                         color: '#' + color.toString(16).padStart(6, '0'),
                         pctLabel: `${absGy} Gy`,
-                    });
+                    };
+                    applyDoseCoverageAudit(levelEntry, isoResult?.coverageAudit);
+                    dataTreeState.planning.doseLevels.push(levelEntry);
                 } else {
                     // Keep Data Tree-selected appearance and independent
                     // 2D/3D visibility when a dose refresh replaces mesh
@@ -4433,6 +4459,7 @@ async function loadAllIsoSurfaces(options = {}) {
                     existing.color = existing.color || ('#' + color.toString(16).padStart(6, '0'));
                     existing.thresholdGy = parseFloat(absGy);
                     existing.pctLabel = `${absGy} Gy`;
+                    applyDoseCoverageAudit(existing, isoResult?.coverageAudit);
                     dataTreeState.planning.doseLevels.push(existing);
                 }
             }

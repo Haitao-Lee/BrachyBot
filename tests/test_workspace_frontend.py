@@ -1317,3 +1317,15 @@ def test_restore_time_3d_camera_guard_reframes_stale_hydration_targets_without_t
     assert "applyScene({ initial: true });" in workspace
     assert "reason: 'planning-mesh-hydration-complete'" in planning
     assert "reason: 'planning-mesh-load-complete'" in planning
+
+
+def test_prescription_isosurface_exposes_display_grid_v100_audit_in_data_tree():
+    viewer = read("web/app/static/js/brachybot-3d-manual.js")
+    data_tree = read("web/app/static/js/brachybot-viewer-volume.js")
+
+    assert "function applyDoseCoverageAudit(level, audit)" in viewer
+    assert "coverageAudit: data.coverage_audit || null" in viewer
+    assert "coveragePct" in viewer
+    assert "V100 ${coveragePct.toFixed(1)}%" in viewer
+    assert "level.coverageAudit?.coverage_percent" in data_tree
+    assert "level.coverageAudit?.reported_metric === 'v100'" in data_tree

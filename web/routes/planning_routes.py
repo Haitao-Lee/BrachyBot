@@ -85,6 +85,100 @@ def _pad_dose_surface_volume(volume, fill_value):
     return padded, np.full(3, float(pad), dtype=np.float64)
 
 
+def _dose_coverage_audit(
+    dose_array,
+    target_mask,
+    threshold_normalized,
+    *,
+    threshold_gy,
+    prescription_gy,
+    dose_metrics=None,
+    grid="unknown",
+):
+    """Recompute target coverage on the exact grid used for a dose surface.
+
+    The audit proves that a displayed prescription surface and the persisted
+    DVH metric describe the same dose field. A small delta is expected after
+    linear resampling to the original CT grid; a material disagreement must be
+    visible in logs and response metadata.
+    """
+    if dose_array is None or target_mask is None:
+        return None
+    try:
+        dose_np = (
+            sitk.GetArrayFromImage(dose_array)
+            if isinstance(dose_array, sitk.Image)
+            else np.asarray(dose_array)
+        )
+        target_np = (
+            sitk.GetArrayFromImage(target_mask)
+            if isinstance(target_mask, sitk.Image)
+            else np.asarray(target_mask)
+        )
+    except Exception:
+        logger.exception("[dose_coverage_audit] Could not decode dose or target data")
+        return None
+
+    if dose_np.ndim != 3 or target_np.ndim != 3 or dose_np.shape != target_np.shape:
+        logger.warning(
+            "[dose_coverage_audit] Grid mismatch dose=%s target=%s grid=%s",
+            getattr(dose_np, "shape", None),
+            getattr(target_np, "shape", None),
+            grid,
+        )
+        return None
+
+    target = target_np > 0
+    target_voxels = int(np.count_nonzero(target))
+    if target_voxels == 0:
+        return None
+    covered_voxels = int(np.count_nonzero((dose_np >= float(threshold_normalized)) & target))
+    coverage_fraction = covered_voxels / target_voxels
+
+    reported_metric = None
+    reported_fraction = None
+    ratio = float(threshold_gy) / max(float(prescription_gy), 1e-12)
+    for expected_ratio, metric_name in ((1.0, "v100"), (1.5, "v150"), (2.0, "v200")):
+        if abs(ratio - expected_ratio) <= 0.025:
+            reported_metric = metric_name
+            break
+    metrics = dose_metrics if isinstance(dose_metrics, dict) else {}
+    if isinstance(metrics.get("metrics"), dict):
+        metrics = metrics["metrics"]
+    if reported_metric and isinstance(metrics.get(reported_metric), (int, float)):
+        reported_fraction = float(metrics[reported_metric])
+        units = str(metrics.get("volume_metric_units") or "").strip().lower()
+        if units in {"percent", "percentage", "0-100"} or (not units and reported_fraction > 1.0):
+            reported_fraction /= 100.0
+
+    delta_points = None
+    consistent = None
+    if reported_fraction is not None:
+        delta_points = (coverage_fraction - reported_fraction) * 100.0
+        # Original-CT dose is linearly resampled from the planning grid. One
+        # percentage point is a strict but practical interpolation tolerance.
+        consistent = abs(delta_points) <= 1.0
+
+    return {
+        "grid": str(grid),
+        "threshold_gy": float(threshold_gy),
+        "threshold_model": float(threshold_normalized),
+        "prescription_gy": float(prescription_gy),
+        "target_voxels": target_voxels,
+        "covered_target_voxels": covered_voxels,
+        "cold_target_voxels": target_voxels - covered_voxels,
+        "coverage_fraction": float(coverage_fraction),
+        "coverage_percent": float(coverage_fraction * 100.0),
+        "reported_metric": reported_metric,
+        "reported_coverage_fraction": reported_fraction,
+        "reported_coverage_percent": (
+            float(reported_fraction * 100.0) if reported_fraction is not None else None
+        ),
+        "delta_percentage_points": float(delta_points) if delta_points is not None else None,
+        "consistent": consistent,
+    }
+
+
 def _saved_dose_scale_gy(agent) -> float:
     """Return the calibration owned by the current plan/session."""
     if agent is None:
@@ -2162,6 +2256,12 @@ def register_planning_routes(
                     direction = agent.memory.retrieve("ct_direction") or (1, 0, 0, 0, 1, 0, 0, 0, 1)
                     logger.info(f"[dose_isosurface] Using fallback spacing={spacing}")
 
+            target_mask = (
+                agent.memory.retrieve("ctv_array")
+                if dose_in_original_ct_space
+                else agent.memory.retrieve("resampled_ctv")
+            )
+
             dose_np = np.array(dose_array)
             if dose_np.ndim != 3:
                 return jsonify({"error": "Invalid dose array dimensions"}), 400
@@ -2184,11 +2284,37 @@ def register_planning_routes(
             # for historical sessions without calibration metadata).
             level_normalized = dose_gy_to_model(level, dose_scale_gy)
             logger.info(f"[dose_isosurface] {level} Gy -> {level_normalized:.4f} normalized (data range: {data_min:.4f}-{data_max:.4f})")
+            prescription_gy = resolve_prescription_gy(
+                plan_config,
+                dose_metrics,
+                default_gy=DEFAULT_PRESCRIPTION_GY,
+                dose_scale_gy=dose_scale_gy,
+            )
+            coverage_audit = _dose_coverage_audit(
+                dose_np,
+                target_mask,
+                level_normalized,
+                threshold_gy=level,
+                prescription_gy=prescription_gy,
+                dose_metrics=dose_metrics,
+                grid="original_ct" if dose_in_original_ct_space else "planning",
+            )
+            if coverage_audit and coverage_audit.get("reported_coverage_percent") is not None:
+                log_method = logger.info if coverage_audit.get("consistent") is not False else logger.warning
+                log_method(
+                    "[dose_isosurface] %s displayed coverage=%.4f%% reported=%.4f%% delta=%+.4f pp consistent=%s",
+                    coverage_audit["reported_metric"].upper(),
+                    coverage_audit["coverage_percent"],
+                    coverage_audit["reported_coverage_percent"],
+                    coverage_audit["delta_percentage_points"],
+                    coverage_audit["consistent"],
+                )
             level = level_normalized
             if level <= data_min or level > data_max:
                 return jsonify({"success": True, "vertices": [], "faces": [], "vertex_count": 0,
                                 "face_count": 0, "threshold": threshold, "dose_range": [data_min, data_max],
-                                "dose_units": DOSE_MODEL_UNITS, "dose_scale_gy": dose_scale_gy})
+                                "dose_units": DOSE_MODEL_UNITS, "dose_scale_gy": dose_scale_gy,
+                                "coverage_audit": coverage_audit})
 
             # Use resampled_ct spacing (z,y,x -> x,y,z for marching cubes).
             # Pad only the extraction field so an isosurface that touches the
@@ -2229,6 +2355,7 @@ def register_planning_routes(
                 "dose_range": [data_min, data_max],
                 "dose_units": DOSE_MODEL_UNITS,
                 "dose_scale_gy": dose_scale_gy,
+                "coverage_audit": coverage_audit,
                 "surface_boundary_padding_voxels": int(_DOSE_SURFACE_BOUNDARY_PADDING_VOXELS),
             })
         except Exception as e:

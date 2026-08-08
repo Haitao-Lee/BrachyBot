@@ -156,13 +156,16 @@ def _resample_legacy_label_array(array, reference, target_shape):
 def _requires_label_faithful_mesh(agent, source: str, label_id: int) -> bool:
     """Return whether a mesh must preserve the exact planning-mask boundary.
 
-    Non-traversable structures are part of the planning safety contract.  The
-    presentation-oriented dilation, closing, and hole filling used for small
-    soft-tissue meshes can move their visible boundary away from the mask
-    checked by the trajectory safety gate.  For those labels, render the raw
-    mask boundary instead so a needle that is safe in the planner is not made
-    to look as though it traverses a reconstructed obstacle.
+    CTV meshes are compared directly with dose isosurfaces and DVH coverage,
+    while non-traversable structures are part of the planning safety contract.
+    Presentation-oriented dilation, closing, hole filling, and mesh smoothing
+    move those visible boundaries away from the masks used by the calculations.
+    Render these labels from their unchanged voxel masks so the 3D viewer does
+    not contradict dose coverage or trajectory validation.
     """
+    if str(source or "").strip().lower() == "ctv":
+        return True
+
     try:
         from tool_factory.seed_plan.planning_pipeline import _resolve_data_tree_obstacle_labels
 
@@ -172,10 +175,7 @@ def _requires_label_faithful_mesh(agent, source: str, label_id: int) -> bool:
     except Exception:
         logger.exception("[viewer_3d] Could not resolve the current hard-obstacle policy")
 
-    # The pancreatic CTV model carries artery and vein in its own label
-    # namespace.  They are always hard obstacles in planning_pipeline even
-    # though their numeric IDs are unrelated to TotalSegmentator labels.
-    return str(source or "").strip().lower() == "ctv" and int(label_id) in {2, 3}
+    return False
 
 
 def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
@@ -1376,21 +1376,26 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
             if mask.sum() == 0:
                 return jsonify({"error": "Empty mask"}), 400
 
-            # Adaptive preprocessing based on mask density
-            density = mask.sum() / (mask.shape[0] * mask.shape[1] * mask.shape[2])
-            if density < 0.001:
-                struct = np.ones((3, 3, 3), dtype=np.uint8)
-                mask = binary_dilation(mask, structure=struct, iterations=2)
-                mask = binary_closing(mask, structure=struct, iterations=3)
-                mask = binary_fill_holes(mask).astype(np.uint8)
-            elif density < 0.01:
-                struct = np.ones((3, 3, 3), dtype=np.uint8)
-                mask = binary_dilation(mask, structure=struct, iterations=1)
-                mask = binary_closing(mask, structure=struct, iterations=2)
-                mask = binary_fill_holes(mask).astype(np.uint8)
-            else:
-                mask = binary_closing(mask, iterations=2).astype(np.uint8)
-                mask = binary_fill_holes(mask).astype(np.uint8)
+            # CTV geometry must remain identical to the mask used by DVH and
+            # dose evaluation. Ordinary anatomy can retain presentation
+            # cleanup, but never enlarge a target that users compare against
+            # the prescription isosurface.
+            label_faithful = str(source or "").strip().lower() == "ctv"
+            if not label_faithful:
+                density = mask.sum() / (mask.shape[0] * mask.shape[1] * mask.shape[2])
+                if density < 0.001:
+                    struct = np.ones((3, 3, 3), dtype=np.uint8)
+                    mask = binary_dilation(mask, structure=struct, iterations=2)
+                    mask = binary_closing(mask, structure=struct, iterations=3)
+                    mask = binary_fill_holes(mask).astype(np.uint8)
+                elif density < 0.01:
+                    struct = np.ones((3, 3, 3), dtype=np.uint8)
+                    mask = binary_dilation(mask, structure=struct, iterations=1)
+                    mask = binary_closing(mask, structure=struct, iterations=2)
+                    mask = binary_fill_holes(mask).astype(np.uint8)
+                else:
+                    mask = binary_closing(mask, iterations=2).astype(np.uint8)
+                    mask = binary_fill_holes(mask).astype(np.uint8)
 
             # Add a guard voxel before distance transforms. This closes masks
             # touching the acquisition boundary without changing the physical
@@ -1412,8 +1417,8 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
             )
             vertices -= surface_padding_zyx * np.asarray(spacing_zyx, dtype=np.float64)
 
-            # Smooth mesh
-            vertices = _laplacian_smooth(vertices, faces, iterations=5, factor=0.4)
+            if not label_faithful:
+                vertices = _laplacian_smooth(vertices, faces, iterations=5, factor=0.4)
 
             # Remove degenerate faces
             v0 = vertices[faces[:, 0]]
@@ -1430,6 +1435,7 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
                 "face_count": len(faces),
                 "source": source,
                 "label_id": label_id,
+                "geometry_mode": "label_faithful" if label_faithful else "presentation_smoothed",
             })
         except Exception as e:
             logger.error(f"Viewer 3D failed: {e}")
