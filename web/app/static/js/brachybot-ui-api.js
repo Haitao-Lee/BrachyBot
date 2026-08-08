@@ -1630,6 +1630,8 @@ function resetAllState(options = {}) {
     // Clear segmentation data arrays
     ctvLabelData = null;
     oarLabelData = null;
+    skinSurfaceData = null;
+    skinSurfaceShape = null;
     labelColorLUT = {};
     ctvLabelColorLUT = {};
     oarLabelColorLUT = {};
@@ -1641,6 +1643,14 @@ function resetAllState(options = {}) {
     dataTreeState.ctv.visible = true;
     dataTreeState.oar.loaded = false;
     dataTreeState.oar.visible = true;
+    dataTreeState.skin.loaded = false;
+    dataTreeState.skin.visible = true;
+    dataTreeState.skin.visible2D = true;
+    dataTreeState.skin.visible3D = true;
+    dataTreeState.skin.status = 'not_generated';
+    dataTreeState.skin.loading = false;
+    dataTreeState.skin.error = null;
+    dataTreeState.skin.voxelCount = 0;
     // The source belongs to the current case. Keeping it during a case reset
     // can make a fresh uploaded mask inherit the previous case's ontology.
     dataTreeState.oarSource = '';

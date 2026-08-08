@@ -245,6 +245,31 @@ def test_same_case_rejects_concurrent_turn_but_other_case_is_allowed():
     gate.set()
 
 
+def test_same_request_id_reuses_the_case_owned_task():
+    """A retried HTTP submit must not create a second agent execution."""
+
+    manager = ChatTaskManager()
+    gate = threading.Event()
+
+    class _SlowAgent(_Agent):
+        def chat_with_stream(self, _message):
+            yield _event("start", {})
+            gate.wait(timeout=2)
+            yield _event("done", {})
+
+    first = manager.start(
+        _App(), "user-a", "case-a", _SlowAgent([]), "hello", {},
+        request_id="request-stable",
+    )
+    retried = manager.start(
+        _App(), "user-a", "case-a", _SlowAgent([]), "hello", {},
+        request_id="request-stable",
+    )
+    assert retried is first
+    manager.cancel(first)
+    gate.set()
+
+
 def test_cancelling_one_case_does_not_cancel_another_running_case():
     manager = ChatTaskManager()
     first_gate = threading.Event()

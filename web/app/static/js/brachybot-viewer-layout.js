@@ -819,6 +819,11 @@ async function reconstruct3D() {
                 console.warn('[viewer] threshold mask reconstruction skipped:', error);
             }
         }
+        if (dataTreeState.skin?.loaded && isDataTreeNodeVisible3D(dataTreeState.skin)) {
+            try { await reconstructOrgan3D('skin_surface', true); } catch (error) {
+                console.warn('[viewer] guide skin reconstruction skipped:', error);
+            }
+        }
 
         // 2) For planning runs, also reconstruct seeds, needles,
         //    and iso surfaces. The user can disable any of these
@@ -925,6 +930,9 @@ async function reconstructOrgan3D(id, silent = false) {
     }
 
     try {
+        if (id === 'skin_surface') {
+            return _reconstructGuideSkinSurface3D(silent);
+        }
         // CTV: reconstruct all labels (multi-label)
         if (id === 'ctv') {
             const labelIds = getCtvMeshLabelIds();
@@ -1470,6 +1478,62 @@ function fitCameraToDoseSurfaceScene() {
         scene3D.camera.far = pose.far;
         scene3D.camera.updateProjectionMatrix();
         scene3D.controls.syncExternalState?.();
+    }
+}
+
+async function _reconstructGuideSkinSurface3D(silent = false) {
+    const scope = _captureViewer3DRequestScope();
+    const node = dataTreeState.skin;
+    if (!node?.loaded) return { success: false, error: 'Guide skin surface is not available' };
+    node.loading = true;
+    node.status = 'loading';
+    renderDataTree?.();
+    try {
+        let response = null;
+        let payload = null;
+        for (let attempt = 0; attempt <= 80; attempt += 1) {
+            if (!_viewer3DRequestScopeIsCurrent(scope)) return { stale: true };
+            response = await fetch(API + '/viewer/3d_skin', {
+                method: 'POST',
+                headers: _viewer3DRequestHeaders(scope, { 'Content-Type': 'application/json' }),
+                body: JSON.stringify({ source: 'guide' }),
+            });
+            payload = await response.json().catch(() => ({}));
+            if (!(response.status === 202 && payload.pending)) break;
+            await new Promise(resolve => setTimeout(
+                resolve, Math.max(100, Math.min(1000, Number(payload.retry_after_ms) || 250)),
+            ));
+        }
+        if (!response?.ok || !payload?.success) {
+            throw new Error(payload?.error || `HTTP ${response?.status || 500}`);
+        }
+        if (!_viewer3DRequestScopeIsCurrent(scope)) return { stale: true };
+        payload.organ_id = 'skin_surface';
+        payload.source = 'skin_surface';
+        payload.label = node.label || 'Guide skin surface';
+        payload.object_id = node.objectId || payload.object_id || 'skin_surface:guide';
+        payload.data_tree_node_id = node.nodeId || 'skin_surface';
+        payload.color = Number.parseInt(String(node.color || '#f2a088').replace('#', ''), 16) || 0xf2a088;
+        payload.opacity = Number(node.opacity ?? 0.10);
+        payload.visible = node.visible !== false;
+        payload.visible2D = node.visible2D !== false;
+        payload.visible3D = node.visible3D !== false;
+        _safeRender3DMesh(payload);
+        node.loading = false;
+        node.status = 'ready';
+        node.meshLoaded = true;
+        renderDataTree?.();
+        if (!silent) switchPanel('viewers', document.querySelectorAll('.panel-tab')[2]);
+        return { success: true, vertex_count: payload.vertex_count, face_count: payload.face_count };
+    } catch (error) {
+        if (_viewer3DRequestScopeIsCurrent(scope)) {
+            node.loading = false;
+            node.status = 'error';
+            node.error = error?.message || String(error);
+            renderDataTree?.();
+            if (!silent) addChat?.('error', error?.message || String(error));
+        }
+        return { success: false, error: error?.message || String(error) };
     }
 }
 

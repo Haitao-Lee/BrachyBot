@@ -113,7 +113,8 @@ def test_skin_resampling_interpolates_thick_slice_contours_in_physical_space():
 
 
 def test_guide_is_watertight_and_stl_round_trips():
-    guide = generate_surgical_guide(_synthetic_agent(), {"geometry_resolution_mm": 1.0})
+    agent = _synthetic_agent()
+    guide = generate_surgical_guide(agent, {"geometry_resolution_mm": 1.0})
     assert guide["status"] == "ready"
     assert guide["validation"]["watertight"] is True
     assert guide["validation"]["source_needle_count"] == 1
@@ -123,6 +124,17 @@ def test_guide_is_watertight_and_stl_round_trips():
     assert guide["validation"]["geometry_resolution_mm"] == 1.0
     payload = mesh_to_ascii_stl(guide["vertices"], guide["faces"])
     assert validate_exported_stl(payload)["watertight"] is True
+    skin = agent.memory.retrieve("skin_surface")
+    skin_mask = agent.memory.retrieve("skin_surface_mask")
+    assert skin["object_id"] == "skin_surface:guide"
+    assert skin["data_tree_node_id"] == "skin_surface"
+    assert skin["default_opacity"] == pytest.approx(0.10)
+    assert skin["status"] == "ready"
+    assert skin_mask.dtype == np.uint8
+    assert skin_mask.shape == agent.memory.retrieve("ct_data").shape
+    assert int(np.count_nonzero(skin_mask)) == skin["voxel_count"]
+    assert guide["skin_surface_object_id"] == skin["object_id"]
+    assert guide["skin_surface_data_version"] == skin["data_version"]
 
 
 def test_auxiliary_holes_are_real_plate_only_alternate_paths():

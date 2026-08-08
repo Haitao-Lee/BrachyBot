@@ -44,6 +44,9 @@ class _Memory:
         oar[1:4, 1:4, 1:4] = 2
         oar[6:9, 5:8, 4:7] = 3
         dose = np.linspace(0.0, 300.0, np.prod(shape), dtype=np.float32).reshape(shape)
+        skin = np.zeros(shape, dtype=np.uint8)
+        skin[1:9, 1:8, 1:7] = 1
+        skin[2:8, 2:7, 2:6] = 0
         self.planning_results = {
             "ct_image": ct,
             "ctv_array": ctv,
@@ -73,6 +76,15 @@ class _Memory:
             "planning_version": 7,
             "manual_plan_version": 3,
             "manual_plan_active": True,
+            "skin_surface": {
+                "object_id": "skin_surface:guide",
+                "data_tree_node_id": "skin_surface",
+                "label": "Guide skin surface",
+                "source": "surgical_guide",
+                "data_version": 2,
+                "threshold_hu": -300.0,
+            },
+            "skin_surface_mask": skin,
             "trajectories": [
                 {"id": "trajectory_1", "entry": [4, 5, 40], "target": [4, 5, 10]},
             ],
@@ -253,6 +265,7 @@ def test_export_service_serializes_true_units_geometry_and_types(tmp_path):
         "image:ct",
         "structure:ctv:1",
         "structure:oar:2",
+        "skin_surface:guide",
         "needle:needle_1",
         "seed:seed_1",
         "dose:volume",
@@ -297,6 +310,21 @@ def test_export_service_serializes_true_units_geometry_and_types(tmp_path):
         user["id"], session.id, agent, catalog["structure:oar:2"], "stl", destination,
     )
     assert surface_path.read_text(encoding="ascii").startswith("solid Duodenum")
+
+    skin_path = service.export_object(
+        user["id"], session.id, agent, catalog["skin_surface:guide"], "nifti", destination,
+    )
+    skin_image = sitk.ReadImage(str(skin_path))
+    assert skin_image.GetDirection() == source_ct.GetDirection()
+    assert int(sitk.GetArrayFromImage(skin_image).sum()) == int(
+        agent.memory.retrieve("skin_surface_mask").sum()
+    )
+    skin_surface_path = service.export_object(
+        user["id"], session.id, agent, catalog["skin_surface:guide"], "stl", destination,
+    )
+    assert skin_surface_path.read_text(encoding="ascii").startswith(
+        "solid Guide skin surface"
+    )
 
     needle_path = service.export_object(
         user["id"], session.id, agent, catalog["needle:needle_1"], "json", destination,
@@ -433,6 +461,13 @@ def test_delete_uses_backend_data_and_invalidates_dependents(tmp_path):
     assert result["invalidated"] == ["dose", "dvh", "report"]
     assert agent.memory.retrieve("manual_seeds") == []
     assert agent.memory.retrieve("manual_plan_active") is True
+
+    skin_result = _delete_object(
+        store, user, session.id, agent, "skin_surface:guide",
+    )
+    assert skin_result["invalidated"] == ["skin_surface", "report"]
+    assert agent.memory.retrieve("skin_surface") is None
+    assert agent.memory.retrieve("skin_surface_mask") is None
 
     pdf_result = _delete_object(
         store, user, session.id, agent, "report:pdf",

@@ -23,6 +23,7 @@ from web.surgical_guide import (
     parse_stl,
     planning_signature,
     save_guide_version,
+    skin_surface_public_payload,
     stl_stream,
     validate_exported_stl,
 )
@@ -123,6 +124,7 @@ def register_surgical_guide_routes(app, get_agent):
                 and current_signature == signature
                 and quality_ready
             ),
+            "skin_surface": skin_surface_public_payload(agent),
         }
 
     def snapshot(agent: Any, reason: str, operation: Dict[str, Any] | None = None) -> None:
@@ -148,26 +150,9 @@ def register_surgical_guide_routes(app, get_agent):
         guide state for that run.
         """
         try:
-            from web.planning_runs import (
-                active_planning_id,
-                list_planning_runs,
-                publish_planning_run,
-            )
+            from web.planning_runs import publish_active_planning_state
 
-            planning_id = active_planning_id(agent.memory)
-            if not planning_id:
-                return
-            status = next(
-                (
-                    str(item.get("status") or "completed")
-                    for item in list_planning_runs(agent.memory)
-                    if str(item.get("planning_id") or "") == str(planning_id)
-                ),
-                "completed",
-            )
-            if status not in {"running", "draft", "completed"}:
-                status = "completed"
-            publish_planning_run(agent, None, status=status)
+            publish_active_planning_state(agent)
         except Exception:
             # Guide generation itself succeeded; a checkpoint retry can repair
             # the optional run snapshot without turning a valid mesh into a 500.
@@ -243,6 +228,10 @@ def register_surgical_guide_routes(app, get_agent):
         except Exception as exc:
             logger.exception("Surgical guide generation failed")
             try:
+                # Skin extraction precedes guide CSG. Preserve a valid skin
+                # segmentation in the current Planning even when the printable
+                # mesh fails its manufacturability checks.
+                publish_active_planning_guide(agent)
                 snapshot(agent, "surgical_guide.failed", {
                     "state": "failed",
                     "message": f"Puncture guide generation failed: {exc}",

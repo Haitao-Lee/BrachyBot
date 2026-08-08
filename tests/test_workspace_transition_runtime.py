@@ -29,6 +29,7 @@ const vm = require('vm');
 
 let releaseCreate;
 const createGate = new Promise(resolve => {{ releaseCreate = resolve; }});
+let oldCaseFlushStarted = false;
 const bodyClasses = new Set();
 const sidebar = {{ setAttribute() {{}} }};
 global.window = {{ _chatTurnActive: false, _chatStreaming: false }};
@@ -41,6 +42,10 @@ global.sessions = {{ old: {{ id: 'old', title: 'Existing case', messages: [] }} 
 global.activeSessionId = 'old';
 global.renderSessionList = () => {{}};
 global.loadSessionChat = () => {{}};
+global.flushActiveReportState = () => {{
+  oldCaseFlushStarted = true;
+  return new Promise(() => {{}});
+}};
 global.fetch = async (url, options = {{}}) => {{
   if (url === '/api/sessions' && options.method === 'POST') {{
     await createGate;
@@ -70,6 +75,7 @@ vm.runInThisContext(fs.readFileSync('{bridge}', 'utf8'), {{ filename: 'brachybot
 (async () => {{
   const first = window.newChat();
   await new Promise(resolve => setImmediate(resolve));
+  assert.strictEqual(oldCaseFlushStarted, true);
   assert(bodyClasses.has('workspace-transitioning'), 'first transition should mark the sidebar busy');
   const second = await window.newChat();
   assert.strictEqual(second.success, false);
@@ -202,6 +208,116 @@ vm.runInThisContext(fs.readFileSync('{bridge}', 'utf8'), {{ filename: 'brachybot
   assert(captured, 'workspace save was not issued');
   assert.strictEqual(captured.options.headers['X-BrachyBot-Session'], 'a');
   assert.strictEqual(captured.body.session_id, 'a');
+  process.exit(0);
+}})().catch(error => {{ console.error(error); process.exit(1); }});
+"""
+    completed = subprocess.run(
+        ["node", "-e", script],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert completed.returncode == 0, completed.stderr or completed.stdout
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="Node.js is required for browser bridge runtime coverage")
+def test_chat_waits_for_authoritative_new_case_without_duplicate_submit():
+    """A message entered during New Case must never target the optimistic ID."""
+
+    bridge = (ROOT / "web/app/static/js/brachybot-workspace.js").as_posix()
+    chat = (ROOT / "web/app/static/js/brachybot-chat-todo.js").as_posix()
+    script = rf"""
+const assert = require('assert');
+const fs = require('fs');
+const vm = require('vm');
+
+let releaseCreate;
+const createGate = new Promise(resolve => {{ releaseCreate = resolve; }});
+const classNames = new Set();
+const input = {{ value: '', readOnly: false, placeholder: 'Message', dataset: {{}} }};
+const button = {{ disabled: false, title: '', classList: {{
+  toggle(name, active) {{ active ? classNames.add(name) : classNames.delete(name); }},
+  contains(name) {{ return classNames.has(name); }},
+}} }};
+const sidebar = {{ setAttribute() {{}} }};
+let chatPosts = 0;
+let errors = 0;
+global.window = {{
+  _chatTurnActive: false,
+  _chatStreaming: false,
+  dispatchEvent() {{}},
+}};
+global.document = {{
+  body: {{ classList: {{
+    toggle(name, active) {{ active ? classNames.add(name) : classNames.delete(name); }},
+    add(name) {{ classNames.add(name); }},
+    remove(name) {{ classNames.delete(name); }},
+  }} }},
+  addEventListener() {{}},
+  getElementById(id) {{
+    if (id === 'sessionSidebar') return sidebar;
+    if (id === 'chatInput') return input;
+    if (id === 'chatSendBtn') return button;
+    return null;
+  }},
+  querySelectorAll() {{ return []; }},
+}};
+global.CustomEvent = function CustomEvent(name, init) {{ this.type = name; this.detail = init?.detail; }};
+global._activeTodoLang = 'en';
+global._TODO_I18N = {{
+  en: {{ header: 'Progress', tools: {{}}, call_prefix: 'Calling ', thinking: 'Thinking', memory: 'Memory', default_processing: 'Processing' }},
+  zh: {{ header: '进度', tools: {{}}, call_prefix: '调用 ', thinking: '思考', memory: '记忆', default_processing: '处理中' }},
+}};
+global.API = '/api';
+global.trainingMonitorState = {{ active: false }};
+global.sessions = {{ old: {{ id: 'old', title: 'Existing case', messages: [] }} }};
+global.activeSessionId = 'old';
+global.state = {{ sessionId: 'old' }};
+global.renderSessionList = () => {{}};
+global.loadSessionChat = () => {{}};
+global.clearClientWorkspace = () => {{}};
+global.detectConversationLanguage = () => 'zh';
+global.addChat = type => {{ if (type === 'error') errors += 1; }};
+global.setStreamingState = () => {{}};
+global.fetch = async (url, options = {{}}) => {{
+  if (url === '/api/sessions' && options.method === 'POST') {{
+    await createGate;
+    return {{ ok: true, json: async () => ({{
+      success: true,
+      session: {{ id: '0123456789abcdef0123456789abcdef', title: 'New case', created_at: 2, updated_at: 2 }},
+      active_session_id: '0123456789abcdef0123456789abcdef',
+      workspace: {{ session_id: '0123456789abcdef0123456789abcdef', session: {{ id: '0123456789abcdef0123456789abcdef', revision: 1 }} }},
+    }}) }};
+  }}
+  if (url.endsWith('/chat')) {{ chatPosts += 1; throw new Error('chat sentinel'); }}
+  throw new Error('Unexpected request: ' + url);
+}};
+
+vm.runInThisContext(fs.readFileSync('{bridge}', 'utf8'), {{ filename: 'brachybot-workspace.js' }});
+vm.runInThisContext(fs.readFileSync('{chat}', 'utf8'), {{ filename: 'brachybot-chat-todo.js' }});
+
+(async () => {{
+  const creating = window.newChat();
+  await new Promise(resolve => setImmediate(resolve));
+  const optimistic = window.activeSessionReadiness();
+  assert.strictEqual(optimistic.pending, true);
+  assert.strictEqual(optimistic.ready, false);
+
+  input.value = '你好';
+  const first = sendChat();
+  input.value = '你好';
+  const repeated = sendChat();
+  assert.strictEqual(button.disabled, true);
+  assert.strictEqual(window._chatSessionReadinessSubmission.text, '你好');
+  releaseCreate();
+  const created = await creating;
+  assert.strictEqual(created.success, true);
+  assert.strictEqual(await window.awaitActiveSessionReady(), '0123456789abcdef0123456789abcdef');
+  await Promise.all([first, repeated]);
+  assert.strictEqual(chatPosts, 1, 'one user intent must create one HTTP chat request');
+  assert.strictEqual(errors, 1, 'the synthetic chat sentinel should surface only once');
+  assert.strictEqual(button.disabled, false);
   process.exit(0);
 }})().catch(error => {{ console.error(error); process.exit(1); }});
 """

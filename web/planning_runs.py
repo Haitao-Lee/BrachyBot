@@ -89,6 +89,8 @@ PLANNING_VALUE_KEYS = (
     "metrics",
     "surgical_guide",
     "surgical_guide_versions",
+    "skin_surface",
+    "skin_surface_mask",
     "artifact_status",
 )
 
@@ -474,6 +476,29 @@ def publish_planning_run(agent: Any, result: Any = None, *, status: str = "compl
     _memory_put(memory, PLANNING_RUN_ID_KEY, planning_id)
     _notify(memory, "planning.run.published")
     return planning_id
+
+
+def publish_active_planning_state(agent: Any) -> Optional[str]:
+    """Refresh the active immutable snapshot without changing run lifecycle.
+
+    Planning-owned artifacts such as a guide skin surface may become available
+    independently of dose calculation. Publishing them must not promote a
+    manual draft to ``completed`` or regress a completed plan to ``draft``.
+    """
+    planning_id = active_planning_id(agent.memory)
+    if not planning_id:
+        return None
+    status = next(
+        (
+            str(item.get("status") or "completed")
+            for item in list_planning_runs(agent.memory)
+            if str(item.get("planning_id") or "") == str(planning_id)
+        ),
+        "completed",
+    )
+    if status not in {"running", "draft", "completed"}:
+        status = "completed"
+    return publish_planning_run(agent, None, status=status)
 
 
 def mark_planning_run(agent: Any, planning_id: str, status: str, error: Optional[str] = None) -> bool:

@@ -10,6 +10,7 @@ from flask import jsonify, request, send_file, session as flask_session
 
 from web.auth import current_user
 from web.export_service import ExportError, ExportJobManager, ExportService, _planning_snapshot
+from web.planning_runs import publish_active_planning_state
 from web.server_support import rate_limit, require_api_key
 from web.structure_service import (
     StructureError,
@@ -214,6 +215,7 @@ def register_data_routes(
             available.update({
                 "ct", "ctv", "oar", "planning", "dose", "dose_overlay",
                 "dvh", "report", "group:planning",
+                "skin_surface", "skin_surface:guide",
                 "group:planning:trajectories", "group:planning:needles",
                 "group:planning:seeds", "group:dose",
                 "group:dose:isosurfaces", "group:report",
@@ -512,6 +514,25 @@ def _delete_object(
             "object_id": stable_id,
             "structures": effective.public_catalog(),
             "invalidated": ["dose", "dvh", "evaluation", "report", "surgical_guide"],
+        }
+
+    if candidate in {"skin_surface", "skin_surface:guide"}:
+        if (
+            memory.retrieve("skin_surface") is None
+            and memory.retrieve("skin_surface_mask") is None
+        ):
+            raise ExportError("Guide skin surface was not found")
+        _batch_memory_update(
+            memory,
+            {},
+            removals=("skin_surface", "skin_surface_mask"),
+        )
+        # The skin surface is planning-owned. Refreshing the active namespaced
+        # snapshot prevents it from reappearing after a Planning switch.
+        publish_active_planning_state(agent)
+        return {
+            "object_id": "skin_surface:guide",
+            "invalidated": ["skin_surface", "report"],
         }
 
     if candidate in {"image:ct", "ct"}:

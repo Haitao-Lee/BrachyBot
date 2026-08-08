@@ -304,6 +304,15 @@ class ChatTaskManager:
         """
         with self._lock:
             self._purge_locked()
+            request_key = str(request_id or "")
+            if request_key:
+                duplicate = next((
+                    task for task in self._tasks.values()
+                    if (task.user_id, task.session_id) == self._owner_key(user_id, session_id)
+                    and task.request_id == request_key
+                ), None)
+                if duplicate is not None:
+                    return duplicate
             if self.active(user_id, session_id) is not None:
                 raise RuntimeError("A chat task is already running for this case")
             task = ChatTask(

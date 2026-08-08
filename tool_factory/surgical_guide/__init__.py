@@ -156,8 +156,8 @@ class SurgicalGuideTool(BaseTool):
             # legacy active alias, otherwise a restart restores needles/seeds
             # but silently loses the guide mesh.
             try:
-                from web.planning_runs import publish_planning_run
-                publish_planning_run(agent, None, status="completed")
+                from web.planning_runs import publish_active_planning_state
+                publish_active_planning_state(agent)
             except Exception:
                 # Guide generation already succeeded; the workspace checkpoint
                 # can retry this optional snapshot publication.
@@ -171,4 +171,12 @@ class SurgicalGuideTool(BaseTool):
                 metadata=guide_public_payload(state),
             )
         except SurgicalGuideError as exc:
+            try:
+                # The CT-derived skin envelope is stored before guide CSG. It
+                # remains a valid inspection result when the printable mesh is
+                # rejected, so bind it to the current Planning snapshot too.
+                from web.planning_runs import publish_active_planning_state
+                publish_active_planning_state(agent)
+            except Exception:
+                pass
             return ToolResult(success=False, error=str(exc), message=str(exc))
