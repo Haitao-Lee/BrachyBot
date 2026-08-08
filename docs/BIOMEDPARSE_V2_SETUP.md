@@ -55,6 +55,20 @@ This stores the ignored binary at
 paths when their environment variables are not set. The upstream checkout must
 still be supplied through `BIOMEDPARSE_ROOT`.
 
+For a repository checkout on the RTX 3090 host, start the web service with the
+tracked launcher so the model paths survive a service restart:
+
+```bash
+./scripts/start_server_with_biomedparse.sh
+```
+
+The launcher uses the application Python environment for BrachyBot and the
+isolated BiomedParse Python environment for upstream inference. Override
+`BRACHYBOT_HOST`, `BRACHYBOT_PORT`, or any `BIOMEDPARSE_*` variable when the
+deployment layout differs. It does not download weights or enable the model
+when the required checkout, checkpoint, or tokenizer assets are missing; the
+runtime availability endpoint remains the source of truth.
+
 The official model is loaded lazily on the first selected request and cached by
 checkout/checkpoint path. The model may use CUDA when available; this optional
 runtime is serialized during initialization and inference because Hydra is
