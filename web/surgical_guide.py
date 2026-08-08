@@ -77,6 +77,12 @@ MAX_SAVED_GUIDE_VERSIONS = 5
 # even for closely spaced needles (>= a printable wall thickness).
 GUIDE_BORE_MARGIN_MM = 0.4
 
+# Minimum printable material left between independent bores or between an
+# auxiliary bore and a primary sleeve.  Keep this manufacturing constraint in
+# one place: parameter validation and cross-needle layout deconfliction must
+# enforce the same physical wall thickness.
+GUIDE_MINIMUM_WALL_MM = 0.35
+
 # Marching Cubes produces a deliberately watertight mesh, but its vertices at
 # a cylindrical wall are still displaced slightly by voxelisation and by the
 # shrink-free surface smoothing pass.  The final wall projection below uses a
@@ -139,6 +145,67 @@ def _orthogonal_basis(direction: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
     return first, second
 
 
+def _segment_distance_mm(
+    start_a: np.ndarray,
+    end_a: np.ndarray,
+    start_b: np.ndarray,
+    end_b: np.ndarray,
+) -> float:
+    """Return the shortest distance between two finite 3D line segments."""
+    p1 = np.asarray(start_a, dtype=np.float64).reshape(3)
+    q1 = np.asarray(end_a, dtype=np.float64).reshape(3)
+    p2 = np.asarray(start_b, dtype=np.float64).reshape(3)
+    q2 = np.asarray(end_b, dtype=np.float64).reshape(3)
+    direction_a = q1 - p1
+    direction_b = q2 - p2
+    offset = p1 - p2
+    length_a_sq = float(np.dot(direction_a, direction_a))
+    length_b_sq = float(np.dot(direction_b, direction_b))
+    epsilon = 1e-12
+
+    if length_a_sq <= epsilon and length_b_sq <= epsilon:
+        return float(np.linalg.norm(p1 - p2))
+    if length_a_sq <= epsilon:
+        factor_b = float(np.clip(
+            np.dot(direction_b, offset) / length_b_sq,
+            0.0,
+            1.0,
+        ))
+        return float(np.linalg.norm(p1 - (p2 + factor_b * direction_b)))
+    if length_b_sq <= epsilon:
+        factor_a = float(np.clip(
+            -np.dot(direction_a, offset) / length_a_sq,
+            0.0,
+            1.0,
+        ))
+        return float(np.linalg.norm((p1 + factor_a * direction_a) - p2))
+
+    direction_dot = float(np.dot(direction_a, direction_b))
+    offset_a = float(np.dot(direction_a, offset))
+    offset_b = float(np.dot(direction_b, offset))
+    denominator = length_a_sq * length_b_sq - direction_dot * direction_dot
+    factor_a = (
+        float(np.clip(
+            (direction_dot * offset_b - offset_a * length_b_sq) / denominator,
+            0.0,
+            1.0,
+        ))
+        if denominator > epsilon
+        else 0.0
+    )
+    factor_b = (direction_dot * factor_a + offset_b) / length_b_sq
+    if factor_b < 0.0:
+        factor_b = 0.0
+        factor_a = float(np.clip(-offset_a / length_a_sq, 0.0, 1.0))
+    elif factor_b > 1.0:
+        factor_b = 1.0
+        factor_a = float(np.clip((direction_dot - offset_a) / length_a_sq, 0.0, 1.0))
+
+    closest_a = p1 + factor_a * direction_a
+    closest_b = p2 + factor_b * direction_b
+    return float(np.linalg.norm(closest_a - closest_b))
+
+
 def _auxiliary_hole_specs(
     paths: Sequence[NeedleGuidePath],
     params: Mapping[str, Any],
@@ -161,8 +228,25 @@ def _auxiliary_hole_specs(
     clearance = float(params["skin_clearance_mm"])
     plate_thickness = float(params["plate_thickness_mm"])
     primary_outer_radius = float(params["sleeve_outer_radius_mm"])
-    minimum_entry_clearance = primary_outer_radius + radius + 0.35
+    minimum_primary_centerline_distance = (
+        primary_outer_radius + radius + GUIDE_MINIMUM_WALL_MM
+    )
     specs: List[Dict[str, Any]] = []
+    path_order = {path.needle_id: index for index, path in enumerate(paths)}
+    primary_segments: List[Dict[str, Any]] = []
+    for path in paths:
+        inward = np.asarray(path.inward_direction, dtype=np.float64).reshape(3)
+        inward /= max(float(np.linalg.norm(inward)), 1e-12)
+        sleeve_inner = np.asarray(path.entry, dtype=np.float64) - inward * clearance
+        sleeve_outer = sleeve_inner - inward * (
+            plate_thickness + float(params["sleeve_outward_mm"])
+        )
+        primary_segments.append({
+            "needle_id": path.needle_id,
+            "start": sleeve_inner,
+            "end": sleeve_outer,
+        })
+
     for path in paths:
         inward = np.asarray(path.inward_direction, dtype=np.float64).reshape(3)
         inward /= max(float(np.linalg.norm(inward)), 1e-12)
@@ -176,12 +260,8 @@ def _auxiliary_hole_specs(
                 angle = phase + 2.0 * math.pi * hole_index / holes_per_ring
                 offset_direction = math.cos(angle) * axis_a + math.sin(angle) * axis_b
                 center = np.asarray(path.entry, dtype=np.float64) + radial_offset * offset_direction
-                close_to_other_entry = any(
-                    other is not path
-                    and float(np.linalg.norm(center - np.asarray(other.entry, dtype=np.float64)))
-                    < minimum_entry_clearance
-                    for other in paths
-                )
+                start = center - inward * (clearance + plate_thickness + 2.0)
+                end = center + inward * (clearance + 2.0)
                 item: Dict[str, Any] = {
                     "id": f"aux_{path.needle_id}_{ring_index + 1}_{hole_index + 1}",
                     "needle_id": path.needle_id,
@@ -192,16 +272,76 @@ def _auxiliary_hole_specs(
                     "radial_offset_mm": radial_offset,
                     "radius_mm": radius,
                     "center": center,
-                    "skipped": bool(close_to_other_entry),
-                    "skip_reason": "nearby_primary_channel" if close_to_other_entry else None,
+                    "start": start,
+                    "end": end,
+                    "skipped": False,
+                    "skip_reason": None,
                 }
-                # The cylinder extends a little beyond both faces of the
-                # plate.  The later mask operation intersects it with
-                # `plate_mask`, so these endpoints cannot cut body or sleeve
-                # material even on an oblique skin surface.
-                item["start"] = center - inward * (clearance + plate_thickness + 2.0)
-                item["end"] = center + inward * (clearance + 2.0)
+                # Check the entire finite cylinder against every primary
+                # sleeve, not only its entry point. Oblique channels can be
+                # clear at the skin while intersecting deeper in the plate.
+                primary_conflicts = []
+                for primary in primary_segments:
+                    centerline_distance = _segment_distance_mm(
+                        start,
+                        end,
+                        np.asarray(primary["start"], dtype=np.float64),
+                        np.asarray(primary["end"], dtype=np.float64),
+                    )
+                    if centerline_distance + 1e-6 < minimum_primary_centerline_distance:
+                        primary_conflicts.append((centerline_distance, primary))
+                if primary_conflicts:
+                    centerline_distance, conflict = min(
+                        primary_conflicts,
+                        key=lambda value: value[0],
+                    )
+                    item.update({
+                        "skipped": True,
+                        "skip_reason": "nearby_primary_channel",
+                        "conflicts_with": str(conflict["needle_id"]),
+                        "centerline_distance_mm": float(centerline_distance),
+                        "surface_clearance_mm": float(
+                            centerline_distance - radius - primary_outer_radius
+                        ),
+                    })
                 specs.append(item)
+
+    # Interleave paths while accepting candidates so a dense cluster does not
+    # let the first needle consume every printable alternate location.  A
+    # candidate is retained only if its complete finite cylinder leaves the
+    # required wall around all previously accepted auxiliary bores.
+    accepted: List[Dict[str, Any]] = []
+    candidates = sorted(
+        (item for item in specs if not bool(item.get("skipped"))),
+        key=lambda item: (
+            int(item["ring_index"]),
+            int(item["hole_index"]),
+            path_order.get(str(item["needle_id"]), len(path_order)),
+        ),
+    )
+    minimum_auxiliary_centerline_distance = 2.0 * radius + GUIDE_MINIMUM_WALL_MM
+    for item in candidates:
+        conflicts = []
+        for prior in accepted:
+            centerline_distance = _segment_distance_mm(
+                np.asarray(item["start"], dtype=np.float64),
+                np.asarray(item["end"], dtype=np.float64),
+                np.asarray(prior["start"], dtype=np.float64),
+                np.asarray(prior["end"], dtype=np.float64),
+            )
+            if centerline_distance + 1e-6 < minimum_auxiliary_centerline_distance:
+                conflicts.append((centerline_distance, prior))
+        if conflicts:
+            centerline_distance, conflict = min(conflicts, key=lambda value: value[0])
+            item.update({
+                "skipped": True,
+                "skip_reason": "nearby_auxiliary_hole",
+                "conflicts_with": str(conflict["id"]),
+                "centerline_distance_mm": float(centerline_distance),
+                "surface_clearance_mm": float(centerline_distance - 2.0 * radius),
+            })
+            continue
+        accepted.append(item)
     return specs
 
 
@@ -281,21 +421,28 @@ def normalize_guide_parameters(raw: Optional[Mapping[str, Any]] = None) -> Dict[
             params[name] = _finite_float(raw.get(name, default), name, lower, upper)
     if legacy_without_auxiliary_parameters:
         params["auxiliary_holes_enabled"] = False
-    if params["sleeve_outer_radius_mm"] <= params["channel_radius_mm"] + 0.35:
+    if (
+        params["sleeve_outer_radius_mm"]
+        <= params["channel_radius_mm"] + GUIDE_MINIMUM_WALL_MM
+    ):
         raise SurgicalGuideError(
             "sleeve_outer_radius_mm must exceed channel_radius_mm by at least 0.35 mm"
         )
     if params["auxiliary_holes_enabled"]:
         auxiliary_radius = float(params["auxiliary_hole_radius_mm"])
         primary_outer_radius = float(params["sleeve_outer_radius_mm"])
-        minimum_primary_clearance = primary_outer_radius + auxiliary_radius + 0.35
+        minimum_primary_clearance = (
+            primary_outer_radius + auxiliary_radius + GUIDE_MINIMUM_WALL_MM
+        )
         if float(params["auxiliary_hole_first_offset_mm"]) < minimum_primary_clearance:
             raise SurgicalGuideError(
                 "auxiliary_hole_first_offset_mm must leave at least 0.35 mm of wall "
                 "outside the primary sleeve"
             )
         if float(params["auxiliary_hole_ring_count"]) > 1:
-            if float(params["auxiliary_hole_ring_spacing_mm"]) < (2.0 * auxiliary_radius + 0.35):
+            if float(params["auxiliary_hole_ring_spacing_mm"]) < (
+                2.0 * auxiliary_radius + GUIDE_MINIMUM_WALL_MM
+            ):
                 raise SurgicalGuideError(
                     "auxiliary_hole_ring_spacing_mm is too small for a printable wall"
                 )
@@ -306,7 +453,7 @@ def normalize_guide_parameters(raw: Optional[Mapping[str, Any]] = None) -> Dict[
                 params["auxiliary_hole_ring_spacing_mm"]
             )
             chord = 2.0 * radius * math.sin(math.pi / holes_per_ring)
-            if chord < (2.0 * auxiliary_radius + 0.35):
+            if chord < (2.0 * auxiliary_radius + GUIDE_MINIMUM_WALL_MM):
                 raise SurgicalGuideError(
                     "auxiliary holes on a ring are too dense for a printable wall"
                 )
@@ -1258,13 +1405,17 @@ def mesh_validation(vertices: np.ndarray, faces: np.ndarray) -> Dict[str, Any]:
     edges.sort(axis=1)
     _, edge_counts = np.unique(edges, axis=0, return_counts=True)
     watertight = bool(np.all(edge_counts == 2))
+    open_edges = int(np.count_nonzero(edge_counts == 1))
+    nonmanifold_edges = int(np.count_nonzero(edge_counts > 2))
     bounds = [vertices.min(axis=0).tolist(), vertices.max(axis=0).tolist()]
     return {
         "valid": watertight,
         "watertight": watertight,
         "vertex_count": int(len(vertices)),
         "face_count": int(len(faces)),
-        "open_or_nonmanifold_edges": int(np.count_nonzero(edge_counts != 2)),
+        "open_edges": open_edges,
+        "nonmanifold_edges": nonmanifold_edges,
+        "open_or_nonmanifold_edges": open_edges + nonmanifold_edges,
         "bounds_world_mm": bounds,
     }
 
@@ -1613,10 +1764,20 @@ def generate_surgical_guide(
                 )
 
         if not validation.get("watertight"):
+            open_edges = int(validation.get("open_edges") or 0)
+            nonmanifold_edges = int(validation.get("nonmanifold_edges") or 0)
+            if nonmanifold_edges and not open_edges:
+                guidance = (
+                    "the generated channels contain an unresolved geometric intersection"
+                )
+            elif open_edges and not nonmanifold_edges:
+                guidance = "the local skin or guide shell contains an unresolved opening"
+            else:
+                guidance = "the guide shell contains unresolved topology defects"
             raise SurgicalGuideError(
                 "Generated guide mesh is not watertight after topology repair "
-                f"(open/non-manifold edges: {int(validation.get('open_or_nonmanifold_edges') or 0)}); "
-                "adjust guide parameters or verify CT skin coverage"
+                f"(open edges: {open_edges}; non-manifold edges: {nonmanifold_edges}); "
+                f"{guidance}"
             )
     validation["mesh_repair"] = mesh_repair
     snapshot = _current_planning_snapshot(agent)
@@ -1658,6 +1819,7 @@ def generate_surgical_guide(
         "radius_mm": float(params["auxiliary_hole_radius_mm"]),
         "first_offset_mm": float(params["auxiliary_hole_first_offset_mm"]),
         "ring_spacing_mm": float(params["auxiliary_hole_ring_spacing_mm"]),
+        "minimum_wall_mm": GUIDE_MINIMUM_WALL_MM,
         "through_plate_only": True,
         "non_protruding": True,
         "holes": [
@@ -1678,6 +1840,21 @@ def generate_surgical_guide(
                 "id": str(spec["id"]),
                 "needle_id": str(spec["needle_id"]),
                 "reason": str(spec.get("skip_reason") or "not_realized"),
+                "conflicts_with": (
+                    str(spec["conflicts_with"])
+                    if spec.get("conflicts_with") is not None
+                    else None
+                ),
+                "centerline_distance_mm": (
+                    float(spec["centerline_distance_mm"])
+                    if spec.get("centerline_distance_mm") is not None
+                    else None
+                ),
+                "surface_clearance_mm": (
+                    float(spec["surface_clearance_mm"])
+                    if spec.get("surface_clearance_mm") is not None
+                    else None
+                ),
             }
             for spec in auxiliary_specs
             if bool(spec.get("skipped"))
