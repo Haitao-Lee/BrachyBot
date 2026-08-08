@@ -1,7 +1,7 @@
 """Regression coverage for 3D meshes that represent hard planning obstacles."""
 
 from web.routes.viewer_routes import _pad_surface_volume, _requires_label_faithful_mesh
-from web.routes.planning_routes import _pad_dose_surface_volume
+from web.routes.planning_routes import _dose_coverage_audit, _pad_dose_surface_volume
 
 import numpy as np
 
@@ -44,9 +44,11 @@ def test_soft_tissue_mesh_keeps_presentation_smoothing():
     assert not _requires_label_faithful_mesh(agent, "oar", 6)
 
 
-def test_embedded_ctv_vessels_are_always_label_faithful():
+def test_every_ctv_label_uses_the_same_boundary_as_dose_evaluation():
+    assert _requires_label_faithful_mesh(_Agent([]), "ctv", 1)
     assert _requires_label_faithful_mesh(_Agent([]), "ctv", 2)
     assert _requires_label_faithful_mesh(_Agent([]), "ctv", 3)
+    assert _requires_label_faithful_mesh(_Agent([]), "CTV", 99)
 
 
 def test_surface_padding_closes_volume_boundary_without_moving_original_voxels():
@@ -73,3 +75,43 @@ def test_dose_surface_padding_preserves_grid_and_uses_background_fill():
     assert np.array_equal(offset_zyx, np.array([1.0, 1.0, 1.0]))
     assert np.all(padded[0] == 0.25)
     assert np.all(padded[-1] == 0.25)
+
+
+def test_dose_surface_coverage_audit_matches_fraction_dvh_metric():
+    target = np.ones((1, 2, 2), dtype=np.uint8)
+    dose = np.array([[[0.7, 0.7], [0.7, 0.1]]], dtype=np.float32)
+
+    audit = _dose_coverage_audit(
+        dose,
+        target,
+        0.5,
+        threshold_gy=120.0,
+        prescription_gy=120.0,
+        dose_metrics={"v100": 0.75, "volume_metric_units": "fraction"},
+        grid="original_ct",
+    )
+
+    assert audit["covered_target_voxels"] == 3
+    assert audit["coverage_percent"] == 75.0
+    assert audit["reported_metric"] == "v100"
+    assert audit["reported_coverage_percent"] == 75.0
+    assert audit["consistent"] is True
+
+
+def test_dose_surface_coverage_audit_understands_percent_and_flags_mismatch():
+    target = np.ones((1, 2, 2), dtype=np.uint8)
+    dose = np.array([[[0.7, 0.1], [0.1, 0.1]]], dtype=np.float32)
+
+    audit = _dose_coverage_audit(
+        dose,
+        target,
+        0.5,
+        threshold_gy=120.0,
+        prescription_gy=120.0,
+        dose_metrics={"v100": 90.0, "volume_metric_units": "percent"},
+    )
+
+    assert audit["coverage_percent"] == 25.0
+    assert audit["reported_coverage_percent"] == 90.0
+    assert audit["delta_percentage_points"] == -65.0
+    assert audit["consistent"] is False

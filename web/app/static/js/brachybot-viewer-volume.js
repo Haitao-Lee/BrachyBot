@@ -3518,7 +3518,10 @@ function renderDataTree() {
             // Preserve a user-renamed iso-surface label; default remains "N Gy".
             const doseLabel = level.label || `${absGy} Gy`;
             const levelState = ensureDataTreeNodeMetadata({ ...level, visible: level.visible, opacity: level.opacity, color: level.color, loaded: true, label: doseLabel }, 'dose_iso_surface', 'planning');
-            const pctLabel = level.pctLabel || `${absGy} Gy`;
+            const coveragePct = Number(level.coveragePct ?? level.coverageAudit?.coverage_percent);
+            const pctLabel = Number.isFinite(coveragePct) && level.coverageAudit?.reported_metric === 'v100'
+                ? `${absGy} Gy · V100 ${coveragePct.toFixed(1)}%`
+                : (level.pctLabel || `${absGy} Gy`);
             html += renderTreeItem(`dose_iso_${level.threshold}`, levelState, pctLabel);
         });
         html += `</div></div>`;
