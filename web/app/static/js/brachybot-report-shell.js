@@ -372,12 +372,28 @@ window.Report = (function () {
     }
 
     // ---------- Auto-fill (P7) ----------
-    async function _fetchHeader() {
+    function _activeReportSessionId(explicitSessionId = '') {
+        if (explicitSessionId) return String(explicitSessionId);
+        if (typeof activeSessionId !== 'undefined' && activeSessionId) return String(activeSessionId);
+        return String(window.state?.sessionId || '');
+    }
+
+    function _reportSessionIsCurrent(expectedSessionId, expectedForm = null) {
+        const expected = String(expectedSessionId || '');
+        const current = _activeReportSessionId();
+        return (!expected || expected === current)
+            && (!expectedForm || window.reportForm === expectedForm);
+    }
+
+    async function _fetchHeader(sessionId = '') {
         try {
             const ws = window.state || {};
             if (!ws.ctPath) return {};
             const r = await fetch('/api/header/info', {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                method: 'POST', headers: {
+                    'Content-Type': 'application/json',
+                    'X-BrachyBot-Session': _activeReportSessionId(sessionId),
+                },
                 body: JSON.stringify({ ct_path: ws.ctPath }),
             });
             const j = await r.json();
@@ -385,10 +401,13 @@ window.Report = (function () {
         } catch (e) { return {}; }
     }
 
-    async function _fetchServerReportPatch(scope, language) {
+    async function _fetchServerReportPatch(scope, language, sessionId = '') {
         const response = await fetch('/api/report/auto-fill', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+                'Content-Type': 'application/json',
+                'X-BrachyBot-Session': _activeReportSessionId(sessionId),
+            },
             body: JSON.stringify({
                 scope: scope || 'all',
                 language: language || 'en',
@@ -461,7 +480,10 @@ window.Report = (function () {
             // The quality rows are rebuilt from their input fingerprint. A
             // forced rebuild during hydration can replace durable cells with
             // defaults before prescription rationale has arrived.
-            window.syncReportQualityAssessment(f);
+            window.syncReportQualityAssessment(f, {
+                refreshCriteria: options.refreshCriteria === true,
+                preserveStored: options.refreshCriteria !== true,
+            });
         }
         if (options.render !== false) {
             panels.editor();
@@ -476,11 +498,15 @@ window.Report = (function () {
             const onlyKey = opts.onlyKey || null;
             const f = window.reportForm;
             if (!f) { _setReportStatus('No report form', 'error'); return; }
+            const expectedSessionId = _activeReportSessionId(opts.sessionId);
+            const isCurrent = () => _reportSessionIsCurrent(expectedSessionId, f);
             // 1. DICOM
             try {
-                const tags = await _fetchHeader();
+                const tags = await _fetchHeader(expectedSessionId);
+                if (!isCurrent()) return { stale: true, applied: 0 };
                 this.fromDicom(tags, onlyKey);
             } catch (e) { console.warn('DICOM auto-fill failed:', e); }
+            if (!isCurrent()) return { stale: true, applied: 0 };
             // 2. NIfTI
             this.fromNifti(onlyKey);
             // 3. Planning
@@ -495,10 +521,15 @@ window.Report = (function () {
             let serverApplied = 0;
             try {
                 const language = (typeof window._i18nLang === 'string') ? window._i18nLang : (f.language || 'en');
-                const payload = await _fetchServerReportPatch('all', language);
+                const payload = await _fetchServerReportPatch('all', language, expectedSessionId);
+                if (!isCurrent()) return { stale: true, applied: 0 };
                 serverApplied = _applyReportPatch(payload.patch || {}, 'bot', {
                     onlyKey,
                     render: false,
+                    // The server patch supplies the source records and site
+                    // criteria. Recompute generic hydration placeholders now,
+                    // while preserving all explicitly user-edited fields.
+                    refreshCriteria: true,
                 }).applied;
             } catch (e) {
                 console.warn('Server report auto-fill unavailable; using local data:', e);
@@ -506,7 +537,10 @@ window.Report = (function () {
             // Persist the source-backed Reference and Status cells together
             // with the numeric metrics before report rendering/checkpointing.
             if (typeof window.syncReportQualityAssessment === 'function') {
-                window.syncReportQualityAssessment(f);
+                window.syncReportQualityAssessment(f, {
+                    refreshCriteria: serverApplied > 0,
+                    preserveStored: serverApplied <= 0,
+                });
             }
             // BUG FIX 2026-06-17 (auto-screenshots in report):
             // auto-capture visual evidence (CT + masks, dose heatmap,
@@ -514,16 +548,20 @@ window.Report = (function () {
             // version only triggered on panel-open, but users who
             // hit "Auto-fill" expected everything to land together.
             try {
-                if (typeof autoCaptureReportFigures === 'function') {
-                    setTimeout(() => autoCaptureReportFigures(), 0);
+                if (opts.captureFigures !== false && typeof autoCaptureReportFigures === 'function') {
+                    setTimeout(() => {
+                        if (isCurrent()) autoCaptureReportFigures({ sessionId: expectedSessionId });
+                    }, 0);
                 }
             } catch (_) {}
+            if (!isCurrent()) return { stale: true, applied: 0 };
             panels.editor(); panels.preview();
             persist.autoSave();
             audit.log('autoFill.fromAll', '*', null, 'filled');
             _setReportStatus(serverApplied > 0
                 ? `Auto-filled with ${serverApplied} source-backed server field(s)`
                 : 'Auto-filled from local NIfTI + planning data', 'ok');
+            return { stale: false, applied: serverApplied };
         },
         fromDicom(tags, onlyKey = null) {
             if (!tags || Object.keys(tags).length === 0) return;

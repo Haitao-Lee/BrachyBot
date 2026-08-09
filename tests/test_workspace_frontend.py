@@ -161,9 +161,23 @@ def test_report_quality_columns_are_persisted_and_auto_fill_is_awaited():
     assert "function syncReportQualityAssessment" in report
     assert "_storedMetricAssessment" in report
     assert "inputFingerprint" in report
-    assert "window.syncReportQualityAssessment(f);" in shell
+    assert "refreshCriteria: options.refreshCriteria === true" in shell
+    assert "function reportNeedsSourceBackedQualityRefresh(form)" in report
+    assert "window.reportNeedsSourceBackedQualityRefresh" in report
+    assert "window.Report.autoFill.fromAll({" in planning
+    assert "captureFigures: false" in planning
     assert "window.syncReportQualityAssessment(f, { force: true })" not in shell
     assert "await Report.autoFill.fromAll()" in planning
+
+
+def test_report_source_restore_is_bound_to_the_selected_session():
+    """Late report metadata from another case must not overwrite this case."""
+    shell = read("web/app/static/js/brachybot-report-shell.js")
+    assert "function _activeReportSessionId" in shell
+    assert "function _reportSessionIsCurrent" in shell
+    assert "'X-BrachyBot-Session': _activeReportSessionId(sessionId)" in shell
+    assert "const expectedSessionId = _activeReportSessionId(opts.sessionId)" in shell
+    assert "if (!isCurrent()) return { stale: true, applied: 0 };" in shell
 
 
 def test_report_recapture_is_durably_scheduled_after_viewer_hydration():
@@ -304,8 +318,8 @@ def test_workspace_transitions_publish_measurable_first_paint_and_restore_stages
     assert "restore.planning_dvh" in ui_api
     assert "restore.report_and_presentation" in ui_api
     assert "restore.fully_interactive" in ui_api
-    assert "brachybot-workspace.js?v=29" in index
-    assert "brachybot-ui-api.js?v=36" in index
+    assert "brachybot-workspace.js?v=30" in index
+    assert "brachybot-ui-api.js?v=37" in index
 
 
 def test_workspace_fetch_preserves_external_transition_abort_semantics():
@@ -373,6 +387,33 @@ def test_background_hydration_cannot_overwrite_authoritative_case_data_with_a_ui
     assert 'status["ct_path"]' in routes
     assert 'status["ctv_path"]' in routes
     assert 'status["oar_path"]' in routes
+
+
+def test_cold_start_uses_the_same_clinical_restore_contract_as_session_switch():
+    """A compact startup snapshot must never masquerade as decoded CT data."""
+    workspace = read("web/app/static/js/brachybot-workspace.js")
+    startup = workspace.split("window.loadSessions =", 1)[1].split(
+        "window.saveSessions =", 1
+    )[0]
+    assert "authoritativeChat: true" in startup
+    assert "preserveClinicalData: true" in startup
+    assert "persist: false" in startup
+    assert "preserveClinicalData: false" not in startup
+
+
+def test_clinical_restore_requires_decoded_ct_and_rebinds_viewer_interactions():
+    """Blank canvases cannot be reported as a fully restored workspace."""
+    ui_api = read("web/app/static/js/brachybot-ui-api.js")
+    restore = ui_api.split("async function _restoreActiveSessionWorkspace", 1)[1].split(
+        "async function restoreActiveSessionWorkspace", 1
+    )[0]
+    assert "decodedVoxelCount === expectedVoxelCount" in restore
+    assert "state.ctLoaded = false" in restore
+    assert "CT restore incomplete for session" in restore
+    assert restore.count("setupViewerInteractions();") >= 2
+    assert "segmentationMeshTask" in restore
+    assert "loadCTVAndObstacleMeshes()" in restore
+    assert "Segmentation restore did not produce label volumes" in restore
 
 
 def test_case_clear_invalidates_late_planning_and_dose_render_responses():
