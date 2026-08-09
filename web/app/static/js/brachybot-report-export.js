@@ -23,9 +23,11 @@ function _composite2DViewerCanvas(axis) {
     const parent = sliceCanvas.parentElement;
     const canvases = parent.querySelectorAll('canvas');
     canvases.forEach(c => {
-        if (c.width === sliceCanvas.width && c.height === sliceCanvas.height && c.style.display !== 'none') {
-            try { ctx.drawImage(c, 0, 0); } catch (e) {}
-        }
+        if (c.style.display === 'none' || c.width < 1 || c.height < 1) return;
+        // Vector overlays use a zoom- and DPR-aware backing store that can be
+        // larger than the native CT canvas. Composite by visual extent rather
+        // than requiring identical backing dimensions.
+        try { ctx.drawImage(c, 0, 0, out.width, out.height); } catch (e) {}
     });
     return out.toDataURL('image/png');
 }

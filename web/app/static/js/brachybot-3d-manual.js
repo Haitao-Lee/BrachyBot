@@ -4847,10 +4847,9 @@ function clearDoseOverlayRuntime() {
     _doseOverlayInflight.clear();
     _doseOverlayLoadPromise = null;
     Object.keys(_doseContourCache).forEach(key => delete _doseContourCache[key]);
-    if (_doseContourPreloadTimer.v) {
-        clearTimeout(_doseContourPreloadTimer.v);
-        _doseContourPreloadTimer.v = null;
-    }
+    _doseContourInflight.clear();
+    _doseContourPreloadTimers.forEach(timer => clearTimeout(timer));
+    _doseContourPreloadTimers.clear();
     if (_dosePreloadTimer) {
         clearTimeout(_dosePreloadTimer);
         _dosePreloadTimer = null;
@@ -5638,51 +5637,92 @@ function setDoseOverlayOpacity(val) {
 }
 
 // ============ DOSE CONTOUR LINES (iso-dose lines on 2D viewers) ============
-// Cache for contour data: { "axis_sliceIndex": contourData }
+// Cache keys include session, planning run, and dose generation so a contour
+// from another case or an older recalculation can never be reused.
 const _doseContourCache = {};
+const _doseContourInflight = new Map();
+
+function _doseContourPlanningId() {
+    const planning = typeof dataTreeState !== 'undefined' ? dataTreeState?.planning : null;
+    const manualPlanningId = typeof manualPlanningState !== 'undefined'
+        ? manualPlanningState?.planningId
+        : null;
+    return String(
+        planning?.activePlanningId
+        || planning?.id
+        || manualPlanningId
+        || '',
+    );
+}
+
+function _doseContourCacheKey(
+    axis,
+    sliceIndex,
+    sessionId = _doseOverlaySessionId(),
+    generation = _doseOverlayLoadGeneration,
+) {
+    return `${sessionId}:${_doseContourPlanningId()}:${generation}:${axis}_${sliceIndex}`;
+}
 
 async function fetchDoseContourSlice(axis, sliceIndex) {
     const ownerSessionId = _doseOverlaySessionId();
     const ownerGeneration = _doseOverlayLoadGeneration;
     const ownerOverlay = state.doseOverlay;
-    const cacheKey = `${axis}_${sliceIndex}`;
+    const ownerPlanningId = _doseContourPlanningId();
+    const cacheKey = _doseContourCacheKey(axis, sliceIndex, ownerSessionId, ownerGeneration);
     if (_doseContourCache[cacheKey]) return _doseContourCache[cacheKey];
+    if (_doseContourInflight.has(cacheKey)) return _doseContourInflight.get(cacheKey);
 
-    try {
+    const request = (async () => {
+      try {
         const axialMax = state.doseOverlay?.maxSlice?.axial;
         const requestSliceIndex = axis === 'axial' && Number.isFinite(axialMax)
             ? Math.max(0, Math.min(axialMax, axialMax - sliceIndex))
             : sliceIndex;
-        const res = await fetch(API + '/planning/dose_contour_slice', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-BrachyBot-Session': ownerSessionId,
-            },
-            body: JSON.stringify({ axis, slice_index: requestSliceIndex }),
-        });
+        let res;
+        for (let attempt = 0; attempt <= 60; attempt += 1) {
+            res = await fetch(API + '/planning/dose_contour_slice', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-BrachyBot-Session': ownerSessionId,
+                },
+                body: JSON.stringify({ axis, slice_index: requestSliceIndex }),
+            });
+            if (res.status !== 202 || attempt >= 60) break;
+            await new Promise(resolve => setTimeout(resolve, Math.min(1000, 150 + attempt * 25)));
+        }
         if (!res.ok) return null;
         const data = await res.json();
         if (!data.success) return null;
         if (ownerGeneration !== _doseOverlayLoadGeneration
             || ownerSessionId !== _doseOverlaySessionId()
+            || ownerPlanningId !== _doseContourPlanningId()
             || ownerOverlay !== state.doseOverlay) {
             return null;
         }
         _doseContourCache[cacheKey] = data;
         return data;
-    } catch (e) {
+      } catch (e) {
         return null;
-    }
+      } finally {
+        if (_doseContourInflight.get(cacheKey) === request) {
+            _doseContourInflight.delete(cacheKey);
+        }
+      }
+    })();
+    _doseContourInflight.set(cacheKey, request);
+    return request;
 }
 
 function renderDoseContourOnCanvas(canvas, axis, sliceIndex) {
-    const cacheKey = `${axis}_${sliceIndex}`;
+    const cacheKey = _doseContourCacheKey(axis, sliceIndex);
     const data = _doseContourCache[cacheKey];
 
     const ctx = canvas.getContext('2d');
     const w = canvas.width;
     const h = canvas.height;
+    const vectorScale = Number(canvas._vectorPixelRatio || 1);
     ctx.clearRect(0, 0, w, h);
     if (!data || !data.contours || data.contours.length === 0) return;
 
@@ -5747,7 +5787,7 @@ function renderDoseContourOnCanvas(canvas, axis, sliceIndex) {
         const b = Math.round(color[2] * 255);
 
         ctx.strokeStyle = `rgba(${r},${g},${b},${Math.min(1, opacity + 0.2)})`;  // Boost opacity
-        ctx.lineWidth = 2.5;  // Increased from 1.5 to 2.5 for better visibility
+        ctx.lineWidth = 2.5 * vectorScale;
         ctx.setLineDash([]);
 
         contour.lines.forEach(line => {
@@ -5774,15 +5814,15 @@ function renderDoseContourOnCanvas(canvas, axis, sliceIndex) {
             const x = col * scaleX;
             const y = row * scaleY;
 
-            ctx.font = '10px Inter, sans-serif';
+            ctx.font = `${10 * vectorScale}px Inter, sans-serif`;
             ctx.fillStyle = `rgba(${r},${g},${b},0.9)`;
             ctx.strokeStyle = 'rgba(0,0,0,0.6)';
-            ctx.lineWidth = 2;
+            ctx.lineWidth = 2 * vectorScale;
             const numericLevel = Number(level);
             const label = Number.isFinite(numericLevel) ? numericLevel.toFixed(1) : '';
             if (!label) return;
-            ctx.strokeText(label, x + 3, y - 3);
-            ctx.fillText(label, x + 3, y - 3);
+            ctx.strokeText(label, x + 3 * vectorScale, y - 3 * vectorScale);
+            ctx.fillText(label, x + 3 * vectorScale, y - 3 * vectorScale);
         }
     });
 }
@@ -5793,6 +5833,7 @@ function triggerDoseContourRender(axis, sliceIndex) {
     const ownerSessionId = _doseOverlaySessionId();
     const ownerGeneration = _doseOverlayLoadGeneration;
     const ownerOverlay = state.doseOverlay;
+    const ownerPlanningId = _doseContourPlanningId();
 
     // Create or get the contour canvas up-front (synchronously) so
     // it exists from the first render, even before the async fetch
@@ -5814,7 +5855,7 @@ function triggerDoseContourRender(axis, sliceIndex) {
     }
 
     const sliceCanvas = document.getElementById('sliceCanvas' + capitalize(axis));
-    if (sliceCanvas) _syncLayerToSliceCanvas(axis, canvas, 7);
+    if (sliceCanvas) _syncLayerToSliceCanvas(axis, canvas, 7, { vector: true });
     canvas.dataset.axis = axis;
     canvas.dataset.sliceIndex = String(sliceIndex);
     const ctx = canvas.getContext('2d');
@@ -5825,10 +5866,11 @@ function triggerDoseContourRender(axis, sliceIndex) {
     //    the user has scrubbed past a slice once, the contour is
     //    cached locally and the next visit renders with zero
     //    network latency.
-    const cacheKey = `${axis}_${sliceIndex}`;
+    const cacheKey = _doseContourCacheKey(axis, sliceIndex);
     const cached = _doseContourCache[cacheKey];
     if (cached) {
         renderDoseContourOnCanvas(canvas, axis, sliceIndex);
+        preloadDoseContourSlices(axis, sliceIndex);
         return;
     }
 
@@ -5840,6 +5882,7 @@ function triggerDoseContourRender(axis, sliceIndex) {
         if (!data
             || ownerGeneration !== _doseOverlayLoadGeneration
             || ownerSessionId !== _doseOverlaySessionId()
+            || ownerPlanningId !== _doseContourPlanningId()
             || ownerOverlay !== state.doseOverlay) return;
         // Make sure we're still on the same slice the user requested
         // (the slider may have moved while the fetch was in flight).
@@ -5857,18 +5900,19 @@ function triggerDoseContourRender(axis, sliceIndex) {
 // overlay path. Without this, every slider tick waits ~150 ms for
 // a network round-trip and the contour appears to "vanish then
 // come back". Fetches are fire-and-forget; failures are silent.
-const _doseContourPreloadTimer = { v: null };
+const _doseContourPreloadTimers = new Map();
 function preloadDoseContourSlices(axis, centerSlice) {
     if (!state.doseOverlay || !state.doseOverlay.visible) return;
-    if (_doseContourPreloadTimer.v) clearTimeout(_doseContourPreloadTimer.v);
-    _doseContourPreloadTimer.v = setTimeout(() => {
-        const PRELOAD_RANGE = 8;
+    if (_doseContourPreloadTimers.has(axis)) clearTimeout(_doseContourPreloadTimers.get(axis));
+    const timer = setTimeout(() => {
+        _doseContourPreloadTimers.delete(axis);
+        const PRELOAD_RANGE = 3;
         const maxSlice = state.doseOverlay.maxSlice?.[axis] || 200;
         for (let d = 1; d <= PRELOAD_RANGE; d++) {
             const fwd = centerSlice + d;
             const bwd = centerSlice - d;
-            const kf = `${axis}_${fwd}`;
-            const kb = `${axis}_${bwd}`;
+            const kf = _doseContourCacheKey(axis, fwd);
+            const kb = _doseContourCacheKey(axis, bwd);
             if (fwd <= maxSlice && !_doseContourCache[kf]) {
                 fetchDoseContourSlice(axis, fwd).catch(() => {});
             }
@@ -5877,6 +5921,7 @@ function preloadDoseContourSlices(axis, centerSlice) {
             }
         }
     }, 50);
+    _doseContourPreloadTimers.set(axis, timer);
 }
 
 function highlightSeed(seedId) {
@@ -5962,6 +6007,9 @@ function clearPlanningVisualization() {
 
     // Clear dose contour cache and canvases
     Object.keys(_doseContourCache).forEach(key => delete _doseContourCache[key]);
+    _doseContourInflight.clear();
+    _doseContourPreloadTimers.forEach(timer => clearTimeout(timer));
+    _doseContourPreloadTimers.clear();
     ['axial', 'coronal', 'sagittal'].forEach(axis => {
         const contourCanvas = document.getElementById('contourCanvas' + capitalize(axis));
         if (contourCanvas) {

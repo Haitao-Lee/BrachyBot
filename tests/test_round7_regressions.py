@@ -150,6 +150,28 @@ def test_dose_contour_redraw_keeps_level_in_scope_and_uses_data_tree_color():
     assert "const numericLevel = Number(level);" in draw_block
 
 
+def test_dose_contours_are_session_scoped_retried_and_redrawn_at_zoom_resolution():
+    """Contour slices must not disappear because of stale caches or raster-only zoom."""
+    contour = (ROOT / "web/app/static/js/brachybot-3d-manual.js").read_text(encoding="utf-8")
+    annotation = (ROOT / "web/app/static/js/brachybot-manual-annotation.js").read_text(encoding="utf-8")
+    report_export = (ROOT / "web/app/static/js/brachybot-report-export.js").read_text(encoding="utf-8")
+    routes = (ROOT / "web/routes/planning_routes.py").read_text(encoding="utf-8")
+
+    assert "function _doseContourCacheKey" in contour
+    assert "_doseContourPlanningId()" in contour
+    assert "const _doseContourInflight = new Map();" in contour
+    assert "res.status !== 202" in contour
+    assert "const _doseContourPreloadTimers = new Map();" in contour
+    assert "preloadDoseContourSlices(axis, sliceIndex);" in contour
+    assert "_syncLayerToSliceCanvas(axis, canvas, 7, { vector: true })" in contour
+    assert "function _viewerVectorPixelRatio" in annotation
+    assert "window.devicePixelRatio" in annotation
+    assert "request2DViewerResolutionRefresh();" in annotation
+    assert "ctx.drawImage(c, 0, 0, out.width, out.height)" in report_export
+    assert "range_tolerance" in routes
+    assert "for level_index, level_contour, level_gy, level_rel in valid_levels" in routes
+
+
 def test_search_fact_check_is_visible_as_a_pending_trace_phase():
     """Search completion must not hide synchronous source verification work."""
     runtime = (ROOT / "agent_runtime/llm_runtime.py").read_text(encoding="utf-8")
@@ -294,8 +316,8 @@ def test_needle_render_scheduler_survives_mixed_static_asset_revisions():
     # Keep this contract aligned with the actual cache-busting revisions in
     # index.html. A stale assertion here falsely reports a deployment bug and
     # hides whether the endpoint interaction bundle is really versioned.
-    assert "brachybot-viewer-layout.js?v=27" in index
-    assert "brachybot-3d-manual.js?v=56" in index
+    assert "brachybot-viewer-layout.js?v=28" in index
+    assert "brachybot-3d-manual.js?v=57" in index
     assert "scene3D.requestRender(1)" in layout
     assert "scene3D.requestRender(2)" in layout
     assert "window.requestRender = requestRender;" in manual

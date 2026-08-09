@@ -2935,6 +2935,11 @@ async function init() {
     if (!state.ctLoaded) {
         state.doseOverlay = null;
         Object.keys(_doseContourCache).forEach(key => delete _doseContourCache[key]);
+        if (typeof _doseContourInflight !== 'undefined') _doseContourInflight.clear();
+        if (typeof _doseContourPreloadTimers !== 'undefined') {
+            _doseContourPreloadTimers.forEach(timer => clearTimeout(timer));
+            _doseContourPreloadTimers.clear();
+        }
         // Clear 2D viewer canvases and dose overlay canvases
         ['axial', 'sagittal', 'coronal'].forEach(axis => {
             const canvas = document.getElementById('sliceCanvas' + capitalize(axis));
@@ -3198,6 +3203,9 @@ function toggleViewerFullscreen(view) {
     if (!card) return;
     const panel = document.getElementById('viewersPanel');
     if (!panel) return;
+    const viewportSnapshot = typeof window.captureViewerViewport === 'function'
+        ? window.captureViewerViewport(view)
+        : null;
 
     if (card.classList.contains('fullscreen')) {
         // Restore
@@ -3215,7 +3223,7 @@ function toggleViewerFullscreen(view) {
         card.style.right = ''; card.style.bottom = ''; card.style.zIndex = '';
         card.style.width = ''; card.style.height = ''; card.style.flex = '';
         if (typeof window.syncViewerGeometry === 'function') {
-            window.syncViewerGeometry({ resetPositions: true, settleMs: 160 });
+            window.syncViewerGeometry({ resetPositions: true, settleMs: 160, viewportSnapshot });
         }
     } else {
         // Enter fullscreen
@@ -3244,7 +3252,7 @@ function toggleViewerFullscreen(view) {
             }
         });
         if (typeof window.syncViewerGeometry === 'function') {
-            window.syncViewerGeometry({ resetPositions: true, settleMs: 160 });
+            window.syncViewerGeometry({ resetPositions: true, settleMs: 160, viewportSnapshot });
         }
     }
 }

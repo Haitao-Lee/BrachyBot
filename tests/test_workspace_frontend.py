@@ -305,7 +305,7 @@ def test_workspace_transitions_publish_measurable_first_paint_and_restore_stages
     assert "restore.report_and_presentation" in ui_api
     assert "restore.fully_interactive" in ui_api
     assert "brachybot-workspace.js?v=29" in index
-    assert "brachybot-ui-api.js?v=35" in index
+    assert "brachybot-ui-api.js?v=36" in index
 
 
 def test_workspace_fetch_preserves_external_transition_abort_semantics():
@@ -1064,7 +1064,10 @@ def test_viewer_layout_restore_resynchronizes_all_viewer_geometry():
     assert "schedule(true)" in layout
     assert "_clearViewerResizeOverrides(panel)" in layout
     assert "window.resizeViewer3D" in layout
-    assert "window.syncViewerGeometry({ resetPositions: true, settleMs: 160 })" in ui_api
+    assert "function captureViewerViewport(axis)" in layout
+    assert "panFractionX" in layout
+    assert "_restoreViewerViewport(viewportSnapshot)" in layout
+    assert "window.syncViewerGeometry({ resetPositions: true, settleMs: 160, viewportSnapshot })" in ui_api
     assert "panel.classList.add('viewer-fullscreen-active')" in ui_api
     assert "panel.classList.remove('viewer-fullscreen-active')" in ui_api
     assert "data-fullscreen-hidden=\"1\"" in ui_api

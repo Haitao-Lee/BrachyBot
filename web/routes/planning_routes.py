@@ -2639,8 +2639,12 @@ def register_planning_routes(
             # Use normalized levels (matching normalized dose array).
             s_min = float(slice_2d.min())
             s_max = float(slice_2d.max())
-            valid_levels = [(c, g, r) for c, g, r in zip(iso_values_contour, iso_values_gy, iso_values_rel)
-                            if s_min < c < s_max]
+            range_tolerance = max(1e-6, abs(s_max - s_min) * 1e-6)
+            valid_levels = [
+                (index, c, g, r)
+                for index, (c, g, r) in enumerate(zip(iso_values_contour, iso_values_gy, iso_values_rel))
+                if (s_min - range_tolerance) <= c <= (s_max + range_tolerance)
+            ]
 
             if not valid_levels:
                 return jsonify({
@@ -2650,11 +2654,12 @@ def register_planning_routes(
                     "slice_range": [s_min, s_max],
                     "dose_units": DOSE_MODEL_UNITS,
                     "dose_scale_gy": dose_scale_gy,
+                    "slice_shape": [int(slice_2d.shape[0]), int(slice_2d.shape[1])],
                 })
 
             # Generate contour lines using marching squares
             contours_data = []
-            for i, (level_contour, level_gy, level_rel) in enumerate(valid_levels):
+            for level_index, level_contour, level_gy, level_rel in valid_levels:
                 try:
                     contours = ski_measure.find_contours(slice_2d, level=level_contour)
                     # Convert to list of [row, col] coordinate arrays
@@ -2665,8 +2670,8 @@ def register_planning_routes(
 
                     if contour_lines:
                         # Get color for this level
-                        color = iso_colors_raw[i % len(iso_colors_raw)]
-                        opacity = iso_opacities[min(i, len(iso_opacities) - 1)] if iso_opacities else 0.3
+                        color = iso_colors_raw[level_index % len(iso_colors_raw)]
+                        opacity = iso_opacities[min(level_index, len(iso_opacities) - 1)] if iso_opacities else 0.3
                         contours_data.append({
                             # Return BOTH: level_gy for the 2D label so
                             # the user sees actual dose (e.g. "120")

@@ -100,6 +100,37 @@ const _resize = { active: false, type: null, card: null, cards: [], startPos: 0,
 // stale or zero-sized container.
 const _viewerGeometrySync = { generation: 0, timer: null };
 
+/**
+ * Capture pan in image-relative coordinates before a viewer card changes size.
+ * Pixel pan values cannot be reused across normal and fullscreen layouts: the
+ * same number of CSS pixels represents a different location in each layout.
+ */
+function captureViewerViewport(axis) {
+    const canvas = getSliceCanvas(axis);
+    if (!canvas) return null;
+    const displayW = Number(canvas._displayW || canvas.offsetWidth || 0);
+    const displayH = Number(canvas._displayH || canvas.offsetHeight || 0);
+    if (displayW < 1 || displayH < 1) return null;
+    return {
+        axis,
+        panFractionX: Number(state.viewerSettings.panX || 0) / displayW,
+        panFractionY: Number(state.viewerSettings.panY || 0) / displayH,
+    };
+}
+window.captureViewerViewport = captureViewerViewport;
+
+function _restoreViewerViewport(snapshot) {
+    if (!snapshot) return;
+    const canvas = getSliceCanvas(snapshot.axis);
+    if (!canvas) return;
+    const displayW = Number(canvas._displayW || canvas.offsetWidth || 0);
+    const displayH = Number(canvas._displayH || canvas.offsetHeight || 0);
+    if (displayW < 1 || displayH < 1) return;
+    state.viewerSettings.panX = Number(snapshot.panFractionX || 0) * displayW;
+    state.viewerSettings.panY = Number(snapshot.panFractionY || 0) * displayH;
+    if (typeof applyViewerTransform === 'function') applyViewerTransform();
+}
+
 function _clearViewerResizeOverrides(panel) {
     if (!panel) return;
     panel.querySelectorAll('.viewers-row, .viewer-card').forEach(el => {
@@ -111,7 +142,7 @@ function _clearViewerResizeOverrides(panel) {
     });
 }
 
-function syncViewerGeometry({ resetPositions = false, settleMs = 0 } = {}) {
+function syncViewerGeometry({ resetPositions = false, settleMs = 0, viewportSnapshot = null } = {}) {
     const generation = ++_viewerGeometrySync.generation;
     // A ResizeObserver callback may arrive between the immediate fullscreen
     // pass and its delayed settle pass. Do not let that harmless callback
@@ -133,6 +164,7 @@ function syncViewerGeometry({ resetPositions = false, settleMs = 0 } = {}) {
             });
         }
         ['axial', 'sagittal', 'coronal'].forEach(axis => resizeCanvas(axis));
+        _restoreViewerViewport(viewportSnapshot);
         if (typeof window.resizeViewer3D === 'function') window.resizeViewer3D();
     };
     const schedule = (acceptNewerGeneration = false) => requestAnimationFrame(() =>
