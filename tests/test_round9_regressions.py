@@ -271,6 +271,20 @@ class Round9RegressionTests(unittest.TestCase):
         self.assertIn("const _restoreCamera = () =>", planning)
         self.assertIn("_restoreCamera();\n            forceRender3DViewer();", planning)
 
+    def test_report_3d_panels_use_reference_direction_and_tight_panel_framing(self):
+        report = self.read("web/app/static/js/brachybot-report-editor.js")
+        index = self.read("web/app/index.html")
+        self.assertIn("function _reportReferenceViewDirection()", report)
+        self.assertIn("Number(entry[0]) - Number(deep[0])", report)
+        self.assertIn("function _frameReportCamera", report)
+        self.assertIn("targetAspect: 1", report)
+        self.assertIn("direction: reportReferenceDirection", report)
+        self.assertIn("zoom: 1", report)
+        self.assertIn("function _captureReportCanvasCrop", report)
+        self.assertIn("_captureReportCanvasCrop(canvas, REPORT_DOSE_SURFACE_ASPECT)", report)
+        self.assertIn("candidate.clone().intersect(context)", report)
+        self.assertIn("brachybot-report-editor.js?v=18", index)
+
 
 if __name__ == "__main__":
     unittest.main()
