@@ -19,6 +19,40 @@ USERNAME_RE = re.compile(r"^[A-Za-z0-9_.-]{3,64}$")
 MIN_PASSWORD_LENGTH = 12
 
 
+def _persistent_development_secret(store: WorkspaceStore) -> str:
+    """Return a private, restart-stable key for installations without one.
+
+    Production deployments should still provide ``BRACHYBOT_SECRET_KEY``.
+    For a local/LAN research installation, rotating an in-memory key on every
+    server restart invalidates the authenticated browser before it can restore
+    the user's durable cases. Store one random key beside the account database
+    instead. ``O_EXCL`` keeps concurrent starters from replacing each other's
+    key and mode 0600 prevents other local users from reading it.
+    """
+    path = store.runtime_dir / "auth_secret_key"
+    try:
+        existing = path.read_text(encoding="utf-8").strip()
+        if len(existing) >= 32:
+            return existing
+    except FileNotFoundError:
+        pass
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    generated = secrets.token_urlsafe(48)
+    try:
+        descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    except FileExistsError:
+        existing = path.read_text(encoding="utf-8").strip()
+        if len(existing) >= 32:
+            return existing
+        raise RuntimeError(f"Persistent authentication key is invalid: {path}")
+    with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+        handle.write(generated)
+        handle.flush()
+        os.fsync(handle.fileno())
+    return generated
+
+
 def _json_error(message: str, status: int):
     return jsonify({"error": message}), status
 
@@ -28,11 +62,11 @@ def configure_auth(app: Flask, store: WorkspaceStore, config: Optional[Dict[str,
     config = config or {}
     secret = config.get("secret_key") or os.environ.get("BRACHYBOT_SECRET_KEY")
     if not secret:
-        # A generated development key still protects credentials in-process,
-        # but operators receive a clear signal that login cookies will expire
-        # across server restarts until they configure a persistent secret.
-        secret = secrets.token_urlsafe(48)
-        app.logger.warning("BRACHYBOT_SECRET_KEY is unset; login cookies will reset after server restart")
+        secret = _persistent_development_secret(store)
+        app.logger.warning(
+            "BRACHYBOT_SECRET_KEY is unset; using the private restart-stable key in %s",
+            store.runtime_dir,
+        )
     app.config.update(
         SECRET_KEY=secret,
         SESSION_COOKIE_HTTPONLY=True,

@@ -43,6 +43,22 @@ def _register(client, username):
     return response.get_json()
 
 
+def test_default_cookie_secret_is_stable_across_server_restarts(tmp_path):
+    runtime = tmp_path / "runtime"
+    first_store = WorkspaceStore(runtime)
+    first_app = Flask("first")
+    configure_auth(first_app, first_store, {})
+
+    second_store = WorkspaceStore(runtime)
+    second_app = Flask("second")
+    configure_auth(second_app, second_store, {})
+
+    secret_path = runtime / "auth_secret_key"
+    assert secret_path.is_file()
+    assert len(secret_path.read_text(encoding="utf-8").strip()) >= 32
+    assert first_app.config["SECRET_KEY"] == second_app.config["SECRET_KEY"]
+
+
 def test_auth_csrf_and_cross_user_session_denial(tmp_path):
     app = _app(tmp_path)
     first = app.test_client()
