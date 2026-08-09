@@ -55,8 +55,48 @@ TRANSIENT_PLANNING_RESULT_KEYS = frozenset({
 TRANSIENT_COLLECTION_LIMIT = int(
     os.environ.get("BRACHYBOT_TRANSIENT_COLLECTION_LIMIT", "256")
 )
+# Small planning arrays (seed coordinates, face indices, and similar records)
+# are cheaper to read eagerly than to keep as one mmap per sidecar. Historical
+# Planning snapshots can contain thousands of these tiny files; mapping each
+# one exhausts the default 1024-descriptor process limit before hydration can
+# publish any data. Large medical volumes remain memory-mapped.
+EAGER_ARRAY_LOAD_MAX_BYTES = int(
+    os.environ.get("BRACHYBOT_EAGER_ARRAY_LOAD_MAX_BYTES", str(1024 ** 2))
+)
+MIN_OPEN_FILE_LIMIT = int(
+    os.environ.get("BRACHYBOT_MIN_OPEN_FILE_LIMIT", "65536")
+)
 
 logger = logging.getLogger(__name__)
+
+
+def _configure_open_file_limit() -> None:
+    """Give the bounded mmap cache enough descriptors on POSIX hosts.
+
+    Eager loading removes the thousands of tiny sidecar descriptors. The
+    remaining large CT, dose, mesh, and mask mappings are intentionally kept
+    lazy, so a server caching several active Sessions still needs more than a
+    shell's usual 1024-descriptor soft limit. The hard limit remains untouched.
+    """
+    try:
+        import resource
+    except ImportError:  # Windows does not expose POSIX resource limits.
+        return
+    try:
+        soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
+        target = min(int(hard), max(int(soft), MIN_OPEN_FILE_LIMIT))
+        if target > soft:
+            resource.setrlimit(resource.RLIMIT_NOFILE, (target, hard))
+            logger.info(
+                "Raised process open-file soft limit from %d to %d for workspace hydration",
+                soft,
+                target,
+            )
+    except (OSError, ValueError):
+        logger.warning(
+            "Could not raise the process open-file limit; large Session hydration may be constrained",
+            exc_info=True,
+        )
 
 
 class WorkspaceError(RuntimeError):
@@ -237,7 +277,11 @@ def _decode_artifacts(value: Any, root: Path) -> Any:
         return value
     if "$array" in value:
         path = _safe_workspace_child(root, value["$array"])
-        return np.load(path, allow_pickle=False, mmap_mode='r')
+        # A memmap keeps one descriptor alive for the array lifetime. Tiny
+        # planning arrays therefore load eagerly, while large medical volumes
+        # retain lazy, read-only mmap behavior to bound resident memory.
+        mmap_mode = "r" if path.stat().st_size > EAGER_ARRAY_LOAD_MAX_BYTES else None
+        return np.load(path, allow_pickle=False, mmap_mode=mmap_mode)
     if "$tuple" in value:
         return tuple(_decode_artifacts(item, root) for item in value["$tuple"])
     if "$image" in value or "$unsupported" in value:
@@ -870,6 +914,7 @@ class WorkspaceStore:
     """SQLite metadata plus filesystem artifacts for account-owned sessions."""
 
     def __init__(self, runtime_dir: Optional[os.PathLike[str] | str] = None):
+        _configure_open_file_limit()
         configured = runtime_dir or os.environ.get("BRACHYBOT_RUNTIME_DIR")
         if configured:
             self.runtime_dir = Path(configured).expanduser().resolve()
