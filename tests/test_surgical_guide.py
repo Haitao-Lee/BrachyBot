@@ -13,9 +13,11 @@ from web.surgical_guide import (
     NeedleGuidePath,
     _auxiliary_hole_specs,
     _auxiliary_hole_support,
+    _sample_mask_at_world_points,
     generate_surgical_guide,
     guide_bore_quality_ready,
     _filter_components,
+    _remove_truncated_cap_backed_voxels,
     _resample_mask_to_local_grid,
     _segment_distance_mm,
     guide_state_for_version,
@@ -106,6 +108,36 @@ def test_auxiliary_hole_support_rejects_a_cylinder_that_ends_inside_the_plate():
     assert reason == "ready"
 
 
+def test_sparse_guide_sampling_does_not_copy_the_complete_binary_grid(monkeypatch):
+    """Auxiliary-bore QA must pass the original CSG grid to SciPy unchanged."""
+    from scipy import ndimage
+
+    image = sitk.GetImageFromArray(np.ones((12, 13, 14), dtype=np.uint8))
+    image.SetSpacing((0.5, 0.75, 1.25))
+    solid = np.ones((12, 13, 14), dtype=bool)
+    captured = {}
+
+    def fake_map_coordinates(source, coordinates, **kwargs):
+        captured["same_object"] = source is solid
+        captured["order"] = kwargs.get("order")
+        captured["coordinates"] = np.asarray(coordinates)
+        return np.ones(captured["coordinates"].shape[1], dtype=bool)
+
+    monkeypatch.setattr(ndimage, "map_coordinates", fake_map_coordinates)
+    sampled = _sample_mask_at_world_points(
+        solid,
+        image,
+        np.zeros(3, dtype=np.int64),
+        image.GetSpacing(),
+        np.array([[1.0, 1.5, 2.5], [2.0, 3.0, 5.0]]),
+    )
+
+    assert captured["same_object"] is True
+    assert captured["order"] == 0
+    assert captured["coordinates"].shape == (3, 2)
+    assert sampled.tolist() == [True, True]
+
+
 def test_filter_components_removes_diagonal_spurs_before_meshing():
     mask = np.zeros((12, 12, 12), dtype=bool)
     mask[2:7, 2:7, 2:7] = True
@@ -148,6 +180,47 @@ def test_skin_resampling_interpolates_thick_slice_contours_in_physical_space():
     rounded_centers = {round(value, 1) for value in center_x_by_slice}
     assert len(rounded_centers) >= 7
     assert center_x_by_slice == sorted(center_x_by_slice)
+
+
+def test_skin_resampling_can_reuse_the_physical_signed_distance_field():
+    source = np.zeros((5, 9, 9), dtype=bool)
+    source[1:4, 2:7, 2:7] = True
+
+    resampled, spacing, signed_distance = _resample_mask_to_local_grid(
+        source,
+        source_spacing_zyx=(2.0, 1.0, 1.0),
+        target_spacing_mm=0.5,
+        return_signed_distance=True,
+    )
+
+    assert spacing == (0.5, 0.5, 0.5)
+    assert signed_distance.shape == resampled.shape
+    assert signed_distance.dtype == np.float32
+    assert np.array_equal(resampled, signed_distance <= 0.0)
+
+
+def test_truncated_cap_rejection_preserves_lateral_skin_support():
+    body = np.zeros((7, 11, 11), dtype=bool)
+    body[:, 3:8, 3:8] = True
+    signed_distance = np.ones(body.shape, dtype=np.float32)
+    solid = np.zeros(body.shape, dtype=bool)
+    # The first point is directly above the lower scan cap. The second lies
+    # beside the lateral wall and is closer to real skin than to either cap.
+    solid[1, 5, 5] = True
+    solid[3, 5, 8] = True
+
+    removed = _remove_truncated_cap_backed_voxels(
+        solid,
+        body,
+        signed_distance,
+        (1.0, 1.0, 1.0),
+        remove_lower_cap=True,
+        remove_upper_cap=True,
+    )
+
+    assert removed == 1
+    assert not bool(solid[1, 5, 5])
+    assert bool(solid[3, 5, 8])
 
 
 def test_guide_is_watertight_and_stl_round_trips():

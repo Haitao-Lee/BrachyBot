@@ -19,12 +19,17 @@ from dataclasses import dataclass
 import hashlib
 import io
 import json
+import logging
 import math
 import re
 import struct
+import time
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
+
+
+logger = logging.getLogger(__name__)
 
 
 class SurgicalGuideError(ValueError):
@@ -1175,20 +1180,30 @@ def _sample_mask_at_world_points(
     spacing_xyz: Sequence[float],
     points_world: np.ndarray,
 ) -> np.ndarray:
-    """Sample a local binary guide mask at physical world coordinates."""
+    """Sample a local binary guide mask at physical world coordinates.
+
+    The guide grid can contain hundreds of millions of voxels at the 0.2 mm
+    manufacturing resolution. Never cast the complete mask for a sparse point
+    query: doing so once for every candidate auxiliary bore turns a 200-hole
+    guide into hundreds of gigabytes of transient memory traffic. Nearest-
+    neighbour sampling is the correct contract because this is a binary CSG
+    grid and the caller samples at no more than half a voxel along each axis.
+    """
     from scipy import ndimage
 
     points = np.asarray(points_world, dtype=np.float64).reshape(-1, 3)
-    indices_zyx = np.vstack([
-        _world_to_local_index_zyx(ct_image, lower_xyz, point, spacing_xyz)
-        for point in points
-    ])
+    spacing = np.asarray(spacing_xyz, dtype=np.float64)
+    direction = np.asarray(ct_image.GetDirection(), dtype=np.float64).reshape(3, 3)
+    crop_origin = _crop_origin_world(ct_image, lower_xyz)
+    # Row-vector form of ``direction.T @ (point - origin)`` for every point.
+    local_xyz = (points - crop_origin) @ direction
+    indices_zyx = (local_xyz / spacing)[:, ::-1]
     return ndimage.map_coordinates(
-        np.asarray(mask, dtype=np.float32),
+        np.asarray(mask),
         indices_zyx.T,
-        order=1,
+        order=0,
         mode="constant",
-        cval=0.0,
+        cval=False,
         prefilter=False,
     )
 
@@ -1293,7 +1308,9 @@ def _resample_mask_to_local_grid(
     mask: np.ndarray,
     source_spacing_zyx: Sequence[float],
     target_spacing_mm: float,
-) -> Tuple[np.ndarray, Tuple[float, float, float]]:
+    *,
+    return_signed_distance: bool = False,
+) -> Any:
     """Resample a skin mask through a physical signed-distance field.
 
     Nearest-neighbour label interpolation preserves every thick-slice CT step
@@ -1334,7 +1351,13 @@ def _resample_mask_to_local_grid(
         * np.float32(target_spacing[axis] / source_spacing[axis])
         for axis in range(3)
     ]
-    sampled_mask = np.empty(tuple(int(value) for value in target_shape), dtype=bool)
+    sampled_shape = tuple(int(value) for value in target_shape)
+    sampled_mask = np.empty(sampled_shape, dtype=bool)
+    sampled_signed_distance = (
+        np.empty(sampled_shape, dtype=np.float32)
+        if return_signed_distance
+        else None
+    )
 
     # Sampling the complete coordinate volume at 0.2 mm can temporarily use
     # several gigabytes. Process z slabs with a bounded point count so guide
@@ -1352,8 +1375,76 @@ def _resample_mask_to_local_grid(
             prefilter=False,
         )
         sampled_mask[z_start:z_stop] = sampled_distance <= 0.0
+        if sampled_signed_distance is not None:
+            sampled_signed_distance[z_start:z_stop] = sampled_distance
 
-    return sampled_mask, tuple(float(value) for value in target_spacing)
+    result_spacing = tuple(float(value) for value in target_spacing)
+    if sampled_signed_distance is not None:
+        return sampled_mask, result_spacing, sampled_signed_distance
+    return sampled_mask, result_spacing
+
+
+def _remove_truncated_cap_backed_voxels(
+    solid: np.ndarray,
+    body_mask: np.ndarray,
+    signed_distance: np.ndarray,
+    spacing_zyx: Sequence[float],
+    *,
+    remove_lower_cap: bool,
+    remove_upper_cap: bool,
+) -> int:
+    """Remove guide voxels supported by a finite-CT boundary rather than skin.
+
+    The nearest-point query separates exactly for a flat z cap: the distance
+    to a cap voxel is the hypotenuse of its z offset and the 2D distance to the
+    cap mask. Computing those two small 2D transforms and checking only active
+    shell voxels replaces a full 3D EDT with three nearest-index volumes. The
+    half-voxel tolerance is deliberately conservative at the cap/skin tie so
+    acceleration cannot make the guide rely on a truncated scan boundary.
+    """
+    from scipy import ndimage
+
+    if not (remove_lower_cap or remove_upper_cap):
+        return 0
+    solid = np.asarray(solid)
+    body_mask = np.asarray(body_mask, dtype=bool)
+    signed_distance = np.asarray(signed_distance)
+    spacing = np.asarray(spacing_zyx, dtype=np.float64)
+    tolerance_mm = 0.5 * float(np.linalg.norm(spacing))
+    cap_distances: List[Tuple[int, np.ndarray]] = []
+    if remove_lower_cap and bool(np.any(body_mask[0])):
+        cap_distances.append((
+            0,
+            ndimage.distance_transform_edt(
+                ~body_mask[0], sampling=tuple(float(value) for value in spacing[1:])
+            ),
+        ))
+    if remove_upper_cap and bool(np.any(body_mask[-1])):
+        cap_distances.append((
+            int(body_mask.shape[0] - 1),
+            ndimage.distance_transform_edt(
+                ~body_mask[-1], sampling=tuple(float(value) for value in spacing[1:])
+            ),
+        ))
+
+    removed = 0
+    for z_index in range(int(solid.shape[0])):
+        yy, xx = np.nonzero(solid[z_index])
+        if yy.size == 0:
+            continue
+        supported_by_cap = np.zeros(yy.size, dtype=bool)
+        surface_distance = np.maximum(
+            signed_distance[z_index, yy, xx].astype(np.float64, copy=False),
+            0.0,
+        )
+        for cap_z, lateral_distance in cap_distances:
+            axial_distance = abs(z_index - cap_z) * float(spacing[0])
+            distance_to_cap = np.hypot(axial_distance, lateral_distance[yy, xx])
+            supported_by_cap |= distance_to_cap <= surface_distance + tolerance_mm
+        if bool(np.any(supported_by_cap)):
+            solid[z_index, yy[supported_by_cap], xx[supported_by_cap]] = False
+            removed += int(np.count_nonzero(supported_by_cap))
+    return removed
 
 
 def _mesh_from_mask(
@@ -1670,6 +1761,25 @@ def generate_surgical_guide(
 
     if agent is None or not hasattr(agent, "memory"):
         raise SurgicalGuideError("Agent is unavailable")
+    generation_started = time.perf_counter()
+    stage_started = generation_started
+    stage_timings: Dict[str, float] = {}
+
+    def finish_stage(name: str, **details: Any) -> None:
+        """Record one stage without retaining any large intermediate arrays."""
+        nonlocal stage_started
+        now = time.perf_counter()
+        duration = round(now - stage_started, 3)
+        stage_timings[name] = duration
+        stage_started = now
+        suffix = " ".join(f"{key}={value}" for key, value in details.items())
+        logger.info(
+            "Surgical guide stage completed stage=%s duration_s=%.3f%s",
+            name,
+            duration,
+            f" {suffix}" if suffix else "",
+        )
+
     params = normalize_guide_parameters(raw_parameters)
     memory = agent.memory
     ct_image = memory.retrieve("ct_image")
@@ -1685,6 +1795,7 @@ def generate_surgical_guide(
     body = _smooth_body_mask(body, source_spacing_zyx=tuple(
         float(value) for value in np.asarray(ct_image.GetSpacing(), dtype=np.float64)[::-1]
     ), sigma_mm=2.0)
+    finish_stage("skin_envelope", source_shape=tuple(int(value) for value in body.shape))
     # Persist before the expensive guide CSG begins. Even when a downstream
     # manufacturability check rejects the guide mesh, the successfully derived
     # skin segmentation remains available for inspection and parameter repair.
@@ -1694,6 +1805,7 @@ def generate_surgical_guide(
         ct_image=ct_image,
         threshold_hu=params["skin_threshold_hu"],
     )
+    finish_stage("skin_surface_persisted")
     # Finite-FOV detection: if the body envelope is truncated by the CT scan
     # boundaries, the guide must only be built from real lateral skin. Entries
     # falling on a truncated flat plane are rejected inside _path_records;
@@ -1729,30 +1841,34 @@ def generate_surgical_guide(
     # Reconstruct the local skin zero-level surface on the requested isotropic
     # physical grid. The CT is never globally resampled or written back; only
     # the bounded guide patch is sampled for CSG and STL extraction.
-    body_crop, spacing_zyx = _resample_mask_to_local_grid(
+    body_crop, spacing_zyx, skin_signed_distance = _resample_mask_to_local_grid(
         body_crop,
         source_spacing_zyx,
         params["geometry_resolution_mm"],
+        return_signed_distance=True,
+    )
+    finish_stage(
+        "local_grid_resampled",
+        grid_shape=tuple(int(value) for value in body_crop.shape),
+        grid_voxels=int(body_crop.size),
     )
     spacing_xyz = tuple(reversed(spacing_zyx))
-    # Signed distance to the body surface (positive outside, like the EDT of
-    # the empty space). `nearest_body` records, for every voxel, the index of
-    # the closest body voxel so we can reject plate voxels that are "backed by"
-    # a flat truncation cap rather than real lateral skin. Computing the
-    # nearest-body indices is only necessary for the finite-FOV cap rejection;
-    # skipping it for the common full-FOV case avoids three extra full-size
-    # int64 allocations.
-    if truncated_fov:
-        outside_distance, nearest_body = ndimage.distance_transform_edt(
-            ~body_crop, sampling=spacing_zyx, return_indices=True
-        )
-    else:
-        outside_distance = ndimage.distance_transform_edt(
-            ~body_crop, sampling=spacing_zyx
-        )
-        nearest_body = None
+    # Reuse the physical signed-distance field that produced the smooth local
+    # body mask. Recomputing an EDT after thresholding this 0.2 mm grid both
+    # quantised the surface a second time and cost minutes for a 200M-voxel
+    # guide crop. Positive values are true physical distance outside the skin;
+    # negative values are inside and remain excluded by ``~body_crop`` below.
+    outside_distance = skin_signed_distance
+    finish_stage("skin_distance_field_reused", truncated_fov=truncated_fov)
     clearance = params["skin_clearance_mm"]
     plate_thickness = params["plate_thickness_mm"]
+    # The zero level of a sampled label distance is uncertain within half a
+    # construction-voxel diagonal. Keep that sub-voxel guard outside the skin
+    # so later Taubin smoothing cannot pull an oblique sleeve wall back into
+    # the patient. At the default 0.2 mm grid this is only 0.173 mm and does not
+    # change the configured plate thickness or any bore diameter.
+    surface_guard_mm = 0.5 * float(np.linalg.norm(np.asarray(spacing_zyx)))
+    protected_clearance = clearance + surface_guard_mm
     # Plate mask: voxels inside the shell band [clearance, clearance+thickness]
     # offset OUTSIDE the skin (od > 0 means outside the body; od=0 is the body
     # interior and must be excluded), intersected with the patch sphere around
@@ -1762,8 +1878,8 @@ def generate_surgical_guide(
     # produce.
     plate_mask = (
         (~body_crop)
-        & (outside_distance >= clearance)
-        & (outside_distance <= clearance + plate_thickness)
+        & (outside_distance >= protected_clearance)
+        & (outside_distance <= protected_clearance + plate_thickness)
     )
     # Patch mask: spherical region of radius patch_margin_mm around every entry.
     # The local grid is isotropic, so a world distance equals an index distance
@@ -1788,6 +1904,7 @@ def generate_surgical_guide(
             plate_voxel_indices = plate_voxel_indices[distance <= patch_radius_index]
             patch_mask[tuple(plate_voxel_indices.T)] = True
     solid = plate_mask & patch_mask
+    finish_stage("plate_patch", plate_voxels=int(np.count_nonzero(solid)))
     # Pass 1: subtract every auxiliary hole from the bare plate first. This is
     # deliberately done before adding any primary sleeve: the auxiliary holes
     # are plate-only alternate paths, and their validated radial offset keeps
@@ -1832,6 +1949,11 @@ def generate_surgical_guide(
             continue
         solid[box] &= ~(plate_mask[box] & hole_mask)
         realized_auxiliary_specs.append(spec)
+    finish_stage(
+        "auxiliary_holes",
+        requested=len(auxiliary_specs),
+        realized=len(realized_auxiliary_specs),
+    )
 
     # Pass 2: union ALL sleeve cylinders, so the plate and every primary
     # sleeve form one merged solid before any primary bore is drilled. If the
@@ -1852,7 +1974,10 @@ def generate_surgical_guide(
         # Trim the sleeve's skin-facing side flush with the plate: for oblique
         # needles the sleeve wall can cross the skin, so clip it at the
         # clearance offset before unioning.
-        sleeve_mask = (sleeve_sdf <= 0.0) & (outside_distance[box] >= clearance)
+        sleeve_mask = (
+            (sleeve_sdf <= 0.0)
+            & (outside_distance[box] >= protected_clearance)
+        )
         solid[box] |= sleeve_mask
 
     # Unioning sleeves after the first auxiliary subtraction can reintroduce
@@ -1886,21 +2011,27 @@ def generate_surgical_guide(
             _effective_primary_bore_radius_mm(params),
         )
         solid[box] &= ~(bore_sdf <= 0.0)
+    finish_stage("primary_sleeves_and_bores", needle_count=len(paths))
     # Reject plate voxels that are backed by a truncated flat cap. When the
     # body envelope is cut by the CT first/last slice, the cap plane is NOT
     # anatomical skin: any guide voxel whose nearest body voxel lies on the
     # truncated boundary slice would hug the cut, so it is removed. This
     # guarantees the plate only contacts real lateral skin.
     if truncated_fov:
-        ct_z_min = int(lower_zyx[0]) == 0
-        ct_z_max = int(upper_zyx[0]) == int(body.shape[0] - 1)
-        nearest_z = np.asarray(nearest_body[0], dtype=np.int64)
-        cap_backed = np.zeros(body_crop.shape, dtype=bool)
-        if trunc_z_min and ct_z_min:
-            cap_backed |= nearest_z == 0
-        if trunc_z_max and ct_z_max:
-            cap_backed |= nearest_z == int(body_crop.shape[0] - 1)
-        solid[cap_backed] = False
+        removed_cap_voxels = _remove_truncated_cap_backed_voxels(
+            solid,
+            body_crop,
+            skin_signed_distance,
+            spacing_zyx,
+            remove_lower_cap=bool(trunc_z_min and int(lower_zyx[0]) == 0),
+            remove_upper_cap=bool(
+                trunc_z_max and int(upper_zyx[0]) == int(body.shape[0] - 1)
+            ),
+        )
+        logger.info(
+            "Surgical guide finite-FOV cap rejection removed_voxels=%d",
+            removed_cap_voxels,
+        )
     # Shave the guide off the CT scan boundaries (finite FOV): keep a clear
     # safety margin between the plate and the truncation plane so the guide
     # never contacts the flat scan-boundary cut.
@@ -1922,6 +2053,7 @@ def generate_surgical_guide(
             "surface around the target, or move the needle entries away from the "
             "scan boundary."
         )
+    finish_stage("solid_cleanup", solid_voxels=int(np.count_nonzero(solid)))
     # Marching Cubes is topologically correct for ordinary binary volumes,
     # but a thin plate intersected by several closely spaced bores can still
     # contain one-voxel diagonal cracks at ambiguous voxel configurations.
@@ -1945,6 +2077,12 @@ def generate_surgical_guide(
         params,
     )
     validation = mesh_validation(vertices, faces)
+    finish_stage(
+        "mesh_extraction_and_validation",
+        vertices=len(vertices),
+        faces=len(faces),
+        watertight=bool(validation.get("watertight")),
+    )
     if not validation.get("watertight"):
         mesh_repair["attempted"] = True
         mesh_repair["method"] = "restricted_voxel_closing_and_bore_recut"
@@ -1961,7 +2099,7 @@ def generate_surgical_guide(
             structure=ndimage.generate_binary_structure(3, 1),
             iterations=1,
         )
-        repaired_solid &= (~body_crop) & (outside_distance >= clearance)
+        repaired_solid &= (~body_crop) & (outside_distance >= protected_clearance)
 
         for spec in realized_auxiliary_specs:
             hole_sdf, box = _cylinder_sdf_in_region(
@@ -2033,6 +2171,13 @@ def generate_surgical_guide(
                 f"(open edges: {open_edges}; non-manifold edges: {nonmanifold_edges}); "
                 f"{guidance}"
             )
+    if mesh_repair["attempted"]:
+        finish_stage(
+            "mesh_topology_repair",
+            vertices=len(vertices),
+            faces=len(faces),
+            watertight=bool(validation.get("watertight")),
+        )
     validation["mesh_repair"] = mesh_repair
     snapshot = _current_planning_snapshot(agent)
     prior = memory.retrieve("surgical_guide")
@@ -2119,6 +2264,16 @@ def generate_surgical_guide(
             if bool(spec.get("skipped"))
         ],
     }
+    stage_timings["total"] = round(time.perf_counter() - generation_started, 3)
+    logger.info(
+        "Surgical guide generation completed duration_s=%.3f needles=%d "
+        "auxiliary_holes=%d vertices=%d faces=%d",
+        stage_timings["total"],
+        len(paths),
+        len(realized_auxiliary_specs),
+        len(vertices),
+        len(faces),
+    )
     # The guide covers the current displayed needle paths, but its validity
     # signature must be stable against the algorithm baseline: a manual needle
     # added after generation must not hide this guide or disable its update
@@ -2156,6 +2311,7 @@ def generate_surgical_guide(
             "skin_fit": "Physical signed-distance skin surface with explicit clearance",
             "skin_surface_interpolation": "physical_signed_distance_linear",
             "geometry_resolution_mm": params["geometry_resolution_mm"],
+            "stage_timings_seconds": stage_timings,
             "bore_quality": bore_quality,
             "finite_fov": {
                 "truncated_superior": bool(trunc_z_max),
