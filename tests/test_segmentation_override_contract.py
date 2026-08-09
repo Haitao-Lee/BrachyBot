@@ -114,6 +114,30 @@ def test_failed_direct_tool_is_not_marked_done():
     assert "empty CTV" in steps[0]["result"]
 
 
+def test_failed_planning_never_runs_the_dependent_surgical_guide():
+    class Harness(_DirectHarness):
+        def __init__(self):
+            super().__init__(_Memory())
+            self.calls = []
+
+        def _execute_tool_with_memory(self, tool, _params):
+            self.calls.append(tool)
+            if tool == "planning_pipeline":
+                return ToolResult(success=False, error="planning failed")
+            return ToolResult(success=True, message="unexpected guide execution")
+
+    harness = Harness()
+    steps = []
+    harness._execute_direct_tools([
+        {"tool": "planning_pipeline", "params": {"step": "full"}},
+        {"tool": "surgical_guide", "params": {"action": "generate"}},
+    ], steps, [0])
+
+    assert harness.calls == ["planning_pipeline"]
+    assert steps[0]["status"] == "error"
+    assert all(step.get("tool") != "surgical_guide" for step in steps)
+
+
 def test_ctv_followup_inherits_site_from_recent_user_message():
     memory = _Memory({"ct_path": "/tmp/case.nii.gz"})
     memory.conversation = [

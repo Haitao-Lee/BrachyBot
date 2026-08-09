@@ -926,7 +926,9 @@ class LLMRuntimeMixin:
                     _input_missing = True
                     final_response = result_text
                     steps[-1]["requires_input"] = True
-                if not tool_succeeded and tool_name in ("ctv_segmentation", "seed_planning"):
+                if not tool_succeeded and tool_name in (
+                    "ctv_segmentation", "oar_segmentation", "seed_planning", "planning_pipeline"
+                ):
                     logger.info(f"Critical tool {tool_name} failed — stopping tool batch")
                     break
 
@@ -988,7 +990,8 @@ class LLMRuntimeMixin:
             #
             # IMPORTANT: this prompt must NOT give the LLM an excuse to
             # summarize early. We list the COMPLETE brachytherapy workflow
-            # (CTV seg → OAR seg → planning_pipeline) and require the LLM
+            # (CTV seg → OAR seg → planning_pipeline → surgical_guide)
+            # and require the LLM
             # to call the next tool if the previous one is not the last in
             # the chain. The LLM is misreading "Tool execution completed"
             # as a signal to stop.
@@ -2493,7 +2496,9 @@ class LLMRuntimeMixin:
                 # If a critical prerequisite tool fails, stop executing
                 # remaining tool calls in this batch so the LLM can ask
                 # the user for missing info instead of cascading failures.
-                if tool_step.get("status") == "error" and tool_name in ("ctv_segmentation", "seed_planning"):
+                if tool_step.get("status") == "error" and tool_name in (
+                    "ctv_segmentation", "oar_segmentation", "seed_planning", "planning_pipeline"
+                ):
                     logger.info(f"Critical tool {tool_name} failed — stopping tool batch (stream)")
                     break
 
@@ -2590,7 +2595,8 @@ class LLMRuntimeMixin:
             #
             # IMPORTANT: this prompt must NOT give the LLM an excuse to
             # summarize early. We list the COMPLETE brachytherapy workflow
-            # (CTV seg → OAR seg → planning_pipeline) and require the LLM
+            # (CTV seg → OAR seg → planning_pipeline → surgical_guide)
+            # and require the LLM
             # to call the next tool if the previous one is not the last in
             # the chain. The LLM is misreading "Tool execution completed"
             # as a signal to stop.

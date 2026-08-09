@@ -501,12 +501,28 @@ print(json.dumps(result))
                 _reason = result.error or result.message or "execution failed"
                 result_summary = result.message[:500] if result.success else f"Error: {_reason}"
                 self.memory.add_message("user", f"[Tool result: {result_summary}]")
+                if not result.success and tc["tool"] in {
+                    "ctv_segmentation", "oar_segmentation", "planning_pipeline"
+                }:
+                    logger.info(
+                        "Stopping direct clinical chain after failed prerequisite: %s",
+                        tc["tool"],
+                    )
+                    if yield_event:
+                        yield_event(tool_step)
+                    break
             except Exception as e:
                 tool_step["status"] = "error"
                 tool_step["result"] = str(e)
                 logger.error(f"Direct tool failed: {tc['tool']}: {e}")
                 self.memory.add_message("assistant", f"[Called {tc['tool']}]")
                 self.memory.add_message("user", f"[Tool result: Error: {str(e)[:200]}]")
+                if tc["tool"] in {
+                    "ctv_segmentation", "oar_segmentation", "planning_pipeline"
+                }:
+                    if yield_event:
+                        yield_event(tool_step)
+                    break
             # Yield completed step for streaming UI (enables incremental viewer updates)
             if yield_event:
                 yield_event(tool_step)
@@ -700,6 +716,41 @@ print(json.dumps(result))
             return (om.get('dmax') or om.get('max_dose') or 0) if isinstance(om, dict) else 0
 
         lines = []
+        # Surgical-guide generation is part of the full planning delivery
+        # contract. Report its real outcome from the bound tool step, falling
+        # back to the persisted guide only when this report is rebuilt after a
+        # refresh. This prevents a successful dose plan from being presented
+        # as a successful printable guide when guide generation actually failed.
+        guide_state = self.memory.retrieve("surgical_guide") or {}
+        guide_step = None
+        if steps:
+            for candidate in reversed(steps):
+                if candidate.get("tool") == "surgical_guide":
+                    guide_step = candidate
+                    break
+
+        guide_summary = ""
+        if guide_step and guide_step.get("status") == "error":
+            guide_summary = L(
+                "\u751f\u6210\u5931\u8d25\uff1b\u8bf7\u67e5\u770b\u6267\u884c\u8ffd\u8e2a\u4e2d\u7684\u5bfc\u677f\u9519\u8bef\u8be6\u60c5\u3002",
+                "Generation failed; see the surgical-guide error in the execution trace.",
+            )
+        elif (
+            (guide_step and guide_step.get("status") == "done")
+            or (isinstance(guide_state, dict) and guide_state.get("status") == "ready")
+        ):
+            version = int(guide_state.get("version") or 1) if isinstance(guide_state, dict) else 1
+            needle_count = len(guide_state.get("selected_needle_ids") or []) if isinstance(guide_state, dict) else 0
+            if needle_count:
+                guide_summary = L(
+                    f"\u5df2\u751f\u6210\u7a7f\u523a\u5bfc\u677f v{version}\uff0c\u5305\u542b {needle_count} \u6761\u89c4\u5212\u9488\u9053\u3002",
+                    f"Puncture guide v{version} generated for {needle_count} planned needle paths.",
+                )
+            else:
+                guide_summary = L(
+                    f"\u5df2\u751f\u6210\u7a7f\u523a\u5bfc\u677f v{version}\u3002",
+                    f"Puncture guide v{version} generated.",
+                )
         # Section 1: Workflow Summary
         lines.append(f"## {L('1. 流程总结', '1. Workflow Summary')}")
         lines.append("")
@@ -708,9 +759,10 @@ print(json.dumps(result))
         if steps:
             for s in steps:
                 if s.get("tool") in ("ctv_segmentation", "oar_segmentation",
-                                       "planning_pipeline", "trajectory_planning"):
+                                       "planning_pipeline", "trajectory_planning",
+                                       "surgical_guide"):
                     tools_run.append(s["tool"])
-        tools_summary = ", ".join(set(tools_run)) if tools_run else "ctv_segmentation, planning_pipeline"
+        tools_summary = ", ".join(dict.fromkeys(tools_run)) if tools_run else "ctv_segmentation, planning_pipeline"
         lines.append(L(
             f"已完成放射性粒子植入规划全流程,执行工具:{tools_summary}。靶区覆盖率V100达{v100_frac*100:.1f}%,D90为{d90_gy:.2f} Gy,规划评分{ps_pct:.0f}/100。",
             f"Brachytherapy planning pipeline completed. Tools executed: {tools_summary}. CTV coverage V100 = {v100_frac*100:.1f}%, D90 = {d90_gy:.2f} Gy, plan score = {ps_pct:.0f}/100."
@@ -756,6 +808,8 @@ print(json.dumps(result))
             density = total_seeds / ctv_vol_cm3
             lines.append(f"- **{L('粒子密度', 'Seed density')}**: {density:.2f} {L('颗 / cm³', 'seeds/cm³')}")
         lines.append(f"- **{L('规划模式', 'Planning mode')}**: rule_based")
+        if guide_summary:
+            lines.append(f"- **{L('手术导板', 'Surgical guide')}**: {guide_summary}")
         lines.append("")
 
         # Section 5: Dose Distribution
