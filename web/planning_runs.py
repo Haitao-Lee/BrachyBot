@@ -559,6 +559,44 @@ def activate_planning_run(agent: Any, planning_id: str) -> Dict[str, Any]:
     return _run_summary(run)
 
 
+def restore_active_planning_aliases(memory: Any) -> List[str]:
+    """Repair missing legacy aliases from the active immutable run snapshot.
+
+    Session hydration restores both the namespaced Planning run and the legacy
+    top-level values consumed by existing Viewer/DVH/Guide routes. Older or
+    interrupted checkpoints may contain the run but omit one or more aliases.
+    Filling only absent values from the same active run is safe: it never
+    replaces a newer live edit and does not change which Planning is active.
+    """
+    planning_id = active_planning_id(memory)
+    if not planning_id:
+        return []
+    snapshot = memory.retrieve(PLANNING_RUN_PREFIX + str(planning_id))
+    if not isinstance(snapshot, Mapping):
+        return []
+
+    restored: List[str] = []
+    with memory._lock:
+        versions = getattr(memory, "_planning_versions", {})
+        run_version = int(versions.get(PLANNING_RUN_PREFIX + str(planning_id), 0))
+        available = set(memory.conversation_state.get("data_available", []))
+        for key in PLANNING_VALUE_KEYS:
+            if memory.planning_results.get(key) is not None:
+                continue
+            value = snapshot.get(key)
+            if value is None:
+                continue
+            cloned = _clone(value)
+            if cloned is None:
+                continue
+            memory.planning_results[key] = cloned
+            versions[key] = max(int(versions.get(key, 0)), run_version)
+            available.add(key)
+            restored.append(key)
+        memory.conversation_state["data_available"] = sorted(available)
+    return restored
+
+
 def planning_run_snapshot(memory: Any, planning_id: Optional[str] = None) -> Dict[str, Any]:
     target = str(planning_id or active_planning_id(memory) or "")
     if not target:

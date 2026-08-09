@@ -1873,6 +1873,15 @@ function clearClientWorkspace(options = {}) {
     }
     if (options.clearReport !== false && typeof _newEmptyReportForm === 'function') {
         window.reportForm = _newEmptyReportForm();
+        // Report maps are Session-owned. Keeping these globals while the CT
+        // workspace is cleared lets a delayed save attach the previous case's
+        // Planning report to the newly selected Session.
+        window.__reportWorkspaceByPlanning = {};
+        window.__reportWorkspaceActivePlanningId = null;
+        window.__reportWorkspaceSessionId = null;
+        window.__reportWorkspaceAudit = [];
+        window.__reportWorkspaceSnapshots = [];
+        window._reportCollapsed = {};
         try { renderReportEditor(); } catch (_) {}
         try { _updateReportPreview(); } catch (_) {}
     }

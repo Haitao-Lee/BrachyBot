@@ -194,7 +194,16 @@ class _ArtifactEncoder:
             # must never overwrite the sidecar still referenced by the current
             # snapshot before the new snapshot has been atomically committed.
             version_suffix = str(self._array_version(source_key)) if source_key and self._array_version else "value"
-            relative = Path("arrays") / f"{name}_{version_suffix}_{self._counter}.npy"
+            # Nested Planning snapshots can produce path-like names hundreds
+            # of characters long. Use a stable digest for the physical file;
+            # the complete logical name remains in the snapshot/reuse index.
+            # This keeps snapshots portable to Windows without weakening the
+            # source-key/version identity used for sidecar reuse.
+            logical_digest = hashlib.sha256(name.encode("utf-8", "replace")).hexdigest()[:16]
+            source_prefix = _safe_filename(source_key or "array")[:16]
+            relative = Path("arrays") / (
+                f"{source_prefix}_{logical_digest}_{version_suffix}_{self._counter}.npy"
+            )
             path = self.root / relative
             if self._ensure_capacity is not None:
                 # ``.npy`` headers are small for the numeric volumes used by
@@ -718,6 +727,102 @@ def _merge_report_patch(current: Mapping[str, Any], incoming: Mapping[str, Any])
     return result
 
 
+def _snapshot_planning_identity(snapshot: Mapping[str, Any]) -> Tuple[set[str], Optional[str]]:
+    """Return Planning IDs owned by a workspace and its authoritative active ID.
+
+    Report state is submitted by the browser, while Planning state is owned by
+    the agent snapshot.  Keeping this boundary explicit prevents a delayed
+    browser save from attaching another Session's report to the current case.
+    """
+    agent = snapshot.get("agent") if isinstance(snapshot, Mapping) else None
+    results = agent.get("planning_results") if isinstance(agent, Mapping) else None
+    if not isinstance(results, Mapping):
+        return set(), None
+
+    planning_ids: set[str] = set()
+    runs = results.get("planning_runs")
+    if isinstance(runs, list):
+        for run in runs:
+            if not isinstance(run, Mapping):
+                continue
+            planning_id = str(run.get("planning_id") or run.get("id") or "").strip()
+            if planning_id:
+                planning_ids.add(planning_id)
+    for key in results:
+        value = str(key)
+        if value.startswith("planning_run:") and len(value) > len("planning_run:"):
+            planning_ids.add(value[len("planning_run:"):])
+
+    active = str(
+        results.get("active_planning_id")
+        or results.get("planning_run_id")
+        or ""
+    ).strip() or None
+    if active:
+        planning_ids.add(active)
+    return planning_ids, active
+
+
+def _report_form_session_id(section: Any) -> str:
+    form, has_form = _report_form_from_section(section)
+    if not has_form:
+        return ""
+    return str(form.get("sessionId") or form.get("session_id") or "").strip()
+
+
+def _sanitize_report_for_snapshot(
+    report: Mapping[str, Any],
+    snapshot: Mapping[str, Any],
+    session_id: str,
+) -> Dict[str, Any]:
+    """Bind persisted report sections to Planning IDs owned by this Session."""
+    result = dict(report or {})
+    planning_ids, active_id = _snapshot_planning_identity(snapshot)
+    requested_active = str(result.get("active_planning_id") or "").strip() or None
+    if not active_id and requested_active and (
+        not planning_ids or requested_active in planning_ids
+    ):
+        active_id = requested_active
+
+    incoming_map = result.get("by_planning_id")
+    filtered: Dict[str, Any] = {}
+    if isinstance(incoming_map, Mapping):
+        for raw_id, section in incoming_map.items():
+            planning_id = str(raw_id or "").strip()
+            if not planning_id or not isinstance(section, Mapping):
+                continue
+            if planning_ids and planning_id not in planning_ids:
+                continue
+            owner = _report_form_session_id(section)
+            if owner and owner != str(session_id):
+                continue
+            filtered[planning_id] = dict(section)
+
+    # Legacy snapshots kept the active report only at the top level. Promote
+    # that section into the active run when it belongs to this Session.
+    legacy_section = {
+        key: value for key, value in result.items()
+        if key not in {"active_planning_id", "by_planning_id"}
+    }
+    legacy_owner = _report_form_session_id(legacy_section)
+    if active_id and active_id not in filtered and (
+        not legacy_owner or legacy_owner == str(session_id)
+    ):
+        _, legacy_has_form = _report_form_from_section(legacy_section)
+        if legacy_has_form:
+            filtered[active_id] = legacy_section
+
+    if active_id and active_id in filtered:
+        sanitized = dict(filtered[active_id])
+    elif not legacy_owner or legacy_owner == str(session_id):
+        sanitized = legacy_section
+    else:
+        sanitized = {}
+    sanitized["active_planning_id"] = active_id
+    sanitized["by_planning_id"] = filtered
+    return sanitized
+
+
 def _safe_workspace_child(root: Path, relative: str) -> Path:
     target = (root / str(relative)).resolve()
     if target != root.resolve() and root.resolve() not in target.parents:
@@ -1135,7 +1240,12 @@ class WorkspaceStore:
                     # Execution Trace and assistant response on restart.
                     snapshot[key] = _merge_chat_patch(current, safe_patch)
                 elif key == "report":
-                    snapshot[key] = _merge_report_patch(current, safe_patch)
+                    merged_report = _merge_report_patch(current, safe_patch)
+                    snapshot[key] = _sanitize_report_for_snapshot(
+                        merged_report,
+                        snapshot,
+                        session_id,
+                    )
                 else:
                     snapshot[key] = {**current, **safe_patch}
         snapshot["saved_at"] = _now()
@@ -1313,6 +1423,21 @@ class WorkspaceStore:
         durable_state = durable_snapshot.get("agent") if isinstance(durable_snapshot.get("agent"), Mapping) else {}
         durable_results = durable_state.get("planning_results") if isinstance(durable_state.get("planning_results"), Mapping) else {}
         durable_versions = durable_state.get("planning_versions") if isinstance(durable_state.get("planning_versions"), Mapping) else {}
+        preserve_durable_results = bool(
+            getattr(agent, "_workspace_hydration_in_progress", False)
+            or getattr(agent, "_workspace_data_ready", True) is False
+        )
+        if preserve_durable_results:
+            # A cold-start metadata pass intentionally replaces array values
+            # with None until the detached hydration worker decodes their NPY
+            # sidecars. UI/report checkpoints can still run during that window.
+            # Treat unchanged durable versions as authoritative so a lightweight
+            # checkpoint cannot replace dose, masks, Planning runs, guides, or
+            # skin arrays with the metadata-only placeholders and then prune the
+            # only sidecar files that can restore them.
+            for key, version in durable_versions.items():
+                planning_versions.setdefault(str(key), int(version or 0))
+            agent_state["planning_versions"] = _safe_json(planning_versions)
         created_array_paths: List[str] = []
         reused_array_count = 0
 
@@ -1434,37 +1559,69 @@ class WorkspaceStore:
             except (OSError, WorkspaceError, ValueError):
                 ct_can_be_reloaded = False
         skipped_transient_results: List[str] = []
-        for key, value in planning_results.items():
+
+        def should_skip_result(key: str, value: Any) -> bool:
             if key in TRANSIENT_PLANNING_RESULT_KEYS:
-                skipped_transient_results.append(str(key))
-                continue
+                return True
             if key == "trajectories":
                 try:
                     if len(value) > TRANSIENT_COLLECTION_LIMIT:
-                        skipped_transient_results.append(str(key))
-                        continue
+                        return True
                 except (TypeError, ValueError):
                     pass
             if key in {"ct_image", "ct_sitk", "ct_image_raw"}:
-                # CT is already durably owned by the case input directory and
-                # is reconstructed on hydration. Persisting the same voxel
-                # array again made every checkpoint rewrite tens or hundreds
-                # of MB and was the main source of multi-minute "Saving case"
-                # operations.
-                continue
+                return True
             if key == "ct_data" and ct_can_be_reloaded:
+                return True
+            return False
+
+        def durable_version_matches(key: str) -> bool:
+            if key not in durable_versions or key not in planning_versions:
+                return False
+            try:
+                return int(durable_versions[key]) == int(planning_versions[key])
+            except (TypeError, ValueError):
+                return False
+
+        for key, value in planning_results.items():
+            key = str(key)
+            if should_skip_result(key, value):
+                skipped_transient_results.append(key)
+                continue
+            if (
+                preserve_durable_results
+                and key in durable_results
+                and durable_version_matches(key)
+            ):
+                # Reuse the entire encoded value, not only its top-level array.
+                # Planning run snapshots contain deeply nested dose and skin
+                # arrays whose metadata-only representation is a tree of None
+                # placeholders during cold-start hydration.
+                encoded_results[key] = durable_results[key]
                 continue
             encoded = encoder.encode(value, _safe_filename(key), str(key))
             if isinstance(encoded, dict) and "$image" in encoded:
                 continue
-            encoded_results[str(key)] = encoded
+            encoded_results[key] = encoded
+
+        if preserve_durable_results:
+            for raw_key, durable_value in durable_results.items():
+                key = str(raw_key)
+                if key in encoded_results or should_skip_result(key, durable_value):
+                    continue
+                if durable_version_matches(key):
+                    # Top-level arrays disappear completely from a metadata
+                    # hydration pass. Preserve those missing unchanged keys as
+                    # well as nested arrays handled above.
+                    encoded_results[key] = durable_value
         logger.info(
-            "workspace checkpoint artifacts encoded session=%s duration_ms=%.1f arrays_created=%d arrays_reused=%d transient_skipped=%s",
+            "workspace checkpoint artifacts encoded session=%s duration_ms=%.1f arrays_created=%d arrays_reused=%d transient_skipped=%s preserve_durable=%s",
             session_id,
             (time.perf_counter() - encode_started) * 1000.0,
             len(created_array_paths),
             reused_array_count,
             ",".join(skipped_transient_results) or "none",
+            preserve_durable_results,
         )
         return {
             "agent_state": agent_state,
@@ -1738,11 +1895,27 @@ class WorkspaceStore:
             memory.conversation_state["data_available"] = sorted(
                 memory.planning_results.keys()
             )
+        restored_aliases: List[str] = []
+        if include_planning_results:
+            # Historical Planning snapshots are immutable and authoritative.
+            # Recreate any missing compatibility aliases before HTTP routes
+            # expose the hydrated agent, so seeds, needles, dose, DVH, guide,
+            # and skin all become available in the same ready transition.
+            try:
+                from web.planning_runs import restore_active_planning_aliases
+
+                restored_aliases = restore_active_planning_aliases(memory)
+            except Exception:
+                logger.exception(
+                    "workspace hydration could not restore active Planning aliases session=%s",
+                    session_id,
+                )
         logger.info(
-            "workspace hydration arrays decoded session=%s duration_ms=%.1f result_keys=%d",
+            "workspace hydration arrays decoded session=%s duration_ms=%.1f result_keys=%d restored_aliases=%s",
             session_id,
             (time.perf_counter() - decode_started) * 1000.0,
             len(memory.planning_results),
+            ",".join(restored_aliases) or "none",
         )
         if isinstance(state.get("config"), Mapping):
             agent.config.update(_restore_json(state["config"]))

@@ -135,6 +135,98 @@ def test_hydration_holds_checkpoint_lock_while_reading_array_sidecars(tmp_path):
     )
 
 
+def test_metadata_hydration_checkpoint_preserves_planning_sidecars(tmp_path):
+    """A lightweight startup checkpoint must not prune durable plan arrays."""
+    store = WorkspaceStore(tmp_path / "runtime")
+    user = store.create_user("partial_hydration_owner", "hash")
+    case = store.create_session(user["id"], "Partial hydration case")
+    agent = _Agent()
+    planning_id = "planning-partial"
+    skin_mask = np.full((3, 2, 2), 1, dtype=np.uint8)
+    guide_vertices = np.arange(18, dtype=np.float32).reshape(6, 3)
+    run_snapshot = {
+        "seed_plan_serialized": agent.memory.retrieve("seed_plan_serialized"),
+        "trajectories": agent.memory.retrieve("trajectories"),
+        "dose_distribution_gy": agent.memory.retrieve("dose_distribution_gy"),
+        "dose_metrics": agent.memory.retrieve("dose_metrics"),
+        "dvh_data": agent.memory.retrieve("dvh_data"),
+        "surgical_guide": {"version": 1, "mesh": {"vertices": guide_vertices}},
+        "skin_surface_mask": skin_mask,
+    }
+    agent.memory.planning_results.update({
+        "planning_runs": [{"planning_id": planning_id, "status": "completed", "visible": True}],
+        "active_planning_id": planning_id,
+        "planning_run_id": planning_id,
+        f"planning_run:{planning_id}": run_snapshot,
+        "surgical_guide": run_snapshot["surgical_guide"],
+        "skin_surface_mask": skin_mask,
+    })
+    agent.memory._planning_versions.update({
+        key: 1 for key in agent.memory.planning_results
+    })
+    store.snapshot_agent(user["id"], case.id, agent, reason="partial.seed")
+
+    partial = _Agent()
+    store.hydrate_agent(
+        user["id"],
+        case.id,
+        partial,
+        include_planning_results=False,
+        load_ct=False,
+    )
+    partial._workspace_hydration_in_progress = True
+    partial._workspace_data_ready = False
+    store.snapshot_agent(user["id"], case.id, partial, reason="partial.ui.checkpoint")
+
+    raw = store.load_snapshot(user["id"], case.id)["agent"]["planning_results"]
+    assert "$array" in raw["dose_distribution_gy"]
+    assert "$array" in raw["skin_surface_mask"]
+    assert "$array" in raw[f"planning_run:{planning_id}"]["dose_distribution_gy"]
+    assert "$array" in raw[f"planning_run:{planning_id}"]["surgical_guide"]["mesh"]["vertices"]
+
+    restored = _Agent()
+    store.hydrate_agent(user["id"], case.id, restored)
+    assert np.array_equal(restored.memory.retrieve("skin_surface_mask"), skin_mask)
+    assert np.array_equal(
+        restored.memory.retrieve("surgical_guide")["mesh"]["vertices"],
+        guide_vertices,
+    )
+    assert restored.memory.retrieve("seed_plan_serialized")["seeds"] == [[1.0, 2.0, 3.0]]
+    assert restored.memory.retrieve("dose_metrics")["d90"] == 123.4
+
+
+def test_full_hydration_repairs_missing_active_planning_aliases(tmp_path):
+    store = WorkspaceStore(tmp_path / "runtime")
+    user = store.create_user("planning_alias_owner", "hash")
+    case = store.create_session(user["id"], "Planning alias case")
+    agent = _Agent()
+    planning_id = "planning-history-only"
+    dose = np.full((3, 2, 2), 4.0, dtype=np.float32)
+    skin = np.ones((3, 2, 2), dtype=np.uint8)
+    run_snapshot = {
+        "seed_plan_serialized": {"seeds": [[4.0, 5.0, 6.0]], "needles": [{"id": "needle-9"}]},
+        "dose_distribution_gy": dose,
+        "dose_metrics": {"v100": 90.61, "d90": 122.75},
+        "surgical_guide": {"version": 3},
+        "skin_surface_mask": skin,
+    }
+    agent.memory.planning_results = {
+        "planning_runs": [{"planning_id": planning_id, "status": "completed", "visible": True}],
+        "active_planning_id": planning_id,
+        "planning_run_id": planning_id,
+        f"planning_run:{planning_id}": run_snapshot,
+    }
+    agent.memory._planning_versions = {key: 1 for key in agent.memory.planning_results}
+    store.snapshot_agent(user["id"], case.id, agent, reason="history.only")
+
+    restored = _Agent()
+    store.hydrate_agent(user["id"], case.id, restored)
+    assert np.array_equal(restored.memory.retrieve("dose_distribution_gy"), dose)
+    assert np.array_equal(restored.memory.retrieve("skin_surface_mask"), skin)
+    assert restored.memory.retrieve("surgical_guide")["version"] == 3
+    assert restored.memory.retrieve("seed_plan_serialized")["needles"][0]["id"] == "needle-9"
+
+
 def test_chat_snapshot_patches_are_append_only(tmp_path):
     """A stale browser patch must not erase a detached task transcript."""
     store = WorkspaceStore(tmp_path / "runtime")
@@ -217,6 +309,64 @@ def test_report_quality_assessment_survives_snapshot_merge(tmp_path):
     restored = store.load_snapshot(user["id"], case.id)["report"]["form"]
     assert restored["qualityAssessment"]["metrics"]["v100"]["reference"] == "See cited case criteria"
     assert restored["qualityAssessment"]["metrics"]["d90"]["statusText"] == "Not assessed"
+
+
+def test_report_patch_is_bound_to_the_sessions_authoritative_planning(tmp_path):
+    store = WorkspaceStore(tmp_path / "runtime")
+    user = store.create_user("report_planning_owner", "hash")
+    case = store.create_session(user["id"], "Planning report ownership case")
+    agent = _Agent()
+    planning_id = "planning-current"
+    agent.memory.planning_results.update({
+        "planning_runs": [{"planning_id": planning_id, "status": "completed", "visible": True}],
+        "active_planning_id": planning_id,
+        "planning_run_id": planning_id,
+        f"planning_run:{planning_id}": {"dose_metrics": {"v100": 90.61}},
+    })
+    agent.memory._planning_versions.update({key: 1 for key in agent.memory.planning_results})
+    store.snapshot_agent(user["id"], case.id, agent, reason="report.plan.seed")
+
+    current_form = {
+        "version": 3,
+        "sessionId": case.id,
+        "updatedAt": 200,
+        "figures": [{"axis": "axial", "_serverUrl": "/current.png"}],
+        "metrics": {"v100": 90.61},
+        "qualityAssessment": {
+            "metrics": {
+                "v100": {
+                    "value": 90.61,
+                    "reference": "Pancreatic criterion: V100 >= 90%",
+                    "statusText": "Meets cited criterion",
+                },
+            },
+        },
+    }
+    foreign_form = {
+        "version": 3,
+        "sessionId": "another-session",
+        "updatedAt": 300,
+        "interpretation": "Foreign case report",
+    }
+    store.save_snapshot_patch(user["id"], case.id, {
+        "report": {
+            "form": foreign_form,
+            "active_planning_id": "planning-foreign",
+            "by_planning_id": {
+                planning_id: {"form": current_form},
+                "planning-foreign": {"form": foreign_form},
+            },
+        },
+    })
+
+    report = store.load_snapshot(user["id"], case.id)["report"]
+    assert report["active_planning_id"] == planning_id
+    assert set(report["by_planning_id"]) == {planning_id}
+    assert report["form"]["sessionId"] == case.id
+    assert report["form"]["figures"][0]["axis"] == "axial"
+    quality = report["form"]["qualityAssessment"]["metrics"]["v100"]
+    assert quality["reference"] == "Pancreatic criterion: V100 >= 90%"
+    assert quality["statusText"] == "Meets cited criterion"
 
 
 def test_newer_incomplete_report_snapshot_cannot_erase_quality_columns(tmp_path):
