@@ -91,6 +91,12 @@ GUIDE_BORE_MARGIN_MM = 0.4
 # enforce the same physical wall thickness.
 GUIDE_MINIMUM_WALL_MM = 0.35
 
+# Auxiliary cylinders are construction tools, not printed geometry.  They
+# must extend well beyond both sides of the guide shell so a curved skin
+# surface cannot truncate a bore into a shallow half-hole.  The resulting STL
+# still contains only the portion removed from the guide material.
+AUXILIARY_HOLE_OVERRUN_MM = 8.0
+
 
 def _effective_primary_bore_radius_mm(params: Mapping[str, Any]) -> float:
     """Return the physical primary-hole radius written to the STL.
@@ -282,8 +288,10 @@ def _auxiliary_hole_specs(
                 angle = phase + 2.0 * math.pi * hole_index / holes_per_ring
                 offset_direction = math.cos(angle) * axis_a + math.sin(angle) * axis_b
                 center = np.asarray(path.entry, dtype=np.float64) + radial_offset * offset_direction
-                start = center - inward * (clearance + plate_thickness + 2.0)
-                end = center + inward * (clearance + 2.0)
+                start = center - inward * (
+                    clearance + plate_thickness + AUXILIARY_HOLE_OVERRUN_MM
+                )
+                end = center + inward * (clearance + AUXILIARY_HOLE_OVERRUN_MM)
                 item: Dict[str, Any] = {
                     "id": f"aux_{path.needle_id}_{ring_index + 1}_{hole_index + 1}",
                     "needle_id": path.needle_id,
@@ -1160,6 +1168,109 @@ def _cylinder_sdf_in_region(
     return sdf, box
 
 
+def _sample_mask_at_world_points(
+    mask: np.ndarray,
+    ct_image: Any,
+    lower_xyz: np.ndarray,
+    spacing_xyz: Sequence[float],
+    points_world: np.ndarray,
+) -> np.ndarray:
+    """Sample a local binary guide mask at physical world coordinates."""
+    from scipy import ndimage
+
+    points = np.asarray(points_world, dtype=np.float64).reshape(-1, 3)
+    indices_zyx = np.vstack([
+        _world_to_local_index_zyx(ct_image, lower_xyz, point, spacing_xyz)
+        for point in points
+    ])
+    return ndimage.map_coordinates(
+        np.asarray(mask, dtype=np.float32),
+        indices_zyx.T,
+        order=1,
+        mode="constant",
+        cval=0.0,
+        prefilter=False,
+    )
+
+
+def _auxiliary_hole_support(
+    solid: np.ndarray,
+    ct_image: Any,
+    lower_xyz: np.ndarray,
+    spacing_xyz: Sequence[float],
+    start: np.ndarray,
+    end: np.ndarray,
+    radius: float,
+    plate_thickness_mm: float,
+) -> Tuple[bool, str]:
+    """Check that an auxiliary cylinder can produce a complete through-hole.
+
+    A Boolean subtraction from a curved shell can otherwise leave a partial
+    opening when the candidate line ends inside the plate or runs along its
+    edge.  The check requires an interior material interval with air on both
+    sides and a material ring around the bore centreline.  Invalid candidates
+    are skipped and recorded instead of being exported as misleading half
+    holes.
+    """
+    axis_vector = np.asarray(end, dtype=np.float64) - np.asarray(start, dtype=np.float64)
+    length = float(np.linalg.norm(axis_vector))
+    if length <= 1e-8:
+        return False, "invalid_auxiliary_axis"
+    axis = axis_vector / length
+    spacing = np.asarray(spacing_xyz, dtype=np.float64)
+    sample_step = max(0.1, min(0.5, float(np.min(spacing)) * 0.5))
+    sample_count = max(3, int(math.ceil(length / sample_step)) + 1)
+    fractions = np.linspace(0.0, 1.0, sample_count, dtype=np.float64)
+    line_points = np.asarray(start, dtype=np.float64) + fractions[:, None] * axis_vector
+    line_values = _sample_mask_at_world_points(
+        solid, ct_image, lower_xyz, spacing_xyz, line_points
+    )
+    inside = line_values >= 0.5
+    true_indices = np.flatnonzero(inside)
+    if true_indices.size == 0:
+        return False, "outside_plate_patch"
+
+    # Find contiguous centreline intervals.  A complete hole must enter and
+    # leave the guide material before the construction cylinder ends.
+    breaks = np.flatnonzero(np.diff(true_indices) > 1)
+    starts = np.r_[true_indices[0], true_indices[breaks + 1]]
+    stops = np.r_[true_indices[breaks], true_indices[-1]]
+    minimum_interval_mm = max(0.75, 0.35 * float(plate_thickness_mm))
+    interval_candidates = []
+    for interval_start, interval_stop in zip(starts, stops):
+        if int(interval_start) <= 0 or int(interval_stop) >= sample_count - 1:
+            continue
+        interval_length = (
+            float(fractions[int(interval_stop)] - fractions[int(interval_start)]) * length
+        )
+        if interval_length >= minimum_interval_mm:
+            interval_candidates.append((int(interval_start), int(interval_stop), interval_length))
+    if not interval_candidates:
+        return False, "not_through_plate"
+
+    # At the middle of the longest material interval, the guide must still
+    # surround the bore by a printable wall.  This rejects holes clipped by a
+    # patch boundary or by a curved guide edge, which otherwise look like half
+    # circles after marching cubes and transparent Viewer rendering.
+    interval_start, interval_stop, _ = max(interval_candidates, key=lambda item: item[2])
+    midpoint = line_points[(interval_start + interval_stop) // 2]
+    radial_a, radial_b = _orthogonal_basis(axis)
+    probe_radius = float(radius) + GUIDE_MINIMUM_WALL_MM
+    angles = np.linspace(0.0, 2.0 * math.pi, 24, endpoint=False)
+    ring_points = np.asarray([
+        midpoint + probe_radius * (
+            math.cos(angle) * radial_a + math.sin(angle) * radial_b
+        )
+        for angle in angles
+    ])
+    ring_values = _sample_mask_at_world_points(
+        solid, ct_image, lower_xyz, spacing_xyz, ring_points
+    )
+    if int(np.count_nonzero(ring_values >= 0.5)) < int(math.ceil(len(angles) * 0.9)):
+        return False, "insufficient_auxiliary_wall"
+    return True, "ready"
+
+
 def _filter_components(mask: np.ndarray, minimum_voxels: int) -> np.ndarray:
     from scipy import ndimage
 
@@ -1686,6 +1797,24 @@ def generate_surgical_guide(
     for spec in auxiliary_specs:
         if bool(spec.get("skipped")):
             continue
+        supported, support_reason = _auxiliary_hole_support(
+            solid,
+            ct_image,
+            lower_xyz,
+            spacing_xyz,
+            np.asarray(spec["start"], dtype=np.float64),
+            np.asarray(spec["end"], dtype=np.float64),
+            float(spec["radius_mm"]),
+            float(plate_thickness),
+        )
+        if not supported:
+            # Never export a candidate that only removes a crescent or a
+            # shallow dimple from the plate.  The skipped reason is persisted
+            # in the guide QA payload so the operator can distinguish a
+            # geometric boundary from a needle-spacing conflict.
+            spec["skipped"] = True
+            spec["skip_reason"] = support_reason
+            continue
         hole_sdf, box = _cylinder_sdf_in_region(
             ct_image, lower_xyz, body_crop.shape, spacing_xyz,
             np.asarray(spec["start"], dtype=np.float64),
@@ -1725,6 +1854,23 @@ def generate_surgical_guide(
         # clearance offset before unioning.
         sleeve_mask = (sleeve_sdf <= 0.0) & (outside_distance[box] >= clearance)
         solid[box] |= sleeve_mask
+
+    # Unioning sleeves after the first auxiliary subtraction can reintroduce
+    # material at a nearby boundary. Re-cut the validated auxiliary bores after
+    # the sleeve pass, while limiting the operation to plate voxels so no
+    # primary sleeve wall can be damaged.
+    for spec in realized_auxiliary_specs:
+        hole_sdf, box = _cylinder_sdf_in_region(
+            ct_image,
+            lower_xyz,
+            body_crop.shape,
+            spacing_xyz,
+            np.asarray(spec["start"], dtype=np.float64),
+            np.asarray(spec["end"], dtype=np.float64),
+            float(spec["radius_mm"]),
+        )
+        solid[box] &= ~(plate_mask[box] & (hole_sdf <= 0.0))
+
     # Pass 3: subtract every primary bore from the fully-unioned solid, so a
     # neighbouring sleeve wall can never plug a channel, regardless of needle
     # spacing or crossing angle.
