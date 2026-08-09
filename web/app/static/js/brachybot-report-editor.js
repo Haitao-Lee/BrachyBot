@@ -554,10 +554,10 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
         lblAxial: '轴位', lblSagittal: '矢状位', lblCoronal: '冠状位',
     } : {
         seed3d: 'Seed Implant Plan',
-        seed3dCap: 'Left: Front view with Data Tree-matched colors for CTV/tumor, OARs, needle paths, and seeds; Right: translucent CTV showing internal 3D seed distribution. Legend colors match the Data Tree.',
+        seed3dCap: 'Left: Reference-direction front view with Data Tree-matched colors for CTV/tumor, nearby OARs, needle paths, and seeds; Right: translucent CTV showing internal 3D seed distribution. Legend colors match the Data Tree.',
         doseDvh: 'Dose Distribution & DVH',
         doseDvhCap: '(a) Axial, (b) Sagittal, and (c) Coronal CT slices with dose heatmap at the peak-dose voxel; (d) CTV/OAR dose surface close-up; (e) dose-volume histogram for CTV and OARs.',
-        lblFront: 'Front view (with OARs)',
+        lblFront: 'Reference-direction front view',
         lblInside: 'Translucent tumor (seed distribution)',
         lblAxial: 'Axial', lblSagittal: 'Sagittal', lblCoronal: 'Coronal',
         lblDoseSurface: 'CTV/OAR dose surface',
@@ -743,6 +743,144 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
         ctx.textAlign = 'center';
         ctx.fillText(text, cx, y, maxW);
     }
+
+    /**
+     * Resolve the plan's external-facing reference direction from authoritative
+     * needle geometry. Planned needles use [deep target, shallow skin entry],
+     * so points[1] - points[0] places the report camera on the entry side.
+     */
+    function _reportReferenceViewDirection() {
+        const needles = Array.isArray(dataTreeState?.planning?.needles)
+            ? dataTreeState.planning.needles
+            : [];
+        const directions = [];
+        for (const needle of needles) {
+            if (!Array.isArray(needle?.points) || needle.points.length < 2) continue;
+            const deep = needle.points[0];
+            const entry = needle.points[1];
+            if (!Array.isArray(deep) || !Array.isArray(entry)) continue;
+            const direction = new THREE.Vector3(
+                Number(entry[0]) - Number(deep[0]),
+                Number(entry[1]) - Number(deep[1]),
+                Number(entry[2]) - Number(deep[2]),
+            );
+            if (![direction.x, direction.y, direction.z].every(Number.isFinite)
+                || direction.lengthSq() < 1e-8) continue;
+            directions.push(direction.normalize());
+        }
+        if (directions.length) {
+            const anchor = directions[0];
+            const averaged = new THREE.Vector3();
+            directions.forEach(direction => {
+                averaged.add(direction.dot(anchor) < 0 ? direction.clone().negate() : direction);
+            });
+            if (averaged.lengthSq() >= 1e-8) return averaged.normalize();
+        }
+
+        const fallback = new THREE.Vector3(
+            Number(document.getElementById('refDirecX')?.value || 0),
+            Number(document.getElementById('refDirecY')?.value || 1),
+            Number(document.getElementById('refDirecZ')?.value || 0),
+        );
+        return fallback.lengthSq() >= 1e-8 ? fallback.normalize() : new THREE.Vector3(0, 1, 0);
+    }
+
+    function _reportCameraUp(viewDirection) {
+        const direction = viewDirection.clone().normalize();
+        const candidates = [
+            new THREE.Vector3(0, 0, 1),
+            new THREE.Vector3(0, 1, 0),
+            new THREE.Vector3(1, 0, 0),
+        ];
+        return candidates.find(candidate => Math.abs(candidate.dot(direction)) < 0.92).clone();
+    }
+
+    /**
+     * Frame a world-space box for the aspect ratio of the final report panel.
+     * The live WebGL canvas is often much wider than the report panel, so using
+     * its aspect directly leaves large black margins after composition.
+     */
+    function _frameReportCamera(box, {
+        direction,
+        targetAspect = 1,
+        margin = 1.08,
+    } = {}) {
+        if (!(box && !box.isEmpty()) || !scene3D.camera || !scene3D.controls) return false;
+        const center = box.getCenter(new THREE.Vector3());
+        const cameraDirection = (direction || new THREE.Vector3(0, 1, 0)).clone().normalize();
+        const cameraUp = _reportCameraUp(cameraDirection);
+        const forward = cameraDirection.clone().negate();
+        const right = forward.clone().cross(cameraUp).normalize();
+        const trueUp = right.clone().cross(forward).normalize();
+        const corners = [];
+        for (const x of [box.min.x, box.max.x]) {
+            for (const y of [box.min.y, box.max.y]) {
+                for (const z of [box.min.z, box.max.z]) corners.push(new THREE.Vector3(x, y, z));
+            }
+        }
+        let halfWidth = 0;
+        let halfHeight = 0;
+        let halfDepth = 0;
+        corners.forEach(corner => {
+            const relative = corner.sub(center);
+            halfWidth = Math.max(halfWidth, Math.abs(relative.dot(right)));
+            halfHeight = Math.max(halfHeight, Math.abs(relative.dot(trueUp)));
+            halfDepth = Math.max(halfDepth, Math.abs(relative.dot(cameraDirection)));
+        });
+        const fov = (Number(scene3D.camera.fov) || 45) * Math.PI / 180;
+        const halfFovY = Math.max(0.05, fov / 2);
+        const aspect = Math.max(0.2, Number(targetAspect) || 1);
+        const halfFovX = Math.atan(Math.tan(halfFovY) * aspect);
+        const planarDistance = Math.max(
+            halfHeight / Math.tan(halfFovY),
+            halfWidth / Math.tan(halfFovX),
+            1,
+        );
+        const distance = halfDepth + planarDistance * Math.max(1, Number(margin) || 1);
+        window.sync3DCameraPose?.({
+            position: center.clone().add(cameraDirection.multiplyScalar(distance)),
+            target: center,
+            up: trueUp,
+            near: 0.01,
+            far: Math.max(2000, distance * 20),
+            aspect: scene3D.camera.aspect,
+            fov: scene3D.camera.fov,
+            // Report composition must not inherit an operator's previous
+            // zoom-out state. The exact user zoom is restored after capture.
+            zoom: 1,
+        });
+        return true;
+    }
+
+    function _captureReportCanvasCrop(canvas, targetAspect = 1, maxOutputEdge = 1200) {
+        if (!canvas || canvas.width < 1 || canvas.height < 1) return null;
+        const aspect = Math.max(0.2, Number(targetAspect) || 1);
+        const sourceAspect = canvas.width / canvas.height;
+        let sx = 0;
+        let sy = 0;
+        let sw = canvas.width;
+        let sh = canvas.height;
+        if (sourceAspect > aspect) {
+            sw = sh * aspect;
+            sx = (canvas.width - sw) / 2;
+        } else if (sourceAspect < aspect) {
+            sh = sw / aspect;
+            sy = (canvas.height - sh) / 2;
+        }
+        const output = document.createElement('canvas');
+        if (aspect >= 1) {
+            output.width = maxOutputEdge;
+            output.height = Math.max(1, Math.round(maxOutputEdge / aspect));
+        } else {
+            output.height = maxOutputEdge;
+            output.width = Math.max(1, Math.round(maxOutputEdge * aspect));
+        }
+        output.getContext('2d').drawImage(canvas, sx, sy, sw, sh, 0, 0, output.width, output.height);
+        return output.toDataURL('image/png');
+    }
+
+    const reportReferenceDirection = _reportReferenceViewDirection();
+    const REPORT_DOSE_SURFACE_ASPECT = 1.24;
 
     // ═══════════════════════════════════════════════════════════
     // FIGURE 1: 3D SEED IMPLANT PLAN — COMPOSITE
@@ -933,7 +1071,9 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
                         if (!isOar || !mesh.visible) continue;
                         const candidate = new THREE.Box3();
                         try { candidate.expandByObject(mesh); } catch (_) { continue; }
-                        if (candidate.intersectsBox(localContext)) box.union(candidate);
+                        if (!candidate.intersectsBox(localContext)) continue;
+                        const localCandidate = candidate.clone().intersect(localContext);
+                        if (!localCandidate.isEmpty()) box.union(localCandidate);
                     }
                 }
                 if (!(box.min.x < box.max.x)) return _computeSceneBox();
@@ -941,33 +1081,18 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
             }
 
             function _frameCameraToBox(box, mode) {
-                if (!(box && box.min.x < box.max.x) || !scene3D.camera || !scene3D.controls) return;
-                const center = box.getCenter(new THREE.Vector3());
-                const size = box.getSize(new THREE.Vector3());
-                const maxDim = Math.max(size.x, size.y, size.z, 1);
-                const fov = (scene3D.camera.fov || 45) * Math.PI / 180;
-                // Keep the close-up tight, but leave enough margin for the
-                // complete CTV and its peripheral seeds. The previous 0.78
-                // factor cropped the tumor in Figure 1 right-hand panels.
-                const padding = mode === 'detail' ? 1.05 : 1.08;
-                const dist = (maxDim * padding) / (2 * Math.tan(fov / 2));
-                const dir = mode === 'detail'
+                const direction = mode === 'detail'
                     ? new THREE.Vector3(0.55, -0.25, 0.8).normalize()
-                    : new THREE.Vector3(0.35, -0.55, 0.76).normalize();
-                window.sync3DCameraPose?.({
-                    position: center.clone().add(dir.multiplyScalar(dist)),
-                    target: center,
-                    up: new THREE.Vector3(0, 1, 0),
-                    near: Math.max(0.1, dist / 100),
-                    far: Math.max(2000, dist * 20),
-                    aspect: scene3D.camera.aspect,
-                    fov: scene3D.camera.fov,
-                    zoom: scene3D.camera.zoom,
+                    : reportReferenceDirection;
+                _frameReportCamera(box, {
+                    direction,
+                    targetAspect: 1,
+                    margin: mode === 'detail' ? 1.06 : 1.08,
                 });
             }
 
             // Helper: render and capture 3D canvas
-            async function _capture3D(label) {
+            async function _capture3D(label, targetAspect = 1) {
                 if (!isCurrentCapture()) return null;
                 await _waitFrames(3);
                 if (!isCurrentCapture()) return null;
@@ -1011,7 +1136,7 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
                             return null;
                         }
                     }
-                    const url = c.toDataURL('image/png');
+                    const url = _captureReportCanvasCrop(c, targetAspect);
                     if (!url || url.length < 5000) {
                         console.warn('[Report] 3D capture appears blank for', label);
                         return null;
@@ -1333,9 +1458,9 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
                     if (!mesh || id.startsWith('dose_iso_')) return;
                     const isCtv = id === 'ctv' || id.startsWith('ctv_') || mesh?.userData?.type === 'ctv';
                     const isSeed = id.startsWith('seed_') || mesh?.userData?.type === 'seed';
-                    const isNeedle = (id.startsWith('needle_') || mesh?.userData?.type === 'needle')
-                        && mesh?.userData?.type !== 'needle_handle';
-                    if (isCtv || isSeed || isNeedle) {
+                    // Needles remain visible, but their long external shafts do
+                    // not define the close-up framing box.
+                    if (isCtv || isSeed) {
                         mesh.visible = true;
                         try {
                             if (isCtv) ctvBox.expandByObject(mesh);
@@ -1345,7 +1470,7 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
                 });
                 if (!ctvBox.isEmpty()) {
                     const ctvSize = ctvBox.getSize(new THREE.Vector3());
-                    const context = ctvBox.clone().expandByScalar(Math.max(12, ctvSize.length() * 0.45));
+                    const context = ctvBox.clone().expandByScalar(Math.max(18, ctvSize.length() * 0.6));
                     Object.entries(scene3D.meshes || {}).forEach(([id, mesh]) => {
                         if (!mesh || typeof _isDoseTexturableMesh !== 'function'
                             || !_isDoseTexturableMesh(id, mesh)) return;
@@ -1356,25 +1481,15 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
                         const appearance = typeof window.getDataTreeAppearanceForMesh === 'function'
                             ? window.getDataTreeAppearanceForMesh(id, mesh) : null;
                         mesh.visible = appearance?.visible !== false;
-                        if (mesh.visible) box.union(candidate);
+                        const localCandidate = candidate.clone().intersect(context);
+                        if (mesh.visible && !localCandidate.isEmpty()) box.union(localCandidate);
                     });
                 }
                 if (box.min.x < box.max.x && scene3D.camera && scene3D.controls) {
-                    const center = box.getCenter(new THREE.Vector3());
-                    const size = box.getSize(new THREE.Vector3());
-                    const maxDim = Math.max(size.x, size.y, size.z, 1);
-                    const fov = (scene3D.camera.fov || 45) * Math.PI / 180;
-                    const dist = (maxDim * 1.2) / (2 * Math.tan(fov / 2));
-                    const dir = new THREE.Vector3(0.5, -0.25, 0.82).normalize();
-                    window.sync3DCameraPose?.({
-                        position: center.clone().add(dir.multiplyScalar(dist)),
-                        target: center,
-                        up: new THREE.Vector3(0, 1, 0),
-                        near: Math.max(0.1, dist / 100),
-                        far: Math.max(2000, dist * 20),
-                        aspect: scene3D.camera.aspect,
-                        fov: scene3D.camera.fov,
-                        zoom: scene3D.camera.zoom,
+                    _frameReportCamera(box, {
+                        direction: reportReferenceDirection,
+                        targetAspect: REPORT_DOSE_SURFACE_ASPECT,
+                        margin: 1.06,
                     });
                     // A WebGL canvas can contain a valid-looking, very large
                     // PNG even when the last frame was cleared to black. Force
@@ -1413,7 +1528,7 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
                                     return null;
                                 }
                             }
-                            const url = canvas.toDataURL('image/png');
+                            const url = _captureReportCanvasCrop(canvas, REPORT_DOSE_SURFACE_ASPECT);
                             if (!url || url.length < 5000) return null;
                             uiDebugLog('[Report] 3D dose-surface capture', label, ':', Math.round(url.length / 1024), 'KB');
                             return url;

@@ -13,8 +13,12 @@ def _read(relative: str) -> str:
 def test_figure_one_detail_view_keeps_the_complete_ctv_in_frame():
     source = _read("web/app/static/js/brachybot-report-editor.js")
 
-    assert "const padding = mode === 'detail' ? 1.05 : 1.08;" in source
-    assert "complete CTV and its peripheral seeds" in source
+    assert "function _frameReportCamera" in source
+    assert "halfHeight / Math.tan(halfFovY)" in source
+    assert "halfWidth / Math.tan(halfFovX)" in source
+    assert "halfDepth + planarDistance" in source
+    assert "margin: mode === 'detail' ? 1.06 : 1.08" in source
+    assert "targetAspect: 1" in source
 
 
 def test_figure_two_rejects_black_webgl_capture_and_retries():
