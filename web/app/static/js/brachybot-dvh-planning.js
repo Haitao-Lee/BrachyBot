@@ -1365,15 +1365,17 @@ async function refreshPlanningUI(options = {}) {
             const _replaceOrCreate = (axis, title, caption, dataUrl, metadata = {}) => {
                 if (!_hasFigures || !dataUrl || dataUrl.length < 5000) return;
                 const idx = window.reportForm.figures.findIndex(f => f && f.axis === axis);
+                // autoCaptureReportFigures owns the canonical publication
+                // camera and peak-dose slice semantics. This late hydration
+                // path only recovers a capture whose mesh or dose layer was
+                // not ready. Replacing an existing capture here would silently
+                // substitute the user's current camera or slice.
+                if (idx >= 0) return;
                 const entry = {
                     type: 'screenshot', title, dataUrl, axis, sliceIdx: null,
                     caption, capturedAt: new Date().toISOString(), ...metadata,
                 };
-                if (idx >= 0) {
-                    Object.assign(window.reportForm.figures[idx], entry);
-                } else {
-                    window.reportForm.figures.push(entry);
-                }
+                window.reportForm.figures.push(entry);
             };
             const lang = (typeof window._i18nLang === 'string') ? window._i18nLang : 'en';
             const _ctvTitle = lang === 'zh' ? 'CTV 与粒子分布特写' : 'CTV and Seed Distribution Close-up';
