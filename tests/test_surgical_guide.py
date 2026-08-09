@@ -12,6 +12,7 @@ from web.surgical_guide import (
     GUIDE_MINIMUM_WALL_MM,
     NeedleGuidePath,
     _auxiliary_hole_specs,
+    _auxiliary_hole_support,
     generate_surgical_guide,
     guide_bore_quality_ready,
     _filter_components,
@@ -66,6 +67,43 @@ def _synthetic_agent():
             }],
         },
     })
+
+
+def test_auxiliary_hole_support_rejects_a_cylinder_that_ends_inside_the_plate():
+    """A partial Boolean cut must never be reported as a realized hole."""
+    image = sitk.GetImageFromArray(np.zeros((16, 16, 16), dtype=np.int16))
+    image.SetSpacing((1.0, 1.0, 1.0))
+    # A four-millimetre-thick flat guide slab in physical X.
+    solid = np.zeros((16, 16, 16), dtype=bool)
+    solid[:, :, 5:9] = True
+    lower_xyz = np.array([0, 0, 0], dtype=np.int64)
+    start = np.array([0.0, 8.0, 8.0])
+
+    supported, reason = _auxiliary_hole_support(
+        solid,
+        image,
+        lower_xyz,
+        (1.0, 1.0, 1.0),
+        start,
+        np.array([6.0, 8.0, 8.0]),
+        radius=1.3,
+        plate_thickness_mm=3.0,
+    )
+    assert supported is False
+    assert reason == "not_through_plate"
+
+    supported, reason = _auxiliary_hole_support(
+        solid,
+        image,
+        lower_xyz,
+        (1.0, 1.0, 1.0),
+        start,
+        np.array([14.0, 8.0, 8.0]),
+        radius=1.3,
+        plate_thickness_mm=3.0,
+    )
+    assert supported is True
+    assert reason == "ready"
 
 
 def test_filter_components_removes_diagonal_spurs_before_meshing():
