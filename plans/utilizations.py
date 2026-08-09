@@ -4,6 +4,7 @@ import logging
 import math
 import os
 import time
+from collections import OrderedDict
 from typing import Any, Dict, List, Tuple
 
 # ===== Third-party libraries =====
@@ -88,6 +89,59 @@ class DoseImageContext:
         self.image_origin = dose_image.GetOrigin()
         self.image_shape = dose_image.GetSize()[::-1]
         self.device = next(dose_cal_model.parameters()).device
+
+        # Rule-based optimization revisits the same physical seed candidate in
+        # Stage 2 and Stage 3.  A DoseUNet prediction is a pure function of the
+        # case CT, model, physical position, and direction, all of which are
+        # immutable for this request-scoped context.  Reusing the exact NumPy
+        # result therefore removes duplicate CPU preprocessing and GPU work
+        # without changing candidate order, thresholds, or floating-point
+        # values.  The byte-bounded LRU disappears with the planning request;
+        # it is never persisted in a Session or shared between patients.
+        max_cache_mb = float(os.getenv("BRACHYBOT_PLANNING_DOSE_CACHE_MB", "768"))
+        self._seed_dose_cache_max_bytes = max(0, int(max_cache_mb * 1024 * 1024))
+        self._seed_dose_cache_bytes = 0
+        self._seed_dose_cache = OrderedDict()
+        self.seed_dose_cache_hits = 0
+        self.seed_dose_cache_misses = 0
+
+    @staticmethod
+    def _seed_dose_key(position_xyz, direction_lps):
+        """Build an exact key after the caller's physical-coordinate transform."""
+        position = np.ascontiguousarray(position_xyz, dtype=np.float64).reshape(-1)
+        direction = np.ascontiguousarray(direction_lps, dtype=np.float64).reshape(-1)
+        return position.tobytes(), direction.tobytes()
+
+    def get_seed_dose(self, position_xyz, direction_lps):
+        key = self._seed_dose_key(position_xyz, direction_lps)
+        cached = self._seed_dose_cache.get(key)
+        if cached is None:
+            self.seed_dose_cache_misses += 1
+            return key, None
+        self._seed_dose_cache.move_to_end(key)
+        self.seed_dose_cache_hits += 1
+        return key, cached
+
+    def store_seed_dose(self, key, dose_array):
+        """Store an immutable-by-contract planner dose map under the byte cap."""
+        if self._seed_dose_cache_max_bytes <= 0:
+            return dose_array
+        value = np.asarray(dose_array)
+        value_bytes = int(value.nbytes)
+        if value_bytes > self._seed_dose_cache_max_bytes:
+            return dose_array
+        previous = self._seed_dose_cache.pop(key, None)
+        if previous is not None:
+            self._seed_dose_cache_bytes -= int(previous.nbytes)
+        while (
+            self._seed_dose_cache
+            and self._seed_dose_cache_bytes + value_bytes > self._seed_dose_cache_max_bytes
+        ):
+            _, evicted = self._seed_dose_cache.popitem(last=False)
+            self._seed_dose_cache_bytes -= int(evicted.nbytes)
+        self._seed_dose_cache[key] = value
+        self._seed_dose_cache_bytes += value_bytes
+        return dose_array
 
 
 
@@ -870,7 +924,14 @@ def single_seed_dose_calculation_dl(pos, direc, dose_image, dose_cal_model, infe
     ``direc`` remain the existing ``(z, y, x)`` voxel-space inputs so the
     established planner coordinate chain is unchanged.
     """
-    from .dose_pre.inference import predict_seed_dose
+    from .dose_pre.inference import DoseInferenceDeadlineExceeded, predict_seed_dose
+
+    # Preserve the original deadline contract even when the exact result is
+    # already present in the request-scoped cache.
+    if deadline is not None and time.monotonic() >= float(deadline):
+        raise DoseInferenceDeadlineExceeded(
+            "DoseUNet inference exceeded the interactive planning time budget"
+        )
 
     index_xyz = np.asarray(pos, dtype=np.float64).reshape(-1)[::-1]
     if index_xyz.size != 3:
@@ -885,13 +946,23 @@ def single_seed_dose_calculation_dl(pos, direc, dose_image, dose_cal_model, infe
     direction_norm = float(np.linalg.norm(direction_lps))
     if direction_norm <= 1e-8:
         raise ValueError("DoseUNet seed direction must be non-zero")
-    return predict_seed_dose(
+    normalized_direction = direction_lps / direction_norm
+    cache_key = None
+    if dose_context is not None and hasattr(dose_context, "get_seed_dose"):
+        cache_key, cached = dose_context.get_seed_dose(position_xyz, normalized_direction)
+        if cached is not None:
+            return cached
+
+    prediction = predict_seed_dose(
         position_xyz,
-        direction_lps / direction_norm,
+        normalized_direction,
         dose_image,
         dose_cal_model,
         deadline=deadline,
     )
+    if cache_key is not None and hasattr(dose_context, "store_seed_dose"):
+        dose_context.store_seed_dose(cache_key, prediction)
+    return prediction
 
 
 

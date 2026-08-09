@@ -4,6 +4,7 @@ import sys
 import time
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 import numpy as np
 
@@ -23,6 +24,7 @@ from plans.dose_pre.inference import (
     predict_seed_doses,
     sliding_window_predict_batch,
 )
+from plans.utilizations import DoseImageContext, single_seed_dose_calculation_dl
 try:
     from plans.reinforcement import LowLevelEnv, evaluate_plan_objective
 except ModuleNotFoundError:  # pragma: no cover - optional RL runtime dependency.
@@ -95,6 +97,49 @@ class RlTerminationAndDoseBatchTests(unittest.TestCase):
                 patch_size=(8, 8, 8),
                 overlap=0.5,
                 device=torch.device("cpu"),
+                deadline=time.monotonic() - 1.0,
+            )
+
+    def test_request_scoped_seed_dose_cache_reuses_only_exact_candidates(self):
+        image = sitk.GetImageFromArray(np.zeros((8, 8, 8), dtype=np.float32))
+        image.SetSpacing((1.0, 1.0, 1.0))
+        model = _IdentityDoseModel().eval()
+        context = DoseImageContext(image, -1000.0, 1000.0, model)
+        expected = np.arange(8 ** 3, dtype=np.float32).reshape(8, 8, 8)
+
+        with patch("plans.dose_pre.inference.predict_seed_dose", return_value=expected) as predictor:
+            first = single_seed_dose_calculation_dl(
+                (4.0, 3.0, 2.0), (0.0, 0.0, 1.0), image, model,
+                8, {}, -1000.0, 1000.0, 1.0, dose_context=context,
+            )
+            second = single_seed_dose_calculation_dl(
+                (4.0, 3.0, 2.0), (0.0, 0.0, 1.0), image, model,
+                8, {}, -1000.0, 1000.0, 1.0, dose_context=context,
+            )
+            single_seed_dose_calculation_dl(
+                (4.0, 3.0, 3.0), (0.0, 0.0, 1.0), image, model,
+                8, {}, -1000.0, 1000.0, 1.0, dose_context=context,
+            )
+
+        self.assertIs(first, second)
+        np.testing.assert_array_equal(second, expected)
+        self.assertEqual(predictor.call_count, 2)
+        self.assertEqual(context.seed_dose_cache_hits, 1)
+        self.assertEqual(context.seed_dose_cache_misses, 2)
+
+    def test_seed_dose_cache_does_not_bypass_an_expired_deadline(self):
+        image = sitk.GetImageFromArray(np.zeros((8, 8, 8), dtype=np.float32))
+        model = _IdentityDoseModel().eval()
+        context = DoseImageContext(image, -1000.0, 1000.0, model)
+        position = np.array([2.0, 3.0, 4.0], dtype=np.float64)
+        direction = np.array([1.0, 0.0, 0.0], dtype=np.float64)
+        key = context._seed_dose_key(position, direction)
+        context.store_seed_dose(key, np.zeros((8, 8, 8), dtype=np.float32))
+
+        with self.assertRaises(DoseInferenceDeadlineExceeded):
+            single_seed_dose_calculation_dl(
+                (4.0, 3.0, 2.0), (0.0, 0.0, 1.0), image, model,
+                8, {}, -1000.0, 1000.0, 1.0, dose_context=context,
                 deadline=time.monotonic() - 1.0,
             )
 
