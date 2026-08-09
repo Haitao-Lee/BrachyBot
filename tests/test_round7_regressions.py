@@ -168,7 +168,10 @@ def test_dose_contours_are_session_scoped_retried_and_redrawn_at_zoom_resolution
     assert "function _viewerVectorPixelRatio" in annotation
     assert "window.devicePixelRatio" in annotation
     assert "request2DViewerResolutionRefresh();" in annotation
-    assert "ctx.drawImage(c, 0, 0, out.width, out.height)" in report_export
+    assert "const layerIds = [" in report_export
+    assert "ctx.drawImage(layer, 0, 0, out.width, out.height)" in report_export
+    assert "parent.querySelectorAll('canvas')" not in report_export
+    assert "`contourCanvas${cap}`" in report_export
     assert "range_tolerance" in routes
     assert "for level_index, level_contour, level_gy, level_rel in valid_levels" in routes
 
@@ -318,7 +321,7 @@ def test_needle_render_scheduler_survives_mixed_static_asset_revisions():
     # index.html. A stale assertion here falsely reports a deployment bug and
     # hides whether the endpoint interaction bundle is really versioned.
     assert "brachybot-viewer-layout.js?v=28" in index
-    assert "brachybot-3d-manual.js?v=57" in index
+    assert "brachybot-3d-manual.js?v=58" in index
     assert "scene3D.requestRender(1)" in layout
     assert "scene3D.requestRender(2)" in layout
     assert "window.requestRender = requestRender;" in manual

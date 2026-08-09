@@ -451,13 +451,13 @@ function removeReportFigure(idx) {
 // planning view — each as a figure with a descriptive caption.
 // Called before PDF export so the report always has evidence.
 //
-// FIGURE 1: 3D Seed Implant Plan (composite)
+// FIGURE 1: 3D Seed Implant Plan (two independent subfigures)
 //   Left:  Front-facing panoramic with all OARs (semi-transparent),
 //          needle paths (red), radioactive seeds (yellow), CTV
 //   Right: Camera aimed at translucent CTV tumor showing internal
 //          3D seed distribution
 //
-// FIGURE 2: Dose Distribution & DVH (composite)
+// FIGURE 2: Dose Distribution & DVH (five independent subfigures)
 //   Top:   Axial / Sagittal / Coronal CT with dose heatmap at
 //          peak dose voxel, arranged in a row
 //   Bottom: DVH curve (CTV + OARs)
@@ -535,8 +535,9 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
     window.reportForm.figures = (window.reportForm.figures || []).filter(f => f && f.type === 'upload');
 
     if (window.reportForm.figures.length > 0) {
-        uiDebugLog('[Report] Figures already exist:', window.reportForm.figures.length, '- skipping');
-        return;
+        // User-provided evidence supplements the standard report; it must not
+        // suppress the seven required Planning/Dose subfigures.
+        uiDebugLog('[Report] Keeping user figures while capturing standard figures:', window.reportForm.figures.length);
     }
     uiDebugLog('[Report] Starting capture, 3D meshes:', Object.keys(scene3D.meshes).length,
         'doseOverlay:', !!state.doseOverlay, 'dvhData:', !!state.dvhData);
@@ -546,21 +547,38 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
     const lang = (typeof window._i18nLang === 'string') ? window._i18nLang : ((_f && _f.language) || 'en');
     const labels = (lang === 'zh') ? {
         seed3d: '粒子植入方案',
-        seed3dCap: '左：正面全景含穿刺针道（红色）、放射性粒子（黄色）、CTV 及所有危及器官；右：半透明 CTV 肿瘤内部三维粒子分布',
+        seed3dCap: '正面全景与靶区特写分别保存为独立高分辨率子图。',
         doseDvh: '剂量分布与DVH',
-        doseDvhCap: '上方：最大剂量层面轴位/矢状位/冠状位 CT 叠加剂量热图；下方：CTV 及各 OAR 的剂量-体积曲线',
+        doseDvhCap: '三个最大剂量层面、三维剂量面和 DVH 分别保存为独立高分辨率子图。',
         lblFront: '正面全景（含危及器官）',
         lblInside: '半透明肿瘤内部（粒子分布）',
         lblAxial: '轴位', lblSagittal: '矢状位', lblCoronal: '冠状位',
+        lblDoseSurface: 'CTV/OAR 三维剂量面',
+        lblDvh: 'DVH 剂量体积直方图',
+        capFront: '沿穿刺参考方向观察的全局规划视图，显示 CTV、邻近 OAR、穿刺针与粒子。',
+        capInside: 'CTV 局部特写，显示半透明靶区内的粒子及其所属针道。',
+        capAxial: '经过峰值剂量体素的轴位 CT 与剂量叠加图。',
+        capSagittal: '经过峰值剂量体素的矢状位 CT 与剂量叠加图。',
+        capCoronal: '经过峰值剂量体素的冠状位 CT 与剂量叠加图。',
+        capDoseSurface: '沿穿刺参考方向观察的 CTV、邻近 OAR 与三维剂量分布。',
+        capDvh: '当前 Planning 的 CTV 与 OAR 剂量体积曲线。',
     } : {
         seed3d: 'Seed Implant Plan',
-        seed3dCap: 'Left: Reference-direction front view with Data Tree-matched colors for CTV/tumor, nearby OARs, needle paths, and seeds; Right: translucent CTV showing internal 3D seed distribution. Legend colors match the Data Tree.',
+        seed3dCap: 'The planning overview and target close-up are stored as independent high-resolution subfigures.',
         doseDvh: 'Dose Distribution & DVH',
-        doseDvhCap: '(a) Axial, (b) Sagittal, and (c) Coronal CT slices with dose heatmap at the peak-dose voxel; (d) CTV/OAR dose surface close-up; (e) dose-volume histogram for CTV and OARs.',
+        doseDvhCap: 'The three peak-dose planes, 3D dose surface, and DVH are stored as independent high-resolution subfigures.',
         lblFront: 'Reference-direction front view',
         lblInside: 'Translucent tumor (seed distribution)',
         lblAxial: 'Axial', lblSagittal: 'Sagittal', lblCoronal: 'Coronal',
         lblDoseSurface: 'CTV/OAR dose surface',
+        lblDvh: 'DVH - Dose Volume Histogram',
+        capFront: 'Global plan viewed along the needle reference direction, including CTV, nearby OARs, needles, and seeds.',
+        capInside: 'Target close-up showing seeds and their needle paths inside the translucent CTV.',
+        capAxial: 'Axial CT and dose overlay through the peak-dose voxel.',
+        capSagittal: 'Sagittal CT and dose overlay through the peak-dose voxel.',
+        capCoronal: 'Coronal CT and dose overlay through the peak-dose voxel.',
+        capDoseSurface: 'CTV, nearby OARs, and 3D dose distribution viewed along the needle reference direction.',
+        capDvh: 'Dose-volume curves for the CTV and OARs in the current Planning run.',
     };
 
     const _ts = () => new Date().toISOString();
@@ -880,13 +898,37 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
     }
 
     const reportReferenceDirection = _reportReferenceViewDirection();
-    const REPORT_DOSE_SURFACE_ASPECT = 1.24;
+    // Report subfigures are captured independently at a page-friendly aspect.
+    // Keeping native images separate preserves far more clinical detail than
+    // drawing several small panels into one irreversible composite bitmap.
+    const REPORT_FIGURE_ASPECT = 16 / 9;
+    const REPORT_DOSE_SURFACE_ASPECT = REPORT_FIGURE_ASPECT;
+
+    async function _waitForReportDoseSlice(axis, sliceIndex, timeoutMs = 12000) {
+        const cap = axis.charAt(0).toUpperCase() + axis.slice(1);
+        const expected = String(sliceIndex);
+        const startedAt = performance.now();
+        while (isCurrentCapture() && performance.now() - startedAt < timeoutMs) {
+            const doseCanvas = document.getElementById(`doseOverlayCanvas${cap}`);
+            const contourCanvas = document.getElementById(`contourCanvas${cap}`);
+            const doseReady = doseCanvas?.dataset?.renderedAxis === axis
+                && doseCanvas?.dataset?.renderedSlice === expected
+                && doseCanvas?.dataset?.dosePending !== 'true';
+            const contourReady = contourCanvas?.dataset?.renderedAxis === axis
+                && contourCanvas?.dataset?.renderedSlice === expected;
+            if (doseReady && contourReady && Number(state.slices?.[axis]) === Number(sliceIndex)) {
+                return true;
+            }
+            await _waitFrames(1);
+        }
+        console.warn(`[Report] Timed out waiting for ${axis} dose/contour slice ${sliceIndex}`);
+        return false;
+    }
 
     // ═══════════════════════════════════════════════════════════
-    // FIGURE 1: 3D SEED IMPLANT PLAN — COMPOSITE
-    //   Left: Front-facing with all OARs + needles + seeds
-    //   Right: Translucent tumor showing seeds inside
-    //   Combined into a single side-by-side image
+    // FIGURE 1: 3D SEED IMPLANT PLAN — TWO NATIVE SUBFIGURES
+    //   (a) Reference-direction global view with nearby anatomy
+    //   (b) Translucent target close-up showing seeds inside
     // ═══════════════════════════════════════════════════════════
     let _restoreFigure1State = null;
     try {
@@ -1086,7 +1128,7 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
                     : reportReferenceDirection;
                 _frameReportCamera(box, {
                     direction,
-                    targetAspect: 1,
+                    targetAspect: REPORT_FIGURE_ASPECT,
                     margin: mode === 'detail' ? 1.06 : 1.08,
                 });
             }
@@ -1174,12 +1216,12 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
             _frameCameraToBox(_computeFocusedPlanBox({ includeOars: true, includeNeedles: false }), 'overview');
             await _waitFrames(2);
             if (!isCurrentCapture()) return { stale: true };
-            let imgA = await _capture3D('View A (front+OARs)');
+            let imgA = await _capture3D('View A (front+OARs)', REPORT_FIGURE_ASPECT);
             if (!imgA) {
                 forceRender3DViewer();
                 await _waitFrames(4);
                 if (!isCurrentCapture()) return { stale: true };
-                imgA = await _capture3D('View A (front+OARs retry)');
+                imgA = await _capture3D('View A (front+OARs retry)', REPORT_FIGURE_ASPECT);
             }
 
             // ── View B: Translucent tumor, seeds visible inside ──
@@ -1235,54 +1277,24 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
             _frameCameraToBox(_computeFocusedPlanBox({ includeOars: false, includeNeedles: false }), 'detail');
             await _waitFrames(2);
             if (!isCurrentCapture()) return { stale: true };
-            let imgB = await _capture3D('View B (translucent tumor)');
+            let imgB = await _capture3D('View B (translucent tumor)', REPORT_FIGURE_ASPECT);
             if (!imgB) {
                 forceRender3DViewer();
                 await _waitFrames(4);
                 if (!isCurrentCapture()) return { stale: true };
-                imgB = await _capture3D('View B (translucent tumor retry)');
+                imgB = await _capture3D('View B (translucent tumor retry)', REPORT_FIGURE_ASPECT);
             }
 
-            // ── Composite: side by side ──
-            if (imgA || imgB) {
-                const W = 1600, halfW = 760, gap = 40, titleH = 44, labelH = 28, legendH = 66, pad = 20;
-                const compCanvas = document.createElement('canvas');
-                compCanvas.width = W;
-                compCanvas.height = titleH + pad + halfW + labelH + legendH;
-                const ctx = compCanvas.getContext('2d');
-
-                // Background
-                ctx.fillStyle = '#0f172a';
-                ctx.fillRect(0, 0, W, compCanvas.height);
-
-                // Title
-                ctx.fillStyle = '#e2e8f0';
-                ctx.font = 'bold 16px Inter, system-ui, sans-serif';
-                ctx.textAlign = 'center';
-                ctx.fillText(labels.seed3d, W / 2, 30);
-
-                // Draw View A (left)
-                await _drawImg(ctx, imgA, pad, titleH, halfW, halfW);
-                if (!isCurrentCapture()) return { stale: true };
-                _drawLabel(ctx, labels.lblFront, pad + halfW / 2, titleH + halfW + 18, halfW);
-
-                // Draw View B (right)
-                await _drawImg(ctx, imgB, pad + halfW + gap, titleH, halfW, halfW);
-                if (!isCurrentCapture()) return { stale: true };
-                _drawLabel(ctx, labels.lblInside, pad + halfW + gap + halfW / 2, titleH + halfW + 18, halfW);
-
-                // Thin separator line between views
-                ctx.strokeStyle = 'rgba(148,163,184,0.2)';
-                ctx.lineWidth = 1;
-                ctx.beginPath();
-                ctx.moveTo(W / 2, titleH + 10);
-                ctx.lineTo(W / 2, titleH + halfW - 10);
-                ctx.stroke();
-
-                _drawPlanLegend(ctx, pad, titleH + halfW + labelH + 6, W - pad * 2);
-
-                _push(labels.seed3d, labels.seed3dCap, compCanvas.toDataURL('image/png'), '3d_seeds');
-            }
+            // Figure 1 is a semantic group, not a pre-composed bitmap. The
+            // export layer lays out these native captures at full page width.
+            if (imgA) _push(labels.lblFront, labels.capFront, imgA, 'report_fig1_global', {
+                figureGroup: 'figure1', figureNumber: 1, subfigure: 'a', sortOrder: 1,
+                captureRole: 'planning_overview',
+            });
+            if (imgB) _push(labels.lblInside, labels.capInside, imgB, 'report_fig1_closeup', {
+                figureGroup: 'figure1', figureNumber: 1, subfigure: 'b', sortOrder: 2,
+                captureRole: 'planning_closeup',
+            });
 
             // Restore immediately on the normal path; the finally block
             // repeats this idempotently for any capture/composition error.
@@ -1310,7 +1322,7 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
     }
 
     // ═══════════════════════════════════════════════════════════
-    // FIGURE 2: DOSE + DVH COMPOSITE
+    // FIGURE 2: DOSE + DVH — FIVE NATIVE SUBFIGURES
     //   Top row: Axial + Sagittal + Coronal CT with dose heatmap
     //            at peak dose voxel (3 views side by side)
     //   Bottom: DVH curve
@@ -1341,9 +1353,9 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
 
             // Navigate all 3 views to peak dose voxel
             const axesCfg = [
-                { ax: 'axial', slice: pv.z, cap: labels.lblAxial },
-                { ax: 'sagittal', slice: pv.x, cap: labels.lblSagittal },
-                { ax: 'coronal', slice: pv.y, cap: labels.lblCoronal },
+                { ax: 'axial', slice: pv.z, axis: 'report_fig2_axial', title: labels.lblAxial, caption: labels.capAxial, subfigure: 'a', order: 1 },
+                { ax: 'sagittal', slice: pv.x, axis: 'report_fig2_sagittal', title: labels.lblSagittal, caption: labels.capSagittal, subfigure: 'b', order: 2 },
+                { ax: 'coronal', slice: pv.y, axis: 'report_fig2_coronal', title: labels.lblCoronal, caption: labels.capCoronal, subfigure: 'c', order: 3 },
             ];
             for (const cfg of axesCfg) {
                 const slider = document.getElementById('slider' + cfg.ax.charAt(0).toUpperCase() + cfg.ax.slice(1));
@@ -1352,17 +1364,29 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
                 if (slider) slider.value = clampedSlice;
                 updateSlice(cfg.ax, clampedSlice);
             }
-            // Wait for all 3 views + dose overlay to render
-            await _waitFrames(8);
+            // Wait for the requested peak-dose slice itself, not a fixed
+            // number of animation frames. On a cache miss the canvas can
+            // otherwise still contain the previous slice when captured.
+            await Promise.all(axesCfg.map(cfg => _waitForReportDoseSlice(
+                cfg.ax,
+                Math.max(0, Math.min(
+                    parseInt(document.getElementById('slider' + cfg.ax.charAt(0).toUpperCase() + cfg.ax.slice(1))?.max || '200'),
+                    Math.round(cfg.slice),
+                )),
+            )));
             if (!isCurrentCapture()) return { stale: true };
 
             // Capture all 3 views
-            const doseImages = [];
             for (const cfg of axesCfg) {
                 const composite = _composite2DViewerCanvas(cfg.ax);
                 if (composite) {
-                    doseImages.push({ dataUrl: composite, label: cfg.cap });
-                    uiDebugLog('[Report] Captured', cfg.cap, 'dose view:', Math.round(composite.length / 1024), 'KB');
+                    _push(cfg.title, cfg.caption, composite, cfg.axis, {
+                        figureGroup: 'figure2', figureNumber: 2,
+                        subfigure: cfg.subfigure, sortOrder: cfg.order,
+                        captureRole: `peak_dose_${cfg.ax}`,
+                        sliceIdx: Math.round(cfg.slice), peakVoxel: { ...pv },
+                    });
+                    uiDebugLog('[Report] Captured', cfg.title, 'dose view:', Math.round(composite.length / 1024), 'KB');
                 }
             }
 
@@ -1595,83 +1619,17 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
                 }
             }
 
-            // Compose into single image
-            if (doseImages.length > 0 || doseSurfaceDataUrl || dvhDataUrl) {
-                const W = 1400;
-                const pad = 24;
-                const gap = 14;
-                const titleH = 48;
-                const colorbarW = 78;
-                const topPanelCount = 4;
-                const viewW = Math.floor((W - pad * 2 - gap * (topPanelCount - 1) - colorbarW - gap) / topPanelCount);
-                const viewH = 270;
-                const dvhH = 370;
-                const dvhYPad = 44;
-
-                const compositeCanvas = document.createElement('canvas');
-                compositeCanvas.width = W;
-                compositeCanvas.height = titleH + viewH + gap + dvhYPad + dvhH + pad;
-                const ctx = compositeCanvas.getContext('2d');
-
-                // Background
-                ctx.fillStyle = '#0f172a';
-                ctx.fillRect(0, 0, compositeCanvas.width, compositeCanvas.height);
-
-                // Title
-                ctx.fillStyle = '#e2e8f0';
-                ctx.font = 'bold 16px Inter, system-ui, sans-serif';
-                ctx.textAlign = 'center';
-                ctx.fillText(labels.doseDvh, W / 2, 30);
-
-                // Draw dose views + 3D dose surface in uniform panels (top)
-                const panelLabels = [
-                    labels.lblAxial || 'Axial',
-                    labels.lblSagittal || 'Sagittal',
-                    labels.lblCoronal || 'Coronal',
-                    labels.lblDoseSurface || 'CTV/OAR dose surface',
-                ];
-                const topPanels = doseImages.slice(0, 3);
-                if (doseSurfaceDataUrl) topPanels.push({ dataUrl: doseSurfaceDataUrl, label: labels.lblDoseSurface || 'CTV/OAR dose surface' });
-                for (let i = 0; i < topPanels.length; i++) {
-                    const entry = topPanels[i];
-                    const xPos = pad + i * (viewW + gap);
-                    await _drawFigurePanel(ctx, entry.dataUrl, xPos, titleH, viewW, viewH, String.fromCharCode(97 + i), panelLabels[i] || entry.label);
-                    if (!isCurrentCapture()) return { stale: true };
-                }
-                _drawDoseColorbar(ctx, W - pad - colorbarW, titleH, colorbarW, viewH, 'Dose (Gy)');
-
-                // Draw thin separator line
-                const sepY = titleH + viewH + gap;
-                ctx.strokeStyle = 'rgba(148,163,184,0.15)';
-                ctx.lineWidth = 1;
-                ctx.beginPath();
-                ctx.moveTo(pad, sepY);
-                ctx.lineTo(W - pad, sepY);
-                ctx.stroke();
-
-                // DVH section label
-                ctx.fillStyle = '#64748b';
-                ctx.font = '11px Inter, system-ui, sans-serif';
-                ctx.textAlign = 'left';
-                ctx.fillText('(e) DVH - Dose Volume Histogram', pad, sepY + 20);
-
-                // Draw DVH chart (bottom)
-                const dvhY = sepY + dvhYPad;
-                if (dvhDataUrl) {
-                    await _drawFigurePanel(ctx, dvhDataUrl, pad, dvhY, W - pad * 2, dvhH, 'e', 'Dose-volume histogram');
-                    if (!isCurrentCapture()) return { stale: true };
-                } else {
-                    // No DVH available — draw placeholder
-                    ctx.fillStyle = 'rgba(148,163,184,0.1)';
-                    ctx.fillRect(pad, dvhY, W - pad * 2, dvhH);
-                    ctx.fillStyle = '#64748b';
-                    ctx.font = '14px Inter, system-ui, sans-serif';
-                    ctx.textAlign = 'center';
-                    ctx.fillText('DVH chart not available', W / 2, dvhY + dvhH / 2);
-                }
-
-                _push(labels.doseDvh, labels.doseDvhCap, compositeCanvas.toDataURL('image/png'), 'dose_dvh_composite');
-            }
+            if (doseSurfaceDataUrl) _push(
+                labels.lblDoseSurface, labels.capDoseSurface, doseSurfaceDataUrl,
+                'report_fig2_dose_surface', {
+                    figureGroup: 'figure2', figureNumber: 2, subfigure: 'd', sortOrder: 4,
+                    captureRole: 'dose_surface_3d', peakVoxel: { ...pv },
+                },
+            );
+            if (dvhDataUrl) _push(labels.lblDvh, labels.capDvh, dvhDataUrl, 'report_fig2_dvh', {
+                figureGroup: 'figure2', figureNumber: 2, subfigure: 'e', sortOrder: 5,
+                captureRole: 'dvh',
+            });
         } else {
             console.warn('[Report] Figure 2 skipped: no dose overlay data', {
                 hasOverlay: !!state.doseOverlay,

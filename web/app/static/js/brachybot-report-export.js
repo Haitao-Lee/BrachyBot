@@ -13,22 +13,92 @@ function _oarVolumePercent(value, units) {
 
 function _composite2DViewerCanvas(axis) {
     const sliceCanvas = document.getElementById('sliceCanvas' + axis.charAt(0).toUpperCase() + axis.slice(1));
-    if (!sliceCanvas) return null;
+    if (!sliceCanvas || sliceCanvas.width < 1 || sliceCanvas.height < 1) return null;
+    const cap = axis.charAt(0).toUpperCase() + axis.slice(1);
+    const sourceWidth = Number(sliceCanvas.width);
+    const sourceHeight = Number(sliceCanvas.height);
+    const outputScale = Math.max(1, 1400 / Math.max(sourceWidth, sourceHeight));
     const out = document.createElement('canvas');
-    out.width = sliceCanvas.width;
-    out.height = sliceCanvas.height;
+    out.width = Math.max(1, Math.round(sourceWidth * outputScale));
+    out.height = Math.max(1, Math.round(sourceHeight * outputScale));
     const ctx = out.getContext('2d');
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
     ctx.fillStyle = '#000';
     ctx.fillRect(0, 0, out.width, out.height);
-    const parent = sliceCanvas.parentElement;
-    const canvases = parent.querySelectorAll('canvas');
-    canvases.forEach(c => {
-        if (c.style.display === 'none' || c.width < 1 || c.height < 1) return;
-        // Vector overlays use a zoom- and DPR-aware backing store that can be
-        // larger than the native CT canvas. Composite by visual extent rather
-        // than requiring identical backing dimensions.
-        try { ctx.drawImage(c, 0, 0, out.width, out.height); } catch (e) {}
+
+    // Capture only the canonical medical-image stack. The viewer container
+    // also owns a narrow dose-colorbar canvas. Querying every descendant
+    // canvas and stretching it to the CT extent turned that 16 x 512 gradient
+    // into a full-frame rainbow image in exported reports.
+    const layerIds = [
+        `sliceCanvas${cap}`,
+        `labelOverlay_${cap}`,
+        `doseOverlayCanvas${cap}`,
+        `contourCanvas${cap}`,
+        `seedsOverlayCanvas${cap}`,
+        `crosshairCanvas${cap}`,
+        `annotationCanvas${cap}`,
+    ];
+    layerIds.forEach(id => {
+        const layer = document.getElementById(id);
+        if (!layer || layer.width < 1 || layer.height < 1) return;
+        const style = window.getComputedStyle ? window.getComputedStyle(layer) : layer.style;
+        const opacity = Number.parseFloat(style?.opacity ?? '1');
+        if (style?.display === 'none' || style?.visibility === 'hidden' || opacity <= 0) return;
+        try {
+            ctx.save();
+            ctx.globalAlpha = Number.isFinite(opacity) ? Math.max(0, Math.min(1, opacity)) : 1;
+            ctx.drawImage(layer, 0, 0, out.width, out.height);
+            ctx.restore();
+        } catch (error) {
+            console.warn(`[Report] Unable to composite ${id}:`, error);
+        }
     });
+
+    // Recreate the compact color scale from its numeric configuration instead
+    // of raster-stretching the DOM colorbar. Text and tick marks therefore
+    // remain legible in a full-width PDF subfigure.
+    const colorbar = document.getElementById(`doseColorbar${cap}`);
+    const colorbarStyle = colorbar && window.getComputedStyle
+        ? window.getComputedStyle(colorbar) : colorbar?.style;
+    if (colorbar && colorbarStyle?.display !== 'none' && colorbarStyle?.visibility !== 'hidden'
+        && typeof _drawDoseColorbarGradient === 'function'
+        && typeof _doseColorbarLabelSpecs === 'function') {
+        const pad = Math.max(12, Math.round(out.width * 0.012));
+        const panelWidth = Math.max(90, Math.round(out.width * 0.105));
+        const panelHeight = Math.max(180, Math.round(out.height * 0.82));
+        const panelX = out.width - panelWidth - pad;
+        const panelY = Math.round((out.height - panelHeight) / 2);
+        const barWidth = Math.max(15, Math.round(panelWidth * 0.2));
+        const barX = panelX + Math.round(panelWidth * 0.12);
+        const barY = panelY + Math.round(panelHeight * 0.08);
+        const barHeight = Math.round(panelHeight * 0.84);
+        ctx.save();
+        ctx.fillStyle = 'rgba(2,6,23,0.82)';
+        ctx.fillRect(panelX, panelY, panelWidth, panelHeight);
+        const gradientCanvas = document.createElement('canvas');
+        gradientCanvas.width = barWidth;
+        gradientCanvas.height = barHeight;
+        _drawDoseColorbarGradient(gradientCanvas.getContext('2d'), barWidth, barHeight);
+        ctx.drawImage(gradientCanvas, barX, barY);
+        ctx.strokeStyle = 'rgba(226,232,240,0.75)';
+        ctx.strokeRect(barX + 0.5, barY + 0.5, barWidth - 1, barHeight - 1);
+        const fontSize = Math.max(11, Math.round(out.width * 0.011));
+        _doseColorbarLabelSpecs(barHeight).forEach(spec => {
+            const y = barY + (barHeight - 1) * (spec.pct / 100);
+            ctx.strokeStyle = 'rgba(226,232,240,0.78)';
+            ctx.beginPath();
+            ctx.moveTo(barX + barWidth + 3, y);
+            ctx.lineTo(barX + barWidth + 10, y);
+            ctx.stroke();
+            ctx.fillStyle = '#f8fafc';
+            ctx.font = `${spec.major ? 'bold ' : ''}${fontSize}px Inter, Arial, sans-serif`;
+            ctx.textAlign = 'left';
+            ctx.fillText(spec.label, barX + barWidth + 13, y + fontSize * 0.34);
+        });
+        ctx.restore();
+    }
     return out.toDataURL('image/png');
 }
 
@@ -735,6 +805,50 @@ function syncReportQualityAssessment(form, options = {}) {
 }
 window.syncReportQualityAssessment = syncReportQualityAssessment;
 
+const _REPORT_FIGURE_AXIS_GROUPS = Object.freeze({
+    figure1: new Set([
+        'report_fig1_global', 'report_fig1_closeup',
+        // Legacy axes remain readable until a fresh capture replaces them.
+        '3d_seeds', '3d_ctv', 'seed_plan_composite',
+    ]),
+    figure2: new Set([
+        'report_fig2_axial', 'report_fig2_sagittal', 'report_fig2_coronal',
+        'report_fig2_dose_surface', 'report_fig2_dvh',
+        'dose_axial', 'dose_sagittal', 'dose_coronal', 'dvh',
+        'dose_dvh_composite',
+    ]),
+});
+
+function _reportFigureGroup(figure) {
+    const explicit = String(figure?.figureGroup || '').toLowerCase();
+    if (explicit === 'figure1' || explicit === 'figure2') return explicit;
+    const axis = String(figure?.axis || '').toLowerCase();
+    for (const [group, axes] of Object.entries(_REPORT_FIGURE_AXIS_GROUPS)) {
+        if (axes.has(axis)) return group;
+    }
+    return '';
+}
+
+function _reportFiguresForGroup(form, group) {
+    const rows = (Array.isArray(form?.figures) ? form.figures : [])
+        .filter(figure => figure && _reportFigureGroup(figure) === group);
+    // A legacy composite is useful for old Sessions only. As soon as native
+    // subfigures exist, never display the downsampled composite beside them.
+    const nativePrefix = group === 'figure1' ? 'report_fig1_' : 'report_fig2_';
+    const nativeRows = rows.filter(figure => String(figure.axis || '').startsWith(nativePrefix));
+    return (nativeRows.length ? nativeRows : rows).sort((left, right) => {
+        const leftOrder = Number(left?.sortOrder);
+        const rightOrder = Number(right?.sortOrder);
+        if (Number.isFinite(leftOrder) || Number.isFinite(rightOrder)) {
+            return (Number.isFinite(leftOrder) ? leftOrder : 999)
+                - (Number.isFinite(rightOrder) ? rightOrder : 999);
+        }
+        return String(left?.subfigure || left?.axis || '').localeCompare(
+            String(right?.subfigure || right?.axis || ''),
+        );
+    });
+}
+
 function _updateReportPreview() {
     const pagesEl = document.getElementById('reportPages');
     if (!pagesEl) return;
@@ -755,13 +869,45 @@ function _updateReportPreview() {
     const d01ccLabel = f.language === 'zh' ? 'D₀.₁cc' : 'D₀.₁cc';
     const v100Label = 'V100';
     const gyUnit = U.Gy;
-    const reportTotalPages = 5;
+    const figure1Rows = _reportFiguresForGroup(f, 'figure1');
+    const figure2Rows = _reportFiguresForGroup(f, 'figure2');
+    const supplementalRows = (Array.isArray(f.figures) ? f.figures : []).filter(
+        figure => figure && !_reportFigureGroup(figure),
+    );
+    const figure1PageCount = Math.ceil(figure1Rows.length / 2);
+    const figure2PageCount = Math.ceil(figure2Rows.length / 2);
+    const supplementalPageCount = Math.ceil(supplementalRows.length / 2);
+    const reportTotalPages = 5 + figure1PageCount + figure2PageCount + supplementalPageCount;
     const pageFooter = (pageNo) =>
         `<div class="hp-page-footer"><span class="pageno">— ${escHtml(s.page)} ${pageNo} ${escHtml(s.pageOf)} ${reportTotalPages} —</span></div>`;
     // A report has one language at a time. English secondary headings used to
     // be appended to every Chinese heading, which made the exported report
     // look partially translated even after the global language switch.
     const secondaryTitle = () => '';
+    const renderFigurePages = (rows, figureNumber, groupTitle, startPageNo) => {
+        if (!rows.length) return '';
+        let html = '';
+        for (let offset = 0; offset < rows.length; offset += 2) {
+            const pageRows = rows.slice(offset, offset + 2);
+            const pageNo = startPageNo + Math.floor(offset / 2);
+            html += `<div class="report-page report-figure-page">
+                <div class="hp-running-header"><span>${escHtml(s.confidentiality)}</span><span class="right">${escHtml(groupTitle)}</span></div>
+                <h2 class="hp-section-title">${escHtml(s.figCaption)} ${figureNumber} · ${escHtml(groupTitle)}</h2>
+                <div class="hp-subfigure-list">${pageRows.map((figure, pageIndex) => {
+                    const imageUrl = _safeReportImageUrl(figure.dataUrl);
+                    if (!imageUrl) return '';
+                    const fallbackIndex = offset + pageIndex;
+                    const subfigure = String(figure.subfigure || String.fromCharCode(97 + fallbackIndex)).toLowerCase();
+                    return `<figure class="hp-subfigure">
+                        <img src="${escHtml(imageUrl)}" alt="${escHtml(figure.title || '')}"/>
+                        <figcaption><b>${escHtml(s.figCaption)} ${figureNumber}(${escHtml(subfigure)}) · ${escHtml(figure.title || '')}</b>${figure.caption ? ' — ' + escHtml(figure.caption) : ''}</figcaption>
+                    </figure>`;
+                }).join('')}</div>
+                ${pageFooter(pageNo)}
+            </div>`;
+        }
+        return html;
+    };
 
     // ============== PAGE 1: Letterhead + Patient ID + Imaging + Case ==============
     // BUG FIX 2026-06-17 (header redesign): the user requested a
@@ -827,13 +973,16 @@ function _updateReportPreview() {
                 <p class="no-indent"><span class="hp-key">${escHtml(s.ctvVolume)}：</span>${f.case.ctvVolumeMm3 !== null ? f.case.ctvVolumeMm3.toFixed(1) + ' ' + U.mm3 : ND}；<span class="hp-key">${escHtml(s.oarCount)}：</span>${f.case.oarCount !== null ? f.case.oarCount : ND}；<span class="hp-key">${escHtml(s.segmentationModel)}：</span>${escHtml(f.segmentation.ctvModelName) || ND}</p>
             </div>
     `;
-    // Figures on page 1 if any
-    if (f.figures && f.figures.length > 0) {
-        const fig1 = f.figures[0];
-        const fig1Url = _safeReportImageUrl(fig1.dataUrl);
-        if (fig1Url) p1 += `<div class="hp-figure"><img src="${escHtml(fig1Url)}" alt="${escHtml(fig1.title || '')}"/><div class="hp-figure-cap">${escHtml(s.figCaption)} 1 · ${escHtml(fig1.title || '')}${fig1.caption ? ' — ' + escHtml(fig1.caption) : ''}</div></div>`;
-    }
     p1 += `${pageFooter(1)}</div>`;
+
+    let nextPageNo = 2;
+    const figure1Pages = renderFigurePages(
+        figure1Rows,
+        1,
+        f.language === 'zh' ? '粒子植入方案' : 'Seed Implant Plan',
+        nextPageNo,
+    );
+    nextPageNo += figure1PageCount;
 
     // ============== PAGE 2: Plan Quality Assessment ==============
     const t = (key) => escHtml(s[key]);
@@ -884,12 +1033,24 @@ function _updateReportPreview() {
             </table>
         </div>
     `;
-    if (f.figures && f.figures.length > 1) {
-        const fig2 = f.figures[1];
-        const fig2Url = _safeReportImageUrl(fig2.dataUrl);
-        if (fig2Url) p2 += `<div class="hp-figure"><img src="${escHtml(fig2Url)}" alt="${escHtml(fig2.title || '')}"/><div class="hp-figure-cap">${escHtml(s.figCaption)} 2 · ${escHtml(fig2.title || '')}${fig2.caption ? ' — ' + escHtml(fig2.caption) : ''}</div></div>`;
-    }
-    p2 += `${pageFooter(2)}</div>`;
+    p2 += `${pageFooter(nextPageNo)}</div>`;
+    nextPageNo += 1;
+
+    const figure2Pages = renderFigurePages(
+        figure2Rows,
+        2,
+        f.language === 'zh' ? '剂量分布与 DVH' : 'Dose Distribution & DVH',
+        nextPageNo,
+    );
+    nextPageNo += figure2PageCount;
+
+    const supplementalPages = renderFigurePages(
+        supplementalRows,
+        3,
+        f.language === 'zh' ? '附加图像' : 'Additional Figures',
+        nextPageNo,
+    );
+    nextPageNo += supplementalPageCount;
 
     // ============== PAGE 3: OAR Dose ==============
     let p3 = `<div class="report-page">
@@ -924,7 +1085,8 @@ function _updateReportPreview() {
         p3 += `<h2 class="hp-section-title">${escHtml(oarSection)}${secondaryTitle('OAR Dose')}</h2>
         <div class="hp-section-body"><p class="no-indent">${escHtml(noOarDose)}</p></div>`;
     }
-    p3 += `${pageFooter(3)}</div>`;
+    p3 += `${pageFooter(nextPageNo)}</div>`;
+    nextPageNo += 1;
 
     // ============== PAGE 4: Clinical Interpretation ==============
     let p4 = `<div class="report-page">
@@ -936,7 +1098,8 @@ function _updateReportPreview() {
         p4 += `<h2 class="hp-section-title">${escHtml(interpretationSection)}${secondaryTitle('Clinical Interpretation')}</h2>
         <div class="hp-section-body"><p class="no-indent">${escHtml(ND)}</p></div>`;
     }
-    p4 += `${pageFooter(4)}</div>`;
+    p4 += `${pageFooter(nextPageNo)}</div>`;
+    nextPageNo += 1;
 
     // ============== PAGE 5: Safety + QA + Methodology + References + Disclaimer + Signatures ==============
     let p5 = `<div class="report-page">
@@ -988,9 +1151,9 @@ function _updateReportPreview() {
             </div>
             ${f.signature.notes ? `<p style="margin-top:6px;font-size:9pt;color:#64748b;">${escHtml(f.signature.notes)}</p>` : ''}
         </div>`;
-    p5 += `${pageFooter(5)}</div>`;
+    p5 += `${pageFooter(nextPageNo)}</div>`;
 
-    pagesEl.innerHTML = p1 + p2 + p3 + p4 + p5;
+    pagesEl.innerHTML = p1 + figure1Pages + p2 + figure2Pages + supplementalPages + p3 + p4 + p5;
 }
 
 function _hpMetricRow(name, value, unit, refText, statusClass, sOverride, statusTextOverride) {
@@ -1261,6 +1424,15 @@ function _printableCss() {
         .hp-figure { margin: 4mm 0; text-align: center; page-break-inside: avoid; }
         .hp-figure img { max-width: 100%; max-height: 110mm; border: 1px solid #cbd5e1; }
         .hp-figure-cap { font-size: 8.5pt; color: #475569; margin-top: 1.5mm; font-style: italic; }
+        /* Report captures remain independent images. Two subfigures fit on an
+           A4 evidence page at full content width; a lone subfigure may use the
+           additional vertical space without being raster-scaled into a collage. */
+        .report-figure-page { display: flex; flex-direction: column; }
+        .hp-subfigure-list { display: flex; flex-direction: column; gap: 4mm; flex: 1; min-height: 0; }
+        .hp-subfigure { margin: 0; text-align: center; page-break-inside: avoid; break-inside: avoid; min-height: 0; }
+        .hp-subfigure img { display: block; width: 100%; height: auto; max-height: 96mm; object-fit: contain; margin: 0 auto; border: 1px solid #cbd5e1; background: #020617; }
+        .hp-subfigure:only-child img { max-height: 190mm; }
+        .hp-subfigure figcaption { font-size: 9pt; line-height: 1.35; color: #334155; margin-top: 1.5mm; font-style: italic; }
         .hp-references { font-size: 9pt; line-height: 1.55; padding-left: 6mm; }
         .hp-references li { margin-bottom: 1.5mm; text-indent: -5mm; padding-left: 5mm; }
         .hp-references a { color: #0c4a6e; text-decoration: none; }

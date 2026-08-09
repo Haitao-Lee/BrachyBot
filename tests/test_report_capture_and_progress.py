@@ -18,7 +18,67 @@ def test_figure_one_detail_view_keeps_the_complete_ctv_in_frame():
     assert "halfWidth / Math.tan(halfFovX)" in source
     assert "halfDepth + planarDistance" in source
     assert "margin: mode === 'detail' ? 1.06 : 1.08" in source
-    assert "targetAspect: 1" in source
+    assert "targetAspect: REPORT_FIGURE_ASPECT" in source
+
+
+def test_report_figures_are_native_subfigures_and_peak_dose_capture_is_ready():
+    editor = _read("web/app/static/js/brachybot-report-editor.js")
+    export = _read("web/app/static/js/brachybot-report-export.js")
+    viewer = _read("web/app/static/js/brachybot-3d-manual.js")
+
+    for axis in (
+        "report_fig1_global",
+        "report_fig1_closeup",
+        "report_fig2_axial",
+        "report_fig2_sagittal",
+        "report_fig2_coronal",
+        "report_fig2_dose_surface",
+        "report_fig2_dvh",
+    ):
+        assert axis in editor
+    assert "figureGroup: 'figure1'" in editor
+    assert "figureGroup: 'figure2'" in editor
+    assert "seed_plan_composite" not in editor
+    assert "dose_dvh_composite" not in editor
+    assert "_waitForReportDoseSlice" in editor
+    assert "doseCanvas.dataset.renderedSlice = String(sliceIndex)" in viewer
+    assert "canvas.dataset.renderedSlice = String(sliceIndex)" in viewer
+
+    # The colorbar canvas is a UI decoration, not a medical image layer.
+    assert "parent.querySelectorAll('canvas')" not in export
+    assert "`doseOverlayCanvas${cap}`" in export
+    assert "`contourCanvas${cap}`" in export
+    assert "`seedsOverlayCanvas${cap}`" in export
+    assert "`doseColorbar${cap}`" in export
+
+
+def test_report_preview_groups_figures_by_stable_metadata_not_array_position():
+    source = _read("web/app/static/js/brachybot-report-export.js")
+
+    assert "function _reportFiguresForGroup" in source
+    assert "figure?.figureGroup" in source
+    assert "left?.sortOrder" in source
+    assert "right?.sortOrder" in source
+    assert "const figure1Rows = _reportFiguresForGroup(f, 'figure1')" in source
+    assert "const figure2Rows = _reportFiguresForGroup(f, 'figure2')" in source
+    assert "renderFigurePages" in source
+    assert "f.figures[0]" not in source
+    assert "f.figures[1]" not in source
+
+
+def test_report_figure_identity_survives_server_artifact_fallback():
+    routes = _read("web/routes/planning_routes.py")
+    workspace = _read("web/app/static/js/brachybot-workspace.js")
+    planning = _read("web/app/static/js/brachybot-dvh-planning.js")
+
+    assert 'str(view_metadata.get("axis") or view_metadata.get("capture_role") or "")' in routes
+    assert 'filename = f"{mode}_screenshot{descriptor}_{uuid4().hex[:12]}.png"' in routes
+    assert "const recoveredFigureMetadata = axis =>" in workspace
+    assert "report_fig2_dose_surface" in workspace
+    assert "identityMatch" in workspace
+    assert "...figureMetadata" in workspace
+    assert "const requiredReportAxes = new Set" in planning
+    assert "hasCompleteReportFigureSet" in planning
 
 
 def test_figure_two_rejects_black_webgl_capture_and_retries():
