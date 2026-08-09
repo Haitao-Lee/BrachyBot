@@ -52,6 +52,14 @@ def test_report_figures_are_native_subfigures_and_peak_dose_capture_is_ready():
     assert "`doseColorbar${cap}`" in export
 
 
+def test_late_viewer_hydration_never_overwrites_canonical_report_capture():
+    source = _read("web/app/static/js/brachybot-dvh-planning.js")
+    start = source.index("const _replaceOrCreate =")
+    block = source[start:source.index("const lang =", start)]
+    assert "if (idx >= 0) return;" in block
+    assert "Object.assign(window.reportForm.figures[idx], entry)" not in block
+
+
 def test_report_preview_groups_figures_by_stable_metadata_not_array_position():
     source = _read("web/app/static/js/brachybot-report-export.js")
 
