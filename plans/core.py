@@ -341,6 +341,13 @@ def optimal_plan(init_trajectories, radiation_volume, dose_image, dose_cal_model
             world_dir = utilizations.direction_transform(dose_image, direction)
             final_seeds.append((world_pos, world_dir))
         final_res.append([res[0], final_seeds, res[2]])
+    _logger.info(
+        "[optimal_plan] Exact seed-dose cache: hits=%d misses=%d entries=%d bytes=%d",
+        dose_context.seed_dose_cache_hits,
+        dose_context.seed_dose_cache_misses,
+        len(dose_context._seed_dose_cache),
+        dose_context._seed_dose_cache_bytes,
+    )
     return final_res
 
 

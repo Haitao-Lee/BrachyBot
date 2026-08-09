@@ -269,30 +269,37 @@ class DeviceManager:
           - '0' / '1' / etc: same as int
           - 'auto' (alias for None)
         """
-        # Honor an existing preference for this caller unless caller
-        # explicitly asked for something different this time.
-        if prefer is None or prefer == "auto":
-            if caller in self._preferred:
-                prefer = self._preferred[caller]
-        if prefer == "cpu":
-            chosen = "cpu"
-        elif prefer is not None:
-            # int / str-int → specific GPU
-            try:
-                idx = int(prefer)
-                if self._cuda_available and 0 <= idx < self._device_count:
-                    chosen = f"cuda:{idx}"
-                else:
-                    logger.warning(f"device_manager: GPU {idx} requested but not available; using cpu")
-                    chosen = "cpu"
-            except ValueError:
-                logger.warning(f"device_manager: unknown prefer value {prefer!r}; auto-picking")
-                chosen = self._auto_pick()
-        else:
-            chosen = self._auto_pick()
-        # Cache the choice for this caller (so model weights stay warm)
-        self._preferred[caller] = chosen
+        # Selection and lease accounting are one atomic operation. Without
+        # this lock, two segmentation threads can both observe an idle GPU and
+        # reserve it before either active counter is visible to the other.
         with self._lease_lock:
+            # Honor an existing preference for this caller unless caller
+            # explicitly asked for something different this time.
+            if prefer is None or prefer == "auto":
+                if caller in self._preferred:
+                    prefer = self._preferred[caller]
+            if prefer == "cpu":
+                chosen = "cpu"
+            elif prefer is not None:
+                # Accept both the public numeric form and the canonical value
+                # stored by this manager itself (for example ``cuda:0``).
+                try:
+                    raw_preference = str(prefer).strip().lower()
+                    if raw_preference.startswith("cuda:"):
+                        raw_preference = raw_preference.split(":", 1)[1]
+                    idx = int(raw_preference)
+                    if self._cuda_available and 0 <= idx < self._device_count:
+                        chosen = f"cuda:{idx}"
+                    else:
+                        logger.warning(f"device_manager: GPU {idx} requested but not available; using cpu")
+                        chosen = "cpu"
+                except (TypeError, ValueError):
+                    logger.warning(f"device_manager: unknown prefer value {prefer!r}; auto-picking")
+                    chosen = self._auto_pick()
+            else:
+                chosen = self._auto_pick()
+            # Cache the choice for this caller (so model weights stay warm).
+            self._preferred[caller] = chosen
             self._active_per_device[chosen] = self._active_per_device.get(chosen, 0) + 1
         logger.info(f"device_manager: {caller} → {chosen} "
                     f"(active on {chosen}: {self._active_per_device[chosen]})")

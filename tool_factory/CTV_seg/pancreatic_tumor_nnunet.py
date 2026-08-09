@@ -201,25 +201,28 @@ class NNUNetPancreaticTumorTool(BaseTool):
         os.environ["OMP_NUM_THREADS"] = "1"
         os.environ["MKL_NUM_THREADS"] = "1"
 
-        # CRITICAL: Auto-detect device and set CUDA_VISIBLE_DEVICES BEFORE importing torch
-        # PyTorch initializes CUDA on first import, so CUDA_VISIBLE_DEVICES must be set first
+        # Select a concrete torch device without mutating process-global
+        # CUDA_VISIBLE_DEVICES. OAR segmentation binds only its own subprocess;
+        # changing the parent environment here could redirect a concurrent OAR
+        # worker or another Session to the wrong GPU.
         from plans.device_manager import DeviceManager
         _dm = DeviceManager.instance()
         _chosen_gpu = "cuda:0"
         _n_gpus = 0
-        _gpu_lease = None
+        _gpu_session = None
         if _dm.cuda_available():
             _n_gpus = _dm.device_count()
-            # Pin to the most-free single GPU by default
+            # nnUNetPredictor owns one torch device. The legacy all-GPU option
+            # therefore retains its established cuda:0 behavior without
+            # changing visibility for the rest of the server process.
             if os.environ.get("NNUNET_USE_ALL_GPUS", "").lower() in ("1", "true", "yes"):
-                _chosen_gpu = f"cuda:0"
-                os.environ["CUDA_VISIBLE_DEVICES"] = ",".join(str(i) for i in range(_n_gpus))
+                _gpu_session = _dm.acquire_session(
+                    caller=self.__class__.__name__, prefer="0"
+                )
             else:
-                # Pick the most-free single GPU (smart scheduler)
-                _chosen_gpu = _dm.acquire(caller=self.__class__.__name__)
-                os.environ["CUDA_VISIBLE_DEVICES"] = _chosen_gpu.split(":", 1)[1] if ":" in _chosen_gpu else "0"
+                _gpu_session = _dm.acquire_session(caller=self.__class__.__name__)
+            _chosen_gpu = _gpu_session.__enter__().device_str
 
-        # NOW import torch - after CUDA_VISIBLE_DEVICES is set
         import torch
 
         # Create device object
@@ -266,19 +269,12 @@ class NNUNetPancreaticTumorTool(BaseTool):
             logger.info(f"nnUNet output shape: {result.shape}, unique values: {np.unique(result)}")
             return result.astype(np.uint8)
         finally:
-            # Free GPU memory and release DeviceManager lease
+            # Free GPU memory and release the standard DeviceManager lease.
             del predictor
             gc.collect()
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
                 logger.info("GPU memory freed")
-            # Release GPU lease so other tools (e.g. TotalSegmentator) can use it
-            if _dm.cuda_available() and _chosen_gpu.startswith("cuda:"):
-                try:
-                    with _dm._lease_lock:
-                        _dm._active_per_device[_chosen_gpu] = max(
-                            0, _dm._active_per_device.get(_chosen_gpu, 0) - 1
-                        )
-                    logger.info(f"Released GPU lease for {_chosen_gpu}")
-                except Exception:
-                    pass
+            if _gpu_session is not None:
+                _gpu_session.__exit__(None, None, None)
+                logger.info(f"Released GPU lease for {_chosen_gpu}")

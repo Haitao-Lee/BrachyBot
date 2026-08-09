@@ -1239,6 +1239,7 @@ def _filter_world_safe_trajectories(
     ctv_mask,
     oar_mask,
     obstacle_labels,
+    body_mask=None,
 ):
     """Reject candidates whose full 150 mm physical needle intersects hard masks."""
     safe = []
@@ -1248,11 +1249,11 @@ def _filter_world_safe_trajectories(
     # Build the body envelope once to detect truncated CT scan boundaries. A
     # needle entering through a flat truncation plane (not real skin) is
     # rejected regardless of obstacle clearance.
-    body_mask = None
-    try:
-        body_mask = _body_mask_from_ct(ct_image)
-    except Exception:
-        logger.warning("[needle_safety] Body mask unavailable; truncation check skipped", exc_info=True)
+    if body_mask is None:
+        try:
+            body_mask = _body_mask_from_ct(ct_image)
+        except Exception:
+            logger.warning("[needle_safety] Body mask unavailable; truncation check skipped", exc_info=True)
     for trajectory in trajectories or []:
         points = _candidate_world_needle_points(trajectory, planning_image, extension)
         if _needle_enters_through_truncated_boundary(points, ct_image, body_mask=body_mask):
@@ -1781,6 +1782,29 @@ class PlanningPipelineTool(BaseTool):
 
         ct_image_path = kwargs.get("ct_image_path")
         if ct_image_path:
+            # The direct planning workflow passes the same CT path that was
+            # already loaded into the Session for segmentation and viewers.
+            # Reusing that immutable LPI image avoids another disk read and
+            # orientation pass while preserving the exact SimpleITK object,
+            # geometry, and voxel values used by the preceding tools.
+            if agent:
+                stored_path = agent.memory.retrieve("ct_path")
+                stored_image = agent.memory.retrieve("ct_image")
+                try:
+                    requested_identity = os.path.realpath(
+                        os.path.abspath(os.fspath(ct_image_path))
+                    )
+                    stored_identity = os.path.realpath(
+                        os.path.abspath(os.fspath(stored_path))
+                    ) if stored_path else None
+                except (TypeError, ValueError, OSError):
+                    requested_identity = os.fspath(ct_image_path)
+                    stored_identity = os.fspath(stored_path) if stored_path else None
+                if stored_image is not None and requested_identity == stored_identity:
+                    logger.info("Reusing Session CT image for planning: %s", ct_image_path)
+                    if agent.memory.retrieve("ct_image_raw") is None:
+                        agent.memory.store("ct_image_raw", stored_image)
+                    return stored_image
             try:
                 logger.info(f"Loading CT image: {ct_image_path}")
                 ct_raw = sitk.ReadImage(ct_image_path)
@@ -1920,7 +1944,10 @@ class PlanningPipelineTool(BaseTool):
     # Individual step implementations
     # ============================================================
 
-    def _step_trajectory_init(self, ct_image, ctv_mask, oar_mask, ref_direc, agent_config, agent):
+    def _step_trajectory_init(
+        self, ct_image, ctv_mask, oar_mask, ref_direc, agent_config, agent,
+        body_mask=None,
+    ):
         """Step 1: Generate candidate trajectories.
 
         Prerequisites:
@@ -2026,6 +2053,7 @@ class PlanningPipelineTool(BaseTool):
             ctv_mask,
             oar_mask,
             obstacle_labels,
+            body_mask=body_mask,
         )
         if not trajectories:
             return ToolResult(
@@ -2060,7 +2088,10 @@ class PlanningPipelineTool(BaseTool):
             },
         )
 
-    def _step_trajectory_refine(self, ct_image, ctv_mask, oar_mask, agent_config, agent):
+    def _step_trajectory_refine(
+        self, ct_image, ctv_mask, oar_mask, agent_config, agent,
+        body_mask=None,
+    ):
         """Step 2: Refine trajectories (filter by quality).
 
         Prerequisites:
@@ -2085,6 +2116,7 @@ class PlanningPipelineTool(BaseTool):
             init_result = self._step_trajectory_init(
                 ct_image, ctv_mask, oar_mask, ref_direc,
                 agent_config or copy.deepcopy(getattr(agent, "config", {}) or {}), agent,
+                body_mask=body_mask,
             )
             if not init_result.success:
                 return ToolResult(success=False, error=f"[trajectory_refine] Cannot generate trajectories: {init_result.error}")
@@ -2144,6 +2176,7 @@ class PlanningPipelineTool(BaseTool):
                 ctv_mask,
                 oar_mask,
                 obstacle_labels,
+                body_mask=body_mask,
             )
         else:
             refined = depth_candidates
@@ -2171,7 +2204,10 @@ class PlanningPipelineTool(BaseTool):
             },
         )
 
-    def _step_seed_planning(self, ct_image, ctv_mask, oar_mask, mode, agent_config, agent):
+    def _step_seed_planning(
+        self, ct_image, ctv_mask, oar_mask, mode, agent_config, agent,
+        body_mask=None,
+    ):
         """Step 3: Optimize seed placement.
 
         Prerequisites:
@@ -2204,11 +2240,15 @@ class PlanningPipelineTool(BaseTool):
             if ref_direc_input is None:
                 ref_direc_input = CONFIG.get("reference_direc", "auto")
             auto_ref_direc = _resolve_ref_direc(ref_direc_input, ct_image, ctv_mask, agent)
-            init_result = self._step_trajectory_init(ct_image, ctv_mask, oar_mask, auto_ref_direc, agent_config, agent)
+            init_result = self._step_trajectory_init(
+                ct_image, ctv_mask, oar_mask, auto_ref_direc, agent_config, agent,
+                body_mask=body_mask,
+            )
             if not init_result.success:
                 return ToolResult(success=False, error=f"[seed_planning] Cannot generate trajectories: {init_result.error}")
             refine_result = self._step_trajectory_refine(
                 ct_image, ctv_mask, oar_mask, agent_config, agent,
+                body_mask=body_mask,
             )
             if not refine_result.success:
                 return ToolResult(success=False, error=f"[seed_planning] Cannot refine trajectories: {refine_result.error}")
@@ -2280,6 +2320,7 @@ class PlanningPipelineTool(BaseTool):
                 ctv_mask,
                 oar_mask,
                 obstacle_labels,
+                body_mask=body_mask,
             )
             if not trajectories:
                 return ToolResult(
@@ -2335,7 +2376,8 @@ class PlanningPipelineTool(BaseTool):
                 ref_input = agent_config.get("reference_direc", CONFIG.get("reference_direc", "auto"))
             ref_direc = _resolve_ref_direc(ref_input, ct_image, ctv_mask, agent)
             init_result = self._step_trajectory_init(
-                ct_image, ctv_mask, oar_mask, ref_direc, agent_config, agent
+                ct_image, ctv_mask, oar_mask, ref_direc, agent_config, agent,
+                body_mask=body_mask,
             )
             if init_result.success:
                 trajectories = init_result.metadata.get("trajectories", [])
@@ -3093,11 +3135,27 @@ class PlanningPipelineTool(BaseTool):
             except Exception as _e:
                 logger.debug(f"step_callback for {substep_name} failed: {_e}")
 
+        # All three geometry stages validate candidates against the same CT
+        # body envelope. The connected-component/fill operation is exact but
+        # relatively expensive, so compute it once for this full request and
+        # pass the identical boolean mask through each stage.
+        body_mask = None
+        try:
+            body_mask = _body_mask_from_ct(ct_image)
+        except Exception:
+            logger.warning(
+                "[needle_safety] Body mask unavailable; truncation check skipped",
+                exc_info=True,
+            )
+
         # Step 1: Trajectory initialization
         logger.info("Step 1/5: Trajectory initialization...")
         _notify("trajectory_init", "pending", "Generating candidate trajectories")
         t0 = time.time()
-        traj_result = self._step_trajectory_init(ct_image, ctv_mask, oar_mask, ref_direc, agent_config, agent)
+        traj_result = self._step_trajectory_init(
+            ct_image, ctv_mask, oar_mask, ref_direc, agent_config, agent,
+            body_mask=body_mask,
+        )
         substep_timings["trajectory_init"] = round(time.time() - t0, 2)
         _notify("trajectory_init", "done" if traj_result.success else "error",
                 f"{len(traj_result.metadata.get('trajectories', []))} trajectories | elapsed_ms={int(substep_timings['trajectory_init']*1000)}")
@@ -3111,6 +3169,7 @@ class PlanningPipelineTool(BaseTool):
         t0 = time.time()
         refine_result = self._step_trajectory_refine(
             ct_image, ctv_mask, oar_mask, agent_config, agent,
+            body_mask=body_mask,
         )
         substep_timings["trajectory_refine"] = round(time.time() - t0, 2)
         _notify("trajectory_refine", "done" if refine_result.success else "error",
@@ -3123,7 +3182,10 @@ class PlanningPipelineTool(BaseTool):
         logger.info("Step 3/5: Seed placement optimization...")
         _notify("seed_planning", "pending", "Optimizing seed placement")
         t0 = time.time()
-        seed_result = self._step_seed_planning(ct_image, ctv_mask, oar_mask, mode, agent_config, agent)
+        seed_result = self._step_seed_planning(
+            ct_image, ctv_mask, oar_mask, mode, agent_config, agent,
+            body_mask=body_mask,
+        )
         substep_timings["seed_planning"] = round(time.time() - t0, 2)
         _notify("seed_planning", "done" if seed_result.success else "error",
                 f"{seed_result.metadata.get('total_seeds', 0)} seeds | elapsed_ms={int(substep_timings['seed_planning']*1000)}")
