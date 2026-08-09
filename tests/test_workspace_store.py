@@ -5,11 +5,19 @@ from __future__ import annotations
 import logging
 import threading
 from io import BytesIO
+from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
 
-from web.workspace_store import WorkspaceLeaseConflict, WorkspaceNotFound, WorkspaceQuotaExceeded, WorkspaceStore
+from web.workspace_store import (
+    EAGER_ARRAY_LOAD_MAX_BYTES,
+    WorkspaceLeaseConflict,
+    WorkspaceNotFound,
+    WorkspaceQuotaExceeded,
+    WorkspaceStore,
+    _decode_artifacts,
+)
 
 
 class _Memory:
@@ -66,6 +74,38 @@ class _Agent:
     def __init__(self):
         self.config = {"mode": "rule_based"}
         self.memory = _Memory()
+
+
+def test_hydration_eager_loads_tiny_arrays_but_keeps_large_volumes_mapped(
+    tmp_path, monkeypatch,
+):
+    """Thousands of tiny planning arrays must not consume one FD each."""
+    root = tmp_path / "case"
+    arrays = root / "arrays"
+    arrays.mkdir(parents=True)
+    tiny_path = arrays / "tiny.npy"
+    large_path = arrays / "large.npy"
+    np.save(tiny_path, np.arange(9, dtype=np.float32))
+    large_count = EAGER_ARRAY_LOAD_MAX_BYTES // np.dtype(np.float32).itemsize + 1024
+    np.save(large_path, np.arange(large_count, dtype=np.float32))
+
+    real_load = np.load
+    modes = {}
+
+    def tracked_load(path, *args, **kwargs):
+        modes[Path(path).name] = kwargs.get("mmap_mode")
+        return real_load(path, *args, **kwargs)
+
+    monkeypatch.setattr("web.workspace_store.np.load", tracked_load)
+    decoded = _decode_artifacts({
+        "tiny": {"$array": "arrays/tiny.npy"},
+        "large": {"$array": "arrays/large.npy"},
+    }, root)
+
+    assert modes == {"tiny.npy": None, "large.npy": "r"}
+    assert isinstance(decoded["tiny"], np.ndarray)
+    assert not isinstance(decoded["tiny"], np.memmap)
+    assert isinstance(decoded["large"], np.memmap)
 
 
 def test_workspace_snapshot_round_trip_preserves_arrays_and_ui(tmp_path):
