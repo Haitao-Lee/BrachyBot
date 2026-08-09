@@ -1582,7 +1582,7 @@ class ChatWorkflowMixin:
                         result = self._execute_tool_with_memory(
                             tc['tool'], dict(tc['params'])
                         )
-                        step["status"] = "done"
+                        step["status"] = "done" if result.success else "error"
                         # Fact checking may perform additional model work.  It
                         # is therefore a first-class trace phase rather than
                         # hidden work after the search tool is marked done.
@@ -1631,6 +1631,14 @@ class ChatWorkflowMixin:
                         self.memory.add_message("assistant", f"[Called {tc['tool']}]")
                         result_summary = result.message[:500] if result.success else f"Error: {result.error}"
                         self.memory.add_message("user", f"[Tool result: {result_summary}]")
+                        if not result.success and tc["tool"] in {
+                            "ctv_segmentation", "oar_segmentation", "planning_pipeline"
+                        }:
+                            logger.info(
+                                "Stopping direct streaming clinical chain after failed prerequisite: %s",
+                                tc["tool"],
+                            )
+                            break
                 except Exception as e:
                     step["status"] = "error"
                     step["result"] = str(e)
@@ -1638,6 +1646,10 @@ class ChatWorkflowMixin:
                     logger.error(f"Direct tool failed: {tc['tool']}: {e}")
                     self.memory.add_message("assistant", f"[Called {tc['tool']}]")
                     self.memory.add_message("user", f"[Tool result: Error: {str(e)[:200]}]")
+                    if tc["tool"] in {
+                        "ctv_segmentation", "oar_segmentation", "planning_pipeline"
+                    }:
+                        break
 
             # Direct tool requests used to have a silent interval here:
             # tools were already marked done while report construction or a

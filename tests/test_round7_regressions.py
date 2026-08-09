@@ -90,8 +90,9 @@ def test_replan_reverses_current_ui_direction_and_reuses_masks():
     calls = [{"tool": "planning_pipeline", "params": {"step": "full"}}]
     routed = agent._normalize_clinical_tool_calls(calls, "请把 reference direction 反向再规划一遍")
 
-    assert [call["tool"] for call in routed] == ["planning_pipeline"]
+    assert [call["tool"] for call in routed] == ["planning_pipeline", "surgical_guide"]
     assert routed[0]["params"]["ref_direc"] == [-1.0, 0.0, 0.0]
+    assert routed[1]["params"] == {"action": "generate"}
     assert agent._is_replan_request("请重新规划") is True
     assert agent._is_replan_request("介绍放射性粒子植入的好处") is False
 

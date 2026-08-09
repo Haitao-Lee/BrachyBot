@@ -971,7 +971,13 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
         )
 
     def _normalize_clinical_tool_calls(self, tool_calls: List[Dict], message: str) -> List[Dict]:
-        """Force full brachytherapy planning into CTV -> OAR -> planning order."""
+        """Build the complete deterministic clinical-planning delivery chain.
+
+        Surgical-guide generation is a planning output, not an optional second
+        model decision. Keeping it in this normalizer makes native LLM tool
+        calls follow the same CTV -> OAR -> planning -> guide contract as the
+        local direct-intent path and the workflow recovery path.
+        """
         if not tool_calls or not self._planning_requested(message, tool_calls):
             return tool_calls
 
@@ -997,6 +1003,7 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
             }
 
         by_tool = {}
+        guide_call = None
         rest = []
         for tc in tool_calls:
             tool_name = tc.get("tool")
@@ -1009,6 +1016,11 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
                     "tool": "planning_pipeline",
                     "params": {"step": "full"},
                 })
+            elif tool_name == "surgical_guide":
+                # Move an explicit guide request behind planning and keep only
+                # one copy. The LLM may request both tools in the same turn.
+                if guide_call is None:
+                    guide_call = clone_call(tc)
             else:
                 rest.append(tc)
 
@@ -1092,6 +1104,24 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
                 planning_params["ref_direc"] = self._reversed_reference_direction()
                 planning_params["_reference_direction_user_override"] = True
             ordered.append(ensure_call("planning_pipeline", planning_params))
+
+        if any(call.get("tool") == "planning_pipeline" for call in ordered):
+            if guide_call is None:
+                guide_call = {
+                    "id": "auto_surgical_guide",
+                    "tool": "surgical_guide",
+                    "params": {"action": "generate"},
+                }
+            else:
+                guide_call["params"] = dict(guide_call.get("params") or {})
+                guide_call["params"].setdefault("action", "generate")
+            ordered.append(guide_call)
+            guide_call = None
+
+        # Preserve a standalone explicit guide call when the active plan was
+        # already complete and no new planning run is required.
+        if guide_call is not None:
+            rest.append(guide_call)
 
         if ordered:
             logger.info(

@@ -600,6 +600,43 @@ def test_planning_report_uses_persisted_effective_mode():
     assert "Planning mode**: rule_based" not in report
 
 
+def test_planning_report_includes_persisted_surgical_guide_delivery():
+    from agent_runtime.core import AgentMemory
+    from agent_runtime.response_tools import ResponseToolMixin
+
+    agent = object.__new__(ResponseToolMixin)
+    agent.memory = AgentMemory("report-guide-test")
+    agent.memory.store("surgical_guide", {
+        "status": "ready",
+        "version": 3,
+        "selected_needle_ids": ["needle_1", "needle_2"],
+    })
+
+    report = agent._build_planning_report("en", [
+        {"type": "tool", "tool": "planning_pipeline", "status": "done"},
+        {"type": "tool", "tool": "surgical_guide", "status": "done"},
+    ])
+
+    assert "planning_pipeline, surgical_guide" in report
+    assert "Puncture guide v3 generated for 2 planned needle paths." in report
+
+
+def test_planning_report_does_not_claim_a_guide_after_generation_failure():
+    from agent_runtime.core import AgentMemory
+    from agent_runtime.response_tools import ResponseToolMixin
+
+    agent = object.__new__(ResponseToolMixin)
+    agent.memory = AgentMemory("report-guide-failure-test")
+
+    report = agent._build_planning_report("en", [
+        {"type": "tool", "tool": "planning_pipeline", "status": "done"},
+        {"type": "tool", "tool": "surgical_guide", "status": "error", "result": "not watertight"},
+    ])
+
+    assert "Generation failed" in report
+    assert "generated for" not in report
+
+
 def test_report_context_does_not_apply_cross_site_defaults():
     from tool_factory.report_context import build_prescription_rationale
 
@@ -1028,13 +1065,36 @@ def test_workflow_normalizer_routes_explicit_tumor_site_and_keeps_ambiguity_clos
         "params": {"step": "full"},
     }]
     routed = agent._normalize_clinical_tool_calls(planning_call, "请执行胰腺癌粒子植入规划")
-    assert [call["tool"] for call in routed[:3]] == [
-        "ctv_segmentation", "oar_segmentation", "planning_pipeline"
+    assert [call["tool"] for call in routed[:4]] == [
+        "ctv_segmentation", "oar_segmentation", "planning_pipeline", "surgical_guide"
     ]
     assert routed[0]["params"]["tumor_type"] == "nnunet_pancreatic"
+    assert routed[3]["params"] == {"action": "generate"}
 
     ambiguous = agent._normalize_clinical_tool_calls(planning_call, "请执行粒子植入规划")
     assert "tumor_type" not in ambiguous[0]["params"]
+
+
+def test_workflow_normalizer_deduplicates_explicit_guide_after_planning():
+    from AgenticSys import BrachyAgent
+
+    class Memory:
+        def retrieve(self, _key, default=None):
+            return default
+
+    agent = object.__new__(BrachyAgent)
+    agent.memory = Memory()
+    agent._has_completed_planning = lambda *_args, **_kwargs: False
+    agent._current_ct_path = lambda *_args, **_kwargs: "/tmp/case.nii.gz"
+
+    routed = agent._normalize_clinical_tool_calls([
+        {"id": "plan", "tool": "planning_pipeline", "params": {"step": "full"}},
+        {"id": "guide", "tool": "surgical_guide", "params": {"action": "generate"}},
+    ], "plan pancreatic brachytherapy")
+
+    assert [call["tool"] for call in routed].count("surgical_guide") == 1
+    assert [call["tool"] for call in routed][-2:] == ["planning_pipeline", "surgical_guide"]
+    assert routed[-1]["id"] == "guide"
 
 
 def test_direct_ctv_request_uses_explicit_site_without_inventing_an_ambiguous_one():
