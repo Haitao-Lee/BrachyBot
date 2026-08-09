@@ -215,7 +215,9 @@
             'dose_distribution', 'dose_distribution_gy', 'dose_metrics',
             'trajectories', 'seed_plan', 'seed_plan_serialized',
             'surgical_guide',
-        ].some(key => Object.prototype.hasOwnProperty.call(results, key));
+        ].some(key => Object.prototype.hasOwnProperty.call(results, key))
+            || Object.keys(results).some(key => key === 'planning_runs'
+                || key.startsWith('planning_run:'));
     }
     window.workspaceSnapshotHasClinicalResources = workspaceSnapshotHasClinicalResources;
 
@@ -515,6 +517,25 @@
         return String(snapshot?.session_id || snapshot?.session?.id || '');
     }
 
+    function workspacePlanningIdentity(snapshot) {
+        const results = snapshot?.agent?.planning_results;
+        const ids = new Set();
+        if (!results || typeof results !== 'object') return { ids, activeId: '' };
+        const runs = Array.isArray(results.planning_runs) ? results.planning_runs : [];
+        runs.forEach(run => {
+            const planningId = String(run?.planning_id || run?.id || '').trim();
+            if (planningId) ids.add(planningId);
+        });
+        Object.keys(results).forEach(key => {
+            if (key.startsWith('planning_run:')) ids.add(key.slice('planning_run:'.length));
+        });
+        const activeId = String(
+            results.active_planning_id || results.planning_run_id || '',
+        ).trim();
+        if (activeId) ids.add(activeId);
+        return { ids, activeId };
+    }
+
     function rememberWorkspaceRevision(snapshot) {
         const sessionId = workspaceSnapshotSessionId(snapshot);
         const value = snapshot?.session?.revision;
@@ -664,6 +685,25 @@
         );
     }
 
+    function reportSectionSessionId(section) {
+        const form = section?.form && typeof section.form === 'object'
+            ? section.form : section;
+        return String(form?.sessionId || form?.session_id || '').trim();
+    }
+
+    function sessionBoundReportMap(rawMap, sessionId, planningIds = null) {
+        const filtered = {};
+        if (!rawMap || typeof rawMap !== 'object') return filtered;
+        Object.entries(rawMap).forEach(([planningId, section]) => {
+            if (!section || typeof section !== 'object') return;
+            if (planningIds?.size && !planningIds.has(String(planningId))) return;
+            const owner = reportSectionSessionId(section);
+            if (owner && owner !== String(sessionId || '')) return;
+            filtered[String(planningId)] = section;
+        });
+        return filtered;
+    }
+
     function reportState() {
         if (!window.reportForm) return {};
         // Persist the exact Reference/Status rows that are visible in the
@@ -713,13 +753,16 @@
         // top-level fields for old clients, but also maintain a per-run map so
         // switching Planning never shows the previous run's narrative or
         // screenshots under the newly selected dose/needles.
-        const byPlanning = (window.__reportWorkspaceByPlanning
-            && typeof window.__reportWorkspaceByPlanning === 'object')
-            ? window.__reportWorkspaceByPlanning
-            : {};
+        const sessionId = String(activeSessionId || '');
+        const sameOwner = String(window.__reportWorkspaceSessionId || '') === sessionId;
+        const byPlanning = sessionBoundReportMap(
+            sameOwner ? window.__reportWorkspaceByPlanning : {},
+            sessionId,
+        );
         byPlanning[planningId] = section;
         window.__reportWorkspaceByPlanning = byPlanning;
         window.__reportWorkspaceActivePlanningId = planningId;
+        window.__reportWorkspaceSessionId = sessionId;
         return {
             ...section,
             active_planning_id: planningId === '__unassigned__' ? null : planningId,
@@ -1359,6 +1402,52 @@
         });
     }
 
+    async function restoreReportFiguresFromArtifacts(
+        targetForm,
+        sessionId,
+        planningId,
+        restoreGeneration,
+    ) {
+        if (!targetForm || !Array.isArray(targetForm.figures) || targetForm.figures.length) return 0;
+        let artifacts = typeof dataTreeState !== 'undefined'
+            && Array.isArray(dataTreeState?.exportArtifacts)
+            ? dataTreeState.exportArtifacts : [];
+        if (!artifacts.length && typeof hydrateDataTreeArtifactCatalog === 'function') {
+            try { artifacts = await hydrateDataTreeArtifactCatalog(); } catch (_) { artifacts = []; }
+        }
+        if (String(activeSessionId || '') !== String(sessionId || '')
+            || restoreGeneration !== workspaceRestoreGeneration) return 0;
+        const screenshots = artifacts.filter(item => {
+            const dataType = String(item?.dataType || item?.type || '');
+            const objectId = String(item?.objectId || '');
+            const filename = objectId.includes(':') ? objectId.split(':').slice(1).join(':') : objectId;
+            const ownerPlanning = String(item?.planningId || '');
+            return ['screenshot', 'report_figure'].includes(dataType)
+                && /^report_screenshot_[^/\\]+\.png$/i.test(filename)
+                && (!ownerPlanning || !planningId || ownerPlanning === String(planningId));
+        });
+        if (!screenshots.length) return 0;
+        targetForm.figures = screenshots.map((item, index) => {
+            const objectId = String(item.objectId || '');
+            const filename = objectId.includes(':') ? objectId.split(':').slice(1).join(':') : objectId;
+            const title = typeof _t === 'function'
+                ? _t(`报告图 ${index + 1}`, `Report Figure ${index + 1}`)
+                : `Report Figure ${index + 1}`;
+            return {
+                id: `restored-report-${filename.replace(/[^a-zA-Z0-9_-]/g, '_')}`,
+                title,
+                axis: `restored-${index + 1}`,
+                caption: '',
+                dataUrl: `/api/sessions/${encodeURIComponent(sessionId)}/screenshots/${encodeURIComponent(filename)}`,
+                _serverUrl: `/api/sessions/${encodeURIComponent(sessionId)}/screenshots/${encodeURIComponent(filename)}`,
+            };
+        });
+        try { renderReportEditor(); } catch (_) {}
+        try { _updateReportPreview(); } catch (_) {}
+        scheduleWorkspaceSave('report.figures.restored-from-catalog');
+        return targetForm.figures.length;
+    }
+
     function restoreReportForPlanning(planningId, options = {}) {
         const target = String(planningId || '');
         const byPlanning = window.__reportWorkspaceByPlanning
@@ -1389,6 +1478,12 @@
                 0,
                 window.reportForm,
             );
+            void restoreReportFiguresFromArtifacts(
+                window.reportForm,
+                String(activeSessionId || ''),
+                target,
+                workspaceRestoreGeneration,
+            );
         } else if (typeof _newEmptyReportForm === 'function') {
             // A newly created Planning has no report yet. Do not leave the
             // previous run's text visible next to the new dose/needle set.
@@ -1410,6 +1505,7 @@
         const sessionId = workspaceSnapshotSessionId(snapshot);
         if (!sessionId || sessionId !== String(activeSessionId || '')) return false;
         let qualityAssessmentNeedsPersist = false;
+        let reportOwnershipNeedsPersist = false;
         rememberWorkspaceRevision(snapshot);
         const ui = snapshot.ui || {};
         const uiState = ui.state || ui;
@@ -1508,20 +1604,53 @@
             const reportSection = snapshot.report && typeof snapshot.report === 'object'
                 ? snapshot.report : null;
             const savedTreePlanning = uiState.data_tree?.planning || {};
+            const planningIdentity = workspacePlanningIdentity(snapshot);
             const targetPlanningId = String(
-                savedTreePlanning.activePlanningId
+                planningIdentity.activeId
+                || savedTreePlanning.activePlanningId
                 || savedTreePlanning.id
                 || reportSection?.active_planning_id
                 || '',
             );
-            if (reportSection?.by_planning_id && typeof reportSection.by_planning_id === 'object') {
-                window.__reportWorkspaceByPlanning = Object.assign(
-                    {},
-                    window.__reportWorkspaceByPlanning || {},
-                    reportSection.by_planning_id,
-                );
+            if (targetPlanningId && typeof dataTreeState !== 'undefined' && dataTreeState?.planning) {
+                dataTreeState.planning.activePlanningId = targetPlanningId;
             }
-            const selectedReportSection = reportSectionForPlanning(reportSection, targetPlanningId);
+            const reportMap = sessionBoundReportMap(
+                reportSection?.by_planning_id,
+                sessionId,
+                planningIdentity.ids,
+            );
+            const rawReportMap = reportSection?.by_planning_id;
+            const rawReportCount = rawReportMap && typeof rawReportMap === 'object'
+                ? Object.keys(rawReportMap).length : 0;
+            reportOwnershipNeedsPersist = !!reportSection && (
+                rawReportCount !== Object.keys(reportMap).length
+                || String(reportSection?.active_planning_id || '') !== targetPlanningId
+            );
+            const declaredReportPlanningId = String(
+                reportSection?.active_planning_id || '',
+            );
+            const legacyReportOwner = reportSectionSessionId(reportSection);
+            if (targetPlanningId && !reportMap[targetPlanningId]
+                && reportFormFromSnapshot(reportSection)
+                && (!declaredReportPlanningId || declaredReportPlanningId === targetPlanningId)
+                && (!legacyReportOwner || legacyReportOwner === sessionId)) {
+                const legacySection = { ...reportSection };
+                delete legacySection.active_planning_id;
+                delete legacySection.by_planning_id;
+                delete legacySection.byPlanning;
+                reportMap[targetPlanningId] = legacySection;
+                reportOwnershipNeedsPersist = true;
+            }
+            window.__reportWorkspaceByPlanning = reportMap;
+            window.__reportWorkspaceActivePlanningId = targetPlanningId || null;
+            window.__reportWorkspaceSessionId = sessionId;
+            const boundedReportSection = reportSection ? {
+                ...reportSection,
+                active_planning_id: targetPlanningId || null,
+                by_planning_id: reportMap,
+            } : null;
+            const selectedReportSection = reportSectionForPlanning(boundedReportSection, targetPlanningId);
             const report = reportFormFromSnapshot(selectedReportSection);
             if (report && typeof report === 'object') {
                 const keepCurrentReport = _preservePopulatedReport(window.reportForm, report, options);
@@ -1559,12 +1688,16 @@
                         if (targetFigure && !targetFigure.dataUrl) targetFigure._cacheKey = savedFigure._cacheKey;
                     });
                 }
-                if (targetPlanningId) window.__reportWorkspaceActivePlanningId = targetPlanningId;
                 if (targetPlanningId && selectedReportSection) {
-                    window.__reportWorkspaceByPlanning = window.__reportWorkspaceByPlanning || {};
                     window.__reportWorkspaceByPlanning[targetPlanningId] = selectedReportSection;
                 }
                 hydrateReportFigureAssets({ report: selectedReportSection }, sessionId, restoreGeneration, 0, targetReport);
+                void restoreReportFiguresFromArtifacts(
+                    targetReport,
+                    sessionId,
+                    targetPlanningId,
+                    restoreGeneration,
+                );
                 const storedSources = selectedReportSection?.sources;
                 if (window.Report?.sources?._map && Array.isArray(storedSources)) {
                     window.Report.sources._map = new Map(storedSources);
@@ -1681,8 +1814,13 @@
                     }
                 }, 0);
             }
-            if (qualityAssessmentNeedsPersist && options.persist !== false) {
-                scheduleWorkspaceSave('report.quality_assessment.restored');
+            if ((qualityAssessmentNeedsPersist || reportOwnershipNeedsPersist)
+                && options.persist !== false) {
+                scheduleWorkspaceSave(
+                    reportOwnershipNeedsPersist
+                        ? 'report.session-planning-ownership.repaired'
+                        : 'report.quality_assessment.restored',
+                );
             }
             return true;
         } finally {

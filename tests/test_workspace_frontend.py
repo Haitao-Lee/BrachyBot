@@ -128,6 +128,30 @@ def test_report_restore_does_not_erase_newer_generated_text():
     assert "const reportSection = snapshot.report" in workspace
 
 
+def test_report_restore_is_session_bound_and_uses_agent_planning_identity():
+    workspace = read("web/app/static/js/brachybot-workspace.js")
+    ui_api = read("web/app/static/js/brachybot-ui-api.js")
+    assert "function workspacePlanningIdentity" in workspace
+    assert "results.active_planning_id || results.planning_run_id" in workspace
+    assert "planningIdentity.activeId" in workspace
+    assert "function sessionBoundReportMap" in workspace
+    assert "window.__reportWorkspaceSessionId = sessionId" in workspace
+    assert "window.__reportWorkspaceByPlanning = reportMap" in workspace
+    assert "declaredReportPlanningId === targetPlanningId" in workspace
+    assert "report.session-planning-ownership.repaired" in workspace
+    assert "window.__reportWorkspaceByPlanning = {}" in ui_api
+    assert "window.__reportWorkspaceSessionId = null" in ui_api
+
+
+def test_missing_report_figure_metadata_is_rebuilt_from_durable_artifacts():
+    workspace = read("web/app/static/js/brachybot-workspace.js")
+    assert "async function restoreReportFiguresFromArtifacts" in workspace
+    assert "hydrateDataTreeArtifactCatalog" in workspace
+    assert "report_screenshot_" in workspace
+    assert "report.figures.restored-from-catalog" in workspace
+    assert "_serverUrl" in workspace
+
+
 def test_report_quality_columns_are_persisted_and_auto_fill_is_awaited():
     workspace = read("web/app/static/js/brachybot-workspace.js")
     report = read("web/app/static/js/brachybot-report-export.js")
@@ -195,8 +219,10 @@ def test_planning_completion_refresh_is_not_tied_to_one_trace_shape():
 def test_geometry_only_planning_runs_are_restored_after_restart():
     """A draft without dose keys still enters the cold-restore planning path."""
     ui_api = read("web/app/static/js/brachybot-ui-api.js")
+    workspace = read("web/app/static/js/brachybot-workspace.js")
     assert "storedKeys.has('planning_runs')" in ui_api
     assert "String(key).startsWith('planning_run:')" in ui_api
+    assert "key.startsWith('planning_run:')" in workspace
 
 
 def test_planning_activation_clears_the_previous_dvh_instance():
@@ -585,8 +611,8 @@ def test_puncture_guide_controls_preserve_all_dimensions_and_selected_channels()
     ):
         assert f'id="{control}"' in index
     assert 'onclick="resetSurgicalGuideControls()"' in index
-    assert "channel_radius_mm: numericControl" in guide
-    assert "sleeve_outer_radius_mm: numericControl" in guide
+    assert "channel_radius_mm: channelRadius" in guide
+    assert "GUIDE_CONTROLS.sleeve_outer_diameter_mm" in guide
     assert "control.addEventListener('input', saveParameters)" in guide
     assert "needleSelection.addEventListener('change', saveParameters)" in guide
     assert "SELECT' && el.multiple" in workspace
