@@ -1210,7 +1210,7 @@ class ToolResultPipeline:
                     f"| 模型置信度 | {confidence_text} |",
                     "",
                     "结果已作为独立 mask 加入 Data Tree，并可在 2D/3D Viewer 中显示。",
-                    "该结果是研究候选分割，不能自动视为 CTV、OAR 或临床确认轮廓。",
+                    "该结果作为独立 mask 保存，不能自动归类为 CTV、OAR 或其他临床结构。",
                 ]
             else:
                 lines = [
@@ -1224,7 +1224,7 @@ class ToolResultPipeline:
                     f"| Model confidence | {confidence_text} |",
                     "",
                     "The result was added as an independent mask in the Data Tree and can be shown in the 2D/3D Viewers.",
-                    "This is a research candidate mask; it is not automatically a CTV, OAR, or clinically approved contour.",
+                    "The mask remains an independent structure and is not automatically assigned as CTV, OAR, or another clinical contour.",
                 ]
             return "\n".join(lines)
         return result.message or f"{tool_name} completed."

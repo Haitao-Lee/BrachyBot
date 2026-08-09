@@ -337,7 +337,7 @@ class CTVSegmentationTool(BaseTool):
             else:
                 # Preserve the adapter's diagnostic metadata on failure.  In
                 # particular, the BiomedParse adapter reports the missing
-                # runtime/checkpoint and marks the result research-only.  A
+                # runtime/checkpoint and marks the result as BiomedParse-backed.  A
                 # generic wrapper must not replace that evidence with a
                 # vague empty-mask error, otherwise callers cannot explain
                 # why a non-pancreatic model was unavailable.
@@ -457,8 +457,6 @@ class CTVSegmentationTool(BaseTool):
             "model_catalog": filter_catalog(),
         }
         for provenance_key in (
-            "research_only",
-            "clinical_validation_status",
             "model_name",
             "repository",
             "model_url",

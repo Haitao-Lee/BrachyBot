@@ -376,8 +376,6 @@ def _availability() -> Dict[str, Any]:
         ),
         "runtime_probe": runtime_probe,
         "missing": missing,
-        "research_only": True,
-        "clinical_validation_status": "not_established",
     }
 
 
@@ -655,7 +653,7 @@ class BiomedParseV2GenericSegmentationTool(BaseTool):
             "Open text-guided anatomy segmentation with the optional BiomedParse v2 "
             "runtime. Use for an explicitly requested anatomy such as liver, pancreas "
             "or shoulder joint when the request is not CTV or OAR segmentation. "
-            "The result is a research candidate mask for review, not a clinical contour."
+            "The result is a reviewable mask and is not automatically assigned as a clinical contour."
         )
 
     @property
@@ -691,7 +689,6 @@ class BiomedParseV2GenericSegmentationTool(BaseTool):
                 "mask_id": {"type": "string"},
                 "voxel_count": {"type": "integer"},
                 "volume_mm3": {"type": "number"},
-                "research_only": {"type": "boolean"},
             },
         }
 
@@ -778,8 +775,6 @@ class BiomedParseV2GenericSegmentationTool(BaseTool):
                 "volume_mm3": volume_mm3,
                 "object_existence_confidence": confidence,
                 "model_name": "BiomedParse v2",
-                "research_only": True,
-                "clinical_validation_status": "not_established",
                 "data_version": datetime.now(timezone.utc).isoformat(),
             }
             metadata = {
@@ -792,13 +787,12 @@ class BiomedParseV2GenericSegmentationTool(BaseTool):
                 "text_prompt": prompt,
                 "object_existence_confidence": confidence,
                 "model_name": "BiomedParse v2",
-                "research_only": True,
             }
             return ToolResult(
                 success=True,
                 data=mask_array,
                 message=(
-                    f"BiomedParse v2 produced a candidate mask for '{target}' "
+                    f"BiomedParse v2 produced a mask for '{target}' "
                     f"({volume_mm3:.1f} mm3). It was added to the Data Tree for review; "
                     "it was not classified as CTV or OAR."
                 ),
@@ -822,7 +816,7 @@ class BiomedParseV2CTVTool(BaseTool):
     @property
     def description(self) -> str:
         return (
-            "Research-only text-guided CT tumor/lesion candidate segmentation using "
+        "Text-guided CT tumor/lesion candidate segmentation for research workflows using "
             "Microsoft BiomedParse v2. Supports selected liver, kidney, lung, colon, "
             "and head/neck prompts. The official checkout and checkpoint must be "
             "installed explicitly; this is not a validated clinical CTV model."
@@ -851,7 +845,6 @@ class BiomedParseV2CTVTool(BaseTool):
                 "ctv_volume_mm3": {"type": "number"},
                 "ctv_voxel_count": {"type": "integer"},
                 "tumor_type_used": {"type": "string"},
-                "research_only": {"type": "boolean"},
             },
         }
 
@@ -864,7 +857,7 @@ class BiomedParseV2CTVTool(BaseTool):
             return ToolResult(
                 success=False,
                 error=f"Unsupported BiomedParse v2 CTV type: {tumor_type}",
-                metadata={"supported_types": sorted(SITE_SPECS), "research_only": True},
+                metadata={"supported_types": sorted(SITE_SPECS)},
             )
         if image is None and image_path:
             try:
@@ -995,7 +988,7 @@ class BiomedParseV2CTVTool(BaseTool):
                 "ctv_volume_mm3": volume_mm3,
                 "ctv_voxel_count": voxel_count,
                 "tumor_type_used": tumor_type,
-                "ctv_source": "biomedparse_v2_research_candidate",
+                "ctv_source": "biomedparse_v2",
                 "label_grid_orientation": "LPI",
                 "label_map": {1: spec["label"]},
                 "text_prompt": spec["prompt"],
@@ -1006,7 +999,7 @@ class BiomedParseV2CTVTool(BaseTool):
                 success=True,
                 data=mask_array,
                 message=(
-                    f"BiomedParse v2 produced a research candidate CTV for {spec['site']} "
+                    f"BiomedParse v2 produced a CTV candidate for {spec['site']} "
                     f"({volume_mm3:.1f} mm3); clinician contour review is required."
                 ),
                 metadata=metadata,
