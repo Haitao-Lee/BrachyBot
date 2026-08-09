@@ -5187,7 +5187,19 @@ def register_planning_routes(
         try:
             img_bytes = _decode_png_data_url(image_data)
 
-            filename = f"{mode}_screenshot_{uuid4().hex[:12]}.png"
+            # Report figures need a recoverable identity even if an older or
+            # partially written workspace snapshot loses the figure array.
+            # Keep the axis in the filename so the artifact-catalog fallback
+            # can rebuild Figure 1/2 membership without relying on file order.
+            report_axis = ""
+            if mode == "report":
+                report_axis = re.sub(
+                    r"[^A-Za-z0-9_-]",
+                    "",
+                    str(view_metadata.get("axis") or view_metadata.get("capture_role") or ""),
+                )[:80]
+            descriptor = f"_{report_axis}" if report_axis else ""
+            filename = f"{mode}_screenshot{descriptor}_{uuid4().hex[:12]}.png"
             try:
                 store, user, session_id = request_case_context()
             except WorkspaceError:

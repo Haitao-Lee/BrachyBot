@@ -5589,6 +5589,11 @@ function renderDoseOverlayOnLayer(doseCanvas, axis, sliceIndex, sliceData) {
     // blank frame that ctx.clearRect alone would cause.
     ctx.clearRect(0, 0, w, h);
     ctx.drawImage(tmpCanvas, 0, 0);
+    // Report capture and screenshot tools must not infer readiness from the
+    // existence of a canvas: that canvas can still contain the previous
+    // slice while an asynchronous request is in flight.
+    doseCanvas.dataset.renderedAxis = axis;
+    doseCanvas.dataset.renderedSlice = String(sliceIndex);
 }
 
 function toggleDoseOverlayVisibility() {
@@ -5724,7 +5729,12 @@ function renderDoseContourOnCanvas(canvas, axis, sliceIndex) {
     const h = canvas.height;
     const vectorScale = Number(canvas._vectorPixelRatio || 1);
     ctx.clearRect(0, 0, w, h);
-    if (!data || !data.contours || data.contours.length === 0) return;
+    if (!data) return;
+    // An empty contour response is still a completed render for this slice.
+    // This lets report capture distinguish it from an old or pending layer.
+    canvas.dataset.renderedAxis = axis;
+    canvas.dataset.renderedSlice = String(sliceIndex);
+    if (!data.contours || data.contours.length === 0) return;
 
     // Coordinate mapping from dose slice to canvas.
     // The server returns slice_shape = [rows, cols] in dose volume

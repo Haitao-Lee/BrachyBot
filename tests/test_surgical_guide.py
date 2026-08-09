@@ -13,6 +13,7 @@ from web.surgical_guide import (
     NeedleGuidePath,
     _auxiliary_hole_specs,
     _auxiliary_hole_support,
+    _connect_plate_patch_components,
     _sample_mask_at_world_points,
     generate_surgical_guide,
     guide_bore_quality_ready,
@@ -153,6 +154,39 @@ def test_filter_components_removes_diagonal_spurs_before_meshing():
     assert not filtered[7, 7, 7]
     assert not filtered[7, 6, 7]
     assert not filtered[6, 7, 7]
+
+
+def test_distant_plate_patches_are_joined_on_the_skin_shell():
+    """Separate needle groups must export as one flush printable plate."""
+    from scipy import ndimage
+
+    plate = np.zeros((20, 48, 112), dtype=bool)
+    plate[8:12, 4:44, 4:108] = True
+    zz, yy, xx = np.indices(plate.shape)
+    first = (zz - 10) ** 2 + (yy - 24) ** 2 + (xx - 20) ** 2 <= 12 ** 2
+    second = (zz - 10) ** 2 + (yy - 24) ** 2 + (xx - 92) ** 2 <= 12 ** 2
+    patches = plate & (first | second)
+    _labels, before = ndimage.label(
+        patches, structure=ndimage.generate_binary_structure(3, 1),
+    )
+    assert before == 2
+
+    connected, qa = _connect_plate_patch_components(
+        plate,
+        patches,
+        np.asarray([[10.0, 24.0, 20.0], [10.0, 24.0, 92.0]]),
+        (1.0, 1.0, 1.0),
+    )
+
+    _labels, after = ndimage.label(
+        connected, structure=ndimage.generate_binary_structure(3, 1),
+    )
+    assert after == 1
+    assert not np.any(connected & ~plate)
+    assert qa["initial_component_count"] == 2
+    assert qa["final_component_count"] == 1
+    assert qa["bridge_count"] == 1
+    assert qa["single_piece"] is True
 
 
 def test_skin_resampling_interpolates_thick_slice_contours_in_physical_space():
@@ -372,6 +406,61 @@ def test_nearby_needles_generate_a_watertight_guide_with_auxiliary_holes():
         for item in guide["auxiliary_holes"]["skipped"]
     )
     assert guide["auxiliary_holes"]["minimum_wall_mm"] == GUIDE_MINIMUM_WALL_MM
+
+
+def test_distant_needle_groups_generate_one_watertight_guide():
+    """The complete CSG pipeline must join non-overlapping local patches."""
+    shape = (128, 128, 128)
+    zz, yy, xx = np.indices(shape)
+    body = (xx - 64) ** 2 + (yy - 64) ** 2 + (zz - 64) ** 2 <= 50 ** 2
+    ct = np.where(body, 40, -1000).astype(np.int16)
+    image = sitk.GetImageFromArray(ct)
+    image.SetSpacing((1.0, 1.0, 1.0))
+    agent = _Agent({
+        "ct_image": image,
+        "ct_data": ct,
+        "algorithm_plan_snapshot": {
+            "needles": [
+                {
+                    "id": "needle_left_group",
+                    "trajectory_id": "traj_left_group",
+                    "points": [[64.0, 35.0, 64.0], [-20.0, 35.0, 64.0]],
+                },
+                {
+                    "id": "needle_right_group",
+                    "trajectory_id": "traj_right_group",
+                    "points": [[64.0, 93.0, 64.0], [-20.0, 93.0, 64.0]],
+                },
+            ],
+            "seeds": [
+                {
+                    "id": "seed_left_group",
+                    "trajectory_id": "traj_left_group",
+                    "position": [50.0, 35.0, 64.0],
+                },
+                {
+                    "id": "seed_right_group",
+                    "trajectory_id": "traj_right_group",
+                    "position": [50.0, 93.0, 64.0],
+                },
+            ],
+        },
+    })
+
+    guide = generate_surgical_guide(agent, {
+        "geometry_resolution_mm": 1.0,
+        "auxiliary_holes_enabled": False,
+    })
+
+    connectivity = guide["validation"]["plate_connectivity"]
+    assert connectivity["initial_component_count"] == 2
+    assert connectivity["bridge_count"] == 1
+    assert connectivity["final_component_count"] == 1
+    assert connectivity["single_piece"] is True
+    assert guide["validation"]["watertight"] is True
+    assert validate_exported_stl(
+        mesh_to_ascii_stl(guide["vertices"], guide["faces"])
+    )["watertight"] is True
 
 
 def test_auxiliary_hole_parameters_enforce_primary_wall_and_ring_spacing():

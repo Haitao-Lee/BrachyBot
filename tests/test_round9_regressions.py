@@ -277,13 +277,13 @@ class Round9RegressionTests(unittest.TestCase):
         self.assertIn("function _reportReferenceViewDirection()", report)
         self.assertIn("Number(entry[0]) - Number(deep[0])", report)
         self.assertIn("function _frameReportCamera", report)
-        self.assertIn("targetAspect: 1", report)
+        self.assertIn("targetAspect: REPORT_FIGURE_ASPECT", report)
         self.assertIn("direction: reportReferenceDirection", report)
         self.assertIn("zoom: 1", report)
         self.assertIn("function _captureReportCanvasCrop", report)
         self.assertIn("_captureReportCanvasCrop(canvas, REPORT_DOSE_SURFACE_ASPECT)", report)
         self.assertIn("candidate.clone().intersect(context)", report)
-        self.assertIn("brachybot-report-editor.js?v=18", index)
+        self.assertIn("brachybot-report-editor.js?v=19", index)
 
 
 if __name__ == "__main__":

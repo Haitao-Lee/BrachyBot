@@ -650,6 +650,19 @@
                 target: 'report-figure',
                 mode: 'report',
                 description: String(figure.title || figure.axis || 'report figure'),
+                title: String(figure.title || ''),
+                planning_id: activeReportPlanningId(),
+                attachment_id: `report-figure-${activeReportPlanningId()}-${String(figure.axis || figure.id || 'image')}`,
+                view_metadata: {
+                    axis: String(figure.axis || ''),
+                    figure_group: String(figure.figureGroup || ''),
+                    figure_number: Number(figure.figureNumber) || null,
+                    subfigure: String(figure.subfigure || ''),
+                    sort_order: Number(figure.sortOrder) || null,
+                    capture_role: String(figure.captureRole || ''),
+                    slice_index: Number.isFinite(Number(figure.sliceIdx)) ? Number(figure.sliceIdx) : null,
+                    peak_voxel: figure.peakVoxel || null,
+                },
             }),
         }).then(response => response.ok ? response.json() : null).then(payload => {
             const url = payload?.screenshot_url || payload?.url || '';
@@ -732,7 +745,11 @@
             for (let i = 0; i < form.figures.length; i++) {
                 const f = form.figures[i];
                 if (f && f.dataUrl && f.dataUrl.length > 10000) {
-                    const cacheKey = `report_fig_${planningId}_${i}_${f.title || ''}`.replace(/[^a-zA-Z0-9_-]/g, '_');
+                    // Axis/role is stable across recapture and reordering; an
+                    // array index is not. Stable keys prevent one of the 2+5
+                    // report subfigures from restoring another image.
+                    const identity = f.axis || f.captureRole || f.id || `${i}_${f.title || ''}`;
+                    const cacheKey = `report_fig_${planningId}_${identity}`.replace(/[^a-zA-Z0-9_-]/g, '_');
                     try {
                         const enc = new TextEncoder();
                         void window.SessionCache.put(sid, 'report', cacheKey, enc.encode(f.dataUrl).buffer).catch(function(){});
@@ -1427,19 +1444,37 @@
                 && (!ownerPlanning || !planningId || ownerPlanning === String(planningId));
         });
         if (!screenshots.length) return 0;
+        const recoveredFigureMetadata = axis => {
+            const map = {
+                report_fig1_global: { figureGroup: 'figure1', figureNumber: 1, subfigure: 'a', sortOrder: 1, captureRole: 'planning_overview' },
+                report_fig1_closeup: { figureGroup: 'figure1', figureNumber: 1, subfigure: 'b', sortOrder: 2, captureRole: 'planning_closeup' },
+                report_fig2_axial: { figureGroup: 'figure2', figureNumber: 2, subfigure: 'a', sortOrder: 1, captureRole: 'peak_dose_axial' },
+                report_fig2_sagittal: { figureGroup: 'figure2', figureNumber: 2, subfigure: 'b', sortOrder: 2, captureRole: 'peak_dose_sagittal' },
+                report_fig2_coronal: { figureGroup: 'figure2', figureNumber: 2, subfigure: 'c', sortOrder: 3, captureRole: 'peak_dose_coronal' },
+                report_fig2_dose_surface: { figureGroup: 'figure2', figureNumber: 2, subfigure: 'd', sortOrder: 4, captureRole: 'dose_surface_3d' },
+                report_fig2_dvh: { figureGroup: 'figure2', figureNumber: 2, subfigure: 'e', sortOrder: 5, captureRole: 'dvh' },
+            };
+            return map[axis] || {};
+        };
         targetForm.figures = screenshots.map((item, index) => {
             const objectId = String(item.objectId || '');
             const filename = objectId.includes(':') ? objectId.split(':').slice(1).join(':') : objectId;
+            const stem = filename.replace(/\.png$/i, '');
+            const identityMatch = stem.match(/^report_screenshot_(report_fig[12]_.+)_([0-9a-f]{12})$/i);
+            const axis = identityMatch ? identityMatch[1] : `restored-${index + 1}`;
+            const figureMetadata = recoveredFigureMetadata(axis);
             const title = typeof _t === 'function'
                 ? _t(`报告图 ${index + 1}`, `Report Figure ${index + 1}`)
                 : `Report Figure ${index + 1}`;
             return {
                 id: `restored-report-${filename.replace(/[^a-zA-Z0-9_-]/g, '_')}`,
+                type: 'screenshot',
                 title,
-                axis: `restored-${index + 1}`,
+                axis,
                 caption: '',
                 dataUrl: `/api/sessions/${encodeURIComponent(sessionId)}/screenshots/${encodeURIComponent(filename)}`,
                 _serverUrl: `/api/sessions/${encodeURIComponent(sessionId)}/screenshots/${encodeURIComponent(filename)}`,
+                ...figureMetadata,
             };
         });
         try { renderReportEditor(); } catch (_) {}

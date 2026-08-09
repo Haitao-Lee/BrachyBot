@@ -1295,9 +1295,19 @@ async function refreshPlanningUI(options = {}) {
                 }
                 await backgroundReportPromise.catch(() => {});
                 if (!isCurrentCase()) return;
-                const hasReportFigures = Array.isArray(window.reportForm?.figures)
-                    && window.reportForm.figures.some(figure => figure && figure.type === 'screenshot');
-                if (!hasReportFigures && typeof autoCaptureReportFigures === 'function') {
+                const requiredReportAxes = new Set([
+                    'report_fig1_global', 'report_fig1_closeup',
+                    'report_fig2_axial', 'report_fig2_sagittal', 'report_fig2_coronal',
+                    'report_fig2_dose_surface', 'report_fig2_dvh',
+                ]);
+                const capturedReportAxes = new Set(
+                    (Array.isArray(window.reportForm?.figures) ? window.reportForm.figures : [])
+                        .map(figure => String(figure?.axis || ''))
+                        .filter(Boolean),
+                );
+                const hasCompleteReportFigureSet = [...requiredReportAxes]
+                    .every(axis => capturedReportAxes.has(axis));
+                if (!hasCompleteReportFigureSet && typeof autoCaptureReportFigures === 'function') {
                     try { await autoCaptureReportFigures({ sessionId: expectedSessionId }); } catch (error) {
                         console.warn('[3D auto-load] background report capture:', error);
                     }
@@ -1352,13 +1362,15 @@ async function refreshPlanningUI(options = {}) {
         try {
             if (!isCurrentCase()) return resolve();
             const _hasFigures = window.reportForm && window.reportForm.figures;
-            const _replaceOrCreate = (axis, title, caption, dataUrl) => {
+            const _replaceOrCreate = (axis, title, caption, dataUrl, metadata = {}) => {
                 if (!_hasFigures || !dataUrl || dataUrl.length < 5000) return;
                 const idx = window.reportForm.figures.findIndex(f => f && f.axis === axis);
-                const entry = { type: 'screenshot', title, dataUrl, axis, sliceIdx: null, caption, capturedAt: new Date().toISOString() };
+                const entry = {
+                    type: 'screenshot', title, dataUrl, axis, sliceIdx: null,
+                    caption, capturedAt: new Date().toISOString(), ...metadata,
+                };
                 if (idx >= 0) {
-                    window.reportForm.figures[idx].dataUrl = dataUrl;
-                    window.reportForm.figures[idx].capturedAt = entry.capturedAt;
+                    Object.assign(window.reportForm.figures[idx], entry);
                 } else {
                     window.reportForm.figures.push(entry);
                 }
@@ -1466,7 +1478,13 @@ async function refreshPlanningUI(options = {}) {
                     else scene3D.requestRender?.(2);
                     await new Promise(r => requestAnimationFrame(r));
                     const c = document.querySelector('#canvas3D canvas');
-                    if (c) _replaceOrCreate('3d_ctv', _ctvTitle, _ctvCap, c.toDataURL('image/png'));
+                    if (c) _replaceOrCreate(
+                        'report_fig1_closeup', _ctvTitle, _ctvCap, c.toDataURL('image/png'),
+                        {
+                            figureGroup: 'figure1', figureNumber: 1, subfigure: 'b',
+                            sortOrder: 2, captureRole: 'planning_closeup',
+                        },
+                    );
                 }
             } finally {
                 for (const [id, vis] of Object.entries(_savedVis)) {
@@ -1484,7 +1502,13 @@ async function refreshPlanningUI(options = {}) {
             else scene3D.requestRender?.(2);
             await new Promise(r => requestAnimationFrame(r));
             const c2 = document.querySelector('#canvas3D canvas');
-            if (c2) _replaceOrCreate('3d_seeds', _seedTitle, _seedCap, c2.toDataURL('image/png'));
+            if (c2) _replaceOrCreate(
+                'report_fig1_global', _seedTitle, _seedCap, c2.toDataURL('image/png'),
+                {
+                    figureGroup: 'figure1', figureNumber: 1, subfigure: 'a',
+                    sortOrder: 1, captureRole: 'planning_overview',
+                },
+            );
 
             // Restore the exact camera pose that was active before the
             // report-only temporary close-up.
@@ -1514,9 +1538,9 @@ async function refreshPlanningUI(options = {}) {
                 const pv = state.doseOverlay.peakVoxel;
                 if (pv) {
                     const axesCfg = [
-                        { ax: 'axial', slice: pv.z, axis: 'dose_axial', titleKey: 'doseAxial', capKey: 'doseAxialCap' },
-                        { ax: 'sagittal', slice: pv.x, axis: 'dose_sagittal', titleKey: 'doseSagittal', capKey: 'doseSagittalCap' },
-                        { ax: 'coronal', slice: pv.y, axis: 'dose_coronal', titleKey: 'doseCoronal', capKey: 'doseCoronalCap' },
+                        { ax: 'axial', slice: pv.z, axis: 'report_fig2_axial', titleKey: 'doseAxial', capKey: 'doseAxialCap', subfigure: 'a', order: 1 },
+                        { ax: 'sagittal', slice: pv.x, axis: 'report_fig2_sagittal', titleKey: 'doseSagittal', capKey: 'doseSagittalCap', subfigure: 'b', order: 2 },
+                        { ax: 'coronal', slice: pv.y, axis: 'report_fig2_coronal', titleKey: 'doseCoronal', capKey: 'doseCoronalCap', subfigure: 'c', order: 3 },
                     ];
                     const labels = (lang === 'zh') ? {
                         doseAxial: '轴位剂量分布', doseAxialCap: '最大剂量层面的轴位 CT 叠加剂量热图',
@@ -1545,11 +1569,15 @@ async function refreshPlanningUI(options = {}) {
                         const composite = _composite2DViewerCanvas(cfg.ax);
                         if (composite && composite.length > 1000) {
                             const idx = window.reportForm.figures.findIndex(f => f && f.axis === cfg.axis);
-                            const entry = { type: 'screenshot', title: labels[cfg.titleKey], dataUrl: composite, axis: cfg.axis, sliceIdx: Math.round(cfg.slice), caption: labels[cfg.capKey], capturedAt: new Date().toISOString() };
+                            const entry = {
+                                type: 'screenshot', title: labels[cfg.titleKey], dataUrl: composite,
+                                axis: cfg.axis, sliceIdx: Math.round(cfg.slice), caption: labels[cfg.capKey],
+                                capturedAt: new Date().toISOString(), figureGroup: 'figure2',
+                                figureNumber: 2, subfigure: cfg.subfigure, sortOrder: cfg.order,
+                                captureRole: `peak_dose_${cfg.ax}`, peakVoxel: { ...pv },
+                            };
                             if (idx >= 0) {
-                                window.reportForm.figures[idx].dataUrl = composite;
-                                window.reportForm.figures[idx].capturedAt = entry.capturedAt;
-                                window.reportForm.figures[idx].sliceIdx = entry.sliceIdx;
+                                Object.assign(window.reportForm.figures[idx], entry);
                             } else {
                                 window.reportForm.figures.push(entry);
                             }
@@ -1570,11 +1598,16 @@ async function refreshPlanningUI(options = {}) {
                 if (dvhEl && typeof Plotly !== 'undefined' && typeof Plotly.toImage === 'function') {
                     const imgData = await Plotly.toImage(dvhEl, { format: 'png', width: 900, height: 450 });
                     if (imgData && imgData.length > 1000) {
-                        const dvhIdx = window.reportForm.figures.findIndex(f => f && f.axis === 'dvh');
-                        const dvhEntry = { type: 'screenshot', title: lang === 'zh' ? 'DVH 剂量体积直方图' : 'DVH — Dose Volume Histogram', dataUrl: imgData, axis: 'dvh', sliceIdx: null, caption: lang === 'zh' ? 'CTV 及各 OAR 的剂量-体积曲线' : 'Dose–volume curves for CTV and all OARs', capturedAt: new Date().toISOString() };
+                        const dvhIdx = window.reportForm.figures.findIndex(f => f && f.axis === 'report_fig2_dvh');
+                        const dvhEntry = {
+                            type: 'screenshot', title: lang === 'zh' ? 'DVH 剂量体积直方图' : 'DVH — Dose Volume Histogram',
+                            dataUrl: imgData, axis: 'report_fig2_dvh', sliceIdx: null,
+                            caption: lang === 'zh' ? 'CTV 及各 OAR 的剂量-体积曲线' : 'Dose–volume curves for CTV and all OARs',
+                            capturedAt: new Date().toISOString(), figureGroup: 'figure2',
+                            figureNumber: 2, subfigure: 'e', sortOrder: 5, captureRole: 'dvh',
+                        };
                         if (dvhIdx >= 0) {
-                            window.reportForm.figures[dvhIdx].dataUrl = imgData;
-                            window.reportForm.figures[dvhIdx].capturedAt = dvhEntry.capturedAt;
+                            Object.assign(window.reportForm.figures[dvhIdx], dvhEntry);
                         } else {
                             window.reportForm.figures.push(dvhEntry);
                         }

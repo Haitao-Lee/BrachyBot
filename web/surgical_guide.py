@@ -102,6 +102,16 @@ GUIDE_MINIMUM_WALL_MM = 0.35
 # still contains only the portion removed from the guide material.
 AUXILIARY_HOLE_OVERRUN_MM = 8.0
 
+# A Planning run must export as one printable guide, even when distant needle
+# groups produce non-overlapping local patches.  The bridge is routed on the
+# CT-derived plate shell (never through the patient) and remains flush with the
+# plate, so it preserves both the skin-facing surface and the configured plate
+# thickness.  Eight millimetres leaves a practical load-bearing strip without
+# materially enlarging the local guide footprint.
+GUIDE_COMPONENT_BRIDGE_WIDTH_MM = 8.0
+GUIDE_COMPONENT_BRIDGE_ROUTE_RESOLUTION_MM = 1.0
+GUIDE_COMPONENT_BRIDGE_QUERY_CHUNK = 250_000
+
 
 def _effective_primary_bore_radius_mm(params: Mapping[str, Any]) -> float:
     """Return the physical primary-hole radius written to the STL.
@@ -1304,6 +1314,207 @@ def _filter_components(mask: np.ndarray, minimum_voxels: int) -> np.ndarray:
     return np.isin(labels, keep)
 
 
+def _face_component_count(mask: np.ndarray) -> int:
+    """Count printable solids using face connectivity, not corner contact."""
+    from scipy import ndimage
+
+    _labels, count = ndimage.label(
+        np.asarray(mask, dtype=bool),
+        structure=ndimage.generate_binary_structure(3, 1),
+    )
+    return int(count)
+
+
+def _minimum_spanning_edges(points_mm: np.ndarray) -> List[Tuple[int, int]]:
+    """Return deterministic Euclidean MST edges for a small anchor set."""
+    points = np.asarray(points_mm, dtype=np.float64)
+    if len(points) <= 1:
+        return []
+    connected = {0}
+    remaining = set(range(1, len(points)))
+    edges: List[Tuple[int, int]] = []
+    while remaining:
+        best: Optional[Tuple[float, int, int]] = None
+        for source in sorted(connected):
+            for target in sorted(remaining):
+                distance = float(np.linalg.norm(points[source] - points[target]))
+                candidate = (distance, source, target)
+                if best is None or candidate < best:
+                    best = candidate
+        if best is None:  # pragma: no cover - guarded by the non-empty sets.
+            break
+        _distance, source, target = best
+        edges.append((source, target))
+        connected.add(target)
+        remaining.remove(target)
+    return edges
+
+
+def _coarse_surface_route(
+    plate_mask: np.ndarray,
+    start_zyx: np.ndarray,
+    end_zyx: np.ndarray,
+    spacing_zyx: Sequence[float],
+    route_resolution_mm: float,
+) -> np.ndarray:
+    """Route between two anchors while remaining on the skin-fitting shell.
+
+    Running a shortest-path solver directly on the 0.2 mm manufacturing grid
+    is needlessly expensive.  A max-pooled shell at approximately 1 mm keeps
+    the skin topology, after which every route cell is mapped back to an actual
+    fine-grid plate voxel.  The final bridge is still constructed on the full
+    resolution shell; the coarse grid is used only for path planning.
+    """
+    from skimage.graph import route_through_array
+    from skimage.measure import block_reduce
+
+    plate = np.asarray(plate_mask, dtype=bool)
+    spacing = np.asarray(spacing_zyx, dtype=np.float64)
+    factor = max(1, int(round(float(route_resolution_mm) / float(np.min(spacing)))))
+    coarse = block_reduce(
+        plate,
+        block_size=(factor, factor, factor),
+        func=np.max,
+        cval=False,
+    ).astype(bool, copy=False)
+    start_cell = np.minimum(
+        np.asarray(start_zyx, dtype=np.int64) // factor,
+        np.asarray(coarse.shape, dtype=np.int64) - 1,
+    )
+    end_cell = np.minimum(
+        np.asarray(end_zyx, dtype=np.int64) // factor,
+        np.asarray(coarse.shape, dtype=np.int64) - 1,
+    )
+    if not bool(coarse[tuple(start_cell)]) or not bool(coarse[tuple(end_cell)]):
+        raise SurgicalGuideError("Guide bridge anchors do not lie on the printable plate shell")
+
+    costs = np.where(coarse, np.float32(1.0), np.float32(1_000_000.0))
+    route, _weight = route_through_array(
+        costs,
+        tuple(int(value) for value in start_cell),
+        tuple(int(value) for value in end_cell),
+        fully_connected=True,
+        geometric=True,
+    )
+    route_array = np.asarray(route, dtype=np.int64)
+    if route_array.size == 0 or not bool(np.all(coarse[tuple(route_array.T)])):
+        raise SurgicalGuideError(
+            "The planned needle groups cannot be connected along the available skin surface"
+        )
+
+    projected: List[np.ndarray] = []
+    previous = np.asarray(start_zyx, dtype=np.int64)
+    for cell in route_array:
+        lower = cell * factor
+        upper = np.minimum(lower + factor, np.asarray(plate.shape, dtype=np.int64))
+        block = plate[
+            lower[0]:upper[0],
+            lower[1]:upper[1],
+            lower[2]:upper[2],
+        ]
+        candidates = np.argwhere(block)
+        if candidates.size == 0:  # pragma: no cover - coarse[cell] guarantees data.
+            continue
+        candidates = candidates + lower
+        distances = np.linalg.norm((candidates - previous) * spacing, axis=1)
+        chosen = candidates[int(np.argmin(distances))]
+        if not projected or not np.array_equal(projected[-1], chosen):
+            projected.append(chosen)
+        previous = chosen
+    if not projected:
+        raise SurgicalGuideError("Unable to project the guide bridge onto the skin surface")
+    return np.asarray(projected, dtype=np.int64)
+
+
+def _connect_plate_patch_components(
+    plate_mask: np.ndarray,
+    plate_patch: np.ndarray,
+    entry_indices_zyx: np.ndarray,
+    spacing_zyx: Sequence[float],
+    *,
+    bridge_width_mm: float = GUIDE_COMPONENT_BRIDGE_WIDTH_MM,
+    route_resolution_mm: float = GUIDE_COMPONENT_BRIDGE_ROUTE_RESOLUTION_MM,
+) -> Tuple[np.ndarray, Dict[str, Any]]:
+    """Join distant needle patches with flush, skin-conforming plate bridges."""
+    from scipy import ndimage
+    from scipy.spatial import cKDTree
+
+    plate = np.asarray(plate_mask, dtype=bool)
+    solid = np.asarray(plate_patch, dtype=bool).copy()
+    structure = ndimage.generate_binary_structure(3, 1)
+    labels, initial_count = ndimage.label(solid, structure=structure)
+    metadata: Dict[str, Any] = {
+        "initial_component_count": int(initial_count),
+        "final_component_count": int(initial_count),
+        "bridge_count": 0,
+        "bridge_width_mm": float(bridge_width_mm),
+        "route_resolution_mm": float(route_resolution_mm),
+        "single_piece": int(initial_count) == 1,
+    }
+    if initial_count <= 1:
+        return solid, metadata
+
+    solid_points = np.argwhere(solid)
+    plate_points = np.argwhere(plate)
+    entries = np.asarray(entry_indices_zyx, dtype=np.float64)
+    spacing = np.asarray(spacing_zyx, dtype=np.float64)
+    if solid_points.size == 0 or plate_points.size == 0 or entries.size == 0:
+        raise SurgicalGuideError("Guide plate components have no valid skin anchors")
+
+    solid_tree = cKDTree(solid_points.astype(np.float32) * spacing.astype(np.float32))
+    _distance, nearest = solid_tree.query(entries * spacing)
+    entry_anchors = solid_points[np.asarray(nearest, dtype=np.int64)]
+    seeded_labels = labels[tuple(entry_anchors.T)]
+    seeded_labels = np.unique(seeded_labels[seeded_labels > 0])
+    # A sphere around an entry can touch a second folded or opposing body
+    # surface.  Such a component has no needle anchor and must not become part
+    # of the printed guide merely because it is larger than the speck filter.
+    solid &= np.isin(labels, seeded_labels)
+    labels, _seeded_count = ndimage.label(solid, structure=structure)
+
+    anchor_by_label: Dict[int, np.ndarray] = {}
+    for anchor in entry_anchors:
+        label = int(labels[tuple(anchor)])
+        if label > 0 and label not in anchor_by_label:
+            anchor_by_label[label] = np.asarray(anchor, dtype=np.int64)
+    anchors = np.asarray(list(anchor_by_label.values()), dtype=np.int64)
+    if len(anchors) <= 1:
+        metadata.update({"final_component_count": 1, "single_piece": True})
+        return solid, metadata
+
+    bridge_edges = _minimum_spanning_edges(anchors.astype(np.float64) * spacing)
+    plate_points_float = plate_points.astype(np.float32)
+    bridge_half_width = max(float(bridge_width_mm) / 2.0, float(np.max(spacing)))
+    for source, target in bridge_edges:
+        route = _coarse_surface_route(
+            plate,
+            anchors[source],
+            anchors[target],
+            spacing,
+            route_resolution_mm,
+        )
+        route_tree = cKDTree(route.astype(np.float32) * spacing.astype(np.float32))
+        for offset in range(0, len(plate_points), GUIDE_COMPONENT_BRIDGE_QUERY_CHUNK):
+            points = plate_points_float[offset:offset + GUIDE_COMPONENT_BRIDGE_QUERY_CHUNK]
+            distances, _indices = route_tree.query(points * spacing.astype(np.float32))
+            selected = plate_points[offset:offset + len(points)][distances <= bridge_half_width]
+            if selected.size:
+                solid[tuple(selected.T)] = True
+
+    _labels, final_count = ndimage.label(solid, structure=structure)
+    metadata.update({
+        "final_component_count": int(final_count),
+        "bridge_count": len(bridge_edges),
+        "single_piece": int(final_count) == 1,
+    })
+    if final_count != 1:
+        raise SurgicalGuideError(
+            "Unable to make one continuous guide along the available skin surface; "
+            "increase CT skin coverage or revise the distant needle groups"
+        )
+    return solid, metadata
+
+
 def _resample_mask_to_local_grid(
     mask: np.ndarray,
     source_spacing_zyx: Sequence[float],
@@ -1890,21 +2101,32 @@ def generate_surgical_guide(
     # the full-size per-entry squared-distance array pass.
     patch_radius_index = params["patch_margin_mm"] / float(spacing_zyx[0])
     plate_voxel_indices = np.argwhere(plate_mask)
+    entry_indices = np.array([
+        _world_to_local_index_zyx(ct_image, lower_xyz, path.entry, spacing_xyz)
+        for path in paths
+    ], dtype=np.float32)
     patch_mask = np.zeros_like(plate_mask)
     if plate_voxel_indices.size:
         from scipy.spatial import cKDTree
 
-        entry_indices = np.array([
-            _world_to_local_index_zyx(ct_image, lower_xyz, path.entry, spacing_xyz)
-            for path in paths
-        ], dtype=np.float32)
         if len(entry_indices):
             entry_tree = cKDTree(entry_indices)
             distance, _ = entry_tree.query(plate_voxel_indices.astype(np.float32))
             plate_voxel_indices = plate_voxel_indices[distance <= patch_radius_index]
             patch_mask[tuple(plate_voxel_indices.T)] = True
     solid = plate_mask & patch_mask
-    finish_stage("plate_patch", plate_voxels=int(np.count_nonzero(solid)))
+    solid, plate_connectivity = _connect_plate_patch_components(
+        plate_mask,
+        solid,
+        entry_indices,
+        spacing_zyx,
+    )
+    finish_stage(
+        "plate_patch",
+        plate_voxels=int(np.count_nonzero(solid)),
+        initial_components=plate_connectivity["initial_component_count"],
+        bridges=plate_connectivity["bridge_count"],
+    )
     # Pass 1: subtract every auxiliary hole from the bare plate first. This is
     # deliberately done before adding any primary sleeve: the auxiliary holes
     # are plate-only alternate paths, and their validated radial offset keeps
@@ -2053,6 +2275,14 @@ def generate_surgical_guide(
             "surface around the target, or move the needle entries away from the "
             "scan boundary."
         )
+    final_solid_component_count = _face_component_count(solid)
+    if final_solid_component_count != 1:
+        raise SurgicalGuideError(
+            "The guide became disconnected after finite-FOV and bore processing; "
+            "one printable guide cannot be produced safely from the current CT coverage"
+        )
+    plate_connectivity["final_component_count"] = final_solid_component_count
+    plate_connectivity["single_piece"] = True
     finish_stage("solid_cleanup", solid_voxels=int(np.count_nonzero(solid)))
     # Marching Cubes is topologically correct for ordinary binary volumes,
     # but a thin plate intersected by several closely spaced bores can still
@@ -2313,6 +2543,7 @@ def generate_surgical_guide(
             "geometry_resolution_mm": params["geometry_resolution_mm"],
             "stage_timings_seconds": stage_timings,
             "bore_quality": bore_quality,
+            "plate_connectivity": plate_connectivity,
             "finite_fov": {
                 "truncated_superior": bool(trunc_z_max),
                 "truncated_inferior": bool(trunc_z_min),
