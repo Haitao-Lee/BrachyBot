@@ -1023,16 +1023,43 @@ function _viewerTransformString() {
     return `rotate(${rotation}deg) scale(${zoom * scaleX}, ${zoom * scaleY}) translate(${panX}px, ${panY}px)`;
 }
 
-function _syncLayerToSliceCanvas(axis, layerCanvas, zIndex) {
+function _viewerVectorPixelRatio(sliceCanvas) {
+    if (!sliceCanvas) return 1;
+    const cssW = Math.max(1, Number(sliceCanvas._displayW || sliceCanvas.offsetWidth || 1));
+    const cssH = Math.max(1, Number(sliceCanvas._displayH || sliceCanvas.offsetHeight || 1));
+    const nativeDensity = Math.max(
+        Number(sliceCanvas.width || 1) / cssW,
+        Number(sliceCanvas.height || 1) / cssH,
+        1,
+    );
+    const deviceDensity = Math.max(1, Number(window.devicePixelRatio || 1));
+    const zoomDensity = deviceDensity * Math.max(1, Number(state.viewerSettings.zoom || 1));
+    const desired = Math.max(nativeDensity, zoomDensity);
+    // Bound the backing store, not the visual zoom. This keeps large medical
+    // volumes responsive while retaining crisp vector contours and labels.
+    const maxBySide = Math.min(4096 / cssW, 4096 / cssH);
+    const maxByArea = Math.sqrt(16000000 / (cssW * cssH));
+    return Math.max(1, Math.min(desired, maxBySide, maxByArea));
+}
+
+function _syncLayerToSliceCanvas(axis, layerCanvas, zIndex, options = {}) {
     const sliceCanvas = getSliceCanvas(axis);
     if (!sliceCanvas || !layerCanvas) return false;
-    if (layerCanvas.width !== sliceCanvas.width || layerCanvas.height !== sliceCanvas.height) {
-        layerCanvas.width = sliceCanvas.width;
-        layerCanvas.height = sliceCanvas.height;
-        layerCanvas._doseRenderEpoch = -1;
-    }
     const sw = sliceCanvas._displayW || sliceCanvas.offsetWidth;
     const sh = sliceCanvas._displayH || sliceCanvas.offsetHeight;
+    const vectorPixelRatio = options.vector ? _viewerVectorPixelRatio(sliceCanvas) : 1;
+    const targetWidth = options.vector
+        ? Math.max(1, Math.round(sw * vectorPixelRatio))
+        : sliceCanvas.width;
+    const targetHeight = options.vector
+        ? Math.max(1, Math.round(sh * vectorPixelRatio))
+        : sliceCanvas.height;
+    if (layerCanvas.width !== targetWidth || layerCanvas.height !== targetHeight) {
+        layerCanvas.width = targetWidth;
+        layerCanvas.height = targetHeight;
+        layerCanvas._doseRenderEpoch = -1;
+    }
+    layerCanvas._vectorPixelRatio = options.vector ? vectorPixelRatio : 1;
     const sx = sliceCanvas._offsetX || parseFloat(sliceCanvas.style.left) || 0;
     const sy = sliceCanvas._offsetY || parseFloat(sliceCanvas.style.top) || 0;
     layerCanvas.style.position = 'absolute';
@@ -1053,6 +1080,25 @@ function _syncLayerToSliceCanvas(axis, layerCanvas, zIndex) {
     layerCanvas.style.transformOrigin = 'center center';
     return true;
 }
+
+let _viewerResolutionRefreshTimer = null;
+function request2DViewerResolutionRefresh() {
+    clearTimeout(_viewerResolutionRefreshTimer);
+    _viewerResolutionRefreshTimer = setTimeout(() => {
+        ['axial', 'sagittal', 'coronal'].forEach(axis => {
+            const sliceIndex = Number(state.slices?.[axis] || 0);
+            if (state.doseOverlay?.visible && typeof triggerDoseContourRender === 'function') {
+                triggerDoseContourRender(axis, sliceIndex);
+            }
+            if (state.seedsOverlay || (typeof hasSurgicalGuideProjection === 'function' && hasSurgicalGuideProjection())) {
+                renderSeedsOverlay(axis, sliceIndex);
+            }
+        });
+        ['axial', 'sagittal', 'coronal'].forEach(axis => syncAnnotationCanvasSize(axis));
+        redrawAllAnnotations();
+    }, 24);
+}
+window.request2DViewerResolutionRefresh = request2DViewerResolutionRefresh;
 
 function renderDoseForCurrentSlice(axis, sliceIndex) {
     if (!state.doseOverlay || !state.doseOverlay.visible) return;
@@ -1643,10 +1689,11 @@ function renderSeedsOverlay(axis, sliceIndex) {
         canvas.style.cssText = 'position:absolute;pointer-events:none;z-index:6;display:block;';
         sliceCanvas.parentElement.appendChild(canvas);
     }
-    _syncLayerToSliceCanvas(axis, canvas, 6);
+    _syncLayerToSliceCanvas(axis, canvas, 6, { vector: true });
     const w = canvas.width;
     const h = canvas.height;
     const ctx = canvas.getContext('2d');
+    const vectorScale = Number(canvas._vectorPixelRatio || 1);
     ctx.clearRect(0, 0, w, h);
 
     const [Z, Y, X] = state.ctShape;
@@ -1712,13 +1759,13 @@ function renderSeedsOverlay(axis, sliceIndex) {
             ctx.lineCap = 'round';
             ctx.lineJoin = 'round';
             ctx.strokeStyle = 'rgba(2, 6, 23, 0.85)';
-            ctx.lineWidth = 4.2;
+            ctx.lineWidth = 4.2 * vectorScale;
             ctx.beginPath();
             ctx.moveTo(segmentStart.x, segmentStart.y);
             ctx.lineTo(segmentEnd.x, segmentEnd.y);
             ctx.stroke();
             ctx.strokeStyle = grad;
-            ctx.lineWidth = 2.2;
+            ctx.lineWidth = 2.2 * vectorScale;
             ctx.beginPath();
             ctx.moveTo(segmentStart.x, segmentStart.y);
             ctx.lineTo(segmentEnd.x, segmentEnd.y);
@@ -1746,7 +1793,7 @@ function renderSeedsOverlay(axis, sliceIndex) {
         ctx.fillStyle = `rgba(${seedRgb[0]}, ${seedRgb[1]}, ${seedRgb[2]}, ${0.18 * alpha})`;
         ctx.fill();
         ctx.strokeStyle = `rgba(${seedRgb[0]}, ${seedRgb[1]}, ${seedRgb[2]}, ${alpha})`;
-        ctx.lineWidth = seedState?._interactionSelected ? 3.0 : 1.4;
+        ctx.lineWidth = (seedState?._interactionSelected ? 3.0 : 1.4) * vectorScale;
         ctx.stroke();
         ctx.restore();
         const center = outline.reduce(
@@ -2101,6 +2148,7 @@ function viewerRotate() {
 
 function applyViewerTransform() {
     const transform = _viewerTransformString();
+    const zoom = Number(state.viewerSettings.zoom || 1);
 
     ['axial', 'sagittal', 'coronal'].forEach(axis => {
         const canvas = getSliceCanvas(axis);
@@ -2143,6 +2191,10 @@ function applyViewerTransform() {
         const seedsCanvas = document.getElementById('seedsOverlayCanvas' + capitalize(axis));
         applyOverlayTransform(seedsCanvas);
     });
+    if (applyViewerTransform._lastResolutionZoom !== zoom) {
+        applyViewerTransform._lastResolutionZoom = zoom;
+        request2DViewerResolutionRefresh();
+    }
 }
 
 function screenToImageCoords(axis, screenX, screenY) {
