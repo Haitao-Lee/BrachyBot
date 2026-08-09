@@ -1241,9 +1241,20 @@ async function refreshPlanningUI(options = {}) {
             // product.  Restore it as soon as planning metrics are available;
             // tying it to the slowest STL/iso-surface request made the
             // Clinical Evaluation section appear empty after a restart.
-            const backgroundReportPromise = typeof reportAutoFill === 'function'
-                ? Promise.resolve().then(() => reportAutoFill({ sessionId: expectedSessionId }))
-                : Promise.resolve();
+            const needsSourceBackedReport = typeof window.reportNeedsSourceBackedQualityRefresh === 'function'
+                ? window.reportNeedsSourceBackedQualityRefresh(window.reportForm)
+                : true;
+            const backgroundReportPromise = (needsSourceBackedReport && window.Report?.autoFill?.fromAll)
+                ? Promise.resolve().then(() => window.Report.autoFill.fromAll({
+                    sessionId: expectedSessionId,
+                    // Existing figures are hydrated from durable attachments.
+                    // Source/quality repair must not race a second capture pass
+                    // while meshes are still reconstructing.
+                    captureFigures: false,
+                }))
+                : (typeof reportAutoFill === 'function'
+                    ? Promise.resolve().then(() => reportAutoFill({ sessionId: expectedSessionId }))
+                    : Promise.resolve());
             backgroundReportPromise.catch(error =>
                 console.warn('[3D auto-load] background report restore:', error));
 

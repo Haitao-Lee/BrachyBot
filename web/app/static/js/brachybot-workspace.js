@@ -2133,7 +2133,19 @@
         // assistant answer while the task/status spinner is already visible.
         await applyWorkspaceSnapshot(workspace, {
             authoritativeChat: true,
-            preserveClinicalData: false,
+            // The startup snapshot is a compact control-plane projection. It
+            // contains paths and presentation preferences, but not decoded CT
+            // voxels or live Three.js objects. Treating it as clinical state
+            // used to create a convincing Data Tree shell while clearing the
+            // real viewer arrays that the background restore was about to
+            // hydrate. Session switching already uses the correct contract:
+            // paint the transcript/preferences first, then let the
+            // session-scoped loaders reconstruct CT, labels and planning data.
+            preserveClinicalData: true,
+            // Never checkpoint the transient pre-hydration shell. In
+            // particular, a blank report form must not overwrite a durable
+            // planning-specific report before source-backed auto-fill runs.
+            persist: false,
         });
         if (!workspaceSnapshotHasClinicalResources(workspace)) {
             cancelBackgroundWorkspaceRestore();

@@ -2286,7 +2286,13 @@ async function loadCTToViewers(ctPath, options = {}) {
                 renderSliceFromVolume(axis, state.slices[axis]);
             });
 
-            // Rebind viewer interactions after canvases are rendered
+            // The canvases now contain decoded voxels, so bind navigation in
+            // the same transaction. Deferring the only bind by 500 ms allowed
+            // workspace/report work (or a quick tab change) to cancel the
+            // practical double-click window after restart.
+            if (typeof setupViewerInteractions === 'function') setupViewerInteractions();
+            // Keep a delayed idempotent pass for layouts whose canvas size is
+            // finalized by a subsequent ResizeObserver frame.
             setTimeout(() => {
                 if (!isCurrentOwner() || renderGeneration !== window.__viewerRenderGeneration) return;
                 setupViewerInteractions();
@@ -2629,7 +2635,7 @@ async function _restoreActiveSessionWorkspace(options = {}) {
     await _yield();
 
     let ctVolumeResult = null;
-    let ctMetaResult = null;
+    let ctLoadError = null;
     const ctTask = (async () => {
         const ctStartedAt = typeof performance !== 'undefined' ? performance.now() : Date.now();
         try {
@@ -2638,6 +2644,7 @@ async function _restoreActiveSessionWorkspace(options = {}) {
                 timeoutMs: options.background === true ? 45000 : 60000,
             });
         } catch (e) {
+            ctLoadError = e;
             console.warn('[session restore] CT load failed:', e);
         } finally {
             recordStage('restore.ct_first_paint', ctStartedAt, { loaded: !!state.ctLoaded });
@@ -2669,6 +2676,32 @@ async function _restoreActiveSessionWorkspace(options = {}) {
     // CT is the base layer for every subsequent restore request.
     await ctTask;
     if (_activeApiSessionId() !== sessionAtStart) return null;
+    // A restored Data Tree entry is not proof that the CT is usable. The old
+    // path swallowed /viewer/load or /viewer/volume failures and continued to
+    // labels/planning, then announced a fully interactive workspace with blank
+    // canvases and no double-click handlers. Make decoded voxel state an
+    // explicit transaction prerequisite instead.
+    const expectedVoxelCount = Array.isArray(state.ctShape)
+        ? state.ctShape.reduce((total, size) => total * Math.max(0, Number(size) || 0), 1)
+        : 0;
+    const decodedVoxelCount = (typeof volumeData !== 'undefined' && volumeData)
+        ? Number(volumeData.length || 0)
+        : 0;
+    const ctReady = !ctLoadError
+        && ctVolumeResult?.success === true
+        && state.ctLoaded === true
+        && expectedVoxelCount > 0
+        && decodedVoxelCount === expectedVoxelCount;
+    if (!ctReady) {
+        state.ctLoaded = false;
+        throw ctLoadError || new Error(
+            `CT restore incomplete for session ${sessionAtStart}: expected ${expectedVoxelCount} voxels, decoded ${decodedVoxelCount}`,
+        );
+    }
+    // Bind interactions synchronously once all three canvases have real voxel
+    // data. The delayed load-time binding remains a resize fallback, but is no
+    // longer the only opportunity to install double-click navigation.
+    if (typeof setupViewerInteractions === 'function') setupViewerInteractions();
     await _yield();
 
     // Labels and planning results share the CT grid but are otherwise
@@ -2696,8 +2729,26 @@ async function _restoreActiveSessionWorkspace(options = {}) {
         })).finally(() => recordStage('restore.planning_dvh', planningStartedAt))
         : Promise.resolve();
 
-    await Promise.allSettled([labelTask, planningTask]);
+    // A segmentation-only case still needs real 3D objects. Planning refresh
+    // also starts this loader, so only launch the independent path when no
+    // Planning owns the reconstruction. The mesh work remains progressive and
+    // does not block CT/2D interaction readiness.
+    const segmentationMeshTask = labelTask.then(labelsLoaded => {
+        if (!labelsLoaded || hasPlanning || typeof loadCTVAndObstacleMeshes !== 'function') return null;
+        return loadCTVAndObstacleMeshes();
+    });
+    segmentationMeshTask.catch(error =>
+        console.warn('[session restore] segmentation mesh reconstruction failed:', error));
+
+    const restoreResults = await Promise.allSettled([labelTask, planningTask]);
     if (_activeApiSessionId() !== sessionAtStart) return null;
+    const [labelResult, planningResult] = restoreResults;
+    if (labelResult.status === 'rejected') throw labelResult.reason;
+    if (planningResult.status === 'rejected') throw planningResult.reason;
+    const expectsLabels = ['ctv_array', 'ctv_mask', 'oar_array'].some(key => storedKeys.has(key));
+    if (expectsLabels && labelResult.value !== true) {
+        throw new Error(`Segmentation restore did not produce label volumes for session ${sessionAtStart}`);
+    }
     await _yield();
 
     // Clinical loaders create the current case's Data Tree entries after the
@@ -2764,6 +2815,7 @@ async function _restoreActiveSessionWorkspace(options = {}) {
     ['axial', 'sagittal', 'coronal'].forEach(axis => {
         try { if (state.slices && Number.isFinite(Number(state.slices[axis]))) renderSliceFromVolume(axis, Number(state.slices[axis])); } catch (_) {}
     });
+    if (typeof setupViewerInteractions === 'function') setupViewerInteractions();
     recordStage('restore.fully_interactive', restoreStartedAt, {
         ct_loaded: !!state.ctLoaded,
         planning: hasPlanning,

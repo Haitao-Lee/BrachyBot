@@ -557,6 +557,28 @@ function _reportHasSourceContext(form) {
             && Object.keys(rationale.target_criteria).length > 0);
 }
 
+/**
+ * Return true when a restored report needs the server's source-backed patch.
+ * Numeric Planning metrics alone are insufficient: an older or partially
+ * checkpointed form can have correct V100/D90 values while its Reference and
+ * Status cells are generic hydration placeholders. This predicate lets the
+ * restart path repair only those incomplete forms and leave an authoritative
+ * planning-specific report untouched.
+ */
+function reportNeedsSourceBackedQualityRefresh(form) {
+    if (!form || typeof form !== 'object') return true;
+    if (!_reportHasSourceContext(form)) return true;
+    const assessment = form.qualityAssessment;
+    if (!_qualityAssessmentMatchesMetrics(assessment, form)) return true;
+    if (assessment?.inputFingerprint !== _reportQualityInputFingerprint(form)) return true;
+    return ['v100', 'd90', 'v150', 'v200'].some(key => {
+        const row = assessment?.metrics?.[key] || {};
+        const reference = String(row.reference || '').trim().toLowerCase();
+        return reference === 'see cited case criteria';
+    });
+}
+window.reportNeedsSourceBackedQualityRefresh = reportNeedsSourceBackedQualityRefresh;
+
 function _sourceBackedMetricAssessment(form, metricKey, value, options = {}) {
     if (!options.ignoreStored) {
         const stored = _storedMetricAssessment(form, metricKey);
