@@ -126,6 +126,25 @@ def test_data_tree_has_independent_2d_and_3d_presentation_controls():
     assert "['visible', 'visible2D', 'visible3D', 'opacity', 'color', 'material', 'locked']" in workspace
 
 
+def test_guide_skin_uses_the_same_data_tree_control_paths_as_other_visual_nodes():
+    """The persisted guide skin must not bypass view or opacity controls."""
+    viewer = read("web/app/static/js/brachybot-viewer-volume.js")
+
+    # A scene-wide appearance sync must respect the 3D-specific flag.  This
+    # catches the regression where a later sync made a hidden skin reappear.
+    assert "item.visible !== false && item.visible3D !== false" in viewer
+
+    # Programmatic visibility and opacity paths must explicitly resolve the
+    # stable skin node instead of falling through to a missing top-level key.
+    assert "else if (id === 'skin_surface') current = dataTreeState.skin?.visible;" in viewer
+    assert "if (id === 'skin_surface') {\n        dataTreeState.skin.opacity = opacity;" in viewer
+    assert "_scheduleDataTreeSave('viewer.opacity:skin_surface')" in viewer
+
+    # The 2D renderer already consumes the persisted skin node state; keep an
+    # assertion beside the control checks so the contract remains end-to-end.
+    assert "const hasSkin2d = !!(skinSurfaceData && isDataTreeNodeVisible2D(dataTreeState.skin));" in viewer
+
+
 def test_iso_surface_refresh_keeps_data_tree_appearance_and_view_flags():
     """Refreshing dose geometry must not reset a user's visibility choices."""
     manual = read("web/app/static/js/brachybot-3d-manual.js")

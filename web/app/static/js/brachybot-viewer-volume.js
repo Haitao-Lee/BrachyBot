@@ -2635,7 +2635,11 @@ function getDataTreeAppearanceForMesh(id, mesh) {
                 ? dataTreeState.planning?.visible !== false
                 : true;
     return {
-        visible: parentVisible && item.visible !== false,
+        // This helper is consumed by the 3D scene synchronizer.  Keep the
+        // view-specific flag here as well as in _apply3DNodeVisibility;
+        // otherwise a later scene-wide appearance sync can resurrect a skin
+        // mesh that the user explicitly hid in 3D.
+        visible: parentVisible && item.visible !== false && item.visible3D !== false,
         opacity: Number.isFinite(Number(item.opacity)) ? Number(item.opacity) : 1,
         color: item.color,
     };
@@ -4041,8 +4045,9 @@ function openColorPicker(id, swatchEl) {
 }
 
 // Programmatic color change for a data-tree node, mirroring the color-dialog
-// applyColor path. Supported node ids: ctv, oar, ctv_*, organ_*, mask_*,
-// seed_*, needle_*, dose_iso_*. Refreshes 2D overlays and the 3D mesh.
+// applyColor path. Supported node ids include the guide skin sibling and the
+// existing CTV, OAR, mask, planning, and dose visual nodes. Refreshes 2D
+// overlays and the 3D mesh.
 function setDataTreeItemColor(id, color) {
     if (!/^#[0-9a-f]{6}$/i.test(String(color || ''))) return false;
     let itemState;
@@ -6057,6 +6062,11 @@ function setDataItemVisibility(id, visible) {
     let current = null;
     if (id.startsWith('organ_')) current = dataTreeState.organs.find(o => o.id === id)?.visible;
     else if (id.startsWith('ctv_')) current = dataTreeState.ctvLabels?.[id]?.visible;
+    // Guide skin is a segmentation sibling with its own stable node ID, not
+    // a dynamically keyed property on dataTreeState.  Keep this explicit so
+    // bridge commands and restore-time UI actions use the same master switch
+    // as the Data Tree eye button.
+    else if (id === 'skin_surface') current = dataTreeState.skin?.visible;
     else if (_planningItems('trajectories').some(t => String(t.id) === String(id))) current = _planningItems('trajectories').find(t => String(t.id) === String(id))?.visible;
     else if (id.startsWith('seed_')) current = _planningItems('seeds').find(s => s.id === id)?.visible;
     else if (id.startsWith('needle_')) current = _planningItems('needles').find(n => n.id === id)?.visible;
@@ -6196,6 +6206,27 @@ function setDataOpacity(id, value) {
         return;
     }
 
+    // Guide skin uses a dedicated top-level Data Tree node rather than the
+    // planning mesh collection.  This branch must run before the generic
+    // dataTreeState[id] guard below; otherwise the skin opacity slider is a
+    // silent no-op even though the node is rendered correctly.
+    if (id === 'skin_surface') {
+        dataTreeState.skin.opacity = opacity;
+        applyMeshOpacity(
+            scene3D.meshes.skin_surface,
+            opacity,
+            isDataTreeNodeVisible3D(dataTreeState.skin),
+        );
+        clearTimeout(_opacityTimer);
+        _opacityTimer = setTimeout(() => {
+            if (state.ctLoaded) reloadOverlays();
+            requestViewerVisualRefresh('skin-opacity');
+            renderDataTreeDebounced();
+            _scheduleDataTreeSave('viewer.opacity:skin_surface');
+        }, 150);
+        return;
+    }
+
     const meshEntry = (dataTreeState.planning.meshes || []).find(m => m.id === id);
     if (meshEntry) {
         meshEntry.opacity = opacity;
@@ -6210,8 +6241,6 @@ function setDataOpacity(id, value) {
     // Update CTV 3D mesh
     if (id === 'ctv') {
         applyMeshOpacity(scene3D.meshes['ctv'], opacity, dataTreeState[id].visible !== false);
-    } else if (id === 'skin_surface') {
-        applyMeshOpacity(scene3D.meshes.skin_surface, opacity, isDataTreeNodeVisible3D(dataTreeState.skin));
     }
 
     if (state.ctLoaded) reloadOverlays();
