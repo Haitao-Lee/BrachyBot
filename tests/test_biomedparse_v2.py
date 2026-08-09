@@ -1,4 +1,4 @@
-"""Regression tests for the optional, research-only BiomedParse adapter."""
+"""Regression tests for the BiomedParse adapter and research workflow."""
 
 from __future__ import annotations
 
@@ -153,7 +153,7 @@ def test_biomedparse_missing_runtime_fails_closed(monkeypatch, tmp_path):
         tumor_type="biomedparse_liver_tumor",
     )
     assert result.success is False
-    assert result.metadata["research_only"] is True
+    assert "research_only" not in result.metadata
     assert any("BIOMEDPARSE_ROOT" in item for item in result.metadata["missing"])
 
 
@@ -314,7 +314,7 @@ def test_unavailable_non_pancreatic_site_reports_research_fallback_state(
     image = sitk.GetImageFromArray(np.zeros((4, 4, 4), dtype=np.int16))
     result = CTVSegmentationTool().execute(image=image, tumor_type="liver")
     assert result.success is False
-    assert result.metadata["research_only"] is True
+    assert "research_only" not in result.metadata
     assert any("BIOMEDPARSE_ROOT" in item for item in result.metadata["missing"])
 
 
@@ -337,8 +337,6 @@ def test_mocked_biomedparse_runtime_preserves_lpi_geometry_and_records_chain(
         lambda: {
             "available": True,
             "missing": [],
-            "research_only": True,
-            "clinical_validation_status": "not_established",
         },
     )
 
@@ -434,7 +432,7 @@ def test_generic_biomedparse_mask_is_an_independent_displayable_result(monkeypat
         adapter,
         "_run_prompt_inference",
         lambda *_args, **_kwargs: (
-            {"available": True, "research_only": True},
+            {"available": True},
             lpi_image,
             mask,
             0.87,
@@ -450,7 +448,7 @@ def test_generic_biomedparse_mask_is_an_independent_displayable_result(monkeypat
     assert result.success is True
     assert result.metadata["generic_mask"]["kind"] == "generic_segmentation"
     assert result.metadata["generic_mask"]["target"] == "shoulder joint"
-    assert result.metadata["generic_mask"]["research_only"] is True
+    assert "research_only" not in result.metadata["generic_mask"]
     assert "ctv_array" not in result.metadata
     assert np.array_equal(result.data, mask)
     assert "not classified as CTV or OAR" in result.message
@@ -464,7 +462,7 @@ def test_generic_biomedparse_empty_mask_is_reported_honestly(monkeypatch):
         adapter,
         "_run_prompt_inference",
         lambda *_args, **_kwargs: (
-            {"available": True, "research_only": True},
+            {"available": True},
             image,
             np.zeros((2, 3, 4), dtype=np.uint8),
             0.12,

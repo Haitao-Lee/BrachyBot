@@ -2,7 +2,7 @@
 
 ## Suitability decision
 
-BiomedParse v2 is a reasonable **research candidate** for non-pancreatic CT
+BiomedParse v2 is a text-guided segmentation component for non-pancreatic CT
 lesion candidates because the official project documents 3D, text-guided
 inference and CT prompts for liver tumors, lung lesions, kidney lesions,
 colon primaries, and head-and-neck cancer. It is not a site-specific,
@@ -16,7 +16,7 @@ Official sources:
 - [BiomedParse model card and checkpoint](https://huggingface.co/microsoft/BiomedParse)
 - [BiomedParse, Nature Methods (2025)](https://doi.org/10.1038/s41592-024-02499-w)
 
-The official repository is research/development software and requires its own
+The official repository requires its own
 isolated dependency environment. The Hugging Face checkpoint is gated and
 requires accepting the model terms and sharing contact information before
 download.
@@ -99,10 +99,9 @@ excluded from this fallback.
 
 The input is reoriented to the project's LPI physical-grid contract. The
 returned binary mask is copied onto that CT's physical metadata, and the
-metadata records `ctv_source=biomedparse_v2_research_candidate`,
-`research_only=true`, the prompt, model URL, checkpoint path, and existence
-confidence. The unified CTV tool then applies the normal physical-grid
-alignment used by the 2D/3D viewers.
+metadata records `ctv_source=biomedparse_v2`, the prompt, model URL, checkpoint
+path, and existence confidence. The unified CTV tool then applies the normal
+physical-grid alignment used by the 2D/3D viewers.
 
 The result is a candidate for contour review, not a signed CTV. A clinician
 must inspect and edit the contour, confirm the tumor site and dose parameters,

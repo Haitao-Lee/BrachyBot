@@ -107,12 +107,12 @@ CTV_MODEL_CATALOG: List[Dict[str, object]] = [
         "site": "liver",
         "modality": "CT",
         "target": "liver tumor CTV candidate",
-        "status": "external_research_runtime_requires_opt_in",
+        "status": "external_runtime_requires_installation",
         "tool": "ctv_segmentation",
         "tumor_type": "biomedparse_liver_tumor",
         "runtime_root_env": "BIOMEDPARSE_ROOT",
         "checkpoint_env": "BIOMEDPARSE_V2_CHECKPOINT",
-        "notes": "Official BiomedParse v2 text-guided candidate; requires the isolated official runtime and clinician contour review.",
+        "notes": "Official BiomedParse v2 text-guided candidate; requires the isolated official runtime and contour review.",
         "sources": [
             "https://github.com/microsoft/BiomedParse/tree/v2",
             "https://huggingface.co/microsoft/BiomedParse",
@@ -124,12 +124,12 @@ CTV_MODEL_CATALOG: List[Dict[str, object]] = [
         "site": "kidney",
         "modality": "CT",
         "target": "kidney lesion CTV candidate",
-        "status": "external_research_runtime_requires_opt_in",
+        "status": "external_runtime_requires_installation",
         "tool": "ctv_segmentation",
         "tumor_type": "biomedparse_kidney_lesion",
         "runtime_root_env": "BIOMEDPARSE_ROOT",
         "checkpoint_env": "BIOMEDPARSE_V2_CHECKPOINT",
-        "notes": "Official BiomedParse v2 lesion candidate; requires the isolated official runtime and clinician contour review.",
+        "notes": "Official BiomedParse v2 lesion candidate; requires the isolated official runtime and contour review.",
         "sources": [
             "https://github.com/microsoft/BiomedParse/tree/v2",
             "https://huggingface.co/microsoft/BiomedParse",
@@ -141,12 +141,12 @@ CTV_MODEL_CATALOG: List[Dict[str, object]] = [
         "site": "lung",
         "modality": "CT",
         "target": "lung lesion CTV candidate",
-        "status": "external_research_runtime_requires_opt_in",
+        "status": "external_runtime_requires_installation",
         "tool": "ctv_segmentation",
         "tumor_type": "biomedparse_lung_lesion",
         "runtime_root_env": "BIOMEDPARSE_ROOT",
         "checkpoint_env": "BIOMEDPARSE_V2_CHECKPOINT",
-        "notes": "Official BiomedParse v2 lesion candidate; requires the isolated official runtime and clinician contour review.",
+        "notes": "Official BiomedParse v2 lesion candidate; requires the isolated official runtime and contour review.",
         "sources": [
             "https://github.com/microsoft/BiomedParse/tree/v2",
             "https://huggingface.co/microsoft/BiomedParse",
@@ -158,12 +158,12 @@ CTV_MODEL_CATALOG: List[Dict[str, object]] = [
         "site": "colon",
         "modality": "CT",
         "target": "colon cancer primary CTV candidate",
-        "status": "external_research_runtime_requires_opt_in",
+        "status": "external_runtime_requires_installation",
         "tool": "ctv_segmentation",
         "tumor_type": "biomedparse_colon_primary",
         "runtime_root_env": "BIOMEDPARSE_ROOT",
         "checkpoint_env": "BIOMEDPARSE_V2_CHECKPOINT",
-        "notes": "Official BiomedParse v2 text-guided candidate; requires the isolated official runtime and clinician contour review.",
+        "notes": "Official BiomedParse v2 text-guided candidate; requires the isolated official runtime and contour review.",
         "sources": [
             "https://github.com/microsoft/BiomedParse/tree/v2",
             "https://huggingface.co/microsoft/BiomedParse",
@@ -175,12 +175,12 @@ CTV_MODEL_CATALOG: List[Dict[str, object]] = [
         "site": "head_neck",
         "modality": "CT",
         "target": "head and neck cancer CTV candidate",
-        "status": "external_research_runtime_requires_opt_in",
+        "status": "external_runtime_requires_installation",
         "tool": "ctv_segmentation",
         "tumor_type": "biomedparse_head_neck_cancer",
         "runtime_root_env": "BIOMEDPARSE_ROOT",
         "checkpoint_env": "BIOMEDPARSE_V2_CHECKPOINT",
-        "notes": "Official BiomedParse v2 text-guided candidate; requires the isolated official runtime and clinician contour review.",
+        "notes": "Official BiomedParse v2 text-guided candidate; requires the isolated official runtime and contour review.",
         "sources": [
             "https://github.com/microsoft/BiomedParse/tree/v2",
             "https://huggingface.co/microsoft/BiomedParse",
@@ -405,8 +405,8 @@ def catalog_with_local_status(repo_root: Optional[str] = None) -> List[Dict[str,
                     "capability_state": "experimental",
                     "capability_color": "orange",
                     "capability_reason": (
-                        "BiomedParse v2 is installed and wired for research use; "
-                        "clinical contour quality is not validated."
+                        "BiomedParse v2 is installed and wired for text-guided CTV candidate segmentation; "
+                        "contour review is required."
                     ),
                     "callable": True,
                 })
@@ -436,9 +436,9 @@ def catalog_with_local_status(repo_root: Optional[str] = None) -> List[Dict[str,
                 "capability_state": "experimental" if entry["local_present"] else "disabled",
                 "capability_color": "orange" if entry["local_present"] else "gray",
                 "capability_reason": (
-                    "Optional local research model is installed but not clinically validated."
+                    "Optional local model is installed; contour review is required."
                     if entry["local_present"]
-                    else "Research entry is not installed or not exposed in the clinical selector."
+                    else "This segmentation entry is not installed or not exposed in the selector."
                 ),
                 "callable": bool(entry["local_present"]),
             })
