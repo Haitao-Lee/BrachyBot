@@ -588,10 +588,18 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
             console.warn('[Report] Figure skipped: dataUrl too short or null');
             return;
         }
-        window.reportForm.figures.push({
-            type: 'screenshot', title, dataUrl, axis: axis || '3d',
+        const stableAxis = axis || '3d';
+        const figure = {
+            type: 'screenshot', title, dataUrl, axis: stableAxis,
             sliceIdx: null, caption, capturedAt: _ts(), ...extra,
-        });
+        };
+        const figures = Array.isArray(window.reportForm.figures)
+            ? window.reportForm.figures : (window.reportForm.figures = []);
+        const existingIndex = figures.findIndex(existing => (
+            existing?.type === 'screenshot' && String(existing.axis || '') === stableAxis
+        ));
+        if (existingIndex >= 0) figures.splice(existingIndex, 1, figure);
+        else figures.push(figure);
         uiDebugLog('[Report] Figure captured:', title, Math.round(dataUrl.length / 1024), 'KB');
     };
 
@@ -1129,7 +1137,10 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
                 _frameReportCamera(box, {
                     direction,
                     targetAspect: REPORT_FIGURE_ASPECT,
-                    margin: mode === 'detail' ? 1.06 : 1.08,
+                    // The overview needs enough surrounding anatomy to make
+                    // the full implant geometry intelligible in a report.
+                    // The close-up remains intentionally tight around CTV.
+                    margin: mode === 'detail' ? 1.06 : 1.24,
                 });
             }
 

@@ -126,16 +126,19 @@ class ResponseToolMixin:
         return match.group(1) if match else None
 
     def _normalize_ctv_tool_params(self, params: Dict) -> Dict:
-        """Normalize legacy CTV site parameters before contract validation."""
+        """Normalize every CTV site spelling before tool contract validation."""
         normalized = dict(params or {})
-        if normalized.get("tumor_site") or normalized.get("site"):
-            raw = normalized.get("tumor_site") or normalized.get("site")
-            if not normalized.get("tumor_type"):
-                mapped = self._map_tumor_type(str(raw))
-                if mapped in self._SUPPORTED_AUTOMATIC_CTV_TYPES:
-                    normalized["tumor_type"] = mapped
-            normalized.pop("tumor_site", None)
-            normalized.pop("site", None)
+        raw = (
+            normalized.get("tumor_type")
+            or normalized.get("tumor_site")
+            or normalized.get("site")
+        )
+        if raw:
+            mapped = self._map_tumor_type(str(raw))
+            if mapped:
+                normalized["tumor_type"] = mapped
+        normalized.pop("tumor_site", None)
+        normalized.pop("site", None)
         if not normalized.get("tumor_type"):
             retrieve = getattr(self.memory, "retrieve", None)
             stored = retrieve("tumor_type_used") if callable(retrieve) else None
@@ -1248,26 +1251,28 @@ Output (JSON array of strings):"""
                 return "📋 Source: Internal system data"
         return ""
 
-    # Tumor type → CTV tool mapping
+    # Tumor type maps to canonical CTV tools. The registry retains legacy
+    # aliases for restored Sessions, but automatic planning must only emit the
+    # current nnU-Net or BiomedParse v2 route names.
     _TUMOR_TYPE_MAP = {
         # English names — pancreatic uses nnUNet (more accurate)
         "pancreatic_tumor": "nnunet_pancreatic",
         "pancreatic": "nnunet_pancreatic",
         "pancreas": "nnunet_pancreatic",
-        "liver_tumor": "voco_liver",
-        "liver": "voco_liver",
-        "kidney_tumor": "voco_kidney",
-        "kidney": "voco_kidney",
-        "colon_tumor": "voco_colon",
-        "colon": "voco_colon",
-        "lung_tumor": "voco_lung",
-        "lung": "voco_lung",
+        "liver_tumor": "biomedparse_liver_tumor",
+        "liver": "biomedparse_liver_tumor",
+        "kidney_tumor": "biomedparse_kidney_lesion",
+        "kidney": "biomedparse_kidney_lesion",
+        "colon_tumor": "biomedparse_colon_primary",
+        "colon": "biomedparse_colon_primary",
+        "lung_tumor": "biomedparse_lung_lesion",
+        "lung": "biomedparse_lung_lesion",
         "pdac": "nnunet_pancreatic",
-        "hepatocellular": "voco_liver",
-        "hcc": "voco_liver",
-        "renal": "voco_kidney",
-        "colorectal": "voco_colon",
-        "nsclc": "voco_lung",
+        "hepatocellular": "biomedparse_liver_tumor",
+        "hcc": "biomedparse_liver_tumor",
+        "renal": "biomedparse_kidney_lesion",
+        "colorectal": "biomedparse_colon_primary",
+        "nsclc": "biomedparse_lung_lesion",
         "prostate": "prostate_tumor",
         "prostate_tumor": "prostate_tumor",
         "胰腺癌": "nnunet_pancreatic",
@@ -1296,34 +1301,51 @@ Output (JSON array of strings):"""
 
     _SUPPORTED_AUTOMATIC_CTV_TYPES = frozenset({
         "nnunet_pancreatic",
-        "voco_pancreatic",
-        "voco_liver",
-        "voco_kidney",
-        "voco_lung",
-        "voco_colon",
+        "biomedparse_liver_tumor",
+        "biomedparse_kidney_lesion",
+        "biomedparse_lung_lesion",
+        "biomedparse_colon_primary",
+        "biomedparse_head_neck_cancer",
         "prostate_tumor",
     })
 
     def _map_tumor_type(self, tumor_type: Optional[str]) -> Optional[str]:
-        """Map user-provided tumor type to VoCo tool name."""
+        """Map a user, catalog, or legacy spelling to one CTV route."""
         if tumor_type is None:
             return None
-        # Already a valid VoCo tool name
-        if tumor_type in self._SUPPORTED_AUTOMATIC_CTV_TYPES:
-            return tumor_type
+        raw = str(tumor_type).strip()
+        if not raw:
+            return None
+        # The CTV package owns public aliases so direct planning, LLM calls,
+        # restored Sessions, and the model catalog cannot drift apart.
+        try:
+            from tool_factory.CTV_seg import normalize_tumor_type
+            canonical = normalize_tumor_type(raw)
+        except Exception:
+            canonical = raw
+        if canonical in self._SUPPORTED_AUTOMATIC_CTV_TYPES:
+            return canonical
         # Look up in mapping
-        mapped = self._TUMOR_TYPE_MAP.get(tumor_type.lower())
+        mapped = self._TUMOR_TYPE_MAP.get(raw.lower())
         if mapped:
-            return mapped
+            try:
+                from tool_factory.CTV_seg import normalize_tumor_type
+                return normalize_tumor_type(mapped)
+            except Exception:
+                return mapped
         # Partial match for Chinese
         for key, val in self._TUMOR_TYPE_MAP.items():
-            if key in tumor_type or tumor_type in key:
-                return val
+            if key in raw or raw in key:
+                try:
+                    from tool_factory.CTV_seg import normalize_tumor_type
+                    return normalize_tumor_type(val)
+                except Exception:
+                    return val
         # Keep explicit unknown sites unsupported. The unified CTV tool will
         # fail closed with the model catalog instead of silently running a
         # pancreatic model on another disease site.
-        logger.warning(f"Unknown tumor_type '{tumor_type}', leaving it unsupported")
-        return tumor_type
+        logger.warning(f"Unknown tumor_type '{raw}', leaving it unsupported")
+        return canonical
 
     @staticmethod
     def _message_text(value) -> str:
@@ -1368,25 +1390,25 @@ Output (JSON array of strings):"""
             ("\u80f0\u817a\u764c", "nnunet_pancreatic"),
             ("\u80f0\u817a\u80bf\u7624", "nnunet_pancreatic"),
             ("\u80f0\u817a", "nnunet_pancreatic"),
-            ("\u809d\u764c", "voco_liver"),
-            ("\u809d\u810f", "voco_liver"),
-            ("\u80be\u764c", "voco_kidney"),
-            ("\u80be", "voco_kidney"),
-            ("\u80ba\u764c", "voco_lung"),
-            ("\u80ba", "voco_lung"),
-            ("\u7ed3\u80a0\u764c", "voco_colon"),
-            ("\u7ed3\u80a0", "voco_colon"),
+            ("\u809d\u764c", "biomedparse_liver_tumor"),
+            ("\u809d\u810f", "biomedparse_liver_tumor"),
+            ("\u80be\u764c", "biomedparse_kidney_lesion"),
+            ("\u80be", "biomedparse_kidney_lesion"),
+            ("\u80ba\u764c", "biomedparse_lung_lesion"),
+            ("\u80ba", "biomedparse_lung_lesion"),
+            ("\u7ed3\u80a0\u764c", "biomedparse_colon_primary"),
+            ("\u7ed3\u80a0", "biomedparse_colon_primary"),
             ("\u524d\u5217\u817a", "prostate_tumor"),
             ("pancreatic cancer", "nnunet_pancreatic"),
             ("pancreatic tumor", "nnunet_pancreatic"),
-            ("liver cancer", "voco_liver"),
-            ("liver tumor", "voco_liver"),
-            ("kidney cancer", "voco_kidney"),
-            ("kidney tumor", "voco_kidney"),
-            ("lung cancer", "voco_lung"),
-            ("lung tumor", "voco_lung"),
-            ("colon cancer", "voco_colon"),
-            ("colon tumor", "voco_colon"),
+            ("liver cancer", "biomedparse_liver_tumor"),
+            ("liver tumor", "biomedparse_liver_tumor"),
+            ("kidney cancer", "biomedparse_kidney_lesion"),
+            ("kidney tumor", "biomedparse_kidney_lesion"),
+            ("lung cancer", "biomedparse_lung_lesion"),
+            ("lung tumor", "biomedparse_lung_lesion"),
+            ("colon cancer", "biomedparse_colon_primary"),
+            ("colon tumor", "biomedparse_colon_primary"),
             ("prostate cancer", "prostate_tumor"),
             ("prostate tumor", "prostate_tumor"),
         )
@@ -1588,6 +1610,13 @@ Output (JSON array of strings):"""
                         p["code"] = p.pop(alias)
                 if not p.get("code", "").strip():
                     continue
+            elif tn == "ctv_segmentation":
+                # LLM calls can contain a friendly site name, an old saved
+                # VoCo alias, or a BiomedParse catalog id. Normalize before
+                # the tool schema is checked so all entry points use the same
+                # canonical model route.
+                p = self._normalize_ctv_tool_params(p)
+                tc["params"] = p
             elif tn == "ui_controller":
                 # Normalize: LLM may pass target/command at top level instead of inside actions
                 if "target" in p and "actions" not in p:

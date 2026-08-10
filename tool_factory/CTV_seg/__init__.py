@@ -88,6 +88,88 @@ BIOMEDPARSE_FALLBACKS = {
 }
 
 
+def normalize_tumor_type(value) -> str:
+    """Return the canonical CTV route for a user, catalog, or legacy alias.
+
+    ``ctv_segmentation`` is called from the UI, direct planning shortcut,
+    restored Sessions, and the LLM.  Those callers historically used a mix of
+    display labels, deprecated ``voco_*`` names, and BiomedParse catalog ids.
+    Keeping the normalization here makes the tool contract authoritative and
+    prevents a valid BiomedParse request from being rejected before inference.
+    """
+    raw = str(value or "").strip()
+    if not raw:
+        return ""
+    normalized = re.sub(r"[\s\-/]+", "_", raw.casefold()).strip("_")
+    aliases = {
+        # Pancreatic production segmentation remains on the validated nnU-Net.
+        "pancreatic_tumor": "nnunet_pancreatic",
+        "pancreatic": "nnunet_pancreatic",
+        "pancreas": "nnunet_pancreatic",
+        "voco_pancreatic": "nnunet_pancreatic",
+        "nnunet_pancreatic": "nnunet_pancreatic",
+        "\u80f0\u817a": "nnunet_pancreatic",
+        "\u80f0\u817a\u80bf\u7624": "nnunet_pancreatic",
+        "\u80f0\u817a\u764c": "nnunet_pancreatic",
+        # BiomedParse v2 CTV prompts. Keep catalog ids and historical VoCo
+        # aliases readable so restored workspaces remain executable.
+        "liver": "biomedparse_liver_tumor",
+        "liver_tumor": "biomedparse_liver_tumor",
+        "liver_cancer": "biomedparse_liver_tumor",
+        "hepatocellular": "biomedparse_liver_tumor",
+        "hcc": "biomedparse_liver_tumor",
+        "voco_liver": "biomedparse_liver_tumor",
+        "biomedparse_liver_tumor": "biomedparse_liver_tumor",
+        "biomedparse_v2_liver_tumor": "biomedparse_liver_tumor",
+        "\u809d": "biomedparse_liver_tumor",
+        "\u809d\u810f": "biomedparse_liver_tumor",
+        "\u809d\u810f\u80bf\u7624": "biomedparse_liver_tumor",
+        "\u809d\u764c": "biomedparse_liver_tumor",
+        "kidney": "biomedparse_kidney_lesion",
+        "kidney_tumor": "biomedparse_kidney_lesion",
+        "kidney_lesion": "biomedparse_kidney_lesion",
+        "renal_tumor": "biomedparse_kidney_lesion",
+        "voco_kidney": "biomedparse_kidney_lesion",
+        "biomedparse_kidney_lesion": "biomedparse_kidney_lesion",
+        "biomedparse_v2_kidney_lesion": "biomedparse_kidney_lesion",
+        "\u80be": "biomedparse_kidney_lesion",
+        "\u80be\u810f": "biomedparse_kidney_lesion",
+        "\u80be\u810f\u80bf\u7624": "biomedparse_kidney_lesion",
+        "lung": "biomedparse_lung_lesion",
+        "lung_tumor": "biomedparse_lung_lesion",
+        "lung_lesion": "biomedparse_lung_lesion",
+        "voco_lung": "biomedparse_lung_lesion",
+        "biomedparse_lung_lesion": "biomedparse_lung_lesion",
+        "biomedparse_v2_lung_lesion": "biomedparse_lung_lesion",
+        "\u80ba": "biomedparse_lung_lesion",
+        "\u80ba\u80bf\u7624": "biomedparse_lung_lesion",
+        "\u80ba\u764c": "biomedparse_lung_lesion",
+        "colon": "biomedparse_colon_primary",
+        "colon_tumor": "biomedparse_colon_primary",
+        "colon_primary": "biomedparse_colon_primary",
+        "voco_colon": "biomedparse_colon_primary",
+        "biomedparse_colon_primary": "biomedparse_colon_primary",
+        "biomedparse_v2_colon_primary": "biomedparse_colon_primary",
+        "\u7ed3\u80a0": "biomedparse_colon_primary",
+        "\u7ed3\u80a0\u80bf\u7624": "biomedparse_colon_primary",
+        "\u7ed3\u80a0\u764c": "biomedparse_colon_primary",
+        "head_neck": "biomedparse_head_neck_cancer",
+        "head_and_neck": "biomedparse_head_neck_cancer",
+        "head_neck_tumor": "biomedparse_head_neck_cancer",
+        "head_neck_cancer": "biomedparse_head_neck_cancer",
+        "biomedparse_head_neck_cancer": "biomedparse_head_neck_cancer",
+        "biomedparse_v2_head_neck_cancer": "biomedparse_head_neck_cancer",
+        "\u5934\u9888": "biomedparse_head_neck_cancer",
+        "\u5934\u9888\u80bf\u7624": "biomedparse_head_neck_cancer",
+        "prostate": "prostate_tumor",
+        "prostate_tumor": "prostate_tumor",
+        "whole_prostate": "prostate_tumor",
+        "\u524d\u5217\u817a": "prostate_tumor",
+        "\u524d\u5217\u817a\u764c": "prostate_tumor",
+    }
+    return aliases.get(normalized, raw)
+
+
 def get_tool(tool_name: str):
     """Get a CTV segmentation tool by name."""
     tool_class = TOOL_REGISTRY.get(tool_name)
@@ -153,8 +235,12 @@ class CTVSegmentationTool(BaseTool):
                 "label_path": {"type": "string", "description": "Path to existing CTV label file (optional)"},
                 "tumor_type": {
                     "type": "string",
-                    "description": f"Tumor type for specialized model. Options: {self._tumor_types}. Required unless label_path is provided.",
-                    "enum": self._tumor_types,
+                    "description": (
+                        "Tumor type for specialized model. Canonical options: "
+                        f"{self._tumor_types}. Friendly anatomy names, legacy "
+                        "VoCo aliases, and BiomedParse v2 catalog ids are normalized "
+                        "by the server. Required unless label_path is provided."
+                    ),
                 },
                 # Backward-compatible alias for older model prompts. The
                 # executor normalizes it immediately to tumor_type; new
@@ -192,26 +278,9 @@ class CTVSegmentationTool(BaseTool):
         image = kwargs.get("image")
         image_path = kwargs.get("image_path")
         label_path = kwargs.get("label_path")
-        tumor_type = (kwargs.get("tumor_type") or kwargs.get("tumor_site") or kwargs.get("site") or "").strip()
-        site_aliases = {
-            "pancreas": "nnunet_pancreatic",
-            "pancreatic": "nnunet_pancreatic",
-            "\u80f0\u817a": "nnunet_pancreatic",
-            "liver": "biomedparse_liver_tumor",
-            "\u809d\u810f": "biomedparse_liver_tumor",
-            "kidney": "biomedparse_kidney_lesion",
-            "\u80be": "biomedparse_kidney_lesion",
-            "lung": "biomedparse_lung_lesion",
-            "\u80ba": "biomedparse_lung_lesion",
-            "colon": "biomedparse_colon_primary",
-            "\u7ed3\u80a0": "biomedparse_colon_primary",
-            "head_neck": "biomedparse_head_neck_cancer",
-            "head and neck": "biomedparse_head_neck_cancer",
-            "\u5934\u9888": "biomedparse_head_neck_cancer",
-            "prostate": "prostate_tumor",
-            "\u524d\u5217\u817a": "prostate_tumor",
-        }
-        tumor_type = site_aliases.get(tumor_type.lower(), tumor_type)
+        tumor_type = normalize_tumor_type(
+            kwargs.get("tumor_type") or kwargs.get("tumor_site") or kwargs.get("site")
+        )
         target_value = kwargs.get("target_value", 1)
         fast_mode = kwargs.get("fast_mode", False)
         allow_empty = bool(kwargs.get("allow_empty", False))

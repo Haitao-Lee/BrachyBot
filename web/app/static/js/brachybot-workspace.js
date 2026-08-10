@@ -698,6 +698,146 @@
         );
     }
 
+    // Report figures are durable planning evidence, not an append-only image
+    // gallery.  Every generated subfigure has one stable role that survives
+    // the browser cache, server artifact catalog, PDF export, and Session
+    // restore.  This prevents a second copy of the same role from becoming a
+    // second Figure 1(a) after a restore.
+    const REPORT_FIGURE_DEFINITIONS = Object.freeze({
+        report_fig1_global: {
+            figureGroup: 'figure1', figureNumber: 1, subfigure: 'a', sortOrder: 1,
+            captureRole: 'planning_overview',
+            title: 'Reference-direction plan overview',
+            caption: 'Global view along the needle reference direction, showing the CTV, selected OARs, needle paths, and seeds.',
+        },
+        report_fig1_closeup: {
+            figureGroup: 'figure1', figureNumber: 1, subfigure: 'b', sortOrder: 2,
+            captureRole: 'planning_closeup',
+            title: 'CTV seed-distribution close-up',
+            caption: 'Target close-up with the CTV made translucent to show seed distribution and needle paths.',
+        },
+        report_fig2_axial: {
+            figureGroup: 'figure2', figureNumber: 2, subfigure: 'a', sortOrder: 1,
+            captureRole: 'peak_dose_axial',
+            title: 'Peak-dose axial view',
+            caption: 'Axial CT slice through the peak-dose location with dose overlay and planning projections.',
+        },
+        report_fig2_sagittal: {
+            figureGroup: 'figure2', figureNumber: 2, subfigure: 'b', sortOrder: 2,
+            captureRole: 'peak_dose_sagittal',
+            title: 'Peak-dose sagittal view',
+            caption: 'Sagittal CT slice through the peak-dose location with dose overlay and planning projections.',
+        },
+        report_fig2_coronal: {
+            figureGroup: 'figure2', figureNumber: 2, subfigure: 'c', sortOrder: 3,
+            captureRole: 'peak_dose_coronal',
+            title: 'Peak-dose coronal view',
+            caption: 'Coronal CT slice through the peak-dose location with dose overlay and planning projections.',
+        },
+        report_fig2_dose_surface: {
+            figureGroup: 'figure2', figureNumber: 2, subfigure: 'd', sortOrder: 4,
+            captureRole: 'dose_surface_3d',
+            title: 'CTV and dose-isosurface overview',
+            caption: 'Three-dimensional view of the CTV and relevant dose isosurfaces.',
+        },
+        report_fig2_dvh: {
+            figureGroup: 'figure2', figureNumber: 2, subfigure: 'e', sortOrder: 5,
+            captureRole: 'dvh',
+            title: 'Dose-volume histogram',
+            caption: 'Dose-volume curves for the CTV and available OAR structures in the current Planning run.',
+        },
+    });
+
+    const REPORT_FIGURE_AXIS_BY_ROLE = Object.freeze(
+        Object.fromEntries(Object.entries(REPORT_FIGURE_DEFINITIONS).map(([axis, definition]) => [definition.captureRole, axis]))
+    );
+
+    function reportFigureAxis(figure) {
+        const explicitAxis = String(figure?.axis || '').trim();
+        if (REPORT_FIGURE_DEFINITIONS[explicitAxis]) return explicitAxis;
+        const role = String(figure?.captureRole || figure?.capture_role || '').trim();
+        return REPORT_FIGURE_AXIS_BY_ROLE[role] || explicitAxis;
+    }
+
+    function reportFigureIdentity(figure, index = 0) {
+        const axis = reportFigureAxis(figure);
+        if (REPORT_FIGURE_DEFINITIONS[axis]) return `report:${axis}`;
+        const source = String(
+            figure?._serverUrl || figure?.dataUrl || figure?.id || `${index}:${figure?.title || ''}`
+        );
+        return `supplemental:${source}`;
+    }
+
+    function isGenericReportFigureTitle(value) {
+        return /^report\s+(figure|screenshot)\s+\d+$/i.test(String(value || '').trim());
+    }
+
+    function normalizeReportFigures(figures, options = {}) {
+        const language = String(options.language || window.reportForm?.language || 'en').toLowerCase();
+        const entries = Array.isArray(figures) ? figures : [];
+        const selected = new Map();
+        const score = figure => {
+            let value = figure?._artifactFallback ? 0 : 100;
+            if (figure?._cacheKey) value += 20;
+            if (figure?._serverUrl || figure?.dataUrl) value += 10;
+            if (figure?.title && !isGenericReportFigureTitle(figure.title)) value += 2;
+            if (figure?.caption) value += 1;
+            return value;
+        };
+
+        entries.forEach((figure, index) => {
+            if (!figure || typeof figure !== 'object') return;
+            const axis = reportFigureAxis(figure);
+            const persistedUrl = String(figure?._serverUrl || figure?.dataUrl || '');
+            const isUnidentifiedLegacyArtifact = !REPORT_FIGURE_DEFINITIONS[axis]
+                && /^report_screenshot_/i.test(persistedUrl.split('/').pop() || '')
+                && isGenericReportFigureTitle(figure.title);
+            // Older catalog-only images without a stable report role remain
+            // exportable artifacts, but they cannot be safely guessed as a
+            // new report Figure. Do not reinsert them into a restored report.
+            if ((figure._artifactFallback || isUnidentifiedLegacyArtifact)
+                && !REPORT_FIGURE_DEFINITIONS[axis]) return;
+            const identity = reportFigureIdentity({ ...figure, axis }, index);
+            const previous = selected.get(identity);
+            if (!previous || score(figure) > score(previous.figure)) {
+                selected.set(identity, { figure, index, axis });
+            }
+        });
+
+        const normalized = Array.from(selected.values()).map(({ figure, index, axis }) => {
+            const definition = REPORT_FIGURE_DEFINITIONS[axis];
+            if (!definition) return { figure, index, sortOrder: Number(figure.sortOrder) || 999 };
+            figure.axis = axis;
+            figure.figureGroup = definition.figureGroup;
+            figure.figureNumber = definition.figureNumber;
+            figure.subfigure = definition.subfigure;
+            figure.sortOrder = definition.sortOrder;
+            figure.captureRole = definition.captureRole;
+            if (!figure.title || isGenericReportFigureTitle(figure.title)) {
+                figure.title = definition.title;
+            }
+            if (!figure.caption) figure.caption = definition.caption;
+            return { figure, index, sortOrder: definition.sortOrder };
+        }).sort((left, right) => (
+            Number(left.figure.figureNumber || 99) - Number(right.figure.figureNumber || 99)
+            || left.sortOrder - right.sortOrder
+            || left.index - right.index
+        )).map(entry => entry.figure);
+
+        // The definitions are currently English because report evidence is
+        // generated in the report language. Existing localized captions are
+        // preserved; only old catalog entries missing all text use this
+        // medical-English fallback.
+        void language;
+        return normalized;
+    }
+
+    window.normalizeReportFigures = normalizeReportFigures;
+    window.describeReportFigure = function describeReportFigure(axis) {
+        const definition = REPORT_FIGURE_DEFINITIONS[String(axis || '')];
+        return definition ? { title: definition.title, caption: definition.caption } : null;
+    };
+
     function reportSectionSessionId(section) {
         const form = section?.form && typeof section.form === 'object'
             ? section.form : section;
@@ -726,6 +866,11 @@
             window.syncReportQualityAssessment(window.reportForm, { preserveStored: true });
         }
         const planningId = activeReportPlanningId();
+        if (Array.isArray(window.reportForm.figures)) {
+            window.reportForm.figures = normalizeReportFigures(window.reportForm.figures, {
+                language: window.reportForm.language,
+            });
+        }
         // IndexedDB remains the fast local cache, but server-owned report
         // figures make restart and another browser deterministic. Uploads are
         // deliberately fire-and-forget and never delay chat/session changes.
@@ -1425,7 +1570,10 @@
         planningId,
         restoreGeneration,
     ) {
-        if (!targetForm || !Array.isArray(targetForm.figures) || targetForm.figures.length) return 0;
+        if (!targetForm || !Array.isArray(targetForm.figures)) return 0;
+        const existingFigures = normalizeReportFigures(targetForm.figures, {
+            language: targetForm.language,
+        });
         let artifacts = typeof dataTreeState !== 'undefined'
             && Array.isArray(dataTreeState?.exportArtifacts)
             ? dataTreeState.exportArtifacts : [];
@@ -1443,7 +1591,10 @@
                 && /^report_screenshot_[^/\\]+\.png$/i.test(filename)
                 && (!ownerPlanning || !planningId || ownerPlanning === String(planningId));
         });
-        if (!screenshots.length) return 0;
+        if (!screenshots.length) {
+            targetForm.figures = existingFigures;
+            return existingFigures.length;
+        }
         const recoveredFigureMetadata = axis => {
             const map = {
                 report_fig1_global: { figureGroup: 'figure1', figureNumber: 1, subfigure: 'a', sortOrder: 1, captureRole: 'planning_overview' },
@@ -1456,7 +1607,7 @@
             };
             return map[axis] || {};
         };
-        targetForm.figures = screenshots.map((item, index) => {
+        const recoveredFigures = screenshots.map((item, index) => {
             const objectId = String(item.objectId || '');
             const filename = objectId.includes(':') ? objectId.split(':').slice(1).join(':') : objectId;
             const stem = filename.replace(/\.png$/i, '');
@@ -1472,11 +1623,19 @@
                 title,
                 axis,
                 caption: '',
+                _artifactFallback: true,
                 dataUrl: `/api/sessions/${encodeURIComponent(sessionId)}/screenshots/${encodeURIComponent(filename)}`,
                 _serverUrl: `/api/sessions/${encodeURIComponent(sessionId)}/screenshots/${encodeURIComponent(filename)}`,
                 ...figureMetadata,
             };
         });
+        // Merge, rather than append, catalog artifacts. A workspace snapshot
+        // wins for an already-known role; catalog files only fill genuinely
+        // missing roles and old UUID copies collapse to one stable subfigure.
+        targetForm.figures = normalizeReportFigures(
+            [...existingFigures, ...recoveredFigures],
+            { language: targetForm.language },
+        );
         try { renderReportEditor(); } catch (_) {}
         try { _updateReportPreview(); } catch (_) {}
         scheduleWorkspaceSave('report.figures.restored-from-catalog');
@@ -1495,6 +1654,11 @@
             const restored = jsonClone(report);
             restored.editedFields = new Set(restored.editedFields || []);
             restored.sessionId = String(activeSessionId || restored.sessionId || '');
+            if (Array.isArray(restored.figures)) {
+                restored.figures = normalizeReportFigures(restored.figures, {
+                    language: restored.language,
+                });
+            }
             window.reportForm = restored;
             window.__reportWorkspaceActivePlanningId = target;
             if (window.Report?.sources?._map && Array.isArray(section?.sources)) {

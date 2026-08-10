@@ -2,6 +2,7 @@
 
 import json
 import copy
+import hashlib
 import logging
 import os
 import re
@@ -5199,7 +5200,18 @@ def register_planning_routes(
                     str(view_metadata.get("axis") or view_metadata.get("capture_role") or ""),
                 )[:80]
             descriptor = f"_{report_axis}" if report_axis else ""
-            filename = f"{mode}_screenshot{descriptor}_{uuid4().hex[:12]}.png"
+            if mode == "report" and report_axis:
+                # Report capture roles are idempotent within one Planning run.
+                # Re-capturing Figure 1(a), including after a Session restore,
+                # must update its durable artifact rather than create another
+                # UUID-named file that later restores as a duplicate subfigure.
+                report_identity = f"{planning_id or '__unassigned__'}:{report_axis}"
+                report_digest = hashlib.sha256(
+                    report_identity.encode("utf-8")
+                ).hexdigest()[:12]
+                filename = f"report_screenshot{descriptor}_{report_digest}.png"
+            else:
+                filename = f"{mode}_screenshot{descriptor}_{uuid4().hex[:12]}.png"
             try:
                 store, user, session_id = request_case_context()
             except WorkspaceError:

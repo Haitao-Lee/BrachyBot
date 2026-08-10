@@ -17,7 +17,7 @@ def test_figure_one_detail_view_keeps_the_complete_ctv_in_frame():
     assert "halfHeight / Math.tan(halfFovY)" in source
     assert "halfWidth / Math.tan(halfFovX)" in source
     assert "halfDepth + planarDistance" in source
-    assert "margin: mode === 'detail' ? 1.06 : 1.08" in source
+    assert "margin: mode === 'detail' ? 1.06 : 1.24" in source
     assert "targetAspect: REPORT_FIGURE_ASPECT" in source
 
 
@@ -95,13 +95,31 @@ def test_report_figure_identity_survives_server_artifact_fallback():
     planning = _read("web/app/static/js/brachybot-dvh-planning.js")
 
     assert 'str(view_metadata.get("axis") or view_metadata.get("capture_role") or "")' in routes
-    assert 'filename = f"{mode}_screenshot{descriptor}_{uuid4().hex[:12]}.png"' in routes
+    assert "report_identity = f\"{planning_id or '__unassigned__'}:{report_axis}\"" in routes
+    assert "hashlib.sha256" in routes
+    assert "function normalizeReportFigures" in workspace
+    assert "REPORT_FIGURE_DEFINITIONS" in workspace
+    assert "_artifactFallback" in workspace
     assert "const recoveredFigureMetadata = axis =>" in workspace
     assert "report_fig2_dose_surface" in workspace
     assert "identityMatch" in workspace
     assert "...figureMetadata" in workspace
     assert "const requiredReportAxes = new Set" in planning
     assert "hasCompleteReportFigureSet" in planning
+
+
+def test_report_restore_and_export_deduplicate_by_stable_subfigure_role():
+    workspace = _read("web/app/static/js/brachybot-workspace.js")
+    export = _read("web/app/static/js/brachybot-report-export.js")
+    api = _read("web/app/static/js/brachybot-ui-api.js")
+
+    assert "reportFigureIdentity" in workspace
+    assert "[...existingFigures, ...recoveredFigures]" in workspace
+    assert "function _reportFigureStableIdentity" in export
+    assert "const seen = new Set();" in export
+    assert "${figureNumber}(${escHtml(headingSubfigure)})" in export
+    assert "function _reportFigureStableKey" in api
+    assert "seenFigureKeys.has(stableKey)" in api
 
 
 def test_figure_two_rejects_black_webgl_capture_and_retries():

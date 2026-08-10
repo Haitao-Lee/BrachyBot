@@ -829,6 +829,24 @@ function _reportFigureGroup(figure) {
     return '';
 }
 
+function _reportFigureStableIdentity(figure, index = 0) {
+    const axis = String(figure?.axis || '').trim();
+    if (/^report_fig[12]_/i.test(axis)) return `axis:${axis}`;
+    const role = String(figure?.captureRole || figure?.capture_role || '').trim();
+    if (role) return `role:${role}`;
+    return `legacy:${axis || figure?.id || figure?._serverUrl || figure?.dataUrl || index}`;
+}
+
+function _reportFigureDisplayText(figure) {
+    const described = typeof window.describeReportFigure === 'function'
+        ? window.describeReportFigure(figure?.axis)
+        : null;
+    return {
+        title: String(figure?.title || described?.title || ''),
+        caption: String(figure?.caption || described?.caption || ''),
+    };
+}
+
 function _reportFiguresForGroup(form, group) {
     const rows = (Array.isArray(form?.figures) ? form.figures : [])
         .filter(figure => figure && _reportFigureGroup(figure) === group);
@@ -836,7 +854,7 @@ function _reportFiguresForGroup(form, group) {
     // subfigures exist, never display the downsampled composite beside them.
     const nativePrefix = group === 'figure1' ? 'report_fig1_' : 'report_fig2_';
     const nativeRows = rows.filter(figure => String(figure.axis || '').startsWith(nativePrefix));
-    return (nativeRows.length ? nativeRows : rows).sort((left, right) => {
+    const sorted = (nativeRows.length ? nativeRows : rows).sort((left, right) => {
         const leftOrder = Number(left?.sortOrder);
         const rightOrder = Number(right?.sortOrder);
         if (Number.isFinite(leftOrder) || Number.isFinite(rightOrder)) {
@@ -846,6 +864,16 @@ function _reportFiguresForGroup(form, group) {
         return String(left?.subfigure || left?.axis || '').localeCompare(
             String(right?.subfigure || right?.axis || ''),
         );
+    });
+    // Defend PDF export against snapshots created before report figures had a
+    // durable role. The workspace restore path also normalizes them, but the
+    // export boundary must never render two copies as the same Figure 1(a).
+    const seen = new Set();
+    return sorted.filter((figure, index) => {
+        const identity = _reportFigureStableIdentity(figure, index);
+        if (seen.has(identity)) return false;
+        seen.add(identity);
+        return true;
     });
 }
 
@@ -893,17 +921,22 @@ function _updateReportPreview() {
         for (let offset = 0; offset < rows.length; offset += 1) {
             const pageRows = rows.slice(offset, offset + 1);
             const pageNo = startPageNo + offset;
+            const headingFigure = pageRows[0] || {};
+            const headingSubfigure = String(
+                headingFigure.subfigure || String.fromCharCode(97 + offset)
+            ).toLowerCase();
             html += `<div class="report-page report-figure-page">
                 <div class="hp-running-header"><span>${escHtml(s.confidentiality)}</span><span class="right">${escHtml(groupTitle)}</span></div>
-                <h2 class="hp-section-title">${escHtml(s.figCaption)} ${figureNumber} · ${escHtml(groupTitle)}</h2>
+                <h2 class="hp-section-title">${escHtml(s.figCaption)} ${figureNumber}(${escHtml(headingSubfigure)}) - ${escHtml(groupTitle)}</h2>
                 <div class="hp-subfigure-list">${pageRows.map((figure, pageIndex) => {
                     const imageUrl = _safeReportImageUrl(figure.dataUrl);
                     if (!imageUrl) return '';
                     const fallbackIndex = offset + pageIndex;
                     const subfigure = String(figure.subfigure || String.fromCharCode(97 + fallbackIndex)).toLowerCase();
+                    const display = _reportFigureDisplayText(figure);
                     return `<figure class="hp-subfigure">
-                        <img src="${escHtml(imageUrl)}" alt="${escHtml(figure.title || '')}"/>
-                        <figcaption><b>${escHtml(s.figCaption)} ${figureNumber}(${escHtml(subfigure)}) · ${escHtml(figure.title || '')}</b>${figure.caption ? ' — ' + escHtml(figure.caption) : ''}</figcaption>
+                        <img src="${escHtml(imageUrl)}" alt="${escHtml(display.title)}"/>
+                        <figcaption><b>${escHtml(s.figCaption)} ${figureNumber}(${escHtml(subfigure)}) - ${escHtml(display.title)}</b>${display.caption ? ': ' + escHtml(display.caption) : ''}</figcaption>
                     </figure>`;
                 }).join('')}</div>
                 ${pageFooter(pageNo)}
