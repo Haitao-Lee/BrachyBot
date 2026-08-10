@@ -1731,6 +1731,7 @@ async function sendChat(prefill, options) {
         sessionId: turnSessionId,
         requestId: turnRequestId,
         messageId: turnAssistantMessageId,
+        responseLanguage: turnIdentity.responseLanguage,
         mode: opts.screenshotMode || (trainingMonitorState.active ? 'monitor' : 'chat'),
         layout: 'auto',
     };
@@ -2188,6 +2189,7 @@ async function sendChat(prefill, options) {
                                             sessionId: turnSessionId,
                                             requestId: turnRequestId,
                                             messageId: turnAssistantMessageId,
+                                            responseLanguage: turnIdentity.responseLanguage,
                                             mode: _ssPlan.mode || screenshotGallery.mode || 'chat',
                                             plan: _ssPlan,
                                         })
@@ -2741,11 +2743,11 @@ function _traceStepForDisplay(step, sessionId, turnLanguage = '') {
         turnLanguage
         || step.trace_language
         || step.response_language
-        || window._i18nLang
         || (typeof conversationLanguageForSession === 'function'
             ? conversationLanguageForSession(sessionId)
             : '')
         || window._responseLanguage
+        || window._i18nLang
         || 'en'
     ).toLowerCase().startsWith('zh') ? 'zh' : 'en';
     const metadata = step.metadata || {};

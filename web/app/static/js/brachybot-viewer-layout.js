@@ -165,6 +165,16 @@ function syncViewerGeometry({ resetPositions = false, settleMs = 0, viewportSnap
         }
         ['axial', 'sagittal', 'coronal'].forEach(axis => resizeCanvas(axis));
         _restoreViewerViewport(viewportSnapshot);
+        // resizeCanvas establishes the CT geometry first. Reconcile every
+        // dependent canvas only after that geometry and the restored viewport
+        // have both settled, otherwise a dose/projection layer can retain the
+        // previous session's left/top/transform until the user presses Fit.
+        if (typeof window.reconcile2DViewerLayers === 'function') {
+            window.reconcile2DViewerLayers({
+                reason: 'viewer-geometry-sync',
+                rerender: true,
+            });
+        }
         if (typeof window.resizeViewer3D === 'function') window.resizeViewer3D();
     };
     const schedule = (acceptNewerGeneration = false) => requestAnimationFrame(() =>
@@ -601,6 +611,15 @@ function renderSliceToCanvas(axis, sliceData) {
             const placeholder = container.querySelector('.viewer-no-data');
             if (placeholder) placeholder.style.display = 'none';
 
+            // Store CT geometry before any dependent layer is resized. The
+            // server-slice fallback used to update annotations first, causing
+            // overlays restored after a restart to use a stale display box.
+            canvas._displayScale = scale;
+            canvas._displayW = displayW;
+            canvas._displayH = displayH;
+            canvas._offsetX = (containerW - displayW) / 2;
+            canvas._offsetY = (containerH - displayH) / 2;
+
             // Update crosshair canvas size
             const crossCanvas = document.getElementById('crosshairCanvas' + capitalize(axis));
             if (crossCanvas) {
@@ -621,13 +640,12 @@ function renderSliceToCanvas(axis, sliceData) {
             // Update annotation canvas size
             syncAnnotationCanvasSize(axis);
             redrawAllAnnotations();
-
-            // Store display info for coordinate mapping
-            canvas._displayScale = scale;
-            canvas._displayW = displayW;
-            canvas._displayH = displayH;
-            canvas._offsetX = (containerW - displayW) / 2;
-            canvas._offsetY = (containerH - displayH) / 2;
+            if (typeof window.reconcile2DViewerLayers === 'function') {
+                window.reconcile2DViewerLayers({
+                    reason: 'server-slice-decoded',
+                    rerender: true,
+                });
+            }
         };
         img.src = sliceData;
         return;
@@ -703,6 +721,12 @@ async function loadAllSlices() {
             await _yieldViewerPaint();
             if (generation !== _sliceRenderGeneration) return;
         }
+        if (typeof window.reconcile2DViewerLayers === 'function') {
+            window.reconcile2DViewerLayers({
+                reason: 'all-volume-slices-loaded',
+                rerender: true,
+            });
+        }
         return;
     }
 
@@ -712,6 +736,13 @@ async function loadAllSlices() {
         loadSlice('sagittal', state.slices.sagittal),
         loadSlice('coronal', state.slices.coronal),
     ]);
+    if (generation !== _sliceRenderGeneration) return;
+    if (typeof window.reconcile2DViewerLayers === 'function') {
+        window.reconcile2DViewerLayers({
+            reason: 'all-server-slices-loaded',
+            rerender: true,
+        });
+    }
 }
 
 // BUG FIX 2026-06-17 (3D default reconstruction): the previous

@@ -1042,11 +1042,56 @@ function _viewerVectorPixelRatio(sliceCanvas) {
     return Math.max(1, Math.min(desired, maxBySide, maxByArea));
 }
 
-function _syncLayerToSliceCanvas(axis, layerCanvas, zIndex, options = {}) {
+function _sliceCanvasDisplayGeometry(axis) {
     const sliceCanvas = getSliceCanvas(axis);
-    if (!sliceCanvas || !layerCanvas) return false;
-    const sw = sliceCanvas._displayW || sliceCanvas.offsetWidth;
-    const sh = sliceCanvas._displayH || sliceCanvas.offsetHeight;
+    if (!sliceCanvas) return null;
+    const width = Number(
+        sliceCanvas._displayW || sliceCanvas.offsetWidth || parseFloat(sliceCanvas.style.width) || 0,
+    );
+    const height = Number(
+        sliceCanvas._displayH || sliceCanvas.offsetHeight || parseFloat(sliceCanvas.style.height) || 0,
+    );
+    if (!(width > 0) || !(height > 0)) return null;
+    const storedLeft = Number(sliceCanvas._offsetX);
+    const storedTop = Number(sliceCanvas._offsetY);
+    return {
+        sliceCanvas,
+        width,
+        height,
+        left: Number.isFinite(storedLeft) ? storedLeft : (parseFloat(sliceCanvas.style.left) || 0),
+        top: Number.isFinite(storedTop) ? storedTop : (parseFloat(sliceCanvas.style.top) || 0),
+    };
+}
+
+function _applySliceLayerGeometry(geometry, layerCanvas, zIndex) {
+    if (!geometry || !layerCanvas) return false;
+    const { sliceCanvas, width, height, left, top } = geometry;
+    layerCanvas.style.position = 'absolute';
+    layerCanvas.style.pointerEvents = 'none';
+    if (zIndex !== undefined && zIndex !== null) layerCanvas.style.zIndex = String(zIndex);
+    layerCanvas.style.width = width + 'px';
+    layerCanvas.style.height = height + 'px';
+    layerCanvas.style.left = left + 'px';
+    layerCanvas.style.top = top + 'px';
+    const transformHost = sliceCanvas._doseWrapper;
+    // Every 2D layer is derived from the CT canvas geometry.  Keeping this in
+    // one helper prevents a restored dose/contour/projection layer from
+    // retaining the previous viewport after the CT canvas has been re-fitted.
+    layerCanvas.style.transform = transformHost && transformHost.contains?.(layerCanvas)
+        ? ''
+        : _viewerTransformString();
+    layerCanvas.style.transformOrigin = 'center center';
+    return true;
+}
+
+function _syncExistingSliceLayer(axis, layer, zIndex) {
+    return _applySliceLayerGeometry(_sliceCanvasDisplayGeometry(axis), layer, zIndex);
+}
+
+function _syncLayerToSliceCanvas(axis, layerCanvas, zIndex, options = {}) {
+    const geometry = _sliceCanvasDisplayGeometry(axis);
+    if (!geometry || !layerCanvas) return false;
+    const { sliceCanvas, width: sw, height: sh } = geometry;
     const vectorPixelRatio = options.vector ? _viewerVectorPixelRatio(sliceCanvas) : 1;
     const targetWidth = options.vector
         ? Math.max(1, Math.round(sw * vectorPixelRatio))
@@ -1060,24 +1105,8 @@ function _syncLayerToSliceCanvas(axis, layerCanvas, zIndex, options = {}) {
         layerCanvas._doseRenderEpoch = -1;
     }
     layerCanvas._vectorPixelRatio = options.vector ? vectorPixelRatio : 1;
-    const sx = sliceCanvas._offsetX || parseFloat(sliceCanvas.style.left) || 0;
-    const sy = sliceCanvas._offsetY || parseFloat(sliceCanvas.style.top) || 0;
-    layerCanvas.style.position = 'absolute';
-    layerCanvas.style.pointerEvents = 'none';
-    layerCanvas.style.zIndex = String(zIndex);
+    _applySliceLayerGeometry(geometry, layerCanvas, zIndex);
     layerCanvas.style.display = 'block';
-    layerCanvas.style.width = sw + 'px';
-    layerCanvas.style.height = sh + 'px';
-    layerCanvas.style.left = sx + 'px';
-    layerCanvas.style.top = sy + 'px';
-    const transformHost = sliceCanvas._doseWrapper;
-    // The wrapper owns the slice transform when it exists. Applying another
-    // transform to a child layer would scale/rotate that overlay twice during
-    // zoom, which is visible as a distorted dose/mask image after resize.
-    layerCanvas.style.transform = transformHost && transformHost.contains?.(layerCanvas)
-        ? ''
-        : _viewerTransformString();
-    layerCanvas.style.transformOrigin = 'center center';
     return true;
 }
 
@@ -1087,8 +1116,11 @@ function request2DViewerResolutionRefresh() {
     _viewerResolutionRefreshTimer = setTimeout(() => {
         ['axial', 'sagittal', 'coronal'].forEach(axis => {
             const sliceIndex = Number(state.slices?.[axis] || 0);
-            if (state.doseOverlay?.visible && typeof triggerDoseContourRender === 'function') {
-                triggerDoseContourRender(axis, sliceIndex);
+            if (state.doseOverlay?.visible) {
+                renderDoseForCurrentSlice(axis, sliceIndex);
+                if (typeof triggerDoseContourRender === 'function') {
+                    triggerDoseContourRender(axis, sliceIndex);
+                }
             }
             if (state.seedsOverlay || (typeof hasSurgicalGuideProjection === 'function' && hasSurgicalGuideProjection())) {
                 renderSeedsOverlay(axis, sliceIndex);
@@ -1099,6 +1131,61 @@ function request2DViewerResolutionRefresh() {
     }, 24);
 }
 window.request2DViewerResolutionRefresh = request2DViewerResolutionRefresh;
+
+let _viewerLayerReconcileFrame = 0;
+let _viewerLayerReconcileOptions = null;
+function reconcile2DViewerLayers(options = {}) {
+    if (typeof state === 'undefined' || !state.ctLoaded) return false;
+    _viewerLayerReconcileOptions = Object.assign(
+        {},
+        _viewerLayerReconcileOptions || {},
+        options,
+        {
+            rerender: options.rerender !== false
+                || !!_viewerLayerReconcileOptions?.rerender,
+        },
+    );
+    const run = () => {
+        _viewerLayerReconcileFrame = 0;
+        const settings = _viewerLayerReconcileOptions || {};
+        _viewerLayerReconcileOptions = null;
+        if (typeof state === 'undefined' || !state.ctLoaded) return;
+        if (typeof applyViewerTransform === 'function') applyViewerTransform();
+        ['axial', 'sagittal', 'coronal'].forEach(axis => {
+            const cap = capitalize(axis);
+            _syncExistingSliceLayer(axis, document.getElementById('crosshairCanvas' + cap));
+            _syncExistingSliceLayer(axis, document.getElementById('labelOverlay_' + cap));
+            syncAnnotationCanvasSize(axis);
+            _syncExistingSliceLayer(axis, getAnnotationCanvas(axis));
+            const sliceIndex = Number(state.slices?.[axis] || 0);
+            if (settings.rerender && state.doseOverlay?.visible) {
+                renderDoseForCurrentSlice(axis, sliceIndex);
+                if (typeof triggerDoseContourRender === 'function') {
+                    triggerDoseContourRender(axis, sliceIndex);
+                }
+            } else {
+                _syncExistingSliceLayer(axis, document.getElementById('doseOverlayCanvas' + cap), 5);
+                _syncExistingSliceLayer(axis, document.getElementById('contourCanvas' + cap), 6);
+            }
+            if (settings.rerender && (state.seedsOverlay
+                || (typeof hasSurgicalGuideProjection === 'function' && hasSurgicalGuideProjection()))) {
+                renderSeedsOverlay(axis, sliceIndex);
+            } else {
+                _syncExistingSliceLayer(axis, document.getElementById('seedsOverlayCanvas' + cap), 7);
+            }
+        });
+        redrawAllAnnotations();
+    };
+    if (options.immediate) {
+        if (_viewerLayerReconcileFrame) cancelAnimationFrame(_viewerLayerReconcileFrame);
+        run();
+        return true;
+    }
+    if (_viewerLayerReconcileFrame) return true;
+    _viewerLayerReconcileFrame = requestAnimationFrame(run);
+    return true;
+}
+window.reconcile2DViewerLayers = reconcile2DViewerLayers;
 
 function renderDoseForCurrentSlice(axis, sliceIndex) {
     if (!state.doseOverlay || !state.doseOverlay.visible) return;
@@ -1822,14 +1909,10 @@ function syncAnnotationCanvasSize(axis) {
     annCanvas.style.width = displayW + 'px';
     annCanvas.style.height = displayH + 'px';
     annCanvas.style.position = 'absolute';
-    // Only reposition if container size changed
-    if (!annCanvas._posSet || annCanvas._posOffsetX !== offsetX || annCanvas._posOffsetY !== offsetY) {
-        annCanvas.style.left = offsetX + 'px';
-        annCanvas.style.top = offsetY + 'px';
-        annCanvas._posSet = true;
-        annCanvas._posOffsetX = offsetX;
-        annCanvas._posOffsetY = offsetY;
-    }
+    annCanvas._posSet = true;
+    annCanvas._posOffsetX = offsetX;
+    annCanvas._posOffsetY = offsetY;
+    _syncExistingSliceLayer(axis, annCanvas);
     annCanvas.style.display = 'block';
     annCanvas.style.pointerEvents = 'none';
 }

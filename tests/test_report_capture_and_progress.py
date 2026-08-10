@@ -74,6 +74,21 @@ def test_report_preview_groups_figures_by_stable_metadata_not_array_position():
     assert "f.figures[1]" not in source
 
 
+def test_native_report_images_use_one_bounded_evidence_page_each():
+    source = _read("web/app/static/js/brachybot-report-export.js")
+    shell = _read("web/app/static/js/brachybot-report-shell.js")
+
+    assert "const figure1PageCount = figure1Rows.length;" in source
+    assert "const figure2PageCount = figure2Rows.length;" in source
+    assert "const supplementalPageCount = supplementalRows.length;" in source
+    assert "for (let offset = 0; offset < rows.length; offset += 1)" in source
+    assert "const pageRows = rows.slice(offset, offset + 1);" in source
+    assert "max-width: 100%" in source
+    assert "max-height: 190mm" in source
+    assert "overflow: hidden" in source
+    assert "wrap.style.transformOrigin = 'top center';" in shell
+
+
 def test_report_figure_identity_survives_server_artifact_fallback():
     routes = _read("web/routes/planning_routes.py")
     workspace = _read("web/app/static/js/brachybot-workspace.js")
