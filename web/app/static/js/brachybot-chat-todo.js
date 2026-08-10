@@ -1072,6 +1072,92 @@ function _chatLanguageForSession(sessionId) {
         : window._i18nLang) === 'zh' ? 'zh' : 'en';
 }
 
+function _chatUserVisibleFailure(sessionId, kind = 'request') {
+    // Server error payloads can contain internal tool output, file paths, or
+    // upstream provider text. Keep those details in the browser console and
+    // show the user one concise, request-language explanation instead.
+    const zh = _chatLanguageForSession(sessionId) === 'zh';
+    const messages = {
+        request: [
+            '本次请求暂时无法完成。请稍后重试；如果刚切换或加载 Session，请等待加载完成后再试。',
+            'This request could not be completed right now. Retry shortly; if the Session was just switched or loaded, wait for loading to finish first.',
+        ],
+        content: [
+            '当前 Session 中的请求内容暂时无法呈现。请确认该 Session 已完成加载后重试。',
+            'The requested content cannot be presented from the current Session yet. Confirm that the Session has finished loading, then retry.',
+        ],
+        response: [
+            '本次请求未获得可验证的回复。请稍后重试。',
+            'No verified response was returned for this request. Please retry shortly.',
+        ],
+    };
+    const pair = messages[kind] || messages.request;
+    return zh ? pair[0] : pair[1];
+}
+
+async function _presentJsonSessionContent(steps, sessionId, turnIdentity) {
+    const commands = (Array.isArray(steps) ? steps : [])
+        .filter(step => step && step.tool === 'ui_content')
+        .map(step => ({
+            id: String(step.id || ''),
+            command: step.metadata?.content_command || step.content_command || null,
+        }))
+        .filter(item => item.command && typeof item.command === 'object');
+    if (!commands.length) return { attachments: [], userMessage: '' };
+
+    const gallery = {
+        sessionId: String(sessionId || ''),
+        requestId: String(turnIdentity?.requestId || ''),
+        messageId: String(turnIdentity?.messageId || ''),
+        responseLanguage: String(turnIdentity?.responseLanguage || _chatLanguageForSession(sessionId)),
+        mode: 'chat',
+        layout: 'auto',
+        items: [],
+        keys: new Set(),
+    };
+    const seen = new Set();
+    const attachments = [];
+    const messages = [];
+    for (const item of commands) {
+        const commandKey = item.id || JSON.stringify([
+            item.command.target,
+            item.command.planning_id,
+            item.command.presentation,
+            item.command.object_ids || [],
+        ]);
+        if (seen.has(commandKey)) continue;
+        seen.add(commandKey);
+        let result;
+        try {
+            result = typeof window.presentSessionContent === 'function'
+                ? await window.presentSessionContent(item.command, gallery, {
+                    sessionId,
+                    requestId: gallery.requestId,
+                    messageId: gallery.messageId,
+                    responseLanguage: gallery.responseLanguage,
+                })
+                : {
+                    success: false,
+                    userMessage: _chatUserVisibleFailure(sessionId, 'content'),
+                    attachments: [],
+                };
+        } catch (error) {
+            console.warn('[chat] JSON Session content presentation failed', error);
+            result = {
+                success: false,
+                userMessage: _chatUserVisibleFailure(sessionId, 'content'),
+                attachments: [],
+            };
+        }
+        if (Array.isArray(result?.attachments)) attachments.push(...result.attachments);
+        if (result?.userMessage) messages.push(String(result.userMessage));
+    }
+    return {
+        attachments,
+        userMessage: messages.filter(Boolean).slice(-1)[0] || '',
+    };
+}
+
 function _addTaskRecoveryNotice(sessionId, taskId, state) {
     const key = `${String(sessionId || '')}:${String(taskId || '')}:${state}`;
     if (!key || window._sessionChatRecoveryNotices[key]) return;
@@ -1863,12 +1949,20 @@ async function sendChat(prefill, options) {
 
         if (!resp.ok) {
             if (thinkingEl && typeof removeThinkingIndicator === 'function') removeThinkingIndicator(thinkingEl);
-            let errText = 'Chat failed: HTTP ' + resp.status;
+            let serverError = '';
             try {
                 const errBody = await resp.json();
-                if (errBody && errBody.error) errText = 'Chat failed: ' + errBody.error;
+                serverError = String(errBody?.error || errBody?.message || '');
             } catch (_) { /* non-JSON error body */ }
-            if (typeof addChat === 'function') addChat('error', errText, true, Date.now(), false, turnSessionId);
+            console.warn('[chat] HTTP request failed', {
+                status: resp.status,
+                serverError,
+                sessionId: turnSessionId,
+            });
+            if (typeof addChat === 'function') {
+                addChat('bot-response', _chatUserVisibleFailure(turnSessionId, 'request'), true,
+                    Date.now(), false, turnSessionId, turnIdentity);
+            }
             setStreamingState(false);
             // Resume callers must be able to distinguish an HTTP failure
             // from a successfully opened stream. A bare return is
@@ -1881,9 +1975,19 @@ async function sendChat(prefill, options) {
             // Server didn't stream — fall back to plain JSON
             if (thinkingEl && typeof removeThinkingIndicator === 'function') removeThinkingIndicator(thinkingEl);
             const data = await resp.json().catch(() => null);
-            const reply = (data && (data.response || data.reply || data.message || data.content)) || '(no reply)';
+            const presentation = await _presentJsonSessionContent(data?.steps, turnSessionId, turnIdentity);
+            const reply = presentation.userMessage
+                || (data && (data.response || data.reply || data.content))
+                || _chatUserVisibleFailure(turnSessionId, 'response');
             if (typeof addChat === 'function') {
-                addChat('bot-response', reply, true, Date.now(), false, turnSessionId, turnIdentity);
+                addChat('bot-response', reply, true, Date.now(), false, turnSessionId, Object.assign(
+                    {},
+                    turnIdentity,
+                    {
+                        attachments: presentation.attachments,
+                        screenshotLayout: 'auto',
+                    },
+                ));
             }
             setStreamingState(false);
             return;
@@ -1893,8 +1997,13 @@ async function sendChat(prefill, options) {
         if (!resp.body || !resp.body.getReader) {
             if (thinkingEl && typeof removeThinkingIndicator === 'function') removeThinkingIndicator(thinkingEl);
             const txt = await resp.text();
+            console.warn('[chat] SSE response body was unavailable', {
+                sessionId: turnSessionId,
+                preview: String(txt || '').slice(0, 240),
+            });
             if (typeof addChat === 'function') {
-                addChat('bot-response', txt, true, Date.now(), false, turnSessionId, turnIdentity);
+                addChat('bot-response', _chatUserVisibleFailure(turnSessionId, 'response'), true,
+                    Date.now(), false, turnSessionId, turnIdentity);
             }
             setStreamingState(false);
             return;
@@ -2435,8 +2544,17 @@ async function sendChat(prefill, options) {
                     } else if (currentEvent === 'error' && data && data.message) {
                         turnFailed = true;
                         _setCaseTaskState(turnSessionId, 'failed', null);
-                        if (typeof addChat === 'function') {
-                            addChat('error', 'AI error: ' + data.message, true, Date.now(), false, turnSessionId);
+                        console.warn('[chat] SSE request failed', {
+                            sessionId: turnSessionId,
+                            message: data.message,
+                        });
+                        // Keep an SSE error within the owning response lifecycle.
+                        // Raw provider/tool text is intentionally not rendered in
+                        // normal chat; it remains available to developers in the
+                        // console and through the server-side log correlation.
+                        if (!responseText) {
+                            responseText = _chatUserVisibleFailure(turnSessionId, 'request');
+                            finalResponseReceived = true;
                         }
                     } else if (currentEvent === 'done') {
                         // Server says stream is complete
@@ -2489,7 +2607,7 @@ async function sendChat(prefill, options) {
         // terminal screenshot/final-response against the newly visible case.
         if (activeSessionId !== turnSessionId) {
             const detachedResponse = responseText
-                || (finalResponseReceived ? '(no reply)' : null);
+                || (finalResponseReceived ? _chatUserVisibleFailure(turnSessionId, 'response') : null);
             if (detachedResponse && typeof saveSessionMessage === 'function') {
                 saveSessionMessage('bot-response', detachedResponse, null, Date.now(), turnSessionId, _buildTurnMeta(turnIdentity));
             }
@@ -2598,9 +2716,8 @@ async function sendChat(prefill, options) {
         // Guard against duplicates: if responseEl exists, finalize it; only create
         // a new bubble if there's NO response element AND no prior addChat fallback
         // was used during streaming.
-        const finalText = finalResponseReceived
-            ? (responseText || '(no reply)')
-            : '(No validated response was returned. Please retry.)';
+        const genericFinalResponse = /^(?:Tools executed\. Check the execution trace above for results\.|\(no reply\)|\(No validated response)/i;
+        const finalText = finalResponseReceived ? (responseText || '') : '';
         let renderedFinalText = finalText;
         const presentationMessage = presentationMessages.filter(Boolean).slice(-1)[0] || '';
         const presentationTools = steps.filter(step => step && step.type === 'tool' && step.tool);
@@ -2612,7 +2729,7 @@ async function sendChat(prefill, options) {
         if (presentationMessage && (
             isPresentationOnlyTurn
             || !renderedFinalText.trim()
-            || /^(?:Tools executed\. Check the execution trace above for results\.|\(no reply\)|\(No validated response)/i.test(renderedFinalText.trim())
+            || genericFinalResponse.test(renderedFinalText.trim())
         )) {
             renderedFinalText = presentationMessage;
             finalResponseReceived = true;
@@ -2622,12 +2739,16 @@ async function sendChat(prefill, options) {
         // returned structured metrics).  Do not show the internal generic
         // acknowledgement; turn the real current-case metrics into a small,
         // language-matched answer instead.
-        if (!renderedFinalText.trim() || /^(?:Tools executed\. Check the execution trace above for results\.|\(no reply\)|\(No validated response)/i.test(renderedFinalText.trim())) {
+        if (!renderedFinalText.trim() || genericFinalResponse.test(renderedFinalText.trim())) {
             const doseFallback = await _buildDoseResultsFallback(text, turnSessionId);
             if (doseFallback) {
                 renderedFinalText = doseFallback;
                 finalResponseReceived = true;
             }
+        }
+        if (!renderedFinalText.trim() || genericFinalResponse.test(renderedFinalText.trim())) {
+            renderedFinalText = _chatUserVisibleFailure(turnSessionId, 'response');
+            finalResponseReceived = true;
         }
         // For an analysis request the acknowledgement is only an internal
         // capture phase; keep the chat clean and show the later multimodal
@@ -2693,7 +2814,7 @@ async function sendChat(prefill, options) {
             // whatever response text and thinking trace arrived so that the
             // transcript is complete when the user opens this case again.
             const detachedResponse = responseText
-                || (finalResponseReceived ? '(no reply)' : null);
+                || (finalResponseReceived ? _chatUserVisibleFailure(turnSessionId, 'response') : null);
             if (detachedResponse && typeof saveSessionMessage === 'function') {
                 saveSessionMessage('bot-response', detachedResponse, null, Date.now(), turnSessionId, _buildTurnMeta(turnIdentity));
             }
@@ -2722,7 +2843,8 @@ async function sendChat(prefill, options) {
             cancelTurnUi('Stopped');
             _setCaseTaskState(turnSessionId, 'cancelled', null);
             if (typeof addChat === 'function') {
-                addChat('system', 'Stopped.', true, Date.now(), false, turnSessionId);
+                addChat('system', _chatLanguageForSession(turnSessionId) === 'zh' ? '已停止。' : 'Stopped.',
+                    true, Date.now(), false, turnSessionId);
             }
         } else if (interruptedStream && !turnCompleted && !turnFailed) {
             // A browser stream interruption is not a task cancellation. The
@@ -2741,15 +2863,19 @@ async function sendChat(prefill, options) {
             } else {
                 turnFailed = true;
                 _setCaseTaskState(turnSessionId, 'failed', null);
+                console.warn('[chat] Stream recovery could not locate a task', e);
                 if (typeof addChat === 'function') {
-                    addChat('error', 'Send failed: ' + (e?.message || e), true, Date.now(), false, turnSessionId);
+                    addChat('error', _chatUserVisibleFailure(turnSessionId, 'request'), true,
+                        Date.now(), false, turnSessionId, turnIdentity);
                 }
             }
         } else {
             turnFailed = true;
             _setCaseTaskState(turnSessionId, 'failed', null);
+            console.warn('[chat] Send failed', e);
             if (typeof addChat === 'function') {
-                addChat('error', 'Send failed: ' + (e?.message || e), true, Date.now(), false, turnSessionId);
+                addChat('error', _chatUserVisibleFailure(turnSessionId, 'request'), true,
+                    Date.now(), false, turnSessionId, turnIdentity);
             } else {
                 console.error('sendChat failed and addChat missing:', e);
             }

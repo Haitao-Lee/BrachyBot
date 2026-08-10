@@ -5012,6 +5012,13 @@ function _restoreScreenshotPanel(panelName) {
 // and display the image in the chat. This bridges the gap between the
 // LLM's ui_screenshot tool call and the frontend's actual capture.
 async function _interceptScreenshotLegacy(target, question, galleryContext, options = {}) {
+    // Older cached callers retain this name. Delegate before doing any work so
+    // they inherit the structured executor's owner checks, state restoration,
+    // localized failure result, and same-reply attachment lifecycle. The
+    // implementation below is retained only as an inert source-compatibility
+    // reference for obsolete bundles and must never create a chat message.
+    return _interceptScreenshot(target, question, galleryContext, options);
+
     const ownerSessionId = String(options.sessionId || _activeApiSessionId());
     const isCurrentOwner = () => ownerSessionId === String(_activeApiSessionId());
     const isAllowed = () => isCurrentOwner()
@@ -5436,6 +5443,7 @@ function _sessionScreenshotArtifacts(ownerSessionId, activePlanningId, options =
         if (activePlanningId && ownerPlanningId && ownerPlanningId !== String(activePlanningId)) return null;
         return {
             id: `session-artifact-${filename.replace(/[^A-Za-z0-9_-]/g, '_')}`,
+            objectId: `${isReport ? 'figure' : 'screenshot'}:${filename}`,
             filename,
             title: String(item?.label || item?.name || filename),
             planningId: ownerPlanningId,
@@ -5460,7 +5468,15 @@ async function _appendPersistedSessionScreenshots(command, galleryContext, owner
         || ''
     );
     const language = _screenshotLanguage(ownerSessionId, context.responseLanguage);
-    const artifacts = _sessionScreenshotArtifacts(ownerSessionId, activePlanningId);
+    const requestedObjectIds = new Set(
+        (Array.isArray(command?.object_ids) ? command.object_ids : [])
+            .map(value => String(value || '').trim().toLowerCase())
+            .filter(Boolean),
+    );
+    const artifacts = _sessionScreenshotArtifacts(ownerSessionId, activePlanningId).filter(artifact => (
+        !requestedObjectIds.size
+        || requestedObjectIds.has(String(artifact.objectId || '').toLowerCase())
+    ));
     const attachments = [];
     artifacts.forEach((artifact, index) => {
         const url = _safeSessionScreenshotUrl(artifact.url, ownerSessionId);
@@ -5553,43 +5569,215 @@ function _sessionContentTreeSnapshot() {
     };
 }
 
-function _sessionContentObjectSummary(objectIds, tree, language) {
-    const requested = Array.isArray(objectIds)
+function _sessionContentObjectIndex() {
+    // This is a read-only index over the same state that renders the Data
+    // Tree.  Do not substitute names for identifiers: an object can be
+    // renamed by a clinician, while its local node ID and persistent object
+    // ID remain the identity boundary shared by Viewer, Session, and export.
+    const tree = typeof dataTreeState !== 'undefined' ? dataTreeState : null;
+    if (!tree) return [];
+    const planning = tree.planning || {};
+    const viewerState = (typeof state !== 'undefined' && state) || window.state || {};
+    const records = [];
+    const seen = new Set();
+    const add = (node, fallback = {}) => {
+        if (!node || typeof node !== 'object') return;
+        const localId = String(
+            node.id || node.nodeId || node.node_id || fallback.localId || '',
+        ).trim();
+        const objectId = String(
+            node.objectId || node.object_id || fallback.objectId || localId,
+        ).trim();
+        if (!localId && !objectId) return;
+        const key = `${localId}|${objectId}`;
+        if (seen.has(key)) return;
+        seen.add(key);
+        records.push({
+            localId: localId || objectId,
+            nodeId: String(node.nodeId || node.node_id || localId || objectId),
+            objectId: objectId || localId,
+            label: String(node.name || node.label || node.displayName || fallback.label || objectId || localId),
+            type: String(node.dataType || node.data_type || node.type || node.source || fallback.type || 'data'),
+            visible: node.visible !== false,
+            visible2D: node.visible2D !== false,
+            visible3D: node.visible3D !== false,
+        });
+    };
+
+    add(tree.ct, { localId: 'ct', objectId: 'image:ct', label: 'CT', type: 'image' });
+    const ctvLabels = Object.values(tree.ctvLabels || {});
+    if (ctvLabels.length) {
+        ctvLabels.forEach((node, index) => add(node, {
+            localId: `ctv_${index + 1}`,
+            objectId: `structure:ctv:${index + 1}`,
+            label: `CTV ${index + 1}`,
+            type: 'ctv_label',
+        }));
+    } else {
+        add(tree.ctv, { localId: 'ctv', objectId: 'structure:ctv:1', label: 'CTV', type: 'ctv' });
+    }
+    add(tree.skin, {
+        localId: 'skin_surface', objectId: 'skin_surface:guide',
+        label: 'Guide skin surface', type: 'skin_surface',
+    });
+    (tree.organs || []).forEach((node, index) => add(node, {
+        localId: `organ_${index + 1}`,
+        objectId: `structure:oar:${index + 1}`,
+        label: `OAR ${index + 1}`,
+        type: 'oar',
+    }));
+    (planning.trajectories || []).forEach((node, index) => add(node, {
+        localId: `trajectory_${index + 1}`,
+        objectId: `trajectory:${node?.id || index + 1}`,
+        label: `Trajectory ${index + 1}`,
+        type: 'trajectory',
+    }));
+    (planning.needles || []).forEach((node, index) => add(node, {
+        localId: `needle_${index + 1}`,
+        objectId: `needle:${node?.id || index + 1}`,
+        label: `Needle ${index + 1}`,
+        type: 'needle',
+    }));
+    (planning.seeds || []).forEach((node, index) => add(node, {
+        localId: `seed_${index + 1}`,
+        objectId: `seed:${node?.id || index + 1}`,
+        label: `Seed ${index + 1}`,
+        type: 'seed',
+    }));
+    if (planning.doseOverlay || tree.dose) {
+        add(planning.doseOverlay || tree.dose, {
+            localId: planning.doseOverlay ? 'dose_overlay' : 'dose',
+            objectId: 'dose:volume', label: 'Dose volume', type: 'dose',
+        });
+    }
+    (planning.doseLevels || []).forEach((node, index) => {
+        const threshold = Number(node?.thresholdGy ?? node?.threshold);
+        const token = Number.isFinite(threshold) ? threshold : index + 1;
+        add(node, {
+            localId: `dose_iso_${token}`,
+            objectId: `dose_iso:${token}`,
+            label: `${token} Gy iso-surface`, type: 'dose_isosurface',
+        });
+    });
+    add(planning.dvh, { localId: 'dvh', objectId: 'dvh:data', label: 'DVH', type: 'dvh_data' });
+    (planning.meshes || []).forEach((node, index) => {
+        const isGuide = String(node?.source || '').toLowerCase() === 'surgical_guide';
+        add(node, {
+            localId: `planning_mesh_${index + 1}`,
+            objectId: isGuide ? 'surgical_guide:active' : `planning_mesh:${node?.id || index + 1}`,
+            label: isGuide ? 'Surgical guide' : `Planning mesh ${index + 1}`,
+            type: isGuide ? 'surgical_guide' : 'planning_mesh',
+        });
+    });
+    (tree.annotations || []).forEach((node, index) => add(node, {
+        localId: `annotation_${index + 1}`,
+        objectId: `annotation:${node?.id || index + 1}`,
+        label: `Annotation ${index + 1}`, type: 'annotation',
+    }));
+    (tree.exportArtifacts || []).forEach((node, index) => add(node, {
+        localId: `artifact_${index + 1}`,
+        objectId: `artifact:${index + 1}`,
+        label: `Session artifact ${index + 1}`, type: 'artifact',
+    }));
+    Object.entries(viewerState.maskLabels || {}).forEach(([id, node]) => add(node, {
+        localId: String(id), objectId: `mask:${id}`,
+        label: String(node?.label || node?.name || id), type: 'mask',
+    }));
+    return records;
+}
+
+function _sessionContentSelectedLocalIds() {
+    try {
+        return typeof getSelectedOrganIds === 'function'
+            ? getSelectedOrganIds().map(value => String(value || '')).filter(Boolean)
+            : [];
+    } catch (_) {
+        return [];
+    }
+}
+
+function _sessionContentObjectMatches(objectIds, options = {}) {
+    const index = _sessionContentObjectIndex();
+    let requested = Array.isArray(objectIds)
         ? objectIds.map(value => String(value || '').trim()).filter(Boolean)
         : [];
+    if (!requested.length && options.useSelection !== false) {
+        requested = _sessionContentSelectedLocalIds();
+    }
+    const requestedKeys = new Set(requested.map(value => value.toLowerCase()));
+    const matches = index.filter(item => requestedKeys.has(String(item.localId).toLowerCase())
+        || requestedKeys.has(String(item.nodeId).toLowerCase())
+        || requestedKeys.has(String(item.objectId).toLowerCase()));
+    return { requested, matches };
+}
+
+function _sessionContentVisibilityText(item, language) {
+    if (item.type === 'report' || item.type === 'report_data' || item.type === 'report_figure'
+        || item.type === 'screenshot' || item.type === 'chat_messages'
+        || item.type === 'execution_trace' || item.type === 'tool_history') {
+        return '';
+    }
+    const zh = language === 'zh';
+    const visible2D = item.visible && item.visible2D;
+    const visible3D = item.visible && item.visible3D;
+    return zh
+        ? `，2D${visible2D ? '\u5df2\u663e\u793a' : '\u5df2\u9690\u85cf'}，3D${visible3D ? '\u5df2\u663e\u793a' : '\u5df2\u9690\u85cf'}`
+        : `, 2D ${visible2D ? 'visible' : 'hidden'}, 3D ${visible3D ? 'visible' : 'hidden'}`;
+}
+
+async function _focusSessionContentObjects(objectIds) {
+    const { matches } = _sessionContentObjectMatches(objectIds);
+    if (!matches.length) return [];
+    // Selection is a view-only operation.  It never changes a node's
+    // visibility, geometry, planning data, or Session persistence state.
+    if (typeof handleTreeItemClick === 'function') {
+        matches.slice(0, 16).forEach((item, index) => {
+            handleTreeItemClick(item.localId, {
+                shiftKey: false,
+                ctrlKey: index > 0,
+                metaKey: false,
+            });
+        });
+    }
+    await _waitScreenshotFrames(1);
+    const rows = Array.from(document.querySelectorAll('#dataTreeBody .tree-item'));
+    const matchedNodeIds = new Set(matches.map(item => String(item.nodeId)));
+    const matchedLocalIds = new Set(matches.map(item => String(item.localId)));
+    const first = rows.find(row => matchedNodeIds.has(String(row.dataset.nodeId || ''))
+        || matchedLocalIds.has(String(row.dataset.item || '')));
+    if (first?.scrollIntoView) {
+        first.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        first.classList.add('session-content-focus');
+        window.setTimeout(() => first.classList.remove('session-content-focus'), 1600);
+    }
+    return matches;
+}
+
+function _sessionContentObjectSummary(objectIds, tree, language) {
+    const { requested, matches } = _sessionContentObjectMatches(objectIds);
     const zh = language === 'zh';
     if (!requested.length) {
         return zh
-            ? '\u672a\u6307\u5b9a\u53ef\u8bfb\u53d6\u7684 Data Tree \u5bf9\u8c61\u3002'
-            : 'No readable Data Tree object was specified.';
+            ? '\u672a\u6307\u5b9a\u53ef\u8bfb\u53d6\u7684 Data Tree \u5bf9\u8c61\uff0c\u4e5f\u6ca1\u6709\u5f53\u524d\u9009\u4e2d\u8282\u70b9\u3002'
+            : 'No readable Data Tree object was specified or currently selected.';
     }
-    const items = [];
-    const planning = (typeof dataTreeState !== 'undefined' && dataTreeState?.planning) || {};
-    const known = [
-        ...(Array.isArray(dataTreeState?.organs) ? dataTreeState.organs : []),
-        ...Object.values(dataTreeState?.ctvLabels || {}),
-        ...(Array.isArray(planning.seeds) ? planning.seeds : []),
-        ...(Array.isArray(planning.needles) ? planning.needles : []),
-        ...(Array.isArray(planning.meshes) ? planning.meshes : []),
-        ...(Array.isArray(dataTreeState?.exportArtifacts) ? dataTreeState.exportArtifacts : []),
-    ];
-    requested.slice(0, 16).forEach(objectId => {
-        const match = known.find(item => String(
-            item?.id || item?.objectId || item?.object_id || item?.nodeId || item?.node_id || ''
-        ) === objectId);
-        if (!match) return;
-        const name = String(match.name || match.label || match.displayName || objectId);
-        const type = String(match.type || match.dataType || match.source || 'data');
-        items.push(zh ? `${name}\uff08${type}\uff09` : `${name} (${type})`);
-    });
-    if (!items.length) {
+    if (!matches.length) {
         return zh
             ? '\u5728\u5f53\u524d Session \u4e2d\u6ca1\u6709\u627e\u5230\u8bf7\u6c42\u7684\u6570\u636e\u5bf9\u8c61\u3002'
             : 'The requested data object was not found in the current Session.';
     }
+    const items = matches.slice(0, 16).map(item => {
+        const type = String(item.type || 'data');
+        return zh
+            ? `${item.label}\uff08${type}${_sessionContentVisibilityText(item, language)}\uff09`
+            : `${item.label} (${type}${_sessionContentVisibilityText(item, language)})`;
+    });
+    const more = matches.length > items.length
+        ? (zh ? `\u8fd8\u6709 ${matches.length - items.length} \u9879` : `${matches.length - items.length} more item(s)`)
+        : '';
     return zh
-        ? `\u5df2\u8bfb\u53d6 Data Tree \u5bf9\u8c61\uff1a${items.join('\u3001')}\u3002`
-        : `Read Data Tree object(s): ${items.join(', ')}.`;
+        ? `\u5df2\u8bfb\u53d6 Data Tree \u5bf9\u8c61：${items.join('\u3001')}${more ? `\uff1b${more}` : ''}\u3002`
+        : `Read Data Tree object(s): ${items.join(', ')}${more ? `; ${more}` : ''}.`;
 }
 
 function _sessionContentSummary(target, planning, tree, language, command = {}) {
@@ -5746,7 +5934,8 @@ window.presentSessionContent = async function presentSessionContent(command = {}
             await hydrateDataTreeArtifactCatalog();
         }
         if (!ownerStillActive()) return { success: false, stale: true, error: 'case_changed' };
-        if (String(command.presentation || 'auto').toLowerCase() === 'open') {
+        const presentation = String(command.presentation || 'auto').toLowerCase();
+        if (presentation === 'open') {
             _openSessionContentPanel(target);
         }
         const tree = _sessionContentTreeSnapshot();
@@ -5771,10 +5960,31 @@ window.presentSessionContent = async function presentSessionContent(command = {}
             }), context, ownerSessionId);
         } else if (target === 'session_screenshots') {
             attachments = await _appendPersistedSessionScreenshots(command, context, ownerSessionId);
+        } else if (target === 'artifact') {
+            // A selected screenshot/report figure is still a durable Session
+            // artifact, so embed the real file in the reply. Other Data Tree
+            // objects remain represented by their own Viewer/Tree nodes; do
+            // not manufacture an image where the Session has none.
+            const selected = _sessionContentObjectMatches(command.object_ids).matches;
+            const selectedScreenshotIds = selected
+                .filter(item => ['screenshot', 'report_figure'].includes(String(item.type || '').toLowerCase()))
+                .map(item => item.objectId);
+            if (selectedScreenshotIds.length) {
+                attachments = await _appendPersistedSessionScreenshots(Object.assign({}, command, {
+                    object_ids: selectedScreenshotIds,
+                }), context, ownerSessionId);
+            }
         }
         if (!ownerStillActive()) return { success: false, stale: true, error: 'case_changed' };
 
-        const summary = _sessionContentSummary(target, planning, tree, language, command);
+        let focusedObjects = [];
+        if (target === 'artifact' && presentation === 'open') {
+            focusedObjects = await _focusSessionContentObjects(command.object_ids);
+            if (!ownerStillActive()) return { success: false, stale: true, error: 'case_changed' };
+        }
+        const summary = _sessionContentSummary(target, planning, tree, language, Object.assign({}, command, {
+            object_ids: command.object_ids?.length ? command.object_ids : focusedObjects.map(item => item.objectId),
+        }));
         if ((target === 'report_figures' || target === 'session_screenshots') && !attachments.length) {
             return {
                 success: false,
