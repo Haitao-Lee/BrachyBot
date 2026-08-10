@@ -813,10 +813,14 @@
             figure.subfigure = definition.subfigure;
             figure.sortOrder = definition.sortOrder;
             figure.captureRole = definition.captureRole;
-            if (!figure.title || isGenericReportFigureTitle(figure.title)) {
+            // Catalog-only recovery is evidence recovery rather than user-authored
+            // report content. Give it the canonical title and caption so a legacy
+            // random screenshot name or historical encoding cannot create a
+            // misleading second "Report Figure N" entry after a Session restore.
+            if (figure._artifactFallback || !figure.title || isGenericReportFigureTitle(figure.title)) {
                 figure.title = definition.title;
             }
-            if (!figure.caption) figure.caption = definition.caption;
+            if (figure._artifactFallback || !figure.caption) figure.caption = definition.caption;
             return { figure, index, sortOrder: definition.sortOrder };
         }).sort((left, right) => (
             Number(left.figure.figureNumber || 99) - Number(right.figure.figureNumber || 99)

@@ -104,6 +104,8 @@ def test_report_figure_identity_survives_server_artifact_fallback():
     assert "report_fig2_dose_surface" in workspace
     assert "identityMatch" in workspace
     assert "...figureMetadata" in workspace
+    assert "if (figure._artifactFallback || !figure.title || isGenericReportFigureTitle(figure.title))" in workspace
+    assert "if (figure._artifactFallback || !figure.caption) figure.caption = definition.caption;" in workspace
     assert "const requiredReportAxes = new Set" in planning
     assert "hasCompleteReportFigureSet" in planning
 
