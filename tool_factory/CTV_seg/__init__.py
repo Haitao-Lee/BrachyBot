@@ -33,6 +33,7 @@ from .covid_voco import VoCoCOVIDSegTool
 from .aorta_voco import VoCoAortaSegTool
 from .brats21_voco import VoCoBRATS21SegTool
 from .pancreatic_tumor_nnunet import NNUNetPancreaticTumorTool
+from .totalsegmentator_liver_tumor import TotalSegmentatorLiverTumorTool
 from .biomedparse_v2 import (
     BiomedParseV2CTVTool,
     BiomedParseV2GenericSegmentationTool,
@@ -47,41 +48,47 @@ from .model_catalog import CTVModelCatalogTool, catalog_with_local_status, filte
 TOOL_REGISTRY = {
     # CTV models. The pancreatic production path always uses nnU-Net.
     "pancreatic_tumor": NNUNetPancreaticTumorTool,
-    # Non-pancreatic CTV segmentation uses Microsoft BiomedParse v2 (the
-    # installed research adapter). The legacy VoCo SwinUNETR checkpoints were
-    # deprecated because their liver/kidney/lung/colon lesion segmentation was
-    # clinically unreliable; all former VoCo aliases now resolve to BiomedParse.
-    "liver_tumor": BiomedParseV2CTVTool,
+    # Liver CTV uses the TotalSegmentator liver_vessels task. The adapter
+    # exposes only its liver_tumor output and discards the other task labels.
+    "liver_tumor": TotalSegmentatorLiverTumorTool,
+    "totalsegmentator_liver_tumor": TotalSegmentatorLiverTumorTool,
+    # Other non-pancreatic CTV candidates remain on the BiomedParse v2
+    # research adapter.
     "kidney_tumor": BiomedParseV2CTVTool,
     "lung_tumor": BiomedParseV2CTVTool,
     "colon_tumor": BiomedParseV2CTVTool,
     # Whole-gland prostate can be a prostate-brachytherapy target in some
     # workflows, but this is not a lesion segmentation model.
     "prostate_tumor": ProstateTumorSegmentationTool,
-    # VoCo pre-trained aliases are retained for call compatibility but now
-    # resolve to BiomedParse; the pancreatic one still goes to nnU-Net.
+    # VoCo aliases remain accepted for old calls. Liver follows the current
+    # TotalSegmentator route; other sites retain their BiomedParse route.
     "voco_pancreatic": NNUNetPancreaticTumorTool,
     "nnunet_pancreatic": NNUNetPancreaticTumorTool,
-    "voco_liver": BiomedParseV2CTVTool,
+    "voco_liver": TotalSegmentatorLiverTumorTool,
     "voco_colon": BiomedParseV2CTVTool,
     "voco_kidney": BiomedParseV2CTVTool,
     "voco_lung": BiomedParseV2CTVTool,
-    # Microsoft BiomedParse v2 research adapter (all supported tumor prompts).
-    **{key: BiomedParseV2CTVTool for key in BIOMEDPARSE_SITE_SPECS},
+    # Microsoft BiomedParse v2 research adapter. The liver prompt remains
+    # available to generic open segmentation, but not to CTV dispatch.
+    **{
+        key: BiomedParseV2CTVTool
+        for key in BIOMEDPARSE_SITE_SPECS
+        if key != "biomedparse_liver_tumor"
+    },
+    # Defensive compatibility alias for old callers that bypass normalization.
+    "biomedparse_liver_tumor": TotalSegmentatorLiverTumorTool,
     # Anatomical, embolism, infection, and MRI-only research models remain
     # importable below but are intentionally excluded from automatic CTV
     # routing. Treating their masks as a CT tumor target would be unsafe.
 }
 
 
-# Legacy VoCo site aliases now resolve to the corresponding BiomedParse prompt.
-# These are the only non-pancreatic CTV sites supported for automatic routing.
+# Non-liver legacy site aliases resolve to their BiomedParse prompts. Liver is
+# intentionally absent because its CTV route is TotalSegmentator.
 BIOMEDPARSE_FALLBACKS = {
-    "liver_tumor": "biomedparse_liver_tumor",
     "kidney_tumor": "biomedparse_kidney_lesion",
     "lung_tumor": "biomedparse_lung_lesion",
     "colon_tumor": "biomedparse_colon_primary",
-    "voco_liver": "biomedparse_liver_tumor",
     "voco_kidney": "biomedparse_kidney_lesion",
     "voco_lung": "biomedparse_lung_lesion",
     "voco_colon": "biomedparse_colon_primary",
@@ -111,20 +118,24 @@ def normalize_tumor_type(value) -> str:
         "\u80f0\u817a": "nnunet_pancreatic",
         "\u80f0\u817a\u80bf\u7624": "nnunet_pancreatic",
         "\u80f0\u817a\u764c": "nnunet_pancreatic",
-        # BiomedParse v2 CTV prompts. Keep catalog ids and historical VoCo
-        # aliases readable so restored workspaces remain executable.
-        "liver": "biomedparse_liver_tumor",
-        "liver_tumor": "biomedparse_liver_tumor",
-        "liver_cancer": "biomedparse_liver_tumor",
-        "hepatocellular": "biomedparse_liver_tumor",
-        "hcc": "biomedparse_liver_tumor",
-        "voco_liver": "biomedparse_liver_tumor",
-        "biomedparse_liver_tumor": "biomedparse_liver_tumor",
-        "biomedparse_v2_liver_tumor": "biomedparse_liver_tumor",
-        "\u809d": "biomedparse_liver_tumor",
-        "\u809d\u810f": "biomedparse_liver_tumor",
-        "\u809d\u810f\u80bf\u7624": "biomedparse_liver_tumor",
-        "\u809d\u764c": "biomedparse_liver_tumor",
+        # TotalSegmentator liver-vessels task. These aliases all mean the
+        # dedicated liver tumor CTV route, not generic BiomedParse.
+        "liver": "totalsegmentator_liver_tumor",
+        "liver_tumor": "totalsegmentator_liver_tumor",
+        "liver_cancer": "totalsegmentator_liver_tumor",
+        "hepatocellular": "totalsegmentator_liver_tumor",
+        "hcc": "totalsegmentator_liver_tumor",
+        "voco_liver": "totalsegmentator_liver_tumor",
+        "totalsegmentator_liver_tumor": "totalsegmentator_liver_tumor",
+        "total_segmentator_liver_tumor": "totalsegmentator_liver_tumor",
+        # Historical CTV ids are redirected so old sessions cannot silently
+        # switch back to BiomedParse after restart.
+        "biomedparse_liver_tumor": "totalsegmentator_liver_tumor",
+        "biomedparse_v2_liver_tumor": "totalsegmentator_liver_tumor",
+        "\u809d": "totalsegmentator_liver_tumor",
+        "\u809d\u810f": "totalsegmentator_liver_tumor",
+        "\u809d\u810f\u80bf\u7624": "totalsegmentator_liver_tumor",
+        "\u809d\u764c": "totalsegmentator_liver_tumor",
         "kidney": "biomedparse_kidney_lesion",
         "kidney_tumor": "biomedparse_kidney_lesion",
         "kidney_lesion": "biomedparse_kidney_lesion",
@@ -206,10 +217,20 @@ def resolve_ctv_tumor_type(params) -> str:
 
 
 def get_tool(tool_name: str):
-    """Get a CTV segmentation tool by name."""
-    tool_class = TOOL_REGISTRY.get(tool_name)
+    """Get a CTV segmentation tool, normalizing legacy aliases first.
+
+    CTV calls can originate from a restored Session, the browser selector, a
+    planning shortcut, or the LLM.  Resolving aliases at this boundary keeps
+    those entry points on the same executor instead of making old identifiers
+    fail before the real tool is reached.
+    """
+    requested_name = str(tool_name or "").strip()
+    canonical_name = normalize_tumor_type(requested_name)
+    tool_class = TOOL_REGISTRY.get(canonical_name)
     if tool_class is None:
-        raise ValueError(f"Unknown tool: {tool_name}. Available: {list(TOOL_REGISTRY.keys())}")
+        raise ValueError(
+            f"Unknown tool: {requested_name}. Available: {list(TOOL_REGISTRY.keys())}"
+        )
     return tool_class()
 
 
@@ -218,15 +239,23 @@ def list_tools():
     return list(TOOL_REGISTRY.keys())
 
 
-# The LLM-facing tumor_type options. The canonical non-pancreatic sites are the
-# biomedparse_* prompts plus the friendly *_tumor aliases; the legacy voco_*
-# aliases are kept in TOOL_REGISTRY only for backward call compatibility and are
-# deliberately hidden from the agent so it cannot pick a deprecated VoCo name.
+# The LLM-facing tumor_type options. Liver is advertised as the dedicated
+# TotalSegmentator route; other supported non-pancreatic sites remain the
+# BiomedParse candidate prompts. Legacy aliases stay server-side only.
 # Pancreatic production routing stays on nnU-Net.
 _PREFERRED_TUMOR_TYPES = (
     ["pancreatic_tumor", "nnunet_pancreatic"]
-    + list(BIOMEDPARSE_SITE_SPECS)
-    + ["liver_tumor", "kidney_tumor", "lung_tumor", "colon_tumor", "prostate_tumor"]
+    + [
+        key for key in BIOMEDPARSE_SITE_SPECS
+        if key != "biomedparse_liver_tumor"
+    ]
+    + [
+        "totalsegmentator_liver_tumor",
+        "kidney_tumor",
+        "lung_tumor",
+        "colon_tumor",
+        "prostate_tumor",
+    ]
 )
 
 
@@ -249,8 +278,9 @@ class CTVSegmentationTool(BaseTool):
     def description(self) -> str:
         return (
             "Segment Clinical Target Volume (CTV/tumor) from CT images. "
-            "Supports verified local pancreatic nnU-Net and optional external/experimental models "
-            "listed by ctv_model_catalog. "
+            "Supports verified local pancreatic nnU-Net, the TotalSegmentator "
+            "liver_vessels/liver_tumor route, and optional models listed by "
+            "ctv_model_catalog. "
             "Input: CT image (SimpleITK) or path, required tumor_type for automatic "
             "segmentation, or label_path for an existing/manual CTV mask. "
             "Output: CTV binary mask and volume metrics."
@@ -273,8 +303,10 @@ class CTVSegmentationTool(BaseTool):
                     "description": (
                         "Tumor type for specialized model. Canonical options: "
                         f"{self._tumor_types}. Friendly anatomy names, legacy "
-                        "VoCo aliases, and BiomedParse v2 catalog ids are normalized "
-                        "by the server. Required unless label_path is provided."
+                        "VoCo aliases, and historical BiomedParse liver ids are "
+                        "normalized by the server. Liver CTV always uses "
+                        "TotalSegmentator and exposes only liver_tumor. Required "
+                        "unless label_path is provided."
                     ),
                 },
                 # Backward-compatible alias for older model prompts. The
@@ -286,7 +318,7 @@ class CTVSegmentationTool(BaseTool):
                 },
                 "model": {
                     "type": "string",
-                    "description": "Compatibility alias for a catalog model id, such as biomedparse_liver_tumor.",
+                    "description": "Compatibility alias for a catalog model id, such as totalsegmentator_liver_tumor.",
                 },
                 "site": {
                     "type": "string",
@@ -580,6 +612,12 @@ class CTVSegmentationTool(BaseTool):
             "model_url",
             "checkpoint",
             "text_prompt",
+            "total_segmentator_task",
+            "total_segmentator_label",
+            "segmentation_task",
+            "segmentation_label",
+            "source_labels_exposed",
+            "target_semantics",
             "object_existence_confidence",
             "requested_tumor_type",
             "fallback_from_unavailable_model",

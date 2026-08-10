@@ -19,44 +19,53 @@ def test_biomedparse_catalog_is_explicit_and_excludes_pancreatic_production():
     tumor_schema = CTVSegmentationTool().input_schema["properties"]["tumor_type"]
     # Site aliases are normalized server-side. An enum here would reject a
     # valid restored ``voco_liver`` or a user-facing ``liver`` before that
-    # normalization can route it to BiomedParse v2.
+    # normalization can route it to the current CTV executor.
     assert "enum" not in tumor_schema
-    assert all(site in tumor_schema["description"] for site in SITE_SPECS)
+    assert all(
+        site in tumor_schema["description"]
+        for site in SITE_SPECS
+        if site != "biomedparse_liver_tumor"
+    )
+    assert "totalsegmentator_liver_tumor" in tumor_schema["description"]
 
 
 def test_deprecated_voco_aliases_are_hidden_from_the_agent():
-    """The LLM-facing enum and catalog must advertise the biomedparse_*
-    candidates, not the deprecated VoCo SwinUNETR aliases. The aliases remain
-    accepted for backward compatibility (they route to BiomedParse) but must
-    never be presented to the agent as a model choice."""
+    """The LLM-facing contract advertises the dedicated liver route.
+
+    Historical VoCo and BiomedParse liver IDs remain accepted only as server
+    compatibility aliases and must never be presented as a second CTV model.
+    """
     from tool_factory.CTV_seg import CTVSegmentationTool, get_tool
-    from tool_factory.CTV_seg.biomedparse_v2 import BiomedParseV2CTVTool
+    from tool_factory.CTV_seg.totalsegmentator_liver_tumor import TotalSegmentatorLiverTumorTool
     from tool_factory.CTV_seg.model_catalog import filter_catalog
 
     description = CTVSegmentationTool().input_schema["properties"]["tumor_type"]["description"]
-    assert "biomedparse_liver_tumor" in description
-    assert "liver_tumor" in description
+    assert "totalsegmentator_liver_tumor" in description
+    assert "biomedparse_liver_tumor" not in description
     # No deprecated VoCo alias may be advertised to the agent. The aliases
     # remain accepted only by the server-side compatibility normalizer.
     assert "voco_liver" not in description
     assert not any(str(m.get("tumor_type", "")).startswith("voco_") for m in filter_catalog())
-    # The aliases must still resolve so existing callers keep working.
-    assert isinstance(get_tool("voco_liver"), BiomedParseV2CTVTool)
+    # The alias must still resolve so existing callers keep working, but it
+    # must resolve to TotalSegmentator rather than BiomedParse.
+    assert isinstance(get_tool("voco_liver"), TotalSegmentatorLiverTumorTool)
 
 
-def test_legacy_voco_aliases_route_to_biomedparse():
-    """All non-pancreatic CTV aliases (liver/kidney/lung/colon and their VoCo
-    forms) must resolve to BiomedParse, never the deprecated VoCo SwinUNETR.
-    The pancreatic production alias stays on nnU-Net."""
+def test_legacy_voco_aliases_route_to_current_ctv_executors():
+    """Liver uses TotalSegmentator; other research candidates use BiomedParse."""
     from tool_factory.CTV_seg import BIOMEDPARSE_FALLBACKS, TOOL_REGISTRY, get_tool
     from tool_factory.CTV_seg.biomedparse_v2 import BiomedParseV2CTVTool
     from tool_factory.CTV_seg.pancreatic_tumor_nnunet import NNUNetPancreaticTumorTool
+    from tool_factory.CTV_seg.totalsegmentator_liver_tumor import TotalSegmentatorLiverTumorTool
 
-    for alias in ("liver_tumor", "kidney_tumor", "lung_tumor", "colon_tumor",
-                  "voco_liver", "voco_kidney", "voco_lung", "voco_colon"):
+    for alias in ("kidney_tumor", "lung_tumor", "colon_tumor",
+                  "voco_kidney", "voco_lung", "voco_colon"):
         assert isinstance(get_tool(alias), BiomedParseV2CTVTool), alias
         assert alias in BIOMEDPARSE_FALLBACKS, alias
         assert BIOMEDPARSE_FALLBACKS[alias].startswith("biomedparse_"), alias
+    for alias in ("liver_tumor", "voco_liver"):
+        assert isinstance(get_tool(alias), TotalSegmentatorLiverTumorTool), alias
+        assert alias not in BIOMEDPARSE_FALLBACKS, alias
     # Pancreatic stays on nnU-Net for all aliases.
     assert isinstance(get_tool("nnunet_pancreatic"), NNUNetPancreaticTumorTool)
     assert isinstance(get_tool("voco_pancreatic"), NNUNetPancreaticTumorTool)
@@ -67,11 +76,11 @@ def test_tumor_type_normalizer_unifies_catalog_display_and_legacy_aliases():
     from tool_factory.CTV_seg import normalize_tumor_type
 
     aliases = {
-        "liver": "biomedparse_liver_tumor",
-        "liver tumor": "biomedparse_liver_tumor",
-        "biomedparse_v2_liver_tumor": "biomedparse_liver_tumor",
-        "voco_liver": "biomedparse_liver_tumor",
-        "\u809d\u810f\u80bf\u7624": "biomedparse_liver_tumor",
+        "liver": "totalsegmentator_liver_tumor",
+        "liver tumor": "totalsegmentator_liver_tumor",
+        "biomedparse_v2_liver_tumor": "totalsegmentator_liver_tumor",
+        "voco_liver": "totalsegmentator_liver_tumor",
+        "\u809d\u810f\u80bf\u7624": "totalsegmentator_liver_tumor",
         "kidney": "biomedparse_kidney_lesion",
         "lung": "biomedparse_lung_lesion",
         "colon": "biomedparse_colon_primary",
@@ -320,27 +329,18 @@ def test_biomedparse_ct_window_maps_to_official_byte_range():
     assert np.allclose(result, [0.0, 127.5, 255.0])
 
 
-def test_unavailable_non_pancreatic_site_reports_research_fallback_state(
-    monkeypatch,
-    tmp_path,
-):
-    import tool_factory.CTV_seg.biomedparse_v2 as adapter
+def test_unavailable_liver_ctv_fails_closed_without_biomedparse_fallback(monkeypatch):
     from tool_factory.CTV_seg import CTVSegmentationTool
 
-    monkeypatch.delenv("BIOMEDPARSE_ROOT", raising=False)
-    monkeypatch.delenv("BIOMEDPARSE_V2_ROOT", raising=False)
-    monkeypatch.delenv("BIOMEDPARSE_V2_CHECKPOINT", raising=False)
-    monkeypatch.setattr(adapter, "_repo_root", lambda: None)
     monkeypatch.setattr(
-        adapter,
-        "_checkpoint_path",
-        lambda _root: tmp_path / "missing-biomedparse-v2.ckpt",
+        "tool_factory.CTV_seg.totalsegmentator_liver_tumor.find_totalsegmentator_executable",
+        lambda: None,
     )
     image = sitk.GetImageFromArray(np.zeros((4, 4, 4), dtype=np.int16))
     result = CTVSegmentationTool().execute(image=image, tumor_type="liver")
     assert result.success is False
-    assert "research_only" not in result.metadata
-    assert any("BIOMEDPARSE_ROOT" in item for item in result.metadata["missing"])
+    assert "TotalSegmentator" in (result.error or "")
+    assert "BiomedParse" not in (result.error or "")
 
 
 def test_mocked_biomedparse_runtime_preserves_lpi_geometry_and_records_chain(
@@ -415,6 +415,7 @@ def test_mocked_biomedparse_runtime_preserves_lpi_geometry_and_records_chain(
 
 def test_model_catalog_exposes_four_state_capability(monkeypatch, tmp_path):
     import tool_factory.CTV_seg.biomedparse_v2 as adapter
+    import tool_factory.CTV_seg.model_catalog as catalog
     from tool_factory.CTV_seg.model_catalog import catalog_with_local_status
 
     monkeypatch.setattr(adapter, "_availability", lambda: {"available": True, "missing": []})
@@ -430,18 +431,25 @@ def test_model_catalog_exposes_four_state_capability(monkeypatch, tmp_path):
             }
         },
     )
+    monkeypatch.setattr(
+        catalog,
+        "find_totalsegmentator_executable",
+        lambda: "/usr/bin/TotalSegmentator",
+    )
     items = {
         item["tumor_type"]: item
         for item in catalog_with_local_status(str(tmp_path))
         if item.get("tumor_type")
     }
-    liver = items["biomedparse_liver_tumor"]
+    liver = items["totalsegmentator_liver_tumor"]
     assert liver["capability_state"] == "experimental"
-    assert liver["capability_color"] == "orange"
+    assert liver["capability_color"] == "green"
     assert liver["callable"] is True
-    assert liver["technical_call_chain_passed"] is True
-    assert liver["space_alignment_passed"] is True
+    assert liver["total_segmentator_task"] == "liver_vessels"
+    assert liver["total_segmentator_label"] == "liver_tumor"
+    assert liver["target_semantics"] == "liver_tumor_ctv_only"
     assert liver["clinical_case_validation"] is False
+    assert items["biomedparse_liver_tumor"]["callable"] is False
     assert items["nnunet_pancreatic"]["capability_state"] == "unavailable"
 
 

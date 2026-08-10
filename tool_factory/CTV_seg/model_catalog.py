@@ -14,6 +14,8 @@ from typing import Dict, Iterable, List, Optional
 
 from tool_factory import BaseTool, ToolResult
 
+from .totalsegmentator_runtime import find_totalsegmentator_executable
+
 
 DIFFTUMOR_BASE = "https://huggingface.co/MrGiovanni/DiffTumor/resolve/main/SegmentationModel"
 
@@ -52,6 +54,26 @@ CTV_MODEL_CATALOG: List[Dict[str, object]] = [
         "sources": [
             "https://github.com/Luffy03/Large-Scale-Medical/tree/main/Downstream/monai/PANORAMA",
             "https://github.com/DIAGNijmegen/panorama_labels#label-legend",
+        ],
+    },
+    {
+        "id": "totalsegmentator_liver_tumor",
+        "site": "liver",
+        "modality": "CT",
+        "target": "liver tumor CTV only",
+        "status": "integrated_external_runtime",
+        "tool": "ctv_segmentation",
+        "tumor_type": "totalsegmentator_liver_tumor",
+        "ui_visible": True,
+        "runtime_executable": "TotalSegmentator",
+        "total_segmentator_task": "liver_vessels",
+        "total_segmentator_label": "liver_tumor",
+        "notes": (
+            "Runs TotalSegmentator's liver_vessels CT task and exposes only "
+            "liver_tumor.nii.gz as a binary CTV. Liver and vessel outputs are discarded."
+        ),
+        "sources": [
+            "https://github.com/wasserth/TotalSegmentator",
         ],
     },
     {
@@ -108,11 +130,16 @@ CTV_MODEL_CATALOG: List[Dict[str, object]] = [
         "modality": "CT",
         "target": "liver tumor CTV candidate",
         "status": "external_runtime_requires_installation",
-        "tool": "ctv_segmentation",
+        # Kept only as an audit/compatibility record. CTV dispatch redirects
+        # this historical id to TotalSegmentator; generic open segmentation
+        # may still use the BiomedParse prompt through its own tool.
+        "tool": None,
+        "ui_visible": False,
+        "deprecated": True,
         "tumor_type": "biomedparse_liver_tumor",
         "runtime_root_env": "BIOMEDPARSE_ROOT",
         "checkpoint_env": "BIOMEDPARSE_V2_CHECKPOINT",
-        "notes": "Official BiomedParse v2 text-guided candidate; requires the isolated official runtime and contour review.",
+        "notes": "Not used for liver CTV. Retained for historical catalog/audit compatibility; use the TotalSegmentator liver_tumor CTV route.",
         "sources": [
             "https://github.com/microsoft/BiomedParse/tree/v2",
             "https://huggingface.co/microsoft/BiomedParse",
@@ -345,7 +372,7 @@ def catalog_with_local_status(repo_root: Optional[str] = None) -> List[Dict[str,
         biomedparse_available = False
         biomedparse_validation = {}
     fallback_for = {
-        "voco_liver": "biomedparse_liver_tumor",
+        "voco_liver": "totalsegmentator_liver_tumor",
         "voco_kidney": "biomedparse_kidney_lesion",
         "voco_lung": "biomedparse_lung_lesion",
         "voco_colon": "biomedparse_colon_primary",
@@ -390,6 +417,34 @@ def catalog_with_local_status(repo_root: Optional[str] = None) -> List[Dict[str,
                     "capability_reason": "Validated pancreatic nnU-Net weights are missing in this runtime.",
                     "callable": False,
                 })
+        elif tumor_type == "totalsegmentator_liver_tumor":
+            runtime_present = bool(find_totalsegmentator_executable())
+            entry.update({
+                "capability_state": "experimental" if runtime_present else "unavailable",
+                # The selector intentionally has a two-color operational
+                # state: callable means green, unavailable means red.
+                "capability_color": "green" if runtime_present else "red",
+                "capability_reason": (
+                    "TotalSegmentator liver_vessels is installed; only the "
+                    "liver_tumor output is exposed as CTV."
+                    if runtime_present
+                    else "TotalSegmentator is missing; liver tumor CTV cannot be run automatically."
+                ),
+                "callable": runtime_present,
+                "runtime_available": runtime_present,
+                "target_semantics": "liver_tumor_ctv_only",
+            })
+        elif tumor_type == "biomedparse_liver_tumor" and bool(entry.get("deprecated")):
+            entry.update({
+                "capability_state": "disabled",
+                "capability_color": "gray",
+                "capability_reason": (
+                    "Historical BiomedParse liver CTV id; CTV requests are "
+                    "redirected to TotalSegmentator."
+                ),
+                "callable": False,
+                "target_semantics": "generic_open_segmentation_only",
+            })
         elif tumor_type.startswith("biomedparse_"):
             validation = biomedparse_validation.get(tumor_type, {})
             entry.update({
@@ -442,13 +497,16 @@ def catalog_with_local_status(repo_root: Optional[str] = None) -> List[Dict[str,
                 ),
                 "callable": bool(entry["local_present"]),
             })
-        # Legacy VoCo SwinUNETR entries are deprecated for CTV: their
-        # liver/kidney/lung/colon lesion segmentation is clinically unreliable
-        # and all non-pancreatic aliases now route to BiomedParse v2.
+        # Legacy VoCo SwinUNETR entries are deprecated for CTV. Their liver
+        # alias now resolves to TotalSegmentator; other sites use BiomedParse.
         if str(entry.get("tumor_type", "")).startswith("voco_"):
             entry["deprecated"] = True
             entry["deprecated_reason"] = (
-                "Legacy VoCo SwinUNETR; use the biomedparse_* candidate for this site."
+                (
+                    "Legacy VoCo liver route; use the TotalSegmentator liver tumor CTV route."
+                    if str(entry.get("tumor_type", "")) == "voco_liver"
+                    else "Legacy VoCo SwinUNETR; use the biomedparse_* candidate for this site."
+                )
             )
         items.append(entry)
     return items
