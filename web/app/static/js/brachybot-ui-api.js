@@ -1527,12 +1527,12 @@ function updateTumorTypeSelector(value) {
     if (!raw) return false;
     const aliases = {
         pancreas: 'nnunet_pancreatic', pancreatic: 'nnunet_pancreatic',
-        liver: 'biomedparse_liver_tumor', kidney: 'biomedparse_kidney_lesion',
+        liver: 'totalsegmentator_liver_tumor', kidney: 'biomedparse_kidney_lesion',
         lung: 'biomedparse_lung_lesion', colon: 'biomedparse_colon_primary',
         prostate: 'prostate_tumor',
         'head and neck': 'biomedparse_head_neck_cancer', head_neck: 'biomedparse_head_neck_cancer',
         '胰腺': 'nnunet_pancreatic', '胰脏': 'nnunet_pancreatic',
-        '肝': 'biomedparse_liver_tumor', '肝脏': 'biomedparse_liver_tumor',
+        '肝': 'totalsegmentator_liver_tumor', '肝脏': 'totalsegmentator_liver_tumor',
         '肾': 'biomedparse_kidney_lesion', '肾脏': 'biomedparse_kidney_lesion',
         '肺': 'biomedparse_lung_lesion', '肺部': 'biomedparse_lung_lesion',
         '结肠': 'biomedparse_colon_primary', '结肠癌': 'biomedparse_colon_primary',

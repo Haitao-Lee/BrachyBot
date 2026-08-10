@@ -1336,14 +1336,14 @@ Output (JSON array of strings):"""
 
     # Tumor type maps to canonical CTV tools. The registry retains legacy
     # aliases for restored Sessions, but automatic planning must only emit the
-    # current nnU-Net or BiomedParse v2 route names.
+    # current nnU-Net, TotalSegmentator, or BiomedParse v2 route names.
     _TUMOR_TYPE_MAP = {
         # English names — pancreatic uses nnUNet (more accurate)
         "pancreatic_tumor": "nnunet_pancreatic",
         "pancreatic": "nnunet_pancreatic",
         "pancreas": "nnunet_pancreatic",
-        "liver_tumor": "biomedparse_liver_tumor",
-        "liver": "biomedparse_liver_tumor",
+        "liver_tumor": "totalsegmentator_liver_tumor",
+        "liver": "totalsegmentator_liver_tumor",
         "kidney_tumor": "biomedparse_kidney_lesion",
         "kidney": "biomedparse_kidney_lesion",
         "colon_tumor": "biomedparse_colon_primary",
@@ -1351,8 +1351,8 @@ Output (JSON array of strings):"""
         "lung_tumor": "biomedparse_lung_lesion",
         "lung": "biomedparse_lung_lesion",
         "pdac": "nnunet_pancreatic",
-        "hepatocellular": "biomedparse_liver_tumor",
-        "hcc": "biomedparse_liver_tumor",
+        "hepatocellular": "totalsegmentator_liver_tumor",
+        "hcc": "totalsegmentator_liver_tumor",
         "renal": "biomedparse_kidney_lesion",
         "colorectal": "biomedparse_colon_primary",
         "nsclc": "biomedparse_lung_lesion",
@@ -1361,9 +1361,9 @@ Output (JSON array of strings):"""
         "胰腺癌": "nnunet_pancreatic",
         "胰腺肿瘤": "nnunet_pancreatic",
         "胰腺": "nnunet_pancreatic",
-        "肝癌": "voco_liver",
-        "肝肿瘤": "voco_liver",
-        "肝脏": "voco_liver",
+        "肝癌": "totalsegmentator_liver_tumor",
+        "肝肿瘤": "totalsegmentator_liver_tumor",
+        "肝脏": "totalsegmentator_liver_tumor",
         "肾癌": "voco_kidney",
         "肾肿瘤": "voco_kidney",
         "肾脏": "voco_kidney",
@@ -1376,7 +1376,7 @@ Output (JSON array of strings):"""
         "前列腺": "prostate_tumor",
         "前列腺癌": "prostate_tumor",
         "胰腺癌患者": "nnunet_pancreatic",   # pancreatic cancer patient
-        "肝癌患者": "voco_liver",            # liver cancer patient
+        "肝癌患者": "totalsegmentator_liver_tumor",  # liver cancer patient
         "肾癌患者": "voco_kidney",           # kidney cancer patient
         "肺癌患者": "voco_lung",             # lung cancer patient
         "结肠癌患者": "voco_colon",          # colon cancer patient
@@ -1384,7 +1384,7 @@ Output (JSON array of strings):"""
 
     _SUPPORTED_AUTOMATIC_CTV_TYPES = frozenset({
         "nnunet_pancreatic",
-        "biomedparse_liver_tumor",
+        "totalsegmentator_liver_tumor",
         "biomedparse_kidney_lesion",
         "biomedparse_lung_lesion",
         "biomedparse_colon_primary",
@@ -1473,8 +1473,8 @@ Output (JSON array of strings):"""
             ("\u80f0\u817a\u764c", "nnunet_pancreatic"),
             ("\u80f0\u817a\u80bf\u7624", "nnunet_pancreatic"),
             ("\u80f0\u817a", "nnunet_pancreatic"),
-            ("\u809d\u764c", "biomedparse_liver_tumor"),
-            ("\u809d\u810f", "biomedparse_liver_tumor"),
+            ("\u809d\u764c", "totalsegmentator_liver_tumor"),
+            ("\u809d\u810f", "totalsegmentator_liver_tumor"),
             ("\u80be\u764c", "biomedparse_kidney_lesion"),
             ("\u80be", "biomedparse_kidney_lesion"),
             ("\u80ba\u764c", "biomedparse_lung_lesion"),
@@ -1484,8 +1484,8 @@ Output (JSON array of strings):"""
             ("\u524d\u5217\u817a", "prostate_tumor"),
             ("pancreatic cancer", "nnunet_pancreatic"),
             ("pancreatic tumor", "nnunet_pancreatic"),
-            ("liver cancer", "biomedparse_liver_tumor"),
-            ("liver tumor", "biomedparse_liver_tumor"),
+            ("liver cancer", "totalsegmentator_liver_tumor"),
+            ("liver tumor", "totalsegmentator_liver_tumor"),
             ("kidney cancer", "biomedparse_kidney_lesion"),
             ("kidney tumor", "biomedparse_kidney_lesion"),
             ("lung cancer", "biomedparse_lung_lesion"),
