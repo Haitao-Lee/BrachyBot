@@ -488,7 +488,11 @@ print(json.dumps(result))
                 result = self._execute_tool_with_memory(tc['tool'], dict(tc['params']))
                 tool_step["status"] = "done" if result.success else "error"
                 tool_step["result"] = self._format_tool_result(tc['tool'], result, lang=_lang)
-                tool_step["metadata"] = result.metadata if result.success else {}
+                tool_step["metadata"] = (
+                    ToolResultPipeline.trace_metadata(tc["tool"], result.metadata)
+                    if result.success
+                    else {}
+                )
                 tool_step["data"] = result.data if result.success else {}
                 if tc["tool"] in ("ctv_segmentation", "oar_segmentation", "biomedparse_segmentation") and result.success:
                     self.memory.store("pending_clarification", None)
@@ -1661,5 +1665,37 @@ Output (JSON array of strings):"""
                         "Dropping ui_screenshot call without a target/views and question"
                     )
                     continue
+                # A report-only request reads artifacts already persisted in
+                # the Session. It is not a live DOM capture: the report panel
+                # may be unmounted or still restoring when this command runs.
+                requested_targets = []
+                if target:
+                    requested_targets.append(target.lower())
+                if isinstance(views, list):
+                    for view in views:
+                        if isinstance(view, dict):
+                            view = view.get("target") or view.get("viewer")
+                        value = str(view or "").strip().lower()
+                        if value:
+                            requested_targets.append(value)
+                if requested_targets and all(value == "report" for value in requested_targets):
+                    tc = dict(tc)
+                    tc["tool"] = "ui_content"
+                    tc["params"] = {
+                        "target": "report_figures",
+                        "presentation": "attachments",
+                        "mode": str(p.get("mode") or "chat"),
+                        "question": question,
+                        "planning_id": str(p.get("planning_id") or ""),
+                    }
+            elif tn == "ui_content":
+                from tool_factory.ui_content import SESSION_CONTENT_TARGETS
+                target = str(p.get("target") or "").strip().lower()
+                question = str(p.get("question") or "").strip()
+                if target not in SESSION_CONTENT_TARGETS or not question:
+                    logger.warning("Dropping ui_content call with unsupported target or no question")
+                    continue
+                p["target"] = target
+                tc["params"] = p
             valid.append(tc)
         return valid

@@ -59,6 +59,7 @@ _SAFE_TOOL_FALLBACKS = frozenset({
     "report_auto_fill",
     "ui_controller",
     "ui_screenshot",
+    "ui_content",
     "ui_annotate",
 })
 _INTERNAL_FALLBACK_MARKERS = (
@@ -134,6 +135,26 @@ def _tool_failure_reason(result) -> str:
         or getattr(result, "message", None)
         or "execution failed"
     ).strip()
+
+
+def _presentation_runtime_failure_message(tool_name: str, lang: str) -> str:
+    """Return a safe, localized failure summary for browser presentation tools.
+
+    Browser presentation errors can contain DOM state, file paths, browser
+    command details, or framework exceptions. They are useful in server logs,
+    but not in the ordinary chat stream or user-facing Execution Trace.
+    """
+    if tool_name == "ui_content":
+        return (
+            "\u5f53\u524d Session \u4e2d\u7684\u8bf7\u6c42\u5185\u5bb9\u6682\u65f6\u65e0\u6cd5\u5448\u73b0\u3002\u8bf7\u786e\u8ba4\u76f8\u5173\u6570\u636e\u5df2\u52a0\u8f7d\u6216\u5df2\u751f\u6210\u540e\u91cd\u8bd5\u3002"
+            if lang == "zh"
+            else "The requested Session content cannot be presented right now. Confirm the related data is loaded or generated, then retry."
+        )
+    return (
+        "\u6682\u65f6\u65e0\u6cd5\u751f\u6210\u8bf7\u6c42\u7684\u622a\u56fe\u3002\u8bf7\u786e\u8ba4\u76ee\u6807\u6570\u636e\u5df2\u52a0\u8f7d\u540e\u91cd\u8bd5\u3002"
+        if lang == "zh"
+        else "The requested screenshot cannot be generated right now. Confirm the target data is loaded, then retry."
+    )
 
 
 def _failed_steps_summary(steps: List[Dict]) -> Optional[str]:
@@ -843,14 +864,15 @@ class LLMRuntimeMixin:
                     continue
 
                 step_id_ref[0] += 1
+                trace_params = ToolResultPipeline.trace_params(tool_name, params)
                 steps.append({
                     "id": step_id_ref[0],
                     "type": "tool",
                     "title": f"Calling {tool_name}",
-                    "content": json.dumps(params, default=str)[:200],
+                    "content": json.dumps(trace_params, default=str)[:200],
                     "status": "pending",
                     "tool": tool_name,
-                    "params": params,
+                    "params": trace_params,
                 })
 
                 # Pre-execution check: if ctv_segmentation is called without
@@ -911,11 +933,19 @@ class LLMRuntimeMixin:
                             steps[-1]["requires_input"] = True
                     except Exception as e:
                         tool_succeeded = False
-                        result_text = f"Exception: {str(e)}"
-                        logger.error(f"Tool {tool_name} failed: {e}")
+                        logger.exception("Tool %s failed", tool_name)
+                        result_text = (
+                            _presentation_runtime_failure_message(tool_name, _lang)
+                            if tool_name in {"ui_screenshot", "ui_content"}
+                            else f"Exception: {str(e)}"
+                        )
                 else:
                     tool_succeeded = False
-                    result_text = f"Unknown tool: {tool_name}. Available: {self.registry.tool_names}"
+                    result_text = (
+                        _presentation_runtime_failure_message(tool_name, _lang)
+                        if tool_name in {"ui_screenshot", "ui_content"}
+                        else f"Unknown tool: {tool_name}. Available: {self.registry.tool_names}"
+                    )
 
                 step_status = "done" if tool_succeeded else "error"
                 steps[-1]["status"] = step_status
@@ -977,7 +1007,7 @@ class LLMRuntimeMixin:
             # so it can only repeat the request. Stop after a screenshot-only
             # batch; the frontend will either show it or send one multimodal
             # analysis follow-up containing the uploaded image.
-            if tool_calls and all(tc.get("tool") == "ui_screenshot" for tc in tool_calls):
+            if tool_calls and all(tc.get("tool") in {"ui_screenshot", "ui_content"} for tc in tool_calls):
                 break
 
             # After all tools executed, instruct LLM to continue or summarize.
@@ -1449,10 +1479,13 @@ class LLMRuntimeMixin:
             tool_steps = [s for s in steps if s.get("type") == "tool"]
             if not tool_steps:
                 return None
-            if any(s.get("tool") != "ui_screenshot" for s in tool_steps if s.get("tool")):
+            if any(s.get("tool") not in {"ui_screenshot", "ui_content"} for s in tool_steps if s.get("tool")):
                 return None
-            ss_steps = [s for s in tool_steps if s.get("tool") == "ui_screenshot"]
-            if not ss_steps:
+            presentation_steps = [
+                s for s in tool_steps
+                if s.get("tool") in {"ui_screenshot", "ui_content"}
+            ]
+            if not presentation_steps:
                 return None
             return ""
 
@@ -1810,7 +1843,7 @@ class LLMRuntimeMixin:
                     _allowed_without_ct = {
                         "report_generator", "clinical_kb", "doc_reader", "case_memory",
                         "tool_creator", "env_manager", "shell_executor", "code_executor",
-                        "ui_inspector", "ui_controller", "ui_screenshot", "ui_annotate",
+                        "ui_inspector", "ui_controller", "ui_screenshot", "ui_content", "ui_annotate",
                         "filesystem_browser", "safety_validator",
                         "plan_comparator", "dicom_rt_exporter",
                         "web_search", "web_fetch", "web_access"  # Allow web tools (no CT dependency)
@@ -2109,14 +2142,15 @@ class LLMRuntimeMixin:
 
                 # Tool call step
                 step_id_ref[0] += 1
+                trace_params = ToolResultPipeline.trace_params(tool_name, params)
                 tool_step = {
                     "id": step_id_ref[0],
                     "type": "tool",
                     "title": f"Calling {tool_name}",
-                    "content": json.dumps(params, default=str)[:200],
+                    "content": json.dumps(trace_params, default=str)[:200],
                     "status": "pending",
                     "tool": tool_name,
-                    "params": params,
+                    "params": trace_params,
                 }
                 steps.append(tool_step)
                 yield yield_event("step", tool_step)
@@ -2436,17 +2470,32 @@ class LLMRuntimeMixin:
                                 if metrics_summary:
                                     result_text += f" | Metrics: {metrics_summary}"
                         else:
-                            error_msg = _tool_failure_reason(result)
-                            if hasattr(result, "data") and result.data and "stderr" in result.data:
-                                stderr = result.data["stderr"][:300]
-                                error_msg = f"{error_msg}: {stderr}" if error_msg else stderr
-                            result_text = f"Error: {error_msg}" if error_msg else "Error: execution failed"
+                            if tool_name in {"ui_screenshot", "ui_content"}:
+                                result_text = ToolResultPipeline.format(
+                                    tool_name,
+                                    result,
+                                    lang=self.memory.user_lang,
+                                )
+                            else:
+                                error_msg = _tool_failure_reason(result)
+                                if hasattr(result, "data") and result.data and "stderr" in result.data:
+                                    stderr = result.data["stderr"][:300]
+                                    error_msg = f"{error_msg}: {stderr}" if error_msg else stderr
+                                result_text = f"Error: {error_msg}" if error_msg else "Error: execution failed"
                     except Exception as e:
-                        result_text = f"Exception: {str(e)}"
-                        logger.error(f"Tool {tool_name} failed: {e}")
+                        logger.exception("Tool %s failed during streaming execution", tool_name)
+                        result_text = (
+                            _presentation_runtime_failure_message(tool_name, self.memory.user_lang)
+                            if tool_name in {"ui_screenshot", "ui_content"}
+                            else f"Exception: {str(e)}"
+                        )
                     logger.info(f"[AFTER-TRY-STREAM] tool={tool_name}, result_text_len={len(result_text) if result_text else 0}, tool_result={type(tool_result).__name__ if tool_result else 'None'}")
                 else:
-                    result_text = f"Unknown tool: {tool_name}. Available: {self.registry.tool_names}"
+                    result_text = (
+                        _presentation_runtime_failure_message(tool_name, self.memory.user_lang)
+                        if tool_name in {"ui_screenshot", "ui_content"}
+                        else f"Unknown tool: {tool_name}. Available: {self.registry.tool_names}"
+                    )
 
                 if tool_result is not None:
                     step_status = "done" if tool_result.success else "error"
@@ -2477,7 +2526,10 @@ class LLMRuntimeMixin:
                     tool_step["result"] = result_text[:200]
                 # Include metadata for frontend actions (ui_screenshot, ui_controller, etc.)
                 if tool_result is not None and tool_result.success and hasattr(tool_result, 'metadata'):
-                    tool_step["metadata"] = tool_result.metadata
+                    tool_step["metadata"] = ToolResultPipeline.trace_metadata(
+                        tool_name,
+                        tool_result.metadata,
+                    )
                 tools_executed = True
 
                 # Deduped tools still need a final step event. The
@@ -2584,7 +2636,7 @@ class LLMRuntimeMixin:
             # The browser captures/uploads screenshots after the SSE turn.
             # Continuing server-side can only repeat the same capture because
             # the image is not available to this loop yet.
-            if tool_calls and all(tc.get("tool") == "ui_screenshot" for tc in tool_calls):
+            if tool_calls and all(tc.get("tool") in {"ui_screenshot", "ui_content"} for tc in tool_calls):
                 break
 
             # After all tools executed, instruct LLM to continue or summarize.

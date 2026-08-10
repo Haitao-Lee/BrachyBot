@@ -102,7 +102,7 @@ class Round9RegressionTests(unittest.TestCase):
         self.assertIn("_isVisualAnalysisRequest", chat)
         self.assertIn("visual_screenshot_analysis", workflow)
         self.assertIn("_screenshot_called_this_turn = set()", runtime)
-        self.assertIn("all(tc.get(\"tool\") == \"ui_screenshot\"", runtime)
+        self.assertIn('all(tc.get("tool") in {"ui_screenshot", "ui_content"}', runtime)
 
     def test_invalid_screenshot_calls_are_filtered_before_tool_execution(self):
         from agent_runtime.response_tools import ResponseToolMixin

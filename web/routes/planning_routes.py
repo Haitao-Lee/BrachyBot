@@ -1057,33 +1057,83 @@ def register_planning_routes(
                 if str(raw_step.get("tool") or "") == "workspace_checkpoint":
                     continue
                 step = dict(raw_step)
-                if str(step.get("tool") or "") == "ui_screenshot":
+                presentation_tool = str(step.get("tool") or "")
+                if presentation_tool in {"ui_screenshot", "ui_content"}:
                     metadata = (
                         dict(step.get("metadata") or {})
                         if isinstance(step.get("metadata"), dict)
                         else {}
                     )
-                    plan = (
-                        dict(metadata.get("screenshot_plan") or {})
-                        if isinstance(metadata.get("screenshot_plan"), dict)
-                        else {}
-                    )
-                    views = list(plan.get("views") or [])
-                    step["params"] = {
-                        "mode": str(plan.get("mode") or "chat"),
-                        "views": views[:8],
-                        "layout": str(plan.get("layout") or "auto"),
-                    }
-                    step["content"] = ""
-                    step["result"] = ""
-                    step["metadata"] = {
-                        "screenshot_plan": plan,
-                        "trace_summary_i18n": metadata.get(
-                            "trace_summary_i18n", {}
-                        ),
-                        "internal_only": True,
-                        "user_visible": False,
-                    }
+                    if presentation_tool == "ui_content":
+                        command = (
+                            dict(metadata.get("content_command") or {})
+                            if isinstance(metadata.get("content_command"), dict)
+                            else {}
+                        )
+                        # Persist only the user-safe command summary. Raw
+                        # model instructions, paths, and browser internals
+                        # are not durable chat content.
+                        step["params"] = {
+                            "target": str(command.get("target") or metadata.get("content_target") or ""),
+                            "presentation": str(command.get("presentation") or "auto"),
+                            "mode": str(command.get("mode") or "chat"),
+                        }
+                        step["content"] = ""
+                        step["result"] = ""
+                        step["metadata"] = {
+                            "content_command": {
+                                key: command.get(key)
+                                for key in ("command", "target", "presentation", "mode", "planning_id", "object_ids")
+                                if command.get(key) not in (None, "", [])
+                            },
+                            "trace_summary_i18n": metadata.get("trace_summary_i18n", {}),
+                            "internal_only": True,
+                            "user_visible": False,
+                        }
+                    else:
+                        plan = (
+                            dict(metadata.get("screenshot_plan") or {})
+                            if isinstance(metadata.get("screenshot_plan"), dict)
+                            else {}
+                        )
+                        # A recovered task can predate the SSE sanitizer, so
+                        # repeat the boundary check before persisting its
+                        # Trace. Preserve only stable scene identifiers and
+                        # rendering controls, never model prompts or paths.
+                        safe_plan = {
+                            key: plan.get(key)
+                            for key in (
+                                "version",
+                                "mode",
+                                "target",
+                                "views",
+                                "layout",
+                                "object_ids",
+                                "data_tree_node_ids",
+                                "highlight_object_ids",
+                                "hide_unrelated",
+                                "focus",
+                                "slice_indices",
+                                "overlays",
+                            )
+                            if plan.get(key) not in (None, "", [], {})
+                        }
+                        views = list(safe_plan.get("views") or [])
+                        step["params"] = {
+                            "mode": str(safe_plan.get("mode") or "chat"),
+                            "views": views[:8],
+                            "layout": str(safe_plan.get("layout") or "auto"),
+                        }
+                        step["content"] = ""
+                        step["result"] = ""
+                        step["metadata"] = {
+                            "screenshot_plan": safe_plan,
+                            "trace_summary_i18n": metadata.get(
+                                "trace_summary_i18n", {}
+                            ),
+                            "internal_only": True,
+                            "user_visible": False,
+                        }
                 persisted_steps.append(step)
             if persisted_steps and (not turn_already_committed or task.internal_followup):
                 append_message(
@@ -2919,6 +2969,7 @@ def register_planning_routes(
         try:
             from tool_factory.ui_controller import CONTROL_REGISTRY
             from tool_factory.ui_screenshot import SCREENSHOT_TARGETS
+            from tool_factory.ui_content import SESSION_CONTENT_TARGETS
             from tool_factory.CTV_seg.model_catalog import catalog_with_local_status
         except Exception as e:
             logger.error(f"Failed to load UI capabilities: {e}")
@@ -2946,6 +2997,7 @@ def register_planning_routes(
             "control_count": len(controls),
             "controls": controls,
             "screenshot_targets": SCREENSHOT_TARGETS,
+            "session_content_targets": SESSION_CONTENT_TARGETS,
             "ctv_models": catalog_with_local_status(),
             "manual_workflow_steps": [
                 "ctv_segmentation",

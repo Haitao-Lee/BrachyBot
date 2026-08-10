@@ -676,6 +676,12 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
             logger.warning(f"UIScreenshotTool not available: {e}")
 
         try:
+            from tool_factory.ui_content import UISessionContentTool
+            self.registry.register(UISessionContentTool())
+        except ImportError as e:
+            logger.warning(f"UISessionContentTool not available: {e}")
+
+        try:
             from tool_factory.ui_annotate import UIAnnotateTool
             self.registry.register(UIAnnotateTool())
         except ImportError as e:

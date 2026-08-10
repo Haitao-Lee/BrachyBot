@@ -5279,12 +5279,35 @@ function _reportFiguresFromArtifactCatalog(ownerSessionId, activePlanningId) {
 
 async function _appendPersistedReportFigures(plan, galleryContext, ownerSessionId) {
     const context = galleryContext || {};
-    const form = window.reportForm;
+    let form = window.reportForm;
+    const requestedPlanningId = String(
+        plan?.planning_id
+        || window.__reportWorkspaceActivePlanningId
+        || dataTreeState?.planning?.activePlanningId
+        || form?.active_planning_id
+        || ''
+    );
+    // The workspace restore and chat shell are deliberately asynchronous. A
+    // content request can therefore arrive before the report editor has
+    // selected its Session-owned form. Restore the persisted report model
+    // first; do not fall back to rasterizing an unmounted report panel.
+    if (
+        String(ownerSessionId || '') === String(_activeApiSessionId())
+        && (!form || (form.sessionId && String(form.sessionId) !== String(ownerSessionId)))
+        && typeof window.restoreReportForPlanning === 'function'
+    ) {
+        try {
+            window.restoreReportForPlanning(requestedPlanningId, { persist: false });
+            await _waitScreenshotFrames(1);
+            form = window.reportForm;
+        } catch (error) {
+            console.debug('[report-content] Unable to restore persisted report form', error);
+        }
+    }
     const formSessionMatches = !form?.sessionId
         || String(form.sessionId) === String(ownerSessionId || '');
     const activePlanningId = String(
-        plan?.planning_id
-        || window.__reportWorkspaceActivePlanningId
+        requestedPlanningId
         || form?.active_planning_id
         || ''
     );
@@ -5375,6 +5398,425 @@ async function _appendPersistedReportFigures(plan, galleryContext, ownerSessionI
     });
     return attachments;
 }
+
+function _safeSessionScreenshotUrl(candidate, ownerSessionId) {
+    const value = String(candidate || '').trim();
+    if (/^data:image\/(?:png|jpe?g|webp);base64,[a-z0-9+/=\s]+$/i.test(value)) {
+        return value;
+    }
+    const match = value.match(/^\/api\/sessions\/([^/]+)\/screenshots\/([A-Za-z0-9_.-]+\.(?:png|jpe?g|webp))$/i);
+    if (!match) return '';
+    try {
+        return decodeURIComponent(match[1]) === String(ownerSessionId || '') ? value : '';
+    } catch (_) {
+        return '';
+    }
+}
+
+function _sessionArtifactFilename(item) {
+    const objectId = String(item?.objectId || item?.object_id || '');
+    const raw = objectId.includes(':')
+        ? objectId.split(':').slice(1).join(':')
+        : objectId || String(item?.name || '');
+    return String(raw || '').split(/[\\/]/).pop() || '';
+}
+
+function _sessionScreenshotArtifacts(ownerSessionId, activePlanningId, options = {}) {
+    const artifacts = typeof dataTreeState !== 'undefined'
+        && Array.isArray(dataTreeState?.exportArtifacts)
+        ? dataTreeState.exportArtifacts : [];
+    const includeReportOnly = options.reportOnly === true;
+    return artifacts.map((item, index) => {
+        const dataType = String(item?.dataType || item?.data_type || item?.type || '').toLowerCase();
+        const filename = _sessionArtifactFilename(item);
+        const ownerPlanningId = String(item?.planningId || item?.planning_id || '');
+        const isScreenshot = ['screenshot', 'report_figure'].includes(dataType);
+        const isReport = /^report_screenshot_[^/\\]+\.(?:png|jpe?g|webp)$/i.test(filename);
+        if (!isScreenshot || !filename || (includeReportOnly && !isReport)) return null;
+        if (activePlanningId && ownerPlanningId && ownerPlanningId !== String(activePlanningId)) return null;
+        return {
+            id: `session-artifact-${filename.replace(/[^A-Za-z0-9_-]/g, '_')}`,
+            filename,
+            title: String(item?.label || item?.name || filename),
+            planningId: ownerPlanningId,
+            dataType,
+            index,
+            isReport,
+            url: `/api/sessions/${encodeURIComponent(ownerSessionId)}/screenshots/${encodeURIComponent(filename)}`,
+        };
+    }).filter(Boolean);
+}
+
+async function _appendPersistedSessionScreenshots(command, galleryContext, ownerSessionId) {
+    const context = galleryContext || {};
+    if (typeof hydrateDataTreeArtifactCatalog === 'function'
+        && String(ownerSessionId) === String(_activeApiSessionId())) {
+        try { await hydrateDataTreeArtifactCatalog(); } catch (_) {}
+    }
+    const activePlanningId = String(
+        command?.planning_id
+        || window.__reportWorkspaceActivePlanningId
+        || dataTreeState?.planning?.activePlanningId
+        || ''
+    );
+    const language = _screenshotLanguage(ownerSessionId, context.responseLanguage);
+    const artifacts = _sessionScreenshotArtifacts(ownerSessionId, activePlanningId);
+    const attachments = [];
+    artifacts.forEach((artifact, index) => {
+        const url = _safeSessionScreenshotUrl(artifact.url, ownerSessionId);
+        if (!url) return;
+        const title = artifact.isReport
+            ? (language === 'zh' ? '\u62a5\u544a\u622a\u56fe' : 'Report figure')
+            : (language === 'zh' ? '\u5df2\u4fdd\u5b58\u622a\u56fe' : 'Saved screenshot');
+        const attachment = _appendScreenshotToGallery(url, 'report', command?.question || '', context, {
+            id: artifact.id,
+            title: `${title} ${index + 1}`,
+            description: command?.question || '',
+            mode: command?.mode || 'chat',
+            request_id: context.requestId,
+            message_id: context.messageId,
+            session_id: ownerSessionId,
+            planning_id: artifact.planningId || activePlanningId,
+            source: 'session_artifact',
+            response_language: context.responseLanguage || language,
+            view_metadata: {
+                filename: artifact.filename,
+                data_type: artifact.dataType,
+                report_figure: artifact.isReport,
+            },
+        });
+        if (attachment) attachments.push(attachment);
+    });
+    return attachments;
+}
+
+async function _readPlanningResultsForPresentation(ownerSessionId) {
+    let response = null;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+        response = await fetch(API + '/planning/results', {
+            headers: { 'X-BrachyBot-Session': String(ownerSessionId || '') },
+        });
+        if (response.status !== 202 || attempt === 2) break;
+        const retryAfter = Number(response.headers.get('Retry-After-Ms') || 250);
+        await new Promise(resolve => setTimeout(resolve, Math.max(100, Math.min(800, retryAfter))));
+    }
+    const payload = await response?.json().catch(() => ({}));
+    if (!response?.ok || payload?.success === false) {
+        const error = String(payload?.error || response?.status || 'planning_results_unavailable');
+        throw new Error(error);
+    }
+    return payload || {};
+}
+
+function _contentNumber(value, digits = 1) {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) return '';
+    return numeric.toFixed(digits).replace(/\.0+$/, '');
+}
+
+function _contentPercent(value) {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) return '';
+    const percent = Math.abs(numeric) <= 1.001 ? numeric * 100 : numeric;
+    return `${_contentNumber(percent, 1)}%`;
+}
+
+function _contentMetric(metrics, names) {
+    if (!metrics || typeof metrics !== 'object') return undefined;
+    for (const name of names) {
+        if (Object.prototype.hasOwnProperty.call(metrics, name)) return metrics[name];
+    }
+    return undefined;
+}
+
+function _sessionContentTreeSnapshot() {
+    const tree = typeof dataTreeState !== 'undefined' ? dataTreeState : null;
+    if (!tree) return null;
+    const planning = tree.planning || {};
+    const guide = (planning.meshes || []).find(item =>
+        String(item?.source || '').toLowerCase() === 'surgical_guide'
+    );
+    return {
+        ctLoaded: !!tree.ct?.loaded,
+        ctvLoaded: !!tree.ctv?.loaded,
+        ctvCount: Object.keys(tree.ctvLabels || {}).length || (tree.ctv?.loaded ? 1 : 0),
+        oarCount: Array.isArray(tree.organs) ? tree.organs.length : 0,
+        skinLoaded: !!tree.skin?.loaded,
+        planningId: String(planning.activePlanningId || planning.id || ''),
+        planningRuns: Array.isArray(planning.runs) ? planning.runs.length : 0,
+        seedCount: Array.isArray(planning.seeds) ? planning.seeds.length : 0,
+        needleCount: Array.isArray(planning.needles) ? planning.needles.length : 0,
+        doseLoaded: !!tree.dose?.loaded || !!planning.doseOverlay,
+        dvhLoaded: !!planning.dvh?.loaded || !!planning.dvh,
+        guide,
+        artifactCount: Array.isArray(tree.exportArtifacts) ? tree.exportArtifacts.length : 0,
+    };
+}
+
+function _sessionContentObjectSummary(objectIds, tree, language) {
+    const requested = Array.isArray(objectIds)
+        ? objectIds.map(value => String(value || '').trim()).filter(Boolean)
+        : [];
+    const zh = language === 'zh';
+    if (!requested.length) {
+        return zh
+            ? '\u672a\u6307\u5b9a\u53ef\u8bfb\u53d6\u7684 Data Tree \u5bf9\u8c61\u3002'
+            : 'No readable Data Tree object was specified.';
+    }
+    const items = [];
+    const planning = (typeof dataTreeState !== 'undefined' && dataTreeState?.planning) || {};
+    const known = [
+        ...(Array.isArray(dataTreeState?.organs) ? dataTreeState.organs : []),
+        ...Object.values(dataTreeState?.ctvLabels || {}),
+        ...(Array.isArray(planning.seeds) ? planning.seeds : []),
+        ...(Array.isArray(planning.needles) ? planning.needles : []),
+        ...(Array.isArray(planning.meshes) ? planning.meshes : []),
+        ...(Array.isArray(dataTreeState?.exportArtifacts) ? dataTreeState.exportArtifacts : []),
+    ];
+    requested.slice(0, 16).forEach(objectId => {
+        const match = known.find(item => String(
+            item?.id || item?.objectId || item?.object_id || item?.nodeId || item?.node_id || ''
+        ) === objectId);
+        if (!match) return;
+        const name = String(match.name || match.label || match.displayName || objectId);
+        const type = String(match.type || match.dataType || match.source || 'data');
+        items.push(zh ? `${name}\uff08${type}\uff09` : `${name} (${type})`);
+    });
+    if (!items.length) {
+        return zh
+            ? '\u5728\u5f53\u524d Session \u4e2d\u6ca1\u6709\u627e\u5230\u8bf7\u6c42\u7684\u6570\u636e\u5bf9\u8c61\u3002'
+            : 'The requested data object was not found in the current Session.';
+    }
+    return zh
+        ? `\u5df2\u8bfb\u53d6 Data Tree \u5bf9\u8c61\uff1a${items.join('\u3001')}\u3002`
+        : `Read Data Tree object(s): ${items.join(', ')}.`;
+}
+
+function _sessionContentSummary(target, planning, tree, language, command = {}) {
+    const zh = language === 'zh';
+    const metrics = planning?.metrics && typeof planning.metrics === 'object' ? planning.metrics : {};
+    const report = window.reportForm && (!window.reportForm.sessionId
+        || String(window.reportForm.sessionId) === String(_activeApiSessionId()))
+        ? window.reportForm : null;
+    const chat = typeof window.getSessionContentSnapshot === 'function'
+        ? window.getSessionContentSnapshot(_activeApiSessionId()) : null;
+    const seedCount = Number(planning?.total_seeds ?? tree?.seedCount ?? 0);
+    const needleCount = Number(planning?.num_trajectories ?? tree?.needleCount ?? 0);
+    const v100 = _contentPercent(_contentMetric(metrics, ['V100', 'v100', 'coverage_v100']));
+    const d90 = _contentNumber(_contentMetric(metrics, ['D90', 'd90', 'dose_d90']), 2);
+    const planningId = String(planning?.planning_id || tree?.planningId || '');
+    const prefix = planningId ? ` (${planningId})` : '';
+    const lines = [];
+
+    if (target === 'planning' || target === 'session_summary') {
+        lines.push(zh
+            ? `\u5f53\u524d\u89c4\u5212${prefix}\uff1a${seedCount}\u9897\u7c92\u5b50\uff0c${needleCount}\u6761\u9488\u9053\u3002`
+            : `Current planning${prefix}: ${seedCount} seed(s) across ${needleCount} needle path(s).`);
+    }
+    if (target === 'dose' || target === 'metrics' || target === 'session_summary') {
+        if (planning?.has_dose) {
+            const doseRange = [planning.dose_min, planning.dose_max]
+                .map(value => _contentNumber(value, 2)).filter(Boolean).join(' - ');
+            lines.push(zh
+                ? `\u5242\u91cf\u7ed3\u679c\u5df2\u52a0\u8f7d${doseRange ? `\uff08${doseRange} Gy\uff09` : ''}\u3002`
+                : `Dose result is loaded${doseRange ? ` (${doseRange} Gy)` : ''}.`);
+        } else if (target !== 'session_summary') {
+            lines.push(zh ? '\u5f53\u524d\u89c4\u5212\u5c1a\u65e0\u53ef\u7528\u5242\u91cf\u7ed3\u679c\u3002' : 'No current dose result is available for this planning run.');
+        }
+        if (v100 || d90) {
+            lines.push(zh
+                ? `\u6307\u6807\uff1a${v100 ? `CTV V100 ${v100}` : ''}${v100 && d90 ? '\uff1b' : ''}${d90 ? `D90 ${d90} Gy` : ''}\u3002`
+                : `Metrics: ${v100 ? `CTV V100 ${v100}` : ''}${v100 && d90 ? '; ' : ''}${d90 ? `D90 ${d90} Gy` : ''}.`);
+        }
+    }
+    if (target === 'dvh' || target === 'session_summary') {
+        const dvh = planning?.dvh;
+        const curveCount = Array.isArray(dvh) ? dvh.length : (dvh && typeof dvh === 'object' ? Object.keys(dvh).length : 0);
+        if (curveCount) {
+            lines.push(zh ? `DVH \u6570\u636e\u5df2\u52a0\u8f7d\uff08${curveCount}\u4e2a\u7ed3\u6784\u6216\u66f2\u7ebf\uff09\u3002` : `DVH data is loaded (${curveCount} structure(s) or curve(s)).`);
+        } else if (target === 'dvh') {
+            lines.push(zh ? '\u5f53\u524d\u89c4\u5212\u5c1a\u65e0\u53ef\u5c55\u793a\u7684 DVH \u6570\u636e\u3002' : 'No DVH data is currently available for presentation.');
+        }
+    }
+    if (target === 'ct' || target === 'session_summary') {
+        const shape = Array.isArray(window.state?.ctShape) ? window.state.ctShape.join(' \u00d7 ') : '';
+        if (tree?.ctLoaded || window.state?.ctLoaded) {
+            lines.push(zh ? `CT \u5df2\u52a0\u8f7d${shape ? `\uff08${shape}\uff09` : ''}\u3002` : `CT is loaded${shape ? ` (${shape})` : ''}.`);
+        } else if (target === 'ct') {
+            lines.push(zh ? '\u5f53\u524d Session \u4e2d\u6ca1\u6709\u5df2\u52a0\u8f7d\u7684 CT \u56fe\u50cf\u3002' : 'No CT image is loaded in the current Session.');
+        }
+    }
+    if (target === 'structures' || target === 'data_tree' || target === 'session_summary') {
+        lines.push(zh
+            ? `\u7ed3\u6784\uff1aCTV ${tree?.ctvCount || 0}\u4e2a\uff0cOAR ${tree?.oarCount || 0}\u4e2a${tree?.skinLoaded ? '\uff0c\u5bfc\u677f\u76ae\u80a4\u8868\u9762\u5df2\u52a0\u8f7d' : ''}\u3002`
+            : `Structures: ${tree?.ctvCount || 0} CTV item(s), ${tree?.oarCount || 0} OAR item(s)${tree?.skinLoaded ? ', guide skin surface loaded' : ''}.`);
+    }
+    if (target === 'surgical_guide' || target === 'session_summary') {
+        if (tree?.guide) {
+            lines.push(zh ? `\u624b\u672f\u5bfc\u677f\u5df2\u52a0\u8f7d\uff1a${tree.guide.label || '\u7a7f\u523a\u5bfc\u677f'}\u3002` : `Surgical Guide is loaded: ${tree.guide.label || 'puncture guide'}.`);
+        } else if (target === 'surgical_guide') {
+            lines.push(zh ? '\u5f53\u524d\u89c4\u5212\u5c1a\u65e0\u53ef\u5c55\u793a\u7684\u624b\u672f\u5bfc\u677f\u3002' : 'No Surgical Guide is currently available for presentation.');
+        }
+    }
+    if (target === 'report' || target === 'session_summary') {
+        if (report) {
+            const figureCount = Array.isArray(report.figures) ? report.figures.length : 0;
+            const technique = String(report.technique || report.treatmentTechnique || '').trim();
+            lines.push(zh
+                ? `\u62a5\u544a\u5df2\u52a0\u8f7d${technique ? `\uff08${technique}\uff09` : ''}\uff0c\u5305\u542b ${figureCount} \u4e2a\u5df2\u4fdd\u5b58\u56fe\u4ef6\u3002`
+                : `Report is loaded${technique ? ` (${technique})` : ''} with ${figureCount} saved figure(s).`);
+        } else if (target === 'report') {
+            lines.push(zh ? '\u5f53\u524d Session \u5c1a\u65e0\u5df2\u52a0\u8f7d\u7684\u62a5\u544a\u6587\u672c\u3002' : 'No report text is loaded for the current Session.');
+        }
+    }
+    if (target === 'chat_history' || target === 'session_summary') {
+        if (chat?.available) {
+            lines.push(zh
+                ? `\u5bf9\u8bdd\u5386\u53f2\uff1a${chat.messageCount} \u6761\u7528\u6237\u53ef\u89c1\u6d88\u606f\uff0c${chat.executionTraceCount} \u4e2a\u6267\u884c\u8ffd\u8e2a\u3002`
+                : `Conversation history: ${chat.messageCount} user-visible message(s) and ${chat.executionTraceCount} execution trace(s).`);
+        } else if (target === 'chat_history') {
+            lines.push(zh ? '\u5f53\u524d Session \u5c1a\u65e0\u5df2\u4fdd\u5b58\u7684\u5bf9\u8bdd\u5386\u53f2\u3002' : 'No saved conversation history is available for the current Session.');
+        }
+    }
+    if (target === 'data_tree') {
+        lines.push(zh
+            ? `Data Tree \u4e2d\u5f53\u524d\u5305\u542b ${tree?.planningRuns || 0}\u4e2a\u89c4\u5212\u7248\u672c\u548c ${tree?.artifactCount || 0}\u4e2a\u6301\u4e45\u5de5\u4ef6\u3002`
+            : `The Data Tree currently contains ${tree?.planningRuns || 0} planning run(s) and ${tree?.artifactCount || 0} persisted artifact(s).`);
+    }
+    if (target === 'artifact') {
+        lines.push(_sessionContentObjectSummary(command?.object_ids, tree, language));
+    }
+    return lines.filter(Boolean).join('\n\n');
+}
+
+function _sessionContentUnavailableMessage(target, language) {
+    const labels = {
+        report_figures: ['\u5f53\u524d\u62a5\u544a\u5c1a\u672a\u4fdd\u5b58\u53ef\u5c55\u793a\u7684\u622a\u56fe\u3002\u8bf7\u5148\u751f\u6210\u6216\u66f4\u65b0\u62a5\u544a\u3002', 'The current report does not yet contain saved figures to present. Generate or update the report first.'],
+        session_screenshots: ['\u5f53\u524d Session \u5c1a\u672a\u4fdd\u5b58\u53ef\u5c55\u793a\u7684\u622a\u56fe\u3002', 'The current Session does not yet contain saved screenshots to present.'],
+        report: ['\u5f53\u524d Session \u5c1a\u65e0\u53ef\u5c55\u793a\u7684\u62a5\u544a\u5185\u5bb9\u3002', 'The current Session does not yet contain report content to present.'],
+    };
+    const pair = labels[target] || ['\u5f53\u524d Session \u4e2d\u6682\u672a\u627e\u5230\u8bf7\u6c42\u7684\u771f\u5b9e\u6570\u636e\u3002', 'The requested real data is not currently available in this Session.'];
+    return language === 'zh' ? pair[0] : pair[1];
+}
+
+function _openSessionContentPanel(target) {
+    // Opening a panel is opt-in. Ordinary content requests stay in the chat
+    // so a model cannot unexpectedly move a clinician away from the current
+    // viewer while it reads persistent Session-owned data.
+    const panelByTarget = {
+        report_figures: 'report',
+        report: 'report',
+        session_screenshots: 'report',
+        planning: 'input',
+        dose: 'viewers',
+        dvh: 'metrics',
+        metrics: 'metrics',
+        ct: 'viewers',
+        structures: 'viewers',
+        surgical_guide: 'viewers',
+        data_tree: 'viewers',
+        artifact: 'viewers',
+    };
+    const panelName = panelByTarget[String(target || '').toLowerCase()];
+    if (!panelName || typeof switchPanel !== 'function') return;
+    const tab = document.querySelector(`.panel-tab[data-panel="${panelName}"]`)
+        || document.querySelector(`.panel-tab[onclick*="${panelName}"]`);
+    if (tab && !tab.classList.contains('active')) switchPanel(panelName, tab);
+}
+
+// Read persisted Session data for a normal chat reply. This is intentionally
+// data-first: it never substitutes a browser screenshot for a missing report,
+// and it never synthesizes a clinical result that the Session does not contain.
+window.presentSessionContent = async function presentSessionContent(command = {}, galleryContext = {}, options = {}) {
+    const context = galleryContext || {};
+    const ownerSessionId = String(options.sessionId || context.sessionId || _activeApiSessionId());
+    const language = _screenshotLanguage(ownerSessionId, options.responseLanguage || context.responseLanguage);
+    const target = String(command.target || 'session_summary').toLowerCase();
+    context.sessionId = ownerSessionId;
+    context.requestId = String(options.requestId || context.requestId || '');
+    context.messageId = String(options.messageId || context.messageId || '');
+    context.responseLanguage = String(options.responseLanguage || context.responseLanguage || language);
+    context.mode = String(command.mode || context.mode || 'chat');
+    context.layout = context.layout || 'auto';
+    const ownerStillActive = () => ownerSessionId === String(_activeApiSessionId());
+    if (!ownerStillActive()) return { success: false, stale: true, error: 'case_changed' };
+
+    try {
+        if (typeof hydrateDataTreeArtifactCatalog === 'function') {
+            await hydrateDataTreeArtifactCatalog();
+        }
+        if (!ownerStillActive()) return { success: false, stale: true, error: 'case_changed' };
+        if (String(command.presentation || 'auto').toLowerCase() === 'open') {
+            _openSessionContentPanel(target);
+        }
+        const tree = _sessionContentTreeSnapshot();
+        const requestedPlanningId = String(command.planning_id || tree?.planningId || '');
+        const planningTargets = new Set(['planning', 'dose', 'dvh', 'metrics', 'session_summary']);
+        const needPlanning = planningTargets.has(target) || target === 'report';
+        let planning = null;
+        if (needPlanning) {
+            try {
+                planning = await _readPlanningResultsForPresentation(ownerSessionId);
+            } catch (error) {
+                if (planningTargets.has(target)) throw error;
+                console.debug('[session-content] Planning summary is not available for report presentation', error);
+            }
+        }
+        if (!ownerStillActive()) return { success: false, stale: true, error: 'case_changed' };
+
+        let attachments = [];
+        if (target === 'report_figures' || target === 'report') {
+            attachments = await _appendPersistedReportFigures(Object.assign({}, command, {
+                planning_id: requestedPlanningId,
+            }), context, ownerSessionId);
+        } else if (target === 'session_screenshots') {
+            attachments = await _appendPersistedSessionScreenshots(command, context, ownerSessionId);
+        }
+        if (!ownerStillActive()) return { success: false, stale: true, error: 'case_changed' };
+
+        const summary = _sessionContentSummary(target, planning, tree, language, command);
+        if ((target === 'report_figures' || target === 'session_screenshots') && !attachments.length) {
+            return {
+                success: false,
+                error: target === 'report_figures' ? 'report_figures_unavailable' : 'session_screenshots_unavailable',
+                userMessage: _sessionContentUnavailableMessage(target, language),
+                attachments: [],
+            };
+        }
+        if (target === 'report' && !attachments.length && !summary) {
+            return {
+                success: false,
+                error: 'report_unavailable',
+                userMessage: _sessionContentUnavailableMessage(target, language),
+                attachments: [],
+            };
+        }
+        const attachmentIntro = attachments.length
+            ? (language === 'zh'
+                ? `\u5df2\u4ece\u5f53\u524d Session \u4e2d\u8bfb\u53d6 ${attachments.length} \u4e2a\u5df2\u4fdd\u5b58\u7684\u56fe\u50cf\u9644\u4ef6\u3002`
+                : `Loaded ${attachments.length} saved image attachment(s) from the current Session.`)
+            : '';
+        const message = [attachmentIntro, summary].filter(Boolean).join('\n\n');
+        if (!message) {
+            return {
+                success: false,
+                error: 'session_content_unavailable',
+                userMessage: _sessionContentUnavailableMessage(target, language),
+                attachments,
+            };
+        }
+        return { success: true, userMessage: message, attachments, target, planning_id: requestedPlanningId };
+    } catch (error) {
+        if (!ownerStillActive()) return { success: false, stale: true, error: 'case_changed' };
+        console.warn('[session-content] Presentation failed', error);
+        return {
+            success: false,
+            error: 'session_content_unavailable',
+            userMessage: _sessionContentUnavailableMessage(target, language),
+            attachments: [],
+        };
+    }
+};
 
 function _appendScreenshotToGallery(url, target, question, galleryContext, attachmentMeta = {}) {
     const context = galleryContext || {};
@@ -5625,46 +6067,17 @@ function _validateScreenshotDataUrl(dataUrl) {
     });
 }
 
-function _renderScreenshotFailure(galleryContext, errorCode) {
+function _screenshotFailureMessage(galleryContext, errorCode) {
     const context = galleryContext || {};
     const language = _screenshotLanguage(context.sessionId, context.responseLanguage);
     const reportUnavailable = String(errorCode || '').includes('report_figures_unavailable');
-    const message = reportUnavailable
+    return reportUnavailable
         ? (language === 'zh'
             ? '\u5f53\u524d\u62a5\u544a\u5c1a\u672a\u751f\u6210\u53ef\u5c55\u793a\u7684\u622a\u56fe\u3002\u8bf7\u5148\u751f\u6210\u6216\u66f4\u65b0\u62a5\u544a\u540e\u518d\u67e5\u770b\u3002'
             : 'The current report does not yet contain a generated screenshot. Generate or update the report, then try again.')
         : (language === 'zh'
             ? '\u672a\u80fd\u751f\u6210\u6709\u6548\u622a\u56fe\u3002\u8bf7\u786e\u8ba4\u76ee\u6807\u6570\u636e\u5df2\u52a0\u8f7d\u540e\u91cd\u8bd5\u3002'
             : 'A valid screenshot could not be generated. Confirm that the target data is loaded, then retry.');
-    const shell = typeof window.ensureAssistantReplyContainer === 'function'
-        ? window.ensureAssistantReplyContainer(
-            context.requestId,
-            context.messageId,
-            Date.now(),
-            context.messageKind || (context.mode === 'monitor' ? 'monitor_evidence' : 'assistant_final'),
-        )
-        : null;
-    if (shell?.response && !String(shell.response.textContent || '').trim()) {
-        shell.response.hidden = false;
-        shell.response.textContent = message;
-    }
-    if (typeof saveSessionMessage === 'function') {
-        saveSessionMessage(
-            'bot-response',
-            message,
-            null,
-            Date.now(),
-            context.sessionId || _activeApiSessionId(),
-            {
-                requestId: context.requestId || '',
-                messageId: context.messageId || '',
-                messageKind: context.messageKind
-                    || (context.mode === 'monitor' ? 'monitor_evidence' : 'assistant_final'),
-                screenshotLayout: context.layout || 'auto',
-            },
-        );
-    }
-    console.warn('[screenshot] user-visible capture failure:', errorCode);
 }
 
 async function _interceptScreenshot(target, question, galleryContext, options = {}) {
@@ -5790,8 +6203,15 @@ async function _interceptScreenshot(target, question, galleryContext, options = 
         };
     } catch (error) {
         if (!ownerStillActive()) return { success: false, stale: true, error: 'case_changed' };
-        _renderScreenshotFailure(context, error?.message || String(error));
-        return { success: false, error: error?.message || String(error), attachments, plan };
+        const errorCode = error?.message || String(error);
+        console.warn('[screenshot] capture failed for the owning reply:', errorCode);
+        return {
+            success: false,
+            error: errorCode,
+            userMessage: _screenshotFailureMessage(context, errorCode),
+            attachments,
+            plan,
+        };
     } finally {
         await _restoreScreenshotViewerState(snapshot, restoreFocus);
     }
