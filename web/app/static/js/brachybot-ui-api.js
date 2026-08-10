@@ -5012,123 +5012,10 @@ function _restoreScreenshotPanel(panelName) {
 // and display the image in the chat. This bridges the gap between the
 // LLM's ui_screenshot tool call and the frontend's actual capture.
 async function _interceptScreenshotLegacy(target, question, galleryContext, options = {}) {
-    // Older cached callers retain this name. Delegate before doing any work so
-    // they inherit the structured executor's owner checks, state restoration,
-    // localized failure result, and same-reply attachment lifecycle. The
-    // implementation below is retained only as an inert source-compatibility
-    // reference for obsolete bundles and must never create a chat message.
+    // Older cached callers retain this name. Route all of them through the
+    // structured executor so the owning reply, Session checks, viewer-state
+    // restoration, and localized failure handling cannot diverge.
     return _interceptScreenshot(target, question, galleryContext, options);
-
-    const ownerSessionId = String(options.sessionId || _activeApiSessionId());
-    const isCurrentOwner = () => ownerSessionId === String(_activeApiSessionId());
-    const isAllowed = () => isCurrentOwner()
-        && (!options.monitorOnly || trainingMonitorState.active);
-    if (!isAllowed()) return { success: false, stale: true, error: 'case_changed' };
-
-    // Screenshots are temporary observations. Restore both the active panel
-    // and the focused seed camera after capture so monitoring never changes
-    // the user's working view or leaves the wrong panel open.
-    const previousPanel = options.preservePanel ? _activeScreenshotPanel() : null;
-    let restoreFocus = null;
-    let normalizedTarget = target;
-    let dataUrl = null;
-    try {
-        // Unified screenshot target map — single source of truth for both
-        // _interceptScreenshot (SSE-driven) and _captureScreenshot (direct).
-        uiDebugLog('[screenshot] Capturing target:', target);
-        normalizedTarget = ({
-            'dose': 'dose-overview',
-            'dose_distribution': 'dose-overview',
-            'dvh-chart': 'dvh',
-        })[target] || target;
-        const el = normalizedTarget === 'dose-overview'
-            ? document.body
-            : await _prepareScreenshotTarget(normalizedTarget);
-        if (!isAllowed()) return { success: false, stale: true, error: 'case_changed' };
-        if (!el) {
-            console.warn('[screenshot] Target element not found:', target);
-            if (typeof addChat === 'function') addChat('error', typeof window._t === 'function'
-                ? window._t(`截图失败：未找到目标元素 "${target}"`, `Screenshot failed: target "${target}" was not found`)
-                : `Screenshot failed: target "${target}" was not found`);
-            return { success: false, error: 'target_not_found' };
-        }
-        if (typeof html2canvas === 'undefined' && normalizedTarget !== 'dose-overview' && normalizedTarget !== 'dvh') {
-            console.warn('[screenshot] html2canvas not loaded');
-            if (typeof addChat === 'function') addChat('error', typeof window._t === 'function'
-                ? window._t('截图失败：html2canvas 库未加载', 'Screenshot failed: html2canvas is unavailable')
-                : 'Screenshot failed: html2canvas is unavailable');
-            return { success: false, error: 'html2canvas_unavailable' };
-        }
-        if (normalizedTarget === 'viewer-3d'
-            && Array.isArray(options.focusSeedIds)
-            && options.focusSeedIds.length
-            && typeof window.focusPlanningSeedsForScreenshot === 'function') {
-            restoreFocus = window.focusPlanningSeedsForScreenshot(options.focusSeedIds) || null;
-            await _waitScreenshotFrames(3);
-        }
-        uiDebugLog('[screenshot] Capturing element:', el.tagName, el.id || el.className);
-        dataUrl = await _captureScreenshotDataUrl(normalizedTarget, el);
-        if (!isAllowed()) return { success: false, stale: true, error: 'case_changed' };
-        if (!dataUrl) throw new Error('No screenshot data was produced');
-        uiDebugLog('[screenshot] Data URL size:', Math.round(dataUrl.length / 1024), 'KB');
-
-        const res = await fetch(API + '/screenshot', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-BrachyBot-Session': ownerSessionId,
-            },
-            body: JSON.stringify({
-                image: dataUrl,
-                target: normalizedTarget,
-                description: question || `Screenshot of ${normalizedTarget}`,
-                mode: options.mode || (options.monitorOnly ? 'monitor' : 'chat'),
-                request_id: options.requestId || galleryContext?.requestId || '',
-                message_id: options.messageId || galleryContext?.messageId || '',
-                question: question || '',
-            }),
-        });
-        const text = await res.text();
-        if (!isAllowed()) return { success: false, stale: true, error: 'case_changed' };
-        let data = {};
-        try {
-            data = text ? JSON.parse(text) : {};
-        } catch (_) {
-            data = { error: text || `HTTP ${res.status}` };
-        }
-        if (!res.ok) throw new Error(data.error || data.message || `HTTP ${res.status}`);
-
-        const screenshotUrl = data.url || data.screenshot_url || data.image_url || data.path
-            || (data.data && (data.data.url || data.data.path));
-        if (!screenshotUrl) throw new Error(data.error || data.message || 'server did not return a screenshot URL');
-        _appendScreenshotToGalleryLegacy(screenshotUrl, normalizedTarget, question, galleryContext);
-        uiDebugLog('[screenshot] Captured and uploaded:', screenshotUrl);
-        return { success: true, url: screenshotUrl, target: normalizedTarget };
-    } catch (e) {
-        if (!isAllowed()) return { success: false, stale: true, error: 'case_changed' };
-        console.warn('[screenshot] Capture or upload failed:', e);
-        if (dataUrl) {
-            _appendScreenshotToGallery(dataUrl, normalizedTarget, question, galleryContext);
-            if (!galleryContext && typeof addChat === 'function') {
-                addChat('system', typeof window._t === 'function'
-                    ? window._t(`截图已在本地生成，但服务器保存失败：${e.message || String(e)}`,
-                        `Screenshot captured locally, but server persistence failed: ${e.message || String(e)}`)
-                    : `Screenshot captured locally, but server persistence failed: ${e.message || String(e)}`);
-            }
-        } else if (typeof addChat === 'function') {
-            addChat('error', typeof window._t === 'function'
-                ? window._t(`截图失败：${e.message || String(e)}`, `Screenshot failed: ${e.message || String(e)}`)
-                : `Screenshot failed: ${e.message || String(e)}`);
-        }
-        return { success: false, error: e.message || String(e), target: normalizedTarget };
-    } finally {
-        if (restoreFocus) {
-            try { restoreFocus(); } catch (error) { console.debug('[screenshot] camera restore skipped:', error); }
-        }
-        if (options.preservePanel && previousPanel && _activeScreenshotPanel() !== previousPanel) {
-            if (_restoreScreenshotPanel(previousPanel)) await _waitScreenshotFrames(2);
-        }
-    }
 }
 
 // Structured chat/Monitor screenshot executor. The earlier single-target
@@ -6103,6 +5990,14 @@ function _normalizeStructuredScreenshotPlan(target, question, options = {}) {
         ? supplied.views
         : [{ target: target || 'full' }];
     views = views.map(view => typeof view === 'string' ? { target: view } : Object.assign({}, view));
+    // Older cached callers used focusSeedIds directly. Merge those stable
+    // IDs into the current plan rather than dropping the requested close-up
+    // when the call crosses the legacy-to-structured boundary.
+    const objectIds = [...new Set([
+        ...(Array.isArray(supplied.object_ids) ? supplied.object_ids : []),
+        ...(Array.isArray(options.focusSeedIds) ? options.focusSeedIds : []),
+        ...(Array.isArray(options.objectIds) ? options.objectIds : []),
+    ].map(value => String(value || '').trim()).filter(Boolean))];
     const expanded = [];
     views.forEach(view => {
         const normalizedTarget = ({
@@ -6124,7 +6019,7 @@ function _normalizeStructuredScreenshotPlan(target, question, options = {}) {
         question: supplied.question || question || '',
         layout: supplied.layout || options.layout || 'auto',
         views: expanded.slice(0, 8),
-        object_ids: Array.isArray(supplied.object_ids) ? supplied.object_ids : [],
+        object_ids: objectIds,
         data_tree_node_ids: Array.isArray(supplied.data_tree_node_ids) ? supplied.data_tree_node_ids : [],
         highlight_object_ids: Array.isArray(supplied.highlight_object_ids)
             ? supplied.highlight_object_ids
