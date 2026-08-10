@@ -321,7 +321,7 @@ def test_needle_render_scheduler_survives_mixed_static_asset_revisions():
     # index.html. A stale assertion here falsely reports a deployment bug and
     # hides whether the endpoint interaction bundle is really versioned.
     assert "brachybot-viewer-layout.js?v=28" in index
-    assert "brachybot-3d-manual.js?v=58" in index
+    assert "brachybot-3d-manual.js?v=59" in index
     assert "scene3D.requestRender(1)" in layout
     assert "scene3D.requestRender(2)" in layout
     assert "window.requestRender = requestRender;" in manual
@@ -344,7 +344,8 @@ def test_manual_seed_defaults_to_needle_middle_and_is_proximity_selectable():
     # The 3D pick must prefer a seed near the pointer over an endpoint handle.
     assert "prefer that seed over any endpoint handle" in manual
     assert "perp < pickRadius" in manual
-    assert "if (bestSeed) obj = bestSeed;" in manual
+    assert "const nearestSeed = seedHits.length ? null : nearestSeedOnPointerRay();" in manual
+    assert ": nearestSeed ? [{ object: nearestSeed }]" in manual
 
 
 
