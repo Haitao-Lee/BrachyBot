@@ -5235,6 +5235,14 @@ function _reportFigureMetadataFromArtifactFilename(filename, index) {
     return Object.assign({ axis }, metadata[axis] || {});
 }
 
+function _reportFigureStableKey(figure, index = 0) {
+    const axis = String(figure?.axis || '').trim();
+    if (/^report_fig[12]_/i.test(axis)) return `axis:${axis}`;
+    const role = String(figure?.captureRole || figure?.capture_role || '').trim();
+    if (role) return `role:${role}`;
+    return `other:${figure?._serverUrl || figure?.dataUrl || figure?.id || index}`;
+}
+
 function _reportFiguresFromArtifactCatalog(ownerSessionId, activePlanningId) {
     const artifacts = typeof dataTreeState !== 'undefined'
         && Array.isArray(dataTreeState?.exportArtifacts)
@@ -5252,11 +5260,18 @@ function _reportFiguresFromArtifactCatalog(ownerSessionId, activePlanningId) {
             return null;
         }
         const metadata = _reportFigureMetadataFromArtifactFilename(filename, index);
+        // Old UUID-only images do not carry enough semantic information to
+        // become a report attachment. Retain them as exported artifacts, but
+        // never guess that an unlabelled file is a new Figure 1/2 subfigure.
+        if (!metadata.figureGroup) return null;
+        const display = typeof window.describeReportFigure === 'function'
+            ? window.describeReportFigure(metadata.axis) : null;
         return Object.assign({
             id: `report-artifact-${filename.replace(/[^A-Za-z0-9_-]/g, '_')}`,
             type: 'screenshot',
-            title: '',
-            caption: '',
+            title: display?.title || '',
+            caption: display?.caption || '',
+            _artifactFallback: true,
             _serverUrl: `/api/sessions/${encodeURIComponent(ownerSessionId)}/screenshots/${encodeURIComponent(filename)}`,
         }, metadata);
     }).filter(Boolean);
@@ -5295,10 +5310,15 @@ async function _appendPersistedReportFigures(plan, galleryContext, ownerSessionI
             ownerSessionId,
         )).filter(Boolean),
     );
+    const seenFigureKeys = new Set(
+        figures.map((figure, index) => _reportFigureStableKey(figure, index)),
+    );
     _reportFiguresFromArtifactCatalog(ownerSessionId, activePlanningId).forEach(figure => {
         const url = _safePersistedReportFigureUrl(figure._serverUrl, ownerSessionId);
-        if (!url || seenUrls.has(url)) return;
+        const stableKey = _reportFigureStableKey(figure, figures.length);
+        if (!url || seenUrls.has(url) || seenFigureKeys.has(stableKey)) return;
         seenUrls.add(url);
+        seenFigureKeys.add(stableKey);
         figures.push(figure);
     });
 

@@ -16,7 +16,12 @@ def test_biomedparse_catalog_is_explicit_and_excludes_pancreatic_production():
     assert set(SITE_SPECS) <= set(TOOL_REGISTRY)
     assert "nnunet_pancreatic" in TOOL_REGISTRY
     assert "biomedparse_pancreas_tumor" not in SITE_SPECS
-    assert set(SITE_SPECS) <= set(CTVSegmentationTool().input_schema["properties"]["tumor_type"]["enum"])
+    tumor_schema = CTVSegmentationTool().input_schema["properties"]["tumor_type"]
+    # Site aliases are normalized server-side. An enum here would reject a
+    # valid restored ``voco_liver`` or a user-facing ``liver`` before that
+    # normalization can route it to BiomedParse v2.
+    assert "enum" not in tumor_schema
+    assert all(site in tumor_schema["description"] for site in SITE_SPECS)
 
 
 def test_deprecated_voco_aliases_are_hidden_from_the_agent():
@@ -28,11 +33,12 @@ def test_deprecated_voco_aliases_are_hidden_from_the_agent():
     from tool_factory.CTV_seg.biomedparse_v2 import BiomedParseV2CTVTool
     from tool_factory.CTV_seg.model_catalog import filter_catalog
 
-    enum = CTVSegmentationTool().input_schema["properties"]["tumor_type"]["enum"]
-    assert "biomedparse_liver_tumor" in enum
-    assert "liver_tumor" in enum
-    # No deprecated VoCo alias may appear in the agent-facing enum or catalog.
-    assert not any(str(t).startswith("voco_") for t in enum), "voco_* aliases must be hidden from the agent"
+    description = CTVSegmentationTool().input_schema["properties"]["tumor_type"]["description"]
+    assert "biomedparse_liver_tumor" in description
+    assert "liver_tumor" in description
+    # No deprecated VoCo alias may be advertised to the agent. The aliases
+    # remain accepted only by the server-side compatibility normalizer.
+    assert "voco_liver" not in description
     assert not any(str(m.get("tumor_type", "")).startswith("voco_") for m in filter_catalog())
     # The aliases must still resolve so existing callers keep working.
     assert isinstance(get_tool("voco_liver"), BiomedParseV2CTVTool)
@@ -55,6 +61,25 @@ def test_legacy_voco_aliases_route_to_biomedparse():
     assert isinstance(get_tool("nnunet_pancreatic"), NNUNetPancreaticTumorTool)
     assert isinstance(get_tool("voco_pancreatic"), NNUNetPancreaticTumorTool)
     assert isinstance(get_tool("pancreatic_tumor"), NNUNetPancreaticTumorTool)
+
+
+def test_tumor_type_normalizer_unifies_catalog_display_and_legacy_aliases():
+    from tool_factory.CTV_seg import normalize_tumor_type
+
+    aliases = {
+        "liver": "biomedparse_liver_tumor",
+        "liver tumor": "biomedparse_liver_tumor",
+        "biomedparse_v2_liver_tumor": "biomedparse_liver_tumor",
+        "voco_liver": "biomedparse_liver_tumor",
+        "\u809d\u810f\u80bf\u7624": "biomedparse_liver_tumor",
+        "kidney": "biomedparse_kidney_lesion",
+        "lung": "biomedparse_lung_lesion",
+        "colon": "biomedparse_colon_primary",
+        "head and neck": "biomedparse_head_neck_cancer",
+        "pancreatic tumor": "nnunet_pancreatic",
+    }
+    for alias, expected in aliases.items():
+        assert normalize_tumor_type(alias) == expected
 
 
 def test_runtime_python_venv_symlink_is_not_resolved():

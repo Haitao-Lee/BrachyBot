@@ -162,6 +162,26 @@ def test_ctv_normalization_uses_persisted_site_for_llm_tool_call():
     assert harness._normalize_ctv_tool_params({})["tumor_type"] == "nnunet_pancreatic"
 
 
+def test_liver_aliases_use_the_biomedparse_route_before_ctv_validation():
+    """A liver planning request must not emit the retired ``voco_liver``.
+
+    The CTV tool accepts legacy aliases for old Sessions, but automatic
+    planning and LLM tool calls must already be canonical before schema/tool
+    validation starts.
+    """
+    harness = _DirectHarness(_Memory({"ct_path": "/tmp/case.nii.gz"}))
+    harness._SUPPORTED_AUTOMATIC_CTV_TYPES = frozenset({
+        "nnunet_pancreatic",
+        "biomedparse_liver_tumor",
+    })
+
+    assert harness._map_tumor_type("liver") == "biomedparse_liver_tumor"
+    assert harness._map_tumor_type("voco_liver") == "biomedparse_liver_tumor"
+    assert harness._normalize_ctv_tool_params({
+        "tumor_type": "biomedparse_v2_liver_tumor",
+    })["tumor_type"] == "biomedparse_liver_tumor"
+
+
 def test_explicit_seed_implant_plan_runs_complete_local_delivery_chain():
     """A clear plan request must not wait for router rediscovery.
 
