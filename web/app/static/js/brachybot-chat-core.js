@@ -36,6 +36,26 @@ function conversationLanguageForSession(sessionId = activeSessionId) {
 }
 window.conversationLanguageForSession = conversationLanguageForSession;
 
+// Read-only, bounded metadata for the Session-content bridge. The bridge
+// needs the real persisted conversation state, but it must not serialize raw
+// execution prompts or duplicate the entire transcript into an assistant
+// reply. Full history remains available in the chat pane and Session export.
+function getSessionContentSnapshot(sessionId = activeSessionId) {
+    const session = sessions[String(sessionId || '')];
+    const messages = Array.isArray(session?.messages) ? session.messages : [];
+    const visible = messages.filter(message => ['user', 'bot-response', 'bot'].includes(String(message?.type || '')));
+    const traces = messages.filter(message => String(message?.message_kind || '') === 'execution_trace');
+    return {
+        available: !!session,
+        messageCount: visible.length,
+        userMessageCount: visible.filter(message => String(message?.type || '') === 'user').length,
+        assistantMessageCount: visible.filter(message => ['bot-response', 'bot'].includes(String(message?.type || ''))).length,
+        executionTraceCount: traces.length,
+        title: String(session?.title || ''),
+    };
+}
+window.getSessionContentSnapshot = getSessionContentSnapshot;
+
 function chatTranslate(zh, en, sessionId = activeSessionId) {
     return conversationLanguageForSession(sessionId) === 'zh' ? zh : en;
 }
@@ -2822,6 +2842,7 @@ const _TODO_I18N = {
             web_search: '联网搜索',
             web_fetch: '抓取网页',
             ui_screenshot: '截屏',
+            ui_content: '呈现 Session 内容',
             ui_controller: 'UI 控制',
             ui_annotate: '图像标注',
             shell_executor: '执行 Shell 命令',
@@ -2865,6 +2886,7 @@ const _TODO_I18N = {
             web_search: 'Web search',
             web_fetch: 'Web fetch',
             ui_screenshot: 'Screenshot',
+            ui_content: 'Present Session content',
             ui_controller: 'UI control',
             fact_checker: 'Source verification',
             ui_annotate: 'Image annotation',

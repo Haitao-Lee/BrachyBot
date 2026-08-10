@@ -1725,6 +1725,14 @@ async function sendChat(prefill, options) {
     const screenshotTasks = [];
     const screenshotResults = [];
     const screenshotTaskKeys = new Set();
+    // Persisted Session content uses the same reply identity as screenshots,
+    // but it reads existing artifacts/data instead of capturing a live DOM
+    // canvas. Keep its lifecycle separate so capture failures cannot replace
+    // or erase the assistant response for this turn.
+    const sessionContentTasks = [];
+    const sessionContentResults = [];
+    const sessionContentTaskKeys = new Set();
+    const presentationMessages = [];
     const uiActionTasks = [];
     // Group screenshots emitted during one assistant turn into one gallery.
     const screenshotGallery = {
@@ -2201,11 +2209,60 @@ async function sendChat(prefill, options) {
                                                 screenshotResults.push(result);
                                             }
                                         }
+                                        if (result?.userMessage) {
+                                            presentationMessages.push(String(result.userMessage));
+                                        }
                                         return result;
                                     }));
                                 } catch (e) {
                                     console.warn('[SSE-STEP] Screenshot interception failed:', e);
                                 }
+                                }
+                            }
+                            // ``ui_content`` presents durable Session-owned
+                            // data (report figures, planning/DVH, Data Tree,
+                            // chat history, etc.) in the same reply. It is not
+                            // a screenshot capture and must not be routed to a
+                            // browser canvas or emitted as a standalone log.
+                            if (data.status === 'done' && data.tool === 'ui_content' && data.metadata) {
+                                const _contentCmd = data.metadata.content_command || data.metadata;
+                                const _contentKey = String(
+                                    data.id || `${_contentCmd.target || 'session_summary'}|${_contentCmd.planning_id || ''}`,
+                                );
+                                if (sessionContentTaskKeys.has(_contentKey)) {
+                                    uiDebugLog('[SSE-STEP] Ignoring duplicate Session content completion:', _contentKey);
+                                } else {
+                                    sessionContentTaskKeys.add(_contentKey);
+                                    const _fallbackLanguage = String(turnIdentity.responseLanguage || '').toLowerCase().startsWith('zh')
+                                        ? '当前 Session 中暂时没有可呈现的对应数据。'
+                                        : 'The requested content is not currently available in this Session.';
+                                    sessionContentTasks.push(Promise.resolve(
+                                        typeof window.presentSessionContent === 'function'
+                                            ? window.presentSessionContent(_contentCmd, screenshotGallery, {
+                                                sessionId: turnSessionId,
+                                                requestId: turnRequestId,
+                                                messageId: turnAssistantMessageId,
+                                                responseLanguage: turnIdentity.responseLanguage,
+                                            })
+                                            : {
+                                                success: false,
+                                                error: 'session_content_bridge_unavailable',
+                                                userMessage: _fallbackLanguage,
+                                                attachments: [],
+                                            },
+                                    ).then(result => {
+                                        if (result?.success && Array.isArray(result.attachments)) {
+                                            sessionContentResults.push(...result.attachments);
+                                        }
+                                        if (result?.userMessage) {
+                                            presentationMessages.push(String(result.userMessage));
+                                        }
+                                        return result;
+                                    }).catch(error => {
+                                        console.warn('[SSE-STEP] Session content presentation failed:', error);
+                                        presentationMessages.push(_fallbackLanguage);
+                                        return { success: false, error: 'session_content_unavailable' };
+                                    }));
                                 }
                             }
                             // Count completed tool calls for the usage-bar
@@ -2458,10 +2515,16 @@ async function sendChat(prefill, options) {
         if (screenshotTasks.length) {
             await Promise.allSettled(screenshotTasks);
         }
+        if (sessionContentTasks.length) {
+            await Promise.allSettled(sessionContentTasks);
+        }
         if (uiActionTasks.length) {
             await Promise.allSettled(uiActionTasks);
         }
         if (String(activeSessionId || '') !== turnSessionId) return;
+        const presentationAttachments = [...screenshotResults, ...sessionContentResults].filter(
+            item => item && typeof item === 'object',
+        );
 
         // A screenshot requested for explanation is visual context, not the
         // final answer. Send exactly one hidden multimodal follow-up after all
@@ -2539,6 +2602,21 @@ async function sendChat(prefill, options) {
             ? (responseText || '(no reply)')
             : '(No validated response was returned. Please retry.)';
         let renderedFinalText = finalText;
+        const presentationMessage = presentationMessages.filter(Boolean).slice(-1)[0] || '';
+        const presentationTools = steps.filter(step => step && step.type === 'tool' && step.tool);
+        const isPresentationOnlyTurn = presentationTools.length > 0
+            && presentationTools.every(step => ['ui_screenshot', 'ui_content'].includes(step.tool));
+        // The browser is authoritative for persisted Session content. Its
+        // result replaces only an empty/internal acknowledgement, never a
+        // substantive analysis written by the model.
+        if (presentationMessage && (
+            isPresentationOnlyTurn
+            || !renderedFinalText.trim()
+            || /^(?:Tools executed\. Check the execution trace above for results\.|\(no reply\)|\(No validated response)/i.test(renderedFinalText.trim())
+        )) {
+            renderedFinalText = presentationMessage;
+            finalResponseReceived = true;
+        }
         // A tool-only turn can legitimately finish without a model-written
         // sentence (for example, a dose inspection request whose tool only
         // returned structured metrics).  Do not show the internal generic
@@ -2567,7 +2645,7 @@ async function sendChat(prefill, options) {
         }
         if (!suppressScreenshotAck && responseEl && typeof finalizeStreamingResponse === 'function') {
             const meta = _buildTurnMeta(Object.assign({}, turnIdentity, {
-                attachments: screenshotResults,
+                attachments: presentationAttachments,
                 screenshotLayout: screenshotGallery.layout || 'auto',
             }));
             finalizeStreamingResponse(responseEl, renderedFinalText, turnSessionId, meta);
@@ -2582,7 +2660,7 @@ async function sendChat(prefill, options) {
                     {},
                     turnIdentity,
                     {
-                        attachments: screenshotResults,
+                        attachments: presentationAttachments,
                         screenshotLayout: screenshotGallery.layout || 'auto',
                     },
                 ));
@@ -2738,7 +2816,7 @@ async function sendChat(prefill, options) {
 
 function _traceStepForDisplay(step, sessionId, turnLanguage = '') {
     if (!step || typeof step !== 'object') return step;
-    if (step.tool !== 'ui_screenshot') return step;
+    if (!['ui_screenshot', 'ui_content'].includes(step.tool)) return step;
     const language = (
         turnLanguage
         || step.trace_language
@@ -2751,6 +2829,25 @@ function _traceStepForDisplay(step, sessionId, turnLanguage = '') {
         || 'en'
     ).toLowerCase().startsWith('zh') ? 'zh' : 'en';
     const metadata = step.metadata || {};
+    if (step.tool === 'ui_content') {
+        const command = metadata.content_command || {};
+        const summaryMap = metadata.trace_summary_i18n || {};
+        const target = String(command.target || metadata.content_target || 'session_summary');
+        const fallback = language === 'zh'
+            ? '\u5df2\u8bfb\u53d6\u5f53\u524d Session \u4e2d\u7684\u5df2\u4fdd\u5b58\u5185\u5bb9\u3002'
+            : 'Read persisted content from the current Session.';
+        return Object.assign({}, step, {
+            title: language === 'zh' ? '\u5448\u73b0 Session \u5185\u5bb9' : 'Present Session content',
+            params: {
+                target,
+                presentation: String(command.presentation || 'auto'),
+                mode: String(command.mode || 'chat'),
+            },
+            content: '',
+            result: String(summaryMap[language] || fallback),
+            metadata,
+        });
+    }
     const summaryMap = metadata.trace_summary_i18n
         || metadata.screenshot_plan?.trace_summary_i18n
         || {};

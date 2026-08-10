@@ -19,7 +19,7 @@ import SimpleITK as sitk
 
 from agent_runtime.core import PlanningPhase, ToolResultPipeline, resolve_reference_direction_input
 from agent_runtime.contracts import RunStatus
-from agent_runtime.turn_policy import classify_local_turn
+from agent_runtime.turn_policy import classify_local_turn, resolve_session_content_target
 from plans.dose_pre.model_loader import (
     DEFAULT_PRESCRIPTION_GY,
     DOSE_MODEL_SCALE_GY,
@@ -560,6 +560,53 @@ class ChatWorkflowMixin:
         lines.append("- Ask separately for site-specific dose standards or OAR limits when an evidence lookup is intended.")
         return "\n".join(lines)
 
+    @staticmethod
+    def _session_content_response(target: str, lang: str = "en") -> str:
+        """Return a localized acknowledgement for a browser content bridge.
+
+        The browser resolves the command against the active Session and may
+        attach persisted figures or open the matching panel. This text is
+        deliberately factual: it does not claim that an artifact exists until
+        the browser has verified it.
+        """
+        target = str(target or "session_summary")
+        zh = {
+            "report_figures": "\u6b63\u5728\u5448\u73b0\u5f53\u524d\u62a5\u544a\u4e2d\u5df2\u4fdd\u5b58\u7684\u622a\u56fe\u3002",
+            "report": "\u6b63\u5728\u6253\u5f00\u5f53\u524d\u62a5\u544a\u5e76\u5448\u73b0\u5176\u5df2\u4fdd\u5b58\u9644\u4ef6\u3002",
+            "session_screenshots": "\u6b63\u5728\u5448\u73b0\u5f53\u524d Session \u4e2d\u5df2\u4fdd\u5b58\u7684\u622a\u56fe\u3002",
+            "planning": "\u6b63\u5728\u5448\u73b0\u5f53\u524d\u89c4\u5212\u7ed3\u679c\u3002",
+            "dose": "\u6b63\u5728\u5448\u73b0\u5f53\u524d\u5242\u91cf\u7ed3\u679c\u3002",
+            "dvh": "\u6b63\u5728\u5448\u73b0\u5f53\u524d DVH \u6570\u636e\u3002",
+            "metrics": "\u6b63\u5728\u5448\u73b0\u5f53\u524d\u89c4\u5212\u6307\u6807\u3002",
+            "ct": "\u6b63\u5728\u5448\u73b0\u5f53\u524d CT \u56fe\u50cf\u548c\u5143\u6570\u636e\u3002",
+            "structures": "\u6b63\u5728\u5448\u73b0\u5f53\u524d\u7ed3\u6784\u548c\u5206\u5272\u7ed3\u679c\u3002",
+            "surgical_guide": "\u6b63\u5728\u5448\u73b0\u5f53\u524d\u624b\u672f\u5bfc\u677f\u3002",
+            "data_tree": "\u6b63\u5728\u5448\u73b0\u5f53\u524d Session \u7684 Data Tree\u3002",
+            "chat_history": "\u6b63\u5728\u5448\u73b0\u5f53\u524d Session \u7684\u5bf9\u8bdd\u5386\u53f2\u3002",
+            "artifact": "\u6b63\u5728\u5448\u73b0\u5f53\u524d Session \u4e2d\u9009\u62e9\u7684\u6570\u636e\u5bf9\u8c61\u3002",
+        }
+        en = {
+            "report_figures": "Presenting the saved figures from the current report.",
+            "report": "Opening the current report and presenting its saved attachments.",
+            "session_screenshots": "Presenting saved screenshots from the current Session.",
+            "planning": "Presenting the current planning result.",
+            "dose": "Presenting the current dose result.",
+            "dvh": "Presenting the current DVH data.",
+            "metrics": "Presenting the current planning metrics.",
+            "ct": "Presenting the loaded CT image and metadata.",
+            "structures": "Presenting the current structures and segmentation results.",
+            "surgical_guide": "Presenting the current Surgical Guide.",
+            "data_tree": "Presenting the current Session Data Tree.",
+            "chat_history": "Presenting the current Session conversation history.",
+            "artifact": "Presenting the selected data object from the current Session.",
+        }
+        return (zh if lang == "zh" else en).get(
+            target,
+            "\u6b63\u5728\u5448\u73b0\u5f53\u524d Session \u4e2d\u53ef\u8bbf\u95ee\u7684\u5185\u5bb9\u3002"
+            if lang == "zh"
+            else "Presenting the accessible content in the current Session.",
+        )
+
     def _build_3d_status_response(self, lang: str = "en") -> str:
         """Explain the current 3D state without inventing a rendering cause."""
         ui_state = self.memory.get_ui_state() or {}
@@ -907,6 +954,14 @@ class ChatWorkflowMixin:
             self._finish_turn(response)
             return response
 
+        if local_policy.intent == "session_content_query":
+            target = resolve_session_content_target(message) or "session_summary"
+            response = self._session_content_response(target, self.memory.user_lang)
+            self.memory.add_message("assistant", response)
+            self._record_experience(message, response)
+            self._finish_turn(response)
+            return response
+
         if self.enhanced:
             self.enhanced.pre_task_hook(message)
 
@@ -1008,6 +1063,25 @@ class ChatWorkflowMixin:
                 "response": response,
                 "steps": steps,
                 "llm_meta": {"usage": {}, "latency_ms": 0, "llm_calls": 0, "route": "local_image_metadata"},
+            }
+
+        if local_policy.intent == "session_content_query":
+            target = resolve_session_content_target(message) or "session_summary"
+            title = "\u5448\u73b0 Session \u5185\u5bb9" if self.memory.user_lang == "zh" else "Present Session Content"
+            content = (
+                "\u6b63\u5728\u8bfb\u53d6\u5f53\u524d Session \u4e2d\u5df2\u4fdd\u5b58\u7684\u5185\u5bb9..."
+                if self.memory.user_lang == "zh"
+                else "Reading saved content from the current Session..."
+            )
+            add_step("ui", title, content, status="done", tool="ui_content", params={"target": target})
+            response = self._session_content_response(target, self.memory.user_lang)
+            self.memory.add_message("assistant", response)
+            self._record_experience(message, response, steps)
+            self._finish_turn(response)
+            return {
+                "response": response,
+                "steps": steps,
+                "llm_meta": {"usage": {}, "latency_ms": 0, "llm_calls": 0, "route": "local_session_content"},
             }
 
         if self.enhanced:
@@ -1502,6 +1576,95 @@ class ChatWorkflowMixin:
             yield yield_event("done", {"context": {"message_count": len(self.memory.conversation)}})
             return
 
+        # Content already persisted in the current Session is presented by the
+        # browser against the owner Session, not recaptured from a potentially
+        # unmounted panel. The tool step carries only a compact, localized
+        # command; the frontend resolves attachments and structured data.
+        if local_policy.intent == "session_content_query":
+            target = resolve_session_content_target(message) or "session_summary"
+            params = {
+                "target": target,
+                "presentation": "attachments" if target in {"report_figures", "session_screenshots"} else "auto",
+                "mode": "chat",
+                "question": message,
+            }
+            state_step = add_step(
+                "tool",
+                _trace_text("\u5448\u73b0 Session \u5185\u5bb9", "Present Session Content"),
+                _trace_text(
+                    "\u6b63\u5728\u8bfb\u53d6\u5f53\u524d Session \u4e2d\u5df2\u4fdd\u5b58\u7684\u5185\u5bb9...",
+                    "Reading saved content from the current Session...",
+                ),
+                status="pending",
+                tool="ui_content",
+                params={"target": target, "presentation": params["presentation"], "mode": "chat"},
+            )
+            yield yield_event("step", state_step)
+            tool = None
+            if getattr(self, "registry", None):
+                try:
+                    tool = self.registry.get("ui_content")
+                except Exception as error:
+                    # A rolling server upgrade can briefly serve a restored
+                    # Session with an older registry. Treat that as a normal,
+                    # localized unavailable state instead of aborting the
+                    # entire chat turn with a registry exception.
+                    logger.warning("Session-content tool is unavailable: %s", error)
+                    tool = None
+            if tool is None:
+                state_step["status"] = "error"
+                state_step["content"] = _trace_text(
+                    "Session \u5185\u5bb9\u5448\u73b0\u670d\u52a1\u6682\u4e0d\u53ef\u7528\u3002",
+                    "The Session content presentation service is unavailable.",
+                )
+                response = (
+                    "\u6682\u65f6\u65e0\u6cd5\u8bfb\u53d6\u5f53\u524d Session \u4e2d\u7684\u8bf7\u6c42\u5185\u5bb9\u3002\u8bf7\u7a0d\u540e\u91cd\u8bd5\uff0c\u6216\u5148\u786e\u8ba4\u8be5 Session \u5df2\u5b8c\u6210\u52a0\u8f7d\u3002"
+                    if self.memory.user_lang == "zh"
+                    else "The requested content cannot be read from the current Session right now. Retry after the Session finishes loading."
+                )
+            else:
+                try:
+                    result = self._execute_tool_with_memory("ui_content", params)
+                except Exception:
+                    logger.exception("Session-content tool execution failed")
+                    state_step["status"] = "error"
+                    state_step["content"] = ""
+                    state_step["result"] = (
+                        "\u5f53\u524d Session \u4e2d\u7684\u8bf7\u6c42\u5185\u5bb9\u6682\u65f6\u65e0\u6cd5\u5448\u73b0\u3002\u8bf7\u7a0d\u540e\u91cd\u8bd5\u3002"
+                        if self.memory.user_lang == "zh"
+                        else "The requested Session content cannot be presented right now. Please retry shortly."
+                    )
+                    response = state_step["result"]
+                else:
+                    raw_metadata = dict(getattr(result, "metadata", {}) or {})
+                    state_step["status"] = "done" if result.success else "error"
+                    state_step["content"] = ""
+                    # Keep only the compact browser command and localized
+                    # trace summary in the live event. The tool's
+                    # model_instruction is intentionally not sent to the
+                    # browser, persisted Trace, or normal chat message.
+                    if result.success:
+                        state_step["metadata"] = ToolResultPipeline.trace_metadata(
+                            "ui_content",
+                            raw_metadata,
+                        )
+                    else:
+                        state_step["metadata"] = {}
+                    state_step["result"] = ToolResultPipeline.format("ui_content", result, self.memory.user_lang)
+                    if result.success:
+                        response = self._session_content_response(target, self.memory.user_lang)
+                    else:
+                        error_map = raw_metadata.get("user_error_i18n", {})
+                        response = str(error_map.get(self.memory.user_lang) or error_map.get("en") or state_step["result"])
+            yield yield_event("step", state_step)
+            self.memory.add_message("assistant", response)
+            self._finish_turn(response)
+            llm_meta["route"] = "local_session_content"
+            llm_meta["phase_timings_ms"] = dict(getattr(self, "_turn_timings", {}) or {})
+            yield from final_response_events({"response": response, "llm_meta": llm_meta})
+            yield yield_event("done", {"context": {"message_count": len(self.memory.conversation)}})
+            return
+
         # A request for the number of currently loaded OARs is a local UI
         # state query. It reads the active case instead of searching the
         # clinical KB, taking a screenshot, or asking the model to infer it.
@@ -1562,8 +1725,9 @@ class ChatWorkflowMixin:
             _lang = self.memory.user_lang
             logger.info(f"Direct tool execution (stream): {len(_direct_tool_calls)} tools")
             for tc in _direct_tool_calls:
-                step = add_step("tool", f"Direct: {tc['tool']}", json.dumps(tc['params'], default=str)[:200],
-                                status="pending", tool=tc['tool'], params=tc['params'])
+                trace_params = ToolResultPipeline.trace_params(tc["tool"], tc["params"])
+                step = add_step("tool", f"Direct: {tc['tool']}", json.dumps(trace_params, default=str)[:200],
+                                status="pending", tool=tc['tool'], params=trace_params)
                 yield yield_event("step", step)
                 try:
                     # Store ct_path for downstream tools
@@ -1609,7 +1773,11 @@ class ChatWorkflowMixin:
                                 _fact_step["content"] = f"Source check unavailable: {str(_fact_exc)[:80]}"
                             yield yield_event("step", _fact_step)
                         step["result"] = _fmt
-                        step["metadata"] = result.metadata if result.success else {}
+                        step["metadata"] = (
+                            ToolResultPipeline.trace_metadata(tc["tool"], result.metadata)
+                            if result.success
+                            else {}
+                        )
                         yield yield_event("step", step)
                         if result.success:
                             # After a segmentation tool, ensure ct_image is
@@ -1631,7 +1799,11 @@ class ChatWorkflowMixin:
                                         )
                         # Store in conversation for context persistence
                         self.memory.add_message("assistant", f"[Called {tc['tool']}]")
-                        result_summary = result.message[:500] if result.success else f"Error: {result.error}"
+                        result_summary = (
+                            _fmt[:500]
+                            if tc["tool"] in {"ui_screenshot", "ui_content"}
+                            else (result.message[:500] if result.success else f"Error: {result.error}")
+                        )
                         self.memory.add_message("user", f"[Tool result: {result_summary}]")
                         if not result.success and tc["tool"] in {
                             "ctv_segmentation", "oar_segmentation", "planning_pipeline"

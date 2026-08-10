@@ -892,7 +892,7 @@ class ToolResultPipeline:
         "biomedparse_segmentation",
     }
     _ANALYSIS_TOOLS = {"code_executor"}
-    _UI_TOOLS = {"ui_controller", "ui_screenshot"}
+    _UI_TOOLS = {"ui_controller", "ui_screenshot", "ui_content"}
     _PLANNING_TOOLS = {"planning_pipeline", "seed_planning", "trajectory_planning", "dose_engine", "dose_evaluation"}
     _WEB_TOOLS = {"web_search", "web_fetch", "web_access"}
     _DOCUMENT_TOOLS = {"doc_reader"}
@@ -911,7 +911,7 @@ class ToolResultPipeline:
         "trajectory_init", "trajectory_refine", "dose_engine", "dose_calc",
         "dose_evaluation", "query_metrics", "surgical_guide",
         "report_generator", "report_auto_fill", "ui_controller",
-        "ui_screenshot", "ui_annotate", "doc_reader",
+        "ui_screenshot", "ui_content", "ui_annotate", "doc_reader",
     }
     _LOCALIZABLE_TOOLS = {"filesystem_browser", "shell_executor", "code_executor"}
 
@@ -926,6 +926,14 @@ class ToolResultPipeline:
 
         Priority: result.display > auto-generated from metadata > result.message > generic
         """
+        meta = result.metadata or {}
+
+        # Presentation tools carry an LLM-facing instruction in result.message.
+        # That instruction must never become ordinary chat text or a Trace row.
+        # Handle their successful and failed results before generic fallbacks.
+        if tool_name in {"ui_screenshot", "ui_content"}:
+            return ToolResultPipeline._format_ui(tool_name, result, meta, lang)
+
         if not result.success and lang == "zh" and tool_name in ToolResultPipeline._DOCUMENT_TOOLS:
             return f"\u8bfb\u53d6\u6587\u4ef6\u5143\u6570\u636e\u5931\u8d25\uff1a{result.error}"
         if not result.success:
@@ -1290,7 +1298,28 @@ class ToolResultPipeline:
     @staticmethod
     def _format_ui(tool_name: str, result, meta: dict, lang: str) -> str:
         """Format UI controller results."""
-        if tool_name == "ui_screenshot":
+        if tool_name in {"ui_screenshot", "ui_content"}:
+            if not result.success:
+                user_errors = meta.get("user_error_i18n") or {}
+                if isinstance(user_errors, dict):
+                    localized = str(
+                        user_errors.get("zh" if lang == "zh" else "en")
+                        or user_errors.get("en")
+                        or ""
+                    ).strip()
+                    if localized:
+                        return localized
+                if tool_name == "ui_content":
+                    return (
+                        "\u5f53\u524d Session \u4e2d\u7684\u8bf7\u6c42\u5185\u5bb9\u6682\u65f6\u65e0\u6cd5\u5448\u73b0\u3002\u8bf7\u786e\u8ba4\u76f8\u5173\u6570\u636e\u5df2\u52a0\u8f7d\u6216\u5df2\u751f\u6210\u540e\u91cd\u8bd5\u3002"
+                        if lang == "zh"
+                        else "The requested Session content cannot be presented right now. Confirm the related data is loaded or generated, then retry."
+                    )
+                return (
+                    "\u6682\u65f6\u65e0\u6cd5\u751f\u6210\u8bf7\u6c42\u7684\u622a\u56fe\u3002\u8bf7\u786e\u8ba4\u76ee\u6807\u6570\u636e\u5df2\u52a0\u8f7d\u540e\u91cd\u8bd5\u3002"
+                    if lang == "zh"
+                    else "The requested screenshot cannot be generated right now. Confirm the target data is loaded, then retry."
+                )
             summaries = meta.get("trace_summary_i18n") or {}
             if isinstance(summaries, dict):
                 return str(
@@ -1306,6 +1335,96 @@ class ToolResultPipeline:
         if display_msg:
             return display_msg
         return result.message or f"{tool_name} completed."
+
+    @staticmethod
+    def trace_metadata(tool_name: str, metadata) -> dict:
+        """Return metadata that is safe to emit in a live Execution Trace.
+
+        Presentation tools need a small command object at the browser boundary,
+        but their original metadata may also contain model-only instructions.
+        Keep the command capability-oriented and strip all transport details
+        before an SSE event or a durable Trace can receive it.
+        """
+        source = dict(metadata or {}) if isinstance(metadata, dict) else {}
+        if tool_name == "ui_content":
+            command = (
+                dict(source.get("content_command") or {})
+                if isinstance(source.get("content_command"), dict)
+                else {}
+            )
+            return {
+                "content_command": ToolResultPipeline.trace_params("ui_content", command),
+                "trace_summary_i18n": source.get("trace_summary_i18n", {}),
+                "internal_only": True,
+                "user_visible": False,
+            }
+        if tool_name == "ui_screenshot":
+            plan = (
+                dict(source.get("screenshot_plan") or {})
+                if isinstance(source.get("screenshot_plan"), dict)
+                else {}
+            )
+            command = (
+                dict(source.get("screenshot_command") or {})
+                if isinstance(source.get("screenshot_command"), dict)
+                else {}
+            )
+            safe_plan = ToolResultPipeline.trace_params("ui_screenshot", plan)
+            return {
+                "screenshot_command": {
+                    "command": str(command.get("command") or "screenshot_plan"),
+                    "target": command.get("target"),
+                    "plan": safe_plan,
+                },
+                "screenshot_plan": safe_plan,
+                "trace_summary_i18n": source.get("trace_summary_i18n", {}),
+                "internal_only": True,
+                "user_visible": False,
+            }
+        return source
+
+    @staticmethod
+    def trace_params(tool_name: str, params) -> dict:
+        """Return the minimum browser contract safe for a presentation Trace.
+
+        ``ui_screenshot`` and ``ui_content`` receive model-facing questions,
+        descriptive prompts, and other implementation details.  Those fields
+        must never be put into an SSE step or a persisted Execution Trace.
+        The remaining fields are stable identifiers and rendering controls the
+        browser genuinely needs to present the requested Session data.
+        """
+        source = dict(params or {}) if isinstance(params, dict) else {}
+        if tool_name == "ui_content":
+            allowed = (
+                "command",
+                "target",
+                "presentation",
+                "mode",
+                "planning_id",
+                "object_ids",
+            )
+        elif tool_name == "ui_screenshot":
+            allowed = (
+                "version",
+                "mode",
+                "target",
+                "views",
+                "layout",
+                "object_ids",
+                "data_tree_node_ids",
+                "highlight_object_ids",
+                "hide_unrelated",
+                "focus",
+                "slice_indices",
+                "overlays",
+            )
+        else:
+            return source
+        return {
+            key: source.get(key)
+            for key in allowed
+            if source.get(key) not in (None, "", [], {})
+        }
 
     @staticmethod
     def _format_web(tool_name: str, result, meta: dict, lang: str) -> str:
