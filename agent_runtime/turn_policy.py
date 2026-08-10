@@ -166,6 +166,40 @@ def _is_current_image_metadata_query(message: str) -> bool:
     )
 
 
+def _is_image_tumor_measurement_request(message: str) -> bool:
+    """Recognize image-grounded tumor location/size analysis requests.
+
+    These requests need a real segmentation result. They are different from
+    general tumor knowledge questions because the user identifies an uploaded
+    scan and asks for patient-specific location or size.
+    """
+    text = str(message or "").strip().lower()
+    if not text:
+        return False
+    image_terms = (
+        "ct", "image", "scan", "nifti", "uploaded", "patient",
+        "\u56fe\u50cf", "\u5f71\u50cf", "\u4e0a\u4f20", "\u60a3\u8005",
+    )
+    tumor_terms = (
+        "tumor", "tumour", "lesion", "cancer",
+        "\u80bf\u7624", "\u80bf\u5757", "\u75c5\u7076", "\u764c",
+    )
+    request_terms = (
+        "analy", "where", "location", "size", "volume", "large",
+        "\u5206\u6790", "\u5728\u54ea", "\u4f4d\u7f6e", "\u591a\u5927", "\u4f53\u79ef",
+    )
+    site_terms = (
+        "pancreas", "pancreatic", "liver", "kidney", "lung", "colon", "prostate",
+        "\u80f0\u817a", "\u809d", "\u80be", "\u80ba", "\u7ed3\u80a0", "\u524d\u5217\u817a",
+    )
+    return (
+        any(term in text for term in image_terms)
+        and any(term in text for term in tumor_terms)
+        and any(term in text for term in request_terms)
+        and any(term in text for term in site_terms)
+    )
+
+
 def resolve_session_content_target(message: str) -> Optional[str]:
     """Resolve a read-only request for persisted current-Session content.
 
@@ -284,6 +318,18 @@ def classify_local_turn(message: str, pending_tumor_site: bool = False) -> Local
             False,
             False,
             frozenset(),
+        )
+
+    # Patient-specific tumor location/size questions require a real CTV mask,
+    # even though they are phrased as questions rather than commands.
+    if _is_image_tumor_measurement_request(text):
+        return LocalTurnPolicy(
+            "segmentation",
+            "medium",
+            True,
+            False,
+            True,
+            CLINICAL_TOOLS,
         )
 
     # A request to view a persisted Session artifact is not a new screenshot,

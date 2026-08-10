@@ -125,26 +125,93 @@ class ResponseToolMixin:
         )
         return match.group(1) if match else None
 
-    def _normalize_ctv_tool_params(self, params: Dict) -> Dict:
-        """Normalize every CTV site spelling before tool contract validation."""
-        normalized = dict(params or {})
-        raw = (
-            normalized.get("tumor_type")
-            or normalized.get("tumor_site")
-            or normalized.get("site")
+    @staticmethod
+    def _is_image_tumor_measurement_request(message: str) -> bool:
+        """Recognize a patient-specific tumor location/size request."""
+        text = str(message or "").strip().lower()
+        if not text:
+            return False
+        return (
+            bool(re.search(
+                r"(?:\bct\b|\bimage\b|\bscan\b|\bnifti\b|\buploaded\b|\bpatient\b|"
+                r"\u56fe\u50cf|\u5f71\u50cf|\u4e0a\u4f20|\u60a3\u8005)", text, re.IGNORECASE,
+            ))
+            and bool(re.search(
+                r"(?:\btumou?r\b|\blesion\b|\bcancer\b|\u80bf\u7624|\u80bf\u5757|\u75c5\u7076|\u764c)",
+                text, re.IGNORECASE,
+            ))
+            and bool(re.search(
+                r"(?:analy|where|location|size|volume|large|\u5206\u6790|\u5728\u54ea|\u4f4d\u7f6e|\u591a\u5927|\u4f53\u79ef)",
+                text, re.IGNORECASE,
+            ))
+            and bool(re.search(
+                r"(?:pancreas|pancreatic|liver|kidney|lung|colon|prostate|"
+                r"\u80f0\u817a|\u809d|\u80be|\u80ba|\u7ed3\u80a0|\u524d\u5217\u817a)",
+                text, re.IGNORECASE,
+            ))
         )
-        if raw:
-            mapped = self._map_tumor_type(str(raw))
+
+    def _normalize_ctv_tool_params(self, params: Dict, message: str = "") -> Dict:
+        """Normalize every CTV call alias before tool contract validation.
+
+        Catalog-driven model calls historically used ``model``/``organ``
+        while the unified CTV tool uses ``tumor_type``. Resolve both forms
+        here and keep a second fallback to the current user turn so a model
+        omission cannot erase a site that the user already supplied.
+        """
+        normalized = dict(params or {})
+        if not normalized.get("image_path"):
+            image_alias = normalized.get("ct_image_path") or normalized.get("ct_path")
+            if image_alias:
+                normalized["image_path"] = image_alias
+        fallback_tumor_type = None
+        for alias in (
+            "tumor_type",
+            "model",
+            "tumor_site",
+            "site",
+            "organ",
+            "organ_type",
+        ):
+            value = normalized.get(alias)
+            if value is None or not str(value).strip():
+                continue
+            mapped = self._map_tumor_type(str(value))
+            if not mapped:
+                continue
+            if mapped in self._SUPPORTED_AUTOMATIC_CTV_TYPES:
+                normalized["tumor_type"] = mapped
+                break
+            if fallback_tumor_type is None:
+                fallback_tumor_type = mapped
+        for alias in ("model", "tumor_site", "site", "organ", "organ_type", "ct_image_path", "ct_path"):
+            normalized.pop(alias, None)
+        if not normalized.get("tumor_type"):
+            inferred = None
+            if message:
+                try:
+                    inferred = self._detect_tumor_type_from_message(message)
+                except Exception:
+                    inferred = None
+            if not inferred:
+                try:
+                    inferred = self._detect_tumor_type_from_message("")
+                except Exception:
+                    inferred = None
+            mapped = self._map_tumor_type(str(inferred)) if inferred else None
             if mapped:
                 normalized["tumor_type"] = mapped
-        normalized.pop("tumor_site", None)
-        normalized.pop("site", None)
         if not normalized.get("tumor_type"):
             retrieve = getattr(self.memory, "retrieve", None)
             stored = retrieve("tumor_type_used") if callable(retrieve) else None
             mapped = self._map_tumor_type(str(stored)) if stored else None
             if mapped in self._SUPPORTED_AUTOMATIC_CTV_TYPES:
                 normalized["tumor_type"] = mapped
+        if not normalized.get("tumor_type") and fallback_tumor_type:
+            # Preserve an unsupported value for the normal clarification/error
+            # path, but only after current-message and persisted Session
+            # context had a chance to resolve a valid route.
+            normalized["tumor_type"] = fallback_tumor_type
         return normalized
 
     @staticmethod
@@ -287,6 +354,18 @@ print(json.dumps(result))
             if action not in seen:
                 seen.add(action)
                 ordered_actions.append(action)
+
+        # "Analyze the uploaded liver-tumor CT and tell me where/how large"
+        # is an image-grounded CTV request, not a generic Python/HU analysis.
+        # Keep full planning commands untouched; only replace the ambiguous
+        # lightweight analysis action for this specific patient-data query.
+        if (
+            self._is_image_tumor_measurement_request(message)
+            and "plan_full" not in ordered_actions
+            and "segment_ctv" not in ordered_actions
+        ):
+            ordered_actions = [action for action in ordered_actions if action != "analyze"]
+            ordered_actions.insert(0, "segment_ctv")
 
         if generic_target:
             # Remove any broad fallback that the legacy keyword detector might

@@ -1263,6 +1263,12 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
             params.setdefault("total_seeds", self.memory.retrieve("total_seeds") or 0)
 
         if tool_name == "ctv_segmentation":
+            # Normalize catalog/legacy aliases before injecting the active CT.
+            # This is the final in-process boundary for direct calls that do
+            # not pass through the LLM parameter normalizer.
+            normalized_ctv_params = self._normalize_ctv_tool_params(params)
+            params.clear()
+            params.update(normalized_ctv_params)
             # ALWAYS force-inject the LPI-oriented CT from memory.
             # The LLM may pass `image` as a string repr of a SimpleITK object,
             # which blocks injection and causes the tool to load raw CT from
@@ -1271,7 +1277,9 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
                 params["image"] = ct_image
             if "label_path" not in params and self.memory.retrieve("ctv_path"):
                 params["label_path"] = self.memory.retrieve("ctv_path")
-            # Map tumor_type to VoCo tool name if needed, and store for planning pipeline
+            # Map tumor_type to the canonical model route and store it for the
+            # planning pipeline. The normalizer above also recovers a site from
+            # the active user conversation when a caller omitted the field.
             if "tumor_type" in params:
                 params["tumor_type"] = self._map_tumor_type(params["tumor_type"])
                 # Store tumor type so planning pipeline can use organ-specific reference direction

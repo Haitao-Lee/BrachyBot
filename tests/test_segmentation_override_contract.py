@@ -22,7 +22,14 @@ class _Memory:
 
 
 class _DirectHarness(ResponseToolMixin):
-    _SUPPORTED_AUTOMATIC_CTV_TYPES = frozenset({"nnunet_pancreatic"})
+    _SUPPORTED_AUTOMATIC_CTV_TYPES = frozenset({
+        "nnunet_pancreatic",
+        "biomedparse_liver_tumor",
+        "biomedparse_kidney_lesion",
+        "biomedparse_lung_lesion",
+        "biomedparse_colon_primary",
+        "biomedparse_head_neck_cancer",
+    })
 
     def __init__(self, memory):
         self.memory = memory
@@ -78,6 +85,16 @@ def test_open_anatomy_request_does_not_override_ctv_workflow():
     calls = harness._detect_tool_request("\u5206\u5272\u80f0\u817a\u80bf\u7624\u7684 CTV")
 
     assert calls is None or all(call["tool"] != "biomedparse_segmentation" for call in calls)
+
+
+def test_patient_tumor_measurement_question_routes_to_ctv_segmentation():
+    harness = _DirectHarness(_Memory({"ct_path": "/case/ct.nii"}))
+    calls = harness._detect_tool_request(
+        "\u4f60\u597d\uff0c\u6211\u4e0a\u4f20\u4e86\u4e00\u540d\u809d\u810f\u80bf\u7624\u60a3\u8005CT\uff0c\u8bf7\u5e2e\u6211\u5206\u6790\u80bf\u7624\u5728\u54ea\uff0c\u6709\u591a\u5927"
+    )
+
+    assert [call["tool"] for call in calls] == ["ctv_segmentation"]
+    assert calls[0]["params"]["tumor_type"] == "biomedparse_liver_tumor"
 
 
 def test_tumor_site_clarification_restores_the_original_full_planning_workflow():
@@ -162,6 +179,87 @@ def test_ctv_normalization_uses_persisted_site_for_llm_tool_call():
     assert harness._normalize_ctv_tool_params({})["tumor_type"] == "nnunet_pancreatic"
 
 
+def test_ctv_normalization_recovers_catalog_model_and_organ_aliases():
+    harness = _DirectHarness(_Memory({"ct_path": "/tmp/case.nii.gz"}))
+    normalized = harness._normalize_ctv_tool_params({
+        "ct_image_path": "/tmp/case.nii.gz",
+        "model": "biomedparse_liver_tumor",
+        "organ": "liver",
+    })
+
+    assert normalized["image_path"] == "/tmp/case.nii.gz"
+    assert normalized["tumor_type"] == "biomedparse_liver_tumor"
+    assert all(key not in normalized for key in ("model", "organ", "ct_image_path"))
+
+    calls = harness._normalize_tool_params([{
+        "tool": "ctv_segmentation",
+        "params": {"model": "biomedparse_liver_tumor", "organ": "liver"},
+    }])
+    assert calls[0]["params"]["tumor_type"] == "biomedparse_liver_tumor"
+    assert "model" not in calls[0]["params"]
+
+
+def test_ctv_normalization_prefers_a_valid_site_over_an_unknown_model_alias():
+    harness = _DirectHarness(_Memory())
+
+    normalized = harness._normalize_ctv_tool_params({
+        "ct_image_path": "/case/ct.nii",
+        "model": "stale_catalog_model_v0",
+        "organ": "liver",
+    })
+
+    assert normalized["image_path"] == "/case/ct.nii"
+    assert normalized["tumor_type"] == "biomedparse_liver_tumor"
+
+
+def test_ctv_normalization_does_not_let_an_unknown_model_hide_user_context():
+    harness = _DirectHarness(_Memory())
+    normalized = harness._normalize_ctv_tool_params(
+        {"model": "stale_catalog_model_v0"},
+        message=(
+            "I uploaded a liver tumor CT; please analyze where the tumor is "
+            "and how large it is"
+        ),
+    )
+
+    assert normalized["tumor_type"] == "biomedparse_liver_tumor"
+
+
+def test_ctv_tool_boundary_prefers_a_valid_organ_over_a_stale_model_id():
+    from tool_factory.CTV_seg import resolve_ctv_tumor_type
+
+    assert resolve_ctv_tumor_type({
+        "model": "stale_catalog_model_v0",
+        "organ": "liver",
+    }) == "biomedparse_liver_tumor"
+
+
+def test_ctv_tool_boundary_reports_missing_ct_after_resolving_site_aliases():
+    from tool_factory.CTV_seg import CTVSegmentationTool
+
+    result = CTVSegmentationTool()._execute(
+        model="biomedparse_liver_tumor",
+        organ="liver",
+    )
+
+    assert not result.success
+    assert "image" in (result.error or "").lower()
+    assert "tumor site is required" not in (result.error or "").lower()
+
+
+def test_ctv_normalization_recovers_site_from_current_user_message():
+    memory = _Memory({"ct_path": "/tmp/case.nii.gz"})
+    memory.conversation = [{
+        "role": "user",
+        "content": "你好，我上传了一名肝脏肿瘤患者CT，请帮我分析肿瘤在哪，有多大",
+    }]
+    harness = _DirectHarness(memory)
+
+    normalized = harness._normalize_ctv_tool_params({"image_path": "/tmp/case.nii.gz"})
+
+    assert normalized["tumor_type"] == "biomedparse_liver_tumor"
+
+
 def test_liver_aliases_use_the_biomedparse_route_before_ctv_validation():
     """A liver planning request must not emit the retired ``voco_liver``.
 
@@ -180,6 +278,7 @@ def test_liver_aliases_use_the_biomedparse_route_before_ctv_validation():
     assert harness._normalize_ctv_tool_params({
         "tumor_type": "biomedparse_v2_liver_tumor",
     })["tumor_type"] == "biomedparse_liver_tumor"
+
 
 
 def test_explicit_seed_implant_plan_runs_complete_local_delivery_chain():

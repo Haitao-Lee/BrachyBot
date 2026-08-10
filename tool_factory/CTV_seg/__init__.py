@@ -170,6 +170,41 @@ def normalize_tumor_type(value) -> str:
     return aliases.get(normalized, raw)
 
 
+def resolve_ctv_tumor_type(params) -> str:
+    """Resolve the canonical CTV model from all supported call aliases.
+
+    The CTV tool is called by the UI, direct workflow shortcuts, the model
+    catalog follow-up, and restored Session actions. Older callers used
+    ``model`` or ``organ`` while the public contract uses ``tumor_type``.
+    Keeping this fallback at the tool boundary prevents a valid site from
+    being lost between those entry points.
+    """
+    if not isinstance(params, dict):
+        return ""
+    fallback = ""
+    for key in (
+        "tumor_type",
+        "model",
+        "tumor_site",
+        "site",
+        "organ",
+        "organ_type",
+    ):
+        value = params.get(key)
+        if value is not None and str(value).strip():
+            candidate = normalize_tumor_type(value)
+            if not candidate:
+                continue
+            # Older catalog callers sometimes send a stale model id together
+            # with a valid organ/site. Prefer the first registered route so a
+            # bad optional alias cannot hide a usable clinical input.
+            if candidate in TOOL_REGISTRY:
+                return candidate
+            if not fallback:
+                fallback = candidate
+    return fallback
+
+
 def get_tool(tool_name: str):
     """Get a CTV segmentation tool by name."""
     tool_class = TOOL_REGISTRY.get(tool_name)
@@ -249,6 +284,22 @@ class CTVSegmentationTool(BaseTool):
                     "type": "string",
                     "description": "Deprecated alias for tumor_type; accepts a site such as pancreas or liver.",
                 },
+                "model": {
+                    "type": "string",
+                    "description": "Compatibility alias for a catalog model id, such as biomedparse_liver_tumor.",
+                },
+                "site": {
+                    "type": "string",
+                    "description": "Compatibility alias for the tumor site.",
+                },
+                "organ": {
+                    "type": "string",
+                    "description": "Compatibility alias for the target organ, such as liver.",
+                },
+                "organ_type": {
+                    "type": "string",
+                    "description": "Compatibility alias for the target organ.",
+                },
                 "target_value": {"type": "number", "default": 1, "description": "Label value for tumor voxels"},
                 "fast_mode": {"type": "boolean", "default": False, "description": "Disable TTA, reduce threads"},
                 "allow_empty": {"type": "boolean", "default": False, "description": "Only for tests; never allow empty clinical CTV by default"},
@@ -278,9 +329,7 @@ class CTVSegmentationTool(BaseTool):
         image = kwargs.get("image")
         image_path = kwargs.get("image_path")
         label_path = kwargs.get("label_path")
-        tumor_type = normalize_tumor_type(
-            kwargs.get("tumor_type") or kwargs.get("tumor_site") or kwargs.get("site")
-        )
+        tumor_type = resolve_ctv_tumor_type(kwargs)
         target_value = kwargs.get("target_value", 1)
         fast_mode = kwargs.get("fast_mode", False)
         allow_empty = bool(kwargs.get("allow_empty", False))

@@ -852,7 +852,7 @@ class LLMRuntimeMixin:
                 tool_name = tc.get("tool", "")
                 params = tc.get("params", {})
                 if tool_name == "ctv_segmentation":
-                    params = self._normalize_ctv_tool_params(params)
+                    params = self._normalize_ctv_tool_params(params, message=message)
                     tc["params"] = params
                 tool_id = tc.get("id", f"tool_{step_id_ref[0]}")
                 tool_succeeded = True
@@ -2256,7 +2256,7 @@ class LLMRuntimeMixin:
 
                 tool_result = None  # Track result for metadata
                 if tool_name == "ctv_segmentation":
-                    params = self._normalize_ctv_tool_params(params)
+                    params = self._normalize_ctv_tool_params(params, message=message)
                     steps[-1]["params"] = params
                 # Pre-execution check: if ctv_segmentation is called without
                 # tumor_type, intercept and ask instead of running and failing.
