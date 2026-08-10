@@ -392,8 +392,10 @@ class LLMRuntimeMixin:
         # for the full detection rules.
         try:
             from memory.language import detect as _lang_detect, system_prompt_clause as _lang_clause
-            _ui_lang = (ui_state_for_override or {}).get("language") or None
-            _lang_info = _lang_detect(message, explicit=_ui_lang)
+            # UI locale is presentation state, not an instruction to translate
+            # the clinical conversation. Keep the LLM reply in the language
+            # of the current user message while Report/static UI remain global.
+            _lang_info = _lang_detect(message)
             enhanced_context += "\n" + _lang_clause(_lang_info) + "\n"
             # Persist for next-turn fallback (short messages like
             # "yes" / "do it" inherit the previous language instead
@@ -1477,9 +1479,11 @@ class LLMRuntimeMixin:
         # detection rules.
         try:
             from memory.language import detect as _lang_detect, system_prompt_clause as _lang_clause
-            _ui_lang = (ui_state_for_override or {}).get("language") or None
-            _lang_info = _lang_detect(message, explicit=_ui_lang)
-            logger.info(f"[LANG] Detected: {_lang_info['code']} (source={_lang_info['source']}, explicit={_ui_lang}), msg='{message[:50]}'")
+            # Do not let the global UI language override the language of this
+            # chat turn. The request remains the source of truth for assistant
+            # prose and Execution Trace summaries.
+            _lang_info = _lang_detect(message)
+            logger.info(f"[LANG] Detected: {_lang_info['code']} (source={_lang_info['source']}), msg='{message[:50]}'")
             enhanced_context += "\n" + _lang_clause(_lang_info) + "\n"
             try:
                 self.memory.store("session_language", _lang_info)

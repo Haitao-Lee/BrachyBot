@@ -874,9 +874,12 @@ function _updateReportPreview() {
     const supplementalRows = (Array.isArray(f.figures) ? f.figures : []).filter(
         figure => figure && !_reportFigureGroup(figure),
     );
-    const figure1PageCount = Math.ceil(figure1Rows.length / 2);
-    const figure2PageCount = Math.ceil(figure2Rows.length / 2);
-    const supplementalPageCount = Math.ceil(supplementalRows.length / 2);
+    // Each evidence image gets an independent A4 page. Report captures are
+    // native, full-resolution views; putting multiple images in one page made
+    // PDF previews crop or scale them into unreadable miniatures.
+    const figure1PageCount = figure1Rows.length;
+    const figure2PageCount = figure2Rows.length;
+    const supplementalPageCount = supplementalRows.length;
     const reportTotalPages = 5 + figure1PageCount + figure2PageCount + supplementalPageCount;
     const pageFooter = (pageNo) =>
         `<div class="hp-page-footer"><span class="pageno">— ${escHtml(s.page)} ${pageNo} ${escHtml(s.pageOf)} ${reportTotalPages} —</span></div>`;
@@ -887,9 +890,9 @@ function _updateReportPreview() {
     const renderFigurePages = (rows, figureNumber, groupTitle, startPageNo) => {
         if (!rows.length) return '';
         let html = '';
-        for (let offset = 0; offset < rows.length; offset += 2) {
-            const pageRows = rows.slice(offset, offset + 2);
-            const pageNo = startPageNo + Math.floor(offset / 2);
+        for (let offset = 0; offset < rows.length; offset += 1) {
+            const pageRows = rows.slice(offset, offset + 1);
+            const pageNo = startPageNo + offset;
             html += `<div class="report-page report-figure-page">
                 <div class="hp-running-header"><span>${escHtml(s.confidentiality)}</span><span class="right">${escHtml(groupTitle)}</span></div>
                 <h2 class="hp-section-title">${escHtml(s.figCaption)} ${figureNumber} · ${escHtml(groupTitle)}</h2>
@@ -1424,14 +1427,13 @@ function _printableCss() {
         .hp-figure { margin: 4mm 0; text-align: center; page-break-inside: avoid; }
         .hp-figure img { max-width: 100%; max-height: 110mm; border: 1px solid #cbd5e1; }
         .hp-figure-cap { font-size: 8.5pt; color: #475569; margin-top: 1.5mm; font-style: italic; }
-        /* Report captures remain independent images. Two subfigures fit on an
-           A4 evidence page at full content width; a lone subfigure may use the
-           additional vertical space without being raster-scaled into a collage. */
-        .report-figure-page { display: flex; flex-direction: column; }
-        .hp-subfigure-list { display: flex; flex-direction: column; gap: 4mm; flex: 1; min-height: 0; }
-        .hp-subfigure { margin: 0; text-align: center; page-break-inside: avoid; break-inside: avoid; min-height: 0; }
-        .hp-subfigure img { display: block; width: 100%; height: auto; max-height: 96mm; object-fit: contain; margin: 0 auto; border: 1px solid #cbd5e1; background: #020617; }
-        .hp-subfigure:only-child img { max-height: 190mm; }
+        /* One native report capture per evidence page. The page box, figure
+           box, and image share the same width constraint so browser preview
+           scaling cannot let a wide canvas escape or crop the PDF page. */
+        .report-figure-page { display: flex; flex-direction: column; overflow: hidden; box-sizing: border-box; }
+        .hp-subfigure-list { display: flex; flex-direction: column; flex: 1; min-height: 0; max-width: 100%; overflow: hidden; }
+        .hp-subfigure { width: 100%; max-width: 100%; margin: 0; text-align: center; page-break-inside: avoid; break-inside: avoid; min-height: 0; overflow: hidden; box-sizing: border-box; }
+        .hp-subfigure img { display: block; width: auto; max-width: 100%; height: auto; max-height: 190mm; object-fit: contain; margin: 0 auto; border: 1px solid #cbd5e1; background: #020617; box-sizing: border-box; }
         .hp-subfigure figcaption { font-size: 9pt; line-height: 1.35; color: #334155; margin-top: 1.5mm; font-style: italic; }
         .hp-references { font-size: 9pt; line-height: 1.55; padding-left: 6mm; }
         .hp-references li { margin-bottom: 1.5mm; text-indent: -5mm; padding-left: 5mm; }

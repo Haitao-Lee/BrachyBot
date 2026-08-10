@@ -1581,11 +1581,18 @@ function clearViewerCanvases() {
     if (typeof invalidateDoseOverlayRenderCache === 'function') invalidateDoseOverlayRenderCache();
     document.querySelectorAll(
         '[id^="sliceCanvas"], [id^="labelOverlay_"], [id^="doseOverlay_"], '
-        + '[id^="doseOverlayCanvas"], [id^="seedsOverlayCanvas"], [id^="crosshairCanvas"], [id^="annotationCanvas"]'
+        + '[id^="doseOverlayCanvas"], [id^="contourCanvas"], [id^="seedsOverlayCanvas"], '
+        + '[id^="crosshairCanvas"], [id^="annotationCanvas"]'
     ).forEach(canvas => {
         const ctx = canvas.getContext?.('2d');
         if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
         canvas.style.display = 'none';
+        // Canvas elements survive a case change. Clear their presentation
+        // transform as well as pixels so a late hydration cannot briefly show
+        // a new CT beneath a dose/projection layer positioned for the old one.
+        ['transform', 'transform-origin', 'left', 'top', 'width', 'height'].forEach(property => {
+            canvas.style.removeProperty(property);
+        });
         canvas._posSet = false;
         canvas._doseWrapper = null;
     });
@@ -2815,6 +2822,17 @@ async function _restoreActiveSessionWorkspace(options = {}) {
     ['axial', 'sagittal', 'coronal'].forEach(axis => {
         try { if (state.slices && Number.isFinite(Number(state.slices[axis]))) renderSliceFromVolume(axis, Number(state.slices[axis])); } catch (_) {}
     });
+    // The final presentation snapshot may restore a saved pan/zoom after the
+    // clinical loaders have already drawn their layers. Reconcile once at the
+    // transaction boundary so CT, dose, contours, and planning projections
+    // leave hydration with the same geometry instead of requiring Fit.
+    if (typeof window.reconcile2DViewerLayers === 'function') {
+        window.reconcile2DViewerLayers({
+            reason: 'workspace-hydration-complete',
+            rerender: true,
+            immediate: true,
+        });
+    }
     if (typeof setupViewerInteractions === 'function') setupViewerInteractions();
     recordStage('restore.fully_interactive', restoreStartedAt, {
         ct_loaded: !!state.ctLoaded,
@@ -5144,19 +5162,25 @@ function _openScreenshotModal(url, label, index = 0, total = 1) {
     document.addEventListener('keydown', onKey);
 }
 
-function _screenshotLanguage(sessionId) {
-    const raw = window._i18nLang || (
-        typeof window.conversationLanguageForSession === 'function'
-            ? window.conversationLanguageForSession(sessionId || _activeApiSessionId())
-            : window._responseLanguage || 'en'
-    );
+function _screenshotLanguage(sessionId, preferredLanguage = '') {
+    // Chat evidence belongs to the request language, not the static UI
+    // language. The report and other application panels still use the global
+    // locale, but screenshot attachments and their trace are part of a reply.
+    const sessionLanguage = typeof window.conversationLanguageForSession === 'function'
+        ? window.conversationLanguageForSession(sessionId || _activeApiSessionId())
+        : '';
+    const raw = preferredLanguage
+        || sessionLanguage
+        || window._responseLanguage
+        || window._i18nLang
+        || 'en';
     return String(raw || 'en').toLowerCase().startsWith('zh') ? 'zh' : 'en';
 }
 
-function _localizedScreenshotText(candidate, fallback, sessionId) {
+function _localizedScreenshotText(candidate, fallback, sessionId, preferredLanguage = '') {
     const value = String(candidate || '').trim();
     if (!value) return fallback;
-    const language = _screenshotLanguage(sessionId);
+    const language = _screenshotLanguage(sessionId, preferredLanguage);
     const hasChinese = /[\u3400-\u9fff]/.test(value);
     if ((language === 'zh' && !hasChinese) || (language === 'en' && hasChinese)) {
         return fallback;
@@ -5164,7 +5188,7 @@ function _localizedScreenshotText(candidate, fallback, sessionId) {
     return value;
 }
 
-function _localizedScreenshotTargetLabel(target) {
+function _localizedScreenshotTargetLabel(target, sessionId = _activeApiSessionId(), preferredLanguage = '') {
     const labels = {
         'viewer-axial': ['\u8f74\u4f4d', 'Axial'],
         'viewer-sagittal': ['\u77e2\u72b6\u4f4d', 'Sagittal'],
@@ -5173,11 +5197,163 @@ function _localizedScreenshotTargetLabel(target) {
         'dvh': ['DVH \u66f2\u7ebf', 'DVH'],
         'data-tree': ['\u6570\u636e\u6811', 'Data Tree'],
         'metrics': ['\u89c4\u5212\u6307\u6807', 'Planning metrics'],
+        'report': ['\u62a5\u544a\u622a\u56fe', 'Report figures'],
         'full': ['\u5b8c\u6574\u754c\u9762', 'Full application'],
     };
-    const language = _screenshotLanguage(_activeApiSessionId());
+    const language = _screenshotLanguage(sessionId, preferredLanguage);
     const pair = labels[target] || [target || '\u622a\u56fe', target || 'Screenshot'];
     return language === 'zh' ? pair[0] : pair[1];
+}
+
+function _safePersistedReportFigureUrl(candidate, ownerSessionId) {
+    const value = String(candidate || '').trim();
+    if (/^data:image\/(?:png|jpe?g|webp);base64,[a-z0-9+/=\s]+$/i.test(value)) {
+        return value;
+    }
+    const match = value.match(/^\/api\/sessions\/([^/]+)\/screenshots\/(report_screenshot_[A-Za-z0-9_.-]+\.png)$/i);
+    if (!match) return '';
+    try {
+        return decodeURIComponent(match[1]) === String(ownerSessionId || '') ? value : '';
+    } catch (_) {
+        return '';
+    }
+}
+
+function _reportFigureMetadataFromArtifactFilename(filename, index) {
+    const stem = String(filename || '').replace(/\.png$/i, '');
+    const identityMatch = stem.match(/^report_screenshot_(report_fig[12]_.+?)_[0-9a-f]{12}$/i);
+    const axis = identityMatch ? identityMatch[1] : `restored-${index + 1}`;
+    const metadata = {
+        report_fig1_global: { figureGroup: 'figure1', figureNumber: 1, subfigure: 'a', sortOrder: 1, captureRole: 'planning_overview' },
+        report_fig1_closeup: { figureGroup: 'figure1', figureNumber: 1, subfigure: 'b', sortOrder: 2, captureRole: 'planning_closeup' },
+        report_fig2_axial: { figureGroup: 'figure2', figureNumber: 2, subfigure: 'a', sortOrder: 1, captureRole: 'peak_dose_axial' },
+        report_fig2_sagittal: { figureGroup: 'figure2', figureNumber: 2, subfigure: 'b', sortOrder: 2, captureRole: 'peak_dose_sagittal' },
+        report_fig2_coronal: { figureGroup: 'figure2', figureNumber: 2, subfigure: 'c', sortOrder: 3, captureRole: 'peak_dose_coronal' },
+        report_fig2_dose_surface: { figureGroup: 'figure2', figureNumber: 2, subfigure: 'd', sortOrder: 4, captureRole: 'dose_surface_3d' },
+        report_fig2_dvh: { figureGroup: 'figure2', figureNumber: 2, subfigure: 'e', sortOrder: 5, captureRole: 'dvh' },
+    };
+    return Object.assign({ axis }, metadata[axis] || {});
+}
+
+function _reportFiguresFromArtifactCatalog(ownerSessionId, activePlanningId) {
+    const artifacts = typeof dataTreeState !== 'undefined'
+        && Array.isArray(dataTreeState?.exportArtifacts)
+        ? dataTreeState.exportArtifacts : [];
+    return artifacts.map((item, index) => {
+        const dataType = String(item?.dataType || item?.type || '');
+        const objectId = String(item?.objectId || item?.object_id || '');
+        const filename = objectId.includes(':')
+            ? objectId.split(':').slice(1).join(':')
+            : objectId || String(item?.name || '');
+        const ownerPlanningId = String(item?.planningId || item?.planning_id || '');
+        if (!['screenshot', 'report_figure'].includes(dataType)
+            || !/^report_screenshot_[^/\\]+\.png$/i.test(filename)
+            || (activePlanningId && ownerPlanningId && ownerPlanningId !== activePlanningId)) {
+            return null;
+        }
+        const metadata = _reportFigureMetadataFromArtifactFilename(filename, index);
+        return Object.assign({
+            id: `report-artifact-${filename.replace(/[^A-Za-z0-9_-]/g, '_')}`,
+            type: 'screenshot',
+            title: '',
+            caption: '',
+            _serverUrl: `/api/sessions/${encodeURIComponent(ownerSessionId)}/screenshots/${encodeURIComponent(filename)}`,
+        }, metadata);
+    }).filter(Boolean);
+}
+
+async function _appendPersistedReportFigures(plan, galleryContext, ownerSessionId) {
+    const context = galleryContext || {};
+    const form = window.reportForm;
+    const formSessionMatches = !form?.sessionId
+        || String(form.sessionId) === String(ownerSessionId || '');
+    const activePlanningId = String(
+        plan?.planning_id
+        || window.__reportWorkspaceActivePlanningId
+        || form?.active_planning_id
+        || ''
+    );
+    const figures = formSessionMatches && Array.isArray(form?.figures)
+        ? form.figures.filter(figure => {
+            if (!figure || typeof figure !== 'object') return false;
+            const figurePlanningId = String(figure.planningId || figure.planning_id || '');
+            return !activePlanningId || !figurePlanningId || figurePlanningId === activePlanningId;
+        }).slice()
+        : [];
+
+    // A report is restored independently from the chat shell.  If a user asks
+    // for its figures during that narrow window, fall back to the durable
+    // catalog instead of trying to rasterize the report panel or reporting a
+    // false "not loaded" error.
+    if (typeof hydrateDataTreeArtifactCatalog === 'function'
+        && String(ownerSessionId) === String(_activeApiSessionId())) {
+        try { await hydrateDataTreeArtifactCatalog(); } catch (_) {}
+    }
+    const seenUrls = new Set(
+        figures.map(figure => _safePersistedReportFigureUrl(
+            figure?._serverUrl || figure?.dataUrl,
+            ownerSessionId,
+        )).filter(Boolean),
+    );
+    _reportFiguresFromArtifactCatalog(ownerSessionId, activePlanningId).forEach(figure => {
+        const url = _safePersistedReportFigureUrl(figure._serverUrl, ownerSessionId);
+        if (!url || seenUrls.has(url)) return;
+        seenUrls.add(url);
+        figures.push(figure);
+    });
+
+    const language = _screenshotLanguage(ownerSessionId, context.responseLanguage);
+    const ordered = figures.map((figure, index) => ({ figure, index })).sort((left, right) => (
+        Number(left.figure.figureNumber || 99) - Number(right.figure.figureNumber || 99)
+        || Number(left.figure.sortOrder || 99) - Number(right.figure.sortOrder || 99)
+        || left.index - right.index
+    ));
+    const attachments = [];
+    ordered.forEach(({ figure, index }) => {
+        const url = _safePersistedReportFigureUrl(
+            figure._serverUrl || figure.dataUrl,
+            ownerSessionId,
+        );
+        if (!url) return;
+        const figureLabel = figure.figureNumber
+            ? `${language === 'zh' ? '\u62a5\u544a\u56fe' : 'Report figure'} ${figure.figureNumber}${figure.subfigure ? `(${String(figure.subfigure).toLowerCase()})` : ''}`
+            : `${language === 'zh' ? '\u62a5\u544a\u622a\u56fe' : 'Report screenshot'} ${index + 1}`;
+        const attachment = _appendScreenshotToGallery(url, 'report', plan.question, context, {
+            id: String(
+                figure.id
+                || `${context.requestId || 'request'}-report-${figure.axis || index}`
+            ),
+            title: _localizedScreenshotText(
+                figure.title,
+                figureLabel,
+                ownerSessionId,
+                context.responseLanguage,
+            ),
+            description: _localizedScreenshotText(
+                figure.caption,
+                plan.question || '',
+                ownerSessionId,
+                context.responseLanguage,
+            ),
+            mode: plan.mode,
+            request_id: context.requestId,
+            message_id: context.messageId,
+            session_id: ownerSessionId,
+            planning_id: activePlanningId,
+            source: 'report_artifact',
+            response_language: context.responseLanguage || language,
+            view_metadata: {
+                axis: String(figure.axis || ''),
+                figure_group: String(figure.figureGroup || ''),
+                figure_number: Number(figure.figureNumber) || null,
+                subfigure: String(figure.subfigure || ''),
+                sort_order: Number(figure.sortOrder) || null,
+                capture_role: String(figure.captureRole || ''),
+            },
+        });
+        if (attachment) attachments.push(attachment);
+    });
+    return attachments;
 }
 
 function _appendScreenshotToGallery(url, target, question, galleryContext, attachmentMeta = {}) {
@@ -5185,7 +5361,11 @@ function _appendScreenshotToGallery(url, target, question, galleryContext, attac
     if (!url) return null;
     if (!Array.isArray(context.items)) context.items = [];
     if (!context.keys) context.keys = new Set();
-    const label = _localizedScreenshotTargetLabel(target);
+    const label = _localizedScreenshotTargetLabel(
+        target,
+        context.sessionId || attachmentMeta?.session_id || _activeApiSessionId(),
+        context.responseLanguage || attachmentMeta?.response_language || '',
+    );
     const attachment = Object.assign({}, attachmentMeta || {}, {
         id: String(
             attachmentMeta?.id
@@ -5199,6 +5379,7 @@ function _appendScreenshotToGallery(url, target, question, galleryContext, attac
         request_id: attachmentMeta?.request_id || context.requestId || '',
         message_id: attachmentMeta?.message_id || context.messageId || '',
         session_id: attachmentMeta?.session_id || context.sessionId || _activeApiSessionId(),
+        response_language: attachmentMeta?.response_language || context.responseLanguage || '',
     });
     const key = String(attachment.id || attachment.url);
     if (context.keys.has(key)) return null;
@@ -5426,10 +5607,15 @@ function _validateScreenshotDataUrl(dataUrl) {
 
 function _renderScreenshotFailure(galleryContext, errorCode) {
     const context = galleryContext || {};
-    const language = _screenshotLanguage(context.sessionId);
-    const message = language === 'zh'
-        ? '\u672a\u80fd\u751f\u6210\u6709\u6548\u622a\u56fe\u3002\u8bf7\u786e\u8ba4\u76ee\u6807\u6570\u636e\u5df2\u52a0\u8f7d\u540e\u91cd\u8bd5\u3002'
-        : 'A valid screenshot could not be generated. Confirm that the target data is loaded, then retry.';
+    const language = _screenshotLanguage(context.sessionId, context.responseLanguage);
+    const reportUnavailable = String(errorCode || '').includes('report_figures_unavailable');
+    const message = reportUnavailable
+        ? (language === 'zh'
+            ? '\u5f53\u524d\u62a5\u544a\u5c1a\u672a\u751f\u6210\u53ef\u5c55\u793a\u7684\u622a\u56fe\u3002\u8bf7\u5148\u751f\u6210\u6216\u66f4\u65b0\u62a5\u544a\u540e\u518d\u67e5\u770b\u3002'
+            : 'The current report does not yet contain a generated screenshot. Generate or update the report, then try again.')
+        : (language === 'zh'
+            ? '\u672a\u80fd\u751f\u6210\u6709\u6548\u622a\u56fe\u3002\u8bf7\u786e\u8ba4\u76ee\u6807\u6570\u636e\u5df2\u52a0\u8f7d\u540e\u91cd\u8bd5\u3002'
+            : 'A valid screenshot could not be generated. Confirm that the target data is loaded, then retry.');
     const shell = typeof window.ensureAssistantReplyContainer === 'function'
         ? window.ensureAssistantReplyContainer(
             context.requestId,
@@ -5467,6 +5653,15 @@ async function _interceptScreenshot(target, question, galleryContext, options = 
     context.sessionId = ownerSessionId;
     context.requestId = String(options.requestId || context.requestId || '');
     context.messageId = String(options.messageId || context.messageId || '');
+    context.responseLanguage = String(
+        options.responseLanguage
+        || context.responseLanguage
+        || (typeof window.conversationLanguageForSession === 'function'
+            ? window.conversationLanguageForSession(ownerSessionId)
+            : '')
+        || window._responseLanguage
+        || 'en'
+    );
     const plan = _normalizeStructuredScreenshotPlan(target, question, options);
     context.mode = plan.mode;
     context.layout = plan.layout;
@@ -5474,14 +5669,24 @@ async function _interceptScreenshot(target, question, galleryContext, options = 
         && (!options.monitorOnly || trainingMonitorState.active);
     if (!ownerStillActive()) return { success: false, stale: true, error: 'case_changed' };
 
-    const snapshot = _snapshotScreenshotViewerState();
+    const reportViews = plan.views.filter(view => String(view?.target || '') === 'report');
+    const captureViews = plan.views.filter(view => String(view?.target || '') !== 'report');
+    const snapshot = captureViews.length ? _snapshotScreenshotViewerState() : null;
     let restoreFocus = null;
     const attachments = [];
     try {
-        restoreFocus = await _applyStructuredScreenshotPlan(plan);
-        for (let index = 0; index < plan.views.length; index += 1) {
+        if (reportViews.length) {
+            const reportAttachments = await _appendPersistedReportFigures(plan, context, ownerSessionId);
+            if (!reportAttachments.length) throw new Error('report_figures_unavailable');
+            attachments.push(...reportAttachments);
+        }
+        if (captureViews.length) {
+            const capturePlan = Object.assign({}, plan, { views: captureViews });
+            restoreFocus = await _applyStructuredScreenshotPlan(capturePlan);
+        }
+        for (let index = 0; index < captureViews.length; index += 1) {
             if (!ownerStillActive()) return { success: false, stale: true, error: 'case_changed' };
-            const view = plan.views[index];
+            const view = captureViews[index];
             const viewTarget = String(view.target || 'full');
             const element = viewTarget === 'dose-overview'
                 ? document.body
@@ -5495,11 +5700,16 @@ async function _interceptScreenshot(target, question, galleryContext, options = 
                 view.attachment_id
                 || `${context.requestId || 'request'}-${viewTarget}-${index}`
             );
-            const fallbackTitle = _localizedScreenshotTargetLabel(viewTarget);
+            const fallbackTitle = _localizedScreenshotTargetLabel(
+                viewTarget,
+                ownerSessionId,
+                context.responseLanguage,
+            );
             const localizedTitle = _localizedScreenshotText(
                 view.title || plan.title,
                 fallbackTitle,
                 ownerSessionId,
+                context.responseLanguage,
             );
             const response = await fetch(API + '/screenshot', {
                 method: 'POST',
@@ -5571,7 +5781,12 @@ window.executeStructuredScreenshotPlan = (plan, context = {}) => _interceptScree
     plan?.views?.[0]?.target || 'full',
     plan?.question || '',
     context,
-    { plan, mode: plan?.mode || 'chat', sessionId: context.sessionId },
+    {
+        plan,
+        mode: plan?.mode || 'chat',
+        sessionId: context.sessionId,
+        responseLanguage: context.responseLanguage || context.response_language || '',
+    },
 );
 
 /******** PANEL SWITCHING ********/

@@ -416,6 +416,23 @@ def test_clinical_restore_requires_decoded_ct_and_rebinds_viewer_interactions():
     assert "Segmentation restore did not produce label volumes" in restore
 
 
+def test_2d_hydration_reconciles_ct_dose_contours_and_planning_projections():
+    """Restored overlays must share the final CT geometry without requiring Fit."""
+    annotation = read("web/app/static/js/brachybot-manual-annotation.js")
+    layout = read("web/app/static/js/brachybot-viewer-layout.js")
+    ui_api = read("web/app/static/js/brachybot-ui-api.js")
+
+    assert "function reconcile2DViewerLayers" in annotation
+    assert "window.reconcile2DViewerLayers = reconcile2DViewerLayers" in annotation
+    assert "renderDoseForCurrentSlice(axis, sliceIndex);" in annotation
+    assert "triggerDoseContourRender(axis, sliceIndex);" in annotation
+    assert "renderSeedsOverlay(axis, sliceIndex);" in annotation
+    assert "reason: 'viewer-geometry-sync'" in layout
+    assert "reason: 'workspace-hydration-complete'" in ui_api
+    assert '[id^="contourCanvas"]' in ui_api
+    assert "canvas.style.removeProperty(property);" in ui_api
+
+
 def test_case_clear_invalidates_late_planning_and_dose_render_responses():
     """Old case refreshes may finish, but they must not paint the new case."""
     ui_api = read("web/app/static/js/brachybot-ui-api.js")

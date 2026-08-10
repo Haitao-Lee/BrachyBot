@@ -92,9 +92,11 @@ class ChatWorkflowMixin:
             lang_clause = ""
             try:
                 from memory.language import detect as _lang_detect, system_prompt_clause as _lang_clause
-                ui_state = self.memory.get_ui_state()
-                _ui_lang = (ui_state or {}).get("language") or None
-                _lang_info = _lang_detect(message, explicit=_ui_lang)
+                # The global UI locale controls static controls and reports;
+                # it must not override the language of a user conversation.
+                # A Chinese request in an English UI still needs a Chinese
+                # reply and Execution Trace.
+                _lang_info = _lang_detect(message)
                 lang_clause = "\n" + _lang_clause(_lang_info) + "\n"
             except Exception as _e:
                 logger.debug("Lightweight language detection skipped: %s", _e)

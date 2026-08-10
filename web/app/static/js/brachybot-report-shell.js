@@ -266,6 +266,12 @@ window.Report = (function () {
             _fitScale = _measureFitScale();
             const effectiveZoom = Math.max(0.2, Math.min(MAX, _zoom * _fitScale));
             if (wrap) {
+                // Keep preview scaling anchored to the page's top center.
+                // Without an explicit inline origin, a late stylesheet/theme
+                // update can apply a different origin and make large figures
+                // appear to extend outside the PDF sheet.
+                wrap.style.transformOrigin = 'top center';
+                wrap.style.width = '100%';
                 wrap.style.transform = `scale(${effectiveZoom})`;
                 // Transforms do not affect normal-flow height. Reserve the
                 // scaled height explicitly to avoid a large blank area below

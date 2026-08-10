@@ -137,11 +137,43 @@ def test_report_chat_and_monitor_capture_paths_remain_separate():
     assert "_autoCaptureReportFiguresImpl" in report
 
 
-def test_user_visible_screenshot_language_prefers_global_ui_language():
+def test_report_chat_target_reads_session_owned_figure_artifacts_not_the_report_dom():
+    tool = _source("tool_factory/ui_screenshot/__init__.py")
+    ui_api = _source("web/app/static/js/brachybot-ui-api.js")
+
+    assert '"report": "Persisted report figures"' in tool
+    assert 'if views == ["report"]' in tool
+    assert "function _safePersistedReportFigureUrl" in ui_api
+    assert "function _appendPersistedReportFigures" in ui_api
+    assert "function _reportFiguresFromArtifactCatalog" in ui_api
+    assert "await hydrateDataTreeArtifactCatalog()" in ui_api
+    assert "source: 'report_artifact'" in ui_api
+    assert "report_figures_unavailable" in ui_api
+    assert "const reportViews = plan.views.filter" in ui_api
+    assert "const captureViews = plan.views.filter" in ui_api
+
+
+def test_user_visible_screenshot_language_prefers_request_language_over_global_ui():
     ui_api = _source("web/app/static/js/brachybot-ui-api.js")
     chat = _source("web/app/static/js/brachybot-chat-todo.js")
+    language_block = ui_api.split("function _screenshotLanguage", 1)[1].split(
+        "function _localizedScreenshotText", 1
+    )[0]
 
-    assert "const raw = window._i18nLang || (" in ui_api
+    assert "function _screenshotLanguage(sessionId, preferredLanguage = '')" in ui_api
+    assert "const raw = preferredLanguage" in language_block
+    assert language_block.index("const raw = preferredLanguage") < language_block.index("|| window._i18nLang")
+    assert "responseLanguage: turnIdentity.responseLanguage" in chat
     assert "response_language: turnIdentity.responseLanguage" in chat
     assert "conversationLanguageForSession(turnSessionId)" in chat
     assert "trace_summary_i18n" in _source("tool_factory/ui_screenshot/__init__.py")
+
+
+def test_agent_reply_language_is_not_overridden_by_the_global_ui_locale():
+    runtime = _source("agent_runtime/llm_runtime.py")
+    workflows = _source("agent_runtime/chat_workflows.py")
+
+    assert "_lang_detect(message, explicit=_ui_lang)" not in runtime
+    assert "_lang_detect(message, explicit=_ui_lang)" not in workflows
+    assert "UI locale is presentation state, not an instruction to translate" in runtime
+    assert "global UI locale controls static controls and reports" in workflows
