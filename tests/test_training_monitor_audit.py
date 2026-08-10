@@ -160,7 +160,8 @@ def test_monitor_seed_focus_restores_camera_and_mesh_state_after_capture():
     assert "meshStates" in manual
     assert "saved.meshStates.forEach" in manual
     assert "box.isEmpty()" in manual
-    assert "focusPlanningSeedsForScreenshot(options.focusSeedIds)" in ui_api
+    assert "options.focusSeedIds" in ui_api
+    assert "focusPlanningSeedsForScreenshot(focusIds)" in ui_api
 
 
 def test_manual_artifact_status_is_projected_to_visible_data_tree_nodes():

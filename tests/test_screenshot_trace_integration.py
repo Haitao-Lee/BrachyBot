@@ -449,6 +449,9 @@ def test_frontend_keeps_trace_and_attachments_bound_to_stable_ids():
     assert ui_api.count("async function _interceptScreenshot(") == 1
     assert "async function _interceptScreenshotLegacy(" in ui_api
     assert "return _interceptScreenshot(target, question, galleryContext, options);" in ui_api
+    legacy_start = ui_api.index("async function _interceptScreenshotLegacy(")
+    legacy_end = ui_api.index("// Structured chat/Monitor screenshot executor.", legacy_start)
+    assert "addChat(" not in ui_api[legacy_start:legacy_end]
 
 
 def test_screenshot_failure_returns_to_the_owning_reply_without_creating_a_new_message():
