@@ -7,7 +7,11 @@ from agent_runtime.chat_workflows import ChatWorkflowMixin
 from agent_runtime.llm_runtime import _collect_tool_fallback_text
 from agent_runtime.core import ToolResultPipeline
 from agent_runtime.response_tools import ResponseToolMixin
-from agent_runtime.turn_policy import classify_local_turn, resolve_session_content_target
+from agent_runtime.turn_policy import (
+    classify_local_turn,
+    resolve_session_content_presentation,
+    resolve_session_content_target,
+)
 from tool_factory import ToolResult
 from tool_factory.ui_content import UISessionContentTool
 from tool_factory.ui_screenshot import UIScreenshotTool
@@ -233,6 +237,14 @@ def test_session_content_resolver_covers_each_persisted_resource_family(message,
     assert classify_local_turn(message).intent == "session_content_query"
 
 
+def test_selected_data_tree_object_uses_generic_artifact_focus_without_name_matching():
+    message = "\u663e\u793a\u5f53\u524d\u9009\u4e2d\u7684\u8282\u70b9"
+
+    assert resolve_session_content_target(message) == "artifact"
+    assert resolve_session_content_presentation(message, "artifact") == "open"
+    assert classify_local_turn(message).intent == "session_content_query"
+
+
 def test_persisted_report_figure_request_uses_session_content_not_live_capture():
     message = "\u6211\u60f3\u770b\u770b\u5f53\u524d\u62a5\u544a\u4e2d\u7684\u622a\u56fe"
 
@@ -321,6 +333,43 @@ def test_session_content_stream_keeps_report_figures_in_the_owning_reply():
     assert "A valid screenshot could not be generated" not in response["response"]
 
 
+def test_session_content_json_trace_carries_the_same_safe_browser_command():
+    class Memory:
+        def __init__(self):
+            self.user_lang = "en"
+            self.conversation = []
+
+        def add_message(self, role, content):
+            self.conversation.append({"role": role, "content": content})
+
+    class Workflow(ChatWorkflowMixin):
+        def __init__(self):
+            self.memory = Memory()
+            self._turn_token = "turn-1"
+
+        def _begin_turn(self, _message):
+            return None
+
+        def _pending_tumor_site_clarification(self):
+            return False
+
+        def _record_experience(self, _message, _response, _steps=None):
+            return None
+
+        def _finish_turn(self, _response):
+            return None
+
+    result = Workflow().chat_with_trace("show the current report figures")
+
+    content_step = next(step for step in result["steps"] if step.get("tool") == "ui_content")
+    assert result["llm_meta"]["route"] == "local_session_content"
+    assert content_step["status"] == "done"
+    assert content_step["metadata"]["content_command"]["target"] == "report_figures"
+    assert content_step["metadata"]["content_command"]["presentation"] == "attachments"
+    assert "question" not in content_step["metadata"]["content_command"]
+    assert "model_instruction" not in content_step["metadata"]
+
+
 def test_session_content_stream_returns_localized_unavailable_state_without_registry_error():
     class Memory:
         def __init__(self):
@@ -399,6 +448,7 @@ def test_frontend_keeps_trace_and_attachments_bound_to_stable_ids():
     assert "assistantMessageId: task.assistant_message_id" in chat
     assert ui_api.count("async function _interceptScreenshot(") == 1
     assert "async function _interceptScreenshotLegacy(" in ui_api
+    assert "return _interceptScreenshot(target, question, galleryContext, options);" in ui_api
 
 
 def test_screenshot_failure_returns_to_the_owning_reply_without_creating_a_new_message():
@@ -423,11 +473,35 @@ def test_session_content_frontend_merges_real_attachments_and_never_emits_raw_lo
     assert "_appendPersistedSessionScreenshots" in ui_api
     assert "_readPlanningResultsForPresentation" in ui_api
     assert "_sessionContentObjectSummary" in ui_api
+    assert "function _sessionContentObjectIndex" in ui_api
+    assert "function _focusSessionContentObjects" in ui_api
+    for token in (
+        "add(tree.ct",
+        "tree.ctvLabels",
+        "add(tree.skin",
+        "tree.organs",
+        "planning.trajectories",
+        "planning.needles",
+        "planning.seeds",
+        "planning.doseOverlay",
+        "planning.doseLevels",
+        "planning.dvh",
+        "planning.meshes",
+        "tree.annotations",
+        "tree.exportArtifacts",
+        "viewerState.maskLabels",
+    ):
+        assert token in ui_api
     assert "function _openSessionContentPanel" in ui_api
     assert "sessionContentTasks" in chat
     assert "presentationAttachments" in chat
     assert "presentationMessages" in chat
     assert "data.tool === 'ui_content'" in chat
+    assert "async function _presentJsonSessionContent" in chat
+    assert "await _presentJsonSessionContent(data?.steps" in chat
+    assert "function _chatUserVisibleFailure" in chat
+    assert "AI error: ' + data.message" not in chat
+    assert "Send failed: ' + (e?.message || e)" not in chat
     assert 'presentation_tool in {"ui_screenshot", "ui_content"}' in routes
     assert '"content_command"' in routes
 

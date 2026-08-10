@@ -198,6 +198,16 @@ def resolve_session_content_target(message: str) -> Optional[str]:
     )
     if not any(term in text for term in presentation_terms):
         return None
+    # A Data Tree selection already carries a stable node/object identity in
+    # the browser. Treat an explicit selected-node request as an artifact
+    # presentation rather than asking the model to infer a display name.
+    # This works for every real Data Tree leaf, including newly added types.
+    selected_object_terms = (
+        "selected item", "selected object", "selected node", "current selection",
+        "this selected", "\u5f53\u524d\u9009\u4e2d", "\u9009\u4e2d\u7684", "\u8fd9\u4e2a\u8282\u70b9", "\u8be5\u8282\u70b9",
+    )
+    if any(term in text for term in selected_object_terms):
+        return "artifact"
     if any(term in text for term in ("data tree", "\u6570\u636e\u6811")):
         return "data_tree"
     if any(term in text for term in ("surgical guide", "puncture guide", "guide mesh", "\u624b\u672f\u5bfc\u677f", "\u7a7f\u523a\u5bfc\u677f")):
@@ -224,6 +234,25 @@ def resolve_session_content_target(message: str) -> Optional[str]:
     if any(term in text for term in ("session", "case", "workspace", "\u672c\u75c5\u4f8b", "\u5f53\u524d\u4f1a\u8bdd", "\u5f53\u524d\u6848\u4f8b", "\u5168\u90e8\u5185\u5bb9")):
         return "session_summary"
     return None
+
+
+def resolve_session_content_presentation(message: str, target: Optional[str] = None) -> str:
+    """Choose the least disruptive browser presentation for a content query.
+
+    Reading saved figures belongs in the reply as attachments. A request that
+    explicitly refers to the selected Data Tree item should additionally open
+    the Viewer panel and focus that existing node; this is still read-only and
+    never changes the object's visibility or planning data.
+    """
+    resolved_target = str(target or resolve_session_content_target(message) or "").lower()
+    if resolved_target in {"report_figures", "session_screenshots"}:
+        return "attachments"
+    text = str(message or "").strip().lower()
+    explicit_selected = any(term in text for term in (
+        "selected item", "selected object", "selected node", "current selection",
+        "this selected", "\u5f53\u524d\u9009\u4e2d", "\u9009\u4e2d\u7684", "\u8fd9\u4e2a\u8282\u70b9", "\u8be5\u8282\u70b9",
+    ))
+    return "open" if resolved_target == "artifact" and explicit_selected else "auto"
 
 
 def classify_local_turn(message: str, pending_tumor_site: bool = False) -> LocalTurnPolicy:

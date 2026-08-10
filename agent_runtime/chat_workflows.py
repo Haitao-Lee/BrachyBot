@@ -19,7 +19,11 @@ import SimpleITK as sitk
 
 from agent_runtime.core import PlanningPhase, ToolResultPipeline, resolve_reference_direction_input
 from agent_runtime.contracts import RunStatus
-from agent_runtime.turn_policy import classify_local_turn, resolve_session_content_target
+from agent_runtime.turn_policy import (
+    classify_local_turn,
+    resolve_session_content_presentation,
+    resolve_session_content_target,
+)
 from plans.dose_pre.model_loader import (
     DEFAULT_PRESCRIPTION_GY,
     DOSE_MODEL_SCALE_GY,
@@ -1067,14 +1071,52 @@ class ChatWorkflowMixin:
 
         if local_policy.intent == "session_content_query":
             target = resolve_session_content_target(message) or "session_summary"
+            presentation = resolve_session_content_presentation(message, target)
             title = "\u5448\u73b0 Session \u5185\u5bb9" if self.memory.user_lang == "zh" else "Present Session Content"
             content = (
                 "\u6b63\u5728\u8bfb\u53d6\u5f53\u524d Session \u4e2d\u5df2\u4fdd\u5b58\u7684\u5185\u5bb9..."
                 if self.memory.user_lang == "zh"
                 else "Reading saved content from the current Session..."
             )
-            add_step("ui", title, content, status="done", tool="ui_content", params={"target": target})
-            response = self._session_content_response(target, self.memory.user_lang)
+            params = {
+                "target": target,
+                "presentation": presentation,
+                "mode": "chat",
+                "question": message,
+            }
+            add_step(
+                "ui", title, content, status="pending", tool="ui_content",
+                params=ToolResultPipeline.trace_params("ui_content", params),
+            )
+            try:
+                # The JSON fallback route still needs the same browser command
+                # as SSE.  Creating it here avoids a second, legacy-only path
+                # that could acknowledge a report request without presenting
+                # the Session-owned figures.
+                from tool_factory.ui_content import UISessionContentTool
+
+                result = UISessionContentTool().execute(**params)
+                steps[-1]["status"] = "done" if result.success else "error"
+                steps[-1]["metadata"] = ToolResultPipeline.trace_metadata(
+                    "ui_content", dict(getattr(result, "metadata", {}) or {}),
+                ) if result.success else {}
+                steps[-1]["result"] = ToolResultPipeline.format(
+                    "ui_content", result, self.memory.user_lang,
+                )
+                if result.success:
+                    response = self._session_content_response(target, self.memory.user_lang)
+                else:
+                    errors = dict(getattr(result, "metadata", {}) or {}).get("user_error_i18n", {})
+                    response = str(errors.get(self.memory.user_lang) or errors.get("en") or steps[-1]["result"])
+            except Exception:
+                logger.exception("Session-content command construction failed")
+                steps[-1]["status"] = "error"
+                steps[-1]["content"] = ""
+                response = (
+                    "\u5f53\u524d Session \u4e2d\u7684\u8bf7\u6c42\u5185\u5bb9\u6682\u65f6\u65e0\u6cd5\u5448\u73b0\u3002\u8bf7\u7a0d\u540e\u91cd\u8bd5\u3002"
+                    if self.memory.user_lang == "zh"
+                    else "The requested Session content cannot be presented right now. Please retry shortly."
+                )
             self.memory.add_message("assistant", response)
             self._record_experience(message, response, steps)
             self._finish_turn(response)
@@ -1302,7 +1344,14 @@ class ChatWorkflowMixin:
         """Streaming version of chat_with_trace. Yields SSE events."""
         self._begin_turn(message)
         self.memory.add_message("user", message)
-        self.memory.user_lang = "zh" if re.search(r'[一-鿿]', message) else "en"
+        try:
+            from memory.language import detect as _detect_turn_language
+            _language = _detect_turn_language(message)
+            self.memory.user_lang = "zh" if _language.get("code") == "zh" else "en"
+        except Exception:
+            # Trace locale follows this user request, independent of the
+            # application-wide locale used by persistent panels and reports.
+            self.memory.user_lang = "zh" if re.search(r"[\u4e00-\u9fff]", message) else "en"
         steps = []
         step_id = [0]
         response = ""  # Initialize response variable
@@ -1584,7 +1633,7 @@ class ChatWorkflowMixin:
             target = resolve_session_content_target(message) or "session_summary"
             params = {
                 "target": target,
-                "presentation": "attachments" if target in {"report_figures", "session_screenshots"} else "auto",
+                "presentation": resolve_session_content_presentation(message, target),
                 "mode": "chat",
                 "question": message,
             }
