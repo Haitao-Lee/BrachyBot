@@ -224,6 +224,21 @@ def test_3d_seed_drag_repaints_the_2d_projection_before_commit():
     assert "redrawSeedNeedleOverlays()" in source
 
 
+def test_3d_seed_drag_owns_the_webgl_pointer_before_orbit_controls():
+    root = __import__("pathlib").Path(__file__).resolve().parents[1]
+    source = (root / "web/app/static/js/brachybot-3d-manual.js").read_text(encoding="utf-8")
+
+    # A wrapper-level bubble listener lets OrbitControls consume the same
+    # pointerdown first. Seed editing must be capture-phase on the renderer
+    # surface and use one prior confirmation decision for the commit path.
+    assert "const handlePlanningPointerDown = (event) =>" in source
+    assert "interactionCanvas.addEventListener(\n        'pointerdown',\n        handlePlanningPointerDown,\n        true,\n    );" in source
+    assert "canvas.addEventListener('mousedown', (event) =>" not in source
+    assert "event.stopImmediatePropagation();" in source
+    assert "nearestSeedOnPointerRay" in source
+    assert "doseRecomputeDecision" in source
+
+
 def test_manual_dose_marks_the_backend_commit_before_slow_viewer_hydration():
     root = __import__("pathlib").Path(__file__).resolve().parents[1]
     source = (root / "web/app/static/js/brachybot-3d-manual.js").read_text(encoding="utf-8")

@@ -859,30 +859,45 @@ def _truncated_boundary_slices(body: np.ndarray) -> Tuple[bool, bool]:
 
     Returns ``(z_min_truncated, z_max_truncated)``.
     """
-    if body.ndim != 3 or min(body.shape) < 3:
-        return False, False
-    z_min_has_body = bool(np.any(body[0]))
-    z_max_has_body = bool(np.any(body[-1]))
-    if not (z_min_has_body or z_max_has_body):
-        return False, False
+    faces = _truncated_boundary_faces(body)
+    return bool(faces["z_min"]), bool(faces["z_max"])
 
-    def _flat_cap(idx: int) -> bool:
-        a = body[idx]
-        neighbour = body[idx + 1] if idx < body.shape[0] - 1 else body[idx - 1]
-        area_a = int(a.sum())
-        area_n = int(neighbour.sum())
-        if area_a < 32:
-            return False  # tiny boundary row: ambiguous, not a clear truncation
-        # A truncation plane keeps a substantial, roughly constant cross-section
-        # right at the boundary; a natural closing (head/sacrum) drops off fast.
-        # A ratio >= 0.35 catches flat truncation caps even when the scan starts
-        # mid-body, while a genuinely curved skin closure drops below it.
-        ratio = float(area_a) / max(1.0, float(area_n))
-        return ratio >= 0.35
 
-    z_min = _flat_cap(0) if z_min_has_body else False
-    z_max = _flat_cap(body.shape[0] - 1) if z_max_has_body else False
-    return bool(z_min), bool(z_max)
+def _truncated_boundary_faces(body: np.ndarray) -> Dict[str, bool]:
+    """Detect flat body caps on every CT array face.
+
+    The guide is constructed in ``[z, y, x]`` array order. Earlier versions
+    only protected the first and last z slices, which left a crop touching a
+    lateral CT edge free to treat that edge as a closed skin surface. The
+    result could be a plate that wrapped around a scan boundary instead of
+    following patient skin. This helper keeps the existing z-only API while
+    extending the same conservative flat-cap test to all six faces.
+    """
+    mask = np.asarray(body, dtype=bool)
+    names = ((0, "z_min", "z_max"), (1, "y_min", "y_max"), (2, "x_min", "x_max"))
+    result = {name: False for _, low, high in names for name in (low, high)}
+    if mask.ndim != 3 or min(mask.shape) < 3:
+        return result
+
+    def flat_cap(axis: int, side: int) -> bool:
+        boundary_index = 0 if side == 0 else int(mask.shape[axis] - 1)
+        neighbour_index = 1 if side == 0 else int(mask.shape[axis] - 2)
+        boundary = np.take(mask, boundary_index, axis=axis)
+        neighbour = np.take(mask, neighbour_index, axis=axis)
+        area_boundary = int(np.count_nonzero(boundary))
+        area_neighbour = int(np.count_nonzero(neighbour))
+        if area_boundary < 32:
+            return False
+        # A flat acquisition cut keeps a substantial cross-section at the
+        # boundary. A natural anatomical end tapers rapidly instead.
+        return float(area_boundary) / max(1.0, float(area_neighbour)) >= 0.35
+
+    for axis, low_name, high_name in names:
+        if bool(np.any(np.take(mask, 0, axis=axis))):
+            result[low_name] = flat_cap(axis, 0)
+        if bool(np.any(np.take(mask, -1, axis=axis))):
+            result[high_name] = flat_cap(axis, 1)
+    return result
 
 
 def _smooth_body_mask(
@@ -917,6 +932,7 @@ def _sample_skin_entry(
     *,
     truncated_z_min: bool = False,
     truncated_z_max: bool = False,
+    truncated_boundary_faces: Optional[Mapping[str, bool]] = None,
 ) -> Tuple[np.ndarray, np.ndarray]:
     """Find the first body voxel entered by the physical needle segment.
 
@@ -941,6 +957,8 @@ def _sample_skin_entry(
     samples = max(2, int(math.ceil(length / step)) + 1)
     size_xyz = np.asarray(ct_image.GetSize(), dtype=np.int64)
     z_count = int(size_xyz[2])
+    boundary_faces = truncated_boundary_faces or {}
+    boundary_tolerance_voxels = 1
     inside_before = False
     first_inside: Optional[np.ndarray] = None
     for fraction in np.linspace(0.0, 1.0, samples, dtype=np.float64):
@@ -965,6 +983,21 @@ def _sample_skin_entry(
             on_truncated_boundary = (
                 (z == 0 and truncated_z_min) or (z == z_count - 1 and truncated_z_max)
             ) or z == 0 or z == z_count - 1
+            # Apply the same rule to lateral finite-FOV faces. A path that
+            # enters through an x/y acquisition cap must not be accepted as
+            # skin merely because it is not on the first or last CT slice.
+            on_truncated_boundary = on_truncated_boundary or (
+                (x <= boundary_tolerance_voxels and bool(boundary_faces.get("x_min")))
+                or (
+                    x >= int(size_xyz[0] - 1) - boundary_tolerance_voxels
+                    and bool(boundary_faces.get("x_max"))
+                )
+                or (y <= boundary_tolerance_voxels and bool(boundary_faces.get("y_min")))
+                or (
+                    y >= int(size_xyz[1] - 1) - boundary_tolerance_voxels
+                    and bool(boundary_faces.get("y_max"))
+                )
+            )
             if on_truncated_boundary:
                 # The needle enters through the CT truncation plane, not real
                 # skin. Keep searching: a real lateral skin entry may exist
@@ -1007,7 +1040,9 @@ def _path_records(
         except SurgicalGuideError:
             continue
     paths: List[NeedleGuidePath] = []
-    trunc_z_min, trunc_z_max = _truncated_boundary_slices(body)
+    boundary_faces = _truncated_boundary_faces(body)
+    trunc_z_min = bool(boundary_faces["z_min"])
+    trunc_z_max = bool(boundary_faces["z_max"])
     for index, needle in enumerate(snapshot["needles"]):
         if not isinstance(needle, Mapping):
             continue
@@ -1023,6 +1058,7 @@ def _path_records(
             ct_image, body, target, external,
             truncated_z_min=trunc_z_min,
             truncated_z_max=trunc_z_max,
+            truncated_boundary_faces=boundary_faces,
         )
         trajectory_id = str(needle.get("trajectory_id") or needle_id)
         linked_seeds = seed_by_trajectory.get(trajectory_id, [])
@@ -1063,6 +1099,68 @@ def _crop_bounds(ct_image: Any, entries: Sequence[np.ndarray], margin_mm: float)
     if np.any(upper <= lower):
         raise SurgicalGuideError("Guide region does not fit inside the CT field of view")
     return lower, upper
+
+
+def _local_boundary_safety_mask(
+    local_shape_zyx: Sequence[int],
+    lower_zyx: Sequence[int],
+    upper_zyx: Sequence[int],
+    source_shape_zyx: Sequence[int],
+    boundary_faces: Mapping[str, bool],
+    target_spacing_zyx: Sequence[float],
+    margin_mm: float,
+) -> Tuple[np.ndarray, Dict[str, Any]]:
+    """Return the printable domain that excludes CT acquisition caps.
+
+    A cropped signed-distance field has no way to distinguish an anatomical
+    outside from a crop face. If the source body reaches a finite-FOV face and
+    the guide crop also reaches that face, the face must be treated as invalid
+    geometry. The mask is applied before patch connection and after every CSG
+    union, so sleeves and bridge routing cannot reintroduce a cap-backed plate.
+    """
+    shape = tuple(int(value) for value in local_shape_zyx)
+    lower = np.asarray(lower_zyx, dtype=np.int64).reshape(3)
+    upper = np.asarray(upper_zyx, dtype=np.int64).reshape(3)
+    source_shape = np.asarray(source_shape_zyx, dtype=np.int64).reshape(3)
+    spacing = np.asarray(target_spacing_zyx, dtype=np.float64).reshape(3)
+    if len(shape) != 3 or np.any(spacing <= 0.0):
+        raise SurgicalGuideError("Invalid local guide boundary geometry")
+
+    safe = np.ones(shape, dtype=bool)
+    excluded: Dict[str, int] = {}
+    # Keep at least one target voxel clear even when an operator explicitly
+    # sets truncation_margin_mm to zero. A zero-width forbidden zone would
+    # reintroduce the exact cap ambiguity this contract is meant to prevent.
+    guard_mm = max(float(margin_mm), float(np.max(spacing)))
+    face_names = (
+        (0, "z_min", "z_max"),
+        (1, "y_min", "y_max"),
+        (2, "x_min", "x_max"),
+    )
+    for axis, low_name, high_name in face_names:
+        low_touches = int(lower[axis]) <= 0 and bool(boundary_faces.get(low_name))
+        high_touches = int(upper[axis]) >= int(source_shape[axis] - 1) and bool(
+            boundary_faces.get(high_name)
+        )
+        guard_voxels = max(1, int(math.ceil(guard_mm / spacing[axis])))
+        if low_touches:
+            index = [slice(None)] * 3
+            index[axis] = slice(0, min(shape[axis], guard_voxels))
+            safe[tuple(index)] = False
+            excluded[low_name] = min(shape[axis], guard_voxels)
+        if high_touches:
+            index = [slice(None)] * 3
+            start = max(0, shape[axis] - guard_voxels)
+            index[axis] = slice(start, shape[axis])
+            safe[tuple(index)] = False
+            excluded[high_name] = min(shape[axis], guard_voxels)
+
+    return safe, {
+        "guard_mm": float(guard_mm),
+        "excluded_faces": excluded,
+        "valid_voxel_count": int(np.count_nonzero(safe)),
+        "local_voxel_count": int(safe.size),
+    }
 
 
 def _crop_origin_world(ct_image: Any, lower_xyz: np.ndarray) -> np.ndarray:
@@ -1997,6 +2095,13 @@ def generate_surgical_guide(
     ct_data = memory.retrieve("ct_data")
     if ct_image is None or ct_data is None:
         raise SurgicalGuideError("Load a CT image before generating a puncture guide")
+    raw_candidate = np.asarray(ct_data, dtype=np.float32) > float(
+        params["skin_threshold_hu"]
+    )
+    # Detect finite-FOV caps from the original thresholded component before
+    # binary closing or smoothing. Both operations can erode a one-voxel CT
+    # face and erase the evidence that the acquisition was truncated.
+    boundary_faces = _truncated_boundary_faces(_largest_component(raw_candidate))
     body = _body_mask(np.asarray(ct_data), params["skin_threshold_hu"])
     # Smooth the body envelope so the guide plate follows a smooth skin
     # surface instead of the CT's slice steps (real CTs often have 5 mm
@@ -2021,10 +2126,11 @@ def generate_surgical_guide(
     # boundaries, the guide must only be built from real lateral skin. Entries
     # falling on a truncated flat plane are rejected inside _path_records;
     # record the truncation state so the caller can warn the operator.
-    trunc_z_min, trunc_z_max = _truncated_boundary_slices(body)
+    trunc_z_min = bool(boundary_faces["z_min"])
+    trunc_z_max = bool(boundary_faces["z_max"])
     paths = _path_records(agent, body, selected_needle_ids)
     auxiliary_specs = _auxiliary_hole_specs(paths, params)
-    truncated_fov = bool(trunc_z_min or trunc_z_max)
+    truncated_fov = bool(any(boundary_faces.values()))
 
     span_margin = (
         params["patch_margin_mm"]
@@ -2058,10 +2164,24 @@ def generate_surgical_guide(
         params["geometry_resolution_mm"],
         return_signed_distance=True,
     )
+    # The full skin mask is a first-class Data Tree segmentation, but it is
+    # never allowed to define a printable cap at a finite CT boundary. Keep a
+    # separate local safety domain for CSG instead of mutating the persisted
+    # skin mask or relying on a post-mesh cleanup pass.
+    boundary_safe_mask, boundary_safety = _local_boundary_safety_mask(
+        body_crop.shape,
+        lower_zyx,
+        upper_zyx,
+        body.shape,
+        boundary_faces,
+        spacing_zyx,
+        params["truncation_margin_mm"],
+    )
     finish_stage(
         "local_grid_resampled",
         grid_shape=tuple(int(value) for value in body_crop.shape),
         grid_voxels=int(body_crop.size),
+        boundary_guard_voxels=boundary_safety["excluded_faces"],
     )
     spacing_xyz = tuple(reversed(spacing_zyx))
     # Reuse the physical signed-distance field that produced the smooth local
@@ -2091,6 +2211,7 @@ def generate_surgical_guide(
         (~body_crop)
         & (outside_distance >= protected_clearance)
         & (outside_distance <= protected_clearance + plate_thickness)
+        & boundary_safe_mask
     )
     # Patch mask: spherical region of radius patch_margin_mm around every entry.
     # The local grid is isotropic, so a world distance equals an index distance
@@ -2199,6 +2320,7 @@ def generate_surgical_guide(
         sleeve_mask = (
             (sleeve_sdf <= 0.0)
             & (outside_distance[box] >= protected_clearance)
+            & boundary_safe_mask[box]
         )
         solid[box] |= sleeve_mask
 
@@ -2233,6 +2355,10 @@ def generate_surgical_guide(
             _effective_primary_bore_radius_mm(params),
         )
         solid[box] &= ~(bore_sdf <= 0.0)
+    # Re-apply the domain after all unions. This is intentionally redundant:
+    # it protects the geometry if a future CSG stage adds a new volume without
+    # remembering to intersect it with the acquisition-safe domain.
+    solid &= boundary_safe_mask
     finish_stage("primary_sleeves_and_bores", needle_count=len(paths))
     # Reject plate voxels that are backed by a truncated flat cap. When the
     # body envelope is cut by the CT first/last slice, the cap plane is NOT
@@ -2265,6 +2391,7 @@ def generate_surgical_guide(
             solid[:boundary_voxels] = False
         if trunc_z_max and ct_z_max:
             solid[-boundary_voxels:] = False
+    solid &= boundary_safe_mask
     # A component disconnected from every needle sleeve is a floating fragment
     # or a plate built on an invalid region; keep only the largest components.
     solid = _filter_components(solid, int(params["minimum_component_voxels"]))
@@ -2330,6 +2457,7 @@ def generate_surgical_guide(
             iterations=1,
         )
         repaired_solid &= (~body_crop) & (outside_distance >= protected_clearance)
+        repaired_solid &= boundary_safe_mask
 
         for spec in realized_auxiliary_specs:
             hole_sdf, box = _cylinder_sdf_in_region(
@@ -2547,6 +2675,14 @@ def generate_surgical_guide(
             "finite_fov": {
                 "truncated_superior": bool(trunc_z_max),
                 "truncated_inferior": bool(trunc_z_min),
+                "boundary_faces": {
+                    key: bool(value) for key, value in boundary_faces.items()
+                },
+                "boundary_safety": boundary_safety,
+                # The complete skin segmentation is persisted for inspection,
+                # while the mesh uses only this local, boundary-safe patch.
+                "geometry_source": "local_skin_patch_only",
+                "complete_skin_volume_used_for_display_only": True,
                 "all_entries_on_real_skin": True,
             },
         },

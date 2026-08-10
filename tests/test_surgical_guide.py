@@ -916,6 +916,35 @@ def test_truncated_fov_body_is_detected_as_flat_cap():
     assert trunc_z_max is True, "body touches z-max slice: superior scan boundary is truncated"
 
 
+def test_truncated_boundary_detection_and_local_guard_cover_all_array_faces():
+    """A local guide crop must not use any finite-FOV face as printable skin."""
+    from web.surgical_guide import (
+        _local_boundary_safety_mask,
+        _truncated_boundary_faces,
+    )
+
+    body = np.zeros((24, 24, 24), dtype=bool)
+    body[:, 4:20, 4:20] = True
+    faces = _truncated_boundary_faces(body)
+    assert faces["z_min"] is True and faces["z_max"] is True
+    assert faces["y_min"] is False and faces["y_max"] is False
+    assert faces["x_min"] is False and faces["x_max"] is False
+
+    safe, metadata = _local_boundary_safety_mask(
+        local_shape_zyx=(24, 16, 16),
+        lower_zyx=(0, 4, 4),
+        upper_zyx=(23, 19, 19),
+        source_shape_zyx=body.shape,
+        boundary_faces=faces,
+        target_spacing_zyx=(0.5, 0.5, 0.5),
+        margin_mm=5.0,
+    )
+    assert not safe[:10].any()
+    assert not safe[-10:].any()
+    assert safe[10:-10].any()
+    assert metadata["excluded_faces"] == {"z_min": 10, "z_max": 10}
+
+
 def test_guide_entry_on_truncation_plane_is_rejected_and_lateral_skin_used():
     from web.surgical_guide import (
         SurgicalGuideError,
@@ -949,6 +978,38 @@ def test_guide_entry_on_truncation_plane_is_rejected_and_lateral_skin_used():
         truncated_z_min=trunc_z_min, truncated_z_max=trunc_z_max,
     )
     assert abs(entry[2] - 12.0) < 3.0, "lateral entry should sit mid-scan (real skin)"
+
+
+def test_lateral_ct_boundary_entry_is_not_treated_as_skin():
+    from web.surgical_guide import (
+        SurgicalGuideError,
+        _body_mask,
+        _largest_component,
+        _sample_skin_entry,
+        _smooth_body_mask,
+        _truncated_boundary_faces,
+    )
+
+    # A body that fills the x-min acquisition face has a lateral cap just as
+    # unsafe as a superior/inferior z cap. The guide must refuse that entry
+    # instead of closing the plate against the finite CT field of view.
+    ct = np.full((16, 16, 16), -1000, dtype=np.int16)
+    ct[2:14, 2:14, 0:8] = 40
+    image = sitk.GetImageFromArray(ct)
+    image.SetSpacing((1.0, 1.0, 1.0))
+    raw_body = _largest_component(ct > -300)
+    faces = _truncated_boundary_faces(raw_body)
+    body = _smooth_body_mask(raw_body, (1.0, 1.0, 1.0), 0.5)
+    assert faces["x_min"] is True
+
+    with pytest.raises(SurgicalGuideError):
+        _sample_skin_entry(
+            image,
+            body,
+            np.asarray([7.0, 8.0, 8.0]),
+            np.asarray([-20.0, 8.0, 8.0]),
+            truncated_boundary_faces=faces,
+        )
 
 
 def test_guide_with_only_truncated_entries_refuses_to_generate():

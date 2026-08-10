@@ -166,14 +166,14 @@ function _manualPayload(options = {}) {
 async function _confirmSeedReplan(seedId) {
     if (typeof _confirmAction !== 'function') return true;
     return _confirmAction(
-        `粒子 ${seedId} 已移动，是否按新位置重新计算剂量和 DVH？`,
+        `\u7C92\u5B50 ${seedId} \u5DF2\u79FB\u52A8\uFF0C\u662F\u5426\u6309\u65B0\u4F4D\u7F6E\u91CD\u65B0\u8BA1\u7B97\u5242\u91CF\u548C DVH\uFF1F`,
         `Seed ${seedId} has moved. Recalculate the dose and DVH for the new position?`,
         {
-            yesZh: '重新计算',
+            yesZh: '\u91CD\u65B0\u8BA1\u7B97',
             yesEn: 'Recalculate',
-            noZh: '仅保存位置',
+            noZh: '\u4EC5\u4FDD\u5B58\u4F4D\u7F6E',
             noEn: 'Save position only',
-            titleZh: '粒子位置已改变',
+            titleZh: '\u7C92\u5B50\u4F4D\u7F6E\u5DF2\u6539\u53D8',
             titleEn: 'Seed position changed',
         },
     );
@@ -996,7 +996,11 @@ async function onManualSeedEdited(seedId, position, rollbackSeeds = null, option
     // launches an expensive AI job or changes the visible plan underneath
     // the user.
     if (options.skipDoseRecompute !== true) {
-        const shouldReplan = await _confirmSeedReplan(seedId);
+        const hasPriorDecision = options.doseRecomputeDecision === 'yes'
+            || options.doseRecomputeDecision === 'no';
+        const shouldReplan = hasPriorDecision
+            ? options.doseRecomputeDecision === 'yes'
+            : await _confirmSeedReplan(seedId);
         if (shouldReplan) {
             await recomputeManualDose('seed_drag');
         } else {
@@ -2377,8 +2381,45 @@ function init3DScene() {
         interactionCanvas.addEventListener('mousemove', scheduleNeedleHandleHover, true);
     }
 
-    // Mouse down - start drag or select
-    canvas.addEventListener('mousedown', (event) => {
+    // Find a seed close to the pointer ray even when an anatomy surface.
+    // The implementation must prefer that seed over any endpoint handle when
+    // the seed is the object the operator is visibly targeting.
+    // occludes its thin physical cylinder. This fallback is deliberately
+    // limited to the planning seed pick radius and never changes free-camera
+    // selection for unrelated meshes.
+    const nearestSeedOnPointerRay = () => {
+        const seedObjects = Object.values(scene3D.meshes || {})
+            .filter(mesh => mesh && mesh.userData?.type === 'seed');
+        let bestSeed = null;
+        let bestProjection = Infinity;
+        for (const seedMesh of seedObjects) {
+            const toSeed = new THREE.Vector3().subVectors(
+                seedMesh.position,
+                raycaster.ray.origin,
+            );
+            const projection = toSeed.dot(raycaster.ray.direction);
+            if (projection < 0) continue;
+            const closest = raycaster.ray.origin.clone().add(
+                raycaster.ray.direction.clone().multiplyScalar(projection),
+            );
+            const perp = closest.distanceTo(seedMesh.position);
+            const pickRadius = Math.max(
+                2.5,
+                Number(seedMesh.geometry?.parameters?.radius || 0.4) * 6,
+            );
+            if (perp < pickRadius && projection < bestProjection) {
+                bestSeed = seedMesh;
+                bestProjection = projection;
+            }
+        }
+        return bestSeed;
+    };
+
+    // Pointer down - start drag or select. This listener must run in capture
+    // phase on the actual WebGL canvas. The previous bubble listener was
+    // attached to the wrapper, so OrbitControls could consume the same left
+    // click first and turn a seed drag into a camera rotation.
+    const handlePlanningPointerDown = (event) => {
         if (event.button !== 0) return; // Only left click
         if (event.__brachyNeedleHandle) return;
 
@@ -2397,7 +2438,9 @@ function init3DScene() {
         // meshes first, then handles, then everything else.
         const seedObjects = objects.filter(obj => obj?.userData?.type === 'seed');
         const seedHits = raycaster.intersectObjects(seedObjects, true);
+        const nearestSeed = seedHits.length ? null : nearestSeedOnPointerRay();
         const intersects = seedHits.length ? seedHits
+            : nearestSeed ? [{ object: nearestSeed }]
             : handleHits.length ? handleHits
             : raycaster.intersectObjects(objects, true);
 
@@ -2407,34 +2450,18 @@ function init3DScene() {
             while (obj.parent && !obj.userData.type) {
                 obj = obj.parent;
             }
-            // A seed that coincides with an endpoint handle (or hides inside an
-            // OAR surface) is hard to grab because its thin physical cylinder
-            // either loses the raycast or is overlapped by the larger handle
-            // sphere. When the pointer is within a generous radius of a seed's
-            // position, prefer that seed over any endpoint handle or surface so
-            // the user can select it and slide it along its needle.
-            if (obj.userData.type !== 'seed') {
-                const seedObjectsAll = Object.values(scene3D.meshes)
-                    .filter(m => m && m.userData?.type === 'seed');
-                let bestSeed = null;
-                let bestSeedDist = Infinity;
-                for (const seedMesh of seedObjectsAll) {
-                    const seedPos = seedMesh.position;
-                    const toSeed = new THREE.Vector3().subVectors(seedPos, raycaster.ray.origin);
-                    const projection = toSeed.dot(raycaster.ray.direction);
-                    if (projection < 0) continue;
-                    const closest = raycaster.ray.origin.clone().add(raycaster.ray.direction.clone().multiplyScalar(projection));
-                    const perp = closest.distanceTo(seedPos);
-                    const pickRadius = Math.max(2.5, seedMesh.geometry?.parameters?.radius * 6 || 2.5);
-                    if (perp < pickRadius && projection < bestSeedDist) {
-                        bestSeed = seedMesh;
-                        bestSeedDist = projection;
+            if (obj.userData.type === 'seed' || obj.userData.type === 'needle' || obj.userData.type === 'needle_handle') {
+                // A seed drag owns the left-button gesture. Stop the event at
+                // the renderer surface before OrbitControls can rotate the
+                // camera, and keep receiving movement after leaving the canvas.
+                if (obj.userData.type === 'seed') {
+                    event.preventDefault();
+                    event.stopImmediatePropagation();
+                    if (typeof interactionCanvas.setPointerCapture === 'function'
+                        && event.pointerId !== undefined) {
+                        try { interactionCanvas.setPointerCapture(event.pointerId); } catch (_) {}
                     }
                 }
-                if (bestSeed) obj = bestSeed;
-            }
-
-            if (obj.userData.type === 'seed' || obj.userData.type === 'needle' || obj.userData.type === 'needle_handle') {
                 // Select this object
                 if (selectedObject) {
                     // Deselect previous
@@ -2486,7 +2513,19 @@ function init3DScene() {
             selectedObject = null;
             requestRender(2);
         }
-    });
+    };
+    interactionCanvas.addEventListener(
+        'pointerdown',
+        handlePlanningPointerDown,
+        true,
+    );
+    if (!supportsPointerEvents) {
+        interactionCanvas.addEventListener(
+            'mousedown',
+            handlePlanningPointerDown,
+            true,
+        );
+    }
 
     // Mouse move - drag seed. The projection redraw is frame-coalesced so
     // 2D remains live without competing with the 3D raycast on every event.
@@ -2609,6 +2648,18 @@ function init3DScene() {
             scene3D.controls.enabled = true;
             interactionCanvas.style.cursor = 'grab';
             const finishedObject = selectedObject;
+            // Snapshot the seed before awaiting a confirmation dialog. The
+            // user may start another camera/seed interaction while the modal
+            // is open; retaining the mesh reference here prevents that newer
+            // selection from receiving the previous seed's commit.
+            const finishedSeed = finishedObject?.userData?.type === 'seed'
+                && seedDragMoved
+                ? {
+                    id: finishedObject.userData.id,
+                    position: finishedObject.position.clone(),
+                    rollback: seedDragRollback,
+                }
+                : null;
             if (finishedObject?.userData?.needleId && typeof setNeedleInteractionHighlight === 'function') {
                 setNeedleInteractionHighlight(finishedObject.userData.needleId, false);
             }
@@ -2616,46 +2667,57 @@ function init3DScene() {
             pendingNeedleStart = null;
             requestRender(4);
 
-            if (selectedObject && selectedObject.userData.type === 'seed' && seedDragMoved) {
-                // Update seed position in data tree state
-                const seedId = selectedObject.userData.id;
-                const seed = dataTreeState.planning.seeds.find(s => s.id === seedId);
-                if (seed) {
-                    seed.position = [selectedObject.position.x, selectedObject.position.y, selectedObject.position.z];
-                }
-                addChat('system', `Seed ${seedId} repositioned to [${selectedObject.position.x.toFixed(1)}, ${selectedObject.position.y.toFixed(1)}, ${selectedObject.position.z.toFixed(1)}]`);
-                // Ask whether to replan (recompute dose and DVH) after the drag.
-                // The seed geometry is committed either way; only the
-                // (potentially slow) AI dose recompute waits for consent. A
-                // simple click without a drag never reaches this prompt.
-                const recalcDose = typeof _confirmAction === 'function'
-                    ? await _confirmAction(
-                        `种子 ${seedId} 已沿针道滑动。是否重新规划并重新计算剂量？`,
-                        `Seed ${seedId} slid along its needle. Replan and recompute dose?`,
-                        {
-                            yesZh: '重新规划',
-                            yesEn: 'Replan',
-                            noZh: '仅移动粒子',
-                            noEn: 'Move only',
-                            titleZh: '粒子位置已改变',
-                            titleEn: 'Seed position changed',
-                        },
-                    )
-                    : true;
-                if (typeof onManualSeedEdited === 'function') {
-                    const rollback = seedDragRollback;
-                    onManualSeedEdited(seedId, selectedObject.position, rollback, { skipDoseRecompute: recalcDose !== true }).catch(error => {
-                        const message = typeof window._t === 'function'
-                            ? window._t(`粒子移动失败：${error.message}`, `Seed move failed: ${error.message}`)
-                            : `Seed move failed: ${error.message}`;
-                        addChat('error', message);
-                    });
-                }
+            if (finishedSeed) {
+                // Release the drag state before opening the modal. A modal is
+                // asynchronous; a later interaction must be free to select a
+                // different object without being cleared by this completion.
                 pendingSeed = null;
                 pendingSeedStart = null;
                 seedDragRollback = null;
                 seedDragMoved = false;
-            } else if (selectedObject && selectedObject.userData.type === 'seed' && !seedDragMoved) {
+                // Update seed position in data tree state
+                const seedId = finishedSeed.id;
+                const seed = dataTreeState.planning.seeds.find(s => s.id === seedId);
+                if (seed) {
+                    seed.position = [
+                        finishedSeed.position.x,
+                        finishedSeed.position.y,
+                        finishedSeed.position.z,
+                    ];
+                }
+                addChat(
+                    'system',
+                    _manualText(
+                        `\u7C92\u5B50 ${seedId} \u5DF2\u6CBF\u6240\u5C5E\u9488\u9053\u79FB\u52A8\u81F3 [`
+                            + `${finishedSeed.position.x.toFixed(1)}, `
+                            + `${finishedSeed.position.y.toFixed(1)}, `
+                            + `${finishedSeed.position.z.toFixed(1)}]\u3002`,
+                        `Seed ${seedId} moved along its needle to [`
+                            + `${finishedSeed.position.x.toFixed(1)}, `
+                            + `${finishedSeed.position.y.toFixed(1)}, `
+                            + `${finishedSeed.position.z.toFixed(1)}].`,
+                    ),
+                );
+                // onManualSeedEdited persists the geometry before asking
+                // whether the expensive dose and DVH refresh should run.
+                // Keeping the confirmation in one place also guarantees a
+                // single dialog for every completed seed drag.
+                if (typeof onManualSeedEdited === 'function') {
+                    try {
+                        await onManualSeedEdited(
+                            seedId,
+                            finishedSeed.position,
+                            finishedSeed.rollback,
+                            {},
+                        );
+                    } catch (error) {
+                        const message = typeof window._t === 'function'
+                            ? window._t(`\u7C92\u5B50\u79FB\u52A8\u5931\u8D25\uFF1A${error.message}`, `Seed move failed: ${error.message}`)
+                            : `Seed move failed: ${error.message}`;
+                        addChat('error', message);
+                    }
+                }
+            } else if (finishedObject && finishedObject.userData.type === 'seed' && !seedDragMoved) {
                 // Click without drag: keep the selection but do not commit.
                 pendingSeed = null;
                 pendingSeedStart = null;
