@@ -99,6 +99,8 @@ def test_report_figure_identity_survives_server_artifact_fallback():
     assert "hashlib.sha256" in routes
     assert "function normalizeReportFigures" in workspace
     assert "REPORT_FIGURE_DEFINITIONS" in workspace
+    assert "const legacyAxis = Object.entries(REPORT_FIGURE_DEFINITIONS).find" in workspace
+    assert "duplicate legacy Figure 1(a) entries collapse correctly" in workspace
     assert "_artifactFallback" in workspace
     assert "const recoveredFigureMetadata = axis =>" in workspace
     assert "report_fig2_dose_surface" in workspace

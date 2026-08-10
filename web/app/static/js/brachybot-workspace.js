@@ -756,7 +756,17 @@
         const explicitAxis = String(figure?.axis || '').trim();
         if (REPORT_FIGURE_DEFINITIONS[explicitAxis]) return explicitAxis;
         const role = String(figure?.captureRole || figure?.capture_role || '').trim();
-        return REPORT_FIGURE_AXIS_BY_ROLE[role] || explicitAxis;
+        if (REPORT_FIGURE_AXIS_BY_ROLE[role]) return REPORT_FIGURE_AXIS_BY_ROLE[role];
+        // Early reports stored the page and subfigure but did not yet persist
+        // the capture role. Recover that identity from the standard report
+        // layout so duplicate legacy Figure 1(a) entries collapse correctly.
+        const figureNumber = Number(figure?.figureNumber);
+        const subfigure = String(figure?.subfigure || '').trim().toLowerCase();
+        const legacyAxis = Object.entries(REPORT_FIGURE_DEFINITIONS).find(([, definition]) => (
+            Number(definition.figureNumber) === figureNumber
+            && String(definition.subfigure || '').toLowerCase() === subfigure
+        ))?.[0];
+        return legacyAxis || explicitAxis;
     }
 
     function reportFigureIdentity(figure, index = 0) {
