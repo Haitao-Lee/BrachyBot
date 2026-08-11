@@ -200,6 +200,32 @@ def _is_image_tumor_measurement_request(message: str) -> bool:
     )
 
 
+def is_report_generation_request(message: str) -> bool:
+    """Return whether a turn asks to create or refresh the editable report.
+
+    Report generation and report presentation are separate capabilities.  The
+    former mutates the Session-owned report from current planning data, while
+    the latter only reads an existing report or its saved figures.  Keeping
+    this semantic boundary here prevents action requests from being swallowed
+    by the broader persisted-content resolver merely because they contain the
+    word ``report``.
+    """
+    text = str(message or "").strip().lower()
+    if not text or not _contains_any(text, ("report", "\u62a5\u544a")):
+        return False
+    english_action = bool(re.search(
+        r"\b(?:generate|regenerate|re-generate|rebuild|create|update|refresh|"
+        r"rewrite|refill|auto-fill|autofill|fill)\b",
+        text,
+    ))
+    action_terms = (
+        "\u751f\u6210", "\u91cd\u65b0\u751f\u6210", "\u518d\u6b21\u751f\u6210",
+        "\u66f4\u65b0", "\u5237\u65b0", "\u91cd\u505a", "\u91cd\u5efa",
+        "\u5236\u4f5c", "\u521b\u5efa", "\u586b\u5145", "\u81ea\u52a8\u586b\u5145",
+    )
+    return english_action or _contains_any(text, action_terms)
+
+
 def resolve_session_content_target(message: str) -> Optional[str]:
     """Resolve a read-only request for persisted current-Session content.
 
@@ -210,6 +236,11 @@ def resolve_session_content_target(message: str) -> Optional[str]:
     """
     text = str(message or "").strip().lower()
     if not text:
+        return None
+
+    # A report action must reach the report-generation workflow.  It is not a
+    # read-only request for the previously persisted report or its figures.
+    if is_report_generation_request(text):
         return None
 
     report_terms = ("report", "\u62a5\u544a")
@@ -330,6 +361,16 @@ def classify_local_turn(message: str, pending_tumor_site: bool = False) -> Local
             False,
             True,
             CLINICAL_TOOLS,
+        )
+
+    if is_report_generation_request(text):
+        return LocalTurnPolicy(
+            "report_generation",
+            "low",
+            False,
+            False,
+            False,
+            UI_TOOLS,
         )
 
     # A request to view a persisted Session artifact is not a new screenshot,

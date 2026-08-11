@@ -611,6 +611,35 @@ class ChatWorkflowMixin:
             else "Presenting the accessible content in the current Session.",
         )
 
+    @staticmethod
+    def _report_generation_params() -> Dict[str, Any]:
+        """Build the single browser action that owns full report generation.
+
+        ``report.autofill`` runs the real Report pipeline in the browser: it
+        reads current Session/planning data, applies the server patch, rebuilds
+        quality rows, captures canonical figures, renders, and persists the
+        result.  Do not replace it with ``ui_content(report)``, which is a
+        read-only presentation capability.
+        """
+        return {
+            "actions": [{"target": "report.autofill", "command": "run"}],
+        }
+
+    @staticmethod
+    def _report_generation_response(lang: str = "en", success: bool = True) -> str:
+        if success:
+            return (
+                "\u5df2\u6839\u636e\u5f53\u524d Session \u7684 CT\u3001\u5206\u5272\u3001\u89c4\u5212\u3001\u5242\u91cf\u548c DVH \u7ed3\u679c\u91cd\u65b0\u751f\u6210\u62a5\u544a\u3002"
+                "\u62a5\u544a\u6b63\u6587\u3001\u8868\u683c\u3001Reference/Status \u8bc4\u4f30\u548c\u6807\u51c6\u56fe\u4ef6\u5df2\u540c\u6b65\u66f4\u65b0\u5e76\u4fdd\u5b58\u3002"
+                if lang == "zh"
+                else "The report has been regenerated from the current Session's CT, segmentation, planning, dose, and DVH results. Report text, tables, Reference/Status assessment, and canonical figures were updated and saved together."
+            )
+        return (
+            "\u5f53\u524d Session \u7684\u62a5\u544a\u751f\u6210\u64cd\u4f5c\u672a\u80fd\u542f\u52a8\u3002\u8bf7\u786e\u8ba4\u8be5 Session \u5df2\u5b8c\u6210\u52a0\u8f7d\u4e14\u5df2\u6709\u53ef\u7528\u7684\u89c4\u5212\u7ed3\u679c\u540e\u91cd\u8bd5\u3002"
+            if lang == "zh"
+            else "Report generation could not be started for the current Session. Confirm that the Session is fully loaded and has an available planning result, then retry."
+        )
+
     def _build_3d_status_response(self, lang: str = "en") -> str:
         """Explain the current 3D state without inventing a rendering cause."""
         ui_state = self.memory.get_ui_state() or {}
@@ -958,6 +987,21 @@ class ChatWorkflowMixin:
             self._finish_turn(response)
             return response
 
+        if local_policy.intent == "report_generation":
+            try:
+                result = self._execute_tool_with_memory(
+                    "ui_controller", self._report_generation_params(),
+                )
+                success = bool(result.success)
+            except Exception:
+                logger.exception("Report-generation UI action construction failed")
+                success = False
+            response = self._report_generation_response(self.memory.user_lang, success)
+            self.memory.add_message("assistant", response)
+            self._record_experience(message, response)
+            self._finish_turn(response)
+            return response
+
         if local_policy.intent == "session_content_query":
             target = resolve_session_content_target(message) or "session_summary"
             response = self._session_content_response(target, self.memory.user_lang)
@@ -1067,6 +1111,41 @@ class ChatWorkflowMixin:
                 "response": response,
                 "steps": steps,
                 "llm_meta": {"usage": {}, "latency_ms": 0, "llm_calls": 0, "route": "local_image_metadata"},
+            }
+
+        if local_policy.intent == "report_generation":
+            title = "\u91cd\u65b0\u751f\u6210\u62a5\u544a" if self.memory.user_lang == "zh" else "Regenerate Report"
+            params = self._report_generation_params()
+            add_step(
+                "tool", title,
+                "\u6b63\u5728\u6839\u636e\u5f53\u524d Session \u7ed3\u679c\u66f4\u65b0\u62a5\u544a..."
+                if self.memory.user_lang == "zh"
+                else "Updating the report from the current Session results...",
+                status="pending", tool="ui_controller", params=params,
+            )
+            try:
+                result = self._execute_tool_with_memory("ui_controller", params)
+                steps[-1]["status"] = "done" if result.success else "error"
+                steps[-1]["result"] = ToolResultPipeline.format(
+                    "ui_controller", result, self.memory.user_lang,
+                )
+                steps[-1]["metadata"] = ToolResultPipeline.trace_metadata(
+                    "ui_controller", dict(getattr(result, "metadata", {}) or {}),
+                ) if result.success else {}
+                success = bool(result.success)
+            except Exception:
+                logger.exception("Report-generation UI action construction failed")
+                steps[-1]["status"] = "error"
+                steps[-1]["content"] = ""
+                success = False
+            response = self._report_generation_response(self.memory.user_lang, success)
+            self.memory.add_message("assistant", response)
+            self._record_experience(message, response, steps)
+            self._finish_turn(response)
+            return {
+                "response": response,
+                "steps": steps,
+                "llm_meta": {"usage": {}, "latency_ms": 0, "llm_calls": 0, "route": "local_report_generation"},
             }
 
         if local_policy.intent == "session_content_query":
@@ -1620,6 +1699,47 @@ class ChatWorkflowMixin:
             self.memory.add_message("assistant", response)
             self._finish_turn(response)
             llm_meta["route"] = "local_image_metadata"
+            llm_meta["phase_timings_ms"] = dict(getattr(self, "_turn_timings", {}) or {})
+            yield from final_response_events({"response": response, "llm_meta": llm_meta})
+            yield yield_event("done", {"context": {"message_count": len(self.memory.conversation)}})
+            return
+
+        if local_policy.intent == "report_generation":
+            params = self._report_generation_params()
+            state_step = add_step(
+                "tool",
+                _trace_text("\u91cd\u65b0\u751f\u6210\u62a5\u544a", "Regenerate Report"),
+                _trace_text(
+                    "\u6b63\u5728\u6839\u636e\u5f53\u524d Session \u7ed3\u679c\u66f4\u65b0\u62a5\u544a...",
+                    "Updating the report from the current Session results...",
+                ),
+                status="pending",
+                tool="ui_controller",
+                params=params,
+            )
+            yield yield_event("step", state_step)
+            try:
+                result = self._execute_tool_with_memory("ui_controller", params)
+                state_step["status"] = "done" if result.success else "error"
+                state_step["content"] = ""
+                state_step["result"] = ToolResultPipeline.format(
+                    "ui_controller", result, self.memory.user_lang,
+                )
+                state_step["metadata"] = ToolResultPipeline.trace_metadata(
+                    "ui_controller", dict(getattr(result, "metadata", {}) or {}),
+                ) if result.success else {}
+                success = bool(result.success)
+            except Exception:
+                logger.exception("Report-generation UI action construction failed")
+                state_step["status"] = "error"
+                state_step["content"] = ""
+                state_step["metadata"] = {}
+                success = False
+            yield yield_event("step", state_step)
+            response = self._report_generation_response(self.memory.user_lang, success)
+            self.memory.add_message("assistant", response)
+            self._finish_turn(response)
+            llm_meta["route"] = "local_report_generation"
             llm_meta["phase_timings_ms"] = dict(getattr(self, "_turn_timings", {}) or {})
             yield from final_response_events({"response": response, "llm_meta": llm_meta})
             yield yield_event("done", {"context": {"message_count": len(self.memory.conversation)}})
