@@ -1463,10 +1463,10 @@ function _printableCss() {
         /* One native report capture per evidence page. The page box, figure
            box, and image share the same width constraint so browser preview
            scaling cannot let a wide canvas escape or crop the PDF page. */
-        .report-figure-page { display: flex; flex-direction: column; overflow: hidden; box-sizing: border-box; }
-        .hp-subfigure-list { display: flex; flex-direction: column; flex: 1; min-height: 0; max-width: 100%; overflow: hidden; }
-        .hp-subfigure { width: 100%; max-width: 100%; margin: 0; text-align: center; page-break-inside: avoid; break-inside: avoid; min-height: 0; overflow: hidden; box-sizing: border-box; }
-        .hp-subfigure img { display: block; width: auto; max-width: 100%; height: auto; max-height: 190mm; object-fit: contain; margin: 0 auto; border: 1px solid #cbd5e1; background: #020617; box-sizing: border-box; }
+        .report-figure-page { display: flex; flex-direction: column; width: 100%; max-width: 100%; min-width: 0; overflow: hidden; box-sizing: border-box; }
+        .hp-subfigure-list { display: flex; flex-direction: column; flex: 1 1 auto; width: 100%; min-width: 0; min-height: 0; max-width: 100%; overflow: hidden; }
+        .hp-subfigure { flex: 0 0 auto; width: 100%; max-width: 100%; min-width: 0; margin: 0; text-align: center; page-break-inside: avoid; break-inside: avoid; min-height: 0; overflow: hidden; box-sizing: border-box; }
+        .hp-subfigure img { display: block; width: 100%; max-width: 100%; min-width: 0; height: auto; max-height: 190mm; object-fit: contain; margin: 0 auto; border: 1px solid #cbd5e1; background: #020617; box-sizing: border-box; }
         .hp-subfigure figcaption { font-size: 9pt; line-height: 1.35; color: #334155; margin-top: 1.5mm; font-style: italic; }
         .hp-references { font-size: 9pt; line-height: 1.55; padding-left: 6mm; }
         .hp-references li { margin-bottom: 1.5mm; text-indent: -5mm; padding-left: 5mm; }

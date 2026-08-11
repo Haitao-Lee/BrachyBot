@@ -14,6 +14,7 @@ from web.surgical_guide import (
     _auxiliary_hole_specs,
     _auxiliary_hole_support,
     _connect_plate_patch_components,
+    _project_bore_walls,
     _sample_mask_at_world_points,
     generate_surgical_guide,
     guide_bore_quality_ready,
@@ -1259,6 +1260,51 @@ def test_converging_needle_bores_stay_open_after_unified_drilling():
         assert blocked == 0, (
             f"{path['needle_id']} channel is blocked by a neighbouring sleeve wall"
         )
+
+
+def test_bore_wall_projection_never_recloses_a_crossing_primary_channel():
+    """Analytic bore rounding must preserve an already drilled crossing void.
+
+    Boolean CSG correctly drills every primary bore last. This unit-level
+    regression isolates the later circular-wall projection: a vertex close to
+    one sleeve wall would otherwise be snapped into another channel at an
+    exact trajectory crossing.
+    """
+    paths = [
+        NeedleGuidePath(
+            needle_id="needle_x",
+            trajectory_id="traj_1",
+            target=np.array([12.0, 0.0, 0.0]),
+            external=np.array([-12.0, 0.0, 0.0]),
+            entry=np.array([0.0, 0.0, 0.0]),
+            inward_direction=np.array([-1.0, 0.0, 0.0]),
+            seed_count=1,
+        ),
+        NeedleGuidePath(
+            needle_id="needle_z",
+            trajectory_id="traj_2",
+            target=np.array([5.0, 0.0, -12.0]),
+            external=np.array([5.0, 0.0, 12.0]),
+            entry=np.array([5.0, 0.0, 0.0]),
+            inward_direction=np.array([0.0, 0.0, -1.0]),
+            seed_count=1,
+        ),
+    ]
+    params = normalize_guide_parameters({
+        "geometry_resolution_mm": 0.5,
+        "skin_clearance_mm": 0.0,
+        "plate_thickness_mm": 3.0,
+        "sleeve_outward_mm": 8.0,
+        "auxiliary_holes_enabled": False,
+    })
+    # This point lies just outside the x-directed sleeve wall. Rounding that
+    # wall to its bore radius would move it into the z-directed primary bore
+    # unless the cross-bore guard rejects the projection.
+    vertices = np.array([[5.0, 1.50, 0.0]], dtype=np.float32)
+    projected, qa = _project_bore_walls(vertices, paths, [], params)
+
+    assert np.allclose(projected, vertices)
+    assert sum(item["cross_bore_protected_vertex_count"] for item in qa["primary"]) >= 1
 
 
 

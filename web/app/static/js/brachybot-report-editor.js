@@ -1101,7 +1101,14 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
                     const isNeedleHandle = mesh?.userData?.type === 'needle_handle';
                     const isNeedle = !isNeedleHandle && (id.startsWith('needle_') || mesh?.userData?.type === 'needle');
                     const isDose = id.startsWith('dose_iso_') || mesh?.userData?.type === 'dose_isosurface';
-                    const isSkin = id === 'skin' || mesh === scene3D.skinMesh || mesh?.userData?.type === 'skin';
+                    // The persisted guide skin is a full-body envelope used
+                    // for fit/attachment inspection, not local anatomy for a
+                    // planning figure.  Including it here makes Figure 1(a)
+                    // frame the entire CT envelope and leaves the implant
+                    // tiny in the center of the report image.
+                    const isSkin = id === 'skin' || id === 'skin_surface'
+                        || mesh === scene3D.skinMesh
+                        || ['skin', 'skin_surface', 'guide_skin_surface'].includes(String(mesh?.userData?.type || ''));
                     const isOar = !isCtv && !isSeed && !isNeedle && !isDose && !isSkin;
                     if (isCtv || isSeed || (includeNeedles && isNeedle)) expand(coreBox, mesh);
                 }
@@ -1116,7 +1123,9 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
                         const isSeed = id.startsWith('seed_') || mesh?.userData?.type === 'seed';
                         const isNeedle = mesh?.userData?.type !== 'needle_handle' && (id.startsWith('needle_') || mesh?.userData?.type === 'needle');
                         const isDose = id.startsWith('dose_iso_') || mesh?.userData?.type === 'dose_isosurface';
-                        const isSkin = id === 'skin' || mesh === scene3D.skinMesh || mesh?.userData?.type === 'skin';
+                        const isSkin = id === 'skin' || id === 'skin_surface'
+                            || mesh === scene3D.skinMesh
+                            || ['skin', 'skin_surface', 'guide_skin_surface'].includes(String(mesh?.userData?.type || ''));
                         const isOar = !isCtv && !isSeed && !isNeedle && !isDose && !isSkin;
                         if (!isOar || !mesh.visible) continue;
                         const candidate = new THREE.Box3();

@@ -34,6 +34,7 @@ from web.planning_runs import (
     invalidate_planning_dependents,
     list_planning_runs,
     mark_planning_run,
+    planning_run_snapshot,
     publish_planning_run,
 )
 
@@ -223,6 +224,7 @@ _append_ui_event = _server_support._append_ui_event
 _build_plan_advice = _server_support._build_plan_advice
 _build_system_readiness = _server_support._build_system_readiness
 _compute_manual_ai_dose = _server_support._compute_manual_ai_dose
+_seed_interference_report = _server_support._seed_interference_report
 _decode_png_data_url = _server_support._decode_png_data_url
 _make_screenshot_url = _server_support._make_screenshot_url
 _resolve_output_path = _server_support._resolve_output_path
@@ -296,7 +298,15 @@ def _validate_label_geometry(ct_path: str, label_path: str) -> Optional[str]:
 
 
 def _snapshot_from_seed_plan(serialized_plan, needle_geometry):
-    """Convert an automatic serialized plan to the frontend world snapshot."""
+    """Convert an automatic serialized plan to the public Viewer snapshot.
+
+    Automatic plans store per-seed dose maps in zero-based Python lists, but
+    their public object IDs are one-based (``traj_1``, ``needle_1``,
+    ``seed_1_1``).  Keep that storage/display distinction here.  Returning
+    list indices as IDs made a rejected drag or a Planning restore hand the
+    browser different identities from ``/planning/results`` and
+    ``/planning/seeds_3d`` for the exact same geometry.
+    """
     seeds = []
     needles = []
     for trajectory_index, entry in enumerate(serialized_plan or []):
@@ -316,7 +326,7 @@ def _snapshot_from_seed_plan(serialized_plan, needle_geometry):
             if len(position) < 3 or len(direction) < 3:
                 continue
             seeds.append({
-                "id": f"seed_{trajectory_index}_{seed_index}",
+                "id": f"seed_{trajectory_index + 1}_{seed_index + 1}",
                 "position": [float(v) for v in position[:3]],
                 "direction": [float(v) for v in direction[:3]],
                 "trajectory_id": trajectory_id,
@@ -324,7 +334,7 @@ def _snapshot_from_seed_plan(serialized_plan, needle_geometry):
         points = (needle_geometry or {}).get(str(trajectory_index))
         if isinstance(points, list) and len(points) >= 2:
             needles.append({
-                "id": f"needle_{trajectory_index}",
+                "id": f"needle_{trajectory_index + 1}",
                 "points": [[float(v) for v in point[:3]] for point in points[:2]],
                 "trajectory_id": trajectory_id,
             })
@@ -405,7 +415,10 @@ def _repair_serialized_manual_seed_plan(memory, seeds):
         entry_copy["seeds"] = clean_seeds
         entry_copy["num_seeds"] = len(clean_seeds)
         repaired.append(entry_copy)
-    memory.store("seed_plan", repaired)
+    # This is a repair of the manual serialized mirror. The automatic
+    # ``seed_plan`` also carries per-seed dose maps and must remain immutable
+    # so a later manual edit can subtract the original contribution exactly.
+    memory.store("manual_plan_serialized", repaired)
     memory.store("seed_plan_serialized", repaired)
     memory.store("total_seeds", len(seeds or []))
 
@@ -432,6 +445,19 @@ def _current_planning_snapshot(agent):
         or len(manual_needles) > 0
     ):
         return {"seeds": list(manual_seeds), "needles": list(manual_needles)}
+    serialized = memory.retrieve("seed_plan_serialized")
+    geometry = memory.retrieve("verified_needle_geometry")
+    if isinstance(serialized, list) and serialized:
+        public_snapshot = _snapshot_from_seed_plan(
+            serialized,
+            geometry if isinstance(geometry, dict) else {},
+        )
+        if public_snapshot["seeds"] or public_snapshot["needles"]:
+            return public_snapshot
+
+    # Older snapshots can predate ``seed_plan_serialized``. Preserve their
+    # stored records as a compatibility fallback rather than treating an old
+    # case as an empty Planning.
     baseline = memory.retrieve("algorithm_plan_snapshot")
     if isinstance(baseline, dict):
         baseline_seeds = baseline.get("seeds")
@@ -440,12 +466,7 @@ def _current_planning_snapshot(agent):
             "seeds": list(baseline_seeds) if baseline_seeds is not None else [],
             "needles": list(baseline_needles) if baseline_needles is not None else [],
         }
-    serialized = memory.retrieve("seed_plan_serialized")
-    geometry = memory.retrieve("verified_needle_geometry")
-    return _snapshot_from_seed_plan(
-        serialized if serialized is not None else [],
-        geometry if isinstance(geometry, dict) else {},
-    )
+    return {"seeds": [], "needles": []}
 
 
 def _manual_seed_geometry_settings(memory) -> Dict[str, float]:
@@ -1689,6 +1710,111 @@ def register_planning_routes(
             return jsonify({"success": False, "error": str(exc)}), 404
         except Exception as exc:
             logger.exception("Unable to activate planning run %s", planning_id)
+            return jsonify({"success": False, "error": str(exc)}), 500
+
+    @app.route("/api/manual_planning/restore_algorithm_plan", methods=["POST"])
+    @require_api_key
+    @rate_limit
+    def api_manual_planning_restore_algorithm_plan():
+        """Activate the original completed algorithm Planning without recompute.
+
+        Manual edits live in child Planning runs. Restoring a Seed therefore
+        means activating the immutable algorithm parent, including its dose,
+        DVH, report-owned guide, and guide skin snapshot, rather than moving
+        one point and launching another expensive calculation.
+        """
+        data = request.get_json(silent=True) or {}
+        session_id = request_ui_session_id(data)
+        agent = get_agent(_lightweight=True)
+        if agent is None:
+            return jsonify({"success": False, "error": "Agent not available"}), 500
+        pending = workspace_data_pending(agent)
+        if pending is not None:
+            return pending
+        try:
+            runs = list_planning_runs(agent.memory)
+            active_id = str(active_planning_id(agent.memory) or "")
+            by_id = {str(item.get("planning_id") or ""): item for item in runs}
+            candidates = []
+            cursor = active_id
+            visited = set()
+            while cursor and cursor not in visited:
+                visited.add(cursor)
+                current_run = by_id.get(cursor)
+                if current_run:
+                    candidates.append(current_run)
+                    cursor = str(current_run.get("parent_planning_id") or "")
+                else:
+                    break
+            seen_candidate_ids = {
+                str(item.get("planning_id") or "") for item in candidates
+            }
+            candidates.extend(
+                item for item in reversed(runs)
+                if str(item.get("planning_id") or "") not in seen_candidate_ids
+            )
+
+            snapshots = {}
+
+            def _snapshot_for(item):
+                planning_id = str(item.get("planning_id") or "")
+                if planning_id not in snapshots:
+                    snapshots[planning_id] = planning_run_snapshot(agent.memory, planning_id)
+                return snapshots[planning_id]
+
+            def _is_algorithm_restore_point(item):
+                snapshot = _snapshot_for(item)
+                if str(item.get("source") or "") == "manual_edit":
+                    return False
+                if str(item.get("status") or "") not in {"completed", ""}:
+                    return False
+                # Modern runs contain ``algorithm_plan_snapshot``. A legacy
+                # completed run may only have seed-plan aliases, but it is
+                # still a valid immutable restore point and must not force a
+                # slow recomputation merely because of its age.
+                return bool(snapshot) and any(
+                    snapshot.get(key) is not None
+                    for key in (
+                        "algorithm_plan_snapshot",
+                        "seed_plan",
+                        "seed_plan_serialized",
+                        "manual_seeds",
+                        "dose_distribution",
+                        "dose_distribution_gy",
+                    )
+                )
+
+            target = next((item for item in candidates if _is_algorithm_restore_point(item)), None)
+            if target is None:
+                return jsonify({
+                    "success": False,
+                    "error": "No completed algorithm Planning is available for restore.",
+                    "code": "algorithm_baseline_missing",
+                }), 409
+
+            target_id = str(target.get("planning_id") or "")
+            summary = activate_planning_run(agent, target_id)
+            snapshot = _snapshot_for(target)
+            # Activate first, then emit the same public snapshot contract used
+            # by the Viewer.  This keeps restore/conflict callbacks on the
+            # one-based IDs the Data Tree is already rendering.
+            restored_snapshot = _current_planning_snapshot(agent)
+            return jsonify({
+                "success": True,
+                "session_id": session_id,
+                "active_planning_id": target_id,
+                "planning_id": target_id,
+                "planning": summary,
+                "seeds": list(restored_snapshot.get("seeds") or []),
+                "needles": list(restored_snapshot.get("needles") or []),
+                "artifact_status": snapshot.get("manual_artifact_status") or snapshot.get("artifact_status") or {},
+                "restored_algorithm_plan": True,
+                "requires_refresh": True,
+            })
+        except KeyError as exc:
+            return jsonify({"success": False, "error": str(exc)}), 404
+        except Exception as exc:
+            logger.exception("Unable to restore the algorithm planning run")
             return jsonify({"success": False, "error": str(exc)}), 500
 
     @app.route("/api/planning/show_step", methods=["POST"])
@@ -3342,8 +3468,40 @@ def register_planning_routes(
         needles = data.get("needles") or []
         reason = data.get("reason") or "manual_update"
         previous_needles = data.get("previous_needles") or []
+        previous_seeds = data.get("previous_seeds") if "previous_seeds" in data else None
         reproject_seeds = bool(data.get("reproject_seeds")) or reason in {"needle_drag", "manual_replan"}
+        # ``update_seeds`` normally owns this validation, but callers can use
+        # the Dose endpoint directly (older browsers, retries, or API users).
+        # Never let such a path launch expensive dose inference for a geometry
+        # that the manual-edit contract would have rejected. The check occurs
+        # before forking a Planning child or invalidating any current result.
+        interference = _seed_interference_report(agent, seeds, needles)
+        if interference.get("status") == "attention":
+            current = _current_planning_snapshot(agent)
+            return jsonify({
+                "success": False,
+                "code": "manual_seed_interference",
+                "error": "Dose update rejected: overlapping or unsafe seed spacing.",
+                "session_id": session_id,
+                "planning_id": active_planning_id(agent.memory),
+                "planning_version": agent.memory.retrieve("manual_plan_version") or 0,
+                "seeds": list(current.get("seeds") or []),
+                "needles": list(current.get("needles") or []),
+                "interference": interference,
+                "artifact_status": agent.memory.retrieve("manual_artifact_status") or {},
+            }), 422
         previous_planning_id = active_planning_id(agent.memory)
+        previous_dose = None
+        if previous_seeds is not None and not reproject_seeds:
+            # Capture the baseline before invalidate_planning_dependents clears
+            # active dose aliases. The child Planning must subtract from this
+            # exact field, never from a dose belonging to a later edit.
+            previous_dose_key = (
+                "dose_distribution"
+                if agent.memory.retrieve("manual_ai_dose")
+                else "algorithm_plan_dose_distribution"
+            )
+            previous_dose = agent.memory.retrieve(previous_dose_key)
         planning_id = None
         created_new_planning = False
         try:
@@ -3370,6 +3528,8 @@ def register_planning_routes(
                 seeds,
                 needles,
                 previous_needles=previous_needles,
+                previous_seeds=previous_seeds,
+                previous_dose=previous_dose,
                 reproject_seeds=reproject_seeds,
             )
             event = _append_ui_event(session_id, {
@@ -3574,7 +3734,10 @@ def register_planning_routes(
                     ],
                     "num_seeds": len(seed_items),
                 })
-            memory.store("seed_plan", serialized_plan)
+            # Do not replace the automatic seed_plan dose-map tuples during a
+            # geometry-only edit. The manual mirror is sufficient for the
+            # current draft and preserves the original plan's restore data.
+            memory.store("manual_plan_serialized", serialized_plan)
             memory.store("seed_plan_serialized", serialized_plan)
             memory.store("total_seeds", len(current_seeds))
             artifact_status = _mark_manual_dependents_stale(
@@ -3701,6 +3864,23 @@ def register_planning_routes(
             if repaired_seed_ids:
                 logger.warning("Repairing duplicate submitted seed IDs: %s", repaired_seed_ids)
             normalized_seeds = _normalize_manual_seed_records(memory, raw_seeds, needles)
+            interference = _seed_interference_report(agent, normalized_seeds, needles)
+            if interference.get("status") == "attention":
+                # Reject before fork/invalidate/store. The previous Planning,
+                # its dose, and its guide therefore remain usable and the
+                # browser can restore the pre-drag snapshot verbatim.
+                return jsonify({
+                    "success": False,
+                    "code": "manual_seed_interference",
+                    "error": "Seed geometry rejected: overlapping or unsafe seed spacing.",
+                    "session_id": session_id,
+                    "planning_id": active_planning_id(memory),
+                    "planning_version": current_version,
+                    "seeds": list(current.get("seeds") or []),
+                    "needles": list(current.get("needles") or []),
+                    "interference": interference,
+                    "artifact_status": memory.retrieve("manual_artifact_status") or {},
+                }), 422
             planning_id = fork_planning_run(agent, reason=reason)
             created_new_planning = str(planning_id) != str(previous_planning_id or "")
             invalidate_planning_dependents(memory, reason=reason)
@@ -3736,7 +3916,11 @@ def register_planning_routes(
                     ],
                     "num_seeds": len(seed_items),
                 })
-            memory.store("seed_plan", serialized_plan)
+            # Keep the automatic seed_plan immutable: its third tuple element
+            # contains per-seed DoseUNet maps used to subtract one moved seed
+            # during incremental recomputation. Manual geometry has its own
+            # namespaced mirrors and must never erase those maps.
+            memory.store("manual_plan_serialized", serialized_plan)
             memory.store("seed_plan_serialized", serialized_plan)
             memory.store("total_seeds", len(normalized_seeds))
             memory.store("manual_geometry_only", True)

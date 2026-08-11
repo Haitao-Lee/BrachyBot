@@ -10,7 +10,7 @@ from web.routes.planning_routes import (
     _normalize_manual_seed_records,
     _submitted_manual_needles,
 )
-from web.server_support import _manual_grid_array
+from web.server_support import _manual_grid_array, _seed_interference_report
 
 
 class Memory:
@@ -68,6 +68,38 @@ def test_seed_projection_uses_configured_implant_step():
     assert _manual_seed_geometry_settings(memory)["implant_step_mm"] == 5.0
 
 
+def test_seed_interference_uses_finite_cylinder_clearance_and_trajectory_owner():
+    """Seed clearance must follow real cylinder axes, not matching positions."""
+    memory = Memory({
+        "plan_config": {
+            "seed_info": {
+                "length": 4.5,
+                "radius": 0.4,
+                "minimum_clearance_mm": 0.5,
+            },
+        },
+    })
+    agent = SimpleNamespace(memory=memory)
+    needles = [
+        {"id": "needle_a", "trajectory_id": "traj_1", "points": [[0, 0, 0], [0, 0, 20]]},
+        {"id": "needle_b", "trajectory_id": "traj_2", "points": [[0.2, 0, 0], [0.2, 0, 20]]},
+    ]
+    seeds = [
+        {"id": "seed_a", "trajectory_id": "traj_1", "position": [0, 0, 10]},
+        {"id": "seed_b", "trajectory_id": "traj_2", "position": [0.2, 0, 10]},
+    ]
+
+    report = _seed_interference_report(agent, seeds, needles)
+
+    assert report["status"] == "attention"
+    assert report["threshold_mm"] == 1.3
+    assert report["close_pairs"][0]["first_id"] == "seed_a"
+    assert report["close_pairs"][0]["second_id"] == "seed_b"
+    assert report["close_pairs"][0]["first_needle_id"] == "traj_1"
+    assert report["close_pairs"][0]["axis_distance_mm"] == 0.2
+    assert report["close_pairs"][0]["risk"] == "overlap"
+
+
 def test_empty_manual_seed_list_remains_authoritative_after_last_delete():
     memory = Memory({
         "manual_plan_active": True,
@@ -95,6 +127,29 @@ def test_manual_snapshot_accepts_numpy_restored_records_without_truthiness():
         "seeds": [{"id": "seed_1"}],
         "needles": [{"id": "needle_1"}],
     }
+
+
+def test_automatic_snapshot_uses_the_same_public_ids_as_viewer_endpoints():
+    """Zero-based dose-map storage must never leak into public object IDs."""
+    memory = Memory({
+        "algorithm_plan_snapshot": {
+            "seeds": [{"id": "seed_0_0"}],
+            "needles": [{"id": "needle_0"}],
+        },
+        "seed_plan_serialized": [{
+            "seeds": [([1.0, 2.0, 3.0], [0.0, 0.0, 1.0])],
+        }],
+        "verified_needle_geometry": {
+            "0": [[1.0, 2.0, 0.0], [1.0, 2.0, 10.0]],
+        },
+    })
+
+    snapshot = _current_planning_snapshot(SimpleNamespace(memory=memory))
+
+    assert snapshot["seeds"][0]["id"] == "seed_1_1"
+    assert snapshot["seeds"][0]["trajectory_id"] == "traj_1"
+    assert snapshot["needles"][0]["id"] == "needle_1"
+    assert snapshot["needles"][0]["trajectory_id"] == "traj_1"
 
 
 def test_hydrated_flattened_volume_is_restored_to_the_ct_grid():
@@ -245,3 +300,30 @@ def test_manual_dose_marks_the_backend_commit_before_slow_viewer_hydration():
 
     assert "_refreshManualDoseViews(data, wasDoseTextureEnabled, { background: true })" in source
     assert "manualPlanningState.backgroundDoseViewerRefresh = refreshPromise" in source
+
+
+def test_seed_drag_rejects_interference_before_dose_and_restores_authoritative_state():
+    root = __import__("pathlib").Path(__file__).resolve().parents[1]
+    manual = (root / "web/app/static/js/brachybot-3d-manual.js").read_text(encoding="utf-8")
+    routes = (root / "web/routes/planning_routes.py").read_text(encoding="utf-8")
+
+    update_seeds_start = routes.index("def api_manual_planning_update_seeds")
+    update_seeds = routes[update_seeds_start:]
+    assert update_seeds.index("interference = _seed_interference_report") < update_seeds.index("planning_id = fork_planning_run")
+    assert '"code": "manual_seed_interference"' in update_seeds
+    assert "const authoritativeSeeds = Array.isArray(data?.seeds)" in manual
+    assert "pair.first_id || '?'" in manual
+    assert "window.restoreSeedToOriginalPosition = restoreAlgorithmPlan" in manual
+    assert "incrementalSeedEdit ? 600000 : 900000" in manual
+
+
+def test_active_manual_plan_is_the_only_seed_source_for_3d_reloads():
+    """A Viewer reload must not redraw immutable automatic geometry after a drag."""
+    root = __import__("pathlib").Path(__file__).resolve().parents[1]
+    viewer = (root / "web/routes/viewer_routes.py").read_text(encoding="utf-8")
+
+    assert 'manual_plan_serialized = agent.memory.retrieve("manual_plan_serialized") or []' in viewer
+    assert "if has_manual_geometry:" in viewer
+    assert "plan_source = manual_plan_serialized or seed_plan_serialized" in viewer
+    assert "manual_plan_active" in viewer
+    assert 'else f"seed_{i + 1}_{j + 1}"' in viewer

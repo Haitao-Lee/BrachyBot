@@ -1933,6 +1933,7 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
 
             seed_plan = agent.memory.retrieve("seed_plan")
             seed_plan_serialized = agent.memory.retrieve("seed_plan_serialized") or []
+            manual_plan_serialized = agent.memory.retrieve("manual_plan_serialized") or []
             plan_config = agent.memory.retrieve("plan_config") or getattr(agent, "config", {}) or {}
             seed_info = plan_config.get("seed_info") if isinstance(plan_config, dict) else {}
             if not isinstance(seed_info, dict):
@@ -1950,8 +1951,13 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
             }
             verified_needle_geometry = agent.memory.retrieve("verified_needle_geometry") or {}
             manual_needles = agent.memory.retrieve("manual_needles") or []
-            has_manual_geometry = bool(manual_needles)
-            if seed_plan is None and not seed_plan_serialized:
+            manual_seeds = agent.memory.retrieve("manual_seeds") or []
+            has_manual_geometry = bool(
+                agent.memory.retrieve("manual_plan_active")
+                or manual_needles
+                or manual_seeds
+            )
+            if seed_plan is None and not seed_plan_serialized and not manual_plan_serialized:
                 return jsonify({
                     "success": True,
                     "seeds": [],
@@ -2014,15 +2020,33 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
             seeds = []
             needles = []
 
-            plan_source = seed_plan if seed_plan is not None else seed_plan_serialized
+            # A manual edit intentionally leaves the automatic ``seed_plan``
+            # immutable so the dose route can subtract its original per-seed
+            # maps.  The renderer must nevertheless use the active manual
+            # mirror. Previously this preferred ``seed_plan`` unconditionally,
+            # so a successful seed drag was redrawn as the old algorithm plan
+            # after any Viewer reload.
+            if has_manual_geometry:
+                # The automatic seed_plan remains immutable for incremental
+                # dose replacement.  It is never the active geometry after a
+                # manual edit; use the durable manual mirror for every Viewer
+                # rebuild, including a session hydration.
+                plan_source = manual_plan_serialized or seed_plan_serialized
+            else:
+                plan_source = (
+                    seed_plan
+                    if seed_plan is not None
+                    else seed_plan_serialized
+                )
             for i, entry in enumerate(plan_source):
                 explicit_needle_points = None
-                trajectory_id = i
-                needle_id = f"needle_{i}"
+                trajectory_id = f"traj_{i + 1}"
+                needle_id = f"needle_{i + 1}"
                 if isinstance(entry, dict):
                     seed_list = entry.get("seeds") or []
-                    trajectory_id = entry.get("trajectory_id", entry.get("id", i))
-                    needle_id = str(entry.get("needle_id") or needle_id)
+                    if has_manual_geometry:
+                        trajectory_id = entry.get("trajectory_id", entry.get("id", trajectory_id))
+                        needle_id = str(entry.get("needle_id") or needle_id)
                     trajectory = entry.get("trajectory")
                     if isinstance(trajectory, dict):
                         candidate_points = trajectory.get("points")
@@ -2063,11 +2087,22 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
                         logger.info(f"[seeds_3d] first seed (already world): pos={pos_world.tolist()}, dir={direc_world.tolist()}")
 
                     seed_data = {
-                        "id": str(seed.get("id") or f"seed_{i}_{j}") if isinstance(seed, dict) else f"seed_{i}_{j}",
+                        # Manual records carry their own durable IDs. The
+                        # automatic storage plan is zero-based internally, but
+                        # every public Viewer/API identity is one-based.
+                        "id": (
+                            str(seed.get("id") or f"seed_{i + 1}_{j + 1}")
+                            if has_manual_geometry and isinstance(seed, dict)
+                            else f"seed_{i + 1}_{j + 1}"
+                        ),
                         "position": pos_world.tolist(),
                         "voxel_index": _world_to_ct_voxel_index(pos_world),
                         "direction": direc_world.tolist(),
-                        "trajectory_id": seed.get("trajectory_id", trajectory_id) if isinstance(seed, dict) else trajectory_id,
+                        "trajectory_id": (
+                            seed.get("trajectory_id", trajectory_id)
+                            if has_manual_geometry and isinstance(seed, dict)
+                            else trajectory_id
+                        ),
                         "seed_index": j,
                     }
                     seeds.append(seed_data)
@@ -2121,7 +2156,7 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
                         )
                         continue
                     needles.append({
-                        "id": f"needle_{i}",
+                        "id": f"needle_{i + 1}",
                         "points": [point.tolist() for point in points],
                         "trajectory_id": trajectory_id,
                     })

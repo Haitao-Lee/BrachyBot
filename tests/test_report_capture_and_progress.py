@@ -19,6 +19,8 @@ def test_figure_one_detail_view_keeps_the_complete_ctv_in_frame():
     assert "halfDepth + planarDistance" in source
     assert "margin: mode === 'detail' ? 1.06 : 1.24" in source
     assert "targetAspect: REPORT_FIGURE_ASPECT" in source
+    assert "id === 'skin_surface'" in source
+    assert "guide_skin_surface" in source
 
 
 def test_report_figures_are_native_subfigures_and_peak_dose_capture_is_ready():
@@ -77,6 +79,7 @@ def test_report_preview_groups_figures_by_stable_metadata_not_array_position():
 def test_native_report_images_use_one_bounded_evidence_page_each():
     source = _read("web/app/static/js/brachybot-report-export.js")
     shell = _read("web/app/static/js/brachybot-report-shell.js")
+    screen_css = _read("web/app/static/css/brachybot-panels-viewers.css")
 
     assert "const figure1PageCount = figure1Rows.length;" in source
     assert "const figure2PageCount = figure2Rows.length;" in source
@@ -84,8 +87,12 @@ def test_native_report_images_use_one_bounded_evidence_page_each():
     assert "for (let offset = 0; offset < rows.length; offset += 1)" in source
     assert "const pageRows = rows.slice(offset, offset + 1);" in source
     assert "max-width: 100%" in source
+    assert "width: 100%" in source
+    assert "min-width: 0" in source
     assert "max-height: 190mm" in source
     assert "overflow: hidden" in source
+    assert ".report-figure-page .hp-subfigure img" in screen_css
+    assert "max-height: 190mm" in screen_css
     assert "wrap.style.transformOrigin = 'top center';" in shell
 
 
