@@ -580,6 +580,56 @@ def test_chat_snapshot_updates_merge_by_stable_message_identity(tmp_path):
     assert trace["timestamp"] == 2000
 
 
+def test_chat_attachment_registry_reconciles_out_of_order_screenshot_writes(tmp_path):
+    """A screenshot captured before the assistant row survives later stale writes."""
+    store = WorkspaceStore(tmp_path / "runtime")
+    user = store.create_user("attachment_registry_owner", "hash")
+    case = store.create_session(user["id"], "Attachment registry case")
+    attachment = {
+        "id": "shot-before-message",
+        "type": "screenshot",
+        "url": f"/api/sessions/{case.id}/screenshots/chat.png",
+        "session_id": case.id,
+        "message_id": "assistant-request-2",
+        "request_id": "request-2",
+    }
+
+    # The browser can upload the image while the assistant shell is still
+    # being created.  The registry is the durable hand-off between writers.
+    store.save_snapshot_patch(
+        user["id"], case.id, {"chat": {"attachments": [attachment]}},
+    )
+    store.save_snapshot_patch(
+        user["id"], case.id,
+        {"chat": {"messages": [{
+            "id": "assistant-request-2",
+            "request_id": "request-2",
+            "type": "bot-response",
+            "content": "截图已生成",
+            "timestamp": 2000,
+        }]}},
+    )
+    # A stale browser checkpoint with the same row but no attachment must not
+    # erase the image that was already committed by the capture request.
+    store.save_snapshot_patch(
+        user["id"], case.id,
+        {"chat": {"messages": [{
+            "id": "assistant-request-2",
+            "request_id": "request-2",
+            "type": "bot-response",
+            "content": "截图已生成",
+            "timestamp": 3000,
+            "attachments": [],
+        }]}},
+    )
+
+    snapshot = store.load_snapshot(user["id"], case.id)
+    messages = snapshot["chat"]["messages"]
+    assistant = next(message for message in messages if message["type"] == "bot-response")
+    assert [item["id"] for item in assistant["attachments"]] == ["shot-before-message"]
+    assert [item["id"] for item in snapshot["chat"]["attachments"]] == ["shot-before-message"]
+
+
 def test_two_case_workspaces_round_trip_without_cross_case_contamination(tmp_path):
     store = WorkspaceStore(tmp_path / "runtime")
     user = store.create_user("multi_case_planner", "hash")

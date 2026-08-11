@@ -6286,6 +6286,7 @@ async function _interceptScreenshot(target, question, galleryContext, options = 
                     case_id: plan.case_id || ownerSessionId,
                     data_version: plan.data_version || '',
                     question: plan.question || '',
+                    response_language: context.responseLanguage || '',
                     view_metadata: {
                         index,
                         focus: plan.focus || {},

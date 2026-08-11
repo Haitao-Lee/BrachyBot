@@ -582,6 +582,32 @@ def test_frontend_keeps_trace_and_attachments_bound_to_stable_ids():
     assert "addChat(" not in ui_api[legacy_start:legacy_end]
 
 
+def test_chat_images_survive_out_of_order_capture_and_session_restore():
+    core = _source("web/app/static/js/brachybot-chat-core.js")
+    workspace = _source("web/app/static/js/brachybot-workspace.js")
+    routes = _source("web/routes/planning_routes.py")
+    ui_api = _source("web/app/static/js/brachybot-ui-api.js")
+
+    # The screenshot endpoint must not depend on a long-running ChatTask
+    # local variable when it creates the assistant shell itself.
+    endpoint = routes.split('@app.route("/api/screenshot"', 1)[1].split(
+        '@app.route("/api/sessions/<session_id>/screenshots/<filename>"', 1
+    )[0]
+    assert 'response_language = str(' in endpoint
+    assert 'getattr(task, "response_language"' not in endpoint
+    assert 'chat_patch = {"attachments": [attachment]}' in endpoint
+
+    # Restore must merge equal-length messages by stable identity, not replace
+    # a richer local attachment list with a stale server copy.
+    assert "function mergeSessionChatMessages(sessionId, serverMessages, localMessages, registry = [])" in core
+    assert "window.mergeSessionChatMessages(sessionId, chatMessages, localMsgs, chat.attachments)" in workspace
+    assert "window.mergeSessionChatMessages(sessionId, messages, currentMessages, chat.attachments)" in workspace
+    assert "normalizeChatAttachments" in core
+    assert "renderAssistantAttachments(" in core
+    assert "user-supplied" in core
+    assert "response_language: context.responseLanguage || ''" in ui_api
+
+
 def test_screenshot_failure_returns_to_the_owning_reply_without_creating_a_new_message():
     ui_api = _source("web/app/static/js/brachybot-ui-api.js")
 
