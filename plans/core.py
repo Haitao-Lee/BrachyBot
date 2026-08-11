@@ -116,7 +116,9 @@ def init_plan(dose_image, radiation_volume, ref_direc, direc_resolution, extract
 
 def optimal_plan(init_trajectories, radiation_volume, dose_image, dose_cal_model, dl_params, lower_bound, upper_bound, distance_rate,
                  target_value, background_value, obstacle_value, infer_img_size, in_lowest_dose, out_highest_dose,
-                 DVH_rate, seed_info, iter_rate, image_normalize_min, image_normalize_max, image_normalize_scale, progressDialog=None):
+                 DVH_rate, seed_info, iter_rate, image_normalize_min, image_normalize_max, image_normalize_scale,
+                 progressDialog=None, parallel_min_distance_mm=None,
+                 parallel_angle_tolerance_deg=None):
     """
     Generate an optimized radiation treatment plan by selecting seed trajectories, placing seeds, and refining the plan
     to ensure effective tumor coverage while minimizing radiation exposure to healthy tissues.
@@ -166,7 +168,9 @@ def optimal_plan(init_trajectories, radiation_volume, dose_image, dose_cal_model
             in_lowest_dose,
             distance_map,
             seed_info,
-            selected_indices
+            selected_indices,
+            parallel_min_distance_mm=parallel_min_distance_mm,
+            parallel_angle_tolerance_deg=parallel_angle_tolerance_deg,
         )
         if optimal_trajectory is None:
             _logger.info(f"[optimal_plan] select_optimal_trajectory returned None at iteration {stage1_count}, {len(init_planned_res)} trajectories planned")
@@ -368,7 +372,9 @@ def optimal_plan_rf(
     image_normalize_min,
     image_normalize_max,
     image_normalize_scale,
-    progressDialog=None
+    progressDialog=None,
+    parallel_min_distance_mm=None,
+    parallel_angle_tolerance_deg=None,
 ):
     """
     Hierarchical reinforcement-learning pipeline for prostate/LDR brachytherapy.
@@ -398,7 +404,9 @@ def optimal_plan_rf(
         image_normalize_min=image_normalize_min,
         image_normalize_max=image_normalize_max,
         image_normalize_scale=image_normalize_scale,
-        progressDialog=progressDialog
+        progressDialog=progressDialog,
+        parallel_min_distance_mm=parallel_min_distance_mm,
+        parallel_angle_tolerance_deg=parallel_angle_tolerance_deg,
     )
 
     return optimal_res

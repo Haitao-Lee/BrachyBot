@@ -36,7 +36,9 @@
         "lower_bound": 0.8,
         "upper_bound": 10,
         "distance_rate": 0.8,
-        "interval_rate": 2
+        "interval_rate": 2,
+        "parallel_min_distance_mm": null,
+        "parallel_angle_tolerance_deg": 10.0
     },
     "iter_rate": 2,
     "rays_res": [10, 20],

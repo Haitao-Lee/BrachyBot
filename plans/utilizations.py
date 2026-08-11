@@ -29,6 +29,10 @@ logger = logging.getLogger(__name__)
 # Legacy analytical dose-fitting code has been removed. Dose calculations must
 # go through the trained dose_unet_spacing1mm helpers in this module.
 from . import geometry
+from .guide_geometry import (
+    resolve_parallel_angle_tolerance_deg,
+    resolve_parallel_needle_min_distance_mm,
+)
 try:
     from . import reinforcement
 except ImportError:
@@ -2635,6 +2639,67 @@ def get_candidate_traj_distance(planned_trajectories, candidate_trajectories, do
     return distance
 
 
+def _world_trajectory_line(trajectory, dose_image):
+    """Return a candidate trajectory as a world-space point and unit vector."""
+
+    point = position_transform(dose_image, np.asarray(trajectory[0]).reshape(-1))[0]
+    direction = direction_transform(dose_image, np.asarray(trajectory[1]).reshape(-1))[0]
+    return np.asarray(point, dtype=float), np.asarray(direction, dtype=float)
+
+
+def get_parallel_trajectory_safety_mask(
+    candidate_trajectories,
+    planned_trajectories,
+    dose_image,
+    parallel_min_distance_mm=None,
+    parallel_angle_tolerance_deg=None,
+):
+    """Return candidates that do not crowd an already planned parallel path.
+
+    This is deliberately an additional hard filter, applied only when the two
+    world-space directions are parallel within the configured tolerance.  The
+    existing distance score and geometric collision checks remain responsible
+    for non-parallel trajectories, so oblique paths are not rejected merely for
+    being close in their starting planes.
+    """
+
+    candidates = list(candidate_trajectories or [])
+    planned = list(planned_trajectories or [])
+    if not candidates or not planned:
+        return np.ones(len(candidates), dtype=bool)
+
+    minimum_distance = resolve_parallel_needle_min_distance_mm(
+        parallel_min_distance_mm
+    )
+    angle_tolerance = resolve_parallel_angle_tolerance_deg(
+        parallel_angle_tolerance_deg
+    )
+    parallel_cosine = math.cos(math.radians(angle_tolerance))
+
+    world_candidates = [_world_trajectory_line(item, dose_image) for item in candidates]
+    world_planned = [_world_trajectory_line(item, dose_image) for item in planned]
+    safe = np.ones(len(candidates), dtype=bool)
+
+    for candidate_index, (candidate_point, candidate_direction) in enumerate(world_candidates):
+        for planned_point, planned_direction in world_planned:
+            cosine = abs(float(np.dot(candidate_direction, planned_direction)))
+            if cosine < parallel_cosine:
+                # Non-parallel spacing is still handled by the historical
+                # geometry and scoring paths; this new rule does not replace it.
+                continue
+            center_distance = geometry.ray_min_distance(
+                candidate_point,
+                candidate_direction,
+                planned_point,
+                planned_direction,
+            )
+            if center_distance < minimum_distance:
+                safe[candidate_index] = False
+                break
+
+    return safe
+
+
 def get_candidate_traj_radiation_by_point_count(trajectories, radiation, in_lowest_dose, rate, seed_info, dose_image, distance_map):
     """
     Calculate the effective radiation for each trajectory.
@@ -2916,7 +2981,21 @@ def get_candidate_traj_weights(candidate_trajectories, planned_trajectories, dos
         return candidate_traj_weights
         
         
-def select_optimal_trajectory(candidate_trajectories, planned_trajectories, radiation, dose_image, lower_bound, upper_bound, distance_rate, in_lowest_dose, distance_map, seed_info, selected_indices):
+def select_optimal_trajectory(
+    candidate_trajectories,
+    planned_trajectories,
+    radiation,
+    dose_image,
+    lower_bound,
+    upper_bound,
+    distance_rate,
+    in_lowest_dose,
+    distance_map,
+    seed_info,
+    selected_indices,
+    parallel_min_distance_mm=None,
+    parallel_angle_tolerance_deg=None,
+):
     """
     Select the optimal trajectory from a list of candidate trajectories using a multi-factor scoring system.
 
@@ -2953,6 +3032,11 @@ def select_optimal_trajectory(candidate_trajectories, planned_trajectories, radi
         
         selected_indices (list):
             A list of indices of already selected trajectories to avoid re-selection.
+        parallel_min_distance_mm (float, optional):
+            Physical center spacing required for near-parallel paths. ``None``
+            resolves to the current printable guide primary-bore diameter.
+        parallel_angle_tolerance_deg (float, optional):
+            Angular tolerance for classifying two paths as parallel.
 
     Returns:
         tuple: 
@@ -3016,6 +3100,24 @@ def select_optimal_trajectory(candidate_trajectories, planned_trajectories, radi
         np.array(adjusted_candidate_traj_margin).reshape(-1)
     )
 
+    # Enforce the physical guide-channel spacing only for near-parallel paths.
+    # Apply the mask before every score fallback below so a disallowed path
+    # cannot be selected merely because another score component is zero.
+    parallel_safe = get_parallel_trajectory_safety_mask(
+        candidate_trajectories,
+        planned_trajectories,
+        dose_image,
+        parallel_min_distance_mm=parallel_min_distance_mm,
+        parallel_angle_tolerance_deg=parallel_angle_tolerance_deg,
+    )
+
+    def _mask_parallel_scores(scores):
+        masked = np.asarray(scores, dtype=float).reshape(-1)
+        masked[~parallel_safe] = 0.0
+        return masked
+
+    candidate_traj_scores = _mask_parallel_scores(candidate_traj_scores)
+
     # Guard: if any input array was empty, return None instead of crashing on np.max.
     # This can happen when candidate_trajectories was empty (no point continuing).
     if candidate_traj_scores.size == 0:
@@ -3029,17 +3131,20 @@ def select_optimal_trajectory(candidate_trajectories, planned_trajectories, radi
             np.array(candidate_traj_radiation).reshape(-1) * 
             np.array(candidate_direction_score).reshape(-1)
         )
+        candidate_traj_scores = _mask_parallel_scores(candidate_traj_scores)
         
         if np.max(candidate_traj_scores) == 0:
             candidate_traj_scores = (
                 np.array(candidate_traj_weights).reshape(-1) * 
                 np.array(candidate_direction_score).reshape(-1)
             )
+            candidate_traj_scores = _mask_parallel_scores(candidate_traj_scores)
 
             if np.max(candidate_traj_scores) == 0:
                 candidate_traj_scores = (
                     np.array(candidate_traj_weights).reshape(-1)
                 )
+                candidate_traj_scores = _mask_parallel_scores(candidate_traj_scores)
                 if np.max(candidate_traj_scores) == 0:
                     return None, None
     
@@ -3058,7 +3163,15 @@ def select_optimal_trajectory(candidate_trajectories, planned_trajectories, radi
     return candidate_trajectories[np.argmax(candidate_traj_scores)], np.argmax(candidate_traj_scores)
 
 
-def update_available_traj(candidate_trajectories, planned_trajectories, seed_info, dose_image, interval_rate):
+def update_available_traj(
+    candidate_trajectories,
+    planned_trajectories,
+    seed_info,
+    dose_image,
+    interval_rate,
+    parallel_min_distance_mm=None,
+    parallel_angle_tolerance_deg=None,
+):
     """
     Check whether candidate trajectories are sufficiently distant from already planned ones.
 
@@ -3074,6 +3187,11 @@ def update_available_traj(candidate_trajectories, planned_trajectories, seed_inf
         Dose distribution used for trajectory distance calculation.
     interval_rate : float
         Scaling factor applied to the minimum spacing.
+    parallel_min_distance_mm : float, optional
+        Additional physical center spacing for near-parallel paths. ``None``
+        resolves to the printable guide primary-bore diameter.
+    parallel_angle_tolerance_deg : float, optional
+        Angular tolerance used to classify paths as parallel.
 
     Returns
     -------
@@ -3086,17 +3204,35 @@ def update_available_traj(candidate_trajectories, planned_trajectories, seed_inf
     if not planned_trajectories:
         return candidate_trajectories, True
 
-    # Compute distance between each candidate and all planned trajectories
-    candidate_distances = get_candidate_traj_distance(
-        planned_trajectories, candidate_trajectories, dose_image
-    )
-
-    # Apply distance threshold
-    threshold = 2 * seed_info['radius'] * interval_rate
-    available_trajectories = [
-        cand for cand, dist in zip(candidate_trajectories, candidate_distances)
-        if dist > threshold
-    ]
+    # Keep the historical seed-spacing threshold for every direction.  For a
+    # near-parallel pair, raise only that pair's threshold to the physical
+    # guide-bore diameter; oblique paths retain the old behavior.
+    base_threshold = 2 * seed_info['radius'] * interval_rate
+    available_trajectories = []
+    for candidate in candidate_trajectories:
+        candidate_is_valid = True
+        for planned in planned_trajectories:
+            distance = get_candidate_traj_distance(
+                [planned], [candidate], dose_image
+            )[0]
+            parallel_safe = get_parallel_trajectory_safety_mask(
+                [candidate],
+                [planned],
+                dose_image,
+                parallel_min_distance_mm=parallel_min_distance_mm,
+                parallel_angle_tolerance_deg=parallel_angle_tolerance_deg,
+            )[0]
+            threshold = base_threshold
+            if not parallel_safe:
+                threshold = max(
+                    threshold,
+                    resolve_parallel_needle_min_distance_mm(parallel_min_distance_mm),
+                )
+            if distance <= threshold:
+                candidate_is_valid = False
+                break
+        if candidate_is_valid:
+            available_trajectories.append(candidate)
 
     return available_trajectories, len(available_trajectories) > 0
 
@@ -3115,6 +3251,8 @@ def generate_hierarchical_state_spaces(
     progressDialog: Any,
     max_levels: int | None = None,
     deadline: float | None = None,
+    parallel_min_distance_mm: float | None = None,
+    parallel_angle_tolerance_deg: float | None = None,
 ):
     """
     Generate hierarchical non-interfering trajectory combinations.
@@ -3175,7 +3313,15 @@ def generate_hierarchical_state_spaces(
             traj_j = traj_elems[j][1]
             # Use original update_available_traj call: pass lists [traj_i], [traj_j]
             try:
-                _, is_valid = update_available_traj([traj_i], [traj_j], seed_info, dose_image, interval_rate)
+                _, is_valid = update_available_traj(
+                    [traj_i],
+                    [traj_j],
+                    seed_info,
+                    dose_image,
+                    interval_rate,
+                    parallel_min_distance_mm=parallel_min_distance_mm,
+                    parallel_angle_tolerance_deg=parallel_angle_tolerance_deg,
+                )
                 valid_pairs[i, j] = valid_pairs[j, i] = is_valid
             except Exception:
                 raise
@@ -3293,7 +3439,8 @@ def hierarchical_planning_rf(
     candidate_trajectories, seed_info, interval_rate, rf_params,
     radiation_volume, dose_image, dose_cal_model, infer_img_size,
     target_value, in_lowest_dose, out_highest_dose, DVH_rate, distance_map,
-    image_normalize_min, image_normalize_max, image_normalize_scale, progressDialog
+    image_normalize_min, image_normalize_max, image_normalize_scale, progressDialog,
+    parallel_min_distance_mm=None, parallel_angle_tolerance_deg=None,
 ):
     """
     Hierarchical reinforcement-learning driver for catheter/needle selection
@@ -3518,6 +3665,8 @@ def hierarchical_planning_rf(
             traj_with_seeds, seed_info, dose_image, interval_rate,
             mask_volume, target_v, in_lowest_dose, DVH_rate, rf_params['bandwidth'], progressDialog,
             max_levels=max_hierarchy_depth, deadline=deadline,
+            parallel_min_distance_mm=parallel_min_distance_mm,
+            parallel_angle_tolerance_deg=parallel_angle_tolerance_deg,
         )
         
         # if not DVH_res:

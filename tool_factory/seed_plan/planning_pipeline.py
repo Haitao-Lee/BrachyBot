@@ -35,6 +35,10 @@ from plans.dose_pre.model_loader import (
     resolve_dose_scale_gy,
     resolve_prescription_gy,
 )
+from plans.guide_geometry import (
+    resolve_parallel_angle_tolerance_deg,
+    resolve_parallel_needle_min_distance_mm,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -459,6 +463,25 @@ def _apply_planning_overrides(args, overrides):
         for key in ("lower_bound", "upper_bound", "distance_rate", "interval_rate"):
             if key in distance:
                 target[key] = _finite_number(distance[key], f"distance_filter.{key}", minimum=0.0, maximum=1000.0)
+        if "parallel_min_distance_mm" in distance:
+            value = distance["parallel_min_distance_mm"]
+            target["parallel_min_distance_mm"] = (
+                None
+                if value is None or (isinstance(value, str) and not value.strip())
+                else _finite_number(
+                    value,
+                    "distance_filter.parallel_min_distance_mm",
+                    minimum=0.01,
+                    maximum=1000.0,
+                )
+            )
+        if "parallel_angle_tolerance_deg" in distance:
+            target["parallel_angle_tolerance_deg"] = _finite_number(
+                distance["parallel_angle_tolerance_deg"],
+                "distance_filter.parallel_angle_tolerance_deg",
+                minimum=0.0,
+                maximum=89.999,
+            )
 
     rf_params = overrides.get("rf_params")
     if isinstance(rf_params, dict):
@@ -2365,6 +2388,23 @@ class PlanningPipelineTool(BaseTool):
         from plans import core, utilizations
         logger.info(f"Running seed planning (mode={mode})...")
 
+        # The printable guide opens the nominal channel by a manufacturing
+        # margin.  Use that physical bore diameter as the default spacing
+        # rule for near-parallel candidates so planning and STL generation
+        # cannot disagree about whether two channels can share a wall.
+        distance_filter = getattr(args, "distance_filtter", {}) or {}
+        parallel_min_distance_mm = resolve_parallel_needle_min_distance_mm(
+            distance_filter.get("parallel_min_distance_mm")
+        )
+        parallel_angle_tolerance_deg = resolve_parallel_angle_tolerance_deg(
+            distance_filter.get("parallel_angle_tolerance_deg")
+        )
+        logger.info(
+            "[needle_spacing] near-parallel minimum=%.3f mm, angle tolerance=%.2f deg",
+            parallel_min_distance_mm,
+            parallel_angle_tolerance_deg,
+        )
+
         # Keep the trajectory list already validated against the current
         # Data-tree obstacle whitelist. Re-reading the unfiltered memory
         # entry here would silently reintroduce paths through bones/vessels.
@@ -2415,7 +2455,9 @@ class PlanningPipelineTool(BaseTool):
                     args.image_normalize[0],
                     args.image_normalize[1],
                     args.image_normalize[2],
-                    _MockProgressDialog()
+                    _MockProgressDialog(),
+                    parallel_min_distance_mm=parallel_min_distance_mm,
+                    parallel_angle_tolerance_deg=parallel_angle_tolerance_deg,
                 )
             else:
                 plan_res = core.optimal_plan(
@@ -2439,7 +2481,9 @@ class PlanningPipelineTool(BaseTool):
                     args.image_normalize[0],
                     args.image_normalize[1],
                     args.image_normalize[2],
-                    _MockProgressDialog()
+                    _MockProgressDialog(),
+                    parallel_min_distance_mm=parallel_min_distance_mm,
+                    parallel_angle_tolerance_deg=parallel_angle_tolerance_deg,
                 )
             effective_mode = mode
             rl_fallback_used = False
@@ -2483,6 +2527,8 @@ class PlanningPipelineTool(BaseTool):
                         args.image_normalize[1],
                         args.image_normalize[2],
                         _MockProgressDialog(),
+                        parallel_min_distance_mm=parallel_min_distance_mm,
+                        parallel_angle_tolerance_deg=parallel_angle_tolerance_deg,
                     )
                     fallback_coverage = _plan_target_coverage(
                         fallback_plan,
@@ -2591,6 +2637,11 @@ class PlanningPipelineTool(BaseTool):
                 "prescription_model_threshold": float(in_lowest_model),
                 "dose_scale_gy": DOSE_MODEL_SCALE_GY,
                 "DVH_rate": float(args.DVH_rate),
+                "needle_spacing": {
+                    "parallel_min_distance_mm": float(parallel_min_distance_mm),
+                    "parallel_angle_tolerance_deg": float(parallel_angle_tolerance_deg),
+                    "source": "physical_guide_primary_bore_diameter",
+                },
                 "seed_info": {
                     "radius": float(args.seed_info.get("radius", 0.4)),
                     "length": float(args.seed_info.get("length", 3.7)),
