@@ -8,6 +8,7 @@ from plans.guide_geometry import (
     guide_primary_bore_diameter_mm,
 )
 from plans.utilizations import (
+    get_trajectory_spacing_safety_mask,
     get_parallel_trajectory_safety_mask,
     select_optimal_trajectory,
     update_available_traj,
@@ -59,6 +60,23 @@ def test_non_parallel_candidate_keeps_the_historical_spacing_behavior():
     assert mask.tolist() == [True]
     assert is_valid is True
     assert available == [candidate]
+
+
+def test_base_interference_is_checked_before_parallel_classification():
+    image = _dose_image()
+    planned = _trajectory([10, 10, 10], [0, 0, 1])
+    # This candidate is oblique to the planned path, but its centerline is
+    # still inside the historical base safety distance.
+    candidate = _trajectory([10, 10.5, 10], [1, 0, 0])
+
+    mask = get_trajectory_spacing_safety_mask(
+        [candidate],
+        [planned],
+        image,
+        base_min_distance_mm=0.8,
+    )
+
+    assert mask.tolist() == [False]
 
 
 def test_selection_mask_cannot_be_bypassed_by_a_higher_score(monkeypatch):
