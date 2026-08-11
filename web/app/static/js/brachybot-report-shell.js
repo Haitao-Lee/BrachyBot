@@ -248,13 +248,15 @@ window.Report = (function () {
 
         function _measureFitScale() {
             const host = document.getElementById('reportPreview');
-            const page = document.querySelector('#reportPages .report-page');
-            if (!host || !page) return 1.0;
+            const pages = Array.from(document.querySelectorAll('#reportPages .report-page'));
+            if (!host || !pages.length) return 1.0;
             const style = window.getComputedStyle(host);
             const horizontalPadding = (parseFloat(style.paddingLeft) || 0)
                 + (parseFloat(style.paddingRight) || 0);
             const availableWidth = Math.max(0, host.clientWidth - horizontalPadding - 2);
-            const pageWidth = page.offsetWidth;
+            // Reports may contain both portrait and landscape A4 sheets. Fit
+            // against the widest physical page so no later page is clipped.
+            const pageWidth = Math.max(...pages.map(page => page.offsetWidth || 0));
             if (availableWidth <= 0 || pageWidth <= 0) return 1.0;
             return Math.min(1.0, availableWidth / pageWidth);
         }

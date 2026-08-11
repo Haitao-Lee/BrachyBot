@@ -781,12 +781,22 @@
     font-feature-settings: "tnum" 1, "lnum" 1;
 }
 .report-page:last-child { page-break-after: auto; break-after: auto; }
+.report-figure-page {
+    height: 297mm;
+    max-height: 297mm;
+}
+.report-page--landscape {
+    width: 297mm;
+    min-height: 210mm;
+    height: 210mm;
+    max-height: 210mm;
+    padding: 14mm 16mm;
+}
 
 /* Keep evidence captures inside the A4 content box in the live preview too.
    The print stylesheet repeats these constraints for PDF/HTML export, but
    the preview has its own stylesheet and must not fall back to an image's
    intrinsic pixel width. */
-.report-figure-page,
 .report-figure-page .hp-subfigure-list,
 .report-figure-page .hp-subfigure {
     width: 100%;
@@ -798,8 +808,16 @@
 .report-figure-page .hp-subfigure-list {
     display: flex;
     flex-direction: column;
+    justify-content: center;
+    flex: 1 1 auto;
+    min-height: 0;
 }
 .report-figure-page .hp-subfigure {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    flex: 1 1 auto;
+    min-height: 0;
     margin: 0;
     text-align: center;
     page-break-inside: avoid;
@@ -807,14 +825,17 @@
 }
 .report-figure-page .hp-subfigure img {
     display: block;
-    width: 100%;
+    width: auto;
     max-width: 100%;
     min-width: 0;
     height: auto;
-    max-height: 190mm;
+    max-height: 176mm;
     object-fit: contain;
     margin: 0 auto;
     box-sizing: border-box;
+}
+.report-page--landscape .hp-subfigure img {
+    max-height: 132mm;
 }
 .report-page::before {
     /* A4 page boundary indicator (top-right page number) */
