@@ -200,30 +200,66 @@ def _is_image_tumor_measurement_request(message: str) -> bool:
     )
 
 
-def is_report_generation_request(message: str) -> bool:
-    """Return whether a turn asks to create or refresh the editable report.
+def resolve_report_request_action(message: str) -> Optional[str]:
+    """Resolve a report turn to one semantic operation.
 
-    Report generation and report presentation are separate capabilities.  The
-    former mutates the Session-owned report from current planning data, while
-    the latter only reads an existing report or its saved figures.  Keeping
-    this semantic boundary here prevents action requests from being swallowed
-    by the broader persisted-content resolver merely because they contain the
-    word ``report``.
+    The operation and the presentation target are intentionally parsed
+    separately.  In particular, a corrective request such as "regenerate the
+    report, not screenshots" must remain a mutating report operation even
+    though the rejected presentation target appears in the same sentence.
+    This resolver is also used at the tool-normalization boundary, so an LLM
+    tool choice cannot silently downgrade report generation to figure reading.
     """
-    text = str(message or "").strip().lower()
+    text = re.sub(r"\s+", " ", str(message or "").strip().lower())
     if not text or not _contains_any(text, ("report", "\u62a5\u544a")):
-        return False
-    english_action = bool(re.search(
+        return None
+
+    # Remove explicitly rejected figure clauses before deciding whether the
+    # user positively requested saved report figures. Keep the rest of the
+    # sentence intact so the requested report operation still wins.
+    positive_text = re.sub(
+        r"(?:\u4e0d\u662f|\u4e0d\u8981|\u5e76\u975e|\u522b|\u65e0\u9700|\u4e0d\u9700\u8981)"
+        r"[^,\uff0c;\uff1b.!\u3002]{0,24}(?:\u622a\u56fe|\u622a\u5c4f|\u56fe\u7247|\u56fe\u4ef6|\u56fe\u50cf)",
+        " ",
+        text,
+    )
+    positive_text = re.sub(
+        r"(?:not|do not|don't|instead of|rather than)\s+"
+        r"[^,;.!]{0,40}\b(?:screenshots?|figures?|images?|pictures?)\b",
+        " ",
+        positive_text,
+        flags=re.IGNORECASE,
+    )
+
+    english_mutation = bool(re.search(
         r"\b(?:generate|regenerate|re-generate|rebuild|create|update|refresh|"
-        r"rewrite|refill|auto-fill|autofill|fill)\b",
+        r"rewrite|refill|auto-fill|autofill|fill|complete)\b",
         text,
     ))
-    action_terms = (
-        "\u751f\u6210", "\u91cd\u65b0\u751f\u6210", "\u518d\u6b21\u751f\u6210",
-        "\u66f4\u65b0", "\u5237\u65b0", "\u91cd\u505a", "\u91cd\u5efa",
-        "\u5236\u4f5c", "\u521b\u5efa", "\u586b\u5145", "\u81ea\u52a8\u586b\u5145",
+    chinese_mutation = _contains_any(text, (
+        "\u751f\u6210", "\u66f4\u65b0", "\u5237\u65b0", "\u91cd\u505a", "\u91cd\u5efa",
+        "\u5236\u4f5c", "\u521b\u5efa", "\u586b\u5145", "\u8865\u5168", "\u5b8c\u5584",
+    ))
+    incomplete_report = bool(re.search(
+        r"(?:\u6b63\u6587|\u6587\u5b57|\u8868\u683c|reference|status|content|text|table)"
+        r"[^,\uff0c;\uff1b.!\u3002]{0,20}(?:\u7a7a|\u6ca1\u6709|\u6ca1\u586b|\u672a\u586b|\u7f3a\u5931|"
+        r"empty|missing|not filled|unfilled|incomplete)",
+        text,
+        flags=re.IGNORECASE,
+    ))
+    if english_mutation or chinese_mutation or incomplete_report:
+        return "regenerate"
+
+    figure_terms = (
+        "figure", "fig", "screenshot", "image", "images", "picture", "figures",
+        "\u622a\u56fe", "\u622a\u5c4f", "\u56fe\u7247", "\u56fe\u50cf", "\u56fe\u4ef6",
     )
-    return english_action or _contains_any(text, action_terms)
+    return "view_figures" if _contains_any(positive_text, figure_terms) else "view"
+
+
+def is_report_generation_request(message: str) -> bool:
+    """Return whether a turn mutates the editable report."""
+    return resolve_report_request_action(message) == "regenerate"
 
 
 def resolve_session_content_target(message: str) -> Optional[str]:
@@ -240,16 +276,12 @@ def resolve_session_content_target(message: str) -> Optional[str]:
 
     # A report action must reach the report-generation workflow.  It is not a
     # read-only request for the previously persisted report or its figures.
-    if is_report_generation_request(text):
+    report_action = resolve_report_request_action(text)
+    if report_action == "regenerate":
         return None
 
-    report_terms = ("report", "\u62a5\u544a")
-    figure_terms = (
-        "figure", "fig", "screenshot", "image", "images", "picture", "figures",
-        "\u622a\u56fe", "\u622a\u5c4f", "\u56fe\u7247", "\u56fe\u50cf", "\u56fe\u4ef6",
-    )
-    if any(term in text for term in report_terms):
-        return "report_figures" if any(term in text for term in figure_terms) else "report"
+    if report_action:
+        return "report_figures" if report_action == "view_figures" else "report"
     # A fresh capture is a different capability from reading Session-owned
     # content. Keep it on the live ui_screenshot path unless the user
     # explicitly asks for a previously saved image collection.

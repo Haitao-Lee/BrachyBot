@@ -10,6 +10,7 @@ from agent_runtime.response_tools import ResponseToolMixin
 from agent_runtime.turn_policy import (
     classify_local_turn,
     is_report_generation_request,
+    resolve_report_request_action,
     resolve_session_content_presentation,
     resolve_session_content_target,
 )
@@ -273,8 +274,10 @@ def test_persisted_report_figure_request_uses_session_content_not_live_capture()
     [
         "\u8bf7\u91cd\u65b0\u751f\u6210\u62a5\u544a",
         "\u8bf7\u66f4\u65b0\u5f53\u524d\u62a5\u544a",
+        "\u6211\u662f\u8981\u4f60\u91cd\u65b0\u751f\u6210\u62a5\u544a\uff0c\u4e0d\u662f\u7ed9\u6211\u622a\u56fe\uff0c\u62a5\u544a\u91cc\u7684\u6587\u5b57\u8fd8\u6ca1\u586b\u5145",
         "regenerate the current report",
         "auto-fill the report",
+        "Regenerate the full report, not screenshots; the report text is still empty.",
     ],
 )
 def test_report_generation_is_an_action_not_a_persisted_content_query(message):
@@ -291,6 +294,47 @@ def test_report_read_request_remains_read_only_after_generation_intent_split():
     assert resolve_session_content_target(message) == "report"
     assert classify_local_turn(message).intent == "session_content_query"
     assert is_report_generation_request("show the generated report") is False
+
+
+def test_report_action_resolver_honors_negation_and_keeps_operations_distinct():
+    assert resolve_report_request_action(
+        "\u91cd\u65b0\u751f\u6210\u62a5\u544a\uff0c\u4e0d\u8981\u53ea\u7ed9\u6211\u622a\u56fe"
+    ) == "regenerate"
+    assert resolve_report_request_action(
+        "Regenerate the report rather than showing report figures"
+    ) == "regenerate"
+    assert resolve_report_request_action("\u8bf7\u67e5\u770b\u62a5\u544a\u622a\u56fe") == "view_figures"
+    assert resolve_report_request_action("\u8bf7\u6253\u5f00\u5f53\u524d\u62a5\u544a") == "view"
+
+
+@pytest.mark.parametrize("tool_name", ["ui_content", "ui_screenshot"])
+def test_tool_normalization_cannot_downgrade_report_generation_to_figures(tool_name):
+    class Memory:
+        conversation = [{
+            "role": "user",
+            "content": "\u62a5\u544a\u6b63\u6587\u8fd8\u6ca1\u586b\uff0c\u4e0d\u8981\u7ed9\u6211\u62a5\u544a\u622a\u56fe",
+        }]
+
+        @staticmethod
+        def retrieve(_key):
+            return None
+
+    normalizer = ResponseToolMixin()
+    normalizer.memory = Memory()
+    params = {
+        "question": "\u62a5\u544a\u6b63\u6587\u8fd8\u6ca1\u586b\uff0c\u4e0d\u8981\u7ed9\u6211\u62a5\u544a\u622a\u56fe",
+    }
+    if tool_name == "ui_content":
+        params.update({"target": "report_figures", "presentation": "attachments"})
+    else:
+        params.update({"views": ["report"], "mode": "chat"})
+
+    calls = normalizer._normalize_tool_params([{"tool": tool_name, "params": params}])
+
+    assert calls == [{
+        "tool": "ui_controller",
+        "params": {"actions": [{"target": "report.autofill", "command": "run"}]},
+    }]
 
 
 def test_report_generation_stream_emits_real_autofill_action_not_report_figures():
@@ -620,6 +664,7 @@ def test_report_generation_executes_and_persists_the_full_report_transaction():
     assert "result.success === false || result.stale === true" in ui_api
     assert "result?.success === false" in chat
     assert "result?.stale === true" in chat
+    assert "Report.autoFill.fromAll({ sessionId: ownerSessionId })" in ui_api
 
     # Text, tables, canonical figures, and the durable workspace snapshot are
     # one awaited transaction before the final assistant reply is rendered.
