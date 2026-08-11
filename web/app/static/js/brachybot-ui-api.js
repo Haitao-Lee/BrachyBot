@@ -3835,7 +3835,8 @@ async function _executeUIActionsWithProgress(actions, options = {}) {
             const result = await _executeUIAction(action, { sessionId: ownerSessionId });
             if (!_uiActionSessionIsCurrent(ownerSessionId)) break;
             results.push(result);
-            const failed = result === false || (result && result.success === false);
+            const failed = result === false
+                || (result && (result.success === false || result.stale === true));
             if (failed) {
                 const message = (result && result.error) || 'The browser could not apply this UI action.';
                 _emitUIActionProgress({ ...base, status: 'error', result: message });

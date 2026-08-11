@@ -1158,6 +1158,41 @@ async function _presentJsonSessionContent(steps, sessionId, turnIdentity) {
     };
 }
 
+async function _executeJsonUIActions(steps, sessionId) {
+    const actionGroups = (Array.isArray(steps) ? steps : [])
+        .filter(step => step && step.tool === 'ui_controller' && step.status === 'done')
+        .map(step => step.metadata?.actions || step.data?.actions || [])
+        .filter(actions => Array.isArray(actions) && actions.length > 0);
+    const results = [];
+    for (const actions of actionGroups) {
+        const group = typeof _executeUIActionsWithProgress === 'function'
+            ? await _executeUIActionsWithProgress(actions, { sessionId })
+            : await Promise.all(actions.map(action => _executeUIAction(action, { sessionId })));
+        results.push(...(Array.isArray(group) ? group : [group]));
+    }
+    return {
+        executed: results.length,
+        failed: results.some(result => result === false
+            || result?.success === false
+            || result?.stale === true),
+    };
+}
+
+function _hasReportGenerationAction(steps) {
+    return (Array.isArray(steps) ? steps : []).some(step => {
+        if (!step || step.tool !== 'ui_controller') return false;
+        const actions = step.metadata?.actions || step.data?.actions || [];
+        return Array.isArray(actions)
+            && actions.some(action => String(action?.target || '') === 'report.autofill');
+    });
+}
+
+function _reportGenerationFailureMessage(sessionId) {
+    return _chatLanguageForSession(sessionId) === 'zh'
+        ? '报告重新生成未完成。系统没有将该操作标记为成功；请确认当前 Session 已加载规划、剂量和 DVH 数据后重试。'
+        : 'Report regeneration did not complete. The operation was not marked successful; confirm that the current Session has loaded planning, dose, and DVH data, then retry.';
+}
+
 function _addTaskRecoveryNotice(sessionId, taskId, state) {
     const key = `${String(sessionId || '')}:${String(taskId || '')}:${state}`;
     if (!key || window._sessionChatRecoveryNotices[key]) return;
@@ -1820,6 +1855,7 @@ async function sendChat(prefill, options) {
     const sessionContentTaskKeys = new Set();
     const presentationMessages = [];
     const uiActionTasks = [];
+    const uiActionResults = [];
     // Group screenshots emitted during one assistant turn into one gallery.
     const screenshotGallery = {
         sessionId: turnSessionId,
@@ -1976,7 +2012,14 @@ async function sendChat(prefill, options) {
             if (thinkingEl && typeof removeThinkingIndicator === 'function') removeThinkingIndicator(thinkingEl);
             const data = await resp.json().catch(() => null);
             const presentation = await _presentJsonSessionContent(data?.steps, turnSessionId, turnIdentity);
-            const reply = presentation.userMessage
+            const uiActions = await _executeJsonUIActions(data?.steps, turnSessionId);
+            const uiFailure = uiActions.failed
+                ? (_hasReportGenerationAction(data?.steps)
+                    ? _reportGenerationFailureMessage(turnSessionId)
+                    : _chatUserVisibleFailure(turnSessionId, 'request'))
+                : '';
+            const reply = uiFailure
+                || presentation.userMessage
                 || (data && (data.response || data.reply || data.content))
                 || _chatUserVisibleFailure(turnSessionId, 'response');
             if (typeof addChat === 'function') {
@@ -2264,13 +2307,21 @@ async function sendChat(prefill, options) {
                                     if (Array.isArray(actions) && actions.length > 0) {
                                         uiDebugLog('[SSE-UI] Executing', actions.length, 'UI actions');
                                         if (typeof _executeUIActionsWithProgress === 'function') {
-                                            uiActionTasks.push(_executeUIActionsWithProgress(actions, {
+                                            const actionTask = _executeUIActionsWithProgress(actions, {
                                                 sessionId: turnSessionId,
+                                            });
+                                            uiActionTasks.push(Promise.resolve(actionTask).then(group => {
+                                                uiActionResults.push(...(Array.isArray(group) ? group : [group]));
+                                                return group;
                                             }));
                                         } else {
-                                            uiActionTasks.push(Promise.all(actions.map(a => _executeUIAction(a, {
+                                            const actionTask = Promise.all(actions.map(a => _executeUIAction(a, {
                                                 sessionId: turnSessionId,
-                                            }))));
+                                            })));
+                                            uiActionTasks.push(actionTask.then(group => {
+                                                uiActionResults.push(...group);
+                                                return group;
+                                            }));
                                         }
                                     }
                                 } catch (e) { console.warn('[SSE-UI] Failed to parse ui_controller result:', e); }
@@ -2487,14 +2538,16 @@ async function sendChat(prefill, options) {
                         if (!finalTextStreamStarted) {
                             finalTextStreamStarted = true;
                             responseText = '';
-                            if (!responseEl && typeof createStreamingResponse === 'function') {
+                            if (!_hasReportGenerationAction(steps)
+                                && !responseEl && typeof createStreamingResponse === 'function') {
                                 if (thinkingEl && typeof removeThinkingIndicator === 'function') removeThinkingIndicator(thinkingEl);
                                 responseEl = createStreamingResponse(turnRequestId, turnAssistantMessageId);
                                 if (todo && responseEl.parentElement) responseEl.parentElement.appendChild(todo.root);
                             }
                         }
                         responseText += String(data.text);
-                        if (responseEl && typeof updateStreamingResponse === 'function') {
+                        if (!_hasReportGenerationAction(steps)
+                            && responseEl && typeof updateStreamingResponse === 'function') {
                             responseEl.classList.add('is-streaming');
                             responseEl.setAttribute('aria-busy', 'true');
                             updateStreamingResponse(responseEl, responseText);
@@ -2510,12 +2563,15 @@ async function sendChat(prefill, options) {
                             continue;
                         }
                         responseText = data.response;
-                        if (!responseEl && typeof createStreamingResponse === 'function') {
+                        const deferUntilUIActionsFinish = _hasReportGenerationAction(steps);
+                        if (!deferUntilUIActionsFinish
+                            && !responseEl && typeof createStreamingResponse === 'function') {
                             if (thinkingEl && typeof removeThinkingIndicator === 'function') removeThinkingIndicator(thinkingEl);
                             responseEl = createStreamingResponse(turnRequestId, turnAssistantMessageId);
                             if (todo && responseEl.parentElement) responseEl.parentElement.appendChild(todo.root);
                         }
-                        if (responseEl && typeof updateStreamingResponse === 'function') {
+                        if (!deferUntilUIActionsFinish
+                            && responseEl && typeof updateStreamingResponse === 'function') {
                             updateStreamingResponse(responseEl, responseText);
                         }
                         if (responseEl) {
@@ -2638,6 +2694,16 @@ async function sendChat(prefill, options) {
         }
         if (uiActionTasks.length) {
             await Promise.allSettled(uiActionTasks);
+        }
+        if (_hasReportGenerationAction(steps)) {
+            const reportActionFailed = uiActionResults.length === 0
+                || uiActionResults.some(result => result === false
+                    || result?.success === false
+                    || result?.stale === true);
+            if (reportActionFailed) {
+                responseText = _reportGenerationFailureMessage(turnSessionId);
+                finalResponseReceived = true;
+            }
         }
         if (String(activeSessionId || '') !== turnSessionId) return;
         const presentationAttachments = [...screenshotResults, ...sessionContentResults].filter(

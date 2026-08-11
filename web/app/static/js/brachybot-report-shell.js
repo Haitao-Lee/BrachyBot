@@ -503,7 +503,10 @@ window.Report = (function () {
         async fromAll(opts = {}) {
             const onlyKey = opts.onlyKey || null;
             const f = window.reportForm;
-            if (!f) { _setReportStatus('No report form', 'error'); return; }
+            if (!f) {
+                _setReportStatus('No report form', 'error');
+                return { success: false, error: 'The report form is unavailable.', applied: 0 };
+            }
             const expectedSessionId = _activeReportSessionId(opts.sessionId);
             const isCurrent = () => _reportSessionIsCurrent(expectedSessionId, f);
             // 1. DICOM
@@ -553,21 +556,49 @@ window.Report = (function () {
             // 3D plan, DVH curve) as report figures. The previous
             // version only triggered on panel-open, but users who
             // hit "Auto-fill" expected everything to land together.
+            let figureCaptureWarning = '';
             try {
                 if (opts.captureFigures !== false && typeof autoCaptureReportFigures === 'function') {
-                    setTimeout(() => {
-                        if (isCurrent()) autoCaptureReportFigures({ sessionId: expectedSessionId });
-                    }, 0);
+                    // A report-generation command is complete only after its
+                    // canonical figures belong to the same Session snapshot as
+                    // the text and tables. Awaiting capture also prevents the
+                    // chat reply from claiming completion while only old image
+                    // attachments have been persisted.
+                    await autoCaptureReportFigures({ sessionId: expectedSessionId });
                 }
-            } catch (_) {}
+            } catch (e) {
+                console.warn('Report figure capture failed during auto-fill:', e);
+                figureCaptureWarning = e?.message || String(e);
+            }
             if (!isCurrent()) return { stale: true, applied: 0 };
             panels.editor(); panels.preview();
-            persist.autoSave();
+            // Flush immediately and wait for the durable workspace checkpoint.
+            // A chat command must not claim that the report was regenerated
+            // while its text/table state is still only held by the browser.
+            persist.flush();
+            let persisted = true;
+            if (typeof window.persistWorkspace === 'function') {
+                persisted = await window.persistWorkspace('report.autofill.completed');
+            }
+            if (!isCurrent()) return { stale: true, applied: 0 };
             audit.log('autoFill.fromAll', '*', null, 'filled');
             _setReportStatus(serverApplied > 0
                 ? `Auto-filled with ${serverApplied} source-backed server field(s)`
                 : 'Auto-filled from local NIfTI + planning data', 'ok');
-            return { stale: false, applied: serverApplied };
+            if (!persisted) {
+                return {
+                    success: false,
+                    stale: false,
+                    applied: serverApplied,
+                    error: 'The report was updated in the browser but could not be saved to the Session.',
+                };
+            }
+            return {
+                success: true,
+                stale: false,
+                applied: serverApplied,
+                warning: figureCaptureWarning,
+            };
         },
         fromDicom(tags, onlyKey = null) {
             if (!tags || Object.keys(tags).length === 0) return;

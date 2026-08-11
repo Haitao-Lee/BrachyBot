@@ -9,6 +9,7 @@ from agent_runtime.core import ToolResultPipeline
 from agent_runtime.response_tools import ResponseToolMixin
 from agent_runtime.turn_policy import (
     classify_local_turn,
+    is_report_generation_request,
     resolve_session_content_presentation,
     resolve_session_content_target,
 )
@@ -267,6 +268,89 @@ def test_persisted_report_figure_request_uses_session_content_not_live_capture()
     assert calls[0]["params"]["planning_id"] == "planning-7"
 
 
+@pytest.mark.parametrize(
+    "message",
+    [
+        "\u8bf7\u91cd\u65b0\u751f\u6210\u62a5\u544a",
+        "\u8bf7\u66f4\u65b0\u5f53\u524d\u62a5\u544a",
+        "regenerate the current report",
+        "auto-fill the report",
+    ],
+)
+def test_report_generation_is_an_action_not_a_persisted_content_query(message):
+    assert is_report_generation_request(message) is True
+    assert resolve_session_content_target(message) is None
+    policy = classify_local_turn(message)
+    assert policy.intent == "report_generation"
+    assert "ui_controller" in policy.allow_tools
+
+
+def test_report_read_request_remains_read_only_after_generation_intent_split():
+    message = "\u8bf7\u67e5\u770b\u5f53\u524d\u62a5\u544a"
+    assert is_report_generation_request(message) is False
+    assert resolve_session_content_target(message) == "report"
+    assert classify_local_turn(message).intent == "session_content_query"
+    assert is_report_generation_request("show the generated report") is False
+
+
+def test_report_generation_stream_emits_real_autofill_action_not_report_figures():
+    class Memory:
+        def __init__(self):
+            self.user_lang = "zh"
+            self.conversation = []
+
+        def add_message(self, role, content):
+            self.conversation.append({"role": role, "content": content})
+
+    class Workflow(ChatWorkflowMixin):
+        def __init__(self):
+            self.memory = Memory()
+            self.multi_agent_wrapper = None
+            self._turn_token = "turn-report"
+
+        def _begin_turn(self, _message):
+            return None
+
+        def _current_turn_token(self):
+            return self._turn_token
+
+        def _is_turn_cancelled(self, _token):
+            return False
+
+        def _pending_tumor_site_clarification(self):
+            return False
+
+        def _execute_tool_with_memory(self, name, params):
+            assert name == "ui_controller"
+            assert params == {"actions": [{"target": "report.autofill", "command": "run"}]}
+            return ToolResult(
+                success=True,
+                message="report.autofill: run",
+                metadata={"actions": params["actions"]},
+            )
+
+        def _finish_turn(self, _response):
+            return None
+
+    events = list(Workflow().chat_with_stream("\u8bf7\u91cd\u65b0\u751f\u6210\u62a5\u544a"))
+    parsed = []
+    for event in events:
+        lines = event.splitlines()
+        if len(lines) >= 2 and lines[0].startswith("event: "):
+            parsed.append((lines[0].removeprefix("event: "), json.loads(lines[1].removeprefix("data: "))))
+
+    controller_steps = [data for event, data in parsed if event == "step" and data.get("tool") == "ui_controller"]
+    assert len(controller_steps) == 2
+    assert controller_steps[-1]["status"] == "done"
+    assert controller_steps[-1]["metadata"]["actions"] == [
+        {"target": "report.autofill", "command": "run"},
+    ]
+    assert not any(data.get("tool") == "ui_content" for event, data in parsed if event == "step")
+    response = next(data for event, data in parsed if event == "response")
+    assert response["llm_meta"]["route"] == "local_report_generation"
+    assert "Reference/Status" in response["response"]
+
+
 def test_session_content_stream_keeps_report_figures_in_the_owning_reply():
     class Memory:
         def __init__(self):
@@ -518,6 +602,32 @@ def test_report_chat_and_monitor_capture_paths_remain_separate():
     assert "mode !== 'report'" in ui_api
     assert "_captureDoseOverviewDataUrl" in ui_api
     assert "_autoCaptureReportFiguresImpl" in report
+
+
+def test_report_generation_executes_and_persists_the_full_report_transaction():
+    chat = _source("web/app/static/js/brachybot-chat-todo.js")
+    ui_api = _source("web/app/static/js/brachybot-ui-api.js")
+    shell = _source("web/app/static/js/brachybot-report-shell.js")
+
+    # Both SSE and plain-JSON transports execute the browser-owned action.
+    assert "async function _executeJsonUIActions" in chat
+    assert "await _executeJsonUIActions(data?.steps" in chat
+    assert "function _hasReportGenerationAction" in chat
+    assert "uiActionResults" in chat
+    assert "_reportGenerationFailureMessage" in chat
+
+    # Session switches make a report action fail instead of silently succeeding.
+    assert "result.success === false || result.stale === true" in ui_api
+    assert "result?.success === false" in chat
+    assert "result?.stale === true" in chat
+
+    # Text, tables, canonical figures, and the durable workspace snapshot are
+    # one awaited transaction before the final assistant reply is rendered.
+    assert "await autoCaptureReportFigures({ sessionId: expectedSessionId })" in shell
+    assert "persist.flush();" in shell
+    assert "await window.persistWorkspace('report.autofill.completed')" in shell
+    assert "success: true" in shell
+    assert "The report form is unavailable." in shell
 
 
 def test_report_chat_target_reads_session_owned_figure_artifacts_not_the_report_dom():
