@@ -1113,7 +1113,12 @@
             }];
         }
         if (messages) {
-            sessions[sessionId].messages = jsonClone(messages);
+            const currentMessages = Array.isArray(sessions[sessionId].messages)
+                ? sessions[sessionId].messages
+                : [];
+            sessions[sessionId].messages = typeof window.mergeSessionChatMessages === 'function'
+                ? window.mergeSessionChatMessages(sessionId, messages, currentMessages, chat.attachments)
+                : jsonClone(messages);
             sessions[sessionId].pending = false;
             if (typeof loadSessionChat === 'function') loadSessionChat(sessionId);
         }
@@ -1967,15 +1972,15 @@
                 }];
             }
             if (!options.skipChat && Array.isArray(chatMessages) && typeof sessions !== 'undefined' && sessions[sessionId]) {
-                // Preserve live browser-side messages that arrived after the
-                // last server save (e.g. detached bot responses during a
-                // session switch).  If the local copy has more messages than
-                // the snapshot the browser is more up-to-date; otherwise the
-                // snapshot is authoritative (page refresh, stale cache).
                 const localMsgs = sessions[sessionId].messages || [];
-                if (options.authoritativeChat || chatMessages.length >= localMsgs.length) {
-                    sessions[sessionId].messages = chatMessages;
-                }
+                // Merge by stable message/request identity instead of using
+                // array length as a freshness signal.  A server snapshot can
+                // have the same number of rows while lacking a newly-uploaded
+                // image attachment; replacing it would make the image vanish
+                // after every refresh or Session switch.
+                sessions[sessionId].messages = typeof window.mergeSessionChatMessages === 'function'
+                    ? window.mergeSessionChatMessages(sessionId, chatMessages, localMsgs, chat.attachments)
+                    : chatMessages;
                 sessions[sessionId].pending = false;
                 if (typeof loadSessionChat === 'function' && sessionId === String(activeSessionId || '')) {
                     loadSessionChat(sessionId);

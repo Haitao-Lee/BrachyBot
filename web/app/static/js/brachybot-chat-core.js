@@ -464,6 +464,149 @@ function createChatIdentity(prefix = 'msg') {
 }
 window.createChatIdentity = createChatIdentity;
 
+function _cloneChatValue(value) {
+    try { return JSON.parse(JSON.stringify(value)); } catch (_) { return value; }
+}
+
+function normalizeChatAttachment(sessionId, value) {
+    if (!value || typeof value !== 'object') {
+        if (typeof value !== 'string' || !value.trim()) return null;
+        value = { url: value.trim() };
+    }
+    const attachment = _cloneChatValue(value) || {};
+    const owner = String(sessionId || attachment.session_id || attachment.sessionId || '').trim();
+    const candidate = String(
+        attachment.url
+        || attachment.src
+        || attachment.image_url
+        || attachment.imageUrl
+        || attachment.screenshot_url
+        || attachment.screenshotUrl
+        || attachment.path
+        || attachment.href
+        || '',
+    ).trim();
+    if (!candidate) return null;
+    // ``data:`` images are valid for a local-only legacy transcript. New
+    // captures use a Session-owned URL so the browser does not have to put a
+    // multi-megabyte base64 payload into every workspace checkpoint.
+    attachment.url = candidate;
+    if (owner) attachment.session_id = owner;
+    attachment.id = String(
+        attachment.id
+        || attachment.attachment_id
+        || attachment.attachmentId
+        || candidate,
+    );
+    return attachment;
+}
+
+function normalizeChatAttachments(sessionId, values) {
+    const normalized = [];
+    const seen = new Set();
+    (Array.isArray(values) ? values : []).forEach(value => {
+        const attachment = normalizeChatAttachment(sessionId, value);
+        if (!attachment) return;
+        const key = String(attachment.id || attachment.url || '');
+        if (!key || seen.has(key)) return;
+        seen.add(key);
+        normalized.push(attachment);
+    });
+    return normalized;
+}
+
+function _chatMessageIdentity(message, index = 0) {
+    if (!message || typeof message !== 'object') return `index:${index}`;
+    const id = String(message.id || '').trim();
+    if (id) return `id:${id}`;
+    const requestId = String(message.request_id || message.requestId || '').trim();
+    const kind = String(message.message_kind || message.messageKind || message.type || '').trim();
+    if (requestId) return `request:${requestId}|${kind}`;
+    return `index:${index}`;
+}
+
+function _mergeChatMessageRecords(sessionId, preferred, secondary) {
+    const result = _cloneChatValue(preferred || {}) || {};
+    const other = secondary && typeof secondary === 'object' ? secondary : {};
+    if (!String(result.content || '').trim() && String(other.content || '').trim()) {
+        result.content = other.content;
+    }
+    const steps = [...(Array.isArray(result.steps) ? result.steps : []), ...(Array.isArray(other.steps) ? other.steps : [])];
+    if (steps.length) {
+        const byId = new Map();
+        steps.forEach((step, index) => {
+            if (!step || typeof step !== 'object') return;
+            const key = String(step.id || `${step.type || ''}|${step.tool || ''}|${index}`);
+            const previous = byId.get(key);
+            // A terminal step is more informative than a stale pending copy
+            // from a browser that was backgrounded during the request.
+            const terminal = ['done', 'error', 'stopped', 'cancelled'].includes(String(step.status || '').toLowerCase());
+            const previousTerminal = ['done', 'error', 'stopped', 'cancelled'].includes(String(previous?.status || '').toLowerCase());
+            byId.set(key, terminal || !previousTerminal ? step : previous);
+        });
+        result.steps = Array.from(byId.values());
+    }
+    const attachments = normalizeChatAttachments(sessionId, [
+        ...(Array.isArray(result.attachments) ? result.attachments : []),
+        ...(Array.isArray(other.attachments) ? other.attachments : []),
+    ]);
+    if (attachments.length || 'attachments' in result || 'attachments' in other) result.attachments = attachments;
+    if (result.meta || other.meta) {
+        result.meta = Object.assign({}, other.meta || {}, result.meta || {});
+        const metaAttachments = normalizeChatAttachments(sessionId, [
+            ...(Array.isArray(result.meta.attachments) ? result.meta.attachments : []),
+            ...(Array.isArray(other.meta?.attachments) ? other.meta.attachments : []),
+            ...attachments,
+        ]);
+        if (metaAttachments.length) result.meta.attachments = metaAttachments;
+    }
+    const timestamps = [Number(result.timestamp || 0), Number(other.timestamp || 0)].filter(value => Number.isFinite(value) && value > 0);
+    if (timestamps.length) result.timestamp = Math.min(...timestamps);
+    return result;
+}
+
+function mergeSessionChatMessages(sessionId, serverMessages, localMessages, registry = []) {
+    const server = Array.isArray(serverMessages) ? serverMessages : [];
+    const local = Array.isArray(localMessages) ? localMessages : [];
+    const durable = server.map(message => _cloneChatValue(message));
+    const positions = new Map();
+    durable.forEach((message, index) => positions.set(_chatMessageIdentity(message, index), index));
+    local.forEach((message, index) => {
+        const key = _chatMessageIdentity(message, index);
+        const position = positions.get(key);
+        if (position == null) {
+            positions.set(key, durable.length);
+            durable.push(_cloneChatValue(message));
+        } else {
+            // Server content is authoritative; local content contributes
+            // attachments and late Trace fields that may not have reached the
+            // checkpoint before a Session switch.
+            durable[position] = _mergeChatMessageRecords(sessionId, durable[position], message);
+        }
+    });
+
+    const registryAttachments = normalizeChatAttachments(sessionId, registry);
+    registryAttachments.forEach(attachment => {
+        const messageId = String(attachment.message_id || attachment.messageId || '').trim();
+        const requestId = String(attachment.request_id || attachment.requestId || '').trim();
+        let target = durable.find(message => messageId && String(message?.id || '') === messageId);
+        if (!target && requestId) {
+            target = durable.find(message => requestId === String(message?.request_id || message?.requestId || '')
+                && ['bot', 'bot-response', 'user'].includes(String(message?.type || '')));
+        }
+        if (target) {
+            target.attachments = normalizeChatAttachments(sessionId, [
+                ...(Array.isArray(target.attachments) ? target.attachments : []),
+                attachment,
+            ]);
+        }
+    });
+    return normalizeSessionMessageIdentities(sessionId, durable);
+}
+window.normalizeChatAttachment = normalizeChatAttachment;
+window.normalizeChatAttachments = normalizeChatAttachments;
+window.mergeSessionChatMessages = mergeSessionChatMessages;
+
 function normalizeSessionMessageIdentities(sessionId, messages) {
     const owner = String(sessionId || 'session');
     let activeRequestId = '';
@@ -508,11 +651,10 @@ function normalizeSessionMessageIdentities(sessionId, messages) {
                 ? 0
                 : record.message_kind === 'execution_trace' || record.type === 'thinking' ? 1 : 2;
         }
-        if (!Array.isArray(record.attachments)) {
-            record.attachments = Array.isArray(record.meta?.attachments)
-                ? record.meta.attachments.slice()
-                : [];
-        }
+        record.attachments = normalizeChatAttachments(owner, [
+            ...(Array.isArray(record.attachments) ? record.attachments : []),
+            ...(Array.isArray(record.meta?.attachments) ? record.meta.attachments : []),
+        ]);
         return record;
     });
     // A turn is persisted by several independent writers: the browser saves
@@ -1178,7 +1320,11 @@ function renderAssistantAttachments(shell, attachments, layout = 'auto') {
     if (!shell || !shell.attachments || !Array.isArray(attachments)) return;
     const gallery = shell.attachments;
     gallery.dataset.layout = String(layout || 'auto');
-    attachments.forEach((attachment, index) => {
+    attachments.forEach((rawAttachment, index) => {
+        const attachment = normalizeChatAttachment(
+            shell.sessionId || activeSessionId,
+            rawAttachment,
+        );
         if (!attachment || !attachment.url) return;
         const attachmentId = String(attachment.id || attachment.url);
         if (Array.from(gallery.children).some(item => String(item.dataset.attachmentId || '') === attachmentId)) return;
@@ -1189,6 +1335,12 @@ function renderAssistantAttachments(shell, attachments, layout = 'auto') {
         const image = document.createElement('img');
         image.className = 'chat-screenshot';
         image.src = attachment.url;
+        if (attachment.fallback_url || attachment.fallbackUrl) {
+            image.addEventListener('error', () => {
+                const fallback = String(attachment.fallback_url || attachment.fallbackUrl || '');
+                if (fallback && image.src !== fallback) image.src = fallback;
+            }, { once: true });
+        }
         image.alt = attachment.title || attachment.description || attachment.target || 'Screenshot';
         const caption = document.createElement('span');
         caption.className = 'chat-image-caption';
@@ -1250,6 +1402,7 @@ function addChat(type, content, scroll, timestamp, fromSession, sessionId = acti
                 const messageId = safeMeta.messageId || safeMeta.message_id || `assistant-${requestId}`;
                 const messageKind = safeMeta.messageKind || safeMeta.message_kind || 'assistant_final';
                 const shell = ensureAssistantReplyContainer(requestId, messageId, timestamp, messageKind);
+                if (shell) shell.sessionId = ownerSessionId;
                 if (shell?.response) {
                     shell.response.innerHTML = typeof renderMarkdown === 'function'
                         ? renderMarkdown(c)
@@ -1326,6 +1479,22 @@ function addChat(type, content, scroll, timestamp, fromSession, sessionId = acti
                     .replace(/\n/g, '<br>');
             }
             wrapper.appendChild(div);
+
+            // Attachments belong to the message itself, not only to the
+            // stable assistant shell.  This also restores user-supplied
+            // images and legacy bot rows after a refresh or Session switch.
+            const attachmentGallery = document.createElement('div');
+            attachmentGallery.className = 'chat-image-gallery';
+            attachmentGallery.dataset.layout = String(
+                safeMeta.layout || safeMeta.screenshotLayout || 'auto',
+            );
+            attachmentGallery.hidden = true;
+            wrapper.appendChild(attachmentGallery);
+            renderAssistantAttachments(
+                { attachments: attachmentGallery, sessionId: ownerSessionId },
+                safeMeta.attachments || [],
+                safeMeta.layout || safeMeta.screenshotLayout || 'auto',
+            );
 
             // Timestamp — prefer the saved timestamp (if this message
             // is being re-rendered from a session) so it shows the

@@ -475,7 +475,7 @@ def _merge_chat_records(existing: Any, incoming: Any) -> List[Any]:
 def _merge_chat_patch(current: Mapping[str, Any], incoming: Mapping[str, Any]) -> Dict[str, Any]:
     """Merge chat content without allowing a stale client to erase history."""
     result = dict(current or {})
-    for key in ("messages", "execution_trace"):
+    for key in ("messages", "execution_trace", "attachments"):
         if key in incoming and isinstance(incoming[key], list):
             result[key] = _merge_chat_records(result.get(key), incoming[key])
     # Task control fields are state, not append-only content.  The latest
@@ -483,6 +483,46 @@ def _merge_chat_patch(current: Mapping[str, Any], incoming: Mapping[str, Any]) -
     for key, value in incoming.items():
         if key not in {"messages", "execution_trace"}:
             result[key] = _safe_json(value)
+    return result
+
+
+def _reconcile_chat_attachment_registry(chat: Any) -> Dict[str, Any]:
+    """Attach durable image records to their owning chat message on read.
+
+    Screenshot capture and chat finalization are independent asynchronous
+    writers.  A capture can therefore be indexed in ``chat.attachments``
+    before the assistant shell exists, or a later browser checkpoint can
+    contain the message without its attachment metadata.  The registry is a
+    small durable index, while the message's ``attachments`` list remains the
+    canonical render contract.  Reconcile both here so refresh and Session
+    switching are deterministic even when the writes arrived out of order.
+    """
+    if not isinstance(chat, Mapping):
+        return {}
+    result = copy.deepcopy(dict(chat))
+    messages = result.get("messages")
+    registry = result.get("attachments")
+    if not isinstance(messages, list) or not isinstance(registry, list):
+        return result
+
+    def matches(message: Mapping[str, Any], attachment: Mapping[str, Any]) -> bool:
+        message_id = str(attachment.get("message_id") or attachment.get("messageId") or "").strip()
+        request_id = str(attachment.get("request_id") or attachment.get("requestId") or "").strip()
+        if message_id and str(message.get("id") or "") == message_id:
+            return True
+        return bool(request_id) and str(message.get("request_id") or message.get("requestId") or "") == request_id \
+            and str(message.get("type") or "") in {"bot", "bot-response"}
+
+    for message in messages:
+        if not isinstance(message, Mapping):
+            continue
+        if str(message.get("type") or "") not in {"bot", "bot-response", "user"}:
+            continue
+        related = [item for item in registry if isinstance(item, Mapping) and matches(message, item)]
+        if not related:
+            continue
+        current = message.get("attachments") if isinstance(message.get("attachments"), list) else []
+        message["attachments"] = _merge_record_list(current, related)
     return result
 
 
@@ -1175,7 +1215,7 @@ class WorkspaceStore:
             },
             "ui": {},
             "report": {},
-            "chat": {"messages": [], "execution_trace": []},
+            "chat": {"messages": [], "execution_trace": [], "attachments": []},
             "operation": {"state": "idle", "checkpoint": None},
         }
 
@@ -1204,6 +1244,12 @@ class WorkspaceStore:
                 raise WorkspaceError("Case workspace snapshot is unreadable") from exc
         if snapshot.get("schema_version") != WORKSPACE_SCHEMA_VERSION:
             raise WorkspaceError("Case workspace schema is unsupported")
+        if isinstance(snapshot.get("chat"), Mapping):
+            # A screenshot may have been persisted just before the assistant
+            # row or after a stale browser checkpoint.  Reconcile the durable
+            # attachment index at read time as well, so a restart never loses
+            # images merely because the original writes were out of order.
+            snapshot["chat"] = _reconcile_chat_attachment_registry(snapshot["chat"])
         snapshot["session"] = record.public_dict()
         snapshot["workspace"] = {
             "inputs_root": str(self.workspace_root(user_id, session_id) / "inputs"),
@@ -1293,6 +1339,11 @@ class WorkspaceStore:
                     )
                 else:
                     snapshot[key] = {**current, **safe_patch}
+        if isinstance(snapshot.get("chat"), Mapping):
+            # Keep the message-level attachment contract materialized in the
+            # snapshot itself.  This makes old clients and direct snapshot
+            # readers see the same complete transcript as the new browser.
+            snapshot["chat"] = _reconcile_chat_attachment_registry(snapshot["chat"])
         snapshot["saved_at"] = _now()
         self._write_snapshot(user_id, root / "snapshot.json", snapshot)
         with self._connection() as connection:

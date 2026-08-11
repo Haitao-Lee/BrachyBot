@@ -5414,6 +5414,9 @@ def register_planning_routes(
         data_version = str(data.get("data_version") or "")[:160]
         question = str(data.get("question") or "")[:2000]
         layout = str(data.get("layout") or "auto")[:32]
+        response_language = str(
+            data.get("response_language") or data.get("responseLanguage") or ""
+        )[:8]
         view_metadata = data.get("view_metadata")
         if not isinstance(view_metadata, dict):
             view_metadata = {}
@@ -5477,9 +5480,12 @@ def register_planning_routes(
             }
 
             # Persist the attachment independently from the long-running chat
-            # task. The final response later updates this same stable message
-            # record instead of replacing it, so refresh/session switches keep
-            # both the image and its execution trace.
+            # task.  Capturing and finalizing are separate asynchronous
+            # writers: the image must first enter the Session-owned registry,
+            # then be copied onto the owning message when that row exists (or
+            # created below).  This prevents a stale browser checkpoint from
+            # leaving a PNG on disk with no recoverable chat reference.
+            chat_patch = {"attachments": [attachment]}
             if request_id or message_id:
                 snapshot = store.load_snapshot(user["id"], session_id)
                 chat = snapshot.get("chat") if isinstance(snapshot.get("chat"), dict) else {}
@@ -5494,7 +5500,7 @@ def register_planning_routes(
                     if (
                         request_id
                         and str(record.get("request_id") or "") == request_id
-                        and record.get("type") == "bot-response"
+                        and record.get("type") in {"bot-response", "bot"}
                     ):
                         owner_message = record
                         break
@@ -5508,26 +5514,27 @@ def register_planning_routes(
                         "request_id": request_id,
                         "message_kind": "assistant_final",
                         "turn_sequence": 2,
-                        "response_language": str(getattr(task, "response_language", "") or "")[:8],
-                        "trace_language": str(getattr(task, "response_language", "") or "")[:8],
+                        "response_language": response_language,
+                        "trace_language": response_language,
                         "attachments": [],
                     }
                     messages.append(owner_message)
-                attachments = list(owner_message.get("attachments") or [])
+                existing_attachments = list(owner_message.get("attachments") or [])
                 if not any(
                     isinstance(item, dict)
                     and str(item.get("id") or "") == attachment_id
-                    for item in attachments
+                    for item in existing_attachments
                 ):
-                    attachments.append(attachment)
-                owner_message["attachments"] = attachments[-16:]
-                store.save_snapshot_patch(
-                    user["id"],
-                    session_id,
-                    {"chat": {"messages": messages}},
-                    expected_revision=None,
-                    reason="chat.screenshot.attached",
-                )
+                    existing_attachments.append(attachment)
+                owner_message["attachments"] = existing_attachments[-16:]
+                chat_patch["messages"] = messages
+            store.save_snapshot_patch(
+                user["id"],
+                session_id,
+                {"chat": chat_patch},
+                expected_revision=None,
+                reason="chat.screenshot.attached",
+            )
 
             return jsonify({
                 "success": True,
