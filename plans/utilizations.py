@@ -2690,10 +2690,6 @@ def get_trajectory_spacing_safety_mask(
     for candidate_index, (candidate_point, candidate_direction) in enumerate(world_candidates):
         for planned_point, planned_direction in world_planned:
             cosine = abs(float(np.dot(candidate_direction, planned_direction)))
-            if cosine < parallel_cosine:
-                # Non-parallel spacing is still handled by the historical
-                # geometry and scoring paths; this new rule does not replace it.
-                continue
             center_distance = geometry.ray_min_distance(
                 candidate_point,
                 candidate_direction,
@@ -2708,7 +2704,9 @@ def get_trajectory_spacing_safety_mask(
             # Stage 2: the guide-bore diameter applies only to near-parallel
             # paths.  Non-parallel candidates remain governed by Stage 1 and
             # the existing obstacle/collision validation.
-            if cosine >= parallel_cosine and center_distance < minimum_distance:
+            if cosine < parallel_cosine:
+                continue
+            if center_distance < minimum_distance:
                 safe[candidate_index] = False
                 break
 
