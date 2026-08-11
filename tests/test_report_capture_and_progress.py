@@ -17,7 +17,7 @@ def test_figure_one_detail_view_keeps_the_complete_ctv_in_frame():
     assert "halfHeight / Math.tan(halfFovY)" in source
     assert "halfWidth / Math.tan(halfFovX)" in source
     assert "halfDepth + planarDistance" in source
-    assert "margin: mode === 'detail' ? 1.06 : 1.58" in source
+    assert "margin: mode === 'detail' ? 1.06 : 2.0" in source
     assert "targetAspect: REPORT_FIGURE_ASPECT" in source
     assert "id === 'skin_surface'" in source
     assert "guide_skin_surface" in source

@@ -1176,7 +1176,7 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
                     // The overview needs enough surrounding anatomy to make
                     // the full implant geometry intelligible in a report.
                     // The close-up remains intentionally tight around CTV.
-                    margin: mode === 'detail' ? 1.06 : 1.58,
+                    margin: mode === 'detail' ? 1.06 : 2.0,
                 });
             }
 
