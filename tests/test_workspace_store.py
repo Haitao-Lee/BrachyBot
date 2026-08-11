@@ -630,6 +630,79 @@ def test_chat_attachment_registry_reconciles_out_of_order_screenshot_writes(tmp_
     assert [item["id"] for item in snapshot["chat"]["attachments"]] == ["shot-before-message"]
 
 
+def test_chat_attachment_registry_preserves_exact_message_ownership(tmp_path):
+    """User and assistant images sharing a request ID must stay separated."""
+    store = WorkspaceStore(tmp_path / "runtime")
+    user = store.create_user("attachment_message_owner", "hash")
+    case = store.create_session(user["id"], "Message attachment ownership")
+    user_attachment = {
+        "id": "user-shot",
+        "type": "screenshot",
+        "url": f"/api/sessions/{case.id}/screenshots/user.png",
+        "message_id": "user-message",
+        "request_id": "shared-request",
+    }
+    assistant_attachment = {
+        "id": "assistant-shot",
+        "type": "screenshot",
+        "url": f"/api/sessions/{case.id}/screenshots/assistant.png",
+        "message_id": "assistant-message",
+        "request_id": "shared-request",
+    }
+
+    # Write the registry first, then the messages, then a stale same-length
+    # message snapshot. This is the ordering seen during reconnects.
+    store.save_snapshot_patch(
+        user["id"], case.id,
+        {"chat": {"attachments": [user_attachment]}},
+    )
+    store.save_snapshot_patch(
+        user["id"], case.id,
+        {"chat": {"attachments": [assistant_attachment], "messages": [
+            {
+                "id": "user-message",
+                "request_id": "shared-request",
+                "type": "user",
+                "content": "image",
+                "attachments": [],
+            },
+            {
+                "id": "assistant-message",
+                "request_id": "shared-request",
+                "type": "bot-response",
+                "content": "analysis",
+                "attachments": [],
+            },
+        ]}},
+    )
+    store.save_snapshot_patch(
+        user["id"], case.id,
+        {"chat": {"messages": [
+            {
+                "id": "user-message",
+                "request_id": "shared-request",
+                "type": "user",
+                "content": "image",
+                "attachments": [],
+            },
+            {
+                "id": "assistant-message",
+                "request_id": "shared-request",
+                "type": "bot-response",
+                "content": "analysis",
+                "attachments": [],
+            },
+        ]}},
+    )
+
+    chat = store.load_snapshot(user["id"], case.id)["chat"]
+    user_message = next(item for item in chat["messages"] if item["id"] == "user-message")
+    assistant_message = next(item for item in chat["messages"] if item["id"] == "assistant-message")
+    assert [item["id"] for item in user_message["attachments"]] == ["user-shot"]
+    assert [item["id"] for item in assistant_message["attachments"]] == ["assistant-shot"]
+    assert {item["id"] for item in chat["attachments"]} == {"user-shot", "assistant-shot"}
+
+
 def test_two_case_workspaces_round_trip_without_cross_case_contamination(tmp_path):
     store = WorkspaceStore(tmp_path / "runtime")
     user = store.create_user("multi_case_planner", "hash")
