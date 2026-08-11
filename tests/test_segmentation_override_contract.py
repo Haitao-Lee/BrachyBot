@@ -78,6 +78,31 @@ def test_open_anatomy_request_routes_to_generic_biomedparse_mask():
     assert calls[0]["params"]["prompt"] == "liver"
 
 
+def test_surgical_guide_regeneration_routes_to_registered_tool():
+    harness = _DirectHarness(_Memory({"ct_path": "/case/ct.nii"}))
+
+    calls = harness._detect_tool_request("\u8bf7\u91cd\u65b0\u751f\u6210\u624b\u672f\u5bfc\u677f")
+
+    assert [call["tool"] for call in calls] == ["surgical_guide"]
+    assert calls[0]["params"] == {"action": "generate"}
+
+
+def test_guide_policy_replaces_provider_code_executor_call():
+    from agent_runtime.turn_policy import classify_local_turn
+
+    harness = _DirectHarness(_Memory())
+    harness._active_turn_policy = classify_local_turn("\u91cd\u65b0\u751f\u6210\u624b\u672f\u5bfc\u677f")
+
+    calls = harness._normalize_tool_params([{
+        "id": "provider-code",
+        "tool": "code_executor",
+        "params": {"code": "brachy_agent.tool_manager.call_tool('surgical_guide', {})"},
+    }])
+
+    assert [call["tool"] for call in calls] == ["surgical_guide"]
+    assert calls[0]["params"] == {"action": "generate"}
+
+
 def test_open_anatomy_request_does_not_override_ctv_workflow():
     harness = _DirectHarness(
         _Memory({"ct_path": "/case/ct.nii", "tumor_type_used": "nnunet_pancreatic"})

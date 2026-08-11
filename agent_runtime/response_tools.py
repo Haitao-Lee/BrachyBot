@@ -11,7 +11,10 @@ from typing import Dict, List, Optional
 
 
 from agent_runtime.core import ToolResultPipeline
-from agent_runtime.turn_policy import resolve_report_request_action
+from agent_runtime.turn_policy import (
+    is_surgical_guide_generation_request,
+    resolve_report_request_action,
+)
 from plans.dose_pre.model_loader import resolve_prescription_gy
 
 logger = logging.getLogger(__name__)
@@ -306,6 +309,16 @@ print(json.dumps(result))
                         "value": "oar",
                     }]
                 },
+            }]
+
+        # Guide generation is an explicit clinical action. Keep it on the
+        # registered tool path so the model cannot replace it with Python code
+        # or expose a disabled code_executor error to the user.
+        if is_surgical_guide_generation_request(message):
+            return [{
+                "id": "tool_direct_surgical_guide",
+                "tool": "surgical_guide",
+                "params": {"action": "generate"},
             }]
 
         # Find action keywords and their positions to preserve user's intended order
@@ -1645,6 +1658,25 @@ Output (JSON array of strings):"""
         _PYTHON_REPR_RE = re.compile(
             r"^<function\s|^<class\s|^<bound method\s|^<module\s|^<object\s"
         )
+        # Enforce the deterministic guide route even if a provider emits an
+        # invalid code_executor call despite the local policy/schema filter.
+        # This is a boundary guard, not a UI workaround: the user's explicit
+        # clinical action always maps to the registered guide tool.
+        active_policy = getattr(self, "_active_turn_policy", None)
+        if getattr(active_policy, "intent", None) == "surgical_guide_generation":
+            guide_call = next(
+                (call for call in (tool_calls or []) if call.get("tool") == "surgical_guide"),
+                None,
+            )
+            return [{
+                "id": (guide_call or {}).get("id", "tool_direct_surgical_guide"),
+                "tool": "surgical_guide",
+                "params": {
+                    **dict((guide_call or {}).get("params") or {}),
+                    "action": "generate",
+                },
+            }]
+
         valid = []
         for tc in tool_calls:
             tn = tc.get("tool", "")

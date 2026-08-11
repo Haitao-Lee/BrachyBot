@@ -262,6 +262,51 @@ def is_report_generation_request(message: str) -> bool:
     return resolve_report_request_action(message) == "regenerate"
 
 
+def is_surgical_guide_generation_request(message: str) -> bool:
+    """Return whether the user explicitly asks to create or rebuild a guide.
+
+    This is intentionally separate from the read-only Session-content resolver.
+    A guide can be viewed, inspected, exported, or generated; only the last
+    group is allowed to mutate the case and call the clinical guide tool.
+    """
+    text = re.sub(r"\s+", " ", str(message or "").strip().lower())
+    if not text:
+        return False
+    guide_terms = (
+        "surgical guide", "puncture guide", "guide mesh", "guide stl",
+        "\u624b\u672f\u5bfc\u677f", "\u7a7f\u523a\u5bfc\u677f", "\u624b\u672f\u5200\u677f", "\u5bfc\u677f",
+    )
+    if not any(term in text for term in guide_terms):
+        return False
+
+    # Match an explicit generation verb, not a passive status/error report.
+    english_action = bool(re.search(
+        r"\b(?:generate|regenerate|re-generate|rebuild|create|make|update|refresh)\b",
+        text,
+        flags=re.IGNORECASE,
+    ))
+    chinese_action = any(term in text for term in (
+        "\u751f\u6210", "\u91cd\u65b0\u751f\u6210", "\u518d\u751f\u6210", "\u91cd\u5efa", "\u91cd\u505a",
+        "\u66f4\u65b0", "\u5237\u65b0", "\u5236\u4f5c", "\u521b\u5efa",
+    ))
+    if not (english_action or chinese_action):
+        return False
+
+    # "guide generation failed" is a diagnostic question, not permission to
+    # start another long-running operation. An imperative regeneration phrase
+    # still wins when both appear in the same message.
+    passive_failure = any(term in text for term in (
+        "failed", "failure", "error", "\u5931\u8d25", "\u62a5\u9519", "\u539f\u56e0",
+    ))
+    imperative = bool(re.search(
+        r"\b(?:please\s+)?(?:regenerate|re-generate|rebuild|create|generate|update|refresh)\b|"
+        r"(?:^|[\s,;:])(?:\u8bf7|\u5e2e\u6211|\u9700\u8981|\u91cd\u65b0|\u518d\u6b21|\u518d|\u91cd\u505a|\u91cd\u5efa|\u751f\u6210|\u5236\u4f5c|\u521b\u5efa|\u66f4\u65b0|\u5237\u65b0)[^。.!?\uff01\uff1f]{0,24}(?:\u624b\u672f|\u7a7f\u523a)?\u5bfc\u677f",
+        text,
+        flags=re.IGNORECASE,
+    ))
+    return not passive_failure or imperative
+
+
 def resolve_session_content_target(message: str) -> Optional[str]:
     """Resolve a read-only request for persisted current-Session content.
 
@@ -403,6 +448,18 @@ def classify_local_turn(message: str, pending_tumor_site: bool = False) -> Local
             False,
             False,
             UI_TOOLS,
+        )
+
+    # Guide generation is a real case mutation and must never fall through to
+    # knowledge_query, where the model may invent a code_executor workaround.
+    if is_surgical_guide_generation_request(text):
+        return LocalTurnPolicy(
+            "surgical_guide_generation",
+            "medium",
+            True,
+            False,
+            True,
+            CLINICAL_TOOLS,
         )
 
     # A request to view a persisted Session artifact is not a new screenshot,

@@ -1888,7 +1888,10 @@ class ChatWorkflowMixin:
         # the LLM so it can read the current case state and produce a meaningful
         # answer instead of auto-executing a tool the user didn't ask for.
         _direct_tool_calls = None
-        if local_policy.intent in ("segmentation", "planning", "treatment_plan", "clinical_planning"):
+        if local_policy.intent in (
+            "segmentation", "planning", "treatment_plan", "clinical_planning",
+            "surgical_guide_generation",
+        ):
             _direct_tool_calls = self._detect_tool_request(message)
         if _direct_tool_calls:
             _lang = self.memory.user_lang

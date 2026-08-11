@@ -199,6 +199,26 @@ def test_segmentation_intent_and_site_followup_are_not_knowledge_queries():
     assert followup.use_completeness
 
 
+def test_surgical_guide_generation_is_a_deterministic_clinical_action():
+    from agent_runtime.turn_policy import classify_local_turn
+
+    policy = classify_local_turn("\u8bf7\u91cd\u65b0\u751f\u6210\u624b\u672f\u5bfc\u677f")
+
+    assert policy.intent == "surgical_guide_generation"
+    assert not policy.use_router
+    assert policy.use_completeness
+    assert "surgical_guide" in policy.allow_tools
+    assert "code_executor" not in policy.allow_tools
+
+
+def test_viewing_a_surgical_guide_remains_read_only():
+    from agent_runtime.turn_policy import classify_local_turn
+
+    policy = classify_local_turn("\u67e5\u770b\u5f53\u524d\u624b\u672f\u5bfc\u677f")
+
+    assert policy.intent == "session_content_query"
+
+
 def test_patient_tumor_location_question_uses_image_segmentation_route():
     from agent_runtime.turn_policy import classify_local_turn
 
