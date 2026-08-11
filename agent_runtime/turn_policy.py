@@ -5,7 +5,7 @@ only for deterministic, low-risk requests.  Clinical execution and evidence
 based medical advice keep the normal routing and review gates.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import re
 from typing import FrozenSet, Iterable, Optional
 
@@ -32,10 +32,27 @@ CLINICAL_TOOLS: FrozenSet[str] = frozenset({
     "report_generator", "query_metrics", "ui_screenshot", "ui_content",
 })
 
+# Ambiguous, constrained, or mixed requests go through the configured LLM's
+# existing function-calling turn rather than a second router call.  This union
+# keeps all established BrachyBot capabilities available while the registry,
+# tool schemas, Session state, and backend validators remain the hard safety
+# boundary.
+SEMANTIC_TOOLS: FrozenSet[str] = frozenset(
+    set(KNOWLEDGE_TOOLS)
+    | set(UI_TOOLS)
+    | set(CLINICAL_TOOLS)
+    | {"case_memory", "plan_comparator", "safety_validator"}
+)
+
 
 @dataclass(frozen=True)
 class LocalTurnPolicy:
-    """Execution choices made before any remote model call."""
+    """Low-cost routing hints and explicit fast-path grants.
+
+    ``intent`` and ``allow_tools`` are advisory routing hints.  Mutating work
+    is authorized only through ``execution_grants``/``workflow_grants`` or an
+    explicit tool call selected by the LLM during this turn.
+    """
 
     intent: str
     complexity: str
@@ -43,6 +60,9 @@ class LocalTurnPolicy:
     use_router: bool
     use_completeness: bool
     allow_tools: Optional[FrozenSet[str]] = None
+    direct_execution: bool = False
+    execution_grants: FrozenSet[str] = field(default_factory=frozenset)
+    workflow_grants: FrozenSet[str] = field(default_factory=frozenset)
 
 
 def _has_cjk(text: str) -> bool:
@@ -52,6 +72,90 @@ def _has_cjk(text: str) -> bool:
 def _contains_any(text: str, phrases: Iterable[str]) -> bool:
     lowered = (text or "").lower()
     return any(phrase.lower() in lowered for phrase in phrases)
+
+
+def _requires_semantic_resolution(message: str) -> bool:
+    """Return whether an action request needs real language understanding.
+
+    This is a conservative fast-path boundary, not another intent classifier.
+    Simple positive imperatives retain the existing low-latency route.  Any
+    negation, exclusion, condition, correction, sequencing constraint, or
+    diagnostic framing is delegated to the configured LLM with the full
+    relevant capability set.
+    """
+    text = re.sub(r"\s+", " ", str(message or "").strip().lower())
+    if not text:
+        return False
+    semantic_markers = (
+        # Negation and exclusion.
+        "\u4e0d\u8981", "\u522b", "\u4e0d\u9700\u8981", "\u65e0\u9700", "\u4e0d\u7528",
+        "\u4e0d\u662f", "\u5e76\u975e", "\u4e0d\u5fc5", "\u4e0d\u53ef\u4ee5", "\u4e0d\u80fd",
+        "\u6ca1\u6709", "\u53d6\u6d88", "\u5207\u52ff", "\u7981\u6b62", "\u4e0d\u5141\u8bb8",
+        "\u4e0d\u6267\u884c", "\u9664\u4e86", "\u9664\u5916",
+        "do not", "don't", "dont", "not ", "without", "except", "exclude",
+        # Mixed goals, sequencing, and conditions.
+        "\u53ea", "\u4ec5", "\u4f46", "\u4f46\u662f", "\u7136\u540e", "\u4e4b\u540e", "\u4e4b\u524d",
+        "\u5148", "\u518d", "\u7b49\u6211", "\u6682\u65f6", "\u9664\u975e", "\u5982\u679c",
+        "only", "but", "instead", "rather than", "after", "before", "unless", "if ",
+        # Corrections and diagnostics should never be mistaken for permission
+        # to repeat the operation being discussed.
+        "\u6211\u662f\u8bf4", "\u6211\u7684\u610f\u601d", "\u8bf4\u9519", "\u6539\u4e3a", "\u539f\u56e0",
+        "\u4e3a\u4ec0\u4e48", "\u62a5\u9519", "\u5931\u8d25", "i mean", "correction", "why", "failed", "error",
+    )
+    return any(marker in text for marker in semantic_markers)
+
+
+def _semantic_action_policy(*, complexity: str = "medium", review: bool = True) -> LocalTurnPolicy:
+    """Use the main LLM once for semantic action selection, not a second router."""
+    return LocalTurnPolicy(
+        "semantic_action",
+        complexity,
+        review,
+        False,
+        review,
+        SEMANTIC_TOOLS,
+    )
+
+
+def _is_canonical_execution_command(message: str, *, operation: str) -> bool:
+    """Return whether a low-latency action shortcut is unquestionably safe.
+
+    This helper never selects a business workflow on its own. It only decides
+    whether a phrase already classified as planning/segmentation is canonical
+    enough to bypass the main LLM. Anything less explicit falls back to
+    semantic function calling.
+    """
+    text = re.sub(r"\s+", " ", str(message or "").strip().lower())
+    if not text or _requires_semantic_resolution(text):
+        return False
+
+    common_english = bool(re.search(
+        r"\b(?:run|execute|start|perform|create|generate|do|rerun|replan)\b",
+        text,
+        flags=re.IGNORECASE,
+    ))
+    common_chinese = bool(re.search(
+        r"(?:\u8bf7|\u5e2e\u6211|\u73b0\u5728|\u7acb\u5373|\u9700\u8981)?"
+        r"(?:\u6267\u884c|\u5f00\u59cb|\u8fdb\u884c|\u751f\u6210|\u5236\u5b9a|\u91cd\u505a|\u91cd\u8dd1)",
+        text,
+    ))
+    if common_english or common_chinese:
+        return True
+
+    if operation == "segmentation":
+        # A bare imperative such as "segment the liver" or "分割肝脏" is
+        # itself explicit. Noun phrases such as "CTV segmentation method"
+        # do not match these command-position forms.
+        return bool(
+            re.match(r"^(?:please\s+)?(?:segment|delineate|outline|extract)\b", text)
+            or re.match(r"^(?:\u8bf7|\u5e2e\u6211|\u73b0\u5728)?(?:\u5206\u5272|\u52fe\u753b|\u52fe\u52d2|\u63d0\u53d6)", text)
+        )
+    if operation == "planning":
+        return bool(
+            re.match(r"^(?:please\s+)?plan\b", text)
+            or re.match(r"^(?:\u8bf7|\u5e2e\u6211|\u73b0\u5728)?(?:\u89c4\u5212|\u5236\u5b9a)", text)
+        )
+    return False
 
 
 def _is_interrogative(message: str) -> bool:
@@ -431,16 +535,11 @@ def classify_local_turn(message: str, pending_tumor_site: bool = False) -> Local
     # Patient-specific tumor location/size questions require a real CTV mask,
     # even though they are phrased as questions rather than commands.
     if _is_image_tumor_measurement_request(text):
-        return LocalTurnPolicy(
-            "segmentation",
-            "medium",
-            True,
-            False,
-            True,
-            CLINICAL_TOOLS,
-        )
+        return _semantic_action_policy(complexity="medium", review=True)
 
     if is_report_generation_request(text):
+        if _requires_semantic_resolution(text):
+            return _semantic_action_policy(complexity="medium", review=False)
         return LocalTurnPolicy(
             "report_generation",
             "low",
@@ -448,11 +547,15 @@ def classify_local_turn(message: str, pending_tumor_site: bool = False) -> Local
             False,
             False,
             UI_TOOLS,
+            direct_execution=True,
+            execution_grants=frozenset({"ui_controller"}),
         )
 
     # Guide generation is a real case mutation and must never fall through to
     # knowledge_query, where the model may invent a code_executor workaround.
     if is_surgical_guide_generation_request(text):
+        if _requires_semantic_resolution(text):
+            return _semantic_action_policy(complexity="medium", review=True)
         return LocalTurnPolicy(
             "surgical_guide_generation",
             "medium",
@@ -460,12 +563,16 @@ def classify_local_turn(message: str, pending_tumor_site: bool = False) -> Local
             False,
             True,
             CLINICAL_TOOLS,
+            direct_execution=True,
+            execution_grants=frozenset({"surgical_guide"}),
         )
 
     # A request to view a persisted Session artifact is not a new screenshot,
     # a viewer mutation, or a knowledge lookup. Keep it out of the expensive
     # router and let the Session-content bridge resolve real stored data.
     if resolve_session_content_target(text):
+        if _requires_semantic_resolution(text):
+            return _semantic_action_policy(complexity="medium", review=False)
         return LocalTurnPolicy(
             "session_content_query",
             "low",
@@ -493,6 +600,12 @@ def classify_local_turn(message: str, pending_tumor_site: bool = False) -> Local
     # A question about clinical data is not a clinical action command.
     # Route interrogative turns through the LLM so it can read the current
     # status from memory instead of auto-executing a segmentation tool.
+    if _is_interrogative(text) and _contains_any(lower, (
+        "segment", "segmentation", "planning", "treatment plan", "generate", "regenerate",
+        "\u5206\u5272", "\u89c4\u5212", "\u8ba1\u5212", "\u751f\u6210", "\u91cd\u65b0\u751f\u6210",
+        "\u5bfc\u677f", "\u62a5\u544a", "\u622a\u56fe",
+    )):
+        return _semantic_action_policy(complexity="medium", review=False)
     if _is_interrogative(text):
         return LocalTurnPolicy("knowledge_query", "low", False, False, False, KNOWLEDGE_TOOLS)
 
@@ -542,21 +655,59 @@ def classify_local_turn(message: str, pending_tumor_site: bool = False) -> Local
         "停止监测", "开始监测", "结束监测", "停止监控", "监测",
     ))
     if planning:
+        if not _is_canonical_execution_command(text, operation="planning"):
+            return _semantic_action_policy(complexity="high", review=True)
         # A full planning request has an unambiguous local execution path
         # (CTV/OAR -> planning pipeline).  Sending it through the remote
         # multi-agent router first adds a second LLM round-trip of tens of
         # seconds without improving the safety gates: review and completeness
         # checks still run after the actual plan is produced.
-        return LocalTurnPolicy("clinical_planning", "high", True, False, True, CLINICAL_TOOLS)
+        return LocalTurnPolicy(
+            "clinical_planning",
+            "high",
+            True,
+            False,
+            True,
+            CLINICAL_TOOLS,
+            direct_execution=True,
+            execution_grants=frozenset({
+                "ctv_segmentation", "oar_segmentation", "planning_pipeline", "surgical_guide",
+            }),
+            workflow_grants=frozenset({"clinical_planning"}),
+        )
     if segmentation:
-        return LocalTurnPolicy("segmentation", "medium", True, False, True, CLINICAL_TOOLS)
+        resumes_clarified_action = bool(
+            pending_tumor_site and not _requires_semantic_resolution(text)
+        )
+        if not resumes_clarified_action and not _is_canonical_execution_command(
+            text,
+            operation="segmentation",
+        ):
+            return _semantic_action_policy(complexity="medium", review=True)
+        return LocalTurnPolicy(
+            "segmentation",
+            "medium",
+            True,
+            False,
+            True,
+            CLINICAL_TOOLS,
+            direct_execution=True,
+            execution_grants=frozenset({
+                "ctv_segmentation", "oar_segmentation", "biomedparse_segmentation",
+            }),
+        )
     if external:
         return LocalTurnPolicy("external_project_query", "low", True, True, True, frozenset({"web_search", "web_fetch", "web_access"}))
     if clinical_advice:
         return LocalTurnPolicy("clinical_knowledge", "medium", True, True, True, KNOWLEDGE_TOOLS)
     if ui:
         return LocalTurnPolicy("ui_control", "low", False, False, False, UI_TOOLS)
-    return LocalTurnPolicy("knowledge_query", "low", False, False, False, KNOWLEDGE_TOOLS)
+    # An unmatched declarative/imperative turn may refer to a newly added
+    # capability, a mixed request, or domain wording that no local shortcut
+    # knows yet. Let the main LLM see the real registered capability set once
+    # instead of silently reducing the turn to a knowledge-only whitelist.
+    # Explicit questions above remain on the smaller low-latency read path.
+    return _semantic_action_policy(complexity="medium", review=False)
 
 
 def filter_tool_schemas(tools, policy: Optional[LocalTurnPolicy]):

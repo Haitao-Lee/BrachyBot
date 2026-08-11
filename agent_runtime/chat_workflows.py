@@ -19,6 +19,7 @@ import SimpleITK as sitk
 
 from agent_runtime.core import PlanningPhase, ToolResultPipeline, resolve_reference_direction_input
 from agent_runtime.contracts import RunStatus
+from agent_runtime.execution_authorization import TurnExecutionAuthorization
 from agent_runtime.turn_policy import (
     classify_local_turn,
     resolve_session_content_presentation,
@@ -37,7 +38,7 @@ logger = logging.getLogger(__name__)
 
 class ChatWorkflowMixin:
     @staticmethod
-    def _llm_unavailable_message() -> str:
+    def _llm_unavailable_message(lang: str = "zh") -> str:
         """Explain an unavailable model instead of fabricating an LLM answer.
 
         Greetings and self-description are conversational requests. A static
@@ -45,9 +46,42 @@ class ChatWorkflowMixin:
         hide a broken provider configuration. The UI can still use explicit
         direct tools while the user fixes the provider.
         """
+        if str(lang or "").lower().startswith("en"):
+            return (
+                "The AI language service is temporarily unavailable, so I cannot "
+                "produce a reliable answer right now. No clinical action was started. "
+                "Please retry after the service connection is restored."
+            )
         return (
-            "当前 LLM 服务未连接，因此我不能生成可靠的自然语言回答。"
-            "请检查 ANTHROPIC_API_KEY/OPENAI_API_KEY 与对应的 BASE_URL、MODEL 配置后重试。"
+            "AI 语言服务暂时不可用，因此我现在无法生成可靠回答。"
+            "本次没有启动任何临床操作；请在服务连接恢复后重试。"
+        )
+
+    def _current_llm_unavailable_message(self) -> str:
+        """Return a provider-failure message in the current conversation language."""
+        lang = getattr(getattr(self, "memory", None), "user_lang", "zh")
+        return self._llm_unavailable_message(lang)
+
+    @staticmethod
+    def _is_llm_provider_error(response: Any) -> bool:
+        """Identify provider/runtime failures that must not leak into chat output.
+
+        Tool failures are handled by their normal tool-result path. This guard is
+        intentionally limited to strings returned by the LLM orchestration layer.
+        Detailed provider diagnostics remain in server logs.
+        """
+        text = str(response or "").strip().lower()
+        if not text:
+            return False
+        return text.startswith(("error:", "llm error:")) or any(
+            marker in text
+            for marker in (
+                "all providers failed",
+                "no llm provider available",
+                "invalid api key",
+                "authentication failed",
+                "unauthorized",
+            )
         )
 
     def _run_lightweight_conversation_stream(self, message, steps, step_id_ref, yield_event):
@@ -74,7 +108,7 @@ class ChatWorkflowMixin:
         if router is None:
             yield {
                 "type": "_result",
-                "response": self._llm_unavailable_message(),
+                "response": self._current_llm_unavailable_message(),
                 "llm_meta": {"usage": {}, "latency_ms": 0, "llm_calls": 0},
             }
             return
@@ -142,11 +176,14 @@ class ChatWorkflowMixin:
             thinking_step["status"] = "done"
             thinking_step["content"] = "Response generated"
             yield yield_event("step", thinking_step)
-            # Providers may return a graceful error (finish_reason="error")
-            # instead of raising. Surface the friendly unavailable message
-            # with the technical reason appended for the operator.
+            # Providers may return a graceful error instead of raising. Keep
+            # technical details in logs; raw credentials/endpoints/errors do
+            # not belong in the user-facing chat stream.
             if finish_reason == "error" or content.startswith("Error:"):
-                content = f"{self._llm_unavailable_message()}\n\n[{content}]"
+                logger.warning("Lightweight LLM provider failure: %s", content[:500])
+                thinking_step["status"] = "error"
+                thinking_step["content"] = "AI language service unavailable"
+                content = self._current_llm_unavailable_message()
             yield {
                 "type": "_result",
                 "response": content,
@@ -159,16 +196,15 @@ class ChatWorkflowMixin:
             }
         except Exception as e:
             # A conversational turn never needs the tool-calling pipeline, so
-            # on failure surface the provider error directly instead of
-            # re-entering the heavy path. Keep the technical reason visible so
-            # the operator can diagnose provider outages.
+            # on failure do not re-enter the heavy path. The full technical
+            # reason remains in server logs for operators.
             logger.warning("Lightweight conversation failed: %s", e)
             thinking_step["status"] = "error"
-            thinking_step["content"] = f"LLM error: {e}"
+            thinking_step["content"] = "AI language service unavailable"
             yield yield_event("step", thinking_step)
             yield {
                 "type": "_result",
-                "response": f"{self._llm_unavailable_message()}\n\n[{e}]",
+                "response": self._current_llm_unavailable_message(),
                 "llm_meta": {"usage": {}, "latency_ms": 0, "llm_calls": 0},
             }
 
@@ -706,10 +742,45 @@ class ChatWorkflowMixin:
             local = threading.local()
             self._turn_local = local
         local.token = token
+        # Every chat turn receives a fresh authorization ledger.  Workflow
+        # recovery and tool normalization must use this ledger instead of
+        # re-reading keywords from the raw user message.
+        authorization = TurnExecutionAuthorization(token)
+        self._turn_execution_authorization = authorization
+        local.authorization = authorization
+        ledgers = getattr(self, "_turn_execution_authorizations", None)
+        if not isinstance(ledgers, dict):
+            ledgers = {}
+            self._turn_execution_authorizations = ledgers
+        ledgers[token] = authorization
+        # Retain a small diagnostic window without allowing an unbounded
+        # per-Agent history to accumulate across a long-lived Session.
+        for old_token in sorted(ledgers)[:-8]:
+            ledgers.pop(old_token, None)
         ledger = getattr(self, "run_ledger", None)
         if ledger is not None:
             ledger.begin(message)
         return token
+
+    def _activate_turn_policy(self, policy) -> None:
+        """Install a routing hint and its explicit fast-path grants."""
+        self._active_turn_policy = policy
+        authorization = self._current_execution_authorization()
+        if authorization is not None:
+            authorization.grant_policy(policy)
+
+    def _current_execution_authorization(self):
+        """Return the authorization ledger owned by the calling turn."""
+        local = getattr(self, "_turn_local", None)
+        authorization = getattr(local, "authorization", None) if local is not None else None
+        if authorization is not None:
+            return authorization
+        token = self._current_turn_token()
+        ledgers = getattr(self, "_turn_execution_authorizations", None)
+        if isinstance(ledgers, dict) and token in ledgers:
+            return ledgers[token]
+        fallback = getattr(self, "_turn_execution_authorization", None)
+        return fallback if getattr(fallback, "token", token) == token else None
 
     def _current_turn_token(self) -> int:
         local = getattr(self, "_turn_local", None)
@@ -972,7 +1043,7 @@ class ChatWorkflowMixin:
             message,
             pending_tumor_site=self._pending_tumor_site_clarification(),
         )
-        self._active_turn_policy = local_policy
+        self._activate_turn_policy(local_policy)
         if local_policy.intent == "case_dose_query":
             response = self._build_current_dose_response(self.memory.user_lang)
             self.memory.add_message("assistant", response)
@@ -987,7 +1058,7 @@ class ChatWorkflowMixin:
             self._finish_turn(response)
             return response
 
-        if local_policy.intent == "report_generation":
+        if local_policy.intent == "report_generation" and local_policy.direct_execution:
             try:
                 result = self._execute_tool_with_memory(
                     "ui_controller", self._report_generation_params(),
@@ -1016,13 +1087,16 @@ class ChatWorkflowMixin:
         if self.brain_available:
             _result = self._run_llm_function_calling(message, [], [0])
             response = _result[0] if isinstance(_result, tuple) else _result
+            if self._is_llm_provider_error(response):
+                logger.warning("LLM provider failure suppressed from non-trace chat output: %s", str(response)[:500])
+                response = self._current_llm_unavailable_message()
         else:
             # The non-trace API is still used by a few integrations. Keep its
             # behavior aligned with chat_with_trace/stream: a conversational
             # request must never receive a fabricated keyword-bot greeting
             # merely because the configured provider is unavailable.
             if local_policy.intent == "small_talk":
-                response = self._llm_unavailable_message()
+                response = self._current_llm_unavailable_message()
             else:
                 response = self._rule_based_chat(message)
 
@@ -1075,7 +1149,7 @@ class ChatWorkflowMixin:
             message,
             pending_tumor_site=self._pending_tumor_site_clarification(),
         )
-        self._active_turn_policy = local_policy
+        self._activate_turn_policy(local_policy)
 
         if local_policy.intent == "case_dose_query":
             title = "当前病例剂量" if self.memory.user_lang == "zh" else "Current Case Dose"
@@ -1113,7 +1187,7 @@ class ChatWorkflowMixin:
                 "llm_meta": {"usage": {}, "latency_ms": 0, "llm_calls": 0, "route": "local_image_metadata"},
             }
 
-        if local_policy.intent == "report_generation":
+        if local_policy.intent == "report_generation" and local_policy.direct_execution:
             title = "\u91cd\u65b0\u751f\u6210\u62a5\u544a" if self.memory.user_lang == "zh" else "Regenerate Report"
             params = self._report_generation_params()
             add_step(
@@ -1230,13 +1304,31 @@ class ChatWorkflowMixin:
             except Exception as e:
                 import traceback as _tb
                 logger.error(f"LLM function calling failed: {e}\n{_tb.format_exc()}")
-                add_step("error", "LLM Error", str(e), status="error")
-                response = f"Error: {e}"
+                add_step(
+                    "error",
+                    "AI 服务不可用" if self.memory.user_lang == "zh" else "AI Service Unavailable",
+                    "自然语言服务连接失败；未启动临床操作。"
+                    if self.memory.user_lang == "zh"
+                    else "The language service connection failed; no clinical action was started.",
+                    status="error",
+                )
+                response = self._current_llm_unavailable_message()
                 llm_meta = {"usage": {}, "latency_ms": 0, "llm_calls": 0}
+            if self._is_llm_provider_error(response):
+                logger.warning("LLM provider failure suppressed from trace chat output: %s", str(response)[:500])
+                add_step(
+                    "error",
+                    "AI 服务不可用" if self.memory.user_lang == "zh" else "AI Service Unavailable",
+                    "自然语言服务连接失败；未启动临床操作。"
+                    if self.memory.user_lang == "zh"
+                    else "The language service connection failed; no clinical action was started.",
+                    status="error",
+                )
+                response = self._current_llm_unavailable_message()
         else:
             if local_policy.intent == "small_talk":
                 add_step("error", "LLM Unavailable", "No configured model; no canned answer was generated.", status="error")
-                response = self._llm_unavailable_message()
+                response = self._current_llm_unavailable_message()
             else:
                 add_step("thinking", "Rule Matcher", "Brain unavailable — using rule-based parsing")
                 response = self._rule_based_chat_with_steps(message, steps, step_id)
@@ -1611,7 +1703,7 @@ class ChatWorkflowMixin:
             message,
             pending_tumor_site=self._pending_tumor_site_clarification(),
         )
-        self._active_turn_policy = local_policy
+        self._activate_turn_policy(local_policy)
 
         # Multi-agent routing (if available). The local policy decides whether
         # this expensive route is needed for the current intent, while the LLM
@@ -1704,7 +1796,7 @@ class ChatWorkflowMixin:
             yield yield_event("done", {"context": {"message_count": len(self.memory.conversation)}})
             return
 
-        if local_policy.intent == "report_generation":
+        if local_policy.intent == "report_generation" and local_policy.direct_execution:
             params = self._report_generation_params()
             state_step = add_step(
                 "tool",
@@ -1888,12 +1980,15 @@ class ChatWorkflowMixin:
         # the LLM so it can read the current case state and produce a meaningful
         # answer instead of auto-executing a tool the user didn't ask for.
         _direct_tool_calls = None
-        if local_policy.intent in (
+        if local_policy.direct_execution and local_policy.intent in (
             "segmentation", "planning", "treatment_plan", "clinical_planning",
             "surgical_guide_generation",
         ):
             _direct_tool_calls = self._detect_tool_request(message)
         if _direct_tool_calls:
+            authorization = self._current_execution_authorization()
+            if authorization is not None:
+                authorization.grant_tool_calls(_direct_tool_calls, source="local_direct_calls")
             _lang = self.memory.user_lang
             logger.info(f"Direct tool execution (stream): {len(_direct_tool_calls)} tools")
             for tc in _direct_tool_calls:
@@ -2154,15 +2249,34 @@ class ChatWorkflowMixin:
             except Exception as e:
                 import traceback as _tb
                 logger.error(f"LLM function calling failed: {e}\n{_tb.format_exc()}")
-                add_step("error", "LLM Error", str(e), status="error")
-                response = f"Error: {e}"
+                step = add_step(
+                    "error",
+                    "AI 服务不可用" if self.memory.user_lang == "zh" else "AI Service Unavailable",
+                    "自然语言服务连接失败；未启动临床操作。"
+                    if self.memory.user_lang == "zh"
+                    else "The language service connection failed; no clinical action was started.",
+                    status="error",
+                )
+                yield yield_event("step", step)
+                response = self._current_llm_unavailable_message()
                 llm_meta = {"usage": {}, "latency_ms": 0, "llm_calls": 0}
-                yield yield_event("error", {"message": str(e)})
+            if self._is_llm_provider_error(response):
+                logger.warning("LLM provider failure suppressed from streaming chat output: %s", str(response)[:500])
+                step = add_step(
+                    "error",
+                    "AI 服务不可用" if self.memory.user_lang == "zh" else "AI Service Unavailable",
+                    "自然语言服务连接失败；未启动临床操作。"
+                    if self.memory.user_lang == "zh"
+                    else "The language service connection failed; no clinical action was started.",
+                    status="error",
+                )
+                yield yield_event("step", step)
+                response = self._current_llm_unavailable_message()
         else:
             if local_policy.intent == "small_talk":
                 step = add_step("error", "LLM Unavailable", "No configured model; no canned answer was generated.", status="error")
                 yield yield_event("step", step)
-                response = self._llm_unavailable_message()
+                response = self._current_llm_unavailable_message()
             else:
                 response = self._rule_based_chat_with_steps_stream(message, steps, step_id, yield_event)
             llm_meta = {"usage": {}, "latency_ms": 0, "llm_calls": 0}
@@ -2664,15 +2778,16 @@ class ChatWorkflowMixin:
                                     except Exception as _rep_e:
                                         logger.warning(f"Failed to build planning report: {_rep_e}")
                                         response = "✅ 自动完成完整规划流程（CTV → OAR → Planning）"
-                                    # A complete planning workflow always ends with
-                                    # surgical guide generation. The direct-tool path
-                                    # (response_tools._detect_tool_request plan_full)
-                                    # already chains ctv -> oar -> planning ->
-                                    # surgical_guide; the workflow enforcer used to
-                                    # stop at planning, so enforced runs never produced
-                                    # a guide for the frontend to display. Generate one
-                                    # here so both paths implement the same workflow.
-                                    if self.registry.get("surgical_guide"):
+                                    # Guide generation is a separate persistent
+                                    # mutation.  Run it only when this turn's
+                                    # semantic decision (or the exact legacy full-
+                                    # planning shortcut) granted that tool.
+                                    authorization = self._current_execution_authorization()
+                                    guide_authorized = bool(
+                                        authorization is not None
+                                        and authorization.tool_allowed("surgical_guide")
+                                    )
+                                    if guide_authorized and self.registry.get("surgical_guide"):
                                         try:
                                             logger.info("[WORKFLOW-ENFORCER-STREAM] Auto-generating surgical guide")
                                             guide_step = add_step(

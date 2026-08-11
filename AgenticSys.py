@@ -838,52 +838,32 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
         )
 
     def _planning_requested(self, message: str, tool_calls: List[Dict] = None) -> bool:
-        """Detect requests to execute planning, not educational questions about planning."""
-        text = (message or "").lower()
-        planning_tools = {"planning_pipeline", "seed_planning", "dose_engine", "dose_evaluation", "dose_calc"}
-        planning_tool_requested = any((tc.get("tool") in planning_tools) for tc in (tool_calls or []))
-        # A replan command can be phrased as a parameter edit (for example,
-        # "reverse reference direction") and may contain no generic Chinese
-        # execution keyword. The explicit tool call plus replan detector is
-        # sufficient evidence to enter the clinical normalizer.
-        if self._is_replan_request(message):
+        """Return whether this turn has an explicit full-planning grant.
+
+        Raw text is deliberately ignored.  A grant originates from either a
+        high-confidence local fast path or a planning tool explicitly selected
+        by the configured LLM.  This prevents a later workflow enforcer from
+        turning "do not run planning" into real clinical computation merely
+        because the sentence contains the words "run" and "planning".
+        """
+        from agent_runtime.execution_authorization import (
+            PLANNING_ANCHOR_TOOLS,
+            PLANNING_WORKFLOW,
+        )
+
+        get_authorization = getattr(self, "_current_execution_authorization", None)
+        authorization = (
+            get_authorization()
+            if callable(get_authorization)
+            else getattr(self, "_turn_execution_authorization", None)
+        )
+        if authorization is not None and authorization.workflow_allowed(PLANNING_WORKFLOW):
             return True
-
-        knowledge_markers = (
-            "介绍", "解释", "说明", "讲讲", "为什么", "为啥", "好处", "优势",
-            "缺点", "局限", "比较", "区别", "对比", "不用其他治疗",
-            "what is", "explain", "why", "benefit", "advantage", "disadvantage",
-            "compare", "comparison", "versus", " vs ",
+        return any(
+            str(call.get("tool") or "") in PLANNING_ANCHOR_TOOLS
+            for call in (tool_calls or [])
+            if isinstance(call, dict)
         )
-        execution_markers = (
-            "执行", "运行", "开始", "生成", "制定", "计算", "进行规划",
-            "开始规划", "重新规划", "帮我规划", "请规划", "做一个计划",
-            "做治疗计划", "治疗计划生成",
-            "run", "execute", "start planning", "perform planning",
-            "generate a treatment plan", "create a treatment plan",
-            "compute plan", "replan",
-        )
-        has_execution_intent = any(k in text for k in execution_markers)
-        is_knowledge_question = any(k in text for k in knowledge_markers)
-
-        if is_knowledge_question and not has_execution_intent:
-            return False
-
-        planning_keywords = (
-            "planning",
-            "treatment plan",
-            "brachytherapy",
-            "implant",
-            "\u89c4\u5212",
-            "\u6cbb\u7597\u8ba1\u5212",
-            "\u7c92\u5b50",
-            "\u690d\u5165",
-            "\u653e\u5c04\u6027",
-        )
-        has_planning_domain = any(k in text for k in planning_keywords)
-        if has_execution_intent and has_planning_domain:
-            return True
-        return planning_tool_requested and has_execution_intent
 
     def _is_replan_request(self, message: str) -> bool:
         """Detect an explicit request to rerun an existing plan."""
@@ -977,12 +957,13 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
         )
 
     def _normalize_clinical_tool_calls(self, tool_calls: List[Dict], message: str) -> List[Dict]:
-        """Build the complete deterministic clinical-planning delivery chain.
+        """Build an authorized deterministic clinical-planning chain.
 
-        Surgical-guide generation is a planning output, not an optional second
-        model decision. Keeping it in this normalizer makes native LLM tool
-        calls follow the same CTV -> OAR -> planning -> guide contract as the
-        local direct-intent path and the workflow recovery path.
+        The LLM or the exact legacy fast path decides whether the turn is
+        allowed to mutate planning data.  This method only supplies required
+        prerequisites for an already-authorized workflow.  In particular, it
+        must not infer permission to generate a Surgical Guide merely because
+        the user mentioned planning.
         """
         if not tool_calls or not self._planning_requested(message, tool_calls):
             return tool_calls
@@ -1111,7 +1092,21 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
                 planning_params["_reference_direction_user_override"] = True
             ordered.append(ensure_call("planning_pipeline", planning_params))
 
-        if any(call.get("tool") == "planning_pipeline" for call in ordered):
+        get_authorization = getattr(self, "_current_execution_authorization", None)
+        authorization = (
+            get_authorization()
+            if callable(get_authorization)
+            else getattr(self, "_turn_execution_authorization", None)
+        )
+        guide_authorized = bool(guide_call) or bool(
+            authorization is not None
+            and authorization.tool_allowed("surgical_guide")
+        )
+
+        if (
+            any(call.get("tool") == "planning_pipeline" for call in ordered)
+            and guide_authorized
+        ):
             if guide_call is None:
                 guide_call = {
                     "id": "auto_surgical_guide",
@@ -1124,8 +1119,8 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
             ordered.append(guide_call)
             guide_call = None
 
-        # Preserve a standalone explicit guide call when the active plan was
-        # already complete and no new planning run is required.
+        # Preserve a standalone explicitly authorized guide call when the
+        # active plan was already complete and no new planning run is needed.
         if guide_call is not None:
             rest.append(guide_call)
 

@@ -332,7 +332,7 @@ def test_workspace_transitions_publish_measurable_first_paint_and_restore_stages
     assert "restore.report_and_presentation" in ui_api
     assert "restore.fully_interactive" in ui_api
     assert "brachybot-workspace.js?v=31" in index
-    assert "brachybot-ui-api.js?v=37" in index
+    assert "brachybot-ui-api.js?v=38" in index
 
 
 def test_workspace_fetch_preserves_external_transition_abort_semantics():
@@ -1175,7 +1175,7 @@ def test_manual_ctv_model_is_explicit_and_uploaded_ct_enables_steps():
 
 def test_small_talk_never_uses_a_canned_answer_when_llm_is_unavailable():
     workflow = read("agent_runtime/chat_workflows.py")
-    assert "def _llm_unavailable_message()" in workflow
+    assert "def _llm_unavailable_message(lang:" in workflow
     assert "no canned answer was generated" in workflow
     assert "Local Fast Path" not in workflow
     assert "Answered locally; no model call" not in workflow

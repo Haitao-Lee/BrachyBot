@@ -226,7 +226,7 @@ def test_patient_tumor_location_question_uses_image_segmentation_route():
         "\u4f60\u597d\uff0c\u6211\u4e0a\u4f20\u4e86\u4e00\u540d\u809d\u810f\u80bf\u7624\u60a3\u8005CT\uff0c\u8bf7\u5e2e\u6211\u5206\u6790\u80bf\u7624\u5728\u54ea\uff0c\u6709\u591a\u5927"
     )
 
-    assert policy.intent == "segmentation"
+    assert policy.intent == "semantic_action"
     assert policy.use_completeness
 
 

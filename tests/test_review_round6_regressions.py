@@ -1065,11 +1065,11 @@ def test_workflow_normalizer_routes_explicit_tumor_site_and_keeps_ambiguity_clos
         "params": {"step": "full"},
     }]
     routed = agent._normalize_clinical_tool_calls(planning_call, "请执行胰腺癌粒子植入规划")
-    assert [call["tool"] for call in routed[:4]] == [
-        "ctv_segmentation", "oar_segmentation", "planning_pipeline", "surgical_guide"
+    assert [call["tool"] for call in routed[:3]] == [
+        "ctv_segmentation", "oar_segmentation", "planning_pipeline"
     ]
     assert routed[0]["params"]["tumor_type"] == "nnunet_pancreatic"
-    assert routed[3]["params"] == {"action": "generate"}
+    assert "surgical_guide" not in [call["tool"] for call in routed]
 
     ambiguous = agent._normalize_clinical_tool_calls(planning_call, "请执行粒子植入规划")
     assert "tumor_type" not in ambiguous[0]["params"]
