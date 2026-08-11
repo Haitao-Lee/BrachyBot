@@ -495,6 +495,85 @@ function fitView() {
     syncViewerGeometry({ resetPositions: true, settleMs: 80 });
 }
 
+// Session restore is different from an operator pressing Fit: the CT canvas,
+// dose/contour layers, and the WebGL scene become ready in separate async
+// phases.  Keep their final framing in one transaction so a restored case
+// cannot leave the MPR panes black or leave an overlay at the previous case's
+// pixel offset.  This helper is intentionally session-scoped and idempotent;
+// a late pass from an older restore must never fit the currently active case.
+let _workspaceViewerFitGeneration = 0;
+async function fitAllViewersAfterWorkspaceRestore({
+    sessionId = null,
+    reason = 'workspace-restore-fit',
+} = {}) {
+    const generation = ++_workspaceViewerFitGeneration;
+    const requestedSessionId = String(sessionId || '');
+    const isCurrent = () => {
+        if (generation !== _workspaceViewerFitGeneration) return false;
+        if (!requestedSessionId) return true;
+        // `activeSessionId` is a global lexical binding in chat-core.js, not
+        // a window property. Prefer the same authoritative helper used by
+        // API requests, then fall back to the binding/state for legacy boot
+        // paths. Reading only window.activeSessionId allowed a late restore
+        // pass to fit the wrong case when the browser had just switched.
+        const active = String(
+            (typeof _activeApiSessionId === 'function' && _activeApiSessionId())
+            || (typeof activeSessionId !== 'undefined' && activeSessionId)
+            || window.activeSessionId
+            || state?.sessionId
+            || ''
+        );
+        return !active || active === requestedSessionId;
+    };
+    const waitPaint = () => new Promise(resolve => {
+        const raf = typeof window.requestAnimationFrame === 'function'
+            ? window.requestAnimationFrame.bind(window)
+            : callback => setTimeout(callback, 0);
+        raf(() => setTimeout(resolve, 0));
+    });
+
+    if (!isCurrent()) return false;
+    // This is the same operation as the visible Fit control, including all
+    // three MPR panes and their shared image-space transform.
+    if (typeof fitView === 'function') fitView();
+    await waitPaint();
+    if (!isCurrent()) return false;
+
+    // Wait for the volume renderer to repaint all planes before the geometry
+    // pass.  This matters on cold restart where the first render can otherwise
+    // establish a zero/old-size canvas and make the dose contour disappear.
+    if (typeof loadAllSlices === 'function' && state?.ctLoaded) {
+        await loadAllSlices();
+    }
+    if (!isCurrent()) return false;
+    if (typeof syncViewerGeometry === 'function') {
+        syncViewerGeometry({ resetPositions: true, settleMs: 120 });
+    }
+    await waitPaint();
+    await waitPaint();
+    if (!isCurrent()) return false;
+
+    if (typeof window.reconcile2DViewerLayers === 'function') {
+        window.reconcile2DViewerLayers({
+            reason,
+            rerender: true,
+            immediate: true,
+        });
+    }
+    if (typeof window.resizeViewer3D === 'function') window.resizeViewer3D();
+    if (typeof window.ensureCameraFitsVisibleScene === 'function') {
+        window.ensureCameraFitsVisibleScene({ forceCenter: true, reason });
+    }
+    if (typeof window.forceRender3DViewer === 'function') window.forceRender3DViewer();
+    // This helper runs outside init3DScene(), so it must use the scheduler
+    // owned by the live scene rather than an optional local render closure.
+    else if (typeof scene3D !== 'undefined' && typeof scene3D.requestRender === 'function') {
+        scene3D.requestRender(4);
+    }
+    return true;
+}
+window.fitAllViewersAfterWorkspaceRestore = fitAllViewersAfterWorkspaceRestore;
+
 function resetViewer() {
     state.viewerSettings = {
         window: 400, level: 40, threshold: null,

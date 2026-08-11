@@ -781,6 +781,41 @@
     font-feature-settings: "tnum" 1, "lnum" 1;
 }
 .report-page:last-child { page-break-after: auto; break-after: auto; }
+
+/* Keep evidence captures inside the A4 content box in the live preview too.
+   The print stylesheet repeats these constraints for PDF/HTML export, but
+   the preview has its own stylesheet and must not fall back to an image's
+   intrinsic pixel width. */
+.report-figure-page,
+.report-figure-page .hp-subfigure-list,
+.report-figure-page .hp-subfigure {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+    overflow: hidden;
+}
+.report-figure-page .hp-subfigure-list {
+    display: flex;
+    flex-direction: column;
+}
+.report-figure-page .hp-subfigure {
+    margin: 0;
+    text-align: center;
+    page-break-inside: avoid;
+    break-inside: avoid;
+}
+.report-figure-page .hp-subfigure img {
+    display: block;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    height: auto;
+    max-height: 190mm;
+    object-fit: contain;
+    margin: 0 auto;
+    box-sizing: border-box;
+}
 .report-page::before {
     /* A4 page boundary indicator (top-right page number) */
     content: '';

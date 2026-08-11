@@ -583,6 +583,132 @@ def _segment_segment_distance(
     return math.sqrt(sum(value * value for value in delta))
 
 
+def _seed_interference_report(agent, seeds, needles) -> Dict[str, Any]:
+    """Check finite seed cylinders for overlap or unsafe surface clearance.
+
+    The monitor and the manual-edit transaction must use the same physical
+    geometry contract.  Keeping this calculation in one backend helper avoids
+    the historical split where the monitor detected a collision but the edit
+    endpoint accepted the same geometry and launched dose inference anyway.
+    Coordinates are patient-world millimetres, and the configured seed length,
+    radius, and clearance are applied to finite cylinders represented by their
+    centre axes.
+    """
+    memory = getattr(agent, "memory", None)
+    plan_config = memory.retrieve("plan_config") if memory is not None else {}
+    plan_config = plan_config if isinstance(plan_config, dict) else {}
+    seed_info = plan_config.get("seed_info")
+    seed_info = seed_info if isinstance(seed_info, dict) else {}
+
+    def _positive(name: str, default: float, minimum: float = 0.0) -> float:
+        try:
+            value = float(seed_info.get(name, default) or default)
+        except (TypeError, ValueError):
+            value = default
+        return value if math.isfinite(value) and value >= minimum else default
+
+    seed_length_mm = max(_positive("length", 4.5, 0.0), 0.1)
+    seed_radius_mm = max(_positive("radius", 0.4, 0.0), 0.05)
+    seed_clearance_mm = max(_positive("minimum_clearance_mm", 0.5, 0.0), 0.0)
+
+    def _point(value: Any) -> list:
+        if isinstance(value, dict):
+            value = value.get("position") or value.get("pos") or value.get("point")
+        if not isinstance(value, (list, tuple)) or len(value) < 3:
+            return []
+        try:
+            point = [float(value[0]), float(value[1]), float(value[2])]
+        except (TypeError, ValueError):
+            return []
+        return point if all(math.isfinite(item) for item in point) else []
+
+    needle_directions = {}
+    for needle in needles or []:
+        if not isinstance(needle, dict):
+            continue
+        needle_id = str(needle.get("id") or needle.get("needle_id") or "")
+        points = needle.get("points") or []
+        if not needle_id or not isinstance(points, (list, tuple)) or len(points) < 2:
+            continue
+        start, end = _point(points[0]), _point(points[-1])
+        if not start or not end:
+            continue
+        vector = [end[axis] - start[axis] for axis in range(3)]
+        magnitude = math.sqrt(sum(value * value for value in vector))
+        if magnitude > 1e-9:
+            direction = [value / magnitude for value in vector]
+            needle_directions[needle_id] = direction
+            # Automatic Planning Seed records are attached through a stable
+            # trajectory ID, while some manual records also retain the Needle
+            # ID. Accept both instead of silently falling back to world-Z for
+            # an otherwise valid finite-cylinder interference check.
+            trajectory_id = str(needle.get("trajectory_id") or "")
+            if trajectory_id:
+                needle_directions[trajectory_id] = direction
+
+    entries = []
+    for index, seed in enumerate(seeds or []):
+        if not isinstance(seed, dict):
+            continue
+        position = _point(seed)
+        if not position:
+            continue
+        direction = _point(seed.get("direction") or seed.get("dir"))
+        needle_id = str(seed.get("needle_id") or seed.get("trajectory_id") or "")
+        if len(direction) < 3:
+            direction = needle_directions.get(needle_id, [0.0, 0.0, 1.0])
+        magnitude = math.sqrt(sum(float(direction[axis]) ** 2 for axis in range(3)))
+        if magnitude <= 1e-9:
+            direction = [0.0, 0.0, 1.0]
+        else:
+            direction = [float(direction[axis]) / magnitude for axis in range(3)]
+        half_length = seed_length_mm / 2.0
+        entries.append({
+            "index": index,
+            "id": str(seed.get("id") or f"seed_{index}"),
+            "needle_id": needle_id,
+            "position": position,
+            "start": [position[axis] - direction[axis] * half_length for axis in range(3)],
+            "end": [position[axis] + direction[axis] * half_length for axis in range(3)],
+        })
+
+    threshold_mm = 2.0 * seed_radius_mm + seed_clearance_mm
+    close_pairs = []
+    for left_index, left in enumerate(entries):
+        for right in entries[left_index + 1:]:
+            axis_distance = _segment_segment_distance(
+                left["start"], left["end"], right["start"], right["end"],
+            )
+            center_distance = math.sqrt(sum(
+                (left["position"][axis] - right["position"][axis]) ** 2
+                for axis in range(3)
+            ))
+            if axis_distance >= threshold_mm:
+                continue
+            close_pairs.append({
+                "first": left["index"],
+                "second": right["index"],
+                "first_id": left["id"],
+                "second_id": right["id"],
+                "first_needle_id": left["needle_id"],
+                "second_needle_id": right["needle_id"],
+                "center_distance_mm": round(center_distance, 3),
+                "axis_distance_mm": round(axis_distance, 3),
+                "surface_clearance_mm": round(axis_distance - (2.0 * seed_radius_mm), 3),
+                "risk": "overlap" if axis_distance < (2.0 * seed_radius_mm) else "too_close",
+            })
+
+    return {
+        "status": "attention" if close_pairs else ("clear" if entries else "unavailable"),
+        "threshold_mm": threshold_mm,
+        "seed_length_mm": seed_length_mm,
+        "seed_radius_mm": seed_radius_mm,
+        "minimum_clearance_mm": seed_clearance_mm,
+        "seed_count": len(entries),
+        "close_pairs": close_pairs[:50],
+    }
+
+
 def _latest_plan_snapshot(
     agent,
     *,
@@ -646,137 +772,7 @@ def _latest_plan_snapshot(
     seed_ids = [entry["id"] for entry in seed_entries]
     seed_positions = [entry["position"] for entry in seed_entries]
 
-    plan_config = agent.memory.retrieve("plan_config") or {}
-    seed_info = plan_config.get("seed_info") if isinstance(plan_config, dict) else {}
-    seed_info = seed_info if isinstance(seed_info, dict) else {}
-    seed_length_mm = max(float(seed_info.get("length") or 4.5), 0.1)
-    seed_radius_mm = max(float(seed_info.get("radius") or 0.4), 0.05)
-    seed_clearance_mm = max(float(seed_info.get("minimum_clearance_mm") or 0.5), 0.0)
-
-    needle_directions = {}
-    for needle in needles:
-        if not isinstance(needle, dict):
-            continue
-        needle_id = str(needle.get("id") or needle.get("needle_id") or "")
-        points = needle.get("points") or []
-        if not needle_id or not isinstance(points, (list, tuple)) or len(points) < 2:
-            continue
-        start, end = _points(points[0]), _points(points[-1])
-        if not start or not end:
-            continue
-        vector = [end[axis] - start[axis] for axis in range(3)]
-        magnitude = math.sqrt(sum(value * value for value in vector))
-        if magnitude > 1e-9:
-            needle_directions[needle_id] = [value / magnitude for value in vector]
-
-    def _unit_direction(entry: Dict[str, Any]) -> list:
-        direction = entry.get("direction") or needle_directions.get(entry.get("needle_id")) or []
-        if len(direction) >= 3:
-            magnitude = math.sqrt(sum(float(direction[axis]) ** 2 for axis in range(3)))
-            if magnitude > 1e-9:
-                return [float(direction[axis]) / magnitude for axis in range(3)]
-        return [0.0, 0.0, 1.0]
-
-    def _segment_endpoints(entry: Dict[str, Any]) -> tuple:
-        center = entry["position"]
-        direction = _unit_direction(entry)
-        half = seed_length_mm / 2.0
-        return (
-            [center[axis] - direction[axis] * half for axis in range(3)],
-            [center[axis] + direction[axis] * half for axis in range(3)],
-        )
-
-    def _segment_distance(left_entry: Dict[str, Any], right_entry: Dict[str, Any]) -> float:
-        """Shortest distance between the physical center axes of two seeds."""
-        p1, q1 = _segment_endpoints(left_entry)
-        p2, q2 = _segment_endpoints(right_entry)
-        u = [q1[i] - p1[i] for i in range(3)]
-        v = [q2[i] - p2[i] for i in range(3)]
-        w = [p1[i] - p2[i] for i in range(3)]
-        a = sum(value * value for value in u)
-        b = sum(u[i] * v[i] for i in range(3))
-        c = sum(value * value for value in v)
-        d = sum(u[i] * w[i] for i in range(3))
-        e = sum(v[i] * w[i] for i in range(3))
-        denominator = a * c - b * b
-        small = 1e-9
-        s_num, s_den = denominator, denominator
-        t_num, t_den = denominator, denominator
-        if denominator < small:
-            s_num, s_den = 0.0, 1.0
-            t_num, t_den = e, c
-        else:
-            s_num = b * e - c * d
-            t_num = a * e - b * d
-            if s_num < 0.0:
-                s_num = 0.0
-                t_num, t_den = e, c
-            elif s_num > s_den:
-                s_num = s_den
-                t_num, t_den = e + b, c
-        if t_num < 0.0:
-            t_num = 0.0
-            if -d < 0.0:
-                s_num = 0.0
-            elif -d > a:
-                s_num = s_den
-            else:
-                s_num, s_den = -d, a
-        elif t_num > t_den:
-            t_num = t_den
-            if -d + b < 0.0:
-                s_num = 0.0
-            elif -d + b > a:
-                s_num = s_den
-            else:
-                s_num, s_den = -d + b, a
-        sc = 0.0 if abs(s_num) < small else s_num / max(s_den, small)
-        tc = 0.0 if abs(t_num) < small else t_num / max(t_den, small)
-        delta = [w[i] + sc * u[i] - tc * v[i] for i in range(3)]
-        return math.sqrt(sum(value * value for value in delta))
-
-    close_pairs = []
-    interference_threshold_mm = 2.0 * seed_radius_mm + seed_clearance_mm
-    for left in range(len(seed_entries)):
-        for right in range(left + 1, len(seed_entries)):
-            axis_distance = _segment_distance(seed_entries[left], seed_entries[right])
-            center_distance = math.sqrt(sum(
-                (seed_positions[left][axis] - seed_positions[right][axis]) ** 2
-                for axis in range(3)
-            ))
-            if axis_distance < interference_threshold_mm:
-                close_pairs.append({
-                    "first": left,
-                    "second": right,
-                    "first_id": seed_ids[left],
-                    "second_id": seed_ids[right],
-                    "first_needle_id": seed_entries[left]["needle_id"],
-                    "second_needle_id": seed_entries[right]["needle_id"],
-                    "center_distance_mm": round(center_distance, 3),
-                    "axis_distance_mm": round(axis_distance, 3),
-                    "surface_clearance_mm": round(axis_distance - (2.0 * seed_radius_mm), 3),
-                    "risk": "overlap" if axis_distance < (2.0 * seed_radius_mm) else "too_close",
-                })
-    if seed_positions:
-        seed_interference = {
-            "status": "attention" if close_pairs else "clear",
-            "threshold_mm": interference_threshold_mm,
-            "seed_length_mm": seed_length_mm,
-            "seed_radius_mm": seed_radius_mm,
-            "minimum_clearance_mm": seed_clearance_mm,
-            "seed_count": len(seed_positions),
-            "close_pairs": close_pairs[:50],
-        }
-    else:
-        seed_interference = {
-            "status": "unavailable",
-            "threshold_mm": interference_threshold_mm,
-            "seed_length_mm": seed_length_mm,
-            "seed_radius_mm": seed_radius_mm,
-            "minimum_clearance_mm": seed_clearance_mm,
-            "seed_count": 0,
-            "close_pairs": [],
-        }
+    seed_interference = _seed_interference_report(agent, seeds, needles)
 
     needle_entries = []
     for index, needle in enumerate(needles):
@@ -1840,6 +1836,8 @@ def _compute_manual_ai_dose(
     needles: list,
     *,
     previous_needles: Optional[list] = None,
+    previous_seeds: Optional[list] = None,
+    previous_dose: Any = None,
     reproject_seeds: bool = False,
 ) -> Dict[str, Any]:
     """Recompute manual-plan dose with the trained DoseUNet model only.
@@ -2163,13 +2161,197 @@ def _compute_manual_ai_dose(
             "[manual_dose] geometry diff: changed_keys=%s previous_needles=%d current_needles=%d",
             sorted(changed_trajectories), len(previous_needles), len(needles),
         )
-    previous_seed_records = agent.memory.retrieve("manual_seeds")
+    # ``update_seeds`` commits the new geometry before this endpoint runs.  A
+    # caller that is editing one seed must therefore provide the accepted
+    # pre-edit list explicitly; reading manual_seeds here would compare the new
+    # plan with itself and silently disable incremental dose replacement.
+    if previous_seeds is not None:
+        previous_seed_records = list(previous_seeds)
+    else:
+        previous_seed_records = agent.memory.retrieve("manual_seeds")
     if not isinstance(previous_seed_records, list) or not previous_seed_records:
         baseline_snapshot = agent.memory.retrieve("algorithm_plan_snapshot") or {}
         previous_seed_records = list(baseline_snapshot.get("seeds") or []) if isinstance(baseline_snapshot, dict) else []
     baseline_dose_key = "dose_distribution" if agent.memory.retrieve("manual_ai_dose") else "algorithm_plan_dose_distribution"
-    previous_dose = agent.memory.retrieve(baseline_dose_key)
+    if previous_dose is None:
+        previous_dose = agent.memory.retrieve(baseline_dose_key)
     incremental_applied = False
+
+    def _seed_signature(seed):
+        if not isinstance(seed, dict):
+            return None
+        try:
+            position = tuple(round(float(value), 5) for value in (seed.get("position") or seed.get("pos"))[:3])
+            direction = tuple(round(float(value), 6) for value in (seed.get("direction") or [0.0, 0.0, 1.0])[:3])
+        except (TypeError, ValueError):
+            return None
+        return (
+            str(seed.get("id") or ""),
+            str(seed.get("trajectory_id") or ""),
+            position,
+            direction,
+            round(float(seed.get("weight", 1.0) or 1.0), 6),
+        )
+
+    def _changed_seed_ids(old_records, new_records):
+        old_by_id = {
+            str(seed.get("id")): seed
+            for seed in old_records or []
+            if isinstance(seed, dict) and str(seed.get("id") or "")
+        }
+        new_by_id = {
+            str(seed.get("id")): seed
+            for seed in new_records or []
+            if isinstance(seed, dict) and str(seed.get("id") or "")
+        }
+        changed = set(old_by_id).symmetric_difference(new_by_id)
+        for seed_id in set(old_by_id).intersection(new_by_id):
+            if _seed_signature(old_by_id[seed_id]) != _seed_signature(new_by_id[seed_id]):
+                changed.add(seed_id)
+        return changed
+
+    def _maps_by_seed_id(seed_records, model_records, *, deadline=None):
+        maps, misses = _cached_seed_maps(seed_records, model_records, deadline=deadline)
+        if len(maps) != len(seed_records):
+            return {}, misses
+        return {
+            str(seed["id"]): np.asarray(seed_map, dtype=np.float32)
+            for seed, seed_map in zip(seed_records, maps)
+            if isinstance(seed, dict) and seed.get("id")
+        }, misses
+
+    def _automatic_seed_maps_by_identity(seed_records):
+        """Resolve automatic per-seed maps without trusting display indices.
+
+        The original planning pipeline stores automatic dose maps in a
+        zero-based ``seed_plan[trajectory][2]`` tuple. The Viewer has always
+        exposed one-based display IDs such as ``seed_1_1``. Treating those
+        numbers as storage indices subtracts a neighbouring seed (or a seed
+        in the next trajectory) on the first manual edit. Match the stable
+        trajectory association and persisted world position instead. If a
+        legacy snapshot cannot be matched unambiguously, the caller falls
+        back to one-seed model inference rather than applying an unsafe
+        subtraction term.
+        """
+        seed_plan = agent.memory.retrieve("seed_plan") or []
+        candidates = []
+        for trajectory_index, entry in enumerate(seed_plan):
+            if not isinstance(entry, (list, tuple)) or len(entry) < 3:
+                continue
+            raw_seeds = entry[1] if isinstance(entry[1], (list, tuple)) else []
+            raw_maps = entry[2] if isinstance(entry[2], (list, tuple)) else []
+            for seed_index, (raw_seed, raw_map) in enumerate(zip(raw_seeds, raw_maps)):
+                if isinstance(raw_seed, dict):
+                    raw_position = raw_seed.get("position") or raw_seed.get("pos")
+                elif isinstance(raw_seed, (list, tuple)) and len(raw_seed) >= 1:
+                    raw_position = raw_seed[0]
+                else:
+                    raw_position = None
+                try:
+                    position = np.asarray(raw_position, dtype=np.float64).reshape(-1)[:3]
+                    dose_map = np.asarray(raw_map, dtype=np.float32)
+                except (TypeError, ValueError):
+                    continue
+                if (
+                    position.size != 3
+                    or not np.all(np.isfinite(position))
+                    or dose_map.shape != dose_base.shape
+                ):
+                    continue
+                candidates.append({
+                    "trajectory_index": trajectory_index,
+                    "seed_index": seed_index,
+                    "position": position,
+                    "map": dose_map,
+                })
+
+        resolved = {}
+        used = set()
+        for seed in seed_records:
+            if not isinstance(seed, dict) or not seed.get("id"):
+                continue
+            try:
+                position = np.asarray(seed.get("position"), dtype=np.float64).reshape(-1)[:3]
+            except (TypeError, ValueError):
+                continue
+            if position.size != 3 or not np.all(np.isfinite(position)):
+                continue
+            trajectory_match = re.fullmatch(
+                r"(?:traj|trajectory)_(\d+)",
+                str(seed.get("trajectory_id") or ""),
+            )
+            expected_trajectory = (
+                int(trajectory_match.group(1)) - 1
+                if trajectory_match and int(trajectory_match.group(1)) > 0
+                else None
+            )
+            eligible = [
+                item for item in candidates
+                if (expected_trajectory is None or item["trajectory_index"] == expected_trajectory)
+                and (item["trajectory_index"], item["seed_index"]) not in used
+            ]
+            if not eligible:
+                continue
+            best = min(
+                eligible,
+                key=lambda item: float(np.linalg.norm(item["position"] - position)),
+            )
+            # Automatic and manual records carry the same patient-world
+            # coordinates. A loose 0.25 mm tolerance admits persistence
+            # rounding but never lets an unrelated seed become the old term.
+            if float(np.linalg.norm(best["position"] - position)) > 0.25:
+                continue
+            used.add((best["trajectory_index"], best["seed_index"]))
+            resolved[str(seed["id"])] = best["map"]
+        return resolved
+
+    # A seed drag changes one physical source.  Reuse the last committed dose
+    # field, remove only the old seed's trained contribution, and add only the
+    # new contribution. This preserves the exact model/calibration path while
+    # avoiding a redundant inference pass for every unchanged source.
+    changed_seeds = _changed_seed_ids(previous_seed_records, norm_seeds) if previous_seeds is not None else set()
+    if changed_seeds and previous_dose is not None and not reproject_seeds:
+        candidate_base = np.asarray(previous_dose, dtype=np.float32)
+        if candidate_base.shape == dose_base.shape:
+            old_norm, old_model = _prepare_model_seeds(
+                [seed for seed in previous_seed_records if isinstance(seed, dict) and str(seed.get("id") or "") in changed_seeds]
+            )
+            new_changed_records = [seed for seed in norm_seeds if str(seed.get("id") or "") in changed_seeds]
+            new_norm, new_model = _prepare_model_seeds(new_changed_records)
+            old_map_by_id = {}
+            old_misses = 0
+            if not agent.memory.retrieve("manual_ai_dose"):
+                # Automatic planning stores one trained dose map per seed in
+                # seed_plan[trajectory][2]. Resolve it by trajectory and the
+                # immutable pre-drag world coordinate; Viewer display IDs use
+                # a different (one-based) numbering convention.
+                old_map_by_id = _automatic_seed_maps_by_identity(old_norm)
+                old_misses = len(old_norm) - len(old_map_by_id)
+            if len(old_map_by_id) != len(old_norm):
+                old_map_by_id, cached_misses = _maps_by_seed_id(
+                    old_norm, old_model, deadline=None,
+                )
+                old_misses += cached_misses
+            new_map_by_id, new_misses = _maps_by_seed_id(
+                new_norm, new_model, deadline=None,
+            ) if new_norm else ({}, 0)
+            if (
+                len(old_map_by_id) == len(old_norm)
+                and len(new_map_by_id) == len(new_norm)
+                and all(np.asarray(value).shape == dose_base.shape for value in old_map_by_id.values())
+                and all(np.asarray(value).shape == dose_base.shape for value in new_map_by_id.values())
+            ):
+                dose_base = candidate_base.copy()
+                for seed_map in old_map_by_id.values():
+                    dose_base -= seed_map
+                for seed_map in new_map_by_id.values():
+                    dose_base += seed_map
+                logger.info(
+                    "[manual_dose] incremental seed edit: changed=%s old=%d new=%d model_misses=%d",
+                    sorted(changed_seeds), len(old_norm), len(new_norm), old_misses + new_misses,
+                )
+                incremental_applied = True
+
     if changed_trajectories and previous_dose is not None:
         candidate_base = np.asarray(previous_dose, dtype=np.float32)
         if candidate_base.shape == dose_base.shape:

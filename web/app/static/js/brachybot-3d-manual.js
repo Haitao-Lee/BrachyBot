@@ -160,6 +160,12 @@ function _manualPayload(options = {}) {
         );
         if (options.previousSnapshot) payload.previous_snapshot = options.previousSnapshot;
     }
+    // Seed edits need the exact pre-edit list so the server can replace only
+    // the moved source contribution in the cached dose field. Do not infer
+    // this baseline from the already-mutated Data Tree after the drag.
+    if (Object.prototype.hasOwnProperty.call(options, 'previousSeeds')) {
+        payload.previous_seeds = _cloneManualSeeds(options.previousSeeds || []);
+    }
     return payload;
 }
 
@@ -406,12 +412,24 @@ async function _commitManualSeeds(reason, rollbackSeeds, rollbackNeedles = null)
     const sameSession = ownerSessionId === _activeApiSessionId();
     if (!response.ok || !data || !data.success) {
         if (sameSession && Array.isArray(rollbackSeeds)) {
+            // Prefer the server's authoritative snapshot whenever it is
+            // available. A rejected drag may race with a later accepted edit,
+            // so restoring only a browser-local rollback can repaint an
+            // obsolete Planning version.
+            const authoritativeSeeds = Array.isArray(data?.seeds)
+                ? data.seeds
+                : rollbackSeeds;
+            const authoritativeNeedles = Array.isArray(data?.needles)
+                ? data.needles
+                : (Array.isArray(rollbackNeedles) ? rollbackNeedles : payload.needles);
             _applyAuthoritativeManualSeeds({
-                seeds: rollbackSeeds,
-                needles: Array.isArray(rollbackNeedles) ? rollbackNeedles : payload.needles,
-                planning_id: payload.planning_id,
-                planning_version: payload.planning_version,
-                artifact_status: manualPlanningState.artifactStatus,
+                seeds: authoritativeSeeds,
+                needles: authoritativeNeedles,
+                planning_id: data?.planning_id || payload.planning_id,
+                planning_version: Number.isFinite(Number(data?.planning_version))
+                    ? Number(data.planning_version)
+                    : payload.planning_version,
+                artifact_status: data?.artifact_status || manualPlanningState.artifactStatus,
             });
         }
         const error = new Error((data && data.error) || `HTTP ${response.status}`);
@@ -421,6 +439,12 @@ async function _commitManualSeeds(reason, rollbackSeeds, rollbackNeedles = null)
     }
     if (!sameSession) return { ...data, stale: true };
     _applyAuthoritativeManualSeeds(data);
+    // A saved geometry change creates a child Planning and marks the old
+    // guide stale. Keep it in the historic parent run, but never display it
+    // as though it still matches the active Needle/Seed geometry.
+    if (typeof window.invalidateSurgicalGuidePresentation === 'function') {
+        window.invalidateSurgicalGuidePresentation();
+    }
     if (typeof scheduleWorkspaceSave === 'function') {
         scheduleWorkspaceSave(`manual.seed.${reason}`);
     }
@@ -457,6 +481,9 @@ async function _persistNeedleGeometryOnly(options = {}) {
     }
     _applyAuthoritativeManualSeeds(data);
     _syncSeedsOverlayFromDataTree();
+    if (typeof window.invalidateSurgicalGuidePresentation === 'function') {
+        window.invalidateSurgicalGuidePresentation();
+    }
     manualPlanningState.lastDoseNeedles = _cloneNeedleGeometry(data.needles);
     if (typeof scheduleWorkspaceSave === 'function') scheduleWorkspaceSave('manual.needle.position_only');
     return data;
@@ -741,6 +768,8 @@ async function _runManualDoseJob(job) {
     const { payload, wasDoseTextureEnabled } = job;
     const jobSessionId = String(payload.session_id || '');
     const requestSequence = ++manualPlanningState.doseRecomputeSequence;
+    const incrementalSeedEdit = Array.isArray(payload.previous_seeds)
+        && payload.reason === 'seed_drag';
     _setManualDoseProgress(
         'running',
         payload.reproject_seeds
@@ -753,9 +782,13 @@ async function _runManualDoseJob(job) {
         return null;
     }
     const doseController = typeof AbortController === 'function' ? new AbortController() : null;
+    // A full DoseUNet request can legitimately outlive two minutes on a
+    // large CT. The former hard 120 s client abort caused
+    // "signal is aborted without reason" while the server kept working.
+    const doseTimeoutMs = incrementalSeedEdit ? 600000 : 900000;
     const doseTimeout = setTimeout(() => {
         if (doseController) doseController.abort();
-    }, 120000);
+    }, doseTimeoutMs);
     try {
         const res = await fetch(API + '/manual_planning/update', {
             method: 'POST',
@@ -814,11 +847,22 @@ async function _runManualDoseJob(job) {
         return data;
     } catch (e) {
         if (jobSessionId !== String(_activeApiSessionId() || '')) return null;
-        if (e?.name === 'AbortError') {
+        const abortedWithoutReason = /signal is aborted without reason/i.test(
+            String(e?.message || ''),
+        );
+        if (e?.name === 'AbortError' || abortedWithoutReason) {
             e.code = 'manual_dose_timeout';
             e.message = _manualText(
                 '剂量重算超过 120 秒仍未返回；修改已保存，请稍后重试更新剂量。',
-                'Dose recomputation exceeded 120 seconds; the edit was saved. Retry the dose update when ready.',
+                `Dose recomputation exceeded ${Math.round(doseTimeoutMs / 1000)} seconds; the edit was saved. Retry the dose update when ready.`,
+            );
+            // Keep the visible timeout wording aligned with the actual
+            // request deadline. The former literal 120 seconds became
+            // misleading after interactive Seed updates gained a longer,
+            // bounded server-safe timeout.
+            e.message = _manualText(
+                `\u5242\u91cf\u91cd\u7b97\u8d85\u8fc7 ${Math.round(doseTimeoutMs / 1000)} \u79d2\u4ecd\u672a\u8fd4\u56de\uff1b\u4fee\u6539\u5df2\u4fdd\u5b58\uff0c\u8bf7\u7a0d\u540e\u91cd\u8bd5\u66f4\u65b0\u5242\u91cf\u3002`,
+                `Dose recomputation exceeded ${Math.round(doseTimeoutMs / 1000)} seconds; the edit was saved. Retry the dose update when ready.`,
             );
         }
         if (e && e.code === 'manual_needle_intersects_obstacle' && payload.reproject_seeds) {
@@ -827,6 +871,15 @@ async function _runManualDoseJob(job) {
             // an unsafe drag visible after the request is rejected.
             if (payload.previous_snapshot) _restoreManualPlanningSnapshot(payload.previous_snapshot);
             else _restoreManualNeedles(payload.previous_needles);
+        }
+        if (e && e.code === 'manual_seed_interference' && e.authoritative) {
+            // Defense in depth for clients that sent the Dose request without
+            // the preceding geometry transaction. Do not leave an unsafe
+            // locally moved Seed visible while the server retained the prior
+            // Planning snapshot.
+            if (Array.isArray(e.authoritative.seeds) && Array.isArray(e.authoritative.needles)) {
+                _applyAuthoritativeManualSeeds(e.authoritative);
+            }
         }
         if (!manualPlanningState.doseRecomputeQueued) {
             _setManualDoseProgress('error', _manualText(`重新规划失败：${e.message}`, `Replanning failed: ${e.message}`));
@@ -984,13 +1037,22 @@ async function onManualSeedEdited(seedId, position, rollbackSeeds = null, option
     }
     _syncSeedsOverlayFromDataTree();
     renderDataTree();
+    await _commitManualSeeds('move', rollback);
+    addChat(
+        'system',
+        _manualText(
+            `\u7C92\u5B50 ${seedId} \u5DF2\u6CBF\u6240\u5C5E\u9488\u9053\u79FB\u52A8\u81F3 [`
+                + `${projected[0].toFixed(1)}, ${projected[1].toFixed(1)}, ${projected[2].toFixed(1)}]\u3002`,
+            `Seed ${seedId} moved along its needle to [`
+                + `${projected[0].toFixed(1)}, ${projected[1].toFixed(1)}, ${projected[2].toFixed(1)}].`,
+        ),
+    );
     if (typeof scheduleWorkspaceSave === 'function') scheduleWorkspaceSave('manual.seed.position');
     reportUIEvent('manual.seed.drag', seedId, {
         position: projected,
         projected_to_needle: !!needle,
         dose_recomputed: options.skipDoseRecompute !== true,
     });
-    await _commitManualSeeds('move', rollback);
     // The geometry is committed to a child Draft Planning first.  Recompute
     // is an explicit operator decision, so dragging a seed never silently
     // launches an expensive AI job or changes the visible plan underneath
@@ -1002,7 +1064,7 @@ async function onManualSeedEdited(seedId, position, rollbackSeeds = null, option
             ? options.doseRecomputeDecision === 'yes'
             : await _confirmSeedReplan(seedId);
         if (shouldReplan) {
-            await recomputeManualDose('seed_drag');
+            await recomputeManualDose('seed_drag', { previousSeeds: rollback });
         } else {
             const message = typeof window._t === 'function'
                 ? window._t(
@@ -2685,19 +2747,6 @@ function init3DScene() {
                         finishedSeed.position.z,
                     ];
                 }
-                addChat(
-                    'system',
-                    _manualText(
-                        `\u7C92\u5B50 ${seedId} \u5DF2\u6CBF\u6240\u5C5E\u9488\u9053\u79FB\u52A8\u81F3 [`
-                            + `${finishedSeed.position.x.toFixed(1)}, `
-                            + `${finishedSeed.position.y.toFixed(1)}, `
-                            + `${finishedSeed.position.z.toFixed(1)}]\u3002`,
-                        `Seed ${seedId} moved along its needle to [`
-                            + `${finishedSeed.position.x.toFixed(1)}, `
-                            + `${finishedSeed.position.y.toFixed(1)}, `
-                            + `${finishedSeed.position.z.toFixed(1)}].`,
-                    ),
-                );
                 // onManualSeedEdited persists the geometry before asking
                 // whether the expensive dose and DVH refresh should run.
                 // Keeping the confirmation in one place also guarantees a
@@ -2711,6 +2760,37 @@ function init3DScene() {
                             {},
                         );
                     } catch (error) {
+                        if (error?.code === 'manual_seed_interference') {
+                            const pairs = error.authoritative?.interference?.close_pairs || [];
+                            const details = pairs.slice(0, 4).map(pair => {
+                                const distance = Number(pair.center_distance_mm);
+                                const distanceText = Number.isFinite(distance)
+                                    ? `${distance.toFixed(2)} mm`
+                                    : 'unknown distance';
+                                return `${pair.first_id || '?'} / ${pair.second_id || '?'} (${distanceText})`;
+                            }).join('; ');
+                            const message = _manualText(
+                                `\u7c92\u5b50\u79fb\u52a8\u5df2\u88ab\u62d2\u7edd\uff1a\u68c0\u6d4b\u5230\u7c92\u5b50\u5e72\u6d89${details ? `\uff1a${details}` : ''}\u3002\u5df2\u6062\u590d\u62d6\u52a8\u524d\u4f4d\u7f6e\uff0c\u672a\u91cd\u65b0\u8ba1\u7b97\u5242\u91cf\u3002`,
+                                `Seed move rejected: overlapping or unsafe spacing was detected${details ? ` (${details})` : ''}. The pre-drag position was restored and dose recomputation was skipped.`,
+                            );
+                            _setManualDoseProgress('error', message);
+                            addChat('error', message);
+                            if (typeof _confirmAction === 'function') {
+                                await _confirmAction(
+                                    message,
+                                    message,
+                                    {
+                                        yesZh: '知道了',
+                                        yesEn: 'Acknowledge',
+                                        noZh: '关闭',
+                                        noEn: 'Close',
+                                        titleZh: '粒子间距冲突',
+                                        titleEn: 'Seed interference',
+                                    },
+                                );
+                            }
+                            return;
+                        }
                         const message = typeof window._t === 'function'
                             ? window._t(`\u7C92\u5B50\u79FB\u52A8\u5931\u8D25\uFF1A${error.message}`, `Seed move failed: ${error.message}`)
                             : `Seed move failed: ${error.message}`;
@@ -2823,10 +2903,10 @@ function init3DScene() {
             items += `<div class="ctx-menu-item" onclick="hideContextMenu();showSeedDose('${id}')">
                 <span class="ctx-icon">&#9889;</span> Show Dose</div>`;
 
-            // Restore to the original position (the spot the seed had when the
-            // case was loaded), independent of the manual drag.
-            items += `<div class="ctx-menu-item" onclick="hideContextMenu();restoreSeedToOriginalPosition('${id}')">
-                <span class="ctx-icon">&#8634;</span> Restore original position</div>`;
+            // Restore the complete immutable algorithm Planning, including
+            // its dose, DVH, guide, skin surface, and report-owned artifacts.
+            items += `<div class="ctx-menu-item" onclick="hideContextMenu();restoreAlgorithmPlan()">
+                <span class="ctx-icon">&#8634;</span> Restore algorithm planning</div>`;
 
             // Delete seed
             items += `<div class="ctx-menu-item" onclick="hideContextMenu();deleteSeed3D('${id}')">
@@ -6334,7 +6414,73 @@ async function restoreNeedleToAlgorithm(needleId) {
 // first loaded (cached in `_originalPosition`). The seed is moved back through
 // the existing commit path and dose recompute is offered, matching the
 // needle-endpoint restore semantics without a new slow backend round-trip.
-async function restoreSeedToOriginalPosition(seedId) {
+async function restoreAlgorithmPlan() {
+    const localize = (zh, en) => typeof window._t === 'function' ? window._t(zh, en) : en;
+    const restoreSessionId = String(_activeApiSessionId() || '');
+    const message = localize(
+        '正在恢复原始算法规划及其剂量、DVH、导板和报告结果…',
+        'Restoring the original algorithm planning, dose, DVH, guide, and report artifacts...',
+    );
+    _setManualDoseProgress('running', message);
+    addChat('system', message);
+    try {
+        const response = await fetch(API + '/manual_planning/restore_algorithm_plan', {
+            method: 'POST',
+            headers: _monitorRequestHeaders(),
+            body: JSON.stringify({ session_id: restoreSessionId }),
+        });
+        const data = await response.json().catch(() => null);
+        if (!response.ok || !data || !data.success) {
+            const error = new Error((data && data.error) || `HTTP ${response.status}`);
+            error.code = data && data.code;
+            throw error;
+        }
+        if (restoreSessionId !== String(_activeApiSessionId() || '')) return data;
+        // Activation is a server-side namespace switch. Hydrate the active
+        // Planning rather than recomputing or reconstructing a partial seed.
+        if (typeof refreshPlanningUI === 'function') {
+            await refreshPlanningUI({
+                sessionId: restoreSessionId,
+                skipLabelLoad: true,
+                preserveViewerState: true,
+                switchToViewers: false,
+                backgroundRestore: true,
+                retryPending: true,
+                autoGenerateGuide: false,
+            });
+        } else {
+            if (typeof loadSeeds3D === 'function') await loadSeeds3D();
+            if (typeof loadAllSlices === 'function' && state.ctLoaded) await loadAllSlices();
+        }
+        if (typeof window.refreshPlanningRunCatalog === 'function') {
+            void window.refreshPlanningRunCatalog({ sessionId: restoreSessionId, silent: true });
+        }
+        if (typeof scheduleWorkspaceSave === 'function') {
+            scheduleWorkspaceSave('planning.run.algorithm.restore');
+        }
+        const done = localize(
+            '已恢复原始算法规划；粒子、针道、剂量、DVH、导板和报告均未重新计算。',
+            'The original algorithm planning was restored; seeds, needles, dose, DVH, guide, and report artifacts were restored without recomputation.',
+        );
+        _setManualDoseProgress('done', done);
+        addChat('system', done);
+        reportUIEvent('planning.run.algorithm.restore', data.planning_id || data.active_planning_id, {});
+        return data;
+    } catch (error) {
+        if (restoreSessionId !== String(_activeApiSessionId() || '')) return null;
+        const failure = localize(
+            `恢复原始算法规划失败：${error.message}`,
+            `Algorithm planning restore failed: ${error.message}`,
+        );
+        _setManualDoseProgress('error', failure);
+        addChat('error', failure);
+        return null;
+    }
+}
+
+// Kept as a private compatibility shim for stale inline handlers. New UI
+// actions restore the complete Planning, never one seed plus a recomputation.
+async function _legacyRestoreSeedToOriginalPosition(seedId) {
     const localize = (zh, en) => typeof window._t === 'function' ? window._t(zh, en) : en;
     const seed = dataTreeState.planning.seeds.find(item => item.id === seedId);
     const original = seed?._originalPosition;
@@ -6364,6 +6510,7 @@ async function restoreSeedToOriginalPosition(seedId) {
         return null;
     }
 }
-window.restoreSeedToOriginalPosition = restoreSeedToOriginalPosition;
+window.restoreAlgorithmPlan = restoreAlgorithmPlan;
+window.restoreSeedToOriginalPosition = restoreAlgorithmPlan;
 
 /******** VIEWER INTERACTIVE TOOLS (Slicer-like) ********/

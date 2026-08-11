@@ -111,6 +111,19 @@ def test_session_restore_uses_corner_non_blocking_hydration_and_fresh_snapshot()
     assert "initial case has no clinical resources; hydration skipped" in ui_api
 
 
+def test_session_restore_fits_all_viewers_with_authoritative_session_guard():
+    """The final restore pass must reset MPR geometry without cross-case races."""
+    layout = read("web/app/static/js/brachybot-viewer-layout.js")
+    ui_api = read("web/app/static/js/brachybot-ui-api.js")
+    assert "async function fitAllViewersAfterWorkspaceRestore" in layout
+    assert "_activeApiSessionId" in layout
+    assert "await loadAllSlices()" in layout
+    assert "reconcile2DViewerLayers" in layout
+    assert "ensureCameraFitsVisibleScene" in layout
+    assert "fitAllViewersAfterWorkspaceRestore" in ui_api
+    assert "reason: 'workspace-hydration-fit'" in ui_api
+
+
 def test_report_restore_does_not_erase_newer_generated_text():
     workspace = read("web/app/static/js/brachybot-workspace.js")
     report = read("web/app/static/js/brachybot-report-export.js")
@@ -429,6 +442,10 @@ def test_2d_hydration_reconciles_ct_dose_contours_and_planning_projections():
     assert "renderSeedsOverlay(axis, sliceIndex);" in annotation
     assert "reason: 'viewer-geometry-sync'" in layout
     assert "reason: 'workspace-hydration-complete'" in ui_api
+    assert "fitAllViewersAfterWorkspaceRestore" in ui_api
+    assert "reason: 'workspace-hydration-fit'" in ui_api
+    assert "window.fitAllViewersAfterWorkspaceRestore = fitAllViewersAfterWorkspaceRestore" in layout
+    assert "reason," in layout
     assert '[id^="contourCanvas"]' in ui_api
     assert "canvas.style.removeProperty(property);" in ui_api
 

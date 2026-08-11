@@ -2834,6 +2834,20 @@ async function _restoreActiveSessionWorkspace(options = {}) {
         });
     }
     if (typeof setupViewerInteractions === 'function') setupViewerInteractions();
+    // The final restore barrier is the first point at which CT pixels,
+    // dependent 2D layers, and planning meshes have all been requested for
+    // the current case.  Fit every viewer here so restart/session hydration
+    // has the same visible result as pressing Fit manually.
+    if (typeof window.fitAllViewersAfterWorkspaceRestore === 'function') {
+        try {
+            await window.fitAllViewersAfterWorkspaceRestore({
+                sessionId: sessionAtStart,
+                reason: 'workspace-hydration-fit',
+            });
+        } catch (error) {
+            console.warn('[session restore] automatic viewer fit failed:', error);
+        }
+    }
     recordStage('restore.fully_interactive', restoreStartedAt, {
         ct_loaded: !!state.ctLoaded,
         planning: hasPlanning,
