@@ -17,7 +17,7 @@ def test_figure_one_detail_view_keeps_the_complete_ctv_in_frame():
     assert "halfHeight / Math.tan(halfFovY)" in source
     assert "halfWidth / Math.tan(halfFovX)" in source
     assert "halfDepth + planarDistance" in source
-    assert "margin: mode === 'detail' ? 1.06 : 1.24" in source
+    assert "margin: mode === 'detail' ? 1.06 : 1.58" in source
     assert "targetAspect: REPORT_FIGURE_ASPECT" in source
     assert "id === 'skin_surface'" in source
     assert "guide_skin_surface" in source
@@ -87,12 +87,21 @@ def test_native_report_images_use_one_bounded_evidence_page_each():
     assert "for (let offset = 0; offset < rows.length; offset += 1)" in source
     assert "const pageRows = rows.slice(offset, offset + 1);" in source
     assert "max-width: 100%" in source
-    assert "width: 100%" in source
+    assert "function _reportFigurePageOrientation" in source
+    assert "data-page-orientation=\"${orientation}\"" in source
+    assert "size: A4 portrait" in source
+    assert "size: A4 landscape" in source
+    assert "width: auto" in source
     assert "min-width: 0" in source
-    assert "max-height: 190mm" in source
+    assert "max-height: 176mm" in source
+    assert "max-height: 132mm" in source
     assert "overflow: hidden" in source
     assert ".report-figure-page .hp-subfigure img" in screen_css
-    assert "max-height: 190mm" in screen_css
+    assert ".report-page--landscape" in screen_css
+    assert "width: 297mm" in screen_css
+    assert "max-height: 176mm" in screen_css
+    assert "max-height: 132mm" in screen_css
+    assert "Math.max(...pages.map(page => page.offsetWidth || 0))" in shell
     assert "wrap.style.transformOrigin = 'top center';" in shell
 
 

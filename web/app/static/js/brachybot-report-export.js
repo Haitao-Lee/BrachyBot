@@ -847,6 +847,49 @@ function _reportFigureDisplayText(figure) {
     };
 }
 
+function _reportFigureAspectRatio(figure) {
+    const storedRatio = Number(figure?.aspectRatio);
+    if (Number.isFinite(storedRatio) && storedRatio > 0) return storedRatio;
+    const width = Number(figure?.pixelWidth);
+    const height = Number(figure?.pixelHeight);
+    if (Number.isFinite(width) && Number.isFinite(height) && width > 0 && height > 0) {
+        return width / height;
+    }
+    const dataUrl = String(figure?.dataUrl || '');
+    if (dataUrl.startsWith('data:image/png;base64,')) {
+        try {
+            // Restored legacy captures may predate persisted dimensions. Read
+            // the PNG IHDR so page orientation still follows the real image.
+            const comma = dataUrl.indexOf(',');
+            const header = atob(dataUrl.slice(comma + 1, comma + 65));
+            const uint32 = offset => (
+                (header.charCodeAt(offset) << 24)
+                | (header.charCodeAt(offset + 1) << 16)
+                | (header.charCodeAt(offset + 2) << 8)
+                | header.charCodeAt(offset + 3)
+            ) >>> 0;
+            const pngWidth = uint32(16);
+            const pngHeight = uint32(20);
+            if (pngWidth > 0 && pngHeight > 0) return pngWidth / pngHeight;
+        } catch (_) {}
+    }
+    return null;
+}
+
+function _reportFigurePageOrientation(figure) {
+    const explicit = String(figure?.pageOrientation || '').toLowerCase();
+    if (explicit === 'landscape' || explicit === 'portrait') return explicit;
+    const ratio = _reportFigureAspectRatio(figure);
+    if (Number.isFinite(ratio)) return ratio >= 1.2 ? 'landscape' : 'portrait';
+    // Server-backed captures from older Sessions may have no inline PNG header.
+    // Use semantic capture roles only as a compatibility fallback.
+    const role = String(figure?.captureRole || figure?.capture_role || '').toLowerCase();
+    if (['planning_overview', 'planning_closeup', 'dose_surface_3d', 'dvh'].includes(role)) {
+        return 'landscape';
+    }
+    return 'portrait';
+}
+
 function _reportFiguresForGroup(form, group) {
     const rows = (Array.isArray(form?.figures) ? form.figures : [])
         .filter(figure => figure && _reportFigureGroup(figure) === group);
@@ -925,7 +968,8 @@ function _updateReportPreview() {
             const headingSubfigure = String(
                 headingFigure.subfigure || String.fromCharCode(97 + offset)
             ).toLowerCase();
-            html += `<div class="report-page report-figure-page">
+            const orientation = _reportFigurePageOrientation(headingFigure);
+            html += `<div class="report-page report-figure-page report-page--${orientation}" data-page-orientation="${orientation}">
                 <div class="hp-running-header"><span>${escHtml(s.confidentiality)}</span><span class="right">${escHtml(groupTitle)}</span></div>
                 <h2 class="hp-section-title">${escHtml(s.figCaption)} ${figureNumber}(${escHtml(headingSubfigure)}) - ${escHtml(groupTitle)}</h2>
                 <div class="hp-subfigure-list">${pageRows.map((figure, pageIndex) => {
@@ -1190,6 +1234,9 @@ function _updateReportPreview() {
     p5 += `${pageFooter(nextPageNo)}</div>`;
 
     pagesEl.innerHTML = p1 + figure1Pages + p2 + figure2Pages + supplementalPages + p3 + p4 + p5;
+    // Mixed portrait/landscape A4 pages can change the widest preview page.
+    // Recalculate fit after the DOM commit instead of retaining the old scale.
+    window.requestAnimationFrame(() => window.Report?.preview?.refresh?.());
 }
 
 function _hpMetricRow(name, value, unit, refText, statusClass, sOverride, statusTextOverride) {
@@ -1393,17 +1440,13 @@ function _printableCss() {
            - 12pt (小四号), 1.5x line-height
            - All black, no grey tints
         */
-        @page {
-            size: A4;
+        @page reportPortrait {
+            size: A4 portrait;
             margin: 0;
         }
-        @page :left {
-            margin-left: 22mm;
-            margin-right: 18mm;
-        }
-        @page :right {
-            margin-left: 18mm;
-            margin-right: 22mm;
+        @page reportLandscape {
+            size: A4 landscape;
+            margin: 0;
         }
         html, body { margin: 0; padding: 0; background: #fff; color: #000; }
         body.report-print { background: #fff; padding: 0; color: #000; }
@@ -1415,6 +1458,12 @@ function _printableCss() {
             font-family: 'Times New Roman', 'SimSun', 'Liberation Serif', serif;
             font-size: 12pt; line-height: 1.5;
             font-feature-settings: "tnum" 1, "lnum" 1;
+            page: reportPortrait;
+        }
+        .report-figure-page { height: 297mm; max-height: 297mm; }
+        .report-page--landscape {
+            width: 297mm; min-height: 210mm; height: 210mm; max-height: 210mm;
+            padding: 14mm 16mm 14mm 16mm; page: reportLandscape;
         }
         .report-page:last-child { page-break-after: auto; }
         /* BUG FIX 2026-06-17 (print letterhead): match the screen
@@ -1463,10 +1512,11 @@ function _printableCss() {
         /* One native report capture per evidence page. The page box, figure
            box, and image share the same width constraint so browser preview
            scaling cannot let a wide canvas escape or crop the PDF page. */
-        .report-figure-page { display: flex; flex-direction: column; width: 100%; max-width: 100%; min-width: 0; overflow: hidden; box-sizing: border-box; }
-        .hp-subfigure-list { display: flex; flex-direction: column; flex: 1 1 auto; width: 100%; min-width: 0; min-height: 0; max-width: 100%; overflow: hidden; }
-        .hp-subfigure { flex: 0 0 auto; width: 100%; max-width: 100%; min-width: 0; margin: 0; text-align: center; page-break-inside: avoid; break-inside: avoid; min-height: 0; overflow: hidden; box-sizing: border-box; }
-        .hp-subfigure img { display: block; width: 100%; max-width: 100%; min-width: 0; height: auto; max-height: 190mm; object-fit: contain; margin: 0 auto; border: 1px solid #cbd5e1; background: #020617; box-sizing: border-box; }
+        .report-figure-page { display: flex; flex-direction: column; max-width: none; min-width: 0; overflow: hidden; box-sizing: border-box; }
+        .hp-subfigure-list { display: flex; flex-direction: column; justify-content: center; flex: 1 1 auto; width: 100%; min-width: 0; min-height: 0; max-width: 100%; overflow: hidden; }
+        .hp-subfigure { display: flex; flex-direction: column; justify-content: center; flex: 1 1 auto; width: 100%; max-width: 100%; min-width: 0; margin: 0; text-align: center; page-break-inside: avoid; break-inside: avoid; min-height: 0; overflow: hidden; box-sizing: border-box; }
+        .hp-subfigure img { display: block; width: auto; max-width: 100%; min-width: 0; height: auto; max-height: 176mm; object-fit: contain; margin: 0 auto; border: 1px solid #cbd5e1; background: #020617; box-sizing: border-box; }
+        .report-page--landscape .hp-subfigure img { max-height: 132mm; }
         .hp-subfigure figcaption { font-size: 9pt; line-height: 1.35; color: #334155; margin-top: 1.5mm; font-style: italic; }
         .hp-references { font-size: 9pt; line-height: 1.55; padding-left: 6mm; }
         .hp-references li { margin-bottom: 1.5mm; text-indent: -5mm; padding-left: 5mm; }

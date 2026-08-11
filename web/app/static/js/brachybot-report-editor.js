@@ -582,6 +582,27 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
     };
 
     const _ts = () => new Date().toISOString();
+    function _pngDataUrlSize(dataUrl) {
+        if (typeof dataUrl !== 'string' || !dataUrl.startsWith('data:image/png;base64,')) return null;
+        try {
+            // PNG stores width and height as big-endian uint32 values in IHDR.
+            // Reading only the header avoids decoding the full clinical capture.
+            const header = atob(dataUrl.slice(dataUrl.indexOf(',') + 1, dataUrl.indexOf(',') + 65));
+            if (header.length < 24 || header.slice(1, 4) !== 'PNG') return null;
+            const uint32 = offset => (
+                (header.charCodeAt(offset) << 24)
+                | (header.charCodeAt(offset + 1) << 16)
+                | (header.charCodeAt(offset + 2) << 8)
+                | header.charCodeAt(offset + 3)
+            ) >>> 0;
+            const width = uint32(16);
+            const height = uint32(20);
+            return width > 0 && height > 0 ? { width, height } : null;
+        } catch (_) {
+            return null;
+        }
+    }
+
     const _push = (title, caption, dataUrl, axis, extra) => {
         if (!isCurrentCapture()) return;
         if (!dataUrl || dataUrl.length < 1000) {
@@ -589,9 +610,15 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
             return;
         }
         const stableAxis = axis || '3d';
+        const imageSize = _pngDataUrlSize(dataUrl);
         const figure = {
             type: 'screenshot', title, dataUrl, axis: stableAxis,
             sliceIdx: null, caption, capturedAt: _ts(), ...extra,
+            ...(imageSize ? {
+                pixelWidth: imageSize.width,
+                pixelHeight: imageSize.height,
+                aspectRatio: imageSize.width / imageSize.height,
+            } : {}),
         };
         const figures = Array.isArray(window.reportForm.figures)
             ? window.reportForm.figures : (window.reportForm.figures = []);
@@ -1149,7 +1176,7 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
                     // The overview needs enough surrounding anatomy to make
                     // the full implant geometry intelligible in a report.
                     // The close-up remains intentionally tight around CTV.
-                    margin: mode === 'detail' ? 1.06 : 1.24,
+                    margin: mode === 'detail' ? 1.06 : 1.58,
                 });
             }
 
