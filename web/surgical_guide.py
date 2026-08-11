@@ -102,6 +102,14 @@ GUIDE_MINIMUM_WALL_MM = 0.35
 # still contains only the portion removed from the guide material.
 AUXILIARY_HOLE_OVERRUN_MM = 8.0
 
+# A main guidance channel must remain an open cylinder even where another
+# sleeve crosses it outside the first sleeve's nominal length.  The CSG cutter
+# therefore extends past its own plate/sleeve span and, when needed, across a
+# neighbouring sleeve that can enter the channel.  These are construction
+# margins only; they do not change the requested channel radius.
+PRIMARY_BORE_CUTTER_END_OVERRUN_MM = 2.0
+PRIMARY_BORE_CROSS_SLEEVE_GUARD_MM = 0.5
+
 # A Planning run must export as one printable guide, even when distant needle
 # groups produce non-overlapping local patches.  The bridge is routed on the
 # CT-derived plate shell (never through the patient) and remains flush with the
@@ -129,7 +137,7 @@ def _effective_primary_bore_radius_mm(params: Mapping[str, Any]) -> float:
 # sleeve edges, plate edges, and the skin-facing surface remain untouched.
 BORE_WALL_PROJECTION_TOLERANCE_FACTOR = 1.25
 BORE_WALL_PROJECTION_MIN_TOLERANCE_MM = 0.2
-BORE_WALL_POLICY = "analytic_cylindrical_projection_after_mesh_smoothing"
+BORE_WALL_POLICY = "global_primary_csg_drilling_and_analytic_cylindrical_projection_v2"
 
 _PARAMETER_LIMITS = {
     "skin_threshold_hu": (-800.0, 100.0),
@@ -245,6 +253,149 @@ def _segment_distance_mm(
     closest_a = p1 + factor_a * direction_a
     closest_b = p2 + factor_b * direction_b
     return float(np.linalg.norm(closest_a - closest_b))
+
+
+def _primary_sleeve_segment(
+    path: NeedleGuidePath,
+    params: Mapping[str, Any],
+) -> Tuple[np.ndarray, np.ndarray]:
+    """Return the finite printed sleeve span for one planned needle.
+
+    The start sits flush with the configured skin-clearance surface and the
+    end points outward beyond the plate.  This remains the physical sleeve
+    definition; the longer *cutter* used below only guarantees that no other
+    sleeve wall can close this channel after unioning the guide solid.
+    """
+    inward = np.asarray(path.inward_direction, dtype=np.float64).reshape(3)
+    norm = float(np.linalg.norm(inward))
+    if norm <= 1e-10:
+        raise SurgicalGuideError(f"Needle {path.needle_id} has a zero direction")
+    inward /= norm
+    sleeve_inner = np.asarray(path.entry, dtype=np.float64).reshape(3) - inward * float(
+        params["skin_clearance_mm"]
+    )
+    sleeve_outer = sleeve_inner - inward * (
+        float(params["plate_thickness_mm"])
+        + float(params["sleeve_outward_mm"])
+    )
+    return sleeve_inner, sleeve_outer
+
+
+def _line_to_segment_distance_mm(
+    line_origin: np.ndarray,
+    line_direction: np.ndarray,
+    segment_start: np.ndarray,
+    segment_end: np.ndarray,
+) -> float:
+    """Return the shortest distance from an infinite line to a finite segment.
+
+    Main-bore cutters are extended only across sleeves that can physically
+    enter their cylindrical void.  Comparing a finite primary sleeve against
+    another finite sleeve is insufficient when the crossing occurs just beyond
+    the first sleeve tip, so this helper intentionally uses the complete
+    primary channel line.
+    """
+    origin = np.asarray(line_origin, dtype=np.float64).reshape(3)
+    direction = np.asarray(line_direction, dtype=np.float64).reshape(3)
+    direction_norm = float(np.linalg.norm(direction))
+    if direction_norm <= 1e-10:
+        raise SurgicalGuideError("Primary bore direction is zero")
+    direction /= direction_norm
+    start = np.asarray(segment_start, dtype=np.float64).reshape(3)
+    end = np.asarray(segment_end, dtype=np.float64).reshape(3)
+    segment = end - start
+    relative = start - origin
+    relative_perpendicular = relative - direction * float(np.dot(relative, direction))
+    segment_perpendicular = segment - direction * float(np.dot(segment, direction))
+    denominator = float(np.dot(segment_perpendicular, segment_perpendicular))
+    if denominator <= 1e-12:
+        closest_factor = 0.0
+    else:
+        closest_factor = float(np.clip(
+            -float(np.dot(relative_perpendicular, segment_perpendicular)) / denominator,
+            0.0,
+            1.0,
+        ))
+    closest_perpendicular = (
+        relative_perpendicular + closest_factor * segment_perpendicular
+    )
+    return float(np.linalg.norm(closest_perpendicular))
+
+
+def _primary_bore_cutter_specs(
+    paths: Sequence[NeedleGuidePath],
+    params: Mapping[str, Any],
+) -> List[Dict[str, Any]]:
+    """Build final through-cutters that keep every main channel open.
+
+    The printable sleeves are finite cylinders, but the primary CSG cutters
+    must also cover any foreign sleeve that intersects a channel beyond its
+    own nominal sleeve tip.  Without that extension, a later/nearby sleeve can
+    leave a crescent or wall across an otherwise drilled primary opening.
+
+    Each returned cutter keeps the same physical bore radius.  Only its axial
+    span is enlarged, conservatively and only near a sleeve that can overlap
+    the channel void, so guide generation remains local and performant.
+    """
+    bore_radius = _effective_primary_bore_radius_mm(params)
+    sleeve_outer_radius = float(params["sleeve_outer_radius_mm"])
+    resolution = float(params["geometry_resolution_mm"])
+    end_overrun = max(PRIMARY_BORE_CUTTER_END_OVERRUN_MM, 2.0 * resolution)
+    cross_sleeve_guard = max(PRIMARY_BORE_CROSS_SLEEVE_GUARD_MM, 2.0 * resolution)
+    sleeves = [
+        (path, *_primary_sleeve_segment(path, params))
+        for path in paths
+    ]
+    cutters: List[Dict[str, Any]] = []
+    for path, sleeve_inner, sleeve_outer in sleeves:
+        axis_vector = sleeve_outer - sleeve_inner
+        sleeve_length = float(np.linalg.norm(axis_vector))
+        if sleeve_length <= 1e-10:
+            raise SurgicalGuideError(f"Needle {path.needle_id} has a zero sleeve length")
+        outward_axis = axis_vector / sleeve_length
+        lower = -end_overrun
+        upper = sleeve_length + end_overrun
+        crossings: List[Dict[str, Any]] = []
+        trigger_distance = bore_radius + sleeve_outer_radius + cross_sleeve_guard
+        for other_path, other_inner, other_outer in sleeves:
+            if other_path.needle_id == path.needle_id:
+                continue
+            centerline_distance = _line_to_segment_distance_mm(
+                sleeve_inner,
+                outward_axis,
+                other_inner,
+                other_outer,
+            )
+            if centerline_distance > trigger_distance:
+                continue
+            other_start_projection = float(
+                np.dot(other_inner - sleeve_inner, outward_axis)
+            )
+            other_end_projection = float(
+                np.dot(other_outer - sleeve_inner, outward_axis)
+            )
+            # A finite foreign sleeve can extend one outer radius beyond each
+            # endpoint along this cutter axis. Include that cap extent plus a
+            # sub-voxel manufacturing guard before drilling the final union.
+            extension = sleeve_outer_radius + end_overrun
+            lower = min(lower, min(other_start_projection, other_end_projection) - extension)
+            upper = max(upper, max(other_start_projection, other_end_projection) + extension)
+            crossings.append({
+                "needle_id": str(other_path.needle_id),
+                "centerline_distance_mm": float(centerline_distance),
+            })
+        cutters.append({
+            "needle_id": str(path.needle_id),
+            "start": sleeve_inner + outward_axis * lower,
+            "end": sleeve_inner + outward_axis * upper,
+            "radius_mm": float(bore_radius),
+            "nominal_start": sleeve_inner,
+            "nominal_end": sleeve_outer,
+            "nominal_length_mm": float(sleeve_length),
+            "cutter_length_mm": float(upper - lower),
+            "crossing_sleeves": crossings,
+        })
+    return cutters
 
 
 def _auxiliary_hole_specs(
@@ -1281,6 +1432,37 @@ def _cylinder_sdf_in_region(
     return sdf, box
 
 
+def _subtract_cylinder_specs_from_mask(
+    solid: np.ndarray,
+    ct_image: Any,
+    lower_xyz: np.ndarray,
+    spacing_xyz: Sequence[float],
+    cylinder_specs: Sequence[Mapping[str, Any]],
+) -> np.ndarray:
+    """Subtract exact finite cylinders from a guide construction mask in place.
+
+    Both the initial CSG pass and the topology-repair pass call this same
+    function.  Keeping the primary-cutter implementation in one place prevents
+    a repair operation from accidentally reverting to the shorter historical
+    sleeve-only bore and re-closing a channel at a sleeve intersection.
+    """
+    for spec in cylinder_specs:
+        start = np.asarray(spec["start"], dtype=np.float64)
+        end = np.asarray(spec["end"], dtype=np.float64)
+        radius = float(spec["radius_mm"])
+        cylinder_sdf, box = _cylinder_sdf_in_region(
+            ct_image,
+            lower_xyz,
+            solid.shape,
+            spacing_xyz,
+            start,
+            end,
+            radius,
+        )
+        solid[box] &= ~(cylinder_sdf <= 0.0)
+    return solid
+
+
 def _sample_mask_at_world_points(
     mask: np.ndarray,
     ct_image: Any,
@@ -1879,6 +2061,8 @@ def _project_bore_walls(
     paths: Sequence[NeedleGuidePath],
     auxiliary_specs: Sequence[Mapping[str, Any]],
     params: Mapping[str, Any],
+    *,
+    primary_bore_specs: Optional[Sequence[Mapping[str, Any]]] = None,
 ) -> Tuple[np.ndarray, Dict[str, Any]]:
     """Restore exact circular cross-sections on the exported bore walls.
 
@@ -1887,9 +2071,9 @@ def _project_bore_walls(
     is robust for the union/subtraction topology, but it is not a suitable
     final definition for a manufactured needle bore: smoothing may move a
     wall vertex a fraction of a millimetre toward or away from the axis.  This
-    pass projects only the narrow radial band around each known cylindrical
-    wall back to its analytic radius.  It does not add material, change the
-    bore length, or alter any auxiliary/main-hole ordering.
+    pass projects only the narrow radial band around each final CSG cutter
+    back to its analytic radius.  It does not add material or alter the
+    auxiliary/main-hole ordering.
 
     ``bore_radius`` includes the manufacturing clearance used during the
     boolean subtraction.  Recording the before/after error gives the export
@@ -1901,11 +2085,28 @@ def _project_bore_walls(
         BORE_WALL_PROJECTION_MIN_TOLERANCE_MM,
         min(0.75, resolution * BORE_WALL_PROJECTION_TOLERANCE_FACTOR),
     )
-    clearance = float(params["skin_clearance_mm"])
-    plate_thickness = float(params["plate_thickness_mm"])
-    sleeve_outward = float(params["sleeve_outward_mm"])
     reports: List[Dict[str, Any]] = []
     projected_indices: set[int] = set()
+    provided_primary_bores: Dict[str, Mapping[str, Any]] = {}
+    for spec in primary_bore_specs or ():
+        if not isinstance(spec, Mapping):
+            continue
+        needle_id = str(spec.get("needle_id") or "")
+        if needle_id and spec.get("start") is not None and spec.get("end") is not None:
+            provided_primary_bores[needle_id] = spec
+
+    def primary_bore_for_path(path: NeedleGuidePath) -> Tuple[np.ndarray, np.ndarray, float]:
+        """Return the final CSG cutter used for this channel, if available."""
+        provided = provided_primary_bores.get(str(path.needle_id))
+        if provided is not None:
+            return (
+                np.asarray(provided["start"], dtype=np.float64),
+                np.asarray(provided["end"], dtype=np.float64),
+                float(provided.get("radius_mm") or _effective_primary_bore_radius_mm(params)),
+            )
+        sleeve_inner, sleeve_outer = _primary_sleeve_segment(path, params)
+        return sleeve_inner, sleeve_outer, _effective_primary_bore_radius_mm(params)
+
     # The Boolean CSG already drills every primary channel after all sleeves
     # have been unioned.  This later analytic wall pass must preserve those
     # cavities: a vertex snapped onto one sleeve wall must never be moved into
@@ -1917,18 +2118,12 @@ def _project_bore_walls(
     cross_bore_guard_mm = max(tolerance, min(0.75, resolution * 0.75))
     protected_bores: List[Dict[str, Any]] = []
     for path in paths:
-        sleeve_inner = (
-            np.asarray(path.entry, dtype=np.float64)
-            - np.asarray(path.inward_direction, dtype=np.float64) * clearance
-        )
-        sleeve_outer = sleeve_inner - np.asarray(
-            path.inward_direction, dtype=np.float64
-        ) * (plate_thickness + sleeve_outward)
+        sleeve_inner, sleeve_outer, bore_radius = primary_bore_for_path(path)
         protected_bores.append({
             "identity": ("primary", str(path.needle_id)),
             "start": sleeve_inner,
             "end": sleeve_outer,
-            "radius_mm": _effective_primary_bore_radius_mm(params),
+            "radius_mm": bore_radius,
         })
     for spec in auxiliary_specs:
         if bool(spec.get("skipped")):
@@ -2035,16 +2230,13 @@ def _project_bore_walls(
         })
 
     for path in paths:
-        sleeve_inner = np.asarray(path.entry, dtype=np.float64) - np.asarray(path.inward_direction, dtype=np.float64) * clearance
-        sleeve_outer = sleeve_inner - np.asarray(path.inward_direction, dtype=np.float64) * (
-            plate_thickness + sleeve_outward
-        )
+        sleeve_inner, sleeve_outer, bore_radius = primary_bore_for_path(path)
         project_wall(
             hole_id=path.needle_id,
             kind="primary",
             start=sleeve_inner,
             end=sleeve_outer,
-            radius=_effective_primary_bore_radius_mm(params),
+            radius=bore_radius,
             identity=("primary", str(path.needle_id)),
         )
 
@@ -2416,21 +2608,19 @@ def generate_surgical_guide(
         )
         solid[box] &= ~(plate_mask[box] & (hole_sdf <= 0.0))
 
-    # Pass 3: subtract every primary bore from the fully-unioned solid, so a
-    # neighbouring sleeve wall can never plug a channel, regardless of needle
-    # spacing or crossing angle.
-    for path in paths:
-        entry = path.entry
-        sleeve_inner = entry - path.inward_direction * clearance
-        sleeve_outer = sleeve_inner - path.inward_direction * (
-            plate_thickness + params["sleeve_outward_mm"]
-        )
-        bore_sdf, box = _cylinder_sdf_in_region(
-            ct_image, lower_xyz, body_crop.shape, spacing_xyz,
-            sleeve_inner, sleeve_outer,
-            _effective_primary_bore_radius_mm(params),
-        )
-        solid[box] &= ~(bore_sdf <= 0.0)
+    # Pass 3: drill every main channel from the fully-unioned solid. The
+    # cutter is deliberately longer than its own sleeve where another sleeve
+    # can cross it: a wall belonging to a neighbouring needle must never remain
+    # inside this channel just because the crossing falls beyond the first
+    # sleeve's finite outer tip.
+    primary_bore_specs = _primary_bore_cutter_specs(paths, params)
+    _subtract_cylinder_specs_from_mask(
+        solid,
+        ct_image,
+        lower_xyz,
+        spacing_xyz,
+        primary_bore_specs,
+    )
     # Re-apply the domain after all unions. This is intentionally redundant:
     # it protects the geometry if a future CSG stage adds a new volume without
     # remembering to intersect it with the acquisition-safe domain.
@@ -2508,6 +2698,7 @@ def generate_surgical_guide(
         paths,
         realized_auxiliary_specs,
         params,
+        primary_bore_specs=primary_bore_specs,
     )
     validation = mesh_validation(vertices, faces)
     finish_stage(
@@ -2546,21 +2737,16 @@ def generate_surgical_guide(
                 float(spec["radius_mm"]),
             )
             repaired_solid[box] &= ~(hole_sdf <= 0.0)
-        for path in paths:
-            sleeve_inner = path.entry - path.inward_direction * clearance
-            sleeve_outer = sleeve_inner - path.inward_direction * (
-                plate_thickness + params["sleeve_outward_mm"]
-            )
-            bore_sdf, box = _cylinder_sdf_in_region(
-                ct_image,
-                lower_xyz,
-                body_crop.shape,
-                spacing_xyz,
-                sleeve_inner,
-                sleeve_outer,
-                _effective_primary_bore_radius_mm(params),
-            )
-            repaired_solid[box] &= ~(bore_sdf <= 0.0)
+        # A binary closing repair may restore material at channel/sleeve
+        # intersections. Reuse the exact final cutters rather than a shorter
+        # sleeve-only bore so repair cannot reintroduce the blocked-hole bug.
+        _subtract_cylinder_specs_from_mask(
+            repaired_solid,
+            ct_image,
+            lower_xyz,
+            spacing_xyz,
+            primary_bore_specs,
+        )
         repaired_solid = _filter_components(
             repaired_solid,
             int(params["minimum_component_voxels"]),
@@ -2578,6 +2764,7 @@ def generate_surgical_guide(
                 paths,
                 realized_auxiliary_specs,
                 params,
+                primary_bore_specs=primary_bore_specs,
             )
             repaired_validation = mesh_validation(repaired_vertices, repaired_faces)
             if repaired_validation.get("watertight"):
@@ -2747,6 +2934,19 @@ def generate_surgical_guide(
             "geometry_resolution_mm": params["geometry_resolution_mm"],
             "stage_timings_seconds": stage_timings,
             "bore_quality": bore_quality,
+            # Persist the final cutter spans so a saved guide can be audited:
+            # a non-empty crossing list proves the affected primary channel
+            # was re-drilled through the neighbouring sleeve wall.
+            "primary_bore_cutters": [
+                {
+                    "needle_id": str(spec["needle_id"]),
+                    "radius_mm": float(spec["radius_mm"]),
+                    "nominal_length_mm": float(spec["nominal_length_mm"]),
+                    "cutter_length_mm": float(spec["cutter_length_mm"]),
+                    "crossing_sleeves": [dict(item) for item in spec["crossing_sleeves"]],
+                }
+                for spec in primary_bore_specs
+            ],
             "plate_connectivity": plate_connectivity,
             "finite_fov": {
                 "truncated_superior": bool(trunc_z_max),

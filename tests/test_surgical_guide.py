@@ -14,8 +14,11 @@ from web.surgical_guide import (
     _auxiliary_hole_specs,
     _auxiliary_hole_support,
     _connect_plate_patch_components,
+    _cylinder_sdf_in_region,
+    _primary_bore_cutter_specs,
     _project_bore_walls,
     _sample_mask_at_world_points,
+    _subtract_cylinder_specs_from_mask,
     generate_surgical_guide,
     guide_bore_quality_ready,
     _filter_components,
@@ -1260,6 +1263,101 @@ def test_converging_needle_bores_stay_open_after_unified_drilling():
         assert blocked == 0, (
             f"{path['needle_id']} channel is blocked by a neighbouring sleeve wall"
         )
+
+
+def test_primary_bore_cutter_drills_through_foreign_sleeve_beyond_own_tip():
+    """A foreign sleeve wall must be cut even beyond the first sleeve's tip.
+
+    This is the geometry seen when two angled needle sleeves approach each
+    other: the foreign sleeve can enter a primary channel after that channel's
+    own printed sleeve nominally ends. A sleeve-length-only cutter leaves a
+    crescent of foreign wall in the otherwise circular channel.
+    """
+    image = sitk.GetImageFromArray(np.zeros((48, 48, 48), dtype=np.int16))
+    image.SetSpacing((1.0, 1.0, 1.0))
+    params = normalize_guide_parameters({
+        "geometry_resolution_mm": 0.5,
+        "skin_clearance_mm": 0.0,
+        "plate_thickness_mm": 3.0,
+        "channel_radius_mm": 0.9,
+        "sleeve_outer_radius_mm": 3.0,
+        "sleeve_outward_mm": 8.0,
+        "auxiliary_holes_enabled": False,
+    })
+    primary = NeedleGuidePath(
+        needle_id="needle_primary",
+        trajectory_id="traj_primary",
+        target=np.array([0.0, 20.0, 20.0]),
+        external=np.array([20.0, 20.0, 20.0]),
+        entry=np.array([5.0, 20.0, 20.0]),
+        inward_direction=np.array([-1.0, 0.0, 0.0]),
+        seed_count=1,
+    )
+    crossing = NeedleGuidePath(
+        needle_id="needle_crossing",
+        trajectory_id="traj_crossing",
+        target=np.array([23.0, 8.0, 20.0]),
+        external=np.array([23.0, 32.0, 20.0]),
+        entry=np.array([23.0, 16.0, 20.0]),
+        inward_direction=np.array([0.0, -1.0, 0.0]),
+        seed_count=1,
+    )
+    cutters = _primary_bore_cutter_specs([primary, crossing], params)
+    primary_cutter = next(item for item in cutters if item["needle_id"] == primary.needle_id)
+
+    # The primary sleeve itself ends at x=16 mm. The foreign sleeve crosses
+    # its channel at x=23 mm, so the final cutter must extend past that wall.
+    assert primary_cutter["nominal_length_mm"] == pytest.approx(11.0)
+    assert float(np.asarray(primary_cutter["end"])[0]) > 25.0
+    assert [item["needle_id"] for item in primary_cutter["crossing_sleeves"]] == [
+        crossing.needle_id
+    ]
+
+    solid = np.zeros((48, 48, 48), dtype=bool)
+    lower_xyz = np.zeros(3, dtype=np.int64)
+    crossing_start = np.asarray(crossing.entry, dtype=np.float64)
+    crossing_end = crossing_start - crossing.inward_direction * 11.0
+    crossing_sdf, box = _cylinder_sdf_in_region(
+        image,
+        lower_xyz,
+        solid.shape,
+        (1.0, 1.0, 1.0),
+        crossing_start,
+        crossing_end,
+        3.0,
+    )
+    solid[box] |= crossing_sdf <= 0.0
+
+    # This point lies on the primary channel axis but in the *wall* (not the
+    # central bore) of the crossing sleeve. It reproduces the blocked crescent
+    # in the report image before the extended primary cutter is applied.
+    probe_zyx = (20, 20, 25)
+    assert bool(solid[probe_zyx]) is True
+    _subtract_cylinder_specs_from_mask(
+        solid,
+        image,
+        lower_xyz,
+        (1.0, 1.0, 1.0),
+        cutters,
+    )
+    assert bool(solid[probe_zyx]) is False
+
+    # The post-Marching-Cubes circular-wall projection must use the same
+    # extended cutters. Otherwise it can snap a crossing sleeve-wall vertex
+    # back into the newly drilled primary channel after the Boolean CSG pass.
+    foreign_wall_vertex = np.array([[24.5, 20.0, 20.0]], dtype=np.float32)
+    projected, quality = _project_bore_walls(
+        foreign_wall_vertex,
+        [primary, crossing],
+        [],
+        params,
+        primary_bore_specs=cutters,
+    )
+    assert np.allclose(projected, foreign_wall_vertex)
+    assert sum(
+        item["cross_bore_protected_vertex_count"]
+        for item in quality["primary"]
+    ) >= 1
 
 
 def test_bore_wall_projection_never_recloses_a_crossing_primary_channel():
