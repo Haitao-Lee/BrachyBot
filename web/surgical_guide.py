@@ -28,6 +28,11 @@ from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
 
+from plans.guide_geometry import (
+    DEFAULT_GUIDE_CHANNEL_RADIUS_MM,
+    GUIDE_BORE_MARGIN_MM,
+)
+
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +46,7 @@ DEFAULT_GUIDE_PARAMETERS: Dict[str, Any] = {
     "skin_clearance_mm": 1.0,
     "plate_thickness_mm": 3.0,
     "patch_margin_mm": 24.0,
-    "channel_radius_mm": 0.9,
+    "channel_radius_mm": DEFAULT_GUIDE_CHANNEL_RADIUS_MM,
     "sleeve_outer_radius_mm": 3.0,
     "sleeve_outward_mm": 8.0,
     "sleeve_inward_mm": 8.0,
@@ -87,8 +92,8 @@ GUIDE_SKIN_DEFAULT_OPACITY = 0.10
 # nominal channel_radius. Without this, two nearby needle sleeves can merge and
 # the wall of one sleeve intrudes into the neighbouring channel, partially
 # plugging its opening. The margin keeps every channel a clean through-hole
-# even for closely spaced needles (>= a printable wall thickness).
-GUIDE_BORE_MARGIN_MM = 0.4
+# even for closely spaced needles (>= a printable wall thickness). The value
+# is shared with the planner through ``plans.guide_geometry``.
 
 # Minimum printable material left between independent bores or between an
 # auxiliary bore and a primary sleeve.  Keep this manufacturing constraint in
