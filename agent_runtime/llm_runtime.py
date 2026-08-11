@@ -602,13 +602,22 @@ class LLMRuntimeMixin:
         # as the SSE API. Without this branch, an explicit guide request can
         # fall through to the provider and be misrouted to code_executor.
         _direct_tool_calls = None
-        _active_intent = getattr(getattr(self, "_active_turn_policy", None), "intent", None)
-        if _active_intent in (
+        _active_policy = getattr(self, "_active_turn_policy", None)
+        _active_intent = getattr(_active_policy, "intent", None)
+        if getattr(_active_policy, "direct_execution", False) and _active_intent in (
             "segmentation", "planning", "treatment_plan", "clinical_planning",
             "surgical_guide_generation",
         ):
             _direct_tool_calls = self._detect_tool_request(message)
         if _direct_tool_calls:
+            get_authorization = getattr(self, "_current_execution_authorization", None)
+            authorization = (
+                get_authorization()
+                if callable(get_authorization)
+                else getattr(self, "_turn_execution_authorization", None)
+            )
+            if authorization is not None:
+                authorization.grant_tool_calls(_direct_tool_calls, source="local_direct_calls")
             logger.info(f"Direct tool execution: {len(_direct_tool_calls)} tools")
             return self._execute_direct_tools(_direct_tool_calls, steps, step_id_ref)
 
@@ -851,7 +860,26 @@ class LLMRuntimeMixin:
                 tools_executed = True
                 break
 
+            get_authorization = getattr(self, "_current_execution_authorization", None)
+            authorization = (
+                get_authorization()
+                if callable(get_authorization)
+                else getattr(self, "_turn_execution_authorization", None)
+            )
+            if authorization is not None:
+                # An explicit LLM tool call is the semantic execution grant
+                # for this turn.  Deterministic normalization may add only
+                # prerequisites covered by that workflow grant.
+                authorization.grant_tool_calls(
+                    valid_tool_calls,
+                    source="llm_tool_calls",
+                )
             tool_calls = self._normalize_clinical_tool_calls(valid_tool_calls, message)
+            if authorization is not None:
+                tool_calls = [
+                    call for call in tool_calls
+                    if authorization.tool_allowed(call.get("tool", ""))
+                ]
             if not tool_calls:
                 tools_executed = True
                 break
@@ -1958,10 +1986,21 @@ class LLMRuntimeMixin:
                 llm_error = str(e)
 
             if llm_error:
+                logger.error("LLM provider stream failed: %s", llm_error)
                 thinking_step["status"] = "error"
-                thinking_step["content"] = f"LLM error: {llm_error}"
+                thinking_step["content"] = (
+                    "AI 语言服务暂时不可用"
+                    if getattr(self.memory, "user_lang", "en") == "zh"
+                    else "AI language service unavailable"
+                )
                 yield yield_event("step", thinking_step)
-                yield {"type": "_result", "response": f"LLM error: {llm_error}", "llm_meta": {"usage": total_usage, "latency_ms": 0, "llm_calls": llm_calls, "phase_timings_ms": dict(getattr(self, "_turn_timings", {}) or {})}}
+                unavailable = getattr(self, "_current_llm_unavailable_message", None)
+                response = (
+                    unavailable()
+                    if callable(unavailable)
+                    else "The AI language service is temporarily unavailable."
+                )
+                yield {"type": "_result", "response": response, "llm_meta": {"usage": total_usage, "latency_ms": 0, "llm_calls": llm_calls, "phase_timings_ms": dict(getattr(self, "_turn_timings", {}) or {})}}
                 return
 
             content = full_content
@@ -2103,7 +2142,25 @@ class LLMRuntimeMixin:
                 tools_executed = True
                 break
 
+            get_authorization = getattr(self, "_current_execution_authorization", None)
+            authorization = (
+                get_authorization()
+                if callable(get_authorization)
+                else getattr(self, "_turn_execution_authorization", None)
+            )
+            if authorization is not None:
+                # The model has now made a structured action decision.  Store
+                # it before clinical ordering adds authorized prerequisites.
+                authorization.grant_tool_calls(
+                    valid_tool_calls,
+                    source="llm_tool_calls",
+                )
             tool_calls = self._normalize_clinical_tool_calls(valid_tool_calls, message)
+            if authorization is not None:
+                tool_calls = [
+                    call for call in tool_calls
+                    if authorization.tool_allowed(call.get("tool", ""))
+                ]
             if not tool_calls:
                 tools_executed = True
                 break

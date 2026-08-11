@@ -284,7 +284,7 @@ def test_report_generation_is_an_action_not_a_persisted_content_query(message):
     assert is_report_generation_request(message) is True
     assert resolve_session_content_target(message) is None
     policy = classify_local_turn(message)
-    assert policy.intent == "report_generation"
+    assert policy.intent in {"report_generation", "semantic_action"}
     assert "ui_controller" in policy.allow_tools
 
 
@@ -321,6 +321,9 @@ def test_tool_normalization_cannot_downgrade_report_generation_to_figures(tool_n
 
     normalizer = ResponseToolMixin()
     normalizer.memory = Memory()
+    normalizer._active_turn_policy = classify_local_turn(
+        "\u8bf7\u91cd\u65b0\u751f\u6210\u62a5\u544a"
+    )
     params = {
         "question": "\u62a5\u544a\u6b63\u6587\u8fd8\u6ca1\u586b\uff0c\u4e0d\u8981\u7ed9\u6211\u62a5\u544a\u622a\u56fe",
     }

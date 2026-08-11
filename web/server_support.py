@@ -721,6 +721,8 @@ def _latest_plan_snapshot(
         metrics = metrics["metrics"]
     total_seeds = agent.memory.retrieve("total_seeds") or 0
     num_trajectories = agent.memory.retrieve("num_trajectories") or 0
+    plan_config = agent.memory.retrieve("plan_config") or getattr(agent, "config", {}) or {}
+    plan_config = plan_config if isinstance(plan_config, dict) else {}
 
     def _points(value: Any) -> list:
         if isinstance(value, dict):

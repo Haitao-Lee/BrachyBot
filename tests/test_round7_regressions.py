@@ -64,6 +64,7 @@ def test_authoritative_previous_needles_recovers_baseline_after_restart():
 
 def test_replan_reverses_current_ui_direction_and_reuses_masks():
     from AgenticSys import BrachyAgent
+    from agent_runtime.execution_authorization import TurnExecutionAuthorization
 
     class Memory:
         def __init__(self):
@@ -84,6 +85,12 @@ def test_replan_reverses_current_ui_direction_and_reuses_masks():
     agent = object.__new__(BrachyAgent)
     agent.memory = Memory()
     agent.config = {"reference_direc": [0, -1, 0]}
+    agent._active_turn_token = 1
+    agent._turn_execution_authorization = TurnExecutionAuthorization(token=1)
+    agent._turn_execution_authorization.grant_tools(
+        ["planning_pipeline", "surgical_guide"],
+        source="legacy_fast_path_test",
+    )
     agent._has_completed_planning = lambda *_args, **_kwargs: True
     agent._current_ct_path = lambda *_args, **_kwargs: "/tmp/case.nii.gz"
 

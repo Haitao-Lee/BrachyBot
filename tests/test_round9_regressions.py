@@ -283,7 +283,7 @@ class Round9RegressionTests(unittest.TestCase):
         self.assertIn("function _captureReportCanvasCrop", report)
         self.assertIn("_captureReportCanvasCrop(canvas, REPORT_DOSE_SURFACE_ASPECT)", report)
         self.assertIn("candidate.clone().intersect(context)", report)
-        self.assertIn("brachybot-report-editor.js?v=19", index)
+        self.assertIn("brachybot-report-editor.js?v=20", index)
 
 
 if __name__ == "__main__":

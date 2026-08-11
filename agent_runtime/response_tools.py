@@ -1718,10 +1718,14 @@ Output (JSON array of strings):"""
                             question = self._message_text(item.get("content", ""))
                             if question:
                                 break
-                if resolve_report_request_action(question) == "regenerate":
+                if (
+                    getattr(active_policy, "direct_execution", False)
+                    and resolve_report_request_action(question) == "regenerate"
+                ):
                     # The model selected a read-only presentation tool for a
-                    # mutating report request. Preserve the user's operation
-                    # and route it through the browser-owned report transaction.
+                    # canonical fast-path report request. Semantic turns keep
+                    # the model's structured tool decision instead of being
+                    # reinterpreted from raw text after function calling.
                     tn = "ui_controller"
                     p = {
                         "actions": [{"target": "report.autofill", "command": "run"}],
