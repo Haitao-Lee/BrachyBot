@@ -475,13 +475,21 @@ def _merge_chat_records(existing: Any, incoming: Any) -> List[Any]:
 def _merge_chat_patch(current: Mapping[str, Any], incoming: Mapping[str, Any]) -> Dict[str, Any]:
     """Merge chat content without allowing a stale client to erase history."""
     result = dict(current or {})
-    for key in ("messages", "execution_trace", "attachments"):
+    for key in ("messages", "execution_trace"):
         if key in incoming and isinstance(incoming[key], list):
             result[key] = _merge_chat_records(result.get(key), incoming[key])
+    if "attachments" in incoming and isinstance(incoming["attachments"], list):
+        # Attachments are a flat Session-owned registry, not chat turns. Do
+        # not group or rank them like messages: the stable attachment ID is
+        # the only identity that should decide whether two captures are the
+        # same file.
+        result["attachments"] = _merge_record_list(
+            result.get("attachments"), incoming["attachments"]
+        )
     # Task control fields are state, not append-only content.  The latest
     # finalizer/browser update is authoritative for these small fields.
     for key, value in incoming.items():
-        if key not in {"messages", "execution_trace"}:
+        if key not in {"messages", "execution_trace", "attachments"}:
             result[key] = _safe_json(value)
     return result
 
@@ -508,8 +516,12 @@ def _reconcile_chat_attachment_registry(chat: Any) -> Dict[str, Any]:
     def matches(message: Mapping[str, Any], attachment: Mapping[str, Any]) -> bool:
         message_id = str(attachment.get("message_id") or attachment.get("messageId") or "").strip()
         request_id = str(attachment.get("request_id") or attachment.get("requestId") or "").strip()
-        if message_id and str(message.get("id") or "") == message_id:
-            return True
+        if message_id:
+            # A capture with an explicit message ID is authoritative. Never
+            # fall through to request-level matching when it belongs to a
+            # different row; that would copy a user image onto the assistant
+            # reply when both rows share one request ID.
+            return str(message.get("id") or "") == message_id
         return bool(request_id) and str(message.get("request_id") or message.get("requestId") or "") == request_id \
             and str(message.get("type") or "") in {"bot", "bot-response"}
 
