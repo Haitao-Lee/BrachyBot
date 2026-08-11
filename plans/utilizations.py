@@ -2647,20 +2647,21 @@ def _world_trajectory_line(trajectory, dose_image):
     return np.asarray(point, dtype=float), np.asarray(direction, dtype=float)
 
 
-def get_parallel_trajectory_safety_mask(
+def get_trajectory_spacing_safety_mask(
     candidate_trajectories,
     planned_trajectories,
     dose_image,
+    base_min_distance_mm=0.0,
     parallel_min_distance_mm=None,
     parallel_angle_tolerance_deg=None,
 ):
-    """Return candidates that do not crowd an already planned parallel path.
+    """Return candidates that pass the two-stage needle-spacing policy.
 
-    This is deliberately an additional hard filter, applied only when the two
-    world-space directions are parallel within the configured tolerance.  The
-    existing distance score and geometric collision checks remain responsible
-    for non-parallel trajectories, so oblique paths are not rejected merely for
-    being close in their starting planes.
+    First every candidate is checked against every planned path using the
+    historical base interference distance.  Only after that pass is a pair's
+    direction compared; the larger guide-bore spacing is applied only when the
+    pair is parallel within the configured angular tolerance.  This keeps
+    oblique, non-interfering paths eligible.
     """
 
     candidates = list(candidate_trajectories or [])
@@ -2671,6 +2672,12 @@ def get_parallel_trajectory_safety_mask(
     minimum_distance = resolve_parallel_needle_min_distance_mm(
         parallel_min_distance_mm
     )
+    try:
+        base_distance = float(base_min_distance_mm)
+    except (TypeError, ValueError):
+        raise ValueError("base_min_distance_mm must be numeric")
+    if not math.isfinite(base_distance) or base_distance < 0.0:
+        raise ValueError("base_min_distance_mm must be finite and non-negative")
     angle_tolerance = resolve_parallel_angle_tolerance_deg(
         parallel_angle_tolerance_deg
     )
@@ -2693,11 +2700,38 @@ def get_parallel_trajectory_safety_mask(
                 planned_point,
                 planned_direction,
             )
-            if center_distance < minimum_distance:
+            # Stage 1: preserve the existing base interference policy for all
+            # directions before considering the parallel-only rule.
+            if center_distance < base_distance:
+                safe[candidate_index] = False
+                break
+            # Stage 2: the guide-bore diameter applies only to near-parallel
+            # paths.  Non-parallel candidates remain governed by Stage 1 and
+            # the existing obstacle/collision validation.
+            if cosine >= parallel_cosine and center_distance < minimum_distance:
                 safe[candidate_index] = False
                 break
 
     return safe
+
+
+def get_parallel_trajectory_safety_mask(
+    candidate_trajectories,
+    planned_trajectories,
+    dose_image,
+    parallel_min_distance_mm=None,
+    parallel_angle_tolerance_deg=None,
+):
+    """Return only the parallel-specific part of the spacing policy."""
+
+    return get_trajectory_spacing_safety_mask(
+        candidate_trajectories,
+        planned_trajectories,
+        dose_image,
+        base_min_distance_mm=0.0,
+        parallel_min_distance_mm=parallel_min_distance_mm,
+        parallel_angle_tolerance_deg=parallel_angle_tolerance_deg,
+    )
 
 
 def get_candidate_traj_radiation_by_point_count(trajectories, radiation, in_lowest_dose, rate, seed_info, dose_image, distance_map):
@@ -3100,23 +3134,26 @@ def select_optimal_trajectory(
         np.array(adjusted_candidate_traj_margin).reshape(-1)
     )
 
-    # Enforce the physical guide-channel spacing only for near-parallel paths.
-    # Apply the mask before every score fallback below so a disallowed path
-    # cannot be selected merely because another score component is zero.
-    parallel_safe = get_parallel_trajectory_safety_mask(
+    # Apply the two-stage geometry gate before every score fallback below so a
+    # disallowed path cannot be selected merely because another score
+    # component is zero.  ``lower_bound`` remains the historical base
+    # interference distance; the guide-bore diameter is the parallel-only
+    # second stage.
+    trajectory_safe = get_trajectory_spacing_safety_mask(
         candidate_trajectories,
         planned_trajectories,
         dose_image,
+        base_min_distance_mm=lower_bound,
         parallel_min_distance_mm=parallel_min_distance_mm,
         parallel_angle_tolerance_deg=parallel_angle_tolerance_deg,
     )
 
-    def _mask_parallel_scores(scores):
+    def _mask_unsafe_scores(scores):
         masked = np.asarray(scores, dtype=float).reshape(-1)
-        masked[~parallel_safe] = 0.0
+        masked[~trajectory_safe] = 0.0
         return masked
 
-    candidate_traj_scores = _mask_parallel_scores(candidate_traj_scores)
+    candidate_traj_scores = _mask_unsafe_scores(candidate_traj_scores)
 
     # Guard: if any input array was empty, return None instead of crashing on np.max.
     # This can happen when candidate_trajectories was empty (no point continuing).
@@ -3131,20 +3168,20 @@ def select_optimal_trajectory(
             np.array(candidate_traj_radiation).reshape(-1) * 
             np.array(candidate_direction_score).reshape(-1)
         )
-        candidate_traj_scores = _mask_parallel_scores(candidate_traj_scores)
+        candidate_traj_scores = _mask_unsafe_scores(candidate_traj_scores)
         
         if np.max(candidate_traj_scores) == 0:
             candidate_traj_scores = (
                 np.array(candidate_traj_weights).reshape(-1) * 
                 np.array(candidate_direction_score).reshape(-1)
             )
-            candidate_traj_scores = _mask_parallel_scores(candidate_traj_scores)
+            candidate_traj_scores = _mask_unsafe_scores(candidate_traj_scores)
 
             if np.max(candidate_traj_scores) == 0:
                 candidate_traj_scores = (
                     np.array(candidate_traj_weights).reshape(-1)
                 )
-                candidate_traj_scores = _mask_parallel_scores(candidate_traj_scores)
+                candidate_traj_scores = _mask_unsafe_scores(candidate_traj_scores)
                 if np.max(candidate_traj_scores) == 0:
                     return None, None
     
@@ -3212,23 +3249,15 @@ def update_available_traj(
     for candidate in candidate_trajectories:
         candidate_is_valid = True
         for planned in planned_trajectories:
-            distance = get_candidate_traj_distance(
-                [planned], [candidate], dose_image
-            )[0]
-            parallel_safe = get_parallel_trajectory_safety_mask(
+            pair_safe = get_trajectory_spacing_safety_mask(
                 [candidate],
                 [planned],
                 dose_image,
+                base_min_distance_mm=base_threshold,
                 parallel_min_distance_mm=parallel_min_distance_mm,
                 parallel_angle_tolerance_deg=parallel_angle_tolerance_deg,
             )[0]
-            threshold = base_threshold
-            if not parallel_safe:
-                threshold = max(
-                    threshold,
-                    resolve_parallel_needle_min_distance_mm(parallel_min_distance_mm),
-                )
-            if distance <= threshold:
+            if not pair_safe:
                 candidate_is_valid = False
                 break
         if candidate_is_valid:
