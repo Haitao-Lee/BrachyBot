@@ -598,7 +598,16 @@ class LLMRuntimeMixin:
         # classify_local_turn.  In the LLM runtime the message always goes
         # through the LLM — the model can see the current case state and
         # decide whether to call tools or just answer.
+        # The non-streaming API must obey the same deterministic action routes
+        # as the SSE API. Without this branch, an explicit guide request can
+        # fall through to the provider and be misrouted to code_executor.
         _direct_tool_calls = None
+        _active_intent = getattr(getattr(self, "_active_turn_policy", None), "intent", None)
+        if _active_intent in (
+            "segmentation", "planning", "treatment_plan", "clinical_planning",
+            "surgical_guide_generation",
+        ):
+            _direct_tool_calls = self._detect_tool_request(message)
         if _direct_tool_calls:
             logger.info(f"Direct tool execution: {len(_direct_tool_calls)} tools")
             return self._execute_direct_tools(_direct_tool_calls, steps, step_id_ref)
