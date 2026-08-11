@@ -11,6 +11,7 @@ from typing import Dict, List, Optional
 
 
 from agent_runtime.core import ToolResultPipeline
+from agent_runtime.turn_policy import resolve_report_request_action
 from plans.dose_pre.model_loader import resolve_prescription_gy
 
 logger = logging.getLogger(__name__)
@@ -1676,6 +1677,24 @@ Output (JSON array of strings):"""
                     break
             if p is None:
                 continue  # Skip this tool call entirely
+            if tn in {"ui_screenshot", "ui_content"}:
+                question = str(p.get("question") or "").strip()
+                if not question:
+                    memory = getattr(self, "memory", None)
+                    for item in reversed(getattr(memory, "conversation", []) or []):
+                        if isinstance(item, dict) and str(item.get("role", "")).lower() == "user":
+                            question = self._message_text(item.get("content", ""))
+                            if question:
+                                break
+                if resolve_report_request_action(question) == "regenerate":
+                    # The model selected a read-only presentation tool for a
+                    # mutating report request. Preserve the user's operation
+                    # and route it through the browser-owned report transaction.
+                    tn = "ui_controller"
+                    p = {
+                        "actions": [{"target": "report.autofill", "command": "run"}],
+                    }
+                    tc = {**tc, "tool": tn, "params": p}
             if tn == "filesystem_browser":
                 if "dirPath" in p and "path" not in p:
                     p["path"] = p.pop("dirPath")

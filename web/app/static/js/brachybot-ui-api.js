@@ -4441,7 +4441,9 @@ async function _executeUIActionRaw(a, options = {}) {
         }
         // ── Report ──
         if (target === 'report.autofill') {
-            if (typeof Report !== 'undefined' && Report.autoFill) return Report.autoFill.fromAll();
+            if (typeof Report !== 'undefined' && Report.autoFill) {
+                return Report.autoFill.fromAll({ sessionId: ownerSessionId });
+            }
             if (typeof reportAutoFill === 'function') return reportAutoFill();
             return { success: false, error: 'Report auto-fill is unavailable.' };
         }
