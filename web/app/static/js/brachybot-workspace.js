@@ -1285,6 +1285,14 @@
 
     function applyDataTreePresentation(savedTree) {
         if (!savedTree || typeof savedTree !== 'object' || typeof dataTreeState === 'undefined') return;
+        // Expansion belongs to the current session's UI presentation. Restore
+        // it independently of clinical arrays so a compact snapshot cannot
+        // reopen unrelated groups during asynchronous tree hydration.
+        const savedExpansion = savedTree.expansionState || savedTree.expansion_state;
+        if (savedExpansion && typeof savedExpansion === 'object'
+            && !Array.isArray(savedExpansion)) {
+            dataTreeState.expansionState = jsonClone(savedExpansion);
+        }
         // Upgrade only known application-default colors. This runs before any
         // presentation fields are copied so a legacy snapshot cannot repaint
         // the new CTV/OAR LUT, while custom colors remain authoritative.

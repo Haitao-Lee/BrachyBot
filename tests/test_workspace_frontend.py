@@ -1069,6 +1069,57 @@ def test_completed_segmentation_retries_publication_and_rebuilds_2d_3d_per_sessi
     assert "window.SessionCache && !force" in manual_3d
 
 
+def test_data_tree_keeps_group_expansion_and_shift_batch_selection():
+    """Tree redraws must preserve collapsed groups and batch context selection."""
+    volume = read("web/app/static/js/brachybot-viewer-volume.js")
+    workspace = read("web/app/static/js/brachybot-workspace.js")
+
+    assert "expansionState: {}" in volume
+    assert 'data-group="image"' in volume
+    assert 'data-group="segmentation"' in volume
+    assert "function _restoreTreeGroupExpansionState" in volume
+    assert "_restoreTreeGroupExpansionState(body);" in volume
+    assert "_treeExpansionState()[key] = expanded;" in volume
+    assert "const savedExpansion = savedTree.expansionState || savedTree.expansion_state;" in workspace
+    assert "dataTreeState.expansionState = jsonClone(savedExpansion);" in workspace
+    assert "function getSelectedDataTreeIds" in volume
+    assert "const selected = getSelectedDataTreeIds();" in volume
+    assert "window.setAllTreeGroupsExpansion" in read("web/app/static/js/brachybot-ui-api.js")
+    assert "window.setTreeGroupExpansion(value, command === 'expand')" in read("web/app/static/js/brachybot-ui-api.js")
+    assert "if (value.startsWith('seed_')) return 'planning_seeds';" in volume
+    assert "if (value.startsWith('needle_')) return 'planning_needles';" in volume
+    assert "CSS.escape" not in volume
+    # A right-click on a member of an existing selection must not clear the
+    # selection before Move/Delete/Export consumes it.
+    assert "if (!selectedItems.has(id))" in volume
+    assert "selectedItems.clear();\n        selectedItems.add(id);" in volume
+    assert "window.resetDataTreeSelectionState = resetDataTreeSelectionState;" in volume
+    # Explicit batch snapshots must stay explicit: an empty selection must
+    # not fall back to the first live item after an async tree refresh.
+    assert "const ids = [...new Set((objectIds == null" in volume
+    assert "Array.from(objectIds)" in volume
+    assert "filter(id => String(id).startsWith('mask_'))" in volume
+
+
+def test_generic_masks_hydrate_without_a_shared_label_volume():
+    """Open masks must start loading before CTV/OAR early-return branches."""
+    volume = read("web/app/static/js/brachybot-viewer-volume.js")
+    start = volume.index("async function loadLabelVolumes(options = {})")
+    generic_start = volume.index("void hydrateGenericMasksFromServer(scope);", start)
+    first_fetch = volume.index("fetch(API + '/viewer/label_volume'", start)
+    assert generic_start < first_fetch
+    assert "genericMaskCatalogGeneration" in volume
+
+
+def test_ctv_model_provenance_keeps_embedded_anatomy_after_oar_load():
+    routes = read("web/routes/viewer_routes.py")
+    structures = read("web/structure_service.py")
+    assert 'ctv_source.startswith("nnunet_")' in routes
+    assert "is_model_ctv" in routes
+    assert "def _is_model_ctv_source" in structures
+    assert "_is_model_ctv_source(ctv_source)" in structures
+
+
 def test_task_resume_distinguishes_reconnect_from_a_server_lost_task():
     """A server restart must not leave a false 'restoring' promise in chat."""
     chat = read("web/app/static/js/brachybot-chat-todo.js")

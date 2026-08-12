@@ -670,6 +670,13 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
             # Use full multi-label array for CTV (includes tumor, artery, vein, pancreas, etc.)
             # Falls back to binary ctv_array if full labels not available
             ctv_source = str(agent.memory.retrieve("ctv_source", "") or "").strip().lower()
+            # Structure reclassification intentionally exposes the effective
+            # source as ``classified``.  The original model provenance is
+            # still authoritative for deciding whether ctv_full_labels may be
+            # split into embedded anatomy nodes.
+            base_ctv_source = str(
+                agent.memory.retrieve("structure_base_ctv_source", "") or ""
+            ).strip().lower()
             oar_source = str(agent.memory.retrieve("oar_source", "") or "").strip().lower()
             ct_ref = agent.memory.retrieve("ct_image")
 
@@ -722,7 +729,21 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
                 "totalsegmentator",
                 "totalsegmentator_liver_tumor",
             }
-            ctv_full = ctv_full_memory if ctv_source in model_sources else None
+            # Keep model-produced multi-label CTV payloads intact across
+            # restore. The pancreatic nnUNet route uses a specific provenance
+            # token, so treating only the legacy `model` token as multi-label
+            # silently dropped pancreas/artery/vein when OAR was loaded later.
+            is_model_ctv = (
+                ctv_source in model_sources
+                or ctv_source.startswith("nnunet_")
+                or ctv_source.startswith("biomedparse_")
+                or ctv_source.startswith("totalsegmentator_")
+                or base_ctv_source in model_sources
+                or base_ctv_source.startswith("nnunet_")
+                or base_ctv_source.startswith("biomedparse_")
+                or base_ctv_source.startswith("totalsegmentator_")
+            )
+            ctv_full = ctv_full_memory if is_model_ctv else None
             if ctv_full is None:
                 ctv_full = _uploaded_label_array(ctv_source, "ctv_array", "ctv_path")
             oar_array = _uploaded_label_array(oar_source, "oar_array", "oar_path")
@@ -737,7 +758,7 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
                 # embedded anatomy labels.  An uploaded CTV is opaque user
                 # data, so every non-zero voxel is CTV even when its source
                 # label is 255 or another application-specific value.
-                if ctv_source == "model":
+                if is_model_ctv:
                     ctv_array = (
                         (ctv_full == 1).astype(np.uint8)
                         if np.any(ctv_full == 1)
@@ -910,7 +931,7 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
                 except Exception:
                     pass
             # Add nnUNet-derived OAR label names
-            if ctv_source == "model" and ctv_full_memory is not None:
+            if is_model_ctv and ctv_full_memory is not None:
                 nnunet_oar_names = {201: "artery", 202: "vein", 203: "pancreas"}
                 for lid, name in nnunet_oar_names.items():
                     if lid not in organ_names:

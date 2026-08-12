@@ -17,6 +17,7 @@ from web.structure_service import (
     build_effective_structures,
     delete_structure,
     reclassify_structure,
+    replace_structure_source,
 )
 from web.workspace_store import WorkspaceStore
 
@@ -215,6 +216,35 @@ def _case(tmp_path):
     return store, user, session, agent
 
 
+def test_query_metrics_accepts_numpy_seed_positions_and_reports_oar_metrics():
+    """The agent bridge must not evaluate a NumPy array as a boolean."""
+    from tool_factory.viewer_command.query_metrics import QueryMetricsTool
+
+    tool = QueryMetricsTool()
+    seed_positions = np.zeros((3, 3), dtype=np.float32)
+    seed_result = tool._execute(
+        metric_type="seed_count",
+        seed_positions=seed_positions,
+        total_seeds=99,
+    )
+    assert seed_result.success is True
+    assert seed_result.metadata["seed_count"] == 3
+
+    all_result = tool._execute(
+        metric_type="all_metrics",
+        ctv_array=np.ones((2, 2, 2), dtype=np.uint8),
+        oar_array=np.ones((2, 2, 2), dtype=np.uint8),
+        organ_names={1: "stomach"},
+        ct_spacing=[1.0, 1.0, 1.0],
+        seed_positions=seed_positions,
+        total_seeds=99,
+        metrics={"v100": 0.9},
+    )
+    assert all_result.success is True
+    assert all_result.metadata["seed_count"] == 3
+    assert all_result.metadata["stomach"] == 0.01
+
+
 def test_structure_classification_is_bidirectional_and_persistent(tmp_path):
     store, user, session, agent = _case(tmp_path)
     memory = agent.memory
@@ -244,13 +274,46 @@ def test_structure_classification_is_bidirectional_and_persistent(tmp_path):
     assert object_id in memory.retrieve("structure_deleted_ids")
 
 
+def test_model_ctv_anatomy_survives_an_oar_source_refresh():
+    """Refreshing OAR must not erase multi-label anatomy from CTV output."""
+    memory = _Memory()
+    shape = (10, 9, 8)
+    full_labels = np.zeros(shape, dtype=np.uint8)
+    full_labels[3:7, 3:7, 2:6] = 1
+    full_labels[0:2, 0:2, 0:2] = 2
+    full_labels[8:10, 7:9, 6:8] = 3
+    full_labels[0:2, 7:9, 6:8] = 4
+    memory.store("ctv_array", (full_labels == 1).astype(np.uint8))
+    memory.store("ctv_full_labels", full_labels)
+    memory.store(
+        "ctv_label_map",
+        {1: "pancreatic tumor", 2: "artery", 3: "vein", 4: "pancreas"},
+    )
+    memory.store("ctv_source", "nnunet_pancreatic")
+    replace_structure_source(memory, "ctv")
+
+    refreshed_oar = np.zeros(shape, dtype=np.uint16)
+    refreshed_oar[7:9, 0:2, 0:2] = 1
+    memory.store("oar_array", refreshed_oar)
+    memory.store("organ_names", {1: "stomach"})
+    memory.store("oar_source", "totalsegmentator")
+    replace_structure_source(memory, "oar")
+
+    catalog = build_effective_structures(memory).public_catalog()
+    names = {item["name"] for item in catalog}
+    assert {"pancreatic tumor", "artery", "vein", "pancreas", "stomach"} <= names
+    assert memory.retrieve("structure_base_ctv_source") == "nnunet_pancreatic"
+    assert memory.retrieve("structure_base_oar_source") == "totalsegmentator"
+
+
 def test_leaf_delete_contract_cannot_be_promoted_to_recursive_group_delete():
     """The Data Tree must opt in before an OAR/CTV parent can be deleted."""
     root = Path(__file__).resolve().parents[1]
     routes = (root / "web" / "routes" / "data_routes.py").read_text(encoding="utf-8")
     viewer = (root / "web" / "app" / "static" / "js" / "brachybot-viewer-volume.js").read_text(encoding="utf-8")
     assert "Recursive group deletion requires explicit confirmation" in routes
-    assert "selectedItems.clear();\n    selectedItems.add(id);\n    lastClickedId = id;" in viewer
+    assert "if (!selectedItems.has(id))" in viewer
+    assert "selectedItems.add(id);" in viewer
     assert "recursive_groups: options.recursiveGroups === true" in viewer
 
 
