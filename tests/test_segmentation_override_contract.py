@@ -87,6 +87,16 @@ def test_surgical_guide_regeneration_routes_to_registered_tool():
     assert calls[0]["params"] == {"action": "generate"}
 
 
+def test_compound_replan_and_guide_request_does_not_use_guide_only_fast_path():
+    harness = _DirectHarness(_Memory({"ct_path": "/case/ct.nii"}))
+    message = (
+        "\u6211\u6539\u4e86\u7c92\u5b50\u690d\u5165\u53c2\u6570\uff0c"
+        "\u8bf7\u91cd\u65b0\u6267\u884c\u89c4\u5212\uff0c\u5e76\u751f\u6210\u65b0\u7684\u5bfc\u677f"
+    )
+
+    assert harness._detect_tool_request(message) is None
+
+
 def test_guide_policy_replaces_provider_code_executor_call():
     from agent_runtime.turn_policy import classify_local_turn
 

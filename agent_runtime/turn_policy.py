@@ -9,6 +9,8 @@ from dataclasses import dataclass, field
 import re
 from typing import FrozenSet, Iterable, Optional
 
+from agent_runtime.action_plan import ActionPlan
+
 
 KNOWLEDGE_TOOLS: FrozenSet[str] = frozenset({
     "clinical_kb", "web_search", "web_fetch", "web_access",
@@ -63,6 +65,7 @@ class LocalTurnPolicy:
     direct_execution: bool = False
     execution_grants: FrozenSet[str] = field(default_factory=frozenset)
     workflow_grants: FrozenSet[str] = field(default_factory=frozenset)
+    action_plan: Optional[ActionPlan] = None
 
 
 def _has_cjk(text: str) -> bool:
@@ -72,6 +75,101 @@ def _has_cjk(text: str) -> bool:
 def _contains_any(text: str, phrases: Iterable[str]) -> bool:
     lowered = (text or "").lower()
     return any(phrase.lower() in lowered for phrase in phrases)
+
+
+def _looks_like_compound_action(message: str) -> bool:
+    """Detect sentence structure that may contain more than one operation.
+
+    This is only a fast-path boundary. It does not choose a tool or a
+    workflow; compound requests are sent to the LLM so it can build the plan.
+    """
+    text = re.sub(r"\s+", " ", str(message or "").strip().lower())
+    if re.search(
+        r"(?:\u7136\u540e|\u4e4b\u540e|\u4e4b\u524d|\u5148|\u518d|\u540c\u65f6|\u4ee5\u53ca|\u5e76(?:\u4e14)?|\u5b8c\u6210\u540e|"
+        r"\b(?:then|after|before|and then|followed by|as well as|also|next)\b)",
+        text,
+        flags=re.IGNORECASE,
+    ):
+        return True
+
+    # Users often separate imperative clauses with punctuation and omit a
+    # connective: "rerun planning, generate a new guide". Detect that
+    # sentence structure only when both sides contain an action head; this is
+    # deliberately a routing boundary, not a tool or intent classifier.
+    action_head = (
+        r"(?:\u6267\u884c|\u8fdb\u884c|\u5f00\u59cb|\u89c4\u5212|\u8ba1\u5212|\u751f\u6210|\u5206\u5272|\u663e\u793a|\u67e5\u770b|\u5bfc\u51fa|"
+        r"\u66f4\u65b0|\u91cd\u5efa|\u8ba1\u7b97|\u8c03\u7528|\u505c\u6b62|\u6253\u5f00|\u5207\u6362|\u5220\u9664|\u79fb\u52a8|\u6dfb\u52a0|"
+        r"run|rerun|replan|plan(?:ning)?|execute|perform|generate|segment|show|view|export|update|rebuild|calculate|call|stop|open|switch|delete|move|add)"
+    )
+    clauses = re.split(r"[,;\uFF0C\uFF1B]", text)
+    if len(clauses) > 1:
+        return any(
+            re.search(action_head, clause, flags=re.IGNORECASE)
+            for clause in clauses[:-1]
+        ) and any(
+            re.search(action_head, clause, flags=re.IGNORECASE)
+            for clause in clauses[1:]
+        )
+    return False
+
+
+def _has_explicit_planning_action(message: str) -> bool:
+    """Recognize an explicit planning operation for dependency enforcement."""
+    text = re.sub(r"\s+", " ", str(message or "").strip().lower())
+    if not text:
+        return False
+    planning = r"(?:\u89c4\u5212|\u8ba1\u5212|planning(?:\s+pipeline)?|treatment\s+plan|brachytherapy\s+plan)"
+    action = r"(?:\u6267\u884c|\u8fdb\u884c|\u5f00\u59cb|\u91cd\u65b0|\u91cd\u505a|\u91cd\u8dd1|\u8c03\u6574|\u66f4\u65b0|execute|run|start|rerun|replan|perform|update)"
+    return bool(re.search(
+        rf"(?:{action}).{{0,18}}(?:{planning})|(?:{planning}).{{0,12}}(?:{action})",
+        text,
+        flags=re.IGNORECASE,
+    ))
+
+
+def is_planning_reexecution_request(message: str) -> bool:
+    """Return true only for an explicit request to replace an existing plan."""
+    text = re.sub(r"\s+", " ", str(message or "").strip().lower())
+    if not text:
+        return False
+    explicit = bool(re.search(
+        r"(?:\u91cd\u65b0|\u518d\u6b21|\u518d|\u91cd\u505a|\u91cd\u8dd1|\u91cd\u65b0\u6267\u884c).{0,12}(?:\u89c4\u5212|\u8ba1\u5212)|"
+        r"\b(?:replan|re-plan|rerun(?: the)? plan|rerun planning)\b",
+        text,
+        flags=re.IGNORECASE,
+    ))
+    changed_then_plan = bool(re.search(
+        r"(?:\u6539|\u4fee\u6539|\u8c03\u6574|\u53d8\u66f4|\u66f4\u65b0|changed?|modified?|adjusted?).{0,28}"
+        r"(?:\u53c2\u6570|\u8bbe\u7f6e|\u7c92\u5b50|\u9488\u9053|parameters?|settings?).{0,24}"
+        r"(?:\u91cd\u65b0|\u518d\u6b21|\u518d|\u6267\u884c|\u8fd0\u884c|rerun|replan|run).{0,12}"
+        r"(?:\u89c4\u5212|\u8ba1\u5212|plan(?:ning)?)",
+        text,
+        flags=re.IGNORECASE,
+    ))
+    return explicit or changed_then_plan
+
+
+def requires_planning_before_guide(message: str) -> bool:
+    """Return true when a guide request explicitly includes a planning step."""
+    return bool(
+        is_surgical_guide_generation_request(message)
+        and (
+            is_planning_reexecution_request(message)
+            or (_looks_like_compound_action(message) and _has_explicit_planning_action(message))
+        )
+    )
+
+
+def _planning_and_guide_plan() -> ActionPlan:
+    """Build the only routing-level plan that is a hard business dependency."""
+    return ActionPlan.from_tools(
+        ("ctv_segmentation", "oar_segmentation", "planning_pipeline", "surgical_guide"),
+        source="semantic_dependency_guard",
+        dependencies={
+            "planning_pipeline": ("ctv_segmentation", "oar_segmentation"),
+            "surgical_guide": ("planning_pipeline",),
+        },
+    )
 
 
 def _requires_semantic_resolution(message: str) -> bool:
@@ -105,8 +203,19 @@ def _requires_semantic_resolution(message: str) -> bool:
     return any(marker in text for marker in semantic_markers)
 
 
-def _semantic_action_policy(*, complexity: str = "medium", review: bool = True) -> LocalTurnPolicy:
+def _semantic_action_policy(
+    *,
+    complexity: str = "medium",
+    review: bool = True,
+    action_plan: Optional[ActionPlan] = None,
+) -> LocalTurnPolicy:
     """Use the main LLM once for semantic action selection, not a second router."""
+    execution_grants = frozenset()
+    workflow_grants = frozenset()
+    if action_plan is not None:
+        execution_grants = frozenset(action_plan.tool_names)
+        if action_plan.requires_tool("planning_pipeline"):
+            workflow_grants = frozenset({"clinical_planning"})
     return LocalTurnPolicy(
         "semantic_action",
         complexity,
@@ -114,6 +223,9 @@ def _semantic_action_policy(*, complexity: str = "medium", review: bool = True) 
         False,
         review,
         SEMANTIC_TOOLS,
+        execution_grants=execution_grants,
+        workflow_grants=workflow_grants,
+        action_plan=action_plan,
     )
 
 
@@ -519,6 +631,23 @@ def classify_local_turn(message: str, pending_tumor_site: bool = False) -> Local
         # answer itself is still generated by the configured LLM.
         return LocalTurnPolicy("small_talk", "low", False, False, False, frozenset())
 
+    # Resolve compound requests before every read-only or operation-specific
+    # shortcut. Otherwise a phrase such as "regenerate the report and show
+    # its figures" could be consumed by the report branch before the model
+    # sees the second action. The only routing-level dependency encoded here
+    # is the safety-critical planning -> guide relationship; all other actions
+    # are selected and ordered by the primary LLM.
+    if _looks_like_compound_action(text):
+        return _semantic_action_policy(
+            complexity="high",
+            review=True,
+            action_plan=(
+                _planning_and_guide_plan()
+                if requires_planning_before_guide(text)
+                else None
+            ),
+        )
+
     # Technical image metadata is a local read-only workspace query. Do this
     # before the interrogative branch so it cannot drift into doc_reader or a
     # knowledge search that returns only a generic completion message.
@@ -555,7 +684,10 @@ def classify_local_turn(message: str, pending_tumor_site: bool = False) -> Local
     # knowledge_query, where the model may invent a code_executor workaround.
     if is_surgical_guide_generation_request(text):
         if _requires_semantic_resolution(text):
-            return _semantic_action_policy(complexity="medium", review=True)
+            return _semantic_action_policy(
+                complexity="medium",
+                review=True,
+            )
         return LocalTurnPolicy(
             "surgical_guide_generation",
             "medium",
@@ -674,6 +806,14 @@ def classify_local_turn(message: str, pending_tumor_site: bool = False) -> Local
                 "ctv_segmentation", "oar_segmentation", "planning_pipeline", "surgical_guide",
             }),
             workflow_grants=frozenset({"clinical_planning"}),
+            action_plan=ActionPlan.from_tools(
+                ("ctv_segmentation", "oar_segmentation", "planning_pipeline", "surgical_guide"),
+                source="clinical_workflow_fast_path",
+                dependencies={
+                    "planning_pipeline": ("ctv_segmentation", "oar_segmentation"),
+                    "surgical_guide": ("planning_pipeline",),
+                },
+            ),
         )
     if segmentation:
         resumes_clarified_action = bool(

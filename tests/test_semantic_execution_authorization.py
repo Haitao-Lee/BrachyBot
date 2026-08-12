@@ -43,6 +43,148 @@ def test_unambiguous_full_plan_keeps_the_low_latency_legacy_route():
     }.issubset(policy.execution_grants)
 
 
+def test_compound_replan_and_guide_request_preserves_an_ordered_action_plan():
+    message = (
+        "\u6211\u6539\u4e86\u7c92\u5b50\u690d\u5165\u53c2\u6570\uff0c"
+        "\u8bf7\u91cd\u65b0\u6267\u884c\u89c4\u5212\uff0c\u5e76\u751f\u6210\u65b0\u7684\u5bfc\u677f"
+    )
+    policy = classify_local_turn(message)
+
+    assert policy.intent == "semantic_action"
+    assert policy.direct_execution is False
+    assert policy.action_plan is not None
+    assert policy.action_plan.tool_names == (
+        "ctv_segmentation",
+        "oar_segmentation",
+        "planning_pipeline",
+        "surgical_guide",
+    )
+    assert [step.tool for step in policy.action_plan.ordered_steps()] == [
+        "ctv_segmentation",
+        "oar_segmentation",
+        "planning_pipeline",
+        "surgical_guide",
+    ]
+    assert policy.action_plan.ordered_steps()[2].depends_on == (
+        "ctv_segmentation",
+        "oar_segmentation",
+    )
+    assert policy.action_plan.ordered_steps()[3].depends_on == ("planning_pipeline",)
+    assert "planning_pipeline" in policy.execution_grants
+    assert "surgical_guide" in policy.execution_grants
+
+
+def test_action_plan_preserves_repeated_provider_steps_and_order_after_merge():
+    from agent_runtime.action_plan import ActionPlan
+
+    provider_plan = ActionPlan.from_tool_calls([
+        {"tool": "report_generator", "params": {"version": 1}},
+        {"tool": "report_generator", "params": {"version": 2}},
+        {"tool": "ui_content", "params": {"target": "report"}},
+    ])
+    merged = ActionPlan.from_tools(
+        ("planning_pipeline", "surgical_guide"),
+        dependencies={"surgical_guide": ("planning_pipeline",)},
+    ).merge(provider_plan)
+
+    assert [step.key for step in provider_plan.steps] == [
+        "report_generator",
+        "report_generator#2",
+        "ui_content",
+    ]
+    ordered = merged.order_tool_calls([
+        {"tool": "ui_content"},
+        {"tool": "surgical_guide"},
+        {"tool": "planning_pipeline"},
+    ])
+    assert [call["tool"] for call in ordered] == [
+        "planning_pipeline",
+        "surgical_guide",
+        "ui_content",
+    ]
+
+
+def test_compound_report_and_attachment_request_cannot_use_report_fast_path():
+    policy = classify_local_turn(
+        "\u8bf7\u91cd\u65b0\u751f\u6210\u62a5\u544a\u5e76\u628a\u62a5\u544a\u56fe\u7247\u663e\u793a\u5728\u5bf9\u8bdd\u4e2d"
+    )
+
+    assert policy.intent == "semantic_action"
+    assert policy.direct_execution is False
+    assert policy.action_plan is None
+
+
+def test_compound_guide_request_keeps_the_planning_dependency_plan():
+    policy = classify_local_turn(
+        "\u8bf7\u91cd\u65b0\u6267\u884c\u89c4\u5212\u540e\u518d\u751f\u6210\u5bfc\u677f"
+    )
+
+    assert policy.intent == "semantic_action"
+    assert policy.action_plan is not None
+    assert policy.action_plan.tool_names[-2:] == (
+        "planning_pipeline",
+        "surgical_guide",
+    )
+
+
+def test_punctuation_separated_actions_also_use_the_primary_planner():
+    policy = classify_local_turn(
+        "\u8bf7\u91cd\u65b0\u89c4\u5212, \u751f\u6210\u65b0\u7684\u5bfc\u677f"
+    )
+
+    assert policy.intent == "semantic_action"
+    assert policy.direct_execution is False
+
+
+def test_action_plan_merge_keeps_repeated_actions_from_later_model_rounds():
+    from agent_runtime.action_plan import ActionPlan
+
+    first = ActionPlan.from_tool_calls([
+        {"tool": "report_generator", "params": {"version": 1}},
+    ])
+    second = ActionPlan.from_tool_calls([
+        {"tool": "report_generator", "params": {"version": 2}},
+        {"tool": "ui_content", "params": {"target": "report"}},
+    ])
+    merged = first.merge(second)
+
+    assert [step.key for step in merged.steps] == [
+        "report_generator",
+        "report_generator#2",
+        "ui_content",
+    ]
+    assert [step.params.get("version") for step in merged.steps[:2]] == [1, 2]
+
+
+def test_action_plan_merges_provider_call_into_dependency_placeholder():
+    from agent_runtime.action_plan import ActionPlan
+
+    guarded = ActionPlan.from_tools(
+        ("planning_pipeline", "surgical_guide"),
+        source="semantic_dependency_guard",
+        dependencies={"surgical_guide": ("planning_pipeline",)},
+    )
+    concrete = ActionPlan.from_tool_calls([
+        {"tool": "planning_pipeline", "params": {"step": "full"}},
+        {"tool": "surgical_guide", "params": {"action": "generate"}},
+    ])
+    merged = guarded.merge(concrete)
+
+    assert [step.key for step in merged.steps] == [
+        "planning_pipeline",
+        "surgical_guide",
+    ]
+    assert merged.steps[0].params["step"] == "full"
+    assert merged.steps[1].params["action"] == "generate"
+
+
+def test_compound_nonclinical_request_uses_primary_semantic_path():
+    policy = classify_local_turn("请先查看当前报告，然后把截图显示在对话中")
+
+    assert policy.intent == "semantic_action"
+    assert policy.direct_execution is False
+
+
 def test_planning_and_segmentation_mentions_are_not_execution_permission():
     planning = classify_local_turn("请介绍放射性粒子植入规划的原理")
     segmentation = classify_local_turn("CTV分割方法有哪些")

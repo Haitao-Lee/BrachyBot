@@ -45,6 +45,7 @@ from agent_runtime.contracts import ContextPackBuilder, RunLedger, ToolCallGatew
 from agent_runtime.response_tools import ResponseToolMixin
 from agent_runtime.llm_runtime import LLMRuntimeMixin
 from agent_runtime.chat_workflows import ChatWorkflowMixin
+from agent_runtime.turn_policy import is_planning_reexecution_request
 
 class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
     """
@@ -868,6 +869,8 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
     def _is_replan_request(self, message: str) -> bool:
         """Detect an explicit request to rerun an existing plan."""
         text = (message or "").lower()
+        if is_planning_reexecution_request(message):
+            return True
         return bool(
             re.search(r"(?:重新|再次|再|重做|重跑).{0,8}(?:规划|计划)", text)
             or re.search(r"(?:规划|计划).{0,8}(?:反向|逆向|重新|再来)", text)
@@ -878,6 +881,20 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
             or re.search(r"\breverse\b.{0,30}\breference\s*direction\b", text)
             or re.search(r"\breference\s*direction\b.{0,30}\breverse\b", text)
             or re.search(r"reference\s*direction.{0,30}(?:reverse|\u53cd\u5411|\u9006\u5411).{0,10}(?:plan|\u89c4\u5212|\u8ba1\u5212)", text)
+            or re.search(r"(?:reverse|\u53cd\u5411|\u9006\u5411).{0,30}reference\s*direction", text)
+        )
+
+    @staticmethod
+    def _reference_direction_reverse_requested(message: str) -> bool:
+        """Return true only when reversing the reference vector was requested."""
+        text = (message or "").lower()
+        return bool(
+            re.search(r"\breverse\b.{0,30}\breference\s*direction\b", text)
+            or re.search(r"\breference\s*direction\b.{0,30}\breverse\b", text)
+            or re.search(
+                r"reference\s*direction.{0,30}(?:reverse|\u53cd\u5411|\u9006\u5411)",
+                text,
+            )
             or re.search(r"(?:reverse|\u53cd\u5411|\u9006\u5411).{0,30}reference\s*direction", text)
         )
 
@@ -976,6 +993,21 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
         )
         planning_ready = self._has_completed_planning()
         replan_requested = self._is_replan_request(message)
+        get_authorization = getattr(self, "_current_execution_authorization", None)
+        authorization = (
+            get_authorization()
+            if callable(get_authorization)
+            else getattr(self, "_turn_execution_authorization", None)
+        )
+        action_plan = getattr(authorization, "action_plan", None)
+        if action_plan is None or not action_plan.steps:
+            active_policy = getattr(self, "_active_turn_policy", None)
+            action_plan = getattr(active_policy, "action_plan", None)
+        if action_plan is not None and action_plan.requires_tool("planning_pipeline"):
+            # The semantic resolver preserved an ordered business plan. Treat
+            # its planning step as an explicit replacement request even when
+            # the provider initially emitted only the downstream guide call.
+            replan_requested = True
         ct_path = self._current_ct_path(tool_calls)
         tumor_type = (
             self.memory.retrieve("tumor_type_used")
@@ -1080,14 +1112,14 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
             # Preserve the live UI direction for both rule-based and RL
             # planning. The auto checkbox is an explicit geometric request;
             # do not replace it with the stale manual vector from the form.
-            if not replan_requested:
+            if not self._reference_direction_reverse_requested(message):
                 live_ref = planning_state.get("reference_direc")
                 if planning_state.get("ref_direc_auto"):
                     live_ref = "auto"
                 if live_ref is not None:
                     planning_params["ref_direc"] = live_ref
 
-            if replan_requested:
+            if self._reference_direction_reverse_requested(message):
                 planning_params["ref_direc"] = self._reversed_reference_direction()
                 planning_params["_reference_direction_user_override"] = True
             ordered.append(ensure_call("planning_pipeline", planning_params))

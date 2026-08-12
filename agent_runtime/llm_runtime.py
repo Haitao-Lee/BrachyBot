@@ -17,6 +17,7 @@ from urllib.parse import unquote, urlparse
 
 from config.prompts import SYSTEM_PROMPT_TEMPLATE, get_prompt_modules
 from agent_runtime.core import AgentMemory, ToolResultPipeline
+from agent_runtime.action_plan import ActionPlan
 from agent_runtime.turn_policy import filter_tool_schemas
 
 logger = logging.getLogger(__name__)
@@ -353,6 +354,50 @@ def _upsert_runtime_context(messages: List[Dict], content: str) -> None:
 
 
 class LLMRuntimeMixin:
+    def _record_ordered_action_plan(self, tool_calls, *, source: str = "llm") -> None:
+        """Persist provider-selected tool order for this isolated chat turn."""
+        plan = ActionPlan.from_tool_calls(tool_calls or (), source=source)
+        if not plan.steps:
+            return
+        authorization = getattr(self, "_current_execution_authorization", lambda: None)()
+        if authorization is not None and hasattr(authorization, "set_action_plan"):
+            authorization.set_action_plan(plan, source=source)
+            ledger = getattr(self, "run_ledger", None)
+            if ledger is not None:
+                from agent_runtime.contracts import RunStatus
+                ledger.transition(
+                    RunStatus.REASONING,
+                    "action.plan.updated",
+                    action_plan=authorization.action_plan.to_dict(),
+                    source=source,
+                )
+
+    def _ordered_action_plan_context(self) -> str:
+        """Give the model the current plan without exposing raw tool payloads."""
+        authorization = getattr(self, "_current_execution_authorization", lambda: None)()
+        plan = getattr(authorization, "action_plan", None)
+        if plan is None or not plan.steps:
+            policy = getattr(self, "_active_turn_policy", None)
+            plan = getattr(policy, "action_plan", None)
+        if plan is None or not plan.steps:
+            return ""
+        ordered = " -> ".join(step.tool for step in plan.ordered_steps())
+        return (
+            "\n### ORDERED ACTION PLAN\n"
+            "The current request contains an ordered business action plan. "
+            "Preserve this order and complete prerequisites before downstream actions. "
+            f"Required order: {ordered}. "
+            "Do not summarize early and do not call a downstream tool before its dependencies.\n"
+        )
+
+    def _order_tool_calls_by_action_plan(self, tool_calls):
+        """Apply the merged turn plan after filtering and dependency injection."""
+        authorization = getattr(self, "_current_execution_authorization", lambda: None)()
+        plan = getattr(authorization, "action_plan", None)
+        if plan is None or not plan.steps:
+            return tool_calls
+        return list(plan.order_tool_calls(tool_calls or ()))
+
     def _pack_context_for_provider(self, messages: List[Dict], user_message: str) -> List[Dict]:
         """Apply the portable context budget before the first provider call.
 
@@ -522,6 +567,7 @@ class LLMRuntimeMixin:
         elif query_type == 'system':
             enhanced_context += "This query is about internal state. Read from conversation history or tool_results. Do NOT search.\n"
 
+        enhanced_context += self._ordered_action_plan_context()
         system_prompt = _build_static_system_prompt(message)
         runtime_context = _build_runtime_context(
             ui_state_summary, enhanced_context, self.memory.get_clean_context()
@@ -616,6 +662,7 @@ class LLMRuntimeMixin:
                 if callable(get_authorization)
                 else getattr(self, "_turn_execution_authorization", None)
             )
+            self._record_ordered_action_plan(_direct_tool_calls, source="local_direct_calls")
             if authorization is not None:
                 authorization.grant_tool_calls(_direct_tool_calls, source="local_direct_calls")
             logger.info(f"Direct tool execution: {len(_direct_tool_calls)} tools")
@@ -750,6 +797,19 @@ class LLMRuntimeMixin:
                 return "已停止本次响应。请修改输入后重新发送，我会按新的请求重新执行。"
             iteration += 1
 
+            # The authorization ledger is updated after every provider tool
+            # decision. Refresh the bounded runtime context before the next
+            # provider round so a multi-round model cannot lose the merged
+            # action plan and start a downstream action early.
+            _upsert_runtime_context(
+                messages,
+                _build_runtime_context(
+                    ui_state_summary,
+                    enhanced_context + self._ordered_action_plan_context(),
+                    self.memory.get_clean_context(),
+                ),
+            )
+
             try:
                 response = _chat_messages_with_retry(
                     self.brain_router, messages=messages, tools=None, max_retries=1
@@ -860,6 +920,10 @@ class LLMRuntimeMixin:
                 tools_executed = True
                 break
 
+            # Preserve the provider's ordered decision before clinical
+            # dependency normalization adds prerequisite calls.
+            self._record_ordered_action_plan(valid_tool_calls, source="llm")
+
             get_authorization = getattr(self, "_current_execution_authorization", None)
             authorization = (
                 get_authorization()
@@ -880,6 +944,7 @@ class LLMRuntimeMixin:
                     call for call in tool_calls
                     if authorization.tool_allowed(call.get("tool", ""))
                 ]
+            tool_calls = self._order_tool_calls_by_action_plan(tool_calls)
             if not tool_calls:
                 tools_executed = True
                 break
@@ -1656,6 +1721,7 @@ class LLMRuntimeMixin:
         elif query_type == 'system':
             enhanced_context += "This query is about internal state. Read from conversation history or tool_results. Do NOT search.\n"
 
+        enhanced_context += self._ordered_action_plan_context()
         system_prompt = _build_static_system_prompt(message)
         runtime_context = _build_runtime_context(
             ui_state_summary, enhanced_context, self.memory.get_clean_context()
@@ -1839,6 +1905,17 @@ class LLMRuntimeMixin:
 
         while iteration < max_iterations:
             iteration += 1
+
+            # Keep the provider's next round synchronized with the durable,
+            # turn-scoped action plan after tool calls or retries update it.
+            _upsert_runtime_context(
+                messages,
+                _build_runtime_context(
+                    ui_state_summary,
+                    enhanced_context + self._ordered_action_plan_context(),
+                    self.memory.get_clean_context(),
+                ),
+            )
 
             # Stream cancel check: unlike the non-streaming path, the streaming
             # loop processes one LLM round at a time and can hang between rounds
@@ -2103,6 +2180,10 @@ class LLMRuntimeMixin:
                 tools_executed = True
                 break
 
+            # Preserve the provider's ordered decision before clinical
+            # dependency normalization adds prerequisite calls.
+            self._record_ordered_action_plan(valid_tool_calls, source="llm")
+
             # HARD BLOCK: prevent redundant tool calls.
             # The LLM sometimes re-calls tools even after they completed.
             _filtered_again = []
@@ -2161,6 +2242,7 @@ class LLMRuntimeMixin:
                     call for call in tool_calls
                     if authorization.tool_allowed(call.get("tool", ""))
                 ]
+            tool_calls = self._order_tool_calls_by_action_plan(tool_calls)
             if not tool_calls:
                 tools_executed = True
                 break

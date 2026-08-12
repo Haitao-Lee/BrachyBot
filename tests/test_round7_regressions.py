@@ -109,6 +109,53 @@ def test_replan_reverses_current_ui_direction_and_reuses_masks():
     assert injected[0]["tool"] == "planning_pipeline"
 
 
+def test_ordered_action_plan_injects_planning_before_provider_guide_call():
+    from AgenticSys import BrachyAgent
+    from agent_runtime.execution_authorization import TurnExecutionAuthorization
+    from agent_runtime.turn_policy import classify_local_turn
+
+    class Memory:
+        def retrieve(self, key, default=None):
+            if key in {"ctv_array", "oar_array"}:
+                return [1]
+            if key == "oar_is_full":
+                return True
+            if key == "tumor_type_used":
+                return "nnunet_pancreatic"
+            return default
+
+        def get_ui_state(self):
+            return {"planning": {}}
+
+    message = (
+        "\u6211\u6539\u4e86\u7c92\u5b50\u690d\u5165\u53c2\u6570\uff0c"
+        "\u8bf7\u91cd\u65b0\u6267\u884c\u89c4\u5212\uff0c\u5e76\u751f\u6210\u65b0\u7684\u5bfc\u677f"
+    )
+    agent = object.__new__(BrachyAgent)
+    agent.memory = Memory()
+    agent.config = {}
+    agent._active_turn_token = 1
+    policy = classify_local_turn(message)
+    agent._active_turn_policy = policy
+    agent._turn_execution_authorization = TurnExecutionAuthorization(token=1)
+    agent._turn_execution_authorization.set_action_plan(policy.action_plan, source="test")
+    agent._turn_execution_authorization.grant_policy(policy)
+    agent._has_completed_planning = lambda *_args, **_kwargs: True
+    agent._current_ct_path = lambda *_args, **_kwargs: "/tmp/case.nii.gz"
+
+    routed = agent._normalize_clinical_tool_calls(
+        [{"tool": "surgical_guide", "params": {"action": "generate"}}],
+        message,
+    )
+
+    assert [call["tool"] for call in routed] == [
+        "planning_pipeline",
+        "surgical_guide",
+    ]
+    assert routed[0]["params"]["step"] == "full"
+    assert routed[0]["params"]["ct_image_path"] == "/tmp/case.nii.gz"
+
+
 def test_chat_renders_only_reviewed_response_event():
     source = (ROOT / "web/app/static/js/brachybot-chat-todo.js").read_text(encoding="utf-8")
     assert "let finalResponseReceived = false;" in source

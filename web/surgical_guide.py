@@ -870,6 +870,52 @@ def guide_state_for_version(agent: Any, version: Optional[Any] = None) -> Dict[s
     return dict(current) if isinstance(current, Mapping) else {}
 
 
+def _guide_history_for_version(agent: Any, previous: Any) -> list[Dict[str, Any]]:
+    """Return the immutable guide history plus the legacy active guide alias."""
+    history = [
+        dict(item)
+        for item in (agent.memory.retrieve("surgical_guide_versions") or [])
+        if isinstance(item, Mapping) and int(item.get("version") or 0) > 0
+    ]
+    if isinstance(previous, Mapping):
+        previous_version = int(previous.get("version") or 0)
+        if previous_version > 0 and not any(
+            int(item.get("version") or 0) == previous_version for item in history
+        ):
+            history.append(dict(previous))
+    by_version = {int(item.get("version") or 0): item for item in history}
+    return [by_version[version] for version in sorted(by_version)]
+
+
+def _resolve_guide_version(
+    agent: Any,
+    previous: Any,
+    signature: str,
+    parameters: Mapping[str, Any],
+    planning_id: Optional[str],
+) -> int:
+    """Choose a stable version without reusing a guide from another plan.
+
+    The active ``surgical_guide`` key is intentionally replaced when a new
+    Planning is created.  Version allocation therefore cannot rely on that
+    alias alone; it must inspect ``surgical_guide_versions``.  A duplicate
+    generation for the same Planning may reuse its version, while a new
+    Planning always gets the next monotonically increasing version.
+    """
+    history = _guide_history_for_version(agent, previous)
+    current_id = str(planning_id or "")
+    for candidate in reversed(history):
+        if (
+            str(candidate.get("source_plan_signature") or "") == str(signature)
+            and (candidate.get("parameters") or {}) == dict(parameters)
+        ):
+            candidate_id = str(candidate.get("planning_id") or "")
+            if current_id and candidate_id and candidate_id != current_id:
+                continue
+            return int(candidate.get("version") or 0)
+    return max((int(item.get("version") or 0) for item in history), default=0) + 1
+
+
 def save_guide_version(agent: Any, state: Mapping[str, Any]) -> Dict[str, Any]:
     """Persist a new immutable mesh version and make it the active display."""
     if agent is None or not hasattr(agent, "memory"):
@@ -2808,20 +2854,6 @@ def generate_surgical_guide(
     snapshot = _current_planning_snapshot(agent)
     prior = memory.retrieve("surgical_guide")
     signature = planning_signature(_algorithm_planning_snapshot(agent))
-    # Deduplicate versions: when the plan geometry and manufacturing parameters
-    # are identical to the latest version, keep that version number instead of
-    # bumping it. This prevents spurious v2 -> v3 jumps caused by duplicate
-    # auto-generation calls (LLM tool + frontend auto-generate after a session
-    # restart) that would otherwise produce N copies of the same guide.
-    reuse_version = None
-    if isinstance(prior, Mapping):
-        prior_sig = str(prior.get("source_plan_signature") or "")
-        prior_params = prior.get("parameters") or {}
-        if prior_sig == signature and prior_params == params:
-            reuse_version = int(prior.get("version") or 0)
-    version = int(reuse_version) if reuse_version else (
-        int(prior.get("version", 0)) + 1 if isinstance(prior, Mapping) else 1
-    )
     # The guide belongs to the currently displayed Planning, including
     # algorithm-generated runs that do not have a manual planning id.  Keep
     # the legacy manual key only as a fallback for old sessions.
@@ -2832,6 +2864,16 @@ def generate_surgical_guide(
         planning_id = ""
     if not planning_id:
         planning_id = str(memory.retrieve("manual_planning_id") or "")
+    # Deduplicate only duplicate generations for the same Planning.  A new
+    # Planning must receive the next guide version even when its geometry and
+    # manufacturing parameters happen to be identical to an older run.
+    version = _resolve_guide_version(
+        agent,
+        prior,
+        signature,
+        params,
+        planning_id or None,
+    )
     planning_version = int(memory.retrieve("manual_plan_version") or 0)
     path_checks = _planned_path_deviation(paths)
     auxiliary_holes = {
