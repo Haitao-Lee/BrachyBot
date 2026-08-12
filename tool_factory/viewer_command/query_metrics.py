@@ -130,7 +130,14 @@ class QueryMetricsTool(BaseTool):
     def _get_seed_count(self, kw) -> ToolResult:
         seeds = kw.get("seed_positions", [])
         total = kw.get("total_seeds", 0)
-        count = len(seeds) if seeds else total
+        # NumPy arrays do not have a scalar truth value.  Use an explicit
+        # length check so live planning arrays and serialized lists behave the
+        # same way when the metrics tool is called from the agent bridge.
+        try:
+            seed_count = len(seeds) if seeds is not None else 0
+        except TypeError:
+            seed_count = 0
+        count = seed_count if seed_count > 0 else total
         return ToolResult(success=True, message=f"Total seeds: {count}", metadata={"seed_count": count})
 
     def _get_hu_statistics(self, kw) -> ToolResult:
@@ -149,7 +156,8 @@ class QueryMetricsTool(BaseTool):
 
     def _get_all_metrics(self, kw) -> ToolResult:
         result = {}
-        for getter in [self._get_dose_metrics, self._get_ctv_volume, self._get_seed_count,
+        for getter in [self._get_dose_metrics, self._get_ctv_volume, self._get_oar_volumes,
+                       self._get_seed_count,
                        self._get_hu_statistics, self._get_spacing_info]:
             try:
                 r = getter(kw)

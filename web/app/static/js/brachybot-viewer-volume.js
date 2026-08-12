@@ -456,6 +456,9 @@ async function hydrateOarDataTreeFromServer(expectedGeneration, expectedSessionI
 async function loadLabelVolumes(options = {}) {
     const scope = _captureViewerDataScope(options.sessionId);
     const sid = scope.sessionId || (typeof activeSessionId !== 'undefined' ? String(activeSessionId) : '');
+    // Generic/open masks are independent from the shared clinical volume.
+    // Start hydration in parallel so standalone masks restore without CTV/OAR.
+    void hydrateGenericMasksFromServer(scope);
     const preserveViewerState = options.preserveViewerState === true;
     // A fresh segmentation/import is a new clinical result, not a viewer
     // preference restore.  Older snapshots could persist the initial CT-only
@@ -787,10 +790,9 @@ async function loadLabelVolumes(options = {}) {
             sessionId: scope.sessionId,
             reason: 'label-volume-loaded',
         });
-        // Open anatomy masks are an independent Data Tree layer. Hydrate them
-        // after the shared CTV/OAR volume so a slow optional mask cannot block
-        // the clinical segmentation paint or planning workflow.
-        void hydrateGenericMasksFromServer(scope);
+        // Generic/open masks were started in parallel at function entry. Do
+        // not issue a second request here: duplicate hydration can race tree
+        // rendering and restore an older presentation snapshot.
         return true;
 }
 
@@ -2213,6 +2215,8 @@ const DEFAULT_NON_TRAVERSABLE_COLOR = '#e58a48';
 const DEFAULT_TRAVERSABLE_COLOR = '#3ccb8f';
 const dataTreeState = {
     structurePaletteVersion: STRUCTURE_PALETTE_VERSION,
+    // Expansion is session-scoped UI state, not transient DOM state.
+    expansionState: {},
     ct:       { visible: true, opacity: 1.0, color: '#888', loaded: false, label: 'CT Image' },
     ctv:      { visible: true, opacity: 0.7, color: DEFAULT_CTV_STRUCTURE_COLOR, loaded: false, label: 'CTV Mask' },
     oar:      { visible: true, opacity: 0.5, color: DEFAULT_OAR_STRUCTURE_COLOR, loaded: false, label: 'All OARs' },
@@ -3137,7 +3141,7 @@ function renderDataTree() {
     let html = '';
 
     // === Image group ===
-    html += `<div class="tree-group">
+    html += `<div class="tree-group" data-group="image">
         <div class="tree-group-header" onclick="toggleTreeGroup(this)" oncontextmenu="event.preventDefault();showGroupContextMenu(event.clientX,event.clientY,'image')">
             <span class="arrow">&#9660;</span>
             <span>Image</span>
@@ -3161,7 +3165,7 @@ function renderDataTree() {
         || Object.keys(state.maskLabels || {}).length > 0;
     const maskCount = Object.keys(state.maskLabels || {}).length;
     const segCount = hasMultiLabelCtv ? ctvLabels.length : (dataTreeState.ctv.loaded ? 1 : 0);
-    html += `<div class="tree-group">
+    html += `<div class="tree-group" data-group="segmentation">
         <div class="tree-group-header" onclick="toggleTreeGroup(this)" oncontextmenu="event.preventDefault();showGroupContextMenu(event.clientX,event.clientY,'segmentation')">
             <span class="arrow">&#9660;</span>
             <span>Segmentation ${hasSeg ? `(${dataTreeState.organs.length + segCount + maskCount + (dataTreeState.skin.loaded ? 1 : 0)})` : ''}</span>
@@ -3768,6 +3772,7 @@ function renderDataTree() {
     }
 
     body.innerHTML = html;
+    _restoreTreeGroupExpansionState(body);
     requestViewerVisualRefresh('data-tree-render');
 }
 
@@ -4097,10 +4102,33 @@ function setDataTreeItemColor(id, color) {
 window.setDataTreeItemColor = setDataTreeItemColor;
 
 function getItemGroup(id) {
-    if (id === 'ctv') return 'ctv';
-    if (id === 'skin_surface') return 'segmentation';
-    const organ = dataTreeState.organs.find(o => o.id === id);
-    return organ ? organ.category : 'other';
+    // Shift selection is a range operation, so its ordering domain must be
+    // stable even while asynchronous segmentation/planning rows are being
+    // hydrated.  The old fallback put most non-organ rows in one `other`
+    // bucket, allowing a range to cross unrelated Data Tree branches and
+    // making a later redraw appear to drop all but the first item.
+    const value = String(id || '');
+    if (value === 'ct') return 'image';
+    if (value === 'ctv' || value.startsWith('ctv_')) return 'ctv';
+    if (value === 'skin_surface') return 'segmentation';
+    if (value.startsWith('organ_')) {
+        const organ = dataTreeState.organs.find(item => item.id === value);
+        return organ?.category || 'oar';
+    }
+    if (value.startsWith('mask_')) return 'masks';
+    if (value.startsWith('seed_')) return 'planning_seeds';
+    if (value.startsWith('needle_')) return 'planning_needles';
+    if (value.startsWith('dose_iso_')) return 'dose_isosurfaces';
+    if (value.startsWith('traj_') || value.startsWith('trajectory_')) {
+        return 'planning_trajectories';
+    }
+    if (value === 'dose_overlay' || value === 'dvh') return 'planning';
+    if (value.startsWith('planning_mesh_')) return 'planning_meshes';
+    if ((dataTreeState.annotations || []).some(item => item.id === value)
+        || (dataTreeState.exportArtifacts || []).some(item => item.id === value)) {
+        return 'artifacts';
+    }
+    return 'other';
 }
 
 function handleTreeItemClick(id, event) {
@@ -4115,6 +4143,12 @@ function handleTreeItemClick(id, event) {
             const hi = Math.max(startIdx, endIdx);
             if (!event.ctrlKey) selectedItems.clear();
             for (let i = lo; i <= hi; i++) selectedItems.add(selectableIds[i]);
+        } else {
+            // A late async tree refresh may remove the old anchor.  The
+            // current item must still become selected instead of making a
+            // Shift-click appear to do nothing or leaving a stale selection.
+            if (!event.ctrlKey) selectedItems.clear();
+            selectedItems.add(id);
         }
     } else if (event.ctrlKey || event.metaKey) {
         // Ctrl+click: toggle individual
@@ -4145,12 +4179,15 @@ function handleTreeItemRightClick(id, event) {
         showGroupContextMenu(event.clientX, event.clientY, id);
         return;
     }
-    // A leaf context menu acts on precisely the leaf under the pointer.
-    // Retaining an old multi-selection here made a right-click on one OAR
-    // capable of submitting every structure from its parent category for
-    // deletion.  Batch actions remain available from explicit parent menus.
-    selectedItems.clear();
-    selectedItems.add(id);
+    // A leaf context menu acts on the existing selection when the pointer is
+    // already inside it, which is how a Windows-style Shift/Ctrl selection
+    // reaches batch actions. A right-click outside the selection intentionally
+    // starts a new single-item selection, so Delete cannot inherit unrelated
+    // rows from a previous operation.
+    if (!selectedItems.has(id)) {
+        selectedItems.clear();
+        selectedItems.add(id);
+    }
     lastClickedId = id;
     // Show menu immediately
     showContextMenu(event.clientX, event.clientY);
@@ -4380,8 +4417,31 @@ async function groupReconstruct3D(category) {
 }
 
 function getSelectedOrganIds() {
-    return [...selectedItems].filter(id => getSelectableIds().includes(id));
+    // Keep the historical function name for callers, but return the complete
+    // selected leaf snapshot. The old implementation rebuilt the selectable
+    // list at each caller and several batch paths then effectively consumed
+    // only the first visible organ after a render.
+    return getSelectedDataTreeIds();
 }
+
+function getSelectedDataTreeIds() {
+    // Return a detached, de-duplicated snapshot. Batch actions may trigger a
+    // render or an async backend refresh; they must continue operating on the
+    // selection that the user made, not on a live Set whose visible rows have
+    // already changed.
+    const selectable = new Set(getSelectableIds());
+    return [...selectedItems].filter(id => selectable.has(id));
+}
+
+function resetDataTreeSelectionState() {
+    // Selection and its Shift anchor are presentation state, not clinical
+    // data. Clear both when a new Session is mounted so stale IDs cannot
+    // affect the first batch action in the new case.
+    selectedItems.clear();
+    lastClickedId = null;
+    renderDataTree();
+}
+window.resetDataTreeSelectionState = resetDataTreeSelectionState;
 
 function _dtText(zh, en) {
     if (typeof window._t === 'function') return window._t(zh, en);
@@ -4740,7 +4800,11 @@ async function _refreshAfterDataMutation(
 async function moveSelectedStructures(classification, objectIds = null) {
     const expectedSessionId = _viewerDataSessionId();
     const appearance = _structureAppearanceMap();
-    const selected = objectIds || getSelectedOrganIds()
+    // Snapshot the caller's IDs before the confirmation dialog or hydration
+    // can redraw the tree. An explicit empty array must remain empty; it
+    // must never fall back to a newer live selection.
+    const selected = (objectIds == null ? getSelectedDataTreeIds()
+        : Array.from(objectIds))
         .map(id => _dataTreeObjectId(id))
         .filter(id => id.startsWith('structure:'));
     if (!selected.length) return false;
@@ -4818,7 +4882,10 @@ async function replanAfterStructureChange(expectedSessionId) {
 }
 
 async function exportSelectedDataTreeItems(objectIds = null) {
-    const ids = objectIds || getSelectedOrganIds().map(id => _dataTreeObjectId(id));
+    // Keep export tied to the selection that opened the menu, even if the
+    // asynchronous export dialog causes a Data Tree rerender.
+    const ids = (objectIds == null ? getSelectedDataTreeIds() : Array.from(objectIds))
+        .map(id => _dataTreeObjectId(id));
     const clean = [...new Set(ids.filter(Boolean))];
     if (!clean.length || typeof window.openSessionExportDialog !== 'function') return false;
     await window.openSessionExportDialog({
@@ -4843,7 +4910,12 @@ async function exportDataTreeGroup(category) {
 async function deleteSelectedDataTreeItems(objectIds = null, options = {}) {
     const expectedSessionId = _viewerDataSessionId();
     const appearance = _structureAppearanceMap();
-    const ids = [...new Set(objectIds || getSelectedOrganIds()
+    // Resolve one detached batch snapshot. A session hydration/render callback
+    // must not change which objects a destructive operation targets while the
+    // confirmation dialog is open.
+    const ids = [...new Set((objectIds == null
+        ? getSelectedDataTreeIds()
+        : Array.from(objectIds))
         .map(id => _dataTreeObjectId(id, 'delete')).filter(Boolean))];
     if (!ids.length) return false;
     const confirmed = typeof window._confirmAction === 'function'
@@ -5372,7 +5444,8 @@ window.setGroupViewVisibility = setGroupViewVisibility;
 window.applyDataTreeViewVisibility = applyDataTreeViewVisibility;
 
 function batchMoveToCategory(category) {
-    getSelectedOrganIds().forEach(id => {
+    const selected = getSelectedDataTreeIds();
+    selected.forEach(id => {
         if (id.startsWith('organ_')) {
             const o = dataTreeState.organs.find(o => o.id === id);
             if (o) o.category = category;
@@ -5382,11 +5455,12 @@ function batchMoveToCategory(category) {
     if (state.ctLoaded) loadAllSlices();
     redrawSeedNeedleOverlays();
     requestViewerVisualRefresh('batch-category');
+    _scheduleDataTreeSave(`viewer.batch-category:${category}`);
     if (typeof syncUIBridgeState === 'function') syncUIBridgeState('data_tree.category').catch(() => {});
 }
 
 function batchSolo() {
-    const selSet = new Set(getSelectedOrganIds());
+    const selSet = new Set(getSelectedDataTreeIds());
     dataTreeState.organs.forEach(o => { o.visible = selSet.has(o.id); });
     dataTreeState.ctv.visible = selSet.has('ctv');
     dataTreeState.skin.visible = selSet.has('skin_surface');
@@ -5397,7 +5471,8 @@ function batchSolo() {
 }
 
 function batchSetOpacity(opacity) {
-    getSelectedOrganIds().forEach(id => {
+    const selected = getSelectedDataTreeIds();
+    selected.forEach(id => {
         if (id === 'ctv') {
             dataTreeState.ctv.opacity = opacity;
             applyMeshOpacity(scene3D.meshes['ctv'], opacity, dataTreeState.ctv.visible !== false);
@@ -5454,10 +5529,11 @@ function batchSetOpacity(opacity) {
     renderDataTree();
     if (state.ctLoaded) loadAllSlices();
     redrawSeedNeedleOverlays();
+    _scheduleDataTreeSave('viewer.batch-opacity');
 }
 
 async function batchReconstruct3D() {
-    const ids = getSelectedOrganIds();
+    const ids = getSelectedDataTreeIds();
     for (const id of ids) {
         await reconstructOrgan3D(id);
     }
@@ -5841,17 +5917,82 @@ function setGroupColor(category, color) {
     _scheduleDataTreeSave(`viewer.group_color:${category}`);
 }
 
+function _treeExpansionState() {
+    if (!dataTreeState.expansionState
+        || typeof dataTreeState.expansionState !== 'object'
+        || Array.isArray(dataTreeState.expansionState)) {
+        dataTreeState.expansionState = {};
+    }
+    return dataTreeState.expansionState;
+}
+
+function _applyTreeGroupExpansion(group, expanded) {
+    if (!group) return;
+    const arrow = group.querySelector(':scope > .tree-group-header .arrow');
+    const items = group.querySelector(':scope > .tree-group-items');
+    if (!items) return;
+    items.classList.toggle('collapsed', !expanded);
+    if (arrow) arrow.classList.toggle('collapsed', !expanded);
+    group.dataset.expanded = expanded ? 'true' : 'false';
+}
+
+function _restoreTreeGroupExpansionState(body) {
+    const expansion = _treeExpansionState();
+    body.querySelectorAll('.tree-group[data-group]').forEach(group => {
+        const key = String(group.dataset.group || '').trim();
+        if (key) _applyTreeGroupExpansion(group, expansion[key] !== false);
+    });
+}
+
 function toggleTreeGroup(header) {
-    const arrow = header.querySelector('.arrow');
-    // Find the .tree-group-items that is a sibling of the parent .tree-group
     const group = header.closest('.tree-group');
     if (!group) return;
     const items = group.querySelector(':scope > .tree-group-items');
-    if (arrow && items) {
-        arrow.classList.toggle('collapsed');
-        items.classList.toggle('collapsed');
+    if (!items) return;
+    const expanded = items.classList.contains('collapsed');
+    _applyTreeGroupExpansion(group, expanded);
+    const key = String(group.dataset.group || '').trim();
+    if (key) {
+        _treeExpansionState()[key] = expanded;
+        _scheduleDataTreeSave(`viewer.tree_group:${key}`);
     }
 }
+
+function setTreeGroupExpansion(key, expanded) {
+    const groupKey = String(key || '').trim();
+    if (!groupKey) return false;
+    const value = !!expanded;
+    _treeExpansionState()[groupKey] = value;
+    // Do not build a selector from the group key.  Group keys are currently
+    // controlled values, but this entry point is also used by the UI command
+    // bridge and old WebViews do not guarantee selector escaping helpers.
+    // Matching the data attribute directly keeps expand/collapse reliable
+    // across browsers.
+    document.querySelectorAll('.tree-group[data-group]').forEach(group => {
+        if (String(group.dataset.group || '').trim() === groupKey) {
+            _applyTreeGroupExpansion(group, value);
+        }
+    });
+    _scheduleDataTreeSave(`viewer.tree_group:${groupKey}`);
+    return true;
+}
+
+function setAllTreeGroupsExpansion(expanded) {
+    const value = !!expanded;
+    document.querySelectorAll('.tree-group[data-group]').forEach(group => {
+        const key = String(group.dataset.group || '').trim();
+        if (!key) return;
+        _treeExpansionState()[key] = value;
+        _applyTreeGroupExpansion(group, value);
+    });
+    _scheduleDataTreeSave(`viewer.tree_groups:${value ? 'expand' : 'collapse'}_all`);
+    return true;
+}
+
+// The UI command bridge and automated UI actions use these same stateful
+// entry points instead of mutating only the current DOM instance.
+window.setTreeGroupExpansion = setTreeGroupExpansion;
+window.setAllTreeGroupsExpansion = setAllTreeGroupsExpansion;
 
 function toggleDataVisibility(id) {
     requestAnimationFrame(() => applyDataTreeViewVisibility());
@@ -6371,8 +6512,13 @@ function deleteDataTreeMask(id) {
 // structures (they never feed dose/planning); moving reclassifies their
 // presentation so they render under the target structure's color/visibility.
 async function moveSelectedMasks(classification, objectIds = null) {
-    const ids = objectIds
-        || Array.from(selectedItems).filter(id => String(id).startsWith('mask_'));
+    // Treat an explicitly supplied empty array as an intentional no-op.  A
+    // live selection Set is not safe here because the async refresh below can
+    // re-render the tree and change selection before the mutation completes.
+    const ids = [...new Set((objectIds == null
+        ? getSelectedDataTreeIds()
+        : Array.from(objectIds)
+    ).filter(id => String(id).startsWith('mask_')))];
     if (!ids.length) return false;
     for (const id of ids) {
         const mask = state.maskLabels?.[id];

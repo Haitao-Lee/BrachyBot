@@ -1243,19 +1243,36 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
         seed_positions = self.memory.retrieve("seed_positions")
 
         if tool_name == "query_metrics":
-            # Keep the fallback tool usable for callers that still route a
-            # non-deterministic status question through function calling. The
-            # local current-dose route normally bypasses this tool, but this
-            # injection ensures the tool reads the active case rather than
-            # returning an empty placeholder.
-            params.setdefault("metrics", self.memory.retrieve("dose_metrics") or self.memory.retrieve("metrics") or {})
-            params.setdefault("ctv_array", ctv_array)
-            params.setdefault("oar_array", oar_array)
-            params.setdefault("organ_names", self.memory.retrieve("organ_names") or {})
-            params.setdefault("ct_spacing", self.memory.retrieve("ct_spacing") or self.memory.retrieve("spacing") or [1, 1, 1])
-            params.setdefault("ct_data", self.memory.retrieve("ct_data"))
-            params.setdefault("seed_positions", seed_positions or [])
-            params.setdefault("total_seeds", self.memory.retrieve("total_seeds") or 0)
+            # Tool-call arguments are not clinical data. Always source metric
+            # inputs from the active workspace, and omit unavailable optional
+            # arrays instead of injecting None (which violates the gateway's
+            # object schema). In particular, an OAR-only query must not carry
+            # ``ctv_array=None`` or a model-generated string representation.
+            metric_type = str(params.get("metric_type") or "all_metrics")
+            params["metrics"] = self.memory.retrieve("dose_metrics") or self.memory.retrieve("metrics") or {}
+            # Never trust arrays serialized by the model or by an earlier
+            # tool call.  They may be a string representation of a NumPy/
+            # SimpleITK object, which fails the object schema even when the
+            # requested metric does not use that array.  Remove them first,
+            # then add only the live workspace arrays required by this metric.
+            params.pop("ctv_array", None)
+            if ctv_array is not None and metric_type in {"ctv_volume", "all_metrics"}:
+                params["ctv_array"] = ctv_array
+            params.pop("oar_array", None)
+            if oar_array is not None and metric_type in {"oar_volumes", "all_metrics"}:
+                params["oar_array"] = oar_array
+            params["organ_names"] = self.memory.retrieve("organ_names") or {}
+            params["ct_spacing"] = self.memory.retrieve("ct_spacing") or self.memory.retrieve("spacing") or [1, 1, 1]
+            ct_data = self.memory.retrieve("ct_data")
+            params.pop("ct_data", None)
+            if ct_data is not None and metric_type in {"hu_statistics", "all_metrics"}:
+                params["ct_data"] = ct_data
+            # NumPy arrays do not have a scalar truth value.  A follow-up
+            # metrics query after planning may receive the live array here;
+            # use an explicit None check so the query does not fail before it
+            # can report the current seed count.
+            params["seed_positions"] = seed_positions if seed_positions is not None else []
+            params["total_seeds"] = self.memory.retrieve("total_seeds") or 0
 
         if tool_name == "ctv_segmentation":
             # Normalize catalog/legacy aliases before injecting the active CT.
@@ -1595,6 +1612,18 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
                 if metadata.get("oar_array") is not None and not self.memory.retrieve("oar_is_full"):
                     self.memory.store("oar_source", "ctv_embedded")
                     self.memory.store("oar_is_full", False)
+                if metadata.get("ctv_source") or metadata.get("ctv_mask_provenance"):
+                    self.memory.store(
+                        "ctv_source",
+                        metadata.get("ctv_source")
+                        or metadata.get("ctv_mask_provenance"),
+                    )
+                # This is the main AgenticSys execution path.  Keep it on the
+                # same authoritative structure transaction as direct tool
+                # results so multi-label CTV anatomy survives a later OAR run
+                # and the Data Tree receives stable source objects immediately.
+                from web.structure_service import replace_structure_source
+                replace_structure_source(self.memory, "ctv")
             elif tool_name == "oar_segmentation":
                 logger.info("OAR segmentation result: oar_array=%s, organ_names=%s", "oar_array" in metadata, "organ_names" in metadata)
                 # BUG FIX 2026-06-16: BEFORE storing the new OAR
@@ -1659,6 +1688,8 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
                 if metadata.get("oar_mask_provenance") is not None:
                     self.memory.store("oar_mask_provenance", metadata["oar_mask_provenance"])
                 self.memory.store("oar_is_full", True)
+                from web.structure_service import replace_structure_source
+                replace_structure_source(self.memory, "oar")
 
             if tool_name == "trajectory_planning" and "trajectories" in metadata:
                 self.memory.store("trajectories", metadata["trajectories"])

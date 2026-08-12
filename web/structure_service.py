@@ -59,12 +59,55 @@ def _int_map(value: Any) -> Dict[int, Any]:
 
 
 def _copy_array(value: Any, dtype=None) -> Optional[np.ndarray]:
+    """Copy a 3-D mask from an array-like value or a SimpleITK image.
+
+    Segmentation tools may return a SimpleITK image while hydrated sessions
+    usually contain NumPy arrays.  Treating the former with ``np.asarray``
+    produces a scalar object array and silently removes the structure from
+    the effective registry.  Keep the conversion at this boundary so all
+    callers use the same spatial voxel ordering.
+    """
     if value is None:
         return None
-    array = np.asarray(value, dtype=dtype)
+    array = None
+    try:
+        candidate = np.asarray(value, dtype=dtype)
+        if candidate.ndim == 3:
+            array = candidate
+    except (TypeError, ValueError):
+        array = None
+    if array is None:
+        get_size = getattr(value, "GetSize", None)
+        if not callable(get_size):
+            return None
+        try:
+            import SimpleITK as sitk
+
+            array = sitk.GetArrayFromImage(value)
+            if dtype is not None:
+                array = np.asarray(array, dtype=dtype)
+        except (ImportError, TypeError, ValueError, RuntimeError):
+            return None
     if array.ndim != 3:
         return None
     return np.array(array, copy=True)
+
+
+def _is_model_ctv_source(source: Any) -> bool:
+    """Return whether a CTV source may carry embedded anatomy labels."""
+    token = str(source or "").strip().lower()
+    return (
+        token in {
+            "model",
+            "biomedparse_v2",
+            "biomedparse_v2_research_candidate",
+            "totalsegmentator",
+            "totalsegmentator_liver_tumor",
+        }
+        or token.startswith("nnunet_")
+        or token.startswith("biomedparse_")
+        or token.startswith("totalsegmentator_")
+    )
 
 
 def _batch_memory_update(memory: Any, updates: Mapping[str, Any], removals: Iterable[str] = ()) -> None:
@@ -111,7 +154,7 @@ def _base_ctv_volume(memory: Any) -> tuple[Optional[np.ndarray], Dict[int, str],
         else memory.retrieve("ctv_full_labels")
     )
 
-    if source == "model" and full_labels is not None:
+    if _is_model_ctv_source(source) and full_labels is not None:
         # The validated pancreatic model reserves label 1 for the actual tumor.
         # Labels 2-4 are anatomy and are represented as OAR source objects below.
         if np.any(full_labels == 1):
@@ -192,7 +235,7 @@ def _source_structures(memory: Any) -> list[Dict[str, Any]]:
         if memory.retrieve("structure_registry_initialized")
         else memory.retrieve("ctv_full_labels")
     )
-    if ctv_source == "model" and full is not None and oar_source not in {
+    if _is_model_ctv_source(ctv_source) and full is not None and oar_source not in {
         "manual_label", "uploaded_unknown", "uploaded", "manual_upload",
     }:
         embedded = {2: (201, "artery"), 3: (202, "vein"), 4: (203, "pancreas")}

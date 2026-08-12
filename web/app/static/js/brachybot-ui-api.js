@@ -298,6 +298,14 @@ function collectUIState() {
             nodes: typeof window.getDataTreeNodeSnapshot === 'function'
                 ? window.getDataTreeNodeSnapshot()
                 : [],
+            // Keep the compact UI bridge session-aware as well.  The full
+            // workspace snapshot stores the same state in camelCase, but
+            // hydration can arrive through this smaller state endpoint first.
+            expansion_state: (dataTreeState.expansionState
+                && typeof dataTreeState.expansionState === 'object'
+                && !Array.isArray(dataTreeState.expansionState))
+                ? jsonClone(dataTreeState.expansionState)
+                : {},
             dose_overlay_visible: dataTreeState.planning?.doseOverlay?.visible !== false,
             dvh_ready: !!dataTreeState.planning?.dvh?.loaded,
         } : {},
@@ -1663,6 +1671,10 @@ function resetAllState(options = {}) {
     dataTreeState.oarSource = '';
     dataTreeState.organs = [];
     dataTreeState.ctvLabels = {};
+    dataTreeState.expansionState = {};
+    // Selection is case-scoped UI state. Clear it together with the tree so
+    // an old Shift anchor cannot select or mutate rows in the next Session.
+    try { window.resetDataTreeSelectionState?.(); } catch (_) {}
     dataTreeState.dose.loaded = false;
     dataTreeState.seeds.loaded = false;
     dataTreeState.needles.loaded = false;
@@ -4079,22 +4091,17 @@ async function _executeUIActionRaw(a, options = {}) {
         // ── Data tree ──
         if (target === 'data_tree') {
             if (command === 'expand_all') {
-                document.querySelectorAll('.tree-group').forEach(g => {
-                    g.querySelector(':scope > .tree-group-header > .arrow')?.classList.remove('collapsed');
-                    g.querySelector(':scope > .tree-group-items')?.classList.remove('collapsed');
-                });
+                if (typeof window.setAllTreeGroupsExpansion === 'function') {
+                    window.setAllTreeGroupsExpansion(true);
+                }
             } else if (command === 'collapse_all') {
-                document.querySelectorAll('.tree-group').forEach(g => {
-                    g.querySelector(':scope > .tree-group-header > .arrow')?.classList.add('collapsed');
-                    g.querySelector(':scope > .tree-group-items')?.classList.add('collapsed');
-                });
+                if (typeof window.setAllTreeGroupsExpansion === 'function') {
+                    window.setAllTreeGroupsExpansion(false);
+                }
             } else {
-                const group = document.querySelector(`.tree-group[data-group="${value}"]`);
-                if (group) {
-                    const arrow = group.querySelector(':scope > .tree-group-header > .arrow');
-                    const items = group.querySelector(':scope > .tree-group-items');
-                    if (command === 'expand') { arrow?.classList.remove('collapsed'); items?.classList.remove('collapsed'); }
-                    else if (command === 'collapse') { arrow?.classList.add('collapsed'); items?.classList.add('collapsed'); }
+                if (typeof window.setTreeGroupExpansion === 'function'
+                    && (command === 'expand' || command === 'collapse')) {
+                    window.setTreeGroupExpansion(value, command === 'expand');
                 }
             }
             return;
