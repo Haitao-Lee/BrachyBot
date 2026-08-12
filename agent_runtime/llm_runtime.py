@@ -650,9 +650,22 @@ class LLMRuntimeMixin:
         _direct_tool_calls = None
         _active_policy = getattr(self, "_active_turn_policy", None)
         _active_intent = getattr(_active_policy, "intent", None)
-        if getattr(_active_policy, "direct_execution", False) and _active_intent in (
-            "segmentation", "planning", "treatment_plan", "clinical_planning",
-            "surgical_guide_generation",
+        _has_explicit_planning_action_plan = bool(
+            getattr(_active_policy, "action_plan", None) is not None
+            and _active_policy.action_plan.requires_tool("planning_pipeline")
+        )
+        if (
+            (
+                getattr(_active_policy, "direct_execution", False)
+                and _active_intent in (
+                    "segmentation",
+                    "planning",
+                    "treatment_plan",
+                    "clinical_planning",
+                    "surgical_guide_generation",
+                )
+            )
+            or _has_explicit_planning_action_plan
         ):
             _direct_tool_calls = self._detect_tool_request(message)
         if _direct_tool_calls:
