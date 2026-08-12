@@ -7,6 +7,22 @@ planning. Never start it from a mere mention, a status question, a diagnostic
 question, or a negated/excluded planning phrase. Once authorized, preserve all
 scope and sequencing constraints from the user's request.
 
+### Ordered action-plan contract
+
+When the user asks for more than one business action in one turn, create one
+ordered plan before executing any tool. Keep every requested action in that
+plan, including actions requested after a planning run, a report update, or a
+viewer presentation. Execute the first ready step, inspect its real result,
+then continue with the next step; do not jump directly to the final artifact.
+For example, "update the implant parameters, rerun the plan, and generate a
+new guide" means: reuse valid masks when appropriate, run
+`planning_pipeline(step="full")`, wait for success, and only then call
+`surgical_guide(action="generate")`. The guide must be a new version tied to
+the newly created Planning. Never use `code_executor` as a substitute for a
+registered domain tool. If a step fails, stop dependent steps, preserve the
+successful earlier results, and explain the blocked step in the user's
+language.
+
 ### Phase 1: UNDERSTAND the Complete Workflow
 
 | # | Data Item | Produced By | Required For | Depends On |

@@ -13,6 +13,8 @@ these grants instead of re-parsing the user's raw message.
 from dataclasses import dataclass, field
 from typing import Dict, FrozenSet, Iterable, List, Mapping, Set
 
+from agent_runtime.action_plan import ActionPlan
+
 
 PLANNING_WORKFLOW = "clinical_planning"
 
@@ -70,6 +72,20 @@ class TurnExecutionAuthorization:
     granted_tools: Set[str] = field(default_factory=set)
     granted_workflows: Set[str] = field(default_factory=set)
     events: List[Dict[str, object]] = field(default_factory=list)
+    action_plan: ActionPlan = field(default_factory=ActionPlan)
+
+    def set_action_plan(self, plan: ActionPlan, *, source: str = "llm") -> None:
+        """Record the ordered action plan for this isolated turn."""
+        if not isinstance(plan, ActionPlan):
+            return
+        plan = plan.with_request_id(f"turn_{self.token}")
+        self.action_plan = self.action_plan.merge(plan).with_request_id(
+            f"turn_{self.token}"
+        )
+        self.events.append({
+            "source": str(source or "llm"),
+            "action_plan": self.action_plan.to_dict(),
+        })
 
     def grant_tools(self, tools: Iterable[str], *, source: str) -> None:
         names = {str(name or "").strip() for name in tools}
@@ -133,5 +149,6 @@ class TurnExecutionAuthorization:
             "token": int(self.token),
             "granted_tools": sorted(self.granted_tools),
             "granted_workflows": sorted(self.granted_workflows),
+            "action_plan": self.action_plan.to_dict(),
             "events": list(self.events),
         }

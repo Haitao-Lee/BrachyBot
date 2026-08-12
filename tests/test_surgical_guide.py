@@ -556,6 +556,27 @@ def test_guide_versions_preserve_parameters_and_stale_as_a_group():
     assert all(item["status"] == "stale" for item in guide_version_summaries(agent))
 
 
+def test_guide_version_reads_history_after_active_alias_is_replaced():
+    agent = _synthetic_agent()
+    first = save_guide_version(
+        agent,
+        generate_surgical_guide(agent, {"channel_radius_mm": 1.0}),
+    )
+
+    # A new Planning clears the active alias while retaining immutable guide
+    # history.  The next guide must continue at v2 instead of reverting to v1.
+    agent.memory.store("surgical_guide", None)
+    agent.memory.store("manual_planning_id", "planning-new")
+    second = save_guide_version(
+        agent,
+        generate_surgical_guide(agent, {"channel_radius_mm": 1.4}),
+    )
+
+    assert first["version"] == 1
+    assert second["version"] == 2
+    assert [item["version"] for item in guide_version_summaries(agent)] == [2, 1]
+
+
 def test_guide_preserves_every_user_adjustable_manufacturing_dimension():
     parameters = normalize_guide_parameters({
         "skin_threshold_hu": -250.0,

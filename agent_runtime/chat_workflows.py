@@ -768,6 +768,16 @@ class ChatWorkflowMixin:
         authorization = self._current_execution_authorization()
         if authorization is not None:
             authorization.grant_policy(policy)
+            action_plan = getattr(policy, "action_plan", None)
+            if action_plan is not None:
+                authorization.set_action_plan(action_plan, source="local_action_plan")
+                ledger = getattr(self, "run_ledger", None)
+                if ledger is not None and action_plan.steps:
+                    ledger.transition(
+                        RunStatus.REASONING,
+                        "action.plan.created",
+                        action_plan=authorization.action_plan.to_dict(),
+                    )
 
     def _current_execution_authorization(self):
         """Return the authorization ledger owned by the calling turn."""

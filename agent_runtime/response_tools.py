@@ -12,7 +12,9 @@ from typing import Dict, List, Optional
 
 from agent_runtime.core import ToolResultPipeline
 from agent_runtime.turn_policy import (
+    is_planning_reexecution_request,
     is_surgical_guide_generation_request,
+    requires_planning_before_guide,
     resolve_report_request_action,
 )
 from plans.dose_pre.model_loader import resolve_prescription_gy
@@ -31,6 +33,8 @@ class ResponseToolMixin:
         """
         params = params or {}
         if any(bool(params.get(key)) for key in ("force_reexecution", "force", "overwrite", "rerun")):
+            return True
+        if is_planning_reexecution_request(message):
             return True
         return bool(re.search(
             r"(?:\u518d\u6b21|\u518d\u5206\u5272|\u91cd\u65b0\u5206\u5272|\u91cd\u65b0\u89c4\u5212|\u518d\u89c4\u5212|\u91cd\u505a|\u91cd\u8dd1|\u5ffd\u7565\u73b0\u6709|\u4e0d\u4f7f\u7528\u73b0\u6709|"
@@ -315,6 +319,22 @@ print(json.dumps(result))
         # registered tool path so the model cannot replace it with Python code
         # or expose a disabled code_executor error to the user.
         if is_surgical_guide_generation_request(message):
+            # A compound request belongs to the semantic action-plan path.
+            # Returning a guide-only direct call here would discard the
+            # preceding planning action before dependency normalization.
+            action_plan = getattr(
+                getattr(self, "_active_turn_policy", None),
+                "action_plan",
+                None,
+            )
+            if (
+                action_plan is not None
+                and action_plan.requires_tool("planning_pipeline")
+            ) or (
+                action_plan is None
+                and requires_planning_before_guide(message)
+            ):
+                return None
             return [{
                 "id": "tool_direct_surgical_guide",
                 "tool": "surgical_guide",
