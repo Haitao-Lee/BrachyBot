@@ -292,6 +292,32 @@ print(json.dumps(result))
         force_reexecution = self._force_reexecution_requested(message=message)
         segmentation_scope = self._segmentation_scope(message)
 
+        # A local dependency plan is already an explicit business decision:
+        # reuse the existing masks, rerun the planning pipeline with the live
+        # planning parameters, and optionally generate the downstream guide.
+        # Do not wait for a second provider round to rediscover this queue.
+        # This is intentionally limited to the routing-created clinical plan;
+        # arbitrary compound requests still go through the primary LLM.
+        authorization = getattr(self, "_current_execution_authorization", lambda: None)()
+        action_plan = getattr(authorization, "action_plan", None)
+        if action_plan is None or not action_plan.steps:
+            action_plan = getattr(
+                getattr(self, "_active_turn_policy", None),
+                "action_plan",
+                None,
+            )
+        planned_tools = set(getattr(action_plan, "tool_names", ()) or ())
+        is_local_planning_plan = bool(
+            action_plan is not None
+            and action_plan.requires_tool("planning_pipeline")
+            and planned_tools.issubset({
+                "ctv_segmentation",
+                "oar_segmentation",
+                "planning_pipeline",
+                "surgical_guide",
+            })
+        )
+
         # Explicit reconstruction commands are deterministic UI actions, not
         # clinical segmentation requests. Route them directly so an existing
         # uploaded OAR mask is reconstructed instead of being sent through
@@ -322,24 +348,55 @@ print(json.dumps(result))
             # A compound request belongs to the semantic action-plan path.
             # Returning a guide-only direct call here would discard the
             # preceding planning action before dependency normalization.
-            action_plan = getattr(
-                getattr(self, "_active_turn_policy", None),
-                "action_plan",
-                None,
-            )
-            if (
-                action_plan is not None
-                and action_plan.requires_tool("planning_pipeline")
-            ) or (
-                action_plan is None
-                and requires_planning_before_guide(message)
+            if is_local_planning_plan or (
+                action_plan is None and requires_planning_before_guide(message)
             ):
+                normalizer = getattr(self, "_normalize_clinical_tool_calls", None)
+                if callable(normalizer):
+                    planned_calls = normalizer(
+                        [{
+                            "id": "tool_planned_surgical_guide",
+                            "tool": "surgical_guide",
+                            "params": {"action": "generate"},
+                        }],
+                        message,
+                    )
+                    if planned_calls:
+                        return planned_calls
                 return None
             return [{
                 "id": "tool_direct_surgical_guide",
                 "tool": "surgical_guide",
                 "params": {"action": "generate"},
             }]
+
+        # A short correction such as "I meant rerun the plan" has no
+        # standalone keyword that the legacy detector can turn into a tool
+        # call.  When the current turn already contains the structured
+        # dependency plan, seed the normalizer with its terminal operation so
+        # it can build the complete queue and inject the missing prerequisites.
+        if is_local_planning_plan:
+            terminal_tool = (
+                "surgical_guide"
+                if action_plan.requires_tool("surgical_guide")
+                else "planning_pipeline"
+            )
+            normalizer = getattr(self, "_normalize_clinical_tool_calls", None)
+            if callable(normalizer):
+                planned_calls = normalizer(
+                    [{
+                        "id": f"tool_planned_{terminal_tool}",
+                        "tool": terminal_tool,
+                        "params": (
+                            {"action": "generate"}
+                            if terminal_tool == "surgical_guide"
+                            else {"step": "full"}
+                        ),
+                    }],
+                    message,
+                )
+                if planned_calls:
+                    return planned_calls
 
         # Find action keywords and their positions to preserve user's intended order
         # Bilingual patterns: Chinese terms below match Chinese user input
@@ -1683,7 +1740,17 @@ Output (JSON array of strings):"""
         # This is a boundary guard, not a UI workaround: the user's explicit
         # clinical action always maps to the registered guide tool.
         active_policy = getattr(self, "_active_turn_policy", None)
-        if getattr(active_policy, "intent", None) == "surgical_guide_generation":
+        authorization = getattr(self, "_current_execution_authorization", lambda: None)()
+        action_plan = getattr(authorization, "action_plan", None)
+        if action_plan is None or not action_plan.steps:
+            action_plan = getattr(active_policy, "action_plan", None)
+        if (
+            getattr(active_policy, "intent", None) == "surgical_guide_generation"
+            and not (
+                action_plan is not None
+                and action_plan.requires_tool("planning_pipeline")
+            )
+        ):
             guide_call = next(
                 (call for call in (tool_calls or []) if call.get("tool") == "surgical_guide"),
                 None,

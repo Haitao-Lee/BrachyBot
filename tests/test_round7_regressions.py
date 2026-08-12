@@ -156,6 +156,131 @@ def test_ordered_action_plan_injects_planning_before_provider_guide_call():
     assert routed[0]["params"]["ct_image_path"] == "/tmp/case.nii.gz"
 
 
+def test_local_replan_action_plan_builds_queue_without_waiting_for_provider():
+    from AgenticSys import BrachyAgent
+    from agent_runtime.execution_authorization import TurnExecutionAuthorization
+    from agent_runtime.turn_policy import classify_local_turn
+
+    class Memory:
+        def retrieve(self, key, default=None):
+            if key in {"ctv_array", "oar_array"}:
+                return [1]
+            if key == "oar_is_full":
+                return True
+            if key == "tumor_type_used":
+                return "nnunet_pancreatic"
+            if key == "ct_path":
+                return "/tmp/case.nii.gz"
+            if key == "plan_config":
+                return {}
+            return default
+
+        def get_ui_state(self):
+            return {
+                "ct_path": "/tmp/case.nii.gz",
+                "planning": {
+                    "in_lowest_energy": 120,
+                    "out_highest_energy": 120,
+                    "distance_filter": {"lower_bound": 1.0, "upper_bound": 9.0},
+                },
+            }
+
+    message = (
+        "\u6211\u6539\u4e86\u7c92\u5b50\u690d\u5165\u53c2\u6570\uff0c"
+        "\u8bf7\u91cd\u65b0\u6267\u884c\u89c4\u5212\uff0c\u5e76\u751f\u6210\u65b0\u7684\u5bfc\u677f"
+    )
+    agent = object.__new__(BrachyAgent)
+    agent.memory = Memory()
+    agent.config = {}
+    agent._active_turn_token = 1
+    policy = classify_local_turn(message)
+    agent._active_turn_policy = policy
+    agent._turn_execution_authorization = TurnExecutionAuthorization(token=1)
+    agent._turn_execution_authorization.set_action_plan(policy.action_plan, source="test")
+    agent._turn_execution_authorization.grant_policy(policy)
+    agent._has_completed_planning = lambda *_args, **_kwargs: True
+
+    calls = agent._detect_tool_request(message)
+
+    assert [call["tool"] for call in calls] == [
+        "planning_pipeline",
+        "surgical_guide",
+    ]
+    assert calls[0]["params"]["ct_image_path"] == "/tmp/case.nii.gz"
+    assert calls[0]["params"]["planning_params"]["distance_filter"] == {
+        "lower_bound": 1.0,
+        "upper_bound": 9.0,
+    }
+
+
+def test_short_replan_action_plan_builds_planning_queue_without_guide():
+    from AgenticSys import BrachyAgent
+    from agent_runtime.execution_authorization import TurnExecutionAuthorization
+    from agent_runtime.turn_policy import classify_local_turn
+
+    class Memory:
+        def retrieve(self, key, default=None):
+            if key in {"ctv_array", "oar_array"}:
+                return [1]
+            if key == "oar_is_full":
+                return True
+            if key == "tumor_type_used":
+                return "nnunet_pancreatic"
+            if key == "ct_path":
+                return "/tmp/case.nii.gz"
+            return default
+
+        def get_ui_state(self):
+            return {"ct_path": "/tmp/case.nii.gz", "planning": {}}
+
+    message = "\u6211\u662f\u8ba9\u4f60\u91cd\u65b0\u89c4\u5212"
+    agent = object.__new__(BrachyAgent)
+    agent.memory = Memory()
+    agent.config = {}
+    agent._active_turn_token = 1
+    policy = classify_local_turn(message)
+    agent._active_turn_policy = policy
+    agent._turn_execution_authorization = TurnExecutionAuthorization(token=1)
+    agent._turn_execution_authorization.set_action_plan(policy.action_plan, source="test")
+    agent._turn_execution_authorization.grant_policy(policy)
+    agent._has_completed_planning = lambda *_args, **_kwargs: True
+
+    calls = agent._detect_tool_request(message)
+
+    assert [call["tool"] for call in calls] == ["planning_pipeline"]
+    assert calls[0]["params"]["step"] == "full"
+
+
+def test_guide_only_command_keeps_the_existing_low_latency_guide_route():
+    from AgenticSys import BrachyAgent
+    from agent_runtime.execution_authorization import TurnExecutionAuthorization
+    from agent_runtime.turn_policy import classify_local_turn
+
+    class Memory:
+        def retrieve(self, key, default=None):
+            if key == "ct_path":
+                return "/tmp/case.nii.gz"
+            return default
+
+        def get_ui_state(self):
+            return {"ct_path": "/tmp/case.nii.gz", "planning": {}}
+
+    message = "请重新生成手术导板"
+    agent = object.__new__(BrachyAgent)
+    agent.memory = Memory()
+    agent.config = {}
+    agent._active_turn_token = 1
+    policy = classify_local_turn(message)
+    agent._active_turn_policy = policy
+    agent._turn_execution_authorization = TurnExecutionAuthorization(token=1)
+    agent._turn_execution_authorization.set_action_plan(policy.action_plan, source="test")
+    agent._turn_execution_authorization.grant_policy(policy)
+
+    calls = agent._detect_tool_request(message)
+
+    assert [call["tool"] for call in calls] == ["surgical_guide"]
+
+
 def test_chat_renders_only_reviewed_response_event():
     source = (ROOT / "web/app/static/js/brachybot-chat-todo.js").read_text(encoding="utf-8")
     assert "let finalResponseReceived = false;" in source
