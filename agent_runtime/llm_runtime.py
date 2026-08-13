@@ -374,11 +374,8 @@ class LLMRuntimeMixin:
 
     def _ordered_action_plan_context(self) -> str:
         """Give the model the current plan without exposing raw tool payloads."""
-        authorization = getattr(self, "_current_execution_authorization", lambda: None)()
-        plan = getattr(authorization, "action_plan", None)
-        if plan is None or not plan.steps:
-            policy = getattr(self, "_active_turn_policy", None)
-            plan = getattr(policy, "action_plan", None)
+        get_action_plan = getattr(self, "_current_action_plan", None)
+        plan = get_action_plan() if callable(get_action_plan) else None
         if plan is None or not plan.steps:
             return ""
         ordered = " -> ".join(step.tool for step in plan.ordered_steps())
@@ -392,8 +389,8 @@ class LLMRuntimeMixin:
 
     def _order_tool_calls_by_action_plan(self, tool_calls):
         """Apply the merged turn plan after filtering and dependency injection."""
-        authorization = getattr(self, "_current_execution_authorization", lambda: None)()
-        plan = getattr(authorization, "action_plan", None)
+        get_action_plan = getattr(self, "_current_action_plan", None)
+        plan = get_action_plan() if callable(get_action_plan) else None
         if plan is None or not plan.steps:
             return tool_calls
         return list(plan.order_tool_calls(tool_calls or ()))
@@ -2380,6 +2377,16 @@ class LLMRuntimeMixin:
                         "params": {},
                         "parent_tool": tool_name,
                     }
+                    # ``dose_calc`` publishes the dose grid before the outer
+                    # planning tool finishes. Keep this as a typed event
+                    # field, rather than forcing the browser to parse the
+                    # human-readable progress string.
+                    if (
+                        str(substep_name) == "dose_calc"
+                        and str(substep_status).lower() == "done"
+                        and "dose_ready=true" in str(substep_content or "").lower()
+                    ):
+                        substep_step["dose_ready"] = True
                     if substep_status == "pending":
                         step_id_ref[0] += 1
                         substep_step["id"] = step_id_ref[0]
@@ -2408,6 +2415,8 @@ class LLMRuntimeMixin:
                             match["status"] = substep_status
                             if substep_content:
                                 match["result"] = str(substep_content)[:200]
+                            if substep_step.get("dose_ready"):
+                                match["dose_ready"] = True
                             append_callback_event("step", match)
                         else:
                             step_id_ref[0] += 1

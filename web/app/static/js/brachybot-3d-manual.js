@@ -4988,6 +4988,10 @@ function clearDoseOverlayRuntime() {
     _doseOverlayAbortControllers.clear();
     _doseOverlayInflight.clear();
     _doseOverlayLoadPromise = null;
+    // Invalidate a metadata bootstrap started by a slice event. The promise
+    // may finish later, but its identity guard prevents it from repainting
+    // the next Session/Planning state.
+    window.__doseOverlayBootstrapState = null;
     Object.keys(_doseContourCache).forEach(key => delete _doseContourCache[key]);
     _doseContourInflight.clear();
     _doseContourPreloadTimers.forEach(timer => clearTimeout(timer));
@@ -5016,6 +5020,96 @@ function clearDoseOverlayRuntime() {
     if (typeof scene3D !== 'undefined' && typeof scene3D.requestRender === 'function') {
         scene3D.requestRender();
     }
+}
+
+let _planningDoseRefreshPromise = null;
+let _planningDoseRefreshQueued = false;
+
+function _planningEventBelongsToCurrentSession(detail) {
+    const eventSession = String(detail?.sessionId || detail?.session_id || '').trim();
+    if (!eventSession) return true;
+    const currentSession = String(
+        (typeof activeSessionId !== 'undefined' && activeSessionId)
+        || state?.sessionId || '',
+    ).trim();
+    return !currentSession || currentSession === eventSession;
+}
+
+function _invalidateDoseForPlanningRun(detail = {}) {
+    if (!_planningEventBelongsToCurrentSession(detail)) return;
+    clearDoseOverlayRuntime();
+    if (typeof state !== 'undefined') state.doseOverlay = null;
+    if (typeof dataTreeState !== 'undefined') {
+        const planning = dataTreeState.planning || {};
+        planning.artifactStatus = {
+            ...(planning.artifactStatus || {}),
+            dose: 'stale',
+            dvh: 'stale',
+            report: 'stale',
+            surgical_guide: 'stale',
+            reason: 'A new Planning run is in progress',
+        };
+        if (dataTreeState.dose) {
+            dataTreeState.dose.loaded = false;
+            dataTreeState.dose.loading = false;
+            dataTreeState.dose.status = 'stale';
+            dataTreeState.dose.error = null;
+        }
+        if (planning.doseOverlay) {
+            planning.doseOverlay.loaded = false;
+            planning.doseOverlay.visible = false;
+            planning.doseOverlay.status = 'stale';
+        }
+    }
+    try { renderDataTree?.(); } catch (_) {}
+    try { loadAllSlices?.(); } catch (_) {}
+    try { requestViewerVisualRefresh?.('planning-run-started'); } catch (_) {}
+}
+
+async function _refreshDoseAfterPlanningEvent(detail = {}) {
+    if (!_planningEventBelongsToCurrentSession(detail)) return;
+    _planningDoseRefreshQueued = true;
+    if (_planningDoseRefreshPromise) return _planningDoseRefreshPromise;
+    _planningDoseRefreshPromise = (async () => {
+        do {
+            _planningDoseRefreshQueued = false;
+            if (typeof refreshPlanningUI === 'function') {
+                await refreshPlanningUI({
+                    sessionId: detail.sessionId || undefined,
+                    // dose_calc is emitted immediately after the backend has
+                    // stored the grid, but the workspace checkpoint and the
+                    // planning-results endpoint can still be a few hundred
+                    // milliseconds behind. Keep the case-bound retry alive so
+                    // a 202 race cannot leave the old slice painted until the
+                    // outer planning task finishes.
+                    retryPending: detail.hasDosePayload === true || detail.doseGeneration != null,
+                    resetPlanVisuals: false,
+                    preserveViewerState: true,
+                    switchToViewers: false,
+                    autoGenerateGuide: false,
+                    preserveReport: true,
+                    reason: 'dose-result-updated',
+                });
+            } else if (typeof loadDoseOverlay === 'function') {
+                await loadDoseOverlay();
+                try { loadAllSlices?.(); } catch (_) {}
+            }
+        } while (_planningDoseRefreshQueued);
+    })().finally(() => { _planningDoseRefreshPromise = null; });
+    return _planningDoseRefreshPromise;
+}
+
+// The chat stream is the authoritative lifecycle source for long-running
+// planning. Bind once because this script can be rehydrated after a session
+// switch; duplicate listeners would issue duplicate dose requests.
+if (!window.__brachybotPlanningDoseEventsBound) {
+    window.__brachybotPlanningDoseEventsBound = true;
+    window.addEventListener('brachybot:planning-run-started', event => {
+        _invalidateDoseForPlanningRun(event.detail || {});
+    });
+    window.addEventListener('brachybot:dose-result-updated', event => {
+        void _refreshDoseAfterPlanningEvent(event.detail || {});
+    });
 }
 
 // The backend returns the checkpoint calibration with each dose payload. Keep a
@@ -5531,6 +5625,14 @@ async function _loadDoseOverlayImpl(retryAttempt = 0) {
         const prevOpacity = state.doseOverlay?.opacity;
         state.doseOverlay = {
             shape: data.dose_shape,
+            planningId: data.planning_id || _doseContourPlanningId(),
+            // The dose array can be replaced while a planning task is still
+            // running. Keep the backend memory generation with the overlay so
+            // a same-shaped slice from the previous calculation cannot win a
+            // race and remain visible.
+            doseGeneration: Number.isFinite(Number(data.dose_generation))
+                ? Number(data.dose_generation)
+                : 0,
             doseMin: data.dose_min,
             doseMax: data.dose_max,
             doseUnits: data.dose_units || 'normalized_model_output',
@@ -5592,8 +5694,10 @@ async function fetchDoseOverlaySlice(axis, sliceIndex) {
     const ownerSessionId = _doseOverlaySessionId();
     const ownerGeneration = _doseOverlayLoadGeneration;
     const ownerOverlay = state.doseOverlay;
-    const cacheKey = `${axis}_${sliceIndex}`;
-    const inflightKey = `${ownerSessionId}:${cacheKey}`;
+    const ownerPlanningId = String(ownerOverlay.planningId || _doseContourPlanningId() || '');
+    const ownerDoseGeneration = Number(ownerOverlay.doseGeneration || 0);
+    const cacheKey = `${ownerDoseGeneration}:${axis}_${sliceIndex}`;
+    const inflightKey = `${ownerSessionId}:${ownerPlanningId}:${cacheKey}`;
     if (ownerOverlay.slices[cacheKey]) return ownerOverlay.slices[cacheKey];
     if (_doseOverlayInflight.has(inflightKey)) return _doseOverlayInflight.get(inflightKey);
 
@@ -5618,7 +5722,11 @@ async function fetchDoseOverlaySlice(axis, sliceIndex) {
                     'Content-Type': 'application/json',
                     'X-BrachyBot-Session': ownerSessionId,
                 },
-                body: JSON.stringify({ axis, slice_index: requestSliceIndex }),
+                body: JSON.stringify({
+                    axis,
+                    slice_index: requestSliceIndex,
+                    planning_id: ownerPlanningId || undefined,
+                }),
                 signal: controller.signal,
             });
             if (res.status !== 202 || attempt >= 60) break;
@@ -5637,6 +5745,20 @@ async function fetchDoseOverlaySlice(axis, sliceIndex) {
         if (ownerGeneration !== _doseOverlayLoadGeneration
             || ownerSessionId !== _doseOverlaySessionId()
             || ownerOverlay !== state.doseOverlay) {
+            return null;
+        }
+        const responsePlanningId = String(data.planning_id || '');
+        const currentPlanningId = String(_doseContourPlanningId() || '');
+        if ((responsePlanningId && ownerPlanningId && responsePlanningId !== ownerPlanningId)
+            || (responsePlanningId && currentPlanningId && responsePlanningId !== currentPlanningId)) {
+            return null;
+        }
+        const responseDoseGeneration = Number(data.dose_generation || 0);
+        if (ownerDoseGeneration > 0 && responseDoseGeneration > 0
+            && responseDoseGeneration !== ownerDoseGeneration) {
+            // The request crossed a dose publication boundary. Do not cache or
+            // paint the old grid; the lifecycle event will request the new
+            // metadata and current slice again.
             return null;
         }
         // If a newer request was issued while this one was in flight,
@@ -5808,7 +5930,8 @@ function _doseContourCacheKey(
     sessionId = _doseOverlaySessionId(),
     generation = _doseOverlayLoadGeneration,
 ) {
-    return `${sessionId}:${_doseContourPlanningId()}:${generation}:${axis}_${sliceIndex}`;
+    const doseGeneration = Number(state?.doseOverlay?.doseGeneration || 0);
+    return `${sessionId}:${_doseContourPlanningId()}:${generation}:${doseGeneration}:${axis}_${sliceIndex}`;
 }
 
 async function fetchDoseContourSlice(axis, sliceIndex) {
@@ -5834,7 +5957,11 @@ async function fetchDoseContourSlice(axis, sliceIndex) {
                     'Content-Type': 'application/json',
                     'X-BrachyBot-Session': ownerSessionId,
                 },
-                body: JSON.stringify({ axis, slice_index: requestSliceIndex }),
+                body: JSON.stringify({
+                    axis,
+                    slice_index: requestSliceIndex,
+                    planning_id: ownerPlanningId || undefined,
+                }),
             });
             if (res.status !== 202 || attempt >= 60) break;
             await new Promise(resolve => setTimeout(resolve, Math.min(1000, 150 + attempt * 25)));
@@ -5842,10 +5969,18 @@ async function fetchDoseContourSlice(axis, sliceIndex) {
         if (!res.ok) return null;
         const data = await res.json();
         if (!data.success) return null;
+        const responsePlanningId = String(data.planning_id || '');
+        if (responsePlanningId && responsePlanningId !== ownerPlanningId) return null;
         if (ownerGeneration !== _doseOverlayLoadGeneration
             || ownerSessionId !== _doseOverlaySessionId()
             || ownerPlanningId !== _doseContourPlanningId()
             || ownerOverlay !== state.doseOverlay) {
+            return null;
+        }
+        const responseDoseGeneration = Number(data.dose_generation || 0);
+        const ownerDoseGeneration = Number(ownerOverlay?.doseGeneration || 0);
+        if (ownerDoseGeneration > 0 && responseDoseGeneration > 0
+            && responseDoseGeneration !== ownerDoseGeneration) {
             return null;
         }
         _doseContourCache[cacheKey] = data;

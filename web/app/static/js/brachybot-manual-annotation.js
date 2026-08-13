@@ -1187,8 +1187,60 @@ function reconcile2DViewerLayers(options = {}) {
 }
 window.reconcile2DViewerLayers = reconcile2DViewerLayers;
 
+function requestDoseOverlayBootstrap(axis, sliceIndex) {
+    if (typeof loadDoseOverlay !== 'function' || !state.ctLoaded) return;
+    const ownerSessionId = typeof _doseOverlaySessionId === 'function'
+        ? String(_doseOverlaySessionId() || '') : '';
+    const ownerPlanningId = typeof _doseContourPlanningId === 'function'
+        ? String(_doseContourPlanningId() || '') : '';
+    const existing = window.__doseOverlayBootstrapState;
+    if (
+        existing
+        && existing.sessionId === ownerSessionId
+        && existing.planningId === ownerPlanningId
+    ) return;
+
+    // A planning task can publish a dose grid before workspace hydration
+    // finishes. Start one guarded metadata request from the slice event; when
+    // it succeeds, repaint the slice that is actually visible now.
+    const promise = Promise.resolve()
+        .then(() => loadDoseOverlay())
+        .then(() => {
+            const currentSessionId = typeof _doseOverlaySessionId === 'function'
+                ? String(_doseOverlaySessionId() || '') : '';
+            const currentPlanningId = typeof _doseContourPlanningId === 'function'
+                ? String(_doseContourPlanningId() || '') : '';
+            if (
+                ownerSessionId !== currentSessionId
+                || ownerPlanningId !== currentPlanningId
+                || !state.doseOverlay?.visible
+            ) return;
+            const currentSlice = Number(state.slices?.[axis] ?? sliceIndex);
+            renderDoseForCurrentSlice(axis, currentSlice);
+        })
+        .catch(() => {})
+        .finally(() => {
+            if (window.__doseOverlayBootstrapState?.promise === promise) {
+                window.__doseOverlayBootstrapState = null;
+            }
+        });
+    window.__doseOverlayBootstrapState = {
+        sessionId: ownerSessionId,
+        planningId: ownerPlanningId,
+        promise,
+    };
+}
+
 function renderDoseForCurrentSlice(axis, sliceIndex) {
-    if (!state.doseOverlay || !state.doseOverlay.visible) return;
+    if (!state.doseOverlay || !state.doseOverlay.visible) {
+        const doseNode = (
+            typeof dataTreeState !== 'undefined' && dataTreeState?.planning
+        ) ? dataTreeState.planning.doseOverlay : null;
+        if (!state.doseOverlay && doseNode?.visible !== false) {
+            requestDoseOverlayBootstrap(axis, sliceIndex);
+        }
+        return;
+    }
     _doseDesiredSlice[axis] = sliceIndex;
     const sliceCanvas = getSliceCanvas(axis);
     if (!sliceCanvas) return;
@@ -1219,9 +1271,12 @@ function renderDoseForCurrentSlice(axis, sliceIndex) {
         // Cache miss — show nearest cached slice as placeholder, then
         // fetch the actual data from the server.
         _doseLastRendered[axis] = -1; // mark canvas as stale
-        // Preserve the last painted layer until the requested slice arrives.
-        // Clearing on every cache miss made a cancelled/202 response look
-        // like the dose had disappeared after a normal slice drag.
+        // Clear the previous slice immediately. Keeping it visible while the
+        // requested slice is pending makes an old dose look current.
+        try {
+            const doseCtx = doseCanvas.getContext('2d');
+            doseCtx?.clearRect(0, 0, doseCanvas.width, doseCanvas.height);
+        } catch (_) {}
         doseCanvas.dataset.dosePending = 'true';
         const renderEpoch = _doseOverlayRenderEpoch;
         fetchDoseOverlaySlice(axis, sliceIndex).then(sliceData => {

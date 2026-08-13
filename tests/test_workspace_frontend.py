@@ -331,8 +331,10 @@ def test_workspace_transitions_publish_measurable_first_paint_and_restore_stages
     assert "restore.planning_dvh" in ui_api
     assert "restore.report_and_presentation" in ui_api
     assert "restore.fully_interactive" in ui_api
-    assert "brachybot-workspace.js?v=31" in index
-    assert "brachybot-ui-api.js?v=38" in index
+    # Versioned URLs are intentional cache invalidation points. Keep this
+    # assertion aligned with the workspace/report artifact restore contract.
+    assert "brachybot-workspace.js?v=32" in index
+    assert "brachybot-ui-api.js?v=39" in index
 
 
 def test_workspace_fetch_preserves_external_transition_abort_semantics():
@@ -1098,7 +1100,14 @@ def test_data_tree_keeps_group_expansion_and_shift_batch_selection():
     # not fall back to the first live item after an async tree refresh.
     assert "const ids = [...new Set((objectIds == null" in volume
     assert "Array.from(objectIds)" in volume
-    assert "filter(id => String(id).startsWith('mask_'))" in volume
+    # Generic masks use the durable ``mask:<id>`` identity while retaining
+    # compatibility with old DOM ids such as ``mask_<id>``.  Batch actions
+    # must resolve both forms through the same helper instead of filtering
+    # one spelling inline.
+    assert "function _maskStateEntry(nodeId)" in volume
+    assert "value.startsWith('mask:')" in volume
+    assert "value.startsWith('mask_')" in volume
+    assert "const rawId = _maskSceneMeshId(id);" in volume
 
 
 def test_generic_masks_hydrate_without_a_shared_label_volume():
@@ -1109,6 +1118,48 @@ def test_generic_masks_hydrate_without_a_shared_label_volume():
     first_fetch = volume.index("fetch(API + '/viewer/label_volume'", start)
     assert generic_start < first_fetch
     assert "genericMaskCatalogGeneration" in volume
+
+
+def test_generic_segmentation_masks_keep_a_real_tree_and_structure_contract():
+    """Open masks must be durable Data Tree objects before promotion."""
+    chat = read("web/app/static/js/brachybot-chat-todo.js")
+    volume = read("web/app/static/js/brachybot-viewer-volume.js")
+    routes = read("web/routes/data_routes.py")
+    structures = read("web/structure_service.py")
+
+    assert "biomedparse_segmentation" in chat
+    assert "hydrateGenericMasksFromServer" in chat
+    assert "fetch(API + '/viewer/generic_masks'" in volume
+    assert "_isOpenGenericMask" in volume
+    assert "reclassify_generic_segmentation_masks" in routes
+    assert "def reclassify_generic_segmentation_masks" in structures
+    assert "_batch_memory_update(memory, updates, removals=_DOWNSTREAM_KEYS)" in structures
+    # The effective Structure Set, not a browser-only label, is the source for
+    # later planning/DVH/export after a user moves the mask to CTV or OAR.
+    assert "structure_catalog" in structures
+
+
+def test_replanning_history_and_midrun_dose_publication_have_stable_contracts():
+    """Replanning and in-progress dose refresh must be version-bound."""
+    planning_runs = read("web/planning_runs.py")
+    planning_ui = read("web/app/static/js/brachybot-dvh-planning.js")
+    chat = read("web/app/static/js/brachybot-chat-todo.js")
+    runtime = read("agent_runtime/llm_runtime.py")
+    pipeline = read("tool_factory/seed_plan/planning_pipeline.py")
+    routes = read("web/routes/planning_routes.py")
+    manual = read("web/app/static/js/brachybot-3d-manual.js")
+
+    assert "def begin_planning_run" in planning_runs
+    assert "def activate_planning_run" in planning_runs
+    assert "Planning_{sequence}" in planning_runs
+    assert "preserveReport: true" in planning_ui
+    assert "restoreReportForPlanning(target" in planning_ui
+    assert "dose_ready=true" in pipeline
+    assert "dose_ready" in runtime
+    assert "doseReadyText" in chat
+    assert "dose[_\\s-]?ready" in chat
+    assert "dose_generation" in routes
+    assert "doseGeneration" in manual
 
 
 def test_ctv_model_provenance_keeps_embedded_anatomy_after_oar_load():

@@ -204,7 +204,7 @@ def _run_summary(run: Mapping[str, Any]) -> Dict[str, Any]:
     return {
         "planning_id": str(run.get("planning_id") or ""),
         "sequence": int(run.get("sequence") or 0),
-        "label": str(run.get("label") or f"Planning_{int(run.get('sequence') or 0)}"),
+        "label": str(run.get("label") or f"Planning_{int(run.get('sequence') or 0) + 1}"),
         "status": str(run.get("status") or "unknown"),
         "visible": bool(run.get("visible", False)),
         "created_at": run.get("created_at"),
@@ -216,13 +216,24 @@ def _run_summary(run: Mapping[str, Any]) -> Dict[str, Any]:
         "num_trajectories": int(run.get("num_trajectories") or 0),
         "has_dose": bool(run.get("has_dose")),
         "has_dvh": bool(run.get("has_dvh")),
+        "has_metrics": bool(run.get("has_metrics")),
         "has_guide": bool(run.get("has_guide")),
+        "has_skin": bool(run.get("has_skin")),
+        "artifact_status": dict(run.get("artifact_status") or {})
+        if isinstance(run.get("artifact_status"), Mapping) else {},
+        "metrics_summary": dict(run.get("metrics_summary") or {})
+        if isinstance(run.get("metrics_summary"), Mapping) else {},
         "error": run.get("error"),
     }
 
 
 def ensure_planning_history(memory: Any) -> List[Dict[str, Any]]:
-    """Migrate a legacy single-plan memory into ``Planning_0`` lazily."""
+    """Load Planning history and migrate old zero-based display labels.
+
+    ``sequence`` remains an internal zero-based ordering value for backward
+    compatibility.  User-facing labels are one-based (Planning_1, Planning_2,
+    ...), which matches the terminology used in the Data Tree and reports.
+    """
     runs = _raw_runs(memory)
     if runs:
         # Older registry records may predate the visibility field. The active
@@ -241,6 +252,16 @@ def ensure_planning_history(memory: Any) -> List[Dict[str, Any]]:
         changed = False
         normalized = []
         for item in runs:
+            # Releases before the one-based label contract wrote the sequence
+            # directly into labels (Planning_0, Planning_1, ...). Migrate only
+            # those exact legacy labels; preserve an explicit custom label.
+            sequence = int(item.get("sequence") or 0)
+            legacy_label = f"Planning_{sequence}"
+            if not item.get("label") or str(item.get("label")) == legacy_label:
+                migrated_label = f"Planning_{sequence + 1}"
+                if item.get("label") != migrated_label:
+                    item = {**item, "label": migrated_label}
+                    changed = True
             visible = str(item.get("planning_id") or "") == active
             if item.get("visible") is not visible:
                 item = {**item, "visible": visible}
@@ -258,7 +279,7 @@ def ensure_planning_history(memory: Any) -> List[Dict[str, Any]]:
     run = {
         "planning_id": planning_id,
         "sequence": 0,
-        "label": "Planning_0",
+        "label": "Planning_1",
         "status": "completed",
         "legacy": True,
         "visible": True,
@@ -268,8 +289,18 @@ def ensure_planning_history(memory: Any) -> List[Dict[str, Any]]:
         "total_seeds": int(memory.retrieve("total_seeds") or len(memory.retrieve("manual_seeds") or [])),
         "num_trajectories": int(memory.retrieve("num_trajectories") or len(memory.retrieve("trajectories") or [])),
         "has_dose": memory.retrieve("dose_distribution_gy") is not None or memory.retrieve("dose_distribution") is not None,
-        "has_dvh": bool(memory.retrieve("dose_metrics") or memory.retrieve("dvh_data")),
+        "has_dvh": memory.retrieve("dvh_data") is not None or memory.retrieve("algorithm_plan_dvh_data") is not None,
+        "has_metrics": isinstance(memory.retrieve("dose_metrics") or memory.retrieve("metrics"), Mapping),
         "has_guide": bool(memory.retrieve("surgical_guide")),
+        "has_skin": memory.retrieve("skin_surface") is not None or memory.retrieve("skin_surface_mask") is not None,
+        "artifact_status": (
+            dict(memory.retrieve("artifact_status") or memory.retrieve("manual_artifact_status") or {})
+            if isinstance(
+                memory.retrieve("artifact_status") or memory.retrieve("manual_artifact_status") or {},
+                Mapping,
+            )
+            else {}
+        ),
     }
     _write_runs(memory, [run], reason="planning.history.migrated")
     _memory_put(memory, ACTIVE_PLANNING_ID_KEY, planning_id)
@@ -322,7 +353,7 @@ def begin_planning_run(
     run = {
         "planning_id": planning_id,
         "sequence": sequence,
-        "label": f"Planning_{sequence}",
+        "label": f"Planning_{sequence + 1}",
         "status": "running",
         "visible": True,
         "created_at": now,
@@ -370,7 +401,7 @@ def fork_planning_run(agent: Any, *, reason: str = "manual_edit") -> str:
     run = {
         "planning_id": planning_id,
         "sequence": sequence,
-        "label": f"Planning_{sequence}",
+        "label": f"Planning_{sequence + 1}",
         "status": "draft",
         "visible": True,
         "created_at": now,
@@ -450,8 +481,18 @@ def publish_planning_run(agent: Any, result: Any = None, *, status: str = "compl
         total_seeds=int(memory.retrieve("total_seeds") or len(memory.retrieve("manual_seeds") or [])),
         num_trajectories=int(memory.retrieve("num_trajectories") or len(memory.retrieve("trajectories") or [])),
         has_dose=memory.retrieve("dose_distribution_gy") is not None or memory.retrieve("dose_distribution") is not None,
-        has_dvh=bool(metrics or memory.retrieve("dvh_data")),
+        has_dvh=memory.retrieve("dvh_data") is not None or memory.retrieve("algorithm_plan_dvh_data") is not None,
+        has_metrics=isinstance(metrics, Mapping) and bool(metrics),
         has_guide=isinstance(guide, Mapping),
+        has_skin=memory.retrieve("skin_surface") is not None or memory.retrieve("skin_surface_mask") is not None,
+        artifact_status=(
+            dict(memory.retrieve("artifact_status") or memory.retrieve("manual_artifact_status") or {})
+            if isinstance(
+                memory.retrieve("artifact_status") or memory.retrieve("manual_artifact_status") or {},
+                Mapping,
+            )
+            else {}
+        ),
         data_version=int(memory.retrieve("manual_plan_version") or 1),
         metrics_summary={
             key: metrics.get(key)

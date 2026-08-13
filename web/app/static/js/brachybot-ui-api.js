@@ -5310,6 +5310,7 @@ async function _appendPersistedReportFigures(plan, galleryContext, ownerSessionI
                 subfigure: String(figure.subfigure || ''),
                 sort_order: Number(figure.sortOrder) || null,
                 capture_role: String(figure.captureRole || ''),
+                capture_contract: String(figure.captureContract || ''),
             },
         });
         if (attachment) attachments.push(attachment);

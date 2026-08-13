@@ -823,7 +823,14 @@ async function activatePlanningRun(planningId, options = {}) {
     if (!sessionId || !target) return false;
     const current = String(dataTreeState?.planning?.id || '');
     if (current === target && options.force !== true) {
+        // A tree click can target the already-active run after a cold restore.
+        // Do not let this fast path skip the planning-scoped Report restore;
+        // the report map is persisted independently from the numeric aliases.
+        if (typeof window.restoreReportForPlanning === 'function') {
+            window.restoreReportForPlanning(target, { persist: false });
+        }
         await refreshPlanningRunCatalog({ sessionId, silent: true });
+        if (typeof renderDataTree === 'function') renderDataTree();
         return true;
     }
     const zh = typeof window._i18nLang === 'string' && window._i18nLang === 'zh';
@@ -863,6 +870,7 @@ async function activatePlanningRun(planningId, options = {}) {
                 switchToViewers: false,
                 backgroundRestore: true,
                 autoGenerateGuide: false,
+                preserveReport: true,
             });
         }
         await refreshPlanningRunCatalog({ sessionId, force: true, silent: true });
@@ -903,7 +911,7 @@ async function refreshPlanningUI(options = {}) {
     );
     // The registry is deliberately cheap and must be available even when a
     // draft Planning has no dose yet.  Do this independently of the clinical
-    // result request so the Data Tree can expose Planning_0/Planning_1 during
+    // result request so the Data Tree can expose Planning_1/Planning_2 during
     // the first cold restore as well as after a normal refresh.
     if (expectedSessionId && typeof refreshPlanningRunCatalog === 'function') {
         void refreshPlanningRunCatalog({ sessionId: expectedSessionId, silent: true });
@@ -981,7 +989,7 @@ async function refreshPlanningUI(options = {}) {
                 }
                 // The registry is compact and independent from the clinical
                 // result payload.  Refresh it in parallel so the Data Tree
-                // exposes Planning_0/Planning_1 without delaying dose, DVH or
+                // exposes Planning_1/Planning_2 without delaying dose, DVH or
                 // mask painting.
                 void refreshPlanningRunCatalog({ sessionId: expectedSessionId, silent: true });
                 uiDebugLog('[refreshPlanningUI] data received, has_dose:', data.has_dose, 'seeds:', data.seeds?.length, 'has_dvh:', !!data.dvh, 'dvh_keys:', data.dvh ? Object.keys(data.dvh).length : 0, 'metrics_keys:', data.metrics ? Object.keys(data.metrics).length : 0);
@@ -1244,7 +1252,9 @@ async function refreshPlanningUI(options = {}) {
             const needsSourceBackedReport = typeof window.reportNeedsSourceBackedQualityRefresh === 'function'
                 ? window.reportNeedsSourceBackedQualityRefresh(window.reportForm)
                 : true;
-            const backgroundReportPromise = (needsSourceBackedReport && window.Report?.autoFill?.fromAll)
+            const backgroundReportPromise = options.preserveReport === true
+                ? Promise.resolve()
+                : (needsSourceBackedReport && window.Report?.autoFill?.fromAll)
                 ? Promise.resolve().then(() => window.Report.autoFill.fromAll({
                     sessionId: expectedSessionId,
                     // Existing figures are hydrated from durable attachments.
@@ -1307,7 +1317,9 @@ async function refreshPlanningUI(options = {}) {
                 );
                 const hasCompleteReportFigureSet = [...requiredReportAxes]
                     .every(axis => capturedReportAxes.has(axis));
-                if (!hasCompleteReportFigureSet && typeof autoCaptureReportFigures === 'function') {
+                if (options.preserveReport !== true
+                    && !hasCompleteReportFigureSet
+                    && typeof autoCaptureReportFigures === 'function') {
                     try { await autoCaptureReportFigures({ sessionId: expectedSessionId }); } catch (error) {
                         console.warn('[3D auto-load] background report capture:', error);
                     }
@@ -1346,7 +1358,7 @@ async function refreshPlanningUI(options = {}) {
             console.warn('[3D auto-load] camera fit guard:', error);
         }
         try {
-            if (typeof reportAutoFill === 'function') {
+            if (options.preserveReport !== true && typeof reportAutoFill === 'function') {
                 await reportAutoFill({ sessionId: expectedSessionId });
             }
         } catch (_) {}
@@ -1355,12 +1367,21 @@ async function refreshPlanningUI(options = {}) {
         // No floating indicator to remove; the trace/todo lifecycle remains
         // the single progress surface for this asynchronous work.
 
-        // 4f-2. Re-capture 3D figures AFTER meshes are loaded.
-        // autoCaptureReportFigures ran before mesh promises resolved,
-        // so the 3D canvas was empty. Now that meshes are in the
-        // scene, re-capture both CTV-zoomed and seeds-overview.
+        // 4f-2. Re-capture report figures only through the canonical report
+        // generator after all meshes are ready.  The retired implementation
+        // below sampled the operator's current 3D camera and could populate
+        // the Figure 1(a)/(b) slots with semantically reversed images.
         try {
             if (!isCurrentCase()) return resolve();
+            if (options.preserveReport !== true
+                && typeof autoCaptureReportFigures === 'function') {
+                await autoCaptureReportFigures({ sessionId: expectedSessionId });
+            }
+            if (!isCurrentCase()) return resolve();
+            // Raw canvas recovery is deliberately opt-in for one-off
+            // diagnostics. It must never run during normal planning or report
+            // generation because it cannot guarantee the Figure 1 contract.
+            if (options.allowLegacyReportFigureRecovery === true) {
             const _hasFigures = window.reportForm && window.reportForm.figures;
             const _replaceOrCreate = (axis, title, caption, dataUrl, metadata = {}) => {
                 if (!_hasFigures || !dataUrl || dataUrl.length < 5000) return;
@@ -1517,6 +1538,9 @@ async function refreshPlanningUI(options = {}) {
             _restoreCamera();
             forceRender3DViewer();
             uiDebugLog('[3D re-capture] Re-captured CTV + seeds figures');
+            } else {
+                uiDebugLog('[3D re-capture] Figure 1 delegated to canonical report capture');
+            }
         } catch (e) { console.warn('[3D re-capture] failed:', e); }
 
         // 5. Data tree badges ("V100: 91.0%" / "13 seeds") — updateSeeds
@@ -1680,7 +1704,7 @@ async function refreshPlanningUI(options = {}) {
         } catch (_) {}
         try {
             if (!isCurrentCase()) return resolve();
-            if (typeof autoCaptureReportFigures === 'function') {
+            if (options.preserveReport !== true && typeof autoCaptureReportFigures === 'function') {
                 await autoCaptureReportFigures();
             }
         } catch (_) {}
@@ -1689,7 +1713,8 @@ async function refreshPlanningUI(options = {}) {
         //     Previously the user had to manually click "Auto-fill"
         //     after every planning run. Now we trigger it automatically.
         try {
-            if (typeof Report !== 'undefined' && Report.autoFill && Report.autoFill.fromAll) {
+            if (options.preserveReport !== true
+                && typeof Report !== 'undefined' && Report.autoFill && Report.autoFill.fromAll) {
                 await Report.autoFill.fromAll();
             }
         } catch (_) {}

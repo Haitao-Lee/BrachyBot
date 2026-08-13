@@ -16,6 +16,7 @@ from web.routes.data_routes import _delete_object
 from web.structure_service import (
     build_effective_structures,
     delete_structure,
+    reclassify_generic_segmentation_masks,
     reclassify_structure,
     replace_structure_source,
 )
@@ -272,6 +273,59 @@ def test_structure_classification_is_bidirectional_and_persistent(tmp_path):
     deleted = delete_structure(memory, object_id)
     assert all(item["object_id"] != object_id for item in deleted.structures)
     assert object_id in memory.retrieve("structure_deleted_ids")
+
+
+def test_generic_mask_move_updates_effective_structure_set_and_invalidates_dependents():
+    memory = _Memory()
+    shape = (10, 9, 8)
+    generic_mask = np.zeros(shape, dtype=np.uint8)
+    generic_mask[2:4, 2:5, 3:6] = 1
+    memory.store("generic_segmentation_masks", [{
+        "mask_id": "mask_pancreas",
+        "object_id": "mask:mask_pancreas",
+        "data_tree_node_id": "mask_pancreas",
+        "name": "Pancreas",
+        "label": "Pancreas",
+        "classification": "unclassified",
+        "moved_to": None,
+        "mask_array": generic_mask,
+        "spacing": [0.7, 0.8, 2.5],
+        "origin": [-120.5, -101.25, 42.0],
+        "direction": [0.0, -1.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0],
+        "data_version": 1,
+    }])
+    memory.store("dvh_data", {"CTV": {"dose": [0, 120]}})
+    memory.store("surgical_guide", {"status": "ready", "version": 1})
+
+    effective = reclassify_generic_segmentation_masks(
+        memory, ["mask:mask_pancreas"], "oar",
+    )
+    moved = next(
+        item for item in effective.structures
+        if item["object_id"] == "mask:mask_pancreas"
+    )
+
+    assert moved["classification"] == "oar"
+    assert moved["name"] == "Pancreas"
+    assert np.array_equal(moved["mask"], generic_mask.astype(bool))
+    persisted = memory.retrieve("generic_segmentation_masks")[0]
+    assert persisted["classification"] == "oar"
+    assert persisted["moved_to"] == "oar"
+    assert np.array_equal(persisted["mask_array"], generic_mask)
+    assert np.all(effective.oar_array[generic_mask > 0] > 0)
+    assert np.count_nonzero(effective.oar_array) >= np.count_nonzero(generic_mask)
+    assert memory.retrieve("dvh_data") is None
+    assert memory.retrieve("surgical_guide")["status"] == "stale"
+
+    restored = reclassify_generic_segmentation_masks(
+        memory, ["mask_pancreas"], "ctv",
+    )
+    restored_row = next(
+        item for item in restored.structures
+        if item["object_id"] == "mask:mask_pancreas"
+    )
+    assert restored_row["classification"] == "ctv"
+    assert np.all(restored.ctv_array[generic_mask > 0] > 0)
 
 
 def test_model_ctv_anatomy_survives_an_oar_source_refresh():

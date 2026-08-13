@@ -178,6 +178,22 @@ def _requires_label_faithful_mesh(agent, source: str, label_id: int) -> bool:
     return False
 
 
+def _is_open_generic_mask_entry(entry):
+    """Return whether a generic mask still belongs in the standalone group.
+
+    A BiomedParse/open mask becomes an effective CTV or OAR through the real
+    structure transaction. Once that happens it must be served by the CTV/OAR
+    label endpoints only; returning it here would make the Viewer rebuild a
+    second, stale standalone mesh and could overwrite its visibility state.
+    """
+    if not isinstance(entry, dict):
+        return False
+    classification = str(
+        entry.get("classification") or entry.get("moved_to") or ""
+    ).strip().lower()
+    return classification not in {"ctv", "oar"}
+
+
 def _generic_mask_entries(agent):
     """Return JSON-safe metadata for session-owned open segmentation masks."""
     raw = agent.memory.retrieve("generic_segmentation_masks") or []
@@ -185,7 +201,7 @@ def _generic_mask_entries(agent):
     if not isinstance(raw, list):
         return entries
     for item in raw:
-        if not isinstance(item, dict) or not item.get("mask_id"):
+        if not _is_open_generic_mask_entry(item) or not item.get("mask_id"):
             continue
         entry = dict(item)
         # The binary payload is served separately so the catalogue stays fast
@@ -203,7 +219,7 @@ def _generic_mask_entry(agent, mask_id):
     if not isinstance(raw, list):
         return None
     for item in raw:
-        if isinstance(item, dict) and str(item.get("mask_id") or "") == wanted:
+        if _is_open_generic_mask_entry(item) and str(item.get("mask_id") or "") == wanted:
             return item
     return None
 
@@ -408,12 +424,36 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
             for _key in (
                 "ctv_array", "ctv_mask", "ctv_full_labels", "ctv_label_map",
                 "ctv_path", "ctv_source", "ctv_volume_mm3", "ctv_voxel_count",
+                # Standalone BiomedParse/open-segmentation results belong to
+                # the loaded CT. Never let a different patient inherit them.
+                "generic_segmentation_masks", "generic_segmentation_latest",
+                "generic_segmentation_completed",
                 "oar_array", "oar_mask", "oar_is_full", "oar_source",
                 "label_grid_orientation",
                 "organ_names", "organ_counts", "dose_metrics", "dose_distribution",
                 "dose_distribution_gy", "seed_plan", "seed_plan_serialized",
                 "seed_positions", "trajectories", "refined_trajectories",
                 "verified_needle_geometry", "dvh_data",
+                # The Structure Set is derived from the new CT. Clear its
+                # source snapshots, overrides and deletion ledger together.
+                "ctv_embedded_oar_array", "structure_registry_initialized",
+                "structure_base_ctv_array", "structure_base_ctv_full_labels",
+                "structure_base_ctv_label_map", "structure_base_ctv_source",
+                "structure_base_oar_array", "structure_base_organ_names",
+                "structure_base_oar_source", "structure_overrides",
+                "structure_deleted_ids", "structure_catalog",
+                # Skin/guide/planning artifacts are patient-specific too.
+                "skin_surface", "skin_surface_mask", "surgical_guide",
+                "surgical_guide_versions", "artifact_status",
+                "manual_artifact_status", "planning_runs",
+                "active_planning_id", "planning_run_id", "manual_planning_id",
+                "plan_config", "dose_units", "dose_scale_gy",
+                "dose_distribution_physical_gy", "algorithm_plan_dose_distribution",
+                "algorithm_plan_dose_distribution_gy", "algorithm_plan_dose_metrics",
+                "algorithm_plan_dvh_data", "metrics", "manual_ai_dose",
+                "manual_plan_active", "manual_plan_version", "manual_geometry_only",
+                "manual_plan_serialized", "manual_planning_preview",
+                "ct_source_meta", "ct_dicom_tags",
             ):
                 agent.memory.store(_key, None)
             agent.memory.conversation_state["planning_completed"] = False

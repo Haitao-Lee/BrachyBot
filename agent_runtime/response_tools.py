@@ -298,14 +298,8 @@ print(json.dumps(result))
         # Do not wait for a second provider round to rediscover this queue.
         # This is intentionally limited to the routing-created clinical plan;
         # arbitrary compound requests still go through the primary LLM.
-        authorization = getattr(self, "_current_execution_authorization", lambda: None)()
-        action_plan = getattr(authorization, "action_plan", None)
-        if action_plan is None or not action_plan.steps:
-            action_plan = getattr(
-                getattr(self, "_active_turn_policy", None),
-                "action_plan",
-                None,
-            )
+        get_action_plan = getattr(self, "_current_action_plan", None)
+        action_plan = get_action_plan() if callable(get_action_plan) else None
         planned_tools = set(getattr(action_plan, "tool_names", ()) or ())
         is_local_planning_plan = bool(
             action_plan is not None
@@ -341,6 +335,41 @@ print(json.dumps(result))
                 },
             }]
 
+        # Materialize an explicitly authorized local business plan before any
+        # terminal-action shortcut.  The provider may have emitted only the
+        # last step after the policy was created, but a guide cannot replace
+        # the required re-planning step.  The normalizer still reuses ready
+        # CTV/OAR masks and injects live parameters, so this is a queue
+        # materialization step rather than a second keyword router.
+        if is_local_planning_plan:
+            normalizer = getattr(self, "_normalize_clinical_tool_calls", None)
+            if callable(normalizer):
+                requested_calls = []
+                emitted_tools = set()
+                for index, step in enumerate(action_plan.ordered_steps()):
+                    tool_name = str(step.tool or "")
+                    if tool_name not in {
+                        "ctv_segmentation",
+                        "oar_segmentation",
+                        "planning_pipeline",
+                        "surgical_guide",
+                    } or tool_name in emitted_tools:
+                        continue
+                    params = dict(step.params or {})
+                    if tool_name == "planning_pipeline":
+                        params.setdefault("step", "full")
+                    elif tool_name == "surgical_guide":
+                        params.setdefault("action", "generate")
+                    requested_calls.append({
+                        "id": f"tool_action_plan_{index}_{tool_name}",
+                        "tool": tool_name,
+                        "params": params,
+                    })
+                    emitted_tools.add(tool_name)
+                planned_calls = normalizer(requested_calls, message)
+                if planned_calls:
+                    return planned_calls
+
         # Guide generation is an explicit clinical action. Keep it on the
         # registered tool path so the model cannot replace it with Python code
         # or expose a disabled code_executor error to the user.
@@ -348,9 +377,7 @@ print(json.dumps(result))
             # A compound request belongs to the semantic action-plan path.
             # Returning a guide-only direct call here would discard the
             # preceding planning action before dependency normalization.
-            if is_local_planning_plan or (
-                action_plan is None and requires_planning_before_guide(message)
-            ):
+            if action_plan is None and requires_planning_before_guide(message):
                 normalizer = getattr(self, "_normalize_clinical_tool_calls", None)
                 if callable(normalizer):
                     planned_calls = normalizer(
@@ -1740,10 +1767,8 @@ Output (JSON array of strings):"""
         # This is a boundary guard, not a UI workaround: the user's explicit
         # clinical action always maps to the registered guide tool.
         active_policy = getattr(self, "_active_turn_policy", None)
-        authorization = getattr(self, "_current_execution_authorization", lambda: None)()
-        action_plan = getattr(authorization, "action_plan", None)
-        if action_plan is None or not action_plan.steps:
-            action_plan = getattr(active_policy, "action_plan", None)
+        get_action_plan = getattr(self, "_current_action_plan", None)
+        action_plan = get_action_plan() if callable(get_action_plan) else None
         if (
             getattr(active_policy, "intent", None) == "surgical_guide_generation"
             and not (

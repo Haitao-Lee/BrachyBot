@@ -201,6 +201,32 @@ def _saved_dose_scale_gy(agent) -> float:
     )
 
 
+def _dose_data_generation(agent) -> int:
+    """Return the newest persisted dose generation for cache validation.
+
+    Workspace memory versions are incremented whenever a value is stored.  A
+    slice response must carry that generation so the browser can distinguish
+    a newly published dose grid from a same-shaped grid cached during an older
+    planning stage.
+    """
+    memory = getattr(agent, "memory", None)
+    versions = getattr(memory, "_planning_versions", {}) if memory is not None else {}
+    if not isinstance(versions, dict):
+        return 0
+    generations = []
+    for key in (
+        "dose_distribution_gy",
+        "dose_distribution",
+        "dose_metrics",
+        "dvh_data",
+    ):
+        try:
+            generations.append(int(versions.get(key, 0) or 0))
+        except (TypeError, ValueError):
+            continue
+    return max(generations, default=0)
+
+
 def _submitted_manual_needles(data: Dict[str, Any], current_needles: Any) -> list:
     """Resolve the needle list without confusing an explicit empty list.
 
@@ -674,6 +700,32 @@ def register_planning_routes(
                 "retry_after_ms": 250,
             }), 202
         return None
+
+    def dose_workspace_data_pending(agent):
+        """Gate dose reads only when the dose grid itself is unavailable.
+
+        Workspace hydration decodes large CT/mesh artifacts in the background.
+        A persisted dose grid is independently sufficient for a slice overlay,
+        so holding these requests behind the global hydration flag leaves the
+        last painted slice on screen until an unrelated task finishes.
+        """
+        pending = workspace_data_pending(agent)
+        if pending is None or agent is None:
+            return pending
+        memory = getattr(agent, "memory", None)
+        if memory is None or not active_planning_id(memory):
+            return pending
+        if memory.retrieve("dose_distribution_gy") is not None:
+            return None
+        if memory.retrieve("dose_distribution_physical_gy") is not None:
+            return None
+        if (
+            memory.retrieve("dose_distribution") is not None
+            and memory.retrieve("resampled_ct") is not None
+            and memory.retrieve("ct_image") is not None
+        ):
+            return None
+        return pending
 
     def monitor_control_agent(session_id):
         """Resolve monitor state without synchronously hydrating a case."""
@@ -2381,7 +2433,7 @@ def register_planning_routes(
         agent = get_agent()
         if agent is None:
             return jsonify({"error": "Agent not available"}), 500
-        pending = workspace_data_pending(agent)
+        pending = dose_workspace_data_pending(agent)
         if pending is not None:
             return pending
 
@@ -2491,6 +2543,8 @@ def register_planning_routes(
                 return jsonify({"success": True, "vertices": [], "faces": [], "vertex_count": 0,
                                 "face_count": 0, "threshold": threshold, "dose_range": [data_min, data_max],
                                 "dose_units": DOSE_MODEL_UNITS, "dose_scale_gy": dose_scale_gy,
+                                "planning_id": active_planning_id(agent.memory),
+                                "dose_generation": _dose_data_generation(agent),
                                 "coverage_audit": coverage_audit})
 
             # Use resampled_ct spacing (z,y,x -> x,y,z for marching cubes).
@@ -2532,6 +2586,8 @@ def register_planning_routes(
                 "dose_range": [data_min, data_max],
                 "dose_units": DOSE_MODEL_UNITS,
                 "dose_scale_gy": dose_scale_gy,
+                "planning_id": active_planning_id(agent.memory),
+                "dose_generation": _dose_data_generation(agent),
                 "coverage_audit": coverage_audit,
                 "surface_boundary_padding_voxels": int(_DOSE_SURFACE_BOUNDARY_PADDING_VOXELS),
             })
@@ -2551,7 +2607,7 @@ def register_planning_routes(
         agent = get_agent()
         if agent is None:
             return jsonify({"error": "Agent not available"}), 500
-        pending = workspace_data_pending(agent)
+        pending = dose_workspace_data_pending(agent)
         if pending is not None:
             return pending
 
@@ -2616,6 +2672,8 @@ def register_planning_routes(
                 "ct_size": ct_size,
                 "dose_units": DOSE_MODEL_UNITS,
                 "dose_scale_gy": _saved_dose_scale_gy(agent),
+                "planning_id": active_planning_id(agent.memory),
+                "dose_generation": _dose_data_generation(agent),
                 "peak_voxel": {
                     "x": int(peak_x),
                     "y": int(peak_y),
@@ -2637,7 +2695,7 @@ def register_planning_routes(
         agent = get_agent()
         if agent is None:
             return jsonify({"error": "Agent not available"}), 500
-        pending = workspace_data_pending(agent)
+        pending = dose_workspace_data_pending(agent)
         if pending is not None:
             return pending
 
@@ -2705,6 +2763,8 @@ def register_planning_routes(
                 "dose_max": float(dose_np.max()),
                 "dose_units": DOSE_MODEL_UNITS,
                 "dose_scale_gy": _saved_dose_scale_gy(agent),
+                "planning_id": active_planning_id(agent.memory),
+                "dose_generation": _dose_data_generation(agent),
             })
         except Exception as e:
             logger.error(f"Dose overlay slice failed: {e}")
@@ -2722,7 +2782,7 @@ def register_planning_routes(
         agent = get_agent()
         if agent is None:
             return jsonify({"error": "Agent not available"}), 500
-        pending = workspace_data_pending(agent)
+        pending = dose_workspace_data_pending(agent)
         if pending is not None:
             return pending
 
@@ -2831,6 +2891,8 @@ def register_planning_routes(
                     "slice_range": [s_min, s_max],
                     "dose_units": DOSE_MODEL_UNITS,
                     "dose_scale_gy": dose_scale_gy,
+                    "planning_id": active_planning_id(agent.memory),
+                    "dose_generation": _dose_data_generation(agent),
                     "slice_shape": [int(slice_2d.shape[0]), int(slice_2d.shape[1])],
                 })
 
@@ -2871,6 +2933,8 @@ def register_planning_routes(
                 "slice_shape": [int(slice_2d.shape[0]), int(slice_2d.shape[1])],
                 "dose_units": DOSE_MODEL_UNITS,
                 "dose_scale_gy": dose_scale_gy,
+                "planning_id": active_planning_id(agent.memory),
+                "dose_generation": _dose_data_generation(agent),
             })
         except Exception as e:
             logger.error(f"Dose contour slice failed: {e}")

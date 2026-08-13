@@ -973,6 +973,35 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
             or ""
         )
 
+    def _current_action_plan(self):
+        """Return the authoritative plan for the current chat turn.
+
+        A local semantic policy is installed before provider calls begin.  A
+        later provider round may record only a downstream call (for example,
+        ``surgical_guide``), but that observation must not replace the
+        already-authorized business sequence.  Prefer a local plan whenever it
+        contains the clinical planning anchor; otherwise use the turn ledger's
+        provider plan for ordinary tool-driven requests.
+        """
+        active_policy = getattr(self, "_active_turn_policy", None)
+        policy_plan = getattr(active_policy, "action_plan", None)
+        get_authorization = getattr(self, "_current_execution_authorization", None)
+        authorization = (
+            get_authorization()
+            if callable(get_authorization)
+            else getattr(self, "_turn_execution_authorization", None)
+        )
+        authorization_plan = getattr(authorization, "action_plan", None)
+        if (
+            policy_plan is not None
+            and getattr(policy_plan, "steps", None)
+            and policy_plan.requires_tool("planning_pipeline")
+        ):
+            return policy_plan
+        if authorization_plan is not None and getattr(authorization_plan, "steps", None):
+            return authorization_plan
+        return policy_plan
+
     def _normalize_clinical_tool_calls(self, tool_calls: List[Dict], message: str) -> List[Dict]:
         """Build an authorized deterministic clinical-planning chain.
 
@@ -999,10 +1028,7 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
             if callable(get_authorization)
             else getattr(self, "_turn_execution_authorization", None)
         )
-        action_plan = getattr(authorization, "action_plan", None)
-        if action_plan is None or not action_plan.steps:
-            active_policy = getattr(self, "_active_turn_policy", None)
-            action_plan = getattr(active_policy, "action_plan", None)
+        action_plan = self._current_action_plan()
         if action_plan is not None and action_plan.requires_tool("planning_pipeline"):
             # The semantic resolver preserved an ordered business plan. Treat
             # its planning step as an explicit replacement request even when
@@ -2116,7 +2142,32 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
             logger.warning("[STORE] generic BiomedParse mask is empty: %s", mask_id)
             return False
 
+        existing = self.memory.retrieve("generic_segmentation_masks") or []
+        if not isinstance(existing, list):
+            existing = []
+        prior = next(
+            (
+                item for item in existing
+                if isinstance(item, dict)
+                and str(item.get("mask_id") or "") == mask_id
+            ),
+            None,
+        )
+
         entry = dict(generic)
+        # Classification and presentation state belong to the persisted mask
+        # object, not to the browser tree.  Preserve them when a later tool
+        # call refreshes the same mask so a re-hydration cannot silently move
+        # the object back to the unclassified group.
+        for key in (
+            "classification", "parent_group", "moved_to", "color", "opacity",
+            "visible", "visible2D", "visible3D", "data_version",
+        ):
+            if key not in entry and isinstance(prior, dict) and key in prior:
+                entry[key] = prior[key]
+        entry["classification"] = str(entry.get("classification") or "unclassified").lower()
+        entry["parent_group"] = str(entry.get("parent_group") or "masks").lower()
+        entry["moved_to"] = entry.get("moved_to") or None
         entry["mask_id"] = mask_id
         entry["object_id"] = str(entry.get("object_id") or f"mask:{mask_id}")
         entry["data_tree_node_id"] = str(entry.get("data_tree_node_id") or mask_id)
@@ -2138,9 +2189,6 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
         entry["error"] = None
         entry["mask_array"] = array
 
-        existing = self.memory.retrieve("generic_segmentation_masks") or []
-        if not isinstance(existing, list):
-            existing = []
         masks = []
         replaced = False
         for item in existing:

@@ -17,6 +17,7 @@ from web.structure_service import (
     _batch_memory_update,
     delete_structure,
     delete_structures,
+    reclassify_generic_segmentation_masks,
     reclassify_structure,
     reclassify_structures,
     resolve_structure_object_id,
@@ -26,6 +27,61 @@ from web.workspace_store import WorkspaceError, WorkspaceStore
 
 
 logger = logging.getLogger(__name__)
+
+
+def _generic_mask_object_id(value: Any) -> str:
+    """Normalize a generic segmentation mask to its stable Data Tree ID."""
+    raw = str(value or "").strip()
+    if raw.startswith("mask:"):
+        return raw
+    if raw.startswith("mask_"):
+        # The legacy DOM id is ``mask_<id>`` while the persisted object id is
+        # ``mask:<id>``. Keep both spellings interchangeable at the API
+        # boundary so a context-menu action cannot address a phantom object.
+        return f"mask:{raw[5:]}"
+    return raw
+
+
+def _public_generic_mask(entry: Mapping[str, Any]) -> Dict[str, Any]:
+    """Return mask metadata without copying the potentially large voxel array."""
+    return {
+        key: value
+        for key, value in dict(entry).items()
+        if key not in {"mask_array", "voxels", "data"}
+    }
+
+
+def _reclassify_generic_masks(
+    memory: Any,
+    object_ids: list[str],
+    classification: str,
+) -> list[Dict[str, Any]]:
+    """Return the public metadata for generic masks after a real move."""
+    destination = str(classification or "").strip().lower()
+    if destination not in {"ctv", "oar"}:
+        raise StructureError("Generic masks can only move to CTV or OAR")
+    requested = {_generic_mask_object_id(value) for value in object_ids}
+    if not requested:
+        raise StructureError("object_ids must contain at least one mask")
+    existing = memory.retrieve("generic_segmentation_masks") or []
+    if not isinstance(existing, list):
+        existing = []
+    matched: list[Dict[str, Any]] = []
+    for raw_entry in existing:
+        if not isinstance(raw_entry, Mapping):
+            continue
+        entry = dict(raw_entry)
+        mask_id = str(entry.get("mask_id") or "").strip()
+        stable_id = _generic_mask_object_id(entry.get("object_id") or mask_id)
+        if stable_id in requested or _generic_mask_object_id(mask_id) in requested:
+            matched.append(_public_generic_mask(entry))
+    if len(matched) != len(requested):
+        missing = sorted(requested - {
+            _generic_mask_object_id(item.get("object_id") or item.get("mask_id"))
+            for item in matched
+        })
+        raise StructureError(f"Generic mask was not found: {missing[0] if missing else 'unknown'}")
+    return matched
 
 
 def register_data_routes(
@@ -179,6 +235,46 @@ def register_data_routes(
             logger.warning("Structure classification failed: %s", exc)
             return error_response(exc)
 
+    @app.route("/api/data/generic-masks/classification", methods=["PATCH"])
+    @require_api_key
+    @rate_limit
+    def api_generic_masks_classification():
+        try:
+            user, session_id, agent = context()
+            payload = request.get_json(silent=True) or {}
+            raw_ids = payload.get("object_ids")
+            if not isinstance(raw_ids, list):
+                raise StructureError("object_ids must be a list")
+            classification = str(payload.get("classification") or "")
+            stable_ids = [_generic_mask_object_id(value) for value in raw_ids]
+            effective = reclassify_generic_segmentation_masks(
+                agent.memory, stable_ids, classification,
+            )
+            updated = _reclassify_generic_masks(
+                agent.memory, stable_ids, classification,
+            )
+            mark_report_stale(
+                str(user["id"]), session_id, "Generic segmentation mask classification changed",
+            )
+            store._audit(user["id"], session_id, "generic_masks.reclassified", {
+                "object_ids": [_generic_mask_object_id(value) for value in raw_ids],
+                "classification": classification,
+            })
+            return jsonify({
+                "success": True,
+                "session_id": session_id,
+                "object_ids": [str(item["object_id"]) for item in updated],
+                "generic_masks": updated,
+                "structures": effective.public_catalog(),
+                "invalidated": [
+                    "dose", "dvh", "evaluation", "report", "surgical_guide",
+                ],
+                "artifact_status": agent.memory.retrieve("structure_artifact_status") or {},
+            })
+        except Exception as exc:
+            logger.warning("Generic mask classification failed: %s", exc)
+            return error_response(exc)
+
     @app.route("/api/data/objects/batch-delete", methods=["POST"])
     @require_api_key
     @rate_limit
@@ -200,6 +296,7 @@ def register_data_routes(
                 "ctv", "oar", "group:structures:ctv", "group:structures:oar",
                 "planning", "group:planning", "group:planning:needles",
                 "group:planning:seeds", "group:dose", "group:dose:isosurfaces",
+                "group:structures:masks",
             }
             requested_groups = sorted(set(ids) & group_aliases)
             if requested_groups and not recursive_groups:
@@ -219,10 +316,11 @@ def register_data_routes(
                 "group:planning:trajectories", "group:planning:needles",
                 "group:planning:seeds", "group:dose",
                 "group:dose:isosurfaces", "group:report",
+                "group:structures:masks",
             })
             nonstructure_missing = [
                 value for value in ids
-                if not value.startswith(("structure:", "organ_", "ctv_"))
+                if not value.startswith(("structure:", "organ_", "ctv_", "mask:", "mask_"))
                 and value not in available
             ]
             if nonstructure_missing:
@@ -233,6 +331,10 @@ def register_data_routes(
                 resolve_structure_object_id(agent.memory, value)
                 for value in ids
                 if value.startswith(("structure:", "organ_", "ctv_"))
+            ]
+            generic_mask_ids = [
+                value for value in ids
+                if value.startswith(("mask:", "mask_"))
             ]
             results = []
             if structure_ids:
@@ -246,8 +348,12 @@ def register_data_routes(
             else:
                 effective = None
             for object_id in ids:
-                if object_id.startswith(("structure:", "organ_", "ctv_")):
+                if object_id.startswith(("structure:", "organ_", "ctv_", "mask:", "mask_")):
                     continue
+                results.append(_delete_object(
+                    store, user, session_id, agent, object_id,
+                ))
+            for object_id in generic_mask_ids:
                 results.append(_delete_object(
                     store, user, session_id, agent, object_id,
                 ))
@@ -514,6 +620,41 @@ def _delete_object(
             "object_id": stable_id,
             "structures": effective.public_catalog(),
             "invalidated": ["dose", "dvh", "evaluation", "report", "surgical_guide"],
+        }
+
+    if candidate.startswith(("mask:", "mask_")):
+        stable_id = _generic_mask_object_id(candidate)
+        mask_id = stable_id.split(":", 1)[1]
+        existing = memory.retrieve("generic_segmentation_masks") or []
+        if not isinstance(existing, list):
+            existing = []
+        remaining = [
+            item for item in existing
+            if not isinstance(item, Mapping)
+            or _generic_mask_object_id(item.get("object_id") or item.get("mask_id")) != stable_id
+        ]
+        if len(remaining) == len(existing):
+            raise ExportError("Generic segmentation mask was not found")
+        promoted = any(
+            isinstance(item, Mapping)
+            and _generic_mask_object_id(item.get("object_id") or item.get("mask_id")) == stable_id
+            and str(item.get("classification") or item.get("moved_to") or "").lower() in {"ctv", "oar"}
+            for item in existing
+        )
+        effective = delete_structure(memory, stable_id) if promoted else None
+        memory.store("generic_segmentation_masks", remaining)
+        if str(memory.retrieve("generic_segmentation_latest") or "") == mask_id:
+            memory.store(
+                "generic_segmentation_latest",
+                str(remaining[-1].get("mask_id") or "") if remaining else None,
+            )
+        invalidated = ["generic_mask"]
+        if promoted:
+            invalidated.extend(["dose", "dvh", "evaluation", "report", "surgical_guide"])
+        return {
+            "object_id": stable_id,
+            "structures": effective.public_catalog() if effective else None,
+            "invalidated": invalidated,
         }
 
     if candidate in {"skin_surface", "skin_surface:guide"}:

@@ -3251,8 +3251,15 @@ class PlanningPipelineTool(BaseTool):
         t0 = time.time()
         dose_result = self._step_dose_calc(ct_image, ctv_mask, oar_mask, agent_config, agent)
         substep_timings["dose_calc"] = round(time.time() - t0, 2)
-        _notify("dose_calc", "done" if dose_result.success else "error",
-                f"elapsed_ms={int(substep_timings['dose_calc']*1000)}")
+        # _step_dose_calc persists the original-space dose grid before this
+        # callback. Advertise that intermediate publication explicitly so the
+        # browser can repaint the current Planning while dose evaluation and
+        # the rest of this long-running pipeline are still running.
+        dose_status = "done" if dose_result.success else "error"
+        dose_content = f"elapsed_ms={int(substep_timings['dose_calc']*1000)}"
+        if dose_result.success:
+            dose_content += " | dose_ready=true"
+        _notify("dose_calc", dose_status, dose_content)
         if dose_result.success:
             results["dose_distribution"] = dose_result.data
 

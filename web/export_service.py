@@ -378,6 +378,46 @@ class ExportService:
                     },
                 ))
 
+        # Generic BiomedParse/open-segmentation masks are first-class scene
+        # objects.  They remain independent masks until the user explicitly
+        # moves one to CTV or OAR, but they must still be exportable with the
+        # same spatial metadata as any other segmentation.
+        generic_masks = memory.retrieve("generic_segmentation_masks") or []
+        if isinstance(generic_masks, list):
+            for index, raw_entry in enumerate(generic_masks):
+                if not isinstance(raw_entry, Mapping):
+                    continue
+                mask_array = raw_entry.get("mask_array")
+                if mask_array is None:
+                    continue
+                try:
+                    array = np.asarray(mask_array)
+                except Exception:
+                    continue
+                if array.ndim != 3 or not np.count_nonzero(array):
+                    continue
+                mask_id = str(raw_entry.get("mask_id") or f"mask_{index}")
+                object_id = str(
+                    raw_entry.get("object_id") or f"mask:{mask_id}"
+                )
+                objects.append(ExportObject(
+                    object_id,
+                    "group:structures:masks",
+                    str(raw_entry.get("label") or raw_entry.get("name") or mask_id),
+                    "generic_mask",
+                    "Structures/AdditionalMasks",
+                    (NIFTI, STL),
+                    "nifti",
+                    {
+                        "mask_id": mask_id,
+                        "classification": str(raw_entry.get("classification") or "unclassified"),
+                        "data_tree_node_id": str(
+                            raw_entry.get("data_tree_node_id") or mask_id
+                        ),
+                        "voxel_count": int(np.count_nonzero(array)),
+                    },
+                ))
+
         needles = _normalized_needles(memory)
         seeds = _normalized_seeds(memory)
         for index, trajectory in enumerate(memory.retrieve("trajectories") or []):
@@ -501,6 +541,15 @@ class ExportService:
                     "source_path": str(source_path),
                     "axis": figure.get("axis"),
                     "captured_at": figure.get("capturedAt"),
+                    "view_metadata": {
+                        "axis": figure.get("axis"),
+                        "figure_group": figure.get("figureGroup"),
+                        "figure_number": figure.get("figureNumber"),
+                        "subfigure": figure.get("subfigure"),
+                        "sort_order": figure.get("sortOrder"),
+                        "capture_role": figure.get("captureRole"),
+                        "capture_contract": figure.get("captureContract"),
+                    },
                 },
             ))
 
@@ -558,6 +607,7 @@ class ExportService:
             "group:structures:ctv": ("group:structures", "CTV"),
             "group:structures:oar": ("group:structures", "OAR"),
             "group:structures:skin": ("group:structures", "Skin surface"),
+            "group:structures:masks": ("group:structures", "Additional masks"),
             "group:planning": (None, "Planning"),
             "group:planning:trajectories": ("group:planning", "Trajectories"),
             "group:planning:needles": ("group:planning", "Needles"),
@@ -660,6 +710,26 @@ class ExportService:
                 _write_nifti(np.asarray(skin_mask, dtype=np.uint8), path, memory)
             else:
                 _write_mask_stl(skin_mask, path, memory, item.name)
+        elif item.data_type == "generic_mask":
+            mask_id = str(item.metadata.get("mask_id") or "")
+            entries = memory.retrieve("generic_segmentation_masks") or []
+            entry = next(
+                (
+                    row for row in entries
+                    if isinstance(row, Mapping)
+                    and str(row.get("mask_id") or "") == mask_id
+                ),
+                None,
+            )
+            if not isinstance(entry, Mapping) or entry.get("mask_array") is None:
+                raise ExportError(f"Generic segmentation mask is no longer available: {item.name}")
+            mask_array = np.asarray(entry["mask_array"], dtype=np.uint8)
+            if not np.count_nonzero(mask_array):
+                raise ExportError(f"Generic segmentation mask is empty: {item.name}")
+            if format_key == "nifti":
+                _write_nifti(mask_array, path, memory)
+            else:
+                _write_mask_stl(mask_array, path, memory, item.name)
         elif item.data_type == "needle":
             needle_id = item.metadata["needle_id"]
             records = [row for row in _normalized_needles(memory) if row["needle_id"] == needle_id]

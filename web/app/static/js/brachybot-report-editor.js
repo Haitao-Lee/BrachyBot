@@ -464,6 +464,13 @@ function removeReportFigure(idx) {
 let _reportCapturePromise = null;
 let _reportCaptureGeneration = 0;
 
+// Figure 1 is a clinical evidence contract rather than a snapshot of the
+// operator's current camera. Persisting the contract lets a later hydration
+// path identify a legacy capture and regenerate the intended global/detail
+// pair instead of silently preserving a semantically swapped image.
+const REPORT_FIGURE_ONE_CAPTURE_CONTRACT = 'figure1-global-overview-target-detail-v2';
+window.REPORT_FIGURE_ONE_CAPTURE_CONTRACT = REPORT_FIGURE_ONE_CAPTURE_CONTRACT;
+
 function _currentReportCaptureSessionId() {
     const value = (typeof _activeApiSessionId === 'function' && _activeApiSessionId())
         || (typeof activeSessionId !== 'undefined' && activeSessionId)
@@ -938,6 +945,10 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
     // drawing several small panels into one irreversible composite bitmap.
     const REPORT_FIGURE_ASPECT = 16 / 9;
     const REPORT_DOSE_SURFACE_ASPECT = REPORT_FIGURE_ASPECT;
+    // Native subfigures are placed one per A4 evidence page. Retain enough
+    // pixels for seed distribution and needle geometry to remain legible in
+    // both the preview and exported PDF.
+    const REPORT_FIGURE_LONG_EDGE = 1800;
 
     async function _waitForReportDoseSlice(axis, sliceIndex, timeoutMs = 12000) {
         const cap = axis.charAt(0).toUpperCase() + axis.slice(1);
@@ -1176,12 +1187,12 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
                     // The overview needs enough surrounding anatomy to make
                     // the full implant geometry intelligible in a report.
                     // The close-up remains intentionally tight around CTV.
-                    margin: mode === 'detail' ? 1.06 : 2.0,
+                    margin: mode === 'detail' ? 1.10 : 1.30,
                 });
             }
 
             // Helper: render and capture 3D canvas
-            async function _capture3D(label, targetAspect = 1) {
+            async function _capture3D(label, targetAspect = 1, maxOutputEdge = REPORT_FIGURE_LONG_EDGE) {
                 if (!isCurrentCapture()) return null;
                 await _waitFrames(3);
                 if (!isCurrentCapture()) return null;
@@ -1225,7 +1236,7 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
                             return null;
                         }
                     }
-                    const url = _captureReportCanvasCrop(c, targetAspect);
+                    const url = _captureReportCanvasCrop(c, targetAspect, maxOutputEdge);
                     if (!url || url.length < 5000) {
                         console.warn('[Report] 3D capture appears blank for', label);
                         return null;
@@ -1247,20 +1258,52 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
                 if (mesh) mesh.visible = true;
             }
             _savedHandleObjects.forEach(({ object }) => { if (object) object.visible = false; });
+            const _isFigureOneCtv = (id, mesh) => id === 'ctv' || id.startsWith('ctv_')
+                || mesh?.userData?.source === 'ctv' || mesh?.userData?.type === 'ctv';
+            const _isFigureOneSeed = (id, mesh) => id.startsWith('seed_')
+                || mesh?.userData?.type === 'seed' || mesh?.userData?.kind === 'seed';
+            const _isFigureOneNeedle = (id, mesh) => mesh?.userData?.type !== 'needle_handle'
+                && (id.startsWith('needle_') || mesh?.userData?.type === 'needle');
+            const _isFigureOneSkin = (id, mesh) => id === 'skin' || id === 'skin_surface'
+                || mesh === scene3D.skinMesh
+                || ['skin', 'skin_surface', 'guide_skin_surface'].includes(String(mesh?.userData?.type || ''));
+            const _setFigureOneOpacity = (mesh, opacity) => {
+                if (!mesh) return;
+                const surface = (typeof getMeshSurface === 'function') ? getMeshSurface(mesh) : mesh;
+                surface?.traverse?.(object => {
+                    const materials = Array.isArray(object.material) ? object.material : [object.material];
+                    materials.forEach(material => {
+                        if (!material) return;
+                        material.opacity = opacity;
+                        material.transparent = opacity < 1;
+                        material.needsUpdate = true;
+                    });
+                });
+            };
+
+            // The guide-fit skin surface is useful in the interactive viewer,
+            // but it is a CT-wide envelope rather than planning evidence. Keep
+            // it out of Figure 1(a) so the global plan is not framed or hidden
+            // by the whole-body surface. The saved state is restored below.
+            for (const [id, mesh] of Object.entries(scene3D.meshes)) {
+                if (_isFigureOneSkin(id, mesh) && mesh) mesh.visible = false;
+            }
+            if (scene3D.skinMesh) scene3D.skinMesh.visible = false;
+
             // OARs semi-transparent (not seeds, needles, dose, or CTV)
             for (const [id, mesh] of Object.entries(scene3D.meshes)) {
-                if (mesh?.material && !id.startsWith('seed_') && !id.startsWith('needle_')
-                    && !id.startsWith('dose_iso_') && !id.startsWith('ctv_') && id !== 'ctv') {
-                    mesh.material.opacity = 0.15;
-                    mesh.material.transparent = true;
-                }
+                if (!mesh || _isFigureOneSkin(id, mesh) || _isFigureOneCtv(id, mesh) || _isFigureOneSeed(id, mesh)
+                    || _isFigureOneNeedle(id, mesh) || id.startsWith('dose_iso_')) continue;
+                _setFigureOneOpacity(mesh, 0.15);
             }
             // CTV semi-transparent
             const ctvMesh = scene3D.meshes['ctv']
                 || Object.values(scene3D.meshes).find(m => m?.userData?.source === 'ctv');
-            if (ctvMesh?.material) { ctvMesh.material.opacity = 0.3; ctvMesh.material.transparent = true; }
+            _setFigureOneOpacity(ctvMesh, 0.30);
 
-            _frameCameraToBox(_computeFocusedPlanBox({ includeOars: true, includeNeedles: false }), 'overview');
+            // Figure 1(a) is the global plan. Include the full planned needle
+            // geometry, but omit the CT-wide skin envelope from the framing.
+            _frameCameraToBox(_computeFocusedPlanBox({ includeOars: true, includeNeedles: true }), 'overview');
             await _waitFrames(2);
             if (!isCurrentCapture()) return { stale: true };
             let imgA = await _capture3D('View A (front+OARs)', REPORT_FIGURE_ASPECT);
@@ -1275,21 +1318,20 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
             // Hide non-essential OARs, keep CTV + seeds + needles only
             for (const [id, mesh] of Object.entries(scene3D.meshes)) {
                 if (!mesh) continue;
-                const isCtv = id === 'ctv' || id.startsWith('ctv_');
-                const isSeed = id.startsWith('seed_');
-                const isNeedle = id.startsWith('needle_') && mesh?.userData?.type !== 'needle_handle';
-                mesh.visible = isCtv || isSeed || isNeedle;
+                mesh.visible = _isFigureOneCtv(id, mesh)
+                    || _isFigureOneSeed(id, mesh)
+                    || _isFigureOneNeedle(id, mesh);
             }
             _savedHandleObjects.forEach(({ object }) => { if (object) object.visible = false; });
             // CTV very translucent so seeds inside are visible
-            if (ctvMesh?.material) { ctvMesh.material.opacity = 0.12; ctvMesh.material.transparent = true; }
+            _setFigureOneOpacity(ctvMesh, 0.12);
             // Seeds bright and opaque
             for (const [id, mesh] of Object.entries(scene3D.meshes)) {
-                if (id.startsWith('seed_') && mesh?.material) { mesh.material.opacity = 1.0; }
+                if (_isFigureOneSeed(id, mesh)) _setFigureOneOpacity(mesh, 1.0);
             }
             // Needles visible but thin
             for (const [id, mesh] of Object.entries(scene3D.meshes)) {
-                if (id.startsWith('needle_') && mesh?.material) { mesh.material.opacity = 0.8; }
+                if (_isFigureOneNeedle(id, mesh)) _setFigureOneOpacity(mesh, 0.8);
             }
 
             // The CTV is translucent, but depth testing can still hide a
@@ -1312,9 +1354,9 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
                 });
             };
             for (const [id, mesh] of Object.entries(scene3D.meshes)) {
-                if (id.startsWith('needle_') && mesh?.userData?.type !== 'needle_handle') {
+                if (_isFigureOneNeedle(id, mesh)) {
                     promotePlanGeometry(mesh, 2000);
-                } else if (id.startsWith('seed_')) {
+                } else if (_isFigureOneSeed(id, mesh)) {
                     promotePlanGeometry(mesh, 2100);
                 }
             }
@@ -1337,10 +1379,12 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
             if (imgA) _push(labels.lblFront, labels.capFront, imgA, 'report_fig1_global', {
                 figureGroup: 'figure1', figureNumber: 1, subfigure: 'a', sortOrder: 1,
                 captureRole: 'planning_overview',
+                captureContract: REPORT_FIGURE_ONE_CAPTURE_CONTRACT,
             });
             if (imgB) _push(labels.lblInside, labels.capInside, imgB, 'report_fig1_closeup', {
                 figureGroup: 'figure1', figureNumber: 1, subfigure: 'b', sortOrder: 2,
                 captureRole: 'planning_closeup',
+                captureContract: REPORT_FIGURE_ONE_CAPTURE_CONTRACT,
             });
 
             // Restore immediately on the normal path; the finally block

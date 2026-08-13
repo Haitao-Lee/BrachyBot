@@ -334,7 +334,7 @@
             const id = String(item?.planning_id || '');
             if (!id) return;
             const sequence = Number.isFinite(Number(item?.sequence)) ? Number(item.sequence) : null;
-            const fallback = sequence === null ? id : `Planning_${sequence}`;
+            const fallback = sequence === null ? id : `Planning_${sequence + 1}`;
             const label = String(item?.label || fallback);
             const status = String(item?.status || '');
             const suffix = status && status !== 'completed'
