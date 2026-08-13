@@ -27,8 +27,18 @@ _BASE_KEYS = (
 _DOWNSTREAM_KEYS = (
     "dose_distribution",
     "dose_distribution_gy",
+    "dose_distribution_physical_gy",
     "dose_metrics",
     "dvh_data",
+    # Keep the legacy algorithm-prefixed aliases in the same invalidation
+    # transaction.  Some restored sessions expose these names instead of the
+    # canonical dose keys, which otherwise lets an old result look current
+    # after a structure classification change.
+    "algorithm_plan_dose_distribution",
+    "algorithm_plan_dose_distribution_gy",
+    "algorithm_plan_dose_metrics",
+    "algorithm_plan_dvh_data",
+    "manual_ai_dose",
     "metrics",
     "plan_score",
     "radiation_volume",
@@ -252,6 +262,54 @@ def _source_structures(memory: Any) -> list[Dict[str, Any]]:
                 "source": "ctv_model_embedded",
                 "mask": full == source_label,
             })
+
+    # Open/generic segmentation results start as independent Data Tree masks.
+    # Once the user explicitly moves one to CTV or OAR, the same persisted
+    # object becomes a real Structure Set source.  Keeping this conversion in
+    # the authoritative source builder means planning, DVH, export, restore,
+    # and both viewers all consume the same classification instead of a
+    # browser-only presentation flag.
+    generic_masks = memory.retrieve("generic_segmentation_masks") or []
+    if isinstance(generic_masks, list):
+        for raw_entry in generic_masks:
+            if not isinstance(raw_entry, Mapping):
+                continue
+            classification = str(
+                raw_entry.get("classification") or raw_entry.get("moved_to") or ""
+            ).strip().lower()
+            if classification not in {"ctv", "oar"}:
+                continue
+            mask = _copy_array(raw_entry.get("mask_array"), dtype=np.uint8)
+            if mask is None or not np.any(mask):
+                continue
+            mask_id = str(
+                raw_entry.get("object_id")
+                or f"mask:{raw_entry.get('mask_id') or ''}"
+            ).strip()
+            # Older browser snapshots used ``mask_<id>`` as a DOM identifier.
+            # Keep the persisted object identity stable when those snapshots
+            # are rebuilt into the authoritative Structure Set.
+            if mask_id.startswith("mask_"):
+                mask_id = f"mask:{mask_id[5:]}"
+            elif not mask_id.startswith("mask:"):
+                mask_id = f"mask:{mask_id}"
+            if not mask_id or mask_id == "mask:":
+                continue
+            result.append({
+                "object_id": mask_id,
+                "source_classification": classification,
+                "source_label": 1,
+                "name": str(
+                    raw_entry.get("name")
+                    or raw_entry.get("label")
+                    or raw_entry.get("target")
+                    or raw_entry.get("mask_id")
+                    or mask_id
+                ),
+                "source": "generic_segmentation",
+                "mask": mask > 0,
+                "generic_mask_id": str(raw_entry.get("mask_id") or ""),
+            })
     return result
 
 
@@ -303,7 +361,16 @@ def build_effective_structures(memory: Any) -> EffectiveStructures:
     used_ctv: set[int] = set()
     used_oar: set[int] = set()
 
-    for item in sorted(source_items, key=lambda row: row["object_id"]):
+    # Generic masks are explicit user-promoted structures.  Apply them after
+    # the original CTV/OAR sources so an intentional move is visible in the
+    # effective label volume when the masks overlap an older source.
+    for item in sorted(
+        source_items,
+        key=lambda row: (
+            1 if str(row.get("source") or "") == "generic_segmentation" else 0,
+            row["object_id"],
+        ),
+    ):
         object_id = item["object_id"]
         if object_id in deleted:
             continue
@@ -467,6 +534,93 @@ def _commit_effective(memory: Any, effective: EffectiveStructures, reason: str) 
 
 def reclassify_structure(memory: Any, object_id: str, classification: str) -> EffectiveStructures:
     return reclassify_structures(memory, [object_id], classification)
+
+
+def reclassify_generic_segmentation_masks(
+    memory: Any,
+    object_ids: Iterable[str],
+    classification: str,
+) -> EffectiveStructures:
+    """Promote open segmentation masks into the effective Structure Set.
+
+    The generic mask remains stored under ``generic_segmentation_masks`` so
+    its original voxel data and stable identity are preserved.  Classification
+    is the only mutable business field; the effective CTV/OAR arrays are then
+    rebuilt in one transaction and all dependent clinical artifacts are marked
+    stale by ``_commit_effective``.
+    """
+    destination = str(classification or "").strip().lower()
+    if destination not in {"ctv", "oar"}:
+        raise StructureError("Generic masks can only move to CTV or OAR")
+    requested = {str(value or "").strip() for value in object_ids if str(value or "").strip()}
+    if not requested:
+        raise StructureError("No generic masks were selected")
+    requested = {
+        value if value.startswith("mask:") else f"mask:{value}"
+        for value in requested
+    }
+
+    initialize_structure_registry(memory)
+    existing = memory.retrieve("generic_segmentation_masks") or []
+    if not isinstance(existing, list):
+        existing = []
+
+    # Use the current CT/structure grid as the spatial contract.  A mask from
+    # another grid must be aligned/imported first; silently broadcasting it
+    # would corrupt dose evaluation and make the Data Tree lie about geometry.
+    reference_shape = None
+    for value in (
+        memory.retrieve("ct_data"),
+        memory.retrieve("structure_base_ctv_array"),
+        memory.retrieve("structure_base_oar_array"),
+    ):
+        candidate = _copy_array(value)
+        if candidate is not None:
+            reference_shape = tuple(candidate.shape)
+            break
+
+    updated: list[Dict[str, Any]] = []
+    matched: set[str] = set()
+    for raw_entry in existing:
+        if not isinstance(raw_entry, Mapping):
+            continue
+        entry = dict(raw_entry)
+        mask_id = str(entry.get("mask_id") or "").strip()
+        stable_id = str(entry.get("object_id") or f"mask:{mask_id}").strip()
+        if not stable_id.startswith("mask:"):
+            stable_id = f"mask:{stable_id}"
+        if stable_id in requested or f"mask:{mask_id}" in requested:
+            mask = _copy_array(entry.get("mask_array"), dtype=np.uint8)
+            if mask is None or not np.any(mask):
+                raise StructureError(f"Generic segmentation mask is empty: {stable_id}")
+            if reference_shape is not None and tuple(mask.shape) != reference_shape:
+                raise StructureError(
+                    f"Generic segmentation mask grid does not match the current CT: {stable_id}"
+                )
+            entry["object_id"] = stable_id
+            entry["classification"] = destination
+            entry["parent_group"] = destination
+            entry["moved_to"] = destination
+            previous_version = entry.get("data_version")
+            entry["data_version"] = (
+                f"{previous_version}:classification:{destination}"
+                if previous_version else f"classification:{destination}"
+            )
+            matched.add(stable_id)
+        updated.append(entry)
+
+    missing = sorted(requested - matched)
+    if missing:
+        raise StructureError(f"Generic segmentation mask was not found: {missing[0]}")
+
+    _batch_memory_update(memory, {"generic_segmentation_masks": updated})
+    effective = build_effective_structures(memory)
+    _commit_effective(
+        memory,
+        effective,
+        f"{len(matched)} generic mask(s) moved to {destination}",
+    )
+    return effective
 
 
 def reclassify_structures(

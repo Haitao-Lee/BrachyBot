@@ -17,10 +17,13 @@ def test_figure_one_detail_view_keeps_the_complete_ctv_in_frame():
     assert "halfHeight / Math.tan(halfFovY)" in source
     assert "halfWidth / Math.tan(halfFovX)" in source
     assert "halfDepth + planarDistance" in source
-    assert "margin: mode === 'detail' ? 1.06 : 2.0" in source
+    assert "margin: mode === 'detail' ? 1.10 : 1.30" in source
     assert "targetAspect: REPORT_FIGURE_ASPECT" in source
     assert "id === 'skin_surface'" in source
     assert "guide_skin_surface" in source
+    assert "includeOars: true, includeNeedles: true" in source
+    assert "REPORT_FIGURE_LONG_EDGE = 1800" in source
+    assert "_captureReportCanvasCrop(c, targetAspect, maxOutputEdge)" in source
 
 
 def test_report_figures_are_native_subfigures_and_peak_dose_capture_is_ready():
@@ -54,12 +57,30 @@ def test_report_figures_are_native_subfigures_and_peak_dose_capture_is_ready():
     assert "`doseColorbar${cap}`" in export
 
 
-def test_late_viewer_hydration_never_overwrites_canonical_report_capture():
+def test_late_viewer_hydration_delegates_to_canonical_report_capture():
     source = _read("web/app/static/js/brachybot-dvh-planning.js")
-    start = source.index("const _replaceOrCreate =")
-    block = source[start:source.index("const lang =", start)]
-    assert "if (idx >= 0) return;" in block
+    start = source.index("4f-2. Re-capture report figures only through the canonical report")
+    block = source[start:source.index("// 5. Data tree badges", start)]
+
+    assert "await autoCaptureReportFigures({ sessionId: expectedSessionId });" in block
+    assert "options.allowLegacyReportFigureRecovery === true" in block
+    assert block.index("options.allowLegacyReportFigureRecovery === true") < block.index("const _replaceOrCreate =")
     assert "Object.assign(window.reportForm.figures[idx], entry)" not in block
+
+
+def test_figure_one_capture_contract_survives_report_artifact_round_trip():
+    editor = _read("web/app/static/js/brachybot-report-editor.js")
+    workspace = _read("web/app/static/js/brachybot-workspace.js")
+    viewer = _read("web/app/static/js/brachybot-viewer-volume.js")
+    api = _read("web/app/static/js/brachybot-ui-api.js")
+    export_service = _read("web/export_service.py")
+
+    assert "REPORT_FIGURE_ONE_CAPTURE_CONTRACT = 'figure1-global-overview-target-detail-v2'" in editor
+    assert editor.count("captureContract: REPORT_FIGURE_ONE_CAPTURE_CONTRACT") == 2
+    assert "capture_contract: String(figure.captureContract || '')" in workspace
+    assert "capture_contract: String(figure.captureContract || '')" in api
+    assert "viewMetadata: item.metadata?.view_metadata || item.metadata || {}" in viewer
+    assert '"capture_contract": figure.get("captureContract")' in export_service
 
 
 def test_report_preview_groups_figures_by_stable_metadata_not_array_position():
@@ -118,7 +139,7 @@ def test_report_figure_identity_survives_server_artifact_fallback():
     assert "const legacyAxis = Object.entries(REPORT_FIGURE_DEFINITIONS).find" in workspace
     assert "duplicate legacy Figure 1(a) entries collapse correctly" in workspace
     assert "_artifactFallback" in workspace
-    assert "const recoveredFigureMetadata = axis =>" in workspace
+    assert "const recoveredFigureMetadata = (axis, viewMetadata = {}) =>" in workspace
     assert "report_fig2_dose_surface" in workspace
     assert "identityMatch" in workspace
     assert "...figureMetadata" in workspace

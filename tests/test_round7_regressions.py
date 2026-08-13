@@ -213,6 +213,57 @@ def test_local_replan_action_plan_builds_queue_without_waiting_for_provider():
     }
 
 
+def test_local_replan_plan_wins_if_provider_overwrites_turn_ledger_with_guide_only():
+    """A later guide-only provider round must not erase the local replan queue."""
+    from AgenticSys import BrachyAgent
+    from agent_runtime.action_plan import ActionPlan
+    from agent_runtime.execution_authorization import TurnExecutionAuthorization
+    from agent_runtime.turn_policy import classify_local_turn
+
+    class Memory:
+        def retrieve(self, key, default=None):
+            if key in {"ctv_array", "oar_array"}:
+                return [1]
+            if key == "oar_is_full":
+                return True
+            if key == "tumor_type_used":
+                return "nnunet_pancreatic"
+            if key == "ct_path":
+                return "/tmp/case.nii.gz"
+            if key == "plan_config":
+                return {}
+            return default
+
+        def get_ui_state(self):
+            return {"ct_path": "/tmp/case.nii.gz", "planning": {}}
+
+    message = (
+        "\u6211\u6539\u4e86\u7c92\u5b50\u690d\u5165\u53c2\u6570，"
+        "\u8bf7\u91cd\u65b0\u6267\u884c\u89c4\u5212，\u5e76\u751f\u6210\u65b0\u7684\u5bfc\u677f"
+    )
+    agent = object.__new__(BrachyAgent)
+    agent.memory = Memory()
+    agent.config = {}
+    agent._active_turn_token = 1
+    policy = classify_local_turn(message)
+    agent._active_turn_policy = policy
+    agent._turn_execution_authorization = TurnExecutionAuthorization(token=1)
+    # Simulate the failure observed in production: a later provider round
+    # records only the terminal guide call in the mutable authorization ledger.
+    agent._turn_execution_authorization.action_plan = ActionPlan.from_tools(
+        ("surgical_guide",), source="provider_guide_only"
+    )
+    agent._has_completed_planning = lambda *_args, **_kwargs: True
+
+    calls = agent._detect_tool_request(message)
+
+    assert [call["tool"] for call in calls] == [
+        "planning_pipeline",
+        "surgical_guide",
+    ]
+    assert calls[0]["params"]["step"] == "full"
+
+
 def test_short_replan_action_plan_builds_planning_queue_without_guide():
     from AgenticSys import BrachyAgent
     from agent_runtime.execution_authorization import TurnExecutionAuthorization

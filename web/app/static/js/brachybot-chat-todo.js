@@ -1835,12 +1835,136 @@ async function sendChat(prefill, options) {
         'manual_planning', 'intraoperative_replan',
     ]);
     let turnSawPlanningWork = false;
+    let turnPlanningRunStarted = false;
+    const turnDoseEvents = new Set();
     const markPlanningEvent = (eventData) => {
         if (!eventData || typeof eventData !== 'object') return false;
-        const tool = String(eventData.tool || '').trim();
-        const parentTool = String(eventData.parent_tool || '').trim();
+        // Different server generations use tool, tool_name, function_name,
+        // or parent_tool for the same streamed event. Normalize those forms
+        // here so an in-progress planning run cannot lose its invalidation or
+        // dose refresh merely because the event envelope changed.
+        const tool = String(
+            eventData.tool || eventData.tool_name || eventData.function_name
+            || eventData.function || eventData.name || '',
+        ).trim();
+        const parentTool = String(
+            eventData.parent_tool || eventData.parentTool || eventData.parent || '',
+        ).trim();
         const matched = PLANNING_EVENT_TOOLS.has(tool) || PLANNING_EVENT_TOOLS.has(parentTool);
-        if (matched) turnSawPlanningWork = true;
+        if (!matched) return false;
+        turnSawPlanningWork = true;
+
+        // Planning results are mutable aliases in the legacy viewer API, but
+        // the server reserves an immutable Planning run before the first
+        // stage writes.  Tell the viewer to remove the old dose presentation
+        // immediately; otherwise a long-running replan leaves the previous
+        // slice overlay looking current until the final response arrives.
+        const status = String(
+            eventData.status || eventData.state || eventData.phase || eventData.result?.status || '',
+        ).trim().toLowerCase();
+        const terminal = new Set(['done', 'completed', 'error', 'failed', 'cancelled', 'stopped']);
+        const eventSessionId = String(eventData.session_id || eventData.sessionId || '').trim();
+        const sessionMatches = !eventSessionId || eventSessionId === String(turnSessionId || '');
+        const metadata = eventData.metadata && typeof eventData.metadata === 'object'
+            ? eventData.metadata : {};
+        const planningId = eventData.planning_id
+            || eventData.planningId
+            || metadata.planning_id
+            || metadata.planningId
+            || eventData.result?.planning_id
+            || eventData.result?.planningId
+            || eventData.result?.metadata?.planning_id
+            || null;
+        // A compact stream may send only the terminal tool result. It still
+        // represents the start of a new immutable Planning run from the
+        // viewer's perspective, so invalidate the previous dose before the
+        // terminal payload is rendered.
+        if (sessionMatches && !turnPlanningRunStarted) {
+            turnPlanningRunStarted = true;
+            window.dispatchEvent(new CustomEvent('brachybot:planning-run-started', {
+                detail: {
+                    sessionId: turnSessionId,
+                    requestId: turnRequestId,
+                    messageId: turnAssistantMessageId,
+                    planningId,
+                    tool: tool || parentTool,
+                },
+            }));
+        }
+        const doseTool = ['dose_calc', 'dose_eval', 'dose_evaluation'].includes(tool)
+            || ['dose_calc', 'dose_eval', 'dose_evaluation'].includes(parentTool);
+        const resultPayload = eventData.result && typeof eventData.result === 'object'
+            ? eventData.result : {};
+        const metadataPayload = resultPayload.metadata && typeof resultPayload.metadata === 'object'
+            ? resultPayload.metadata : {};
+        // Tool progress may arrive in several valid wire shapes.  The
+        // planning pipeline publishes the early dose grid as a compact
+        // ``content: "... | dose_ready=true"`` event in some streams, while
+        // other providers preserve it as structured metadata.  Normalize
+        // both here so an in-progress slice refresh does not depend on the
+        // LLM/provider's event serialization details.
+        const doseReadyText = [
+            eventData.content,
+            eventData.message,
+            eventData.detail,
+            typeof eventData.result === 'string' ? eventData.result : '',
+            resultPayload.content,
+            resultPayload.message,
+            metadata.content,
+            metadata.message,
+            metadataPayload.content,
+            metadataPayload.message,
+        ].filter(value => typeof value === 'string').join('\n');
+        const hasDosePayload = !!(
+            eventData.has_dose || metadata.has_dose || metadataPayload.has_dose
+            || eventData.dose_distribution || eventData.dose_distribution_gy
+            || eventData.dose_overlay || eventData.dose_metrics
+            || resultPayload.dose_distribution || resultPayload.dose_distribution_gy
+            || resultPayload.dose_overlay || resultPayload.dose_metrics
+            || metadata.dose_distribution || metadata.dose_distribution_gy
+            || metadataPayload.dose_distribution || metadataPayload.dose_distribution_gy
+        );
+        const doseReady = eventData.dose_ready === true
+            || eventData.doseReady === true
+            || metadata.dose_ready === true
+            || metadataPayload.dose_ready === true
+            || /["']?dose[_\s-]?ready["']?\s*[:=]\s*(?:"?true"?|done|1)\b/i.test(doseReadyText);
+        const planningPipelineTool = tool === 'planning_pipeline' || parentTool === 'planning_pipeline';
+        const doseOperation = doseTool || (planningPipelineTool && (hasDosePayload || doseReady));
+        const rejectedDoseStatus = new Set(['error', 'failed', 'cancelled', 'stopped']);
+        // A dose grid can be published by dose_calc before the enclosing
+        // planning_pipeline emits its terminal event.  The presence of a real
+        // dose payload is therefore sufficient to refresh the Viewer; waiting
+        // for the final planning response is what caused frozen slices during
+        // long-running jobs.
+        const doseEventEligible = !rejectedDoseStatus.has(status)
+            && (terminal.has(status) || hasDosePayload || doseReady);
+        if (sessionMatches && doseOperation && doseEventEligible) {
+            const doseGeneration = eventData.dose_generation
+                || eventData.doseGeneration
+                || metadata.dose_generation
+                || metadata.doseGeneration
+                || metadataPayload.dose_generation
+                || metadataPayload.doseGeneration
+                || resultPayload.dose_generation
+                || resultPayload.doseGeneration
+                || '';
+            const eventKey = `${turnRequestId}|${tool}|${parentTool}|${planningId || ''}|${status}|${doseGeneration}|${hasDosePayload || doseReady ? 'payload' : 'terminal'}`;
+            if (!turnDoseEvents.has(eventKey)) {
+                turnDoseEvents.add(eventKey);
+                window.dispatchEvent(new CustomEvent('brachybot:dose-result-updated', {
+                    detail: {
+                        sessionId: turnSessionId,
+                        requestId: turnRequestId,
+                        messageId: turnAssistantMessageId,
+                        planningId,
+                        tool: tool || parentTool,
+                        doseGeneration: doseGeneration || null,
+                        hasDosePayload: hasDosePayload || doseReady,
+                    },
+                }));
+            }
+        }
         return matched;
     };
     const screenshotTasks = [];
@@ -2467,7 +2591,11 @@ async function sendChat(prefill, options) {
                             // ensures refreshPlanningUI fires even when the
                             // top-level planning_pipeline done event is missing.
                             const LAST_PLANNING_SUBSTEPS = ['dose_eval', 'dose_calc'];
-                            const SEG_TOOLS = ['ctv_segmentation', 'oar_segmentation'];
+                            const SEG_TOOLS = [
+                                'ctv_segmentation',
+                                'oar_segmentation',
+                                'biomedparse_segmentation',
+                            ];
                             const isPlanDone = data.status === 'done' && (
                                 FINAL_PLANNING_TOOLS.includes(data.tool) ||
                                 FINAL_PLANNING_TOOLS.includes(data.parent_tool || '') ||
@@ -2484,43 +2612,69 @@ async function sendChat(prefill, options) {
                             // fetched by the frontend.
                             const completedSegmentationTool = String(data.tool || data.parent_tool || '');
                             if (data.status === 'done' && SEG_TOOLS.includes(completedSegmentationTool)) {
-                                const segmentationKind = completedSegmentationTool === 'oar_segmentation' ? 'oar' : 'ctv';
-                                uiDebugLog('[SSE-STEP] Segmentation done:', completedSegmentationTool, '- hydrating viewer artifacts');
-                                // The workspace may publish the tool result before the
-                                // label endpoint and 3D mesh service are ready. This
-                                // session-bound job retries the short publication race,
-                                // paints 2D/Data Tree first, then builds true meshes in
-                                // the background without extending the chat task.
-                                if (typeof window.hydrateCompletedSegmentationArtifacts === 'function') {
-                                    void window.hydrateCompletedSegmentationArtifacts({
-                                        sessionId: turnSessionId,
-                                        kind: segmentationKind,
-                                        reason: 'chat-segmentation-complete',
-                                    }).then(() => {
-                                        // The label endpoint and mesh worker can
-                                        // complete in separate turns. Reconcile
-                                        // once more after both have published so a
-                                        // cold session cannot leave the Data Tree
-                                        // or MPR overlays one event behind.
-                                        if (String(activeSessionId || '') !== String(turnSessionId || '')) return;
-                                        window.reconcileSegmentationViewerState?.({
+                                if (completedSegmentationTool === 'biomedparse_segmentation') {
+                                    // Open-ended masks are not part of the CTV/OAR
+                                    // label-volume payload.  Hydrate their own
+                                    // persisted catalogue immediately so a chat
+                                    // request such as "segment the pancreas" has
+                                    // the same Data Tree/2D/3D delivery contract
+                                    // as a model CTV or OAR result.
+                                    const genericScope = typeof window._captureViewerDataScope === 'function'
+                                        ? window._captureViewerDataScope(turnSessionId)
+                                        : { sessionId: turnSessionId, dataGeneration: null };
+                                    if (typeof window.hydrateGenericMasksFromServer === 'function') {
+                                        void window.hydrateGenericMasksFromServer(genericScope)
+                                            .then(() => {
+                                                if (String(activeSessionId || '') !== String(turnSessionId || '')) return;
+                                                window.renderDataTree?.();
+                                                window.loadAllSlices?.();
+                                                window.requestViewerVisualRefresh?.('generic-segmentation-complete');
+                                            })
+                                            .catch(error => console.warn(
+                                                '[SSE-STEP] generic segmentation hydration failed:',
+                                                error,
+                                            ));
+                                    }
+                                    scrollToBottom();
+                                } else {
+                                    const segmentationKind = completedSegmentationTool === 'oar_segmentation' ? 'oar' : 'ctv';
+                                    uiDebugLog('[SSE-STEP] Segmentation done:', completedSegmentationTool, '- hydrating viewer artifacts');
+                                    // The workspace may publish the tool result before the
+                                    // label endpoint and 3D mesh service are ready. This
+                                    // session-bound job retries the short publication race,
+                                    // paints 2D/Data Tree first, then builds true meshes in
+                                    // the background without extending the chat task.
+                                    if (typeof window.hydrateCompletedSegmentationArtifacts === 'function') {
+                                        void window.hydrateCompletedSegmentationArtifacts({
                                             sessionId: turnSessionId,
-                                            reason: 'chat-segmentation-hydrated',
-                                        });
-                                    }).catch(error => console.warn('[SSE-STEP] segmentation artifact hydration failed:', error));
-                                } else if (typeof loadLabelVolumes === 'function') {
-                                    loadLabelVolumes({
-                                        sessionId: turnSessionId,
-                                        forceFresh: true,
-                                        preserveViewerState: true,
-                                        resetPresentation: true,
-                                    }).then(() => {
-                                        if (String(activeSessionId || '') !== String(turnSessionId || '')) return;
-                                        window.reconcileSegmentationViewerState?.({
+                                            kind: segmentationKind,
+                                            reason: 'chat-segmentation-complete',
+                                        }).then(() => {
+                                            // The label endpoint and mesh worker can
+                                            // complete in separate turns. Reconcile
+                                            // once more after both have published so a
+                                            // cold session cannot leave the Data Tree
+                                            // or MPR overlays one event behind.
+                                            if (String(activeSessionId || '') !== String(turnSessionId || '')) return;
+                                            window.reconcileSegmentationViewerState?.({
+                                                sessionId: turnSessionId,
+                                                reason: 'chat-segmentation-hydrated',
+                                            });
+                                        }).catch(error => console.warn('[SSE-STEP] segmentation artifact hydration failed:', error));
+                                    } else if (typeof loadLabelVolumes === 'function') {
+                                        loadLabelVolumes({
                                             sessionId: turnSessionId,
-                                            reason: 'chat-labels-hydrated',
-                                        });
-                                    }).catch(error => console.warn('[SSE-STEP] fallback label load failed:', error));
+                                            forceFresh: true,
+                                            preserveViewerState: true,
+                                            resetPresentation: true,
+                                        }).then(() => {
+                                            if (String(activeSessionId || '') !== String(turnSessionId || '')) return;
+                                            window.reconcileSegmentationViewerState?.({
+                                                sessionId: turnSessionId,
+                                                reason: 'chat-labels-hydrated',
+                                            });
+                                        }).catch(error => console.warn('[SSE-STEP] fallback label load failed:', error));
+                                    }
                                 }
                             }
                         }

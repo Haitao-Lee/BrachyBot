@@ -660,6 +660,7 @@
                     subfigure: String(figure.subfigure || ''),
                     sort_order: Number(figure.sortOrder) || null,
                     capture_role: String(figure.captureRole || ''),
+                    capture_contract: String(figure.captureContract || ''),
                     slice_index: Number.isFinite(Number(figure.sliceIdx)) ? Number(figure.sliceIdx) : null,
                     peak_voxel: figure.peakVoxel || null,
                 },
@@ -1622,7 +1623,7 @@
             targetForm.figures = existingFigures;
             return existingFigures.length;
         }
-        const recoveredFigureMetadata = axis => {
+        const recoveredFigureMetadata = (axis, viewMetadata = {}) => {
             const map = {
                 report_fig1_global: { figureGroup: 'figure1', figureNumber: 1, subfigure: 'a', sortOrder: 1, captureRole: 'planning_overview' },
                 report_fig1_closeup: { figureGroup: 'figure1', figureNumber: 1, subfigure: 'b', sortOrder: 2, captureRole: 'planning_closeup' },
@@ -1632,7 +1633,11 @@
                 report_fig2_dose_surface: { figureGroup: 'figure2', figureNumber: 2, subfigure: 'd', sortOrder: 4, captureRole: 'dose_surface_3d' },
                 report_fig2_dvh: { figureGroup: 'figure2', figureNumber: 2, subfigure: 'e', sortOrder: 5, captureRole: 'dvh' },
             };
-            return map[axis] || {};
+            const base = map[axis] || {};
+            const captureContract = String(
+                viewMetadata?.capture_contract || viewMetadata?.captureContract || '',
+            ).trim();
+            return captureContract ? { ...base, captureContract } : base;
         };
         const recoveredFigures = screenshots.map((item, index) => {
             const objectId = String(item.objectId || '');
@@ -1640,7 +1645,10 @@
             const stem = filename.replace(/\.png$/i, '');
             const identityMatch = stem.match(/^report_screenshot_(report_fig[12]_.+)_([0-9a-f]{12})$/i);
             const axis = identityMatch ? identityMatch[1] : `restored-${index + 1}`;
-            const figureMetadata = recoveredFigureMetadata(axis);
+            const figureMetadata = recoveredFigureMetadata(
+                axis,
+                item.viewMetadata || item.view_metadata || item.metadata || {},
+            );
             const title = typeof _t === 'function'
                 ? _t(`报告图 ${index + 1}`, `Report Figure ${index + 1}`)
                 : `Report Figure ${index + 1}`;

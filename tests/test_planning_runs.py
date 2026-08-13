@@ -60,7 +60,7 @@ def test_full_runs_are_immutable_and_activation_restores_selected_aliases():
     _publish(agent, second, seed="seed-b")
 
     runs = list_planning_runs(agent.memory)
-    assert [run["label"] for run in runs] == ["Planning_0", "Planning_1"]
+    assert [run["label"] for run in runs] == ["Planning_1", "Planning_2"]
     assert runs[0]["visible"] is False
     assert runs[1]["visible"] is True
 
@@ -132,3 +132,55 @@ def test_artifact_snapshot_refresh_preserves_draft_status_and_skin_surface():
     assert run["status"] == "draft"
     assert snapshot["skin_surface"]["data_version"] == 2
     assert snapshot["skin_surface_mask"] == [[[1, 0], [0, 0]]]
+
+
+def test_activation_restores_all_planning_owned_downstream_artifacts():
+    agent = _agent()
+    first = begin_planning_run(agent, step="full", force_new=True)
+    agent.memory.store = lambda key, value: agent.memory.planning_results.__setitem__(key, value)
+    first_values = {
+        "dose_distribution_gy": [[1.0]],
+        "dose_metrics": {"v100": 90.0, "d90": 120.0},
+        "dvh_data": {"CTV": {"dose": [0.0, 120.0], "volume_percent": [100.0, 90.0]}},
+        "skin_surface": {"object_id": "skin_surface:guide", "data_version": 1},
+        "skin_surface_mask": [[1]],
+        "surgical_guide": {"status": "ready", "version": 1},
+        "surgical_guide_versions": [{"version": 1, "planning_id": first}],
+        "artifact_status": {
+            "dose": "ready", "dvh": "ready", "report": "ready", "surgical_guide": "ready",
+        },
+    }
+    for key, value in first_values.items():
+        agent.memory.store(key, value)
+    publish_planning_run(agent, None, status="completed")
+
+    second = begin_planning_run(agent, step="full", force_new=True)
+    second_values = {
+        "dose_distribution_gy": [[2.0]],
+        "dose_metrics": {"v100": 91.0, "d90": 121.0},
+        "dvh_data": {"CTV": {"dose": [0.0, 121.0], "volume_percent": [100.0, 91.0]}},
+        "skin_surface": {"object_id": "skin_surface:guide", "data_version": 2},
+        "skin_surface_mask": [[2]],
+        "surgical_guide": {"status": "ready", "version": 2},
+        "surgical_guide_versions": [{"version": 2, "planning_id": second}],
+        "artifact_status": {
+            "dose": "ready", "dvh": "ready", "report": "ready", "surgical_guide": "ready",
+        },
+    }
+    for key, value in second_values.items():
+        agent.memory.store(key, value)
+    publish_planning_run(agent, None, status="completed")
+
+    activate_planning_run(agent, first)
+    for key, value in first_values.items():
+        assert agent.memory.retrieve(key) == value
+    runs = list_planning_runs(agent.memory)
+    assert runs[0]["visible"] is True
+    assert runs[1]["visible"] is False
+
+    activate_planning_run(agent, second)
+    for key, value in second_values.items():
+        assert agent.memory.retrieve(key) == value
+    runs = list_planning_runs(agent.memory)
+    assert runs[0]["visible"] is False
+    assert runs[1]["visible"] is True
