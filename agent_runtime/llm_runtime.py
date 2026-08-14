@@ -2734,10 +2734,16 @@ class LLMRuntimeMixin:
                     if self.memory.retrieve("ct_image") is None:
                         try:
                             import SimpleITK as sitk
-                            ct_img = sitk.ReadImage(params['image_path'])
+                            from utils.ct_volume import normalize_ct_image
+                            ct_img, source_meta = normalize_ct_image(
+                                sitk.ReadImage(params['image_path'])
+                            )
                             self.memory.store("ct_image", ct_img)
                             # Also keep the raw frame for label metadata alignment
                             self.memory.store("ct_image_raw", ct_img)
+                            existing_meta = dict(self.memory.retrieve("ct_source_meta") or {})
+                            existing_meta.update(source_meta)
+                            self.memory.store("ct_source_meta", existing_meta)
                         except Exception as e:
                             logger.warning(
                                 f"Failed to auto-load CT image from {params['image_path']}: {e}. "

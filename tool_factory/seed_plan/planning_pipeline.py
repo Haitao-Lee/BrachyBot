@@ -1802,6 +1802,7 @@ class PlanningPipelineTool(BaseTool):
         spatial metadata from the raw frame, matching the contract in AgenticSys.
         """
         import SimpleITK as sitk
+        from utils.ct_volume import normalize_ct_image
 
         ct_image_path = kwargs.get("ct_image_path")
         if ct_image_path:
@@ -1824,6 +1825,11 @@ class PlanningPipelineTool(BaseTool):
                     requested_identity = os.fspath(ct_image_path)
                     stored_identity = os.fspath(stored_path) if stored_path else None
                 if stored_image is not None and requested_identity == stored_identity:
+                    stored_image, source_meta = normalize_ct_image(stored_image)
+                    agent.memory.store("ct_image", stored_image)
+                    existing_meta = dict(agent.memory.retrieve("ct_source_meta") or {})
+                    existing_meta.update(source_meta)
+                    agent.memory.store("ct_source_meta", existing_meta)
                     logger.info("Reusing Session CT image for planning: %s", ct_image_path)
                     if agent.memory.retrieve("ct_image_raw") is None:
                         agent.memory.store("ct_image_raw", stored_image)
@@ -1831,12 +1837,16 @@ class PlanningPipelineTool(BaseTool):
             try:
                 logger.info(f"Loading CT image: {ct_image_path}")
                 ct_raw = sitk.ReadImage(ct_image_path)
-                ct_image = _safe_dicom_orient(ct_raw, 'LPI', context="for CT")
+                ct_frame, source_meta = normalize_ct_image(ct_raw)
+                ct_image = _safe_dicom_orient(ct_frame, 'LPI', context="for CT")
                 if agent:
                     # Store both raw (for label metadata) and oriented (for downstream use)
-                    agent.memory.store("ct_image_raw", ct_raw)
+                    agent.memory.store("ct_image_raw", ct_frame)
                     agent.memory.store("ct_image", ct_image)
                     agent.memory.store("ct_path", ct_image_path)
+                    existing_meta = dict(agent.memory.retrieve("ct_source_meta") or {})
+                    existing_meta.update(source_meta)
+                    agent.memory.store("ct_source_meta", existing_meta)
                 return ct_image
             except Exception as e:
                 logger.warning(f"Failed to load CT from path '{ct_image_path}': {e}. Falling back to memory.")
@@ -1844,6 +1854,11 @@ class PlanningPipelineTool(BaseTool):
         if agent:
             ct_image = agent.memory.retrieve("ct_image")
             if ct_image is not None:
+                ct_image, source_meta = normalize_ct_image(ct_image)
+                agent.memory.store("ct_image", ct_image)
+                existing_meta = dict(agent.memory.retrieve("ct_source_meta") or {})
+                existing_meta.update(source_meta)
+                agent.memory.store("ct_source_meta", existing_meta)
                 # Ensure stored CT is also LPI-oriented
                 ct_image = _safe_dicom_orient(ct_image, 'LPI', context="for stored CT")
                 # Maintain ct_image_raw invariant — _store_label_with_metadata needs it.

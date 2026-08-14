@@ -16,6 +16,7 @@ WEB_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(WEB_DIR, ".."))
 
 from plans.dose_pre.model_loader import DEFAULT_PRESCRIPTION_GY, resolve_prescription_gy
+from utils.ct_volume import normalize_ct_image
 from utils.operation_tracker import get_active_operations as _tracked_operations
 
 try:
@@ -1038,7 +1039,7 @@ def create_app(config: Optional[Dict] = None):
         except Exception as e:
             return jsonify({"error": str(e)}), 500
 
-    def _load_ct_image(path):
+    def _load_ct_image_raw(path):
         """Load a medical image from `path` and return (sitk.Image, kind, meta).
 
         `path` may be:
@@ -1149,6 +1150,20 @@ def create_app(config: Optional[Dict] = None):
 
         # Unknown extension — try anyway
         return sitk.ReadImage(path), "volume", {"file": os.path.abspath(path)}
+
+    def _load_ct_image(path):
+        """Load a CT and normalize 4-D sources to one 3-D planning frame.
+
+        The source file remains untouched. Keeping this normalization at the
+        shared loader boundary makes Viewer loads and header inspection use the
+        same dimensionality policy, while metadata records whether a frame was
+        selected from a 4-D source.
+        """
+        image, kind, meta = _load_ct_image_raw(path)
+        normalized, volume_meta = normalize_ct_image(image)
+        normalized_meta = dict(meta or {})
+        normalized_meta.update(volume_meta)
+        return normalized, kind, normalized_meta
 
     def _extract_dicom_tags(sitk_img):
         """Extract clinically relevant DICOM tags via SimpleITK.
