@@ -455,7 +455,7 @@ function removeReportFigure(idx) {
 //   Left:  Front-facing panoramic with all OARs (semi-transparent),
 //          needle paths (red), radioactive seeds (yellow), CTV
 //   Right: Camera aimed at translucent CTV tumor showing internal
-//          3D seed distribution
+//          3D seed distribution; OAR and guide-skin meshes are hidden
 //
 // FIGURE 2: Dose Distribution & DVH (five independent subfigures)
 //   Top:   Axial / Sagittal / Coronal CT with dose heatmap at
@@ -468,7 +468,7 @@ let _reportCaptureGeneration = 0;
 // operator's current camera. Persisting the contract lets a later hydration
 // path identify a legacy capture and regenerate the intended global/detail
 // pair instead of silently preserving a semantically swapped image.
-const REPORT_FIGURE_ONE_CAPTURE_CONTRACT = 'figure1-global-overview-target-detail-v2';
+const REPORT_FIGURE_ONE_CAPTURE_CONTRACT = 'figure1-global-overview-target-detail-v3-no-oar-closeup';
 window.REPORT_FIGURE_ONE_CAPTURE_CONTRACT = REPORT_FIGURE_ONE_CAPTURE_CONTRACT;
 
 function _currentReportCaptureSessionId() {
@@ -1264,6 +1264,20 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
                 || mesh?.userData?.type === 'seed' || mesh?.userData?.kind === 'seed';
             const _isFigureOneNeedle = (id, mesh) => mesh?.userData?.type !== 'needle_handle'
                 && (id.startsWith('needle_') || mesh?.userData?.type === 'needle');
+            // Figure 1(b) is an implant-target detail, not an anatomy panel.
+            // Keep this classification explicit because restored/generic meshes
+            // may not use the `organ_*` ID convention consistently. OAR has
+            // priority over the allow-list below so an incorrectly inherited
+            // source tag can never leak an OAR into the close-up.
+            const _isFigureOneOar = (id, mesh) => {
+                const key = String(id || '').toLowerCase();
+                const source = String(mesh?.userData?.source || '').toLowerCase();
+                const type = String(mesh?.userData?.type || '').toLowerCase();
+                const category = String(mesh?.userData?.category || mesh?.userData?.classification || '').toLowerCase();
+                return key === 'oar' || key.startsWith('oar_') || key.startsWith('organ_')
+                    || source === 'oar' || type === 'oar' || type === 'oar_mask'
+                    || category === 'oar';
+            };
             const _isFigureOneSkin = (id, mesh) => id === 'skin' || id === 'skin_surface'
                 || mesh === scene3D.skinMesh
                 || ['skin', 'skin_surface', 'guide_skin_surface'].includes(String(mesh?.userData?.type || ''));
@@ -1315,12 +1329,15 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
             }
 
             // ── View B: Translucent tumor, seeds visible inside ──
-            // Hide non-essential OARs, keep CTV + seeds + needles only
+            // Figure 1(b) is an explicit allow-list: CTV/tumor, seeds, and
+            // needle paths only. In particular, hide every OAR even if a
+            // restored mesh carries an ambiguous or stale CTV source tag.
             for (const [id, mesh] of Object.entries(scene3D.meshes)) {
                 if (!mesh) continue;
-                mesh.visible = _isFigureOneCtv(id, mesh)
-                    || _isFigureOneSeed(id, mesh)
-                    || _isFigureOneNeedle(id, mesh);
+                mesh.visible = !_isFigureOneOar(id, mesh)
+                    && (_isFigureOneCtv(id, mesh)
+                        || _isFigureOneSeed(id, mesh)
+                        || _isFigureOneNeedle(id, mesh));
             }
             _savedHandleObjects.forEach(({ object }) => { if (object) object.visible = false; });
             // CTV very translucent so seeds inside are visible

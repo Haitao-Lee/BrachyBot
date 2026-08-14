@@ -75,8 +75,14 @@ def test_figure_one_capture_contract_survives_report_artifact_round_trip():
     api = _read("web/app/static/js/brachybot-ui-api.js")
     export_service = _read("web/export_service.py")
 
-    assert "REPORT_FIGURE_ONE_CAPTURE_CONTRACT = 'figure1-global-overview-target-detail-v2'" in editor
+    assert "REPORT_FIGURE_ONE_CAPTURE_CONTRACT = 'figure1-global-overview-target-detail-v3-no-oar-closeup'" in editor
     assert editor.count("captureContract: REPORT_FIGURE_ONE_CAPTURE_CONTRACT") == 2
+    assert "const _isFigureOneOar = (id, mesh)" in editor
+    assert "mesh.visible = !_isFigureOneOar(id, mesh)" in editor
+    assert "OAR and guide-skin meshes are hidden" in editor
+    legacy = _read("web/app/static/js/brachybot-dvh-planning.js")
+    assert "const isOar = key === 'oar'" in legacy
+    assert "mesh.visible = !isOar && (isCtv || isSeed || isNeedle);" in legacy
     assert "capture_contract: String(figure.captureContract || '')" in workspace
     assert "capture_contract: String(figure.captureContract || '')" in api
     assert "viewMetadata: item.metadata?.view_metadata || item.metadata || {}" in viewer

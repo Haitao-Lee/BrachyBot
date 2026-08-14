@@ -1406,7 +1406,11 @@ async function refreshPlanningUI(options = {}) {
 
             forceRender3DViewer();
 
-            // 4f-2a. Close-up capture: keep CTV and seeds, hide OAR/skin/needles.
+            // 4f-2a. Compatibility close-up capture: keep CTV, seeds, and
+            // needle paths, while hiding OAR and guide-skin meshes. The
+            // canonical report capture normally owns this path; retaining the
+            // same allow-list here prevents legacy hydration from reintroducing
+            // anatomy into Figure 1(b).
             const ctvMesh = scene3D.meshes['ctv'] || Object.values(scene3D.meshes).find(m => m?.userData?.type === 'ctv');
             const _savedCamera = scene3D.camera && scene3D.controls ? {
                 position: scene3D.camera.position.clone(),
@@ -1456,7 +1460,15 @@ async function refreshPlanningUI(options = {}) {
                         _savedVis[id] = mesh.visible;
                         const isCtv = id === 'ctv' || mesh?.userData?.type === 'ctv' || id.startsWith('ctv_');
                         const isSeed = id.startsWith('seed_') || mesh?.userData?.type === 'seed' || mesh?.userData?.kind === 'seed';
-                        mesh.visible = isCtv || isSeed;
+                        const key = String(id || '').toLowerCase();
+                        const source = String(mesh?.userData?.source || '').toLowerCase();
+                        const type = String(mesh?.userData?.type || '').toLowerCase();
+                        const category = String(mesh?.userData?.category || mesh?.userData?.classification || '').toLowerCase();
+                        const isOar = key === 'oar' || key.startsWith('oar_') || key.startsWith('organ_')
+                            || source === 'oar' || type === 'oar' || type === 'oar_mask'
+                            || category === 'oar';
+                        const isNeedle = type === 'needle' || id.startsWith('needle_');
+                        mesh.visible = !isOar && (isCtv || isSeed || isNeedle);
                     }
                     if (scene3D.skinMesh) { _savedVis['__skin__'] = scene3D.skinMesh.visible; scene3D.skinMesh.visible = false; }
 
