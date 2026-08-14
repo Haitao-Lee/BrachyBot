@@ -2068,12 +2068,14 @@ class WorkspaceStore:
             if not path.exists():
                 return
             import SimpleITK as sitk
+            from utils.ct_volume import normalize_ct_image
             # Restore the same physical grid used by the viewer and all
             # current segmentation outputs.  Keeping a raw-direction CT here
             # beside LPI masks recreates the mirror/translation bug after a
             # server restart.
             raw_image = sitk.ReadImage(str(path))
-            image = sitk.DICOMOrient(raw_image, "LPI")
+            raw_frame, source_meta = normalize_ct_image(raw_image)
+            image = sitk.DICOMOrient(raw_frame, "LPI")
             import numpy as np
             array = sitk.GetArrayFromImage(image)
             if cancel_event is not None and cancel_event.is_set():
@@ -2084,13 +2086,18 @@ class WorkspaceStore:
                 memory.planning_results["ct_path"] = str(path)
                 memory.planning_results["ct_image"] = image
                 memory.planning_results["ct_sitk"] = image
-                memory.planning_results["ct_image_raw"] = raw_image
+                # Keep a 3-D raw frame for label metadata alignment. The
+                # original 4-D source remains available at ct_path.
+                memory.planning_results["ct_image_raw"] = raw_frame
                 memory.planning_results["ct_data"] = array
                 memory.planning_results["ct_shape"] = list(array.shape)
                 memory.planning_results["ct_spacing"] = tuple(float(v) for v in image.GetSpacing())
                 memory.planning_results["ct_origin"] = tuple(float(v) for v in image.GetOrigin())
                 memory.planning_results["ct_direction"] = tuple(float(v) for v in image.GetDirection())
                 memory.planning_results["ct_axis_map"] = {"axial": 0, "sagittal": 2, "coronal": 1}
+                existing_meta = dict(memory.planning_results.get("ct_source_meta") or {})
+                existing_meta.update(source_meta)
+                memory.planning_results["ct_source_meta"] = existing_meta
         except Exception:
             # A damaged CT must not prevent the rest of the session metadata
             # from being inspected or deleted.

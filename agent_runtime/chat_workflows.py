@@ -2027,10 +2027,16 @@ class ChatWorkflowMixin:
                         if self.memory.retrieve("ct_image") is None:
                             try:
                                 import SimpleITK as sitk
-                                ct_img = sitk.ReadImage(tc['params']['image_path'])
+                                from utils.ct_volume import normalize_ct_image
+                                ct_img, source_meta = normalize_ct_image(
+                                    sitk.ReadImage(tc['params']['image_path'])
+                                )
                                 self.memory.store("ct_image", ct_img)
                                 # Keep raw frame for label metadata alignment
                                 self.memory.retrieve("ct_image_raw") or self.memory.store("ct_image_raw", ct_img)
+                                existing_meta = dict(self.memory.retrieve("ct_source_meta") or {})
+                                existing_meta.update(source_meta)
+                                self.memory.store("ct_source_meta", existing_meta)
                             except Exception as _e:
                                 logger.warning(f"Failed to pre-load CT image: {_e}")
 
@@ -2078,10 +2084,16 @@ class ChatWorkflowMixin:
                                 if self.memory.retrieve("ct_image") is None:
                                     try:
                                         import SimpleITK as sitk
-                                        ct_img = sitk.ReadImage(tc['params']['image_path'])
+                                        from utils.ct_volume import normalize_ct_image
+                                        ct_img, source_meta = normalize_ct_image(
+                                            sitk.ReadImage(tc['params']['image_path'])
+                                        )
                                         self.memory.store("ct_image", ct_img)
                                         # Also keep raw frame for label metadata alignment
                                         self.memory.retrieve("ct_image_raw") or self.memory.store("ct_image_raw", ct_img)
+                                        existing_meta = dict(self.memory.retrieve("ct_source_meta") or {})
+                                        existing_meta.update(source_meta)
+                                        self.memory.store("ct_source_meta", existing_meta)
                                     except Exception as e:
                                         logger.warning(
                                             f"Failed to auto-load CT from {tc['params']['image_path']}: {e}. "

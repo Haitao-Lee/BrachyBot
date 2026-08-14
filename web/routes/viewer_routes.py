@@ -16,6 +16,7 @@ from flask import Response, current_app, jsonify, request, send_from_directory, 
 
 from web.auth import current_user
 from web.structure_service import build_effective_structures
+from utils.ct_volume import normalize_ct_image
 from agent_runtime.core import PlanningPhase
 
 try:
@@ -320,6 +321,7 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
             "hu_range": [float(np.min(ct_data)), float(np.max(ct_data))],
             "dicom": agent.memory.retrieve("ct_dicom_tags") or {},
             "source_kind": agent.memory.retrieve("ct_source_kind") or "nifti",
+            "source_meta": agent.memory.retrieve("ct_source_meta") or {},
         }
 
     @app.route("/api/viewer/load", methods=["POST"])
@@ -387,6 +389,10 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
             if hydration_cancel is not None:
                 hydration_cancel.set()
             ct_sitk, kind, src_meta = load_ct_image(ct_path)
+            # Keep this route defensive even when a custom loader is injected:
+            # DICOMOrient only receives a supported 3-D CT frame.
+            ct_sitk, volume_meta = normalize_ct_image(ct_sitk)
+            src_meta = {**(src_meta or {}), **volume_meta}
             logger.info(f"CT source kind: {kind}; meta: {src_meta}")
 
             # Reorient to LPI (Left-Posterior-Inferior) standard anatomical orientation
@@ -520,6 +526,11 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
                 "hu_range": [float(ct_data.min()), float(ct_data.max())],
                 "dicom": dicom_tags,
                 "source_kind": kind,
+                "source_meta": {
+                    key: value
+                    for key, value in (src_meta or {}).items()
+                    if key != "first_slice_tags"
+                },
             }
             if kind == "dicom_series":
                 response["series_count"] = src_meta.get("series_count", 0)
