@@ -154,6 +154,32 @@ def _resample_legacy_label_array(array, reference, target_shape):
     return guarded
 
 
+def _clamp_viewer_slice_index(value, axis_name, shape, axis_map=None):
+    """Normalize a viewer slice request to the currently loaded volume.
+
+    Viewer requests can outlive a CT change: a slider event for the previous
+    case may arrive after the new, smaller volume has already been installed.
+    Treat that as a stale presentation request and clamp it to the new volume
+    instead of letting ``numpy.take`` raise an IndexError.  The returned axis
+    is also normalized so malformed axis names cannot select a non-existent
+    dimension.
+    """
+    dimensions = tuple(int(size) for size in (shape or ()) if size is not None)
+    mapping = axis_map or {"axial": 0, "sagittal": 2, "coronal": 1}
+    try:
+        axis = int(mapping.get(str(axis_name), 0))
+    except (TypeError, ValueError):
+        axis = 0
+    if axis < 0 or axis >= len(dimensions):
+        axis = 0
+    maximum = max(0, dimensions[axis] - 1) if dimensions else 0
+    try:
+        requested = int(float(value))
+    except (TypeError, ValueError, OverflowError):
+        requested = 0
+    return max(0, min(requested, maximum)), axis
+
+
 def _requires_label_faithful_mesh(agent, source: str, label_id: int) -> bool:
     """Return whether a mesh must preserve the exact planning-mask boundary.
 
@@ -573,7 +599,15 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
             axis_map = agent.memory.retrieve("ct_axis_map") or {
                 'axial': 0, 'sagittal': 2, 'coronal': 1,
             }
-            axis = axis_map.get(axis_name, 0)
+            requested_slice_index = slice_index
+            slice_index, axis = _clamp_viewer_slice_index(
+                slice_index, axis_name, np.asarray(ct_data).shape, axis_map
+            )
+            if str(requested_slice_index) != str(slice_index):
+                logger.debug(
+                    "[viewer] clamped stale slice request axis=%s requested=%r actual=%d shape=%s",
+                    axis_name, requested_slice_index, slice_index, tuple(ct_data.shape),
+                )
             # Apply window/level
             lower = window_center - window_width / 2
             upper = window_center + window_width / 2
@@ -642,6 +676,9 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
                 "success": True,
                 "data": f"data:image/png;base64,{img_str}",
                 "shape": list(slice_data.shape),
+                "slice_index": int(slice_index),
+                "requested_slice_index": requested_slice_index,
+                "total_slices": int(ct_data.shape[axis]),
             })
         except Exception as e:
             import traceback
@@ -1109,7 +1146,9 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
             axis_map = agent.memory.retrieve("ct_axis_map") or {
                 'axial': 0, 'sagittal': 2, 'coronal': 1,
             }
-            axis = axis_map.get(axis_name, 0)
+            slice_index, axis = _clamp_viewer_slice_index(
+                slice_index, axis_name, np.asarray(ct_data).shape, axis_map
+            )
 
             # Get the segmentation mask
             ct_ref = agent.memory.retrieve("ct_image")
@@ -1433,7 +1472,10 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
             axis_map = agent.memory.retrieve("ct_axis_map") or {
                 'axial': 0, 'sagittal': 2, 'coronal': 1,
             }
-            mask_slice = np.take(mask, slice_index, axis=axis_map.get(axis, 0))
+            slice_index, mask_axis = _clamp_viewer_slice_index(
+                slice_index, axis, np.asarray(mask).shape, axis_map
+            )
+            mask_slice = np.take(mask, slice_index, axis=mask_axis)
 
             # Count voxels
             total_voxels = int(mask.sum())

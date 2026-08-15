@@ -1642,6 +1642,17 @@ function deferSceneResourceDisposal(resources) {
 function resetAllState(options = {}) {
     const deferredResources = options.deferDisposal ? [] : null;
     clearViewerCanvases();
+    // Invalidate and cancel slice/overlay requests before a new CT can be
+    // installed.  This matters when an upload replaces a short study while
+    // the previous study still has slider requests in flight.
+    try { if (typeof invalidateViewerDataLoads === 'function') invalidateViewerDataLoads(); } catch (_) {}
+    if (state.slices) Object.assign(state.slices, { axial: 0, sagittal: 0, coronal: 0 });
+    ['axial', 'sagittal', 'coronal'].forEach(axis => {
+        const slider = document.getElementById('slider' + capitalize(axis));
+        if (slider) slider.value = '0';
+        const label = document.getElementById('sliceLabel' + capitalize(axis));
+        if (label) label.textContent = '0';
+    });
     // Clear segmentation data arrays
     ctvLabelData = null;
     oarLabelData = null;
