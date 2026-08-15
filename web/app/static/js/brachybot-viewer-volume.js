@@ -232,9 +232,18 @@ let organMetaFromServer = {};  // {label_id: {name, color, voxels}}
 let genericMaskVolumeData = Object.create(null);
 let genericMaskCatalogGeneration = 0;
 let viewerDataLoadGeneration = 0;
+const viewerDataAbortControllers = new Set();
 
 function invalidateViewerDataLoads() {
     viewerDataLoadGeneration += 1;
+    // A CT/session switch can otherwise leave old slice requests in flight.
+    // They are harmless after the generation check, but cancelling them also
+    // prevents a stale request from reaching the server after the new CT has
+    // already replaced the old volume.
+    viewerDataAbortControllers.forEach(controller => {
+        try { controller.abort(); } catch (_) {}
+    });
+    viewerDataAbortControllers.clear();
     return viewerDataLoadGeneration;
 }
 
@@ -1858,6 +1867,8 @@ async function loadSlice(axis, sliceIndex) {
         return;
     }
 
+    const requestController = new AbortController();
+    viewerDataAbortControllers.add(requestController);
     try {
         let res;
         for (let attempt = 0; attempt <= 60; attempt += 1) {
@@ -1871,6 +1882,7 @@ async function loadSlice(axis, sliceIndex) {
                     window_width: state.viewerSettings.window,
                     threshold: state.viewerSettings.threshold !== null ? state.viewerSettings.threshold : undefined,
                 }),
+                signal: requestController.signal,
             });
             if (res.status !== 202 || attempt >= 60) break;
             await new Promise(resolve => setTimeout(resolve, 250));
@@ -1886,7 +1898,9 @@ async function loadSlice(axis, sliceIndex) {
             renderSliceToCanvas(axis, data.data);
         }
     } catch (e) {
-        console.error('Failed to load slice:', e);
+        if (e?.name !== 'AbortError') console.error('Failed to load slice:', e);
+    } finally {
+        viewerDataAbortControllers.delete(requestController);
     }
 }
 
