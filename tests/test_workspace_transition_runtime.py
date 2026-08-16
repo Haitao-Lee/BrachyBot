@@ -222,6 +222,56 @@ vm.runInThisContext(fs.readFileSync('{bridge}', 'utf8'), {{ filename: 'brachybot
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="Node.js is required for browser bridge runtime coverage")
+def test_workspace_save_retries_once_after_checkpoint_revision_conflict():
+    """A checkpoint race must refresh the CAS revision instead of stranding UI saves."""
+
+    bridge = (ROOT / "web/app/static/js/brachybot-workspace.js").as_posix()
+    script = rf"""
+const assert = require('assert');
+const fs = require('fs');
+const vm = require('vm');
+
+const requests = [];
+global.window = {{ brachybotAuth: {{ user: {{ id: 'u1' }} }} }};
+global.document = {{
+  body: {{ classList: {{ toggle() {{}}, add() {{}}, remove() {{}} }} }},
+  getElementById() {{ return null; }},
+  querySelectorAll() {{ return []; }},
+}};
+global.sessions = {{ a: {{ id: 'a', title: 'Case A', messages: [] }} }};
+global.activeSessionId = 'a';
+global.fetch = async (url, options = {{}}) => {{
+  if (url !== '/api/workspace/state') throw new Error('Unexpected request: ' + url);
+  const body = JSON.parse(options.body);
+  requests.push(body);
+  if (requests.length === 1) {{
+    return {{ ok: false, status: 409, json: async () => ({{
+      code: 'stale_workspace', current_revision: 17,
+    }}) }};
+  }}
+  return {{ ok: true, status: 200, json: async () => ({{ success: true, revision: 18 }}) }};
+}};
+
+vm.runInThisContext(fs.readFileSync('{bridge}', 'utf8'), {{ filename: 'brachybot-workspace.js' }});
+(async () => {{
+  const saved = await window.persistWorkspace('runtime.revision-race');
+  assert.strictEqual(saved, true);
+  assert.strictEqual(requests.length, 2, 'only one controlled retry is allowed');
+  assert.strictEqual(requests[1].revision, 17, 'retry must use the authoritative revision');
+  process.exit(0);
+}})().catch(error => {{ console.error(error); process.exit(1); }});
+"""
+    completed = subprocess.run(
+        ["node", "-e", script],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert completed.returncode == 0, completed.stderr or completed.stdout
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="Node.js is required for browser bridge runtime coverage")
 def test_chat_waits_for_authoritative_new_case_without_duplicate_submit():
     """A message entered during New Case must never target the optimistic ID."""
 
@@ -274,6 +324,7 @@ global.trainingMonitorState = {{ active: false }};
 global.sessions = {{ old: {{ id: 'old', title: 'Existing case', messages: [] }} }};
 global.activeSessionId = 'old';
 global.state = {{ sessionId: 'old' }};
+global.collectUIState = () => {{ throw new Error('optional ui state failure'); }};
 global.renderSessionList = () => {{}};
 global.loadSessionChat = () => {{}};
 global.clearClientWorkspace = () => {{}};

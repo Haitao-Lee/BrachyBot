@@ -24,6 +24,42 @@ def test_authenticated_boot_uses_server_session_loader():
     assert 'id="workspaceRecoveryDismiss"' in index
 
 
+def test_chat_ui_state_capture_and_workspace_conflicts_are_non_blocking():
+    """Optional UI context cannot block chat, and stale saves have one repair path."""
+    ui_api = read("web/app/static/js/brachybot-ui-api.js")
+    chat = read("web/app/static/js/brachybot-chat-todo.js")
+    workspace = read("web/app/static/js/brachybot-workspace.js")
+    routes = read("web/routes/session_routes.py")
+
+    assert "function _cloneUiStateValue" in ui_api
+    assert "function _collectUIState" in ui_api
+    assert "_cloneUiStateValue(dataTreeState.expansionState)" in ui_api
+    assert "jsonClone(dataTreeState.expansionState)" not in ui_api
+    assert "Optional UI state capture failed; sending request without it" in chat
+    assert "workspaceSaveInFlight" in workspace
+    assert "workspaceSaveQueuedReasons" in workspace
+    assert "for (let attempt = 0; attempt < 2; attempt += 1)" in workspace
+    assert 'payload["current_revision"] = current_revision' in routes
+    assert '"stale_workspace" if is_stale_revision else "workspace_locked"' in routes
+
+
+def test_ct_data_tree_window_level_controls_share_the_viewer_state():
+    """The CT row is a compact second control surface, not a duplicate state store."""
+    volume = read("web/app/static/js/brachybot-viewer-volume.js")
+    controls = read("web/app/static/css/brachybot-report-controls.css")
+
+    assert "function setViewerWindowLevel" in volume
+    assert "function applyDataTreeWindowLevel" in volume
+    assert "window.applyDataTreeWindowLevel = applyDataTreeWindowLevel" in volume
+    assert 'data-ct-window-level="window"' in volume
+    assert 'data-ct-window-level="level"' in volume
+    assert "_syncWindowLevelControls();" in volume
+    assert "viewer.window_level.data_tree" in volume
+    assert "clearSliceCache();" in volume
+    assert ".ct-window-level-controls" in controls
+    assert ".tree-item--ct .item-info { display: none; }" in controls
+
+
 def test_legacy_chat_bindings_delegate_to_durable_workspace():
     chat = read("web/app/static/js/brachybot-chat-core.js")
     assert "window.__serverWorkspaceReady" in chat
@@ -333,8 +369,8 @@ def test_workspace_transitions_publish_measurable_first_paint_and_restore_stages
     assert "restore.fully_interactive" in ui_api
     # Versioned URLs are intentional cache invalidation points. Keep this
     # assertion aligned with the workspace/report artifact restore contract.
-    assert "brachybot-workspace.js?v=32" in index
-    assert "brachybot-ui-api.js?v=39" in index
+    assert "brachybot-workspace.js?v=33" in index
+    assert "brachybot-ui-api.js?v=40" in index
 
 
 def test_workspace_fetch_preserves_external_transition_abort_semantics():
