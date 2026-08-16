@@ -308,6 +308,7 @@ def register_session_routes(
         if error:
             return error
         data = request.get_json(silent=True) or {}
+        session_id = ""
         patch: Dict[str, Any] = {}
         for key in ("ui", "report", "chat", "operation"):
             if isinstance(data.get(key), dict):
@@ -351,7 +352,24 @@ def register_session_routes(
                 if agent is not None and isinstance(data.get("ui_state"), dict):
                     agent.memory.set_ui_state(data["ui_state"])
         except WorkspaceLeaseConflict as exc:
-            return jsonify({"error": str(exc), "code": "stale_workspace"}), 409
+            # A checkpoint from the same case may legitimately win the
+            # revision race. Return the authoritative revision so the browser
+            # can rebuild and retry its append-safe UI/chat patch once.
+            conflict_message = str(exc)
+            is_stale_revision = "updated in another browser" in conflict_message.lower()
+            current_revision = None
+            try:
+                if session_id and is_stale_revision:
+                    current_revision = store.get_session(user["id"], session_id).revision
+            except WorkspaceError:
+                pass
+            payload = {
+                "error": conflict_message,
+                "code": "stale_workspace" if is_stale_revision else "workspace_locked",
+            }
+            if current_revision is not None:
+                payload["current_revision"] = current_revision
+            return jsonify(payload), 409
         except WorkspaceError as exc:
             return jsonify({"error": str(exc)}), 400
         return jsonify({"success": True, "revision": snapshot["session"]["revision"], "workspace": snapshot})

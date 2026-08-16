@@ -6,6 +6,8 @@
     let revision = null;
     const sessionRevisions = Object.create(null);
     let saveTimer = null;
+    const workspaceSaveInFlight = Object.create(null);
+    const workspaceSaveQueuedReasons = Object.create(null);
     let restoring = false;
     let workspaceTransition = null;
     let pendingSessionCreationId = null;
@@ -2062,45 +2064,91 @@
         }
     }
 
-    async function persistWorkspace(reason, options = {}) {
-        if ((restoring && !options.allowDuringRestore) || !window.brachybotAuth?.user || !activeSessionId) return false;
-        const ownerSessionId = String(activeSessionId);
-        const ownerRevision = sessionRevisions[ownerSessionId] ?? revision;
-        const payload = {
+    function workspaceSavePayload(ownerSessionId, reason) {
+        return {
             session_id: ownerSessionId,
-            revision: ownerRevision,
+            revision: sessionRevisions[ownerSessionId] ?? revision,
             ui_state: workspaceUiState(),
             report: reportState(),
             chat: chatState(),
             reason,
         };
+    }
+
+    async function postWorkspaceSave(ownerSessionId, payload) {
+        const response = await workspaceFetch('/api/workspace/state', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-BrachyBot-Session': ownerSessionId,
+            },
+            body: JSON.stringify(payload),
+        });
+        return {
+            response,
+            data: await response.json().catch(() => null),
+        };
+    }
+
+    async function persistWorkspace(reason, options = {}) {
+        if ((restoring && !options.allowDuringRestore) || !window.brachybotAuth?.user || !activeSessionId) return false;
+        const ownerSessionId = String(activeSessionId);
+        if (workspaceSaveInFlight[ownerSessionId]) {
+            // UI/report/chat writes are snapshots of the same selected case.
+            // Serialize them so two debounce timers cannot race their CAS
+            // revisions and fill the browser console with avoidable 409s.
+            workspaceSaveQueuedReasons[ownerSessionId] = reason || 'ui.changed';
+            return workspaceSaveInFlight[ownerSessionId];
+        }
+
+        const save = (async () => {
+            // A server-side checkpoint can advance the revision between a
+            // browser render and its debounced save. The route returns that
+            // revision, so retry once with a freshly-built payload instead of
+            // permanently stranding the client on an obsolete CAS token.
+            for (let attempt = 0; attempt < 2; attempt += 1) {
+                const payload = workspaceSavePayload(ownerSessionId, reason);
+                const { response, data } = await postWorkspaceSave(ownerSessionId, payload);
+                if (response.status === 409) {
+                    if (data?.code === 'workspace_locked' && ownerSessionId === String(activeSessionId || '')) {
+                        document.body.classList.add('workspace-readonly');
+                        return false;
+                    }
+                    const currentRevision = Number(data?.current_revision ?? data?.revision);
+                    if (data?.code === 'stale_workspace'
+                        && ownerSessionId === String(activeSessionId || '')
+                        && Number.isFinite(currentRevision)
+                        && attempt === 0) {
+                        sessionRevisions[ownerSessionId] = currentRevision;
+                        revision = currentRevision;
+                        continue;
+                    }
+                    console.debug('[workspace] save skipped after revision conflict');
+                    return false;
+                }
+                if (data?.success) {
+                    sessionRevisions[ownerSessionId] = data.revision;
+                    if (ownerSessionId === String(activeSessionId || '')) revision = data.revision;
+                }
+                return !!data?.success;
+            }
+            return false;
+        })();
+        workspaceSaveInFlight[ownerSessionId] = save;
         try {
-            const response = await workspaceFetch('/api/workspace/state', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-BrachyBot-Session': ownerSessionId,
-                },
-                body: JSON.stringify(payload),
-            });
-            const data = await response.json().catch(() => null);
-            if (response.status === 409) {
-                if (data?.code === 'workspace_locked' && ownerSessionId === String(activeSessionId || '')) {
-                    document.body.classList.add('workspace-readonly');
-                }
-                if (data?.code === 'stale_workspace' && ownerSessionId === String(activeSessionId || '')) {
-                    console.debug('[workspace] stale save skipped; authoritative snapshot will refresh the revision');
-                }
-                return false;
-            }
-            if (data?.success) {
-                sessionRevisions[ownerSessionId] = data.revision;
-                if (ownerSessionId === String(activeSessionId || '')) revision = data.revision;
-            }
-            return !!data?.success;
+            return await save;
         } catch (error) {
             console.debug('[workspace] save deferred:', error);
             return false;
+        } finally {
+            if (workspaceSaveInFlight[ownerSessionId] === save) {
+                delete workspaceSaveInFlight[ownerSessionId];
+                const queuedReason = workspaceSaveQueuedReasons[ownerSessionId];
+                delete workspaceSaveQueuedReasons[ownerSessionId];
+                if (queuedReason && ownerSessionId === String(activeSessionId || '')) {
+                    setTimeout(() => { void persistWorkspace(queuedReason); }, 0);
+                }
+            }
         }
     }
 

@@ -2035,42 +2035,125 @@ function updateLabelImage(view) {
     }
 }
 
-function applyViewerSettings() {
-    const wc = document.getElementById('viewerWindow').value;
-    const wl = document.getElementById('viewerLevel').value;
-    state.viewerSettings.window = parseInt(wc);
-    state.viewerSettings.level = parseInt(wl);
-    if (state.ctLoaded) {
-        clearSliceCache();
-        loadAllSlices();
-    }
+const WINDOW_LEVEL_PRESETS = Object.freeze({
+    soft: { w: 400, l: 40 },
+    bone: { w: 2000, l: 400 },
+    lung: { w: 1500, l: -600 },
+    brain: { w: 80, l: 40 },
+});
+
+let windowLevelRenderTimer = null;
+
+function _viewerWindowValue(value, fallback) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) && parsed > 0
+        ? Math.max(1, Math.round(parsed))
+        : Math.max(1, Math.round(Number(fallback) || 400));
 }
 
+function _viewerLevelValue(value, fallback) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? Math.round(parsed) : Math.round(Number(fallback) || 40);
+}
+
+function _matchingWindowLevelPreset(windowWidth, windowLevel) {
+    return Object.entries(WINDOW_LEVEL_PRESETS).find(([, preset]) => (
+        preset.w === windowWidth && preset.l === windowLevel
+    ))?.[0] || 'custom';
+}
+
+function _syncWindowLevelControls() {
+    const settings = state.viewerSettings || {};
+    const windowWidth = _viewerWindowValue(settings.window, 400);
+    const windowLevel = _viewerLevelValue(settings.level, 40);
+    const preset = _matchingWindowLevelPreset(windowWidth, windowLevel);
+
+    const toolbarWindow = document.getElementById('viewerWindow');
+    const toolbarLevel = document.getElementById('viewerLevel');
+    const toolbarPreset = document.getElementById('windowPreset');
+    if (toolbarWindow && document.activeElement !== toolbarWindow) toolbarWindow.value = windowWidth;
+    if (toolbarLevel && document.activeElement !== toolbarLevel) toolbarLevel.value = windowLevel;
+    if (toolbarPreset) toolbarPreset.value = preset;
+
+    // The Data Tree is a second control surface for the same Viewer state.
+    // Do not store a duplicate W/L value on the CT node; that would drift
+    // after Session hydration or a toolbar edit.
+    document.querySelectorAll('[data-ct-window-level="window"]').forEach(input => {
+        if (document.activeElement !== input) input.value = windowWidth;
+    });
+    document.querySelectorAll('[data-ct-window-level="level"]').forEach(input => {
+        if (document.activeElement !== input) input.value = windowLevel;
+    });
+}
+
+function _renderWindowLevelSlices(delayMs = 0) {
+    if (!state.ctLoaded) return;
+    clearSliceCache();
+    clearTimeout(windowLevelRenderTimer);
+    if (delayMs > 0) {
+        windowLevelRenderTimer = setTimeout(() => {
+            windowLevelRenderTimer = null;
+            if (state.ctLoaded) loadAllSlices();
+        }, delayMs);
+        return;
+    }
+    loadAllSlices();
+}
+
+function setViewerWindowLevel(windowWidth, windowLevel, options = {}) {
+    state.viewerSettings = state.viewerSettings || {};
+    const nextWindow = _viewerWindowValue(windowWidth, state.viewerSettings.window);
+    const nextLevel = _viewerLevelValue(windowLevel, state.viewerSettings.level);
+    const changed = nextWindow !== Number(state.viewerSettings.window)
+        || nextLevel !== Number(state.viewerSettings.level);
+    state.viewerSettings.window = nextWindow;
+    state.viewerSettings.level = nextLevel;
+    if (options.userConfigured !== false) state.viewerSettings.userConfigured = true;
+    _syncWindowLevelControls();
+    if (changed || options.forceRender) {
+        _renderWindowLevelSlices(Number(options.renderDelayMs) || 0);
+    }
+    if ((changed || options.persistOnNoChange) && options.persist !== false
+        && typeof window.scheduleWorkspaceSave === 'function') {
+        window.scheduleWorkspaceSave(options.reason || 'viewer.window_level');
+    }
+    return { window: nextWindow, level: nextLevel, changed };
+}
+
+function applyViewerSettings() {
+    const windowWidth = document.getElementById('viewerWindow')?.value;
+    const windowLevel = document.getElementById('viewerLevel')?.value;
+    return setViewerWindowLevel(windowWidth, windowLevel, {
+        reason: 'viewer.window_level.toolbar',
+    });
+}
+
+function applyDataTreeWindowLevel() {
+    const windowWidth = document.getElementById('dataTreeWindowWidth')?.value;
+    const windowLevel = document.getElementById('dataTreeWindowLevel')?.value;
+    return setViewerWindowLevel(windowWidth, windowLevel, {
+        // Number inputs may emit several change events while their spinner is
+        // held. Coalesce re-renders but retain the same final image quality.
+        renderDelayMs: 60,
+        reason: 'viewer.window_level.data_tree',
+    });
+}
+window.applyDataTreeWindowLevel = applyDataTreeWindowLevel;
+
 function applyWindowPreset() {
-    const preset = document.getElementById('windowPreset').value;
+    const preset = document.getElementById('windowPreset')?.value;
     applyWindowPresetByName(preset);
 }
 
 function applyWindowPresetByName(preset) {
-    const presets = {
-        soft: { w: 400, l: 40 },
-        bone: { w: 2000, l: 400 },
-        lung: { w: 1500, l: -600 },
-        brain: { w: 80, l: 40 },
-        custom: null,
-    };
-    const p = presets[preset];
-    if (p) {
-        state.viewerSettings.window = p.w;
-        state.viewerSettings.level = p.l;
-        document.getElementById('viewerWindow').value = p.w;
-        document.getElementById('viewerLevel').value = p.l;
-        document.getElementById('windowPreset').value = preset;
-        if (state.ctLoaded) {
-            clearSliceCache();
-            loadAllSlices();
-        }
+    const selected = WINDOW_LEVEL_PRESETS[preset];
+    if (!selected) {
+        _syncWindowLevelControls();
+        return;
     }
+    setViewerWindowLevel(selected.w, selected.l, {
+        reason: 'viewer.window_level.preset',
+    });
 }
 
 async function syncViewerState() {
@@ -2090,15 +2173,18 @@ async function syncViewerState() {
         const s = data;
         const changed = {};
 
-        if (s.window && s.window !== state.viewerSettings.window) {
-            state.viewerSettings.window = s.window;
-            document.getElementById('viewerWindow').value = s.window;
-            changed.window = true;
-        }
-        if (s.level && s.level !== state.viewerSettings.level) {
-            state.viewerSettings.level = s.level;
-            document.getElementById('viewerLevel').value = s.level;
-            changed.level = true;
+        const hasWindow = Number.isFinite(Number(s.window));
+        const hasLevel = Number.isFinite(Number(s.level));
+        if (hasWindow || hasLevel) {
+            const updated = setViewerWindowLevel(
+                hasWindow ? s.window : state.viewerSettings.window,
+                hasLevel ? s.level : state.viewerSettings.level,
+                { persist: false, userConfigured: false },
+            );
+            if (updated.changed) {
+                changed.window = hasWindow;
+                changed.level = hasLevel;
+            }
         }
         if (s.threshold !== undefined && s.threshold !== state.viewerSettings.threshold) {
             state.viewerSettings.threshold = s.threshold;
@@ -2108,10 +2194,7 @@ async function syncViewerState() {
         // Don't sync slice positions - frontend is source of truth
         // (Server doesn't store them unless navigate_slice is called)
 
-        if (Object.keys(changed).length > 0) {
-            clearSliceCache();
-            loadAllSlices();
-        }
+        if (Object.keys(changed).length > 0) _syncWindowLevelControls();
     } catch (e) {
         // Ignore sync errors
     }
@@ -4021,6 +4104,17 @@ function renderTreeItem(id, itemState, info) {
     // 3D button for organs, CTV, CTV sub-labels, planning items, and masks
     const canRecon3d = id === 'ctv' || id === 'skin_surface' || id.startsWith('organ_') || id.startsWith('ctv_') || id.startsWith('seed_') || id.startsWith('needle_') || isMaskId;
     const recon3dBtn = canRecon3d ? `<button class="recon3d-btn" title="3D Reconstruct" onclick="event.stopPropagation();reconstructOrgan3D('${id}')">&#9638;</button>` : '';
+    const isCt = id === 'ct';
+    const windowWidth = _viewerWindowValue(state?.viewerSettings?.window, 400);
+    const windowLevel = _viewerLevelValue(state?.viewerSettings?.level, 40);
+    const widthTitle = typeof _dtText === 'function' ? _dtText('窗宽', 'Window width') : 'Window width';
+    const levelTitle = typeof _dtText === 'function' ? _dtText('窗位', 'Window level') : 'Window level';
+    const ctWindowLevelControls = isCt && itemState.loaded
+        ? `<span class="ct-window-level-controls" onclick="event.stopPropagation()" onmousedown="event.stopPropagation()">
+            <label title="${escHtml(widthTitle)}"><span>W</span><input id="dataTreeWindowWidth" data-ct-window-level="window" type="number" min="1" step="10" value="${windowWidth}" aria-label="${escHtml(widthTitle)}" ${disabledAttr} onchange="event.stopPropagation();applyDataTreeWindowLevel()" onkeydown="event.stopPropagation()"></label>
+            <label title="${escHtml(levelTitle)}"><span>L</span><input id="dataTreeWindowLevel" data-ct-window-level="level" type="number" step="10" value="${windowLevel}" aria-label="${escHtml(levelTitle)}" ${disabledAttr} onchange="event.stopPropagation();applyDataTreeWindowLevel()" onkeydown="event.stopPropagation()"></label>
+        </span>`
+        : '';
 
     const dataAttr = (id === 'ctv' || id.startsWith('organ_') || id.startsWith('ctv_')) ? `data-organ-id="${id}"` : '';
     const selectedClass = selectedItems.has(id) ? 'selected' : '';
@@ -4028,13 +4122,13 @@ function renderTreeItem(id, itemState, info) {
     const statusLabel = itemState.status && itemState.status !== 'ready'
         ? `<span class="item-status item-status-${itemState.status}" title="${escHtml(itemState.error || itemState.status)}">${escHtml(_dtStatusText(itemState.status))}</span>`
         : '';
-    return `<div class="tree-item ${selectedClass}" data-node-id="${escHtml(itemState.nodeId || id)}" data-node-type="${escHtml(itemState.type || 'visual') }" data-status="${escHtml(itemState.status || 'ready')}" ${loadedClass} ${indent} ${dataAttr}
+    return `<div class="tree-item ${isCt ? 'tree-item--ct' : ''} ${selectedClass}" data-node-id="${escHtml(itemState.nodeId || id)}" data-node-type="${escHtml(itemState.type || 'visual') }" data-status="${escHtml(itemState.status || 'ready')}" ${loadedClass} ${indent} ${dataAttr}
         onclick="handleTreeItemClick('${id}', event)"
         oncontextmenu="event.preventDefault();event.stopPropagation();handleTreeItemRightClick('${id}', event)">
         <button class="eye-btn ${eyeClass}" onclick="event.stopPropagation();toggleDataVisibility('${id}')" ${disabledAttr}>${eyeIcon}</button>
         <span class="color-swatch" style="background:${itemState.color};" onclick="event.stopPropagation();openColorPicker('${id}', this)" title="Click to change color"></span>
         <span class="item-label">${escHtml(itemState.label || '')}</span>
-        <span class="item-info">${escHtml(info || '')}</span>${statusLabel}
+        <span class="item-info">${escHtml(info || '')}</span>${ctWindowLevelControls}${statusLabel}
         ${recon3dBtn}
         <input type="range" class="opacity-slider" min="0" max="100" value="${Math.round(itemState.opacity * 100)}"
             ${disabledAttr}

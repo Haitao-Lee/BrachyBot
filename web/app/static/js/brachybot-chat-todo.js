@@ -1989,7 +1989,15 @@ async function sendChat(prefill, options) {
         mode: opts.screenshotMode || (trainingMonitorState.active ? 'monitor' : 'chat'),
         layout: 'auto',
     };
-    const uiState = (typeof collectUIState === 'function') ? collectUIState() : {};
+    // UI state is useful planning context, but it is not a prerequisite for
+    // sending the user's message. A rendering extension must never make the
+    // chat appear to accept a message while preventing the network request.
+    let uiState = {};
+    try {
+        uiState = (typeof collectUIState === 'function') ? (collectUIState() || {}) : {};
+    } catch (error) {
+        console.error('[chat] Optional UI state capture failed; sending request without it:', error);
+    }
     const cancelTurnUi = (reason) => {
         if (thinkingEl && typeof removeThinkingIndicator === 'function') {
             removeThinkingIndicator(thinkingEl);

@@ -147,7 +147,32 @@ function applyParameterSet(param) {
     return true;
 }
 
+function _cloneUiStateValue(value, fallback = {}) {
+    // UI state is optional context for the agent. Keep its cloning local to
+    // this bundle: Workspace owns a separate private serializer and scripts
+    // are loaded independently during startup.
+    try {
+        return JSON.parse(JSON.stringify(value));
+    } catch (error) {
+        console.warn('[ui-state] Unable to clone optional UI state:', error);
+        return fallback;
+    }
+}
+
 function collectUIState() {
+    // A broken optional presentation field must never prevent a clinical or
+    // conversational request from reaching the server. This boundary is
+    // deliberately defensive because callers include chat, manual planning,
+    // export, and monitor actions.
+    try {
+        return _collectUIState();
+    } catch (error) {
+        console.error('[ui-state] UI state collection failed; continuing without it:', error);
+        return {};
+    }
+}
+
+function _collectUIState() {
     const gv = (id) => {
         const el = document.getElementById(id);
         return el ? (el.value || '').trim() : '';
@@ -304,7 +329,7 @@ function collectUIState() {
             expansion_state: (dataTreeState.expansionState
                 && typeof dataTreeState.expansionState === 'object'
                 && !Array.isArray(dataTreeState.expansionState))
-                ? jsonClone(dataTreeState.expansionState)
+                ? _cloneUiStateValue(dataTreeState.expansionState)
                 : {},
             dose_overlay_visible: dataTreeState.planning?.doseOverlay?.visible !== false,
             dvh_ready: !!dataTreeState.planning?.dvh?.loaded,
