@@ -385,6 +385,7 @@ const state = {
     ctSpacing: null,
     ctOrigin: null,
     ctDirection: null,
+    ctHURange: null,
     seedsOverlay: null,  // { seeds: [...], needles: [...] } in world coords
     slices: { axial: 0, sagittal: 0, coronal: 0 },
     doseOpacity: 0.4,

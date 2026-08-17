@@ -2042,18 +2042,104 @@ const WINDOW_LEVEL_PRESETS = Object.freeze({
     brain: { w: 80, l: 40 },
 });
 
+const DEFAULT_CT_HU_RANGE = Object.freeze([-1024, 3071]);
+const WINDOW_LEVEL_MIN_SPAN = 1;
+
 let windowLevelRenderTimer = null;
 
 function _viewerWindowValue(value, fallback) {
     const parsed = Number(value);
     return Number.isFinite(parsed) && parsed > 0
-        ? Math.max(1, Math.round(parsed))
-        : Math.max(1, Math.round(Number(fallback) || 400));
+        ? Math.max(1, Math.round(parsed * 2) / 2)
+        : Math.max(1, Math.round((Number(fallback) || 400) * 2) / 2);
 }
 
 function _viewerLevelValue(value, fallback) {
     const parsed = Number(value);
-    return Number.isFinite(parsed) ? Math.round(parsed) : Math.round(Number(fallback) || 40);
+    // Half-HU endpoints can produce a quarter-HU midpoint. Preserve it so the
+    // dual-handle contract remains exact: L=(upper+lower)/2.
+    return Number.isFinite(parsed)
+        ? Math.round(parsed * 4) / 4
+        : Math.round((Number(fallback) || 40) * 4) / 4;
+}
+
+function _windowLevelBounds(windowWidth, windowLevel) {
+    const width = _viewerWindowValue(windowWidth, 400);
+    const level = _viewerLevelValue(windowLevel, 40);
+    return {
+        low: level - width / 2,
+        high: level + width / 2,
+    };
+}
+
+function _ctWindowSliderDomain(windowWidth, windowLevel) {
+    const bounds = _windowLevelBounds(windowWidth, windowLevel);
+    const storedRange = Array.isArray(state?.ctHURange) ? state.ctHURange : [];
+    const storedLow = Number(storedRange[0]);
+    const storedHigh = Number(storedRange[1]);
+    let min = Number.isFinite(storedLow) ? Math.floor(storedLow) : DEFAULT_CT_HU_RANGE[0];
+    let max = Number.isFinite(storedHigh) ? Math.ceil(storedHigh) : DEFAULT_CT_HU_RANGE[1];
+
+    // A restored custom window may extend beyond the sampled scalar range.
+    // Keep both handles reachable instead of silently clamping that state.
+    min = Math.min(min, Math.floor(bounds.low));
+    max = Math.max(max, Math.ceil(bounds.high));
+    if (max - min < WINDOW_LEVEL_MIN_SPAN) max = min + WINDOW_LEVEL_MIN_SPAN;
+    return { min, max };
+}
+
+function _formatWindowLevelValue(value) {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) return '0';
+    if (Number.isInteger(numeric)) return String(numeric);
+    if (Number.isInteger(numeric * 2)) return numeric.toFixed(1);
+    return numeric.toFixed(2);
+}
+
+function _normalizeWindowRange(lowValue, highValue, changedHandle, domain) {
+    let low = Number(lowValue);
+    let high = Number(highValue);
+    if (!Number.isFinite(low) || !Number.isFinite(high)) {
+        const current = _windowLevelBounds(state?.viewerSettings?.window, state?.viewerSettings?.level);
+        low = current.low;
+        high = current.high;
+    }
+
+    low = Math.max(domain.min, Math.min(domain.max, low));
+    high = Math.max(domain.min, Math.min(domain.max, high));
+    if (high - low < WINDOW_LEVEL_MIN_SPAN) {
+        if (changedHandle === 'low') {
+            low = Math.max(domain.min, high - WINDOW_LEVEL_MIN_SPAN);
+        } else {
+            high = Math.min(domain.max, low + WINDOW_LEVEL_MIN_SPAN);
+        }
+    }
+    return { low, high };
+}
+
+function _updateWindowRangePresentation(control, low, high, domain) {
+    if (!control) return;
+    const span = Math.max(WINDOW_LEVEL_MIN_SPAN, domain.max - domain.min);
+    const lowPercent = Math.max(0, Math.min(100, ((low - domain.min) / span) * 100));
+    const highPercent = Math.max(0, Math.min(100, ((high - domain.min) / span) * 100));
+    control.style.setProperty('--wl-low-pct', `${lowPercent}%`);
+    control.style.setProperty('--wl-high-pct', `${highPercent}%`);
+
+    const windowWidth = high - low;
+    const windowLevel = (high + low) / 2;
+    const lowOutput = control.querySelector('[data-ct-window-output="low"]');
+    const highOutput = control.querySelector('[data-ct-window-output="high"]');
+    const summaryOutput = control.querySelector('[data-ct-window-output="summary"]');
+    if (lowOutput) lowOutput.textContent = _formatWindowLevelValue(low);
+    if (highOutput) highOutput.textContent = _formatWindowLevelValue(high);
+    if (summaryOutput) {
+        summaryOutput.textContent = `W${_formatWindowLevelValue(windowWidth)} L${_formatWindowLevelValue(windowLevel)}`;
+    }
+
+    const lowInput = control.querySelector('[data-ct-window-level="low"]');
+    const highInput = control.querySelector('[data-ct-window-level="high"]');
+    if (lowInput) lowInput.setAttribute('aria-valuetext', `${_formatWindowLevelValue(low)} HU`);
+    if (highInput) highInput.setAttribute('aria-valuetext', `${_formatWindowLevelValue(high)} HU`);
 }
 
 function _matchingWindowLevelPreset(windowWidth, windowLevel) {
@@ -2078,25 +2164,36 @@ function _syncWindowLevelControls() {
     // The Data Tree is a second control surface for the same Viewer state.
     // Do not store a duplicate W/L value on the CT node; that would drift
     // after Session hydration or a toolbar edit.
-    document.querySelectorAll('[data-ct-window-level="window"]').forEach(input => {
-        if (document.activeElement !== input) input.value = windowWidth;
-    });
-    document.querySelectorAll('[data-ct-window-level="level"]').forEach(input => {
-        if (document.activeElement !== input) input.value = windowLevel;
+    const bounds = _windowLevelBounds(windowWidth, windowLevel);
+    const domain = _ctWindowSliderDomain(windowWidth, windowLevel);
+    document.querySelectorAll('.ct-window-level-controls').forEach(control => {
+        const lowInput = control.querySelector('[data-ct-window-level="low"]');
+        const highInput = control.querySelector('[data-ct-window-level="high"]');
+        [lowInput, highInput].forEach(input => {
+            if (!input) return;
+            input.min = domain.min;
+            input.max = domain.max;
+        });
+        if (lowInput) lowInput.value = bounds.low;
+        if (highInput) highInput.value = bounds.high;
+        _updateWindowRangePresentation(control, bounds.low, bounds.high, domain);
     });
 }
 
 function _renderWindowLevelSlices(delayMs = 0) {
     if (!state.ctLoaded) return;
-    clearSliceCache();
     clearTimeout(windowLevelRenderTimer);
     if (delayMs > 0) {
         windowLevelRenderTimer = setTimeout(() => {
             windowLevelRenderTimer = null;
-            if (state.ctLoaded) loadAllSlices();
+            if (state.ctLoaded) {
+                clearSliceCache();
+                loadAllSlices();
+            }
         }, delayMs);
         return;
     }
+    clearSliceCache();
     loadAllSlices();
 }
 
@@ -2128,17 +2225,39 @@ function applyViewerSettings() {
     });
 }
 
-function applyDataTreeWindowLevel() {
-    const windowWidth = document.getElementById('dataTreeWindowWidth')?.value;
-    const windowLevel = document.getElementById('dataTreeWindowLevel')?.value;
-    return setViewerWindowLevel(windowWidth, windowLevel, {
-        // Number inputs may emit several change events while their spinner is
-        // held. Coalesce re-renders but retain the same final image quality.
-        renderDelayMs: 60,
-        reason: 'viewer.window_level.data_tree',
-    });
+function applyDataTreeWindowRange(changedHandle, persist = false) {
+    const lowInput = document.getElementById('dataTreeWindowLow');
+    const highInput = document.getElementById('dataTreeWindowHigh');
+    if (!lowInput || !highInput) return null;
+
+    const domain = {
+        min: Number(lowInput.min),
+        max: Number(lowInput.max),
+    };
+    const normalized = _normalizeWindowRange(lowInput.value, highInput.value, changedHandle, domain);
+    lowInput.value = normalized.low;
+    highInput.value = normalized.high;
+    _updateWindowRangePresentation(
+        lowInput.closest('.ct-window-level-controls'),
+        normalized.low,
+        normalized.high,
+        domain,
+    );
+
+    return setViewerWindowLevel(
+        normalized.high - normalized.low,
+        (normalized.high + normalized.low) / 2,
+        {
+            // Input events can arrive faster than a three-plane MPR render. A
+            // one-frame debounce keeps the Viewer live without building a queue.
+            renderDelayMs: 16,
+            persist,
+            persistOnNoChange: persist,
+            reason: 'viewer.window_level.data_tree',
+        },
+    );
 }
-window.applyDataTreeWindowLevel = applyDataTreeWindowLevel;
+window.applyDataTreeWindowRange = applyDataTreeWindowRange;
 
 function applyWindowPreset() {
     const preset = document.getElementById('windowPreset')?.value;
@@ -4107,12 +4226,29 @@ function renderTreeItem(id, itemState, info) {
     const isCt = id === 'ct';
     const windowWidth = _viewerWindowValue(state?.viewerSettings?.window, 400);
     const windowLevel = _viewerLevelValue(state?.viewerSettings?.level, 40);
-    const widthTitle = typeof _dtText === 'function' ? _dtText('窗宽', 'Window width') : 'Window width';
-    const levelTitle = typeof _dtText === 'function' ? _dtText('窗位', 'Window level') : 'Window level';
+    const windowBounds = _windowLevelBounds(windowWidth, windowLevel);
+    const windowDomain = _ctWindowSliderDomain(windowWidth, windowLevel);
+    const lowTitle = typeof _dtText === 'function' ? _dtText('显示灰度下限', 'Display intensity lower bound') : 'Display intensity lower bound';
+    const highTitle = typeof _dtText === 'function' ? _dtText('显示灰度上限', 'Display intensity upper bound') : 'Display intensity upper bound';
+    const rangeTitle = typeof _dtText === 'function'
+        ? _dtText('拖动两端实时调整窗宽窗位', 'Drag either handle to adjust window and level live')
+        : 'Drag either handle to adjust window and level live';
+    const windowSpan = Math.max(WINDOW_LEVEL_MIN_SPAN, windowDomain.max - windowDomain.min);
+    const lowPercent = Math.max(0, Math.min(100, ((windowBounds.low - windowDomain.min) / windowSpan) * 100));
+    const highPercent = Math.max(0, Math.min(100, ((windowBounds.high - windowDomain.min) / windowSpan) * 100));
     const ctWindowLevelControls = isCt && itemState.loaded
-        ? `<span class="ct-window-level-controls" onclick="event.stopPropagation()" onmousedown="event.stopPropagation()">
-            <label title="${escHtml(widthTitle)}"><span>W</span><input id="dataTreeWindowWidth" data-ct-window-level="window" type="number" min="1" step="10" value="${windowWidth}" aria-label="${escHtml(widthTitle)}" ${disabledAttr} onchange="event.stopPropagation();applyDataTreeWindowLevel()" onkeydown="event.stopPropagation()"></label>
-            <label title="${escHtml(levelTitle)}"><span>L</span><input id="dataTreeWindowLevel" data-ct-window-level="level" type="number" step="10" value="${windowLevel}" aria-label="${escHtml(levelTitle)}" ${disabledAttr} onchange="event.stopPropagation();applyDataTreeWindowLevel()" onkeydown="event.stopPropagation()"></label>
+        ? `<span class="ct-window-level-controls" title="${escHtml(rangeTitle)}" style="--wl-low-pct:${lowPercent}%;--wl-high-pct:${highPercent}%;" onclick="event.stopPropagation()" ondblclick="event.stopPropagation()" onmousedown="event.stopPropagation()" onpointerdown="event.stopPropagation()" onkeydown="event.stopPropagation()">
+            <span class="ct-window-range-values" aria-hidden="true">
+                <output data-ct-window-output="low">${_formatWindowLevelValue(windowBounds.low)}</output>
+                <output data-ct-window-output="summary">W${_formatWindowLevelValue(windowWidth)} L${_formatWindowLevelValue(windowLevel)}</output>
+                <output data-ct-window-output="high">${_formatWindowLevelValue(windowBounds.high)}</output>
+            </span>
+            <span class="ct-window-range-track">
+                <span class="ct-window-range-base"></span>
+                <span class="ct-window-range-fill"></span>
+                <input id="dataTreeWindowLow" data-ct-window-level="low" type="range" min="${windowDomain.min}" max="${windowDomain.max}" step="0.5" value="${windowBounds.low}" aria-label="${escHtml(lowTitle)}" aria-valuetext="${_formatWindowLevelValue(windowBounds.low)} HU" ${disabledAttr} onpointerdown="event.stopPropagation();this.classList.add('is-active')" onpointerup="event.stopPropagation();this.classList.remove('is-active')" onpointercancel="this.classList.remove('is-active')" onblur="this.classList.remove('is-active')" oninput="event.stopPropagation();applyDataTreeWindowRange('low', false)" onchange="event.stopPropagation();applyDataTreeWindowRange('low', true)">
+                <input id="dataTreeWindowHigh" data-ct-window-level="high" type="range" min="${windowDomain.min}" max="${windowDomain.max}" step="0.5" value="${windowBounds.high}" aria-label="${escHtml(highTitle)}" aria-valuetext="${_formatWindowLevelValue(windowBounds.high)} HU" ${disabledAttr} onpointerdown="event.stopPropagation();this.classList.add('is-active')" onpointerup="event.stopPropagation();this.classList.remove('is-active')" onpointercancel="this.classList.remove('is-active')" onblur="this.classList.remove('is-active')" oninput="event.stopPropagation();applyDataTreeWindowRange('high', false)" onchange="event.stopPropagation();applyDataTreeWindowRange('high', true)">
+            </span>
         </span>`
         : '';
 
