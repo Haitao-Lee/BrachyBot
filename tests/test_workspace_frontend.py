@@ -44,19 +44,26 @@ def test_chat_ui_state_capture_and_workspace_conflicts_are_non_blocking():
 
 
 def test_ct_data_tree_window_level_controls_share_the_viewer_state():
-    """The CT row is a compact second control surface, not a duplicate state store."""
+    """The CT row uses one live dual-handle range backed by Viewer W/L state."""
     volume = read("web/app/static/js/brachybot-viewer-volume.js")
     controls = read("web/app/static/css/brachybot-report-controls.css")
 
     assert "function setViewerWindowLevel" in volume
-    assert "function applyDataTreeWindowLevel" in volume
-    assert "window.applyDataTreeWindowLevel = applyDataTreeWindowLevel" in volume
-    assert 'data-ct-window-level="window"' in volume
-    assert 'data-ct-window-level="level"' in volume
+    assert "function applyDataTreeWindowRange" in volume
+    assert "window.applyDataTreeWindowRange = applyDataTreeWindowRange" in volume
+    assert 'data-ct-window-level="low"' in volume
+    assert 'data-ct-window-level="high"' in volume
+    assert 'type="range"' in volume
+    assert "normalized.high - normalized.low" in volume
+    assert "(normalized.high + normalized.low) / 2" in volume
+    assert "renderDelayMs: 16" in volume
+    assert "persistOnNoChange: persist" in volume
     assert "_syncWindowLevelControls();" in volume
     assert "viewer.window_level.data_tree" in volume
     assert "clearSliceCache();" in volume
     assert ".ct-window-level-controls" in controls
+    assert ".ct-window-range-fill" in controls
+    assert "pointer-events: auto" in controls
     assert ".tree-item--ct .item-info { display: none; }" in controls
 
 
