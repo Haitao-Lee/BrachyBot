@@ -638,6 +638,295 @@ def restore_active_planning_aliases(memory: Any) -> List[str]:
     return restored
 
 
+def _planning_value_present(value: Any) -> bool:
+    """Return whether a restored artifact contains usable payload data."""
+    if value is None:
+        return False
+    if np is not None and isinstance(value, np.ndarray):
+        return value.size > 0
+    if isinstance(value, (Mapping, list, tuple, set)):
+        return bool(value)
+    return True
+
+
+def _planning_snapshot_flags(snapshot: Mapping[str, Any]) -> Dict[str, Any]:
+    """Derive Data Tree artifact flags from one immutable run snapshot.
+
+    The registry is intentionally compact and older checkpoints sometimes
+    contain stale ``has_*`` flags.  The namespaced snapshot is the source of
+    truth after a restart, so derive the flags from the actual persisted
+    values instead of trusting the old summary alone.
+    """
+    geometry = any(
+        _planning_value_present(snapshot.get(key))
+        for key in (
+            "trajectories",
+            "refined_trajectories",
+            "seed_plan",
+            "seed_plan_serialized",
+            "seed_positions",
+            "verified_needle_geometry",
+            "manual_seeds",
+            "manual_needles",
+        )
+    )
+    has_dose = any(
+        _planning_value_present(snapshot.get(key))
+        for key in (
+            "dose_distribution",
+            "dose_distribution_gy",
+            "dose_distribution_physical_gy",
+            "algorithm_plan_dose_distribution",
+            "algorithm_plan_dose_distribution_gy",
+            "manual_ai_dose",
+        )
+    )
+    has_metrics = any(
+        _planning_value_present(snapshot.get(key))
+        for key in ("dose_metrics", "algorithm_plan_dose_metrics", "metrics")
+    )
+    has_dvh = any(
+        _planning_value_present(snapshot.get(key))
+        for key in ("dvh_data", "algorithm_plan_dvh_data", "dose_metrics")
+    )
+    has_guide = any(
+        _planning_value_present(snapshot.get(key))
+        for key in ("surgical_guide", "surgical_guide_versions")
+    )
+    has_skin = any(
+        _planning_value_present(snapshot.get(key))
+        for key in ("skin_surface", "skin_surface_mask")
+    )
+
+    total_seeds = snapshot.get("total_seeds")
+    try:
+        total_seeds = int(total_seeds or 0)
+    except (TypeError, ValueError):
+        total_seeds = 0
+    if total_seeds <= 0:
+        serialized = snapshot.get("seed_plan_serialized")
+        if isinstance(serialized, Mapping):
+            serialized = serialized.get("seeds") or serialized.get("seed_plan")
+        if isinstance(serialized, list):
+            total_seeds = len(serialized)
+        elif isinstance(snapshot.get("manual_seeds"), list):
+            total_seeds = len(snapshot.get("manual_seeds") or [])
+
+    num_trajectories = snapshot.get("num_trajectories")
+    try:
+        num_trajectories = int(num_trajectories or 0)
+    except (TypeError, ValueError):
+        num_trajectories = 0
+    if num_trajectories <= 0:
+        for key in ("refined_trajectories", "trajectories", "manual_needles"):
+            value = snapshot.get(key)
+            if isinstance(value, (list, tuple)):
+                num_trajectories = len(value)
+                if num_trajectories:
+                    break
+
+    metrics = next(
+        (
+            snapshot.get(key)
+            for key in ("dose_metrics", "algorithm_plan_dose_metrics", "metrics")
+            if isinstance(snapshot.get(key), Mapping)
+        ),
+        {},
+    )
+    metrics_summary = {
+        key: metrics.get(key)
+        for key in ("v100", "v150", "v200", "d90", "plan_score")
+        if metrics.get(key) is not None
+    }
+    artifact_status = next(
+        (
+            dict(snapshot.get(key))
+            for key in ("artifact_status", "manual_artifact_status")
+            if isinstance(snapshot.get(key), Mapping)
+        ),
+        {},
+    )
+    return {
+        "geometry": geometry,
+        "has_dose": has_dose,
+        "has_dvh": has_dvh,
+        "has_metrics": has_metrics,
+        "has_guide": has_guide,
+        "has_skin": has_skin,
+        "total_seeds": total_seeds,
+        "num_trajectories": num_trajectories,
+        "metrics_summary": metrics_summary,
+        "artifact_status": artifact_status,
+    }
+
+
+def _planning_snapshot_score(snapshot: Mapping[str, Any]) -> int:
+    """Rank snapshots so a stale empty active shell cannot hide a real plan."""
+    flags = _planning_snapshot_flags(snapshot)
+    return sum(
+        weight
+        for key, weight in (
+            ("geometry", 2),
+            ("has_dose", 3),
+            ("has_dvh", 2),
+            ("has_metrics", 1),
+            ("has_guide", 2),
+            ("has_skin", 1),
+        )
+        if flags[key]
+    )
+
+
+def _activate_planning_snapshot(memory: Any, planning_id: str) -> List[str]:
+    """Activate a decoded snapshot without requiring an Agent wrapper."""
+    snapshot = memory.retrieve(PLANNING_RUN_PREFIX + str(planning_id))
+    if not isinstance(snapshot, Mapping):
+        return []
+    restored: List[str] = []
+    with memory._lock:
+        versions = getattr(memory, "_planning_versions", {})
+        run_version = int(versions.get(PLANNING_RUN_PREFIX + str(planning_id), 0))
+        for key in PLANNING_VALUE_KEYS:
+            if key in snapshot:
+                value = _clone(snapshot[key])
+                if value is not None:
+                    memory.planning_results[key] = value
+                    restored.append(key)
+                else:
+                    memory.planning_results.pop(key, None)
+            else:
+                memory.planning_results.pop(key, None)
+            versions[key] = max(int(versions.get(key, 0)), run_version)
+        memory.planning_results[ACTIVE_PLANNING_ID_KEY] = str(planning_id)
+        versions[ACTIVE_PLANNING_ID_KEY] = max(
+            int(versions.get(ACTIVE_PLANNING_ID_KEY, 0)), run_version
+        )
+        memory.planning_results[PLANNING_RUN_ID_KEY] = str(planning_id)
+        versions[PLANNING_RUN_ID_KEY] = max(
+            int(versions.get(PLANNING_RUN_ID_KEY, 0)), run_version
+        )
+        memory.conversation_state["data_available"] = sorted(memory.planning_results.keys())
+    return restored
+
+
+def reconcile_planning_history(
+    memory: Any,
+    *,
+    recover_running: bool = False,
+) -> Dict[str, Any]:
+    """Reconcile the registry and active aliases after a full hydration.
+
+    A lightweight checkpoint can preserve ``planning_runs`` while a previous
+    active alias points at a newly-created, incomplete run.  In that state the
+    UI correctly renders the history rows but every downstream endpoint sees
+    an empty plan.  This repair is deliberately limited to the hydration
+    boundary: live planning never auto-switches the user's active run.
+    """
+    runs = ensure_planning_history(memory)
+    if not runs:
+        return {"active_planning_id": None, "restored_aliases": [], "changed": False}
+
+    snapshots = {
+        str(run.get("planning_id")): memory.retrieve(
+            PLANNING_RUN_PREFIX + str(run.get("planning_id"))
+        )
+        for run in runs
+    }
+    changed = False
+    enriched: List[Dict[str, Any]] = []
+    scores: Dict[str, int] = {}
+    for run in runs:
+        planning_id = str(run.get("planning_id") or "")
+        snapshot = snapshots.get(planning_id)
+        if not isinstance(snapshot, Mapping):
+            if recover_running and str(run.get("status")) == "running":
+                run = {
+                    **run,
+                    "status": "interrupted",
+                    "error": run.get("error") or "Server restarted before this Planning completed",
+                }
+                changed = True
+            enriched.append(run)
+            scores[planning_id] = 0
+            continue
+        flags = _planning_snapshot_flags(snapshot)
+        scores[planning_id] = _planning_snapshot_score(snapshot)
+        updates: Dict[str, Any] = {}
+        for key in ("total_seeds", "num_trajectories"):
+            if flags[key] and int(run.get(key) or 0) != int(flags[key]):
+                updates[key] = int(flags[key])
+        for key in ("has_dose", "has_dvh", "has_metrics", "has_guide", "has_skin"):
+            if flags[key] and not bool(run.get(key)):
+                updates[key] = True
+        if flags["artifact_status"] and run.get("artifact_status") != flags["artifact_status"]:
+            updates["artifact_status"] = flags["artifact_status"]
+        if flags["metrics_summary"] and run.get("metrics_summary") != flags["metrics_summary"]:
+            updates["metrics_summary"] = flags["metrics_summary"]
+        if recover_running and str(run.get("status")) == "running":
+            updates["status"] = "interrupted"
+            updates.setdefault(
+                "error",
+                "Server restarted before this Planning completed",
+            )
+        if updates:
+            run = {**run, **updates}
+            changed = True
+        enriched.append(run)
+
+    if changed:
+        _write_runs(memory, enriched, reason="planning.history.reconciled")
+        runs = enriched
+
+    active = active_planning_id(memory)
+    active_run = next((run for run in runs if str(run.get("planning_id")) == str(active)), None)
+    stable = [
+        run for run in runs
+        if str(run.get("status")) in {"completed", "interrupted"}
+        and str(run.get("planning_id")) in snapshots
+        and isinstance(snapshots.get(str(run.get("planning_id"))), Mapping)
+    ]
+    best = max(
+        stable or [run for run in runs if str(run.get("planning_id")) in snapshots],
+        key=lambda run: (
+            scores.get(str(run.get("planning_id")), 0),
+            int(run.get("sequence") or 0),
+        ),
+        default=None,
+    )
+    target = str(active or "")
+    if active_run is None or not isinstance(snapshots.get(target), Mapping):
+        if best is not None:
+            target = str(best.get("planning_id") or "")
+    elif str(active_run.get("status")) in {"interrupted", "running"} and best is not None:
+        if scores.get(str(best.get("planning_id")), 0) > scores.get(target, 0):
+            target = str(best.get("planning_id") or "")
+
+    restored_aliases: List[str]
+    active_target_changed = bool(target and target != str(active or ""))
+    if active_target_changed:
+        restored_aliases = _activate_planning_snapshot(memory, target)
+        active = target
+        runs = ensure_planning_history(memory)
+        _write_runs(
+            memory,
+            [
+                {**run, "visible": str(run.get("planning_id")) == target}
+                for run in runs
+            ],
+            reason="planning.history.active.reconciled",
+        )
+        _memory_put(memory, ACTIVE_PLANNING_ID_KEY, target)
+        _memory_put(memory, PLANNING_RUN_ID_KEY, target)
+    else:
+        restored_aliases = restore_active_planning_aliases(memory)
+
+    return {
+        "active_planning_id": active or None,
+        "restored_aliases": restored_aliases,
+        "changed": changed or active_target_changed,
+    }
+
+
 def planning_run_snapshot(memory: Any, planning_id: Optional[str] = None) -> Dict[str, Any]:
     target = str(planning_id or active_planning_id(memory) or "")
     if not target:

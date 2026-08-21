@@ -38,6 +38,109 @@ logger = logging.getLogger(__name__)
 
 class ChatWorkflowMixin:
     @staticmethod
+    def _strip_internal_visual_context_text(value: Any) -> str:
+        """Remove generated screenshot-child protocol lines from summaries.
+
+        A hidden multimodal child can be compacted into ``AgentMemory``'s
+        plain-text summary before the child finishes.  Removing only the
+        protocol markers is intentionally narrow: ordinary user discussion
+        about screenshots remains valid context, while raw attachment URLs
+        and the child instruction cannot steer the next independent turn.
+        """
+        text = str(value or "")
+        if not text:
+            return ""
+        protocol_markers = (
+            "[Screenshot captured:",
+            "Analyze the supplied screenshot(s)",
+            "Do not request another screenshot.",
+            "分析提供的截图",
+            "不要请求另一个截图",
+        )
+        lines = [
+            line for line in text.splitlines()
+            if not any(marker in line for marker in protocol_markers)
+        ]
+        return "\n".join(lines).strip()
+
+    @staticmethod
+    def _is_internal_visual_context_entry(entry: Any) -> bool:
+        """Recognize only the generated multimodal child prompt.
+
+        This is deliberately a protocol check, not an intent classifier.  A
+        real user may ask to inspect a screenshot, so the ordinary words
+        "screenshot" and "analyze" must never be enough to delete context.
+        The generated child always carries the capture marker, a ``User
+        request`` block, and one of the fixed analysis instructions.
+        """
+        if isinstance(entry, dict):
+            content = entry.get("content") or entry.get("message") or entry.get("text") or ""
+            marked = (
+                entry.get("internal_followup") is True
+                or entry.get("internalFollowup") is True
+                or str(entry.get("message_kind") or entry.get("messageKind") or "").lower()
+                == "internal_followup"
+            )
+        else:
+            content = getattr(entry, "content", "")
+            marked = bool(getattr(entry, "internal_followup", False))
+        if marked:
+            return True
+        content = str(content or "")
+        if "[Screenshot captured:" not in content:
+            return False
+        has_request = "User request:" in content or "用户请求：" in content
+        has_instruction = (
+            "Analyze the supplied screenshot" in content
+            or "分析提供的截图" in content
+            or "Do not request another screenshot" in content
+            or "不要请求另一个截图" in content
+        )
+        return has_request and has_instruction
+
+    def _purge_orphaned_visual_context(self) -> None:
+        """Remove legacy hidden visual prompts before a new user turn.
+
+        Older clients persisted the generated multimodal prompt in the
+        AgentMemory conversation.  Workspace migration protects future
+        snapshots, but an already-hydrated Agent can still hold that row in
+        memory.  Purging this exact protocol record at the turn boundary is
+        what prevents a later unrelated question from inheriting the previous
+        screenshot task while preserving all genuine clinical conversation.
+        """
+        memory = getattr(self, "memory", None)
+        if memory is None or not hasattr(memory, "_lock"):
+            return
+        with memory._lock:
+            conversation = getattr(memory, "conversation", None)
+            if isinstance(conversation, list):
+                memory.conversation = [
+                    entry for entry in conversation
+                    if not self._is_internal_visual_context_entry(entry)
+                ]
+            smart = getattr(memory, "smart_context", None)
+            smart_messages = getattr(smart, "messages", None) if smart is not None else None
+            if isinstance(smart_messages, list):
+                smart.messages = [
+                    entry for entry in smart_messages
+                    if not self._is_internal_visual_context_entry(entry)
+                ]
+            # Compaction stores the same child prompt as plain text.  Clean
+            # that second representation as well, otherwise ``get_clean_context``
+            # can reintroduce the old screenshot task after the message row is
+            # removed and make an unrelated user request appear to be pending.
+            summary = getattr(memory, "context_summary", "")
+            cleaned_summary = self._strip_internal_visual_context_text(summary)
+            if cleaned_summary != summary:
+                memory.context_summary = cleaned_summary
+            # A removed prompt changes the context inputs.  Never reuse a
+            # cleaned prompt summary or relevance cache for the next turn.
+            if hasattr(memory, "_clean_context_cache_key"):
+                memory._clean_context_cache_key = None
+            if hasattr(memory, "_clean_context_cache_value"):
+                memory._clean_context_cache_value = ""
+
+    @staticmethod
     def _llm_unavailable_message(lang: str = "zh") -> str:
         """Explain an unavailable model instead of fabricating an LLM answer.
 
@@ -496,8 +599,10 @@ class ChatWorkflowMixin:
         v150 = self._dose_fraction(metrics.get("v150", metrics.get("V150")))
         v200 = self._dose_fraction(metrics.get("v200", metrics.get("V200")))
         d90 = number("d90", "D90")
+        d95 = number("d95", "D95")
         dmean = number("dmean", "Dmean", "mean_dose")
         d2 = number("d2", "D2", "d2cc", "D2cc")
+        dmax = number("dmax", "Dmax", "max_dose")
         ci = number("ci", "CI")
         hi = number("hi", "HI")
         score = number("plan_score", "score")
@@ -551,6 +656,10 @@ class ChatWorkflowMixin:
                 f"- CI / HI：{ci_text} / {hi_text}",
                 f"- 计划评分：{score_text}",
             ]
+            if d95 is not None:
+                lines.insert(-2, f"- D95：{fmt(d95)} Gy")
+            if dmax is not None:
+                lines.insert(-2, f"- Dmax：{fmt(dmax)} Gy")
             if ranked_oars:
                 lines.extend([
                     "",
@@ -586,6 +695,10 @@ class ChatWorkflowMixin:
             f"- CI / HI: {fmt(ci, '', 3)} / {fmt(hi, '', 3)}",
             f"- Plan score: {fmt(score, '/100', 0)}",
         ]
+        if d95 is not None:
+            lines.insert(-2, f"- D95: {fmt(d95)} Gy")
+        if dmax is not None:
+            lines.insert(-2, f"- Dmax: {fmt(dmax)} Gy")
         if ranked_oars:
             lines.extend(["", "### Highest current OAR dose structures", "", "| Structure | Dmax (Gy) | D2cc (Gy) |", "|---|---:|---:|"])
             for _, name, dmax_value, d2cc_value in ranked_oars[:5]:
@@ -614,6 +727,7 @@ class ChatWorkflowMixin:
             "report_figures": "\u6b63\u5728\u5448\u73b0\u5f53\u524d\u62a5\u544a\u4e2d\u5df2\u4fdd\u5b58\u7684\u622a\u56fe\u3002",
             "report": "\u6b63\u5728\u6253\u5f00\u5f53\u524d\u62a5\u544a\u5e76\u5448\u73b0\u5176\u5df2\u4fdd\u5b58\u9644\u4ef6\u3002",
             "session_screenshots": "\u6b63\u5728\u5448\u73b0\u5f53\u524d Session \u4e2d\u5df2\u4fdd\u5b58\u7684\u622a\u56fe\u3002",
+            "reply_attachments": "\u6b63\u5728\u5448\u73b0\u4e0a\u4e00\u6761\u53ef\u89c1\u56de\u590d\u4e2d\u7684\u56fe\u50cf\u9644\u4ef6\u3002",
             "planning": "\u6b63\u5728\u5448\u73b0\u5f53\u524d\u89c4\u5212\u7ed3\u679c\u3002",
             "dose": "\u6b63\u5728\u5448\u73b0\u5f53\u524d\u5242\u91cf\u7ed3\u679c\u3002",
             "dvh": "\u6b63\u5728\u5448\u73b0\u5f53\u524d DVH \u6570\u636e\u3002",
@@ -629,6 +743,7 @@ class ChatWorkflowMixin:
             "report_figures": "Presenting the saved figures from the current report.",
             "report": "Opening the current report and presenting its saved attachments.",
             "session_screenshots": "Presenting saved screenshots from the current Session.",
+            "reply_attachments": "Presenting the image attachments from the most recent visible reply.",
             "planning": "Presenting the current planning result.",
             "dose": "Presenting the current dose result.",
             "dvh": "Presenting the current DVH data.",
@@ -1036,8 +1151,16 @@ class ChatWorkflowMixin:
             return f"Tool generation failed: {result['error']}"
 
     def chat(self, message: str) -> str:
+        turn_context = getattr(self, "_active_turn_context", {}) or {}
+        internal_followup = bool(turn_context.get("internal_followup"))
+        if not internal_followup:
+            self._purge_orphaned_visual_context()
         self._begin_turn(message)
-        self.memory.add_message("user", message)
+        # Hidden screenshot-analysis prompts are execution context, not a new
+        # user turn. Persisting their raw URL markers into conversation memory
+        # lets a later question inherit the previous screenshot task.
+        if not internal_followup:
+            self.memory.add_message("user", message)
         try:
             from memory.language import detect as _detect_turn_language
             _language = _detect_turn_language(message)
@@ -1127,8 +1250,13 @@ class ChatWorkflowMixin:
         return response
 
     def chat_with_trace(self, message: str) -> Dict[str, Any]:
+        turn_context = getattr(self, "_active_turn_context", {}) or {}
+        internal_followup = bool(turn_context.get("internal_followup"))
+        if not internal_followup:
+            self._purge_orphaned_visual_context()
         self._begin_turn(message)
-        self.memory.add_message("user", message)
+        if not internal_followup:
+            self.memory.add_message("user", message)
         try:
             from memory.language import detect as _detect_turn_language
             _language = _detect_turn_language(message)
@@ -1150,7 +1278,11 @@ class ChatWorkflowMixin:
                 **kwargs
             })
 
-        add_step("user", "User Input", message)
+        # Keep the non-streaming compatibility path subject to the same
+        # hidden-child boundary as the SSE path.  A visual-analysis prompt is
+        # transport context, never a second user message or Trace row.
+        if not internal_followup:
+            add_step("user", "User Input", message)
 
         # Local classification only controls expensive routing/review/tool
         # policy. The configured LLM still generates the user-facing answer,
@@ -1234,7 +1366,13 @@ class ChatWorkflowMixin:
 
         if local_policy.intent == "session_content_query":
             target = resolve_session_content_target(message) or "session_summary"
-            presentation = resolve_session_content_presentation(message, target)
+            from tool_factory.ui_content import normalize_session_content_request
+
+            content_contract = normalize_session_content_request(
+                question=message,
+                presentation=resolve_session_content_presentation(message, target),
+            )
+            presentation = content_contract["presentation"]
             title = "\u5448\u73b0 Session \u5185\u5bb9" if self.memory.user_lang == "zh" else "Present Session Content"
             content = (
                 "\u6b63\u5728\u8bfb\u53d6\u5f53\u524d Session \u4e2d\u5df2\u4fdd\u5b58\u7684\u5185\u5bb9..."
@@ -1244,6 +1382,8 @@ class ChatWorkflowMixin:
             params = {
                 "target": target,
                 "presentation": presentation,
+                "selection": content_contract["selection"],
+                "analysis": content_contract["analysis"],
                 "mode": "chat",
                 "question": message,
             }
@@ -1521,10 +1661,98 @@ class ChatWorkflowMixin:
         self._finish_turn(response)
         return {"response": response, "steps": steps, "llm_meta": llm_meta}
 
+    def _snapshot_internal_turn_memory(self) -> Dict[str, Any]:
+        """Capture only conversational state for a hidden visual child.
+
+        Screenshot analysis may need temporary tool-result messages so a
+        second model call can see the captured image. Those messages are not
+        a new user turn, however, and must not become context for the next
+        question. Clinical planning data and UI state are deliberately not
+        included: a hidden child is read-only with respect to those stores.
+        """
+        import copy
+
+        memory = self.memory
+        snapshot: Dict[str, Any] = {}
+        with memory._lock:
+            for name in (
+                "conversation",
+                "tool_results",
+                "conversation_state",
+                "context_summary",
+                "_clean_context_cache_key",
+                "_clean_context_cache_value",
+                "compaction_count",
+                "user_lang",
+            ):
+                if hasattr(memory, name):
+                    snapshot[name] = copy.deepcopy(getattr(memory, name))
+            smart = getattr(memory, "smart_context", None)
+            if smart is not None:
+                snapshot["smart_context"] = {
+                    name: copy.deepcopy(getattr(smart, name))
+                    for name in (
+                        "messages",
+                        "entities",
+                        "topics",
+                        "current_topic",
+                        "_message_counter",
+                    )
+                    if hasattr(smart, name)
+                }
+        return snapshot
+
+    def _restore_internal_turn_memory(self, snapshot: Dict[str, Any]) -> None:
+        """Restore the parent conversation after a hidden visual child."""
+        import copy
+
+        memory = self.memory
+        with memory._lock:
+            for name, value in snapshot.items():
+                if name == "smart_context":
+                    continue
+                setattr(memory, name, copy.deepcopy(value))
+            smart_snapshot = snapshot.get("smart_context")
+            smart = getattr(memory, "smart_context", None)
+            if isinstance(smart_snapshot, dict) and smart is not None:
+                for name, value in smart_snapshot.items():
+                    setattr(smart, name, copy.deepcopy(value))
+
     def chat_with_stream(self, message: str):
+        """Stream a turn, isolating internal visual-analysis children.
+
+        The browser may reconnect a screenshot child after a Session switch.
+        Keeping the isolation at this boundary means every entry path
+        (initial request, replay, or server-side recovery) gets the same
+        memory and persistence semantics.
+        """
+        turn_context = getattr(self, "_active_turn_context", {}) or {}
+        if not bool(turn_context.get("internal_followup")):
+            yield from self._chat_with_stream_impl(message)
+            return
+
+        snapshot = self._snapshot_internal_turn_memory()
+        memory = self.memory
+        previous_suppression = bool(getattr(memory, "_suppress_persistence", False))
+        memory._suppress_persistence = True
+        try:
+            yield from self._chat_with_stream_impl(message)
+        finally:
+            memory._suppress_persistence = previous_suppression
+            self._restore_internal_turn_memory(snapshot)
+
+    def _chat_with_stream_impl(self, message: str):
         """Streaming version of chat_with_trace. Yields SSE events."""
+        turn_context = getattr(self, "_active_turn_context", {}) or {}
+        internal_followup = bool(turn_context.get("internal_followup"))
+        if not internal_followup:
+            self._purge_orphaned_visual_context()
         self._begin_turn(message)
-        self.memory.add_message("user", message)
+        # The multimodal prompt is still passed to the current LLM call, but
+        # it must never become a durable user message. Its screenshot URLs are
+        # transport-only evidence owned by the parent assistant reply.
+        if not internal_followup:
+            self.memory.add_message("user", message)
         try:
             from memory.language import detect as _detect_turn_language
             _language = _detect_turn_language(message)
@@ -1701,11 +1929,25 @@ class ChatWorkflowMixin:
                 complexity,
                 "Required" if review else "Optional",
             )
-        yield yield_event("start", {"message": message, "language": _lang_info_start})
-
-        # User step
-        add_step("user", _trace_text("\u7528\u6237\u8f93\u5165", "User Input"), message)
-        yield yield_event("step", steps[-1])
+        # A visual-analysis child receives the screenshot prompt only as
+        # short-lived model context.  It is never a conversational user turn,
+        # so do not put the raw URLs/instructions into the SSE transport or its
+        # step list.  This is the source-level boundary that protects both live
+        # rendering and reconnect/replay paths; filtering durable rows alone is
+        # too late because a client can render a replayed event immediately.
+        if internal_followup:
+            yield yield_event(
+                "start",
+                {
+                    "message": "Visual screenshot analysis follow-up",
+                    "language": _lang_info_start,
+                    "internal_followup": True,
+                },
+            )
+        else:
+            yield yield_event("start", {"message": message, "language": _lang_info_start})
+            add_step("user", _trace_text("\u7528\u6237\u8f93\u5165", "User Input"), message)
+            yield yield_event("step", steps[-1])
 
         # The local policy is an execution hint only. It does not synthesize
         # an answer; all user-facing text continues through the configured LLM.
@@ -1853,9 +2095,17 @@ class ChatWorkflowMixin:
         # command; the frontend resolves attachments and structured data.
         if local_policy.intent == "session_content_query":
             target = resolve_session_content_target(message) or "session_summary"
+            from tool_factory.ui_content import normalize_session_content_request
+
+            content_contract = normalize_session_content_request(
+                question=message,
+                presentation=resolve_session_content_presentation(message, target),
+            )
             params = {
                 "target": target,
-                "presentation": resolve_session_content_presentation(message, target),
+                "presentation": content_contract["presentation"],
+                "selection": content_contract["selection"],
+                "analysis": content_contract["analysis"],
                 "mode": "chat",
                 "question": message,
             }
@@ -1868,7 +2118,7 @@ class ChatWorkflowMixin:
                 ),
                 status="pending",
                 tool="ui_content",
-                params={"target": target, "presentation": params["presentation"], "mode": "chat"},
+                params=ToolResultPipeline.trace_params("ui_content", params),
             )
             yield yield_event("step", state_step)
             tool = None
@@ -2329,7 +2579,10 @@ class ChatWorkflowMixin:
         ):
             response = self._build_3d_status_response(self.memory.user_lang)
 
-        self._record_experience(message, response, steps)
+        # A hidden visual child is not an independent user interaction. Its
+        # temporary analysis must not enter episodic/skill memory either.
+        if not internal_followup:
+            self._record_experience(message, response, steps)
 
         # Quality review DISABLED (2026-06-22): the review triggered a
         # mysterious "Review Feedback" retry that generated a brief
@@ -2384,6 +2637,13 @@ class ChatWorkflowMixin:
         _high_value_called = _tools_called & _high_value_tools
         _knowledge_tools = {"web_search", "web_fetch", "web_access"}
         _knowledge_called = _tools_called & _knowledge_tools
+        _direct_read_result = any(
+            isinstance((step.get("metadata") or {}).get("response_contract"), dict)
+            and (step.get("metadata") or {}).get("response_contract", {}).get("mode") == "direct_read"
+            and step.get("status") == "done"
+            for step in steps
+            if step.get("type") == "tool"
+        )
         _has_plan = self._has_completed_planning_in_steps(steps)
         _router_requires_review = bool(
             _ma_routing and getattr(_ma_routing, "requires_review", False)
@@ -2396,7 +2656,14 @@ class ChatWorkflowMixin:
             re.IGNORECASE,
         ))
 
-        if _router_requires_review:
+        if _direct_read_result:
+            # A successful typed read from the active session is already a
+            # deterministic answer. Review is useful for planning and
+            # evidence synthesis, but it only adds latency and a redundant
+            # checker round here.
+            _needs_review = False
+            _review_reason = "direct_read_contract"
+        elif _router_requires_review:
             _needs_review = True
             _review_reason = "router_requires_review"
         elif _knowledge_called:

@@ -359,7 +359,18 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
         # decoded by the server's background hydration worker.
         agent = get_agent(_lightweight=True)
         if agent is None:
-            return jsonify({"error": "Agent not available"}), 500
+            # A Session switch/reconnect can reach the Viewer before the
+            # metadata Agent has been installed.  This is a normal control
+            # plane race, not a corrupt CT.  Return the same retryable
+            # contract used by slice, mask, and 3D endpoints so the client
+            # keeps the loading state instead of showing a false HTTP 500.
+            return jsonify({
+                "success": False,
+                "pending": True,
+                "code": "workspace_agent_initializing",
+                "message": "The case agent is still initializing.",
+                "retry_after_ms": 250,
+            }), 202
 
         data = request.get_json() or {}
         ct_path = data.get("ct_path")
@@ -416,13 +427,38 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
                 hydration_cancel.set()
             ct_sitk, kind, src_meta = load_ct_image(ct_path)
             # Keep this route defensive even when a custom loader is injected:
-            # DICOMOrient only receives a supported 3-D CT frame.
-            ct_sitk, volume_meta = normalize_ct_image(ct_sitk)
+            # DICOMOrient only receives a supported scalar 3-D CT frame. Do
+            # not expose SimpleITK's low-level exception as an HTTP 500: the
+            # browser can show a useful input error and keep the case usable.
+            try:
+                ct_sitk, volume_meta = normalize_ct_image(ct_sitk)
+            except (TypeError, ValueError, RuntimeError) as exc:
+                logger.warning("CT normalization rejected %s: %s", ct_path, exc)
+                return jsonify({
+                    "success": False,
+                    "code": "unsupported_ct_geometry",
+                    "error": str(exc),
+                }), 422
             src_meta = {**(src_meta or {}), **volume_meta}
             logger.info(f"CT source kind: {kind}; meta: {src_meta}")
 
+            if not hasattr(ct_sitk, "GetDimension") or int(ct_sitk.GetDimension()) != 3:
+                return jsonify({
+                    "success": False,
+                    "code": "unsupported_ct_geometry",
+                    "error": "CT input must resolve to one scalar 3-D volume.",
+                }), 422
+
             # Reorient to LPI (Left-Posterior-Inferior) standard anatomical orientation
-            ct_oriented = sitk.DICOMOrient(ct_sitk, 'LPI')
+            try:
+                ct_oriented = sitk.DICOMOrient(ct_sitk, 'LPI')
+            except RuntimeError as exc:
+                logger.warning("CT orientation failed after normalization %s: %s", ct_path, exc)
+                return jsonify({
+                    "success": False,
+                    "code": "ct_orientation_failed",
+                    "error": "The CT volume could not be oriented for viewing. Please use a scalar 3-D CT volume.",
+                }), 422
             logger.info(f"Reoriented to LPI")
 
             ct_data = sitk.GetArrayFromImage(ct_oriented)  # Shape: (Z, Y, X) in LPI orientation
@@ -575,7 +611,13 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
         """Get a specific slice from loaded CT as PNG image."""
         agent = get_agent(_lightweight=True)
         if agent is None:
-            return jsonify({"error": "Agent not available"}), 500
+            return jsonify({
+                "success": False,
+                "pending": True,
+                "code": "workspace_agent_initializing",
+                "message": "The case agent is still initializing.",
+                "retry_after_ms": 250,
+            }), 202
         pending = workspace_data_pending(agent, require="ct")
         if pending is not None:
             return pending
@@ -1061,7 +1103,13 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
         """List open BiomedParse masks for the active session."""
         agent = get_agent(_lightweight=True)
         if agent is None:
-            return jsonify({"error": "Agent not available"}), 500
+            return jsonify({
+                "success": False,
+                "pending": True,
+                "code": "workspace_agent_initializing",
+                "message": "The case agent is still initializing.",
+                "retry_after_ms": 250,
+            }), 202
         pending = workspace_data_pending(agent)
         if pending is not None:
             return pending
@@ -1074,15 +1122,41 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
         """Return one persisted open mask as a session-scoped binary volume."""
         agent = get_agent(_lightweight=True)
         if agent is None:
-            return jsonify({"error": "Agent not available"}), 500
+            return jsonify({
+                "success": False,
+                "pending": True,
+                "code": "workspace_agent_initializing",
+                "message": "The case agent is still initializing.",
+                "retry_after_ms": 250,
+            }), 202
         pending = workspace_data_pending(agent)
         if pending is not None:
             return pending
         entry = _generic_mask_entry(agent, request.args.get("mask_id"))
         if entry is None:
             return jsonify({"success": False, "error": "Generic mask is not available"}), 404
+        raw_mask = entry.get("mask_array")
+        if raw_mask is None:
+            hydration_active = bool(
+                getattr(agent, "_workspace_hydration_in_progress", False)
+                or getattr(agent, "_workspace_hydration_phase", "")
+                not in {"", "ready", "failed"}
+            )
+            return jsonify({
+                "success": False,
+                "pending": hydration_active,
+                "code": (
+                    "generic_mask_hydration_pending"
+                    if hydration_active else "generic_mask_unavailable"
+                ),
+                "message": (
+                    "Mask data is still loading."
+                    if hydration_active else "Generic segmentation mask data is unavailable."
+                ),
+                "retry_after_ms": 250 if hydration_active else 0,
+            }), 202 if hydration_active else 409
         try:
-            volume = np.ascontiguousarray(np.asarray(entry.get("mask_array"), dtype=np.uint8) > 0)
+            volume = np.ascontiguousarray(np.asarray(raw_mask, dtype=np.uint8) > 0)
             ct_data = agent.memory.retrieve("ct_data")
             if volume.ndim != 3 or (ct_data is not None and volume.shape != np.asarray(ct_data).shape):
                 return jsonify({"success": False, "error": "Generic mask does not match the current CT geometry"}), 409
@@ -1104,12 +1178,25 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
             response.headers["X-Origin"] = json.dumps(entry.get("origin") or agent.memory.retrieve("ct_origin") or [0, 0, 0])
             response.headers["X-Direction"] = json.dumps(entry.get("direction") or agent.memory.retrieve("ct_direction") or [1, 0, 0, 0, 1, 0, 0, 0, 1])
             response.headers["X-Target"] = str(entry.get("target") or entry.get("label") or "")
-            response.headers["X-Voxel-Count"] = str(int(entry.get("voxel_count") or np.count_nonzero(volume)))
+            stored_voxel_count = entry.get("voxel_count")
+            try:
+                voxel_count = (
+                    int(stored_voxel_count)
+                    if stored_voxel_count is not None
+                    else int(np.count_nonzero(volume))
+                )
+            except (TypeError, ValueError):
+                voxel_count = int(np.count_nonzero(volume))
+            response.headers["X-Voxel-Count"] = str(voxel_count)
             response.headers["Cache-Control"] = "private, no-store"
             return response
         except Exception as exc:
-            logger.error("Generic mask volume failed: %s", exc)
-            return jsonify({"success": False, "error": str(exc)}), 500
+            logger.warning("Generic mask volume unavailable: %s", exc)
+            return jsonify({
+                "success": False,
+                "code": "generic_mask_unavailable",
+                "error": "Generic segmentation mask data is unavailable.",
+            }), 409
 
     @app.route("/api/viewer/overlay", methods=["POST"])
     @require_api_key
@@ -1658,7 +1745,13 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
         """Generate 3D mesh from a specific organ mask label."""
         agent = get_agent(_lightweight=True)
         if agent is None:
-            return jsonify({"error": "Agent not available"}), 500
+            return jsonify({
+                "success": False,
+                "pending": True,
+                "code": "workspace_agent_initializing",
+                "message": "The case agent is still initializing.",
+                "retry_after_ms": 250,
+            }), 202
         pending = workspace_data_pending(agent)
         if pending is not None:
             return pending
@@ -1681,8 +1774,21 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
 
             if source == "generic":
                 generic_entry = _generic_mask_entry(agent, mask_id)
-                if generic_entry is None or generic_entry.get("mask_array") is None:
-                    return jsonify({"error": "Generic mask data is not available"}), 404
+                if generic_entry is None:
+                    return jsonify({"success": False, "code": "generic_mask_not_found", "error": "Generic mask is not available"}), 404
+                if generic_entry.get("mask_array") is None:
+                    hydration_active = bool(
+                        getattr(agent, "_workspace_hydration_in_progress", False)
+                        or getattr(agent, "_workspace_hydration_phase", "")
+                        not in {"", "ready", "failed"}
+                    )
+                    return jsonify({
+                        "success": False,
+                        "pending": hydration_active,
+                        "code": "generic_mask_hydration_pending" if hydration_active else "generic_mask_unavailable",
+                        "error": "Generic segmentation mask is still loading." if hydration_active else "Generic segmentation mask data is unavailable.",
+                        "retry_after_ms": 250 if hydration_active else 0,
+                    }), 202 if hydration_active else 409
                 mask_data = np.asarray(generic_entry["mask_array"], dtype=np.uint8)
                 label_faithful = True
             elif source == "ctv":
@@ -1693,7 +1799,39 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
                 label_faithful = _requires_label_faithful_mesh(agent, source, int(label_id))
 
             if mask_data is None:
-                return jsonify({"error": f"No {source} mask data available"}), 400
+                hydration_active = bool(
+                    getattr(agent, "_workspace_hydration_in_progress", False)
+                    or getattr(agent, "_workspace_hydration_phase", "")
+                    not in {"", "ready", "failed"}
+                )
+                return jsonify({
+                    "success": False,
+                    "pending": hydration_active,
+                    "code": (
+                        "workspace_hydration_pending"
+                        if hydration_active else "mask_data_unavailable"
+                    ),
+                    "error": (
+                        f"{source.upper()} mask data is still loading."
+                        if hydration_active
+                        else f"No {source} mask data is available for this case."
+                    ),
+                    "retry_after_ms": 250 if hydration_active else 0,
+                }), 202 if hydration_active else 409
+
+            if getattr(mask_data, "ndim", None) != 3:
+                return jsonify({
+                    "success": False,
+                    "code": "invalid_mask_geometry",
+                    "error": "Mask data must be a 3-D volume on the current CT grid.",
+                }), 409
+            ct_data = agent.memory.retrieve("ct_data")
+            if ct_data is not None and tuple(mask_data.shape) != tuple(np.asarray(ct_data).shape):
+                return jsonify({
+                    "success": False,
+                    "code": "mask_geometry_mismatch",
+                    "error": "Mask data does not match the current CT geometry.",
+                }), 409
 
             # Extract binary mask for this label
             if source != "generic":
@@ -1712,6 +1850,18 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
             total_voxels = int(binary_mask.sum())
             if total_voxels == 0:
                 missing = mask_id if source == "generic" else f"label {label_id}"
+                if bool(data.get("allow_missing")):
+                    # Background prewarming can observe a persisted label map
+                    # one request before the matching volume is available.
+                    # Treat that one optional mesh as a skipped item; an
+                    # explicit user reconstruction still receives the 400
+                    # below and remains diagnosable.
+                    return jsonify({
+                        "success": False,
+                        "skipped": True,
+                        "code": "mask_label_not_present",
+                        "message": f"{missing} is not present in the current mask.",
+                    })
                 return jsonify({"error": f"{missing} not found in mask"}), 400
             mask_digest = hashlib.blake2b(binary_mask.tobytes(), digest_size=8).hexdigest()
             cache_key = (
@@ -2042,6 +2192,14 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
         if agent is None:
             return jsonify({"error": "Agent not available"}), 500
 
+        # Do not run display-time safety filtering against the metadata-only
+        # hydration shell. A cold restore may contain the durable seed plan
+        # while CTV/OAR arrays are still decoding; that is a pending state,
+        # not evidence that every needle is unsafe.
+        pending = workspace_data_pending(agent)
+        if pending is not None:
+            return pending
+
         try:
             import numpy as np
 
@@ -2093,6 +2251,7 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
             safety_oar = None
             obstacle_labels = set()
             world_validator = None
+            safety_deferred = True
             try:
                 from tool_factory.seed_plan.planning_pipeline import (
                     _merge_embedded_hard_obstacles,
@@ -2100,20 +2259,51 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
                     _world_segment_hits_obstacle,
                 )
 
-                safety_ctv = agent._get_label_array("ctv_full_labels")
-                if safety_ctv is None:
-                    safety_ctv = agent._get_label_array("ctv_array")
-                safety_oar = agent._get_label_array("oar_array")
-                safety_oar, embedded_labels = _merge_embedded_hard_obstacles(safety_oar, agent)
-                obstacle_labels, _ = _resolve_data_tree_obstacle_labels(agent)
-                obstacle_labels.update(embedded_labels)
-                world_validator = _world_segment_hits_obstacle
+                # Safety revalidation is meaningful only on the original CT
+                # grid. During a cold restore the registry and verified
+                # needle geometry are available before the large label arrays;
+                # resampled/partial masks must not be treated as evidence that
+                # a persisted, already-validated plan is unsafe.
+                ct_data = agent.memory.retrieve("ct_data")
+                ct_shape = tuple(np.asarray(ct_data).shape) if ct_data is not None else ()
+
+                def _original_grid_mask(value):
+                    if value is None or len(ct_shape) != 3:
+                        return None
+                    candidate = np.asarray(value)
+                    if candidate.ndim != 3 or tuple(candidate.shape) != ct_shape:
+                        return None
+                    return candidate
+
+                candidate_ctv = agent._get_label_array("ctv_full_labels")
+                if candidate_ctv is None:
+                    candidate_ctv = agent._get_label_array("ctv_array")
+                candidate_oar = agent._get_label_array("oar_array")
+                safety_ctv = _original_grid_mask(candidate_ctv)
+                safety_oar = _original_grid_mask(candidate_oar)
+                if safety_ctv is not None and safety_oar is not None:
+                    safety_oar, embedded_labels = _merge_embedded_hard_obstacles(safety_oar, agent)
+                    obstacle_labels, _ = _resolve_data_tree_obstacle_labels(agent)
+                    obstacle_labels.update(embedded_labels)
+                    world_validator = _world_segment_hits_obstacle
+                    safety_deferred = False
+                else:
+                    logger.info(
+                        "[seeds_3d] Deferring display-time safety recheck until original-grid CTV/OAR masks are hydrated"
+                    )
             except Exception:
-                # A missing optional safety artifact must fail closed below;
-                # never silently fall back to rendering an unchecked line.
-                logger.exception("[seeds_3d] Unable to prepare current obstacle validator")
+                # A restore-time absence is an intermediate state. The plan
+                # already carries validated geometry; wait for the original
+                # masks instead of deleting its Data Tree representation.
+                logger.warning("[seeds_3d] Display-time safety recheck deferred", exc_info=True)
 
             def _needle_is_safe(points):
+                # Automatic planning already performed original-grid safety
+                # validation. If the restored masks are unavailable, retain
+                # that verified geometry for display and report the deferred
+                # recheck instead of deleting it from the viewer.
+                if safety_deferred:
+                    return True
                 if world_validator is None:
                     return False
                 return not world_validator(
@@ -2291,6 +2481,7 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
                 "planning_id": agent.memory.retrieve("manual_planning_id"),
                 "planning_version": int(agent.memory.retrieve("manual_plan_version") or 0),
                 "artifact_status": agent.memory.retrieve("manual_artifact_status") or {},
+                "safety_check": "deferred" if safety_deferred else "verified",
             })
         except Exception as e:
             logger.error(f"Seed 3D data failed: {e}")

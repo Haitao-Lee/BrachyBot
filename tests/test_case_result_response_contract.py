@@ -80,6 +80,59 @@ def test_current_case_dose_response_reads_saved_metrics_without_web_tools():
     assert "Advertisement" not in response
 
 
+def test_dose_result_language_is_read_only_but_recalculation_stays_mutating():
+    from agent_runtime.turn_policy import _is_current_case_dose_query, classify_local_turn
+
+    read_request = "现在计算的剂量结果中，CTV的几个关键指标是多少"
+    assert _is_current_case_dose_query(read_request) is True
+    policy = classify_local_turn(read_request)
+    assert policy.intent == "case_dose_query"
+    assert policy.use_router is False
+    assert policy.use_completeness is False
+
+    for mutation in (
+        "请重新计算剂量",
+        "现在我改了针和粒子的位置，请重新计算剂量",
+        "Please recalculate the dose now",
+    ):
+        assert _is_current_case_dose_query(mutation) is False
+
+
+def test_query_metrics_exposes_typed_direct_read_contract_and_localized_table():
+    from agent_runtime.core import ToolResultPipeline
+    from tool_factory.viewer_command.query_metrics import QueryMetricsTool
+
+    result = QueryMetricsTool()._execute(
+        metric_type="dose_metrics",
+        metrics={
+            "v100": 0.9143,
+            "v150": 0.6584,
+            "v200": 0.4489,
+            "d90": 122.54,
+            "d95": 100.10,
+            "dmean": 416.67,
+            "d2": 4292.90,
+            "dmax": 4780.30,
+            "ci": 0.836,
+            "hi": 38.8,
+            "plan_score": 83.08,
+            "prescription_gy": 120.0,
+        },
+    )
+
+    assert result.success is True
+    contract = result.metadata["response_contract"]
+    assert contract["mode"] == "direct_read"
+    assert contract["source"] == "active_session"
+    assert ToolResultPipeline.direct_read_contract(result) == contract
+
+    rendered = ToolResultPipeline.format("query_metrics", result, "zh")
+    assert "当前病例剂量指标" in rendered
+    assert "V100" in rendered and "91.43%" in rendered
+    assert "D95" in rendered and "Dmax" in rendered
+    assert "{\"V100\"" not in rendered
+
+
 def test_restored_turn_order_uses_request_and_explicit_sequence():
     from web.workspace_store import _merge_chat_records
 

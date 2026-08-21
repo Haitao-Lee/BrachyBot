@@ -758,33 +758,93 @@ async function refreshPlanningRunCatalog(options = {}) {
     }
     const promise = (async () => {
         try {
-            const response = await fetch(API + '/planning/runs', {
-                headers: _planningRunHeaders(sessionId),
-            });
-            if (response.status === 202) return [];
-            const payload = await response.json().catch(() => ({}));
-            if (!response.ok || payload.success !== true) {
-                throw new Error(payload.error || `Planning registry request failed (${response.status})`);
+            const retryPending = options.retryPending === true;
+            const maxPendingPolls = retryPending ? 360 : 0;
+            let pendingPoll = 0;
+            let latestRuns = null;
+
+            const applyCatalog = (payload) => {
+                if (String(_planningRunSessionId()) !== sessionId) return false;
+                const incomingRuns = Array.isArray(payload.runs) ? payload.runs : null;
+                const planning = (typeof dataTreeState !== 'undefined' && dataTreeState.planning)
+                    ? dataTreeState.planning : null;
+                const hydrationPending = payload.hydration_pending === true;
+                if (planning) {
+                    // A pending metadata response may legitimately contain no
+                    // rows while the old browser state still has a valid
+                    // registry. Never replace that state with [] merely
+                    // because the artifact phase has not converged yet.
+                    if (incomingRuns && (!hydrationPending || incomingRuns.length > 0 || !Array.isArray(planning.runs) || planning.runs.length === 0)) {
+                        planning.runs = incomingRuns;
+                    }
+                    planning.hydrationPending = hydrationPending;
+                    planning.hydrationPhase = payload.hydration_phase || (hydrationPending ? 'artifacts' : 'ready');
+                    const catalogIds = new Set((Array.isArray(incomingRuns) ? incomingRuns : [])
+                        .map(run => String(run?.planning_id || ''))
+                        .filter(Boolean));
+                    const requestedActive = String(payload.active_planning_id || '');
+                    const existingActive = String(planning.activePlanningId || planning.id || '');
+                    const fallbackActive = Array.isArray(incomingRuns) && incomingRuns.length > 0
+                        ? String(
+                            incomingRuns.find(run => run?.visible === true)?.planning_id
+                            || incomingRuns[incomingRuns.length - 1]?.planning_id
+                            || '',
+                        )
+                        : '';
+                    const normalizedActive = Array.isArray(incomingRuns) && incomingRuns.length > 0
+                        ? (catalogIds.has(requestedActive)
+                            ? requestedActive
+                            : catalogIds.has(existingActive) ? existingActive : fallbackActive)
+                        : (requestedActive || existingActive || null);
+                    planning.activePlanningId = normalizedActive || null;
+                    if (normalizedActive) planning.id = normalizedActive;
+                    latestRuns = Array.isArray(planning.runs) ? planning.runs : [];
+                }
+                const guideRuns = incomingRuns || latestRuns || [];
+                if (typeof window.refreshSurgicalGuidePlanningOptions === 'function') {
+                    window.refreshSurgicalGuidePlanningOptions(
+                        guideRuns,
+                        payload.active_planning_id || null,
+                    );
+                }
+                if (typeof renderDataTree === 'function') renderDataTree();
+                return true;
+            };
+
+            while (true) {
+                const response = await fetch(API + '/planning/runs', {
+                    headers: _planningRunHeaders(sessionId),
+                });
+                const payload = await response.json().catch(() => ({}));
+                if (response.status === 202) {
+                    if (!retryPending || pendingPoll >= maxPendingPolls) break;
+                    pendingPoll += 1;
+                    await new Promise(resolve => setTimeout(resolve, Math.max(
+                        100, Math.min(1000, Number(payload.retry_after_ms || 300)),
+                    )));
+                    if (String(_planningRunSessionId()) !== sessionId) return [];
+                    continue;
+                }
+                if (!response.ok || payload.success !== true) {
+                    throw new Error(payload.error || `Planning registry request failed (${response.status})`);
+                }
+                if (!applyCatalog(payload)) return [];
+                const hydrationPending = payload.hydration_pending === true;
+                if (!hydrationPending || !retryPending || pendingPoll >= maxPendingPolls) break;
+                pendingPoll += 1;
+                await new Promise(resolve => setTimeout(resolve, Math.max(
+                    100, Math.min(1000, Number(payload.retry_after_ms || 300)),
+                )));
+                if (String(_planningRunSessionId()) !== sessionId) return [];
             }
-            if (String(_planningRunSessionId()) !== sessionId) return [];
             const planning = (typeof dataTreeState !== 'undefined' && dataTreeState.planning)
                 ? dataTreeState.planning : null;
-            if (planning) {
-                planning.runs = Array.isArray(payload.runs) ? payload.runs : [];
-                planning.activePlanningId = payload.active_planning_id || planning.id || null;
-                if (planning.activePlanningId) planning.id = planning.activePlanningId;
-            }
-            if (typeof window.refreshSurgicalGuidePlanningOptions === 'function') {
-                window.refreshSurgicalGuidePlanningOptions(
-                    Array.isArray(payload.runs) ? payload.runs : [],
-                    payload.active_planning_id || null,
-                );
-            }
-            if (typeof renderDataTree === 'function') renderDataTree();
-            return planning?.runs || [];
+            return latestRuns || planning?.runs || [];
         } catch (error) {
             if (!options.silent) console.warn('[planning runs] catalog:', error);
-            return [];
+            const planning = (typeof dataTreeState !== 'undefined' && dataTreeState.planning)
+                ? dataTreeState.planning : null;
+            return Array.isArray(planning?.runs) ? planning.runs : [];
         } finally {
             if (_planningRunCatalogPromise?.promise === promise) _planningRunCatalogPromise = null;
         }
@@ -914,7 +974,11 @@ async function refreshPlanningUI(options = {}) {
     // result request so the Data Tree can expose Planning_1/Planning_2 during
     // the first cold restore as well as after a normal refresh.
     if (expectedSessionId && typeof refreshPlanningRunCatalog === 'function') {
-        void refreshPlanningRunCatalog({ sessionId: expectedSessionId, silent: true });
+        void refreshPlanningRunCatalog({
+            sessionId: expectedSessionId,
+            retryPending: options.retryPending === true,
+            silent: true,
+        });
     }
     const isCurrentCase = () => {
         if (generation !== _refreshGeneration) return false;
@@ -991,7 +1055,11 @@ async function refreshPlanningUI(options = {}) {
                 // result payload.  Refresh it in parallel so the Data Tree
                 // exposes Planning_1/Planning_2 without delaying dose, DVH or
                 // mask painting.
-                void refreshPlanningRunCatalog({ sessionId: expectedSessionId, silent: true });
+                void refreshPlanningRunCatalog({
+                    sessionId: expectedSessionId,
+                    retryPending: options.retryPending === true,
+                    silent: true,
+                });
                 uiDebugLog('[refreshPlanningUI] data received, has_dose:', data.has_dose, 'seeds:', data.seeds?.length, 'has_dvh:', !!data.dvh, 'dvh_keys:', data.dvh ? Object.keys(data.dvh).length : 0, 'metrics_keys:', data.metrics ? Object.keys(data.metrics).length : 0);
 
                 // 1. Metrics cards (V100, D90, etc.) + summary

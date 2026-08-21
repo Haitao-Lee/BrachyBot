@@ -614,6 +614,89 @@ def _mark_manual_dependents_stale(memory, *, reason: str, planning_version: int)
     return status
 
 
+def _serialize_manual_plan(needles, seeds):
+    """Build the durable viewer/planning mirror from current manual geometry.
+
+    Manual mutations must update the same serialized representation used by
+    the Viewer after a session restore.  Keeping this normalization in one
+    helper prevents a delete transaction from leaving a removed trajectory in
+    ``seed_plan_serialized`` even though the live arrays look correct.
+    """
+    grouped_seeds: Dict[str, list] = {}
+    for seed in seeds or []:
+        if not isinstance(seed, dict):
+            continue
+        grouped_seeds.setdefault(str(seed.get("trajectory_id") or ""), []).append(seed)
+
+    serialized_plan = []
+    for needle in needles or []:
+        if not isinstance(needle, dict):
+            continue
+        trajectory_id = str(needle.get("trajectory_id") or needle.get("id") or "")
+        seed_items = grouped_seeds.get(trajectory_id, [])
+        serialized_plan.append({
+            "trajectory_id": trajectory_id,
+            "needle_id": str(needle.get("id") or trajectory_id),
+            "trajectory": {
+                "id": trajectory_id,
+                "points": needle.get("points") or [],
+            },
+            "seeds": [
+                {
+                    "id": seed.get("id"),
+                    "position": seed.get("position"),
+                    "direction": seed.get("direction"),
+                    "trajectory_id": trajectory_id,
+                }
+                for seed in seed_items
+            ],
+            "num_seeds": len(seed_items),
+        })
+    return serialized_plan
+
+
+def _remove_manual_needle(snapshot, needle_id: str):
+    """Remove a Needle and all dependent Seeds without validating survivors.
+
+    Deletion is a topology mutation, not a new geometry proposal.  Existing
+    seed spacing problems therefore must not veto it; the resulting plan is
+    marked stale and can be checked when the user explicitly recalculates.
+    """
+    needle_id = str(needle_id or "").strip()
+    needles = [row for row in (snapshot.get("needles") or []) if isinstance(row, dict)]
+    seeds = [row for row in (snapshot.get("seeds") or []) if isinstance(row, dict)]
+    target = next((row for row in needles if str(row.get("id") or "") == needle_id), None)
+    if target is None:
+        return None
+
+    trajectory_id = str(target.get("trajectory_id") or needle_id)
+    owner_ids = {needle_id, trajectory_id}
+    remaining_needles = [
+        row for row in needles
+        if str(row.get("id") or "") != needle_id
+    ]
+    removed_seeds = []
+    remaining_seeds = []
+    for seed in seeds:
+        seed_owners = {
+            str(seed.get("trajectory_id") or "").strip(),
+            str(seed.get("needle_id") or "").strip(),
+        }
+        if seed_owners & owner_ids:
+            removed_seeds.append(seed)
+        else:
+            remaining_seeds.append(seed)
+
+    return {
+        "needle": target,
+        "needle_id": needle_id,
+        "trajectory_id": trajectory_id,
+        "needles": remaining_needles,
+        "seeds": remaining_seeds,
+        "removed_seeds": removed_seeds,
+    }
+
+
 _FULL_WORKSPACE_CHAT_TERMS = (
     "ct", "ctv", "oar", "mask", "segmentation", "segment", "分割", "掩膜",
     "planning", "plan", "规划", "剂量", "dose", "dvh", "needle", "seed",
@@ -713,8 +796,12 @@ def register_planning_routes(
         if pending is None or agent is None:
             return pending
         memory = getattr(agent, "memory", None)
-        if memory is None or not active_planning_id(memory):
+        if memory is None:
             return pending
+        # A legacy snapshot can contain a durable dose grid before the compact
+        # Planning registry is decoded.  The grid itself is still enough to
+        # serve a session-scoped overlay/results request, so do not make that
+        # valid data wait behind an unrelated registry artifact.
         if memory.retrieve("dose_distribution_gy") is not None:
             return None
         if memory.retrieve("dose_distribution_physical_gy") is not None:
@@ -729,16 +816,34 @@ def register_planning_routes(
 
     def monitor_control_agent(session_id):
         """Resolve monitor state without synchronously hydrating a case."""
+
+        def ready_or_none(candidate):
+            if candidate is None:
+                return None
+            # A lightweight case lookup intentionally returns a metadata shell
+            # during cold restore.  Monitor stop is a control-plane operation;
+            # it must not inspect or mutate that shell because doing so can
+            # cancel the background artifact hydration and persist a partial
+            # workspace snapshot.  The UI bridge already records the stop
+            # boundary independently, so the caller can build a pending
+            # summary without an Agent here.
+            if getattr(candidate, "_workspace_hydration_in_progress", False):
+                return None
+            if not bool(getattr(candidate, "_workspace_data_ready", True)):
+                return None
+            return candidate
+
         if callable(get_cached_agent):
             cached = get_cached_agent(session_id)
-            if cached is not None:
-                return cached
+            ready = ready_or_none(cached)
+            if ready is not None:
+                return ready
         if not callable(get_agent):
             return None
         try:
             # The server callback installs a metadata shell and continues
             # decoding CT/planning arrays in its background hydration worker.
-            return get_agent(session_id, _lightweight=True)
+            return ready_or_none(get_agent(session_id, _lightweight=True))
         except TypeError:
             # Small test/app factories may still expose the old callback
             # signature. Do not fall back to a potentially blocking cold load.
@@ -1047,6 +1152,15 @@ def register_planning_routes(
             # original request without that server detail.
             display_message = task.message.split("\n\n[Uploaded image path:", 1)[0]
             task_created_ms = int(task.created_at * 1000)
+            # Hidden visual-analysis children have their own execution task
+            # identity, but their answer and sanitized trace belong to the
+            # original assistant reply. Keeping the two identities separate
+            # prevents stale screenshot work from replacing a later turn.
+            durable_request_id = str(task.parent_request_id or task.request_id)
+            durable_user_message_id = str(task.parent_user_message_id or task.user_message_id)
+            durable_assistant_message_id = str(
+                task.parent_assistant_message_id or task.assistant_message_id
+            )
 
             def existing_same_turn_state() -> tuple[bool, bool, bool]:
                 """Avoid replaying a turn already committed by the browser.
@@ -1062,13 +1176,13 @@ def register_planning_routes(
                 for index, record in enumerate(messages):
                     if (
                         isinstance(record, dict)
-                        and str(record.get("request_id") or "") == task.request_id
+                        and str(record.get("request_id") or "") == durable_request_id
                     ):
                         matching = [
                             row
                             for row in messages
                             if isinstance(row, dict)
-                            and str(row.get("request_id") or "") == task.request_id
+                            and str(row.get("request_id") or "") == durable_request_id
                         ]
                         return (
                             any(
@@ -1118,15 +1232,21 @@ def register_planning_routes(
                     "user",
                     display_message,
                     timestamp_ms=int(task.created_at * 1000),
-                    message_id=task.user_message_id,
-                    request_id=task.request_id,
+                    message_id=durable_user_message_id,
+                    request_id=durable_request_id,
                 )
             # ``workspace_checkpoint`` is an internal save operation, never a
             # user-facing workflow step.  Filter legacy journals as well as
             # live events so an older interrupted turn cannot resurrect a
             # fake pending step on the next session restore.
+            # A visual-analysis child is execution-only. Its screenshot tool
+            # step already belongs to the parent Trace, and its prose is
+            # merged into the parent's assistant row below. Do not append a
+            # child Trace row here: even a sanitized legacy visual-analysis-
+            # row can be grouped as a second user turn after a refresh by
+            # old clients.
             persisted_steps = []
-            for raw_step in list(task.steps):
+            for raw_step in ([] if task.internal_followup else list(task.steps)):
                 if str(raw_step.get("tool") or "") == "workspace_checkpoint":
                     continue
                 step = dict(raw_step)
@@ -1149,6 +1269,8 @@ def register_planning_routes(
                         step["params"] = {
                             "target": str(command.get("target") or metadata.get("content_target") or ""),
                             "presentation": str(command.get("presentation") or "auto"),
+                            "selection": command.get("selection") if isinstance(command.get("selection"), dict) else {},
+                            "analysis": bool(command.get("analysis")),
                             "mode": str(command.get("mode") or "chat"),
                         }
                         step["content"] = ""
@@ -1156,7 +1278,7 @@ def register_planning_routes(
                         step["metadata"] = {
                             "content_command": {
                                 key: command.get(key)
-                                for key in ("command", "target", "presentation", "mode", "planning_id", "object_ids")
+                                for key in ("command", "target", "presentation", "selection", "analysis", "mode", "planning_id", "object_ids")
                                 if command.get(key) not in (None, "", [])
                             },
                             "trace_summary_i18n": metadata.get("trace_summary_i18n", {}),
@@ -1208,16 +1330,18 @@ def register_planning_routes(
                             "user_visible": False,
                         }
                 persisted_steps.append(step)
-            if persisted_steps and (not turn_already_committed or task.internal_followup):
+            if persisted_steps and not task.internal_followup and (
+                not turn_already_committed
+            ):
                 append_message(
                     "thinking",
                     "",
                     persisted_steps,
                     timestamp_ms=int((task.finished_at or time.time()) * 1000),
-                    message_id=f"trace-{task.request_id}",
-                    request_id=task.request_id,
+                    message_id=f"trace-{durable_request_id}",
+                    request_id=durable_request_id,
                     turn_sequence=1,
-                    reply_to_message_id=task.assistant_message_id,
+                    reply_to_message_id=durable_assistant_message_id,
                 )
             # A user-cancelled turn must never resurrect buffered draft text
             # when the case is reopened. Preserve the request and trace for
@@ -1228,12 +1352,13 @@ def register_planning_routes(
                 # finalizer is also doing its durability fallback.
                 pass
             elif final_status == "cancelled":
-                append_message(
-                    "system",
-                    "Stopped.",
-                    message_id=f"status-{task.request_id}",
-                    request_id=task.request_id,
-                )
+                if not task.internal_followup:
+                    append_message(
+                        "system",
+                        "Stopped.",
+                        message_id=f"status-{durable_request_id}",
+                        request_id=durable_request_id,
+                    )
             else:
                 final_response = task.response or task.streamed_response
                 screenshot_steps = [
@@ -1262,16 +1387,43 @@ def register_planning_routes(
                     append_message(
                         "bot-response",
                         final_response,
-                        message_id=task.assistant_message_id,
-                        request_id=task.request_id,
+                        message_id=durable_assistant_message_id,
+                        request_id=durable_request_id,
                     )
                 elif task.error:
-                    append_message(
-                        "error",
-                        "AI error: " + task.error,
-                        message_id=f"error-{task.request_id}",
-                        request_id=task.request_id,
-                    )
+                    if task.internal_followup:
+                        append_message(
+                            "bot-response",
+                            (
+                                "截图已生成，但当前图像分析暂时不可用；截图仍保留在原回复中。"
+                                if str(task.response_language or "").lower().startswith("zh")
+                                else "The screenshot was captured, but visual analysis is temporarily unavailable. The image remains attached to the original reply."
+                            ),
+                            message_id=durable_assistant_message_id,
+                            request_id=durable_request_id,
+                        )
+                    else:
+                        append_message(
+                            "error",
+                            "AI error: " + task.error,
+                            message_id=f"error-{durable_request_id}",
+                            request_id=durable_request_id,
+                        )
+
+            trace_for_snapshot = persisted_steps
+            if task.internal_followup:
+                # The parent browser writer may already have persisted the
+                # routing and screenshot steps. Never replace that full trace
+                # with an empty child trace on checkpoint.
+                trace_for_snapshot = list(chat.get("execution_trace") or [])
+                for record in messages:
+                    if (
+                        isinstance(record, dict)
+                        and record.get("type") == "thinking"
+                        and str(record.get("id") or "") == f"trace-{durable_request_id}"
+                    ):
+                        trace_for_snapshot = list(record.get("steps") or trace_for_snapshot)
+                        break
 
             store.save_snapshot_patch(
                 task.user_id,
@@ -1282,7 +1434,7 @@ def register_planning_routes(
                         # Keep a case-level trace as a compact, direct source
                         # for restore diagnostics. The thinking message above
                         # remains the presentation format used by the chat UI.
-                        "execution_trace": persisted_steps,
+                        "execution_trace": trace_for_snapshot,
                         # Only running tasks occupy ``task_id``. Keep the last
                         # id separately for audit without making a completed
                         # turn look resumable after a browser restart.
@@ -1510,15 +1662,24 @@ def register_planning_routes(
         agent = get_agent()
         if agent is None:
             return jsonify({"error": "Agent not available"}), 500
-        pending = workspace_data_pending(agent)
+        # Do not make a restored dose/DVH wait for every unrelated CT mesh or
+        # segmentation sidecar.  This endpoint reads the same dose grid as
+        # the overlay route and can safely render its summary as soon as that
+        # grid has decoded; the remaining planning geometry is fetched by its
+        # own case-scoped loaders.
+        pending = dose_workspace_data_pending(agent)
         if pending is not None:
             return pending
 
         try:
             import numpy as np
 
-            # Get data from memory
+            # Get data from memory.  A legacy or partially migrated snapshot
+            # can contain a non-dict metric artifact; this read-only endpoint
+            # must still return its independently durable dose/DVH sidecars.
             dose_metrics = agent.memory.retrieve("dose_metrics") or {}
+            if not isinstance(dose_metrics, dict):
+                dose_metrics = {}
             total_seeds = agent.memory.retrieve("total_seeds") or 0
             num_trajectories = agent.memory.retrieve("num_trajectories") or 0
             seed_plan = agent.memory.retrieve("seed_plan")
@@ -1647,8 +1808,16 @@ def register_planning_routes(
                 total_seeds = len(seeds)
                 num_trajectories = len(current_needles)
 
-            # Build DVH data
-            dvh_data = dose_metrics.get("dvh_data", {})
+            # DVH is persisted both inside the original dose-metrics payload
+            # and as a first-class durable artifact. During Session recovery
+            # the workspace store may restore the durable sidecar before the
+            # historical nested metrics object is available. Prefer the
+            # nested value when present, otherwise return that authoritative
+            # sidecar instead of telling the client to purge a valid chart.
+            dvh_data = dose_metrics.get("dvh_data")
+            if not isinstance(dvh_data, dict) or not dvh_data:
+                durable_dvh = agent.memory.retrieve("dvh_data")
+                dvh_data = durable_dvh if isinstance(durable_dvh, dict) else {}
 
             # Dose shape/range
             dose_shape = None
@@ -1716,15 +1885,27 @@ def register_planning_routes(
         agent = get_agent(_lightweight=True)
         if agent is None:
             return jsonify({"success": False, "error": "Agent not available"}), 500
-        pending = workspace_data_pending(agent)
-        if pending is not None:
-            return pending
         try:
+            # The compact registry is restored during the metadata pass and
+            # is safe to expose before large NPY sidecars finish decoding.
+            # Returning it with an explicit hydration flag lets the Data Tree
+            # paint stable Planning identities immediately without treating
+            # an intermediate 202 response as an empty case.
             runs = list_planning_runs(agent.memory)
+            pending = workspace_data_pending(agent)
+            pending_status = (
+                pending[1]
+                if isinstance(pending, tuple) and len(pending) > 1
+                else None
+            )
+            hydration_pending = pending_status == 202
             return jsonify({
                 "success": True,
                 "active_planning_id": active_planning_id(agent.memory),
                 "runs": runs,
+                "hydration_pending": hydration_pending,
+                "hydration_phase": getattr(agent, "_workspace_hydration_phase", "ready"),
+                "retry_after_ms": 250 if hydration_pending else 0,
             })
         except Exception as exc:
             logger.exception("Unable to list planning runs")
@@ -2396,6 +2577,16 @@ def register_planning_routes(
             # current model output 1.0 is 190.8 Gy, while the default
             # prescription remains 120 Gy.
             dose_metrics = agent.memory.retrieve("dose_metrics") or {}
+            if not isinstance(dose_metrics, dict):
+                # A malformed legacy checkpoint must not turn a read-only
+                # planning-results request into a 500. The durable DVH
+                # sidecar below is independently restored when available.
+                dose_metrics = {}
+            if not isinstance(dose_metrics, dict):
+                # A damaged or legacy checkpoint must not turn a read-only
+                # planning-results request into a 500. The independently
+                # persisted DVH sidecar below can still be restored.
+                dose_metrics = {}
             plan_config = agent.memory.retrieve("plan_config") or config
             saved_scale = _saved_dose_scale_gy(agent)
             prescription_gy = resolve_prescription_gy(
@@ -3872,6 +4063,161 @@ def register_planning_routes(
             logger.exception("Position-only needle update failed")
             return jsonify({"success": False, "error": str(exc)}), 422
 
+    @app.route("/api/manual_planning/delete_needle", methods=["POST"])
+    @require_api_key
+    @rate_limit
+    def api_manual_planning_delete_needle():
+        """Delete one Needle and its dependent Seeds as a topology mutation.
+
+        This endpoint deliberately does not run the seed-interference gate.
+        That gate protects *new or edited* geometry; it must not make it
+        impossible to remove a bad Needle from a previously saved plan.  The
+        resulting child Planning is explicitly stale so dose/DVH/guide
+        generation can validate the remaining geometry at the user's chosen
+        recalculation point.
+        """
+        data = request.get_json(silent=True) or {}
+        session_id = request_ui_session_id(data)
+        agent = get_agent(session_id)
+        if agent is None:
+            return jsonify({"success": False, "error": "Agent not available"}), 500
+
+        needle_id = str(data.get("needle_id") or data.get("needleId") or "").strip()
+        if not needle_id:
+            return jsonify({"success": False, "error": "needle_id is required"}), 400
+
+        memory = agent.memory
+        current = _current_planning_snapshot(agent)
+        current_version = int(memory.retrieve("manual_plan_version") or 0)
+        expected_version = data.get("expected_version")
+        if expected_version is not None:
+            try:
+                expected_version = int(expected_version)
+            except (TypeError, ValueError):
+                return jsonify({"success": False, "error": "expected_version must be an integer"}), 400
+            if expected_version != current_version:
+                return jsonify({
+                    "success": False,
+                    "error": "The planning data changed before this needle deletion was committed.",
+                    "code": "stale_manual_plan",
+                    "planning_version": current_version,
+                    "seeds": list(current.get("seeds") or []),
+                    "needles": list(current.get("needles") or []),
+                }), 409
+
+        mutation = _remove_manual_needle(current, needle_id)
+        if mutation is None:
+            return jsonify({
+                "success": False,
+                "error": f"Unknown needle: {needle_id}",
+                "code": "needle_not_found",
+                "planning_version": current_version,
+                "seeds": list(current.get("seeds") or []),
+                "needles": list(current.get("needles") or []),
+            }), 404
+
+        reason = str(data.get("reason") or "needle_delete")
+        previous_planning_id = active_planning_id(memory)
+        planning_id = None
+        created_new_planning = False
+        try:
+            # Fork first so the completed plan remains a restore point.  The
+            # child receives the topology edit and stale dependent status.
+            planning_id = fork_planning_run(agent, reason=reason)
+            created_new_planning = str(planning_id) != str(previous_planning_id or "")
+            invalidate_planning_dependents(memory, reason=reason)
+            next_version = current_version + 1
+            remaining_needles = mutation["needles"]
+            remaining_seeds = mutation["seeds"]
+            memory.store("manual_planning_id", str(planning_id))
+            memory.store("manual_plan_active", True)
+            memory.store("manual_plan_version", next_version)
+            memory.store("manual_geometry_only", True)
+            memory.store("manual_needles", remaining_needles)
+            memory.store("manual_seeds", remaining_seeds)
+            memory.store("manual_plan_serialized", _serialize_manual_plan(remaining_needles, remaining_seeds))
+            memory.store("seed_plan_serialized", _serialize_manual_plan(remaining_needles, remaining_seeds))
+            memory.store("total_seeds", len(remaining_seeds))
+            memory.store("num_trajectories", len(remaining_needles))
+
+            # Keep any legacy trajectory list aligned when it is present, but
+            # never reject the delete because an old list is incomplete.
+            trajectory_id = str(mutation["trajectory_id"])
+            for key in ("trajectories", "refined_trajectories"):
+                rows = memory.retrieve(key)
+                if not isinstance(rows, list):
+                    continue
+                memory.store(key, [
+                    row for row in rows
+                    if not isinstance(row, dict)
+                    or str(row.get("id") or row.get("trajectory_id") or "") not in {needle_id, trajectory_id}
+                ])
+
+            artifact_status = _mark_manual_dependents_stale(
+                memory,
+                reason=reason,
+                planning_version=next_version,
+            )
+            publish_planning_run(agent, None, status="draft")
+            removed_seed_ids = [str(seed.get("id") or "") for seed in mutation["removed_seeds"]]
+            event = _append_ui_event(session_id, {
+                "type": "manual.needle.delete",
+                "label": reason,
+                "detail": {
+                    "needle_id": needle_id,
+                    "trajectory_id": trajectory_id,
+                    "removed_seed_ids": removed_seed_ids,
+                    "remaining_needle_count": len(remaining_needles),
+                    "remaining_seed_count": len(remaining_seeds),
+                    "planning_id": str(planning_id),
+                    "planning_version": next_version,
+                    "artifacts_stale": True,
+                    "dose_recomputed": False,
+                },
+            })
+            checkpoint_operation(
+                agent,
+                "ready",
+                "Needle and dependent seeds deleted; dose recomputation is required",
+                checkpoint={
+                    "kind": "manual_planning",
+                    "reason": reason,
+                    "needle_id": needle_id,
+                    "removed_seed_count": len(removed_seed_ids),
+                    "dose_recomputed": False,
+                },
+            )
+            return jsonify({
+                "success": True,
+                "session_id": session_id,
+                "case_id": session_id,
+                "planning_id": str(planning_id),
+                "planning_version": next_version,
+                "deleted_needle_id": needle_id,
+                "deleted_trajectory_id": trajectory_id,
+                "removed_seed_ids": removed_seed_ids,
+                "needles": remaining_needles,
+                "seeds": remaining_seeds,
+                "artifact_status": artifact_status,
+                "dose_recomputed": False,
+                "requires_recompute": True,
+                "event": event,
+            })
+        except Exception as exc:
+            if created_new_planning and planning_id:
+                try:
+                    mark_planning_run(agent, planning_id, "failed", error=str(exc))
+                except Exception:
+                    logger.warning("Unable to roll back failed needle deletion Planning %s", planning_id, exc_info=True)
+            checkpoint_operation(
+                agent,
+                "interrupted",
+                "Needle deletion did not complete",
+                checkpoint={"kind": "manual_planning", "reason": reason, "needle_id": needle_id, "error": str(exc)},
+            )
+            logger.exception("Manual needle deletion failed")
+            return jsonify({"success": False, "error": str(exc)}), 422
+
     @app.route("/api/manual_planning/update_seeds", methods=["POST"])
     @require_api_key
     @rate_limit
@@ -4495,14 +4841,40 @@ def register_planning_routes(
         """Clean up incomplete conversation after user aborts streaming."""
         try:
             _, user, session_id = request_case_context()
-            task = chat_tasks.active(user["id"], session_id)
+            # A task can be publicly cancelled before its worker has finished
+            # unwinding. Prefer the running task, but retain the live worker
+            # identity so a second Stop cannot fall through into AgentMemory
+            # cleanup while an internal screenshot child still owns it.
+            task = chat_tasks.active(user["id"], session_id) or chat_tasks.live(
+                user["id"], session_id
+            )
             if task is not None:
                 # The abort endpoint performs its own small, explicit
                 # interruption checkpoint below. Do not let the cancelled
                 # worker later run the normal completion hook against the
                 # same agent after a new chat turn has already started.
                 task._skip_finalization = True
-                chat_tasks.cancel(task)
+                was_running = task.is_running()
+                if was_running:
+                    chat_tasks.cancel(task)
+                # A visual-analysis child has no independent user turn. Stop
+                # handling here, before agent hydration and the normal memory
+                # cleanup below, so cancellation cannot pop the parent
+                # screenshot reply or mark that parent as interrupted.
+                if task.internal_followup:
+                    return jsonify({
+                        "success": True,
+                        "cancel_requested": True,
+                        "internal_followup": True,
+                    })
+                # The first Stop may already have changed the public status;
+                # do not pop the visible user's conversation a second time.
+                if not was_running:
+                    return jsonify({
+                        "success": True,
+                        "cancel_requested": True,
+                        "already_cancelling": True,
+                    })
             agent = (get_cached_agent(session_id) if callable(get_cached_agent) else None)
             if agent is None and task is not None:
                 agent = task.agent
@@ -4838,6 +5210,21 @@ def register_planning_routes(
             "",
             str(data.get("assistant_message_id") or ""),
         )[:160] or f"assistant-{request_id}"
+        parent_request_id = re.sub(
+            r"[^A-Za-z0-9_.:-]",
+            "",
+            str(data.get("parent_request_id") or ""),
+        )[:128]
+        parent_user_message_id = re.sub(
+            r"[^A-Za-z0-9_.:-]",
+            "",
+            str(data.get("parent_user_message_id") or ""),
+        )[:160]
+        parent_assistant_message_id = re.sub(
+            r"[^A-Za-z0-9_.:-]",
+            "",
+            str(data.get("parent_assistant_message_id") or ""),
+        )[:160]
         internal_followup = bool(data.get("internal_followup", False))
         response_language = str(data.get("response_language") or "")[:8]
         if not message and not image_path:
@@ -4945,6 +5332,9 @@ def register_planning_routes(
                     request_id=request_id,
                     user_message_id=user_message_id,
                     assistant_message_id=assistant_message_id,
+                    parent_request_id=parent_request_id,
+                    parent_user_message_id=parent_user_message_id,
+                    parent_assistant_message_id=parent_assistant_message_id,
                     internal_followup=internal_followup,
                     response_language=response_language,
                 )
@@ -4959,7 +5349,13 @@ def register_planning_routes(
                     "kind": "chat",
                     "task_id": task.task_id,
                     "request_id": task.request_id,
-                    "user_message": message[:500],
+                    # Hidden multimodal prompts contain screenshot URLs and
+                    # are execution context, never durable operation text.
+                    "user_message": (
+                        "Visual screenshot analysis follow-up"
+                        if internal_followup
+                        else message[:500]
+                    ),
                 }
                 if agent is not None:
                     checkpoint_operation(agent, "running", "Chat response is in progress", checkpoint=checkpoint)

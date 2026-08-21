@@ -914,6 +914,7 @@ window._sessionChatTaskStatuses = window._sessionChatTaskStatuses || {};
 window._detachedChatTasks = window._detachedChatTasks || {};
 window._sessionChatQueues = window._sessionChatQueues || {};
 window._activeChatTaskSessionId = window._activeChatTaskSessionId || null;
+window._activeChatInternalFollowup = !!window._activeChatInternalFollowup;
 window._explicitChatStopSessions = window._explicitChatStopSessions || {};
 // Stop has two phases: aborting this tab's SSE stream and receiving the
 // server acknowledgement that the case-owned task is terminal. Keep that
@@ -1357,13 +1358,18 @@ function _isAdviceRequest(text) {
 window._pendingHiddenChats = window._pendingHiddenChats || [];
 window._hiddenChatFlushRunning = false;
 
-function _isScreenshotAckResponse(text, steps) {
+function _isScreenshotAckResponse(text, steps, visualContentResults = []) {
     if (!Array.isArray(steps) || !steps.length) return false;
     const toolSteps = steps.filter(step => step && step.type === 'tool' && step.tool);
     if (!toolSteps.length) return false;
-    if (toolSteps.some(step => step.tool !== 'ui_screenshot')) return false;
+    if (toolSteps.some(step => !['ui_screenshot', 'ui_content'].includes(step.tool))) return false;
     if (toolSteps.some(step => step.status === 'error')) return false;
-    return true;
+    // A persisted visual attachment follows the same two-stage protocol as a
+    // live screenshot: the first response only confirms that evidence was
+    // collected, and the hidden child supplies the actual interpretation.
+    // Never hide a substantive answer from a mixed clinical/tool turn.
+    return toolSteps.some(step => step.tool === 'ui_screenshot')
+        || (Array.isArray(visualContentResults) && visualContentResults.length > 0);
 }
 
 function _isVisualAnalysisRequest(text) {
@@ -1392,13 +1398,161 @@ function _enqueueHiddenChat(message, options) {
     const safeMessage = String(message || '').trim();
     if (!safeMessage) return;
     if (!Array.isArray(window._pendingHiddenChats)) window._pendingHiddenChats = [];
+    const opts = options || {};
+    const followupKey = String(opts.followupKey || '');
+    if (followupKey) {
+        if (!window._visualFollowupStates) window._visualFollowupStates = new Map();
+        const state = window._visualFollowupStates.get(followupKey);
+        if (state === 'queued' || state === 'running' || state === 'done') return;
+        window._visualFollowupStates.set(followupKey, 'queued');
+    }
     window._pendingHiddenChats.push({
         message: safeMessage,
-        options: options || {},
-        sessionId: activeSessionId,
+        options: opts,
+        // The parent turn owns this child even if the user changes the
+        // visible Session between capture completion and queue flushing.
+        sessionId: opts.sessionId || activeSessionId,
+        followupKey,
     });
     setTimeout(() => { try { _flushHiddenChatQueue(); } catch (_) {} }, 0);
 }
+
+// Cancel only the hidden visual-analysis children owned by one parent turn.
+// A later user message must never inherit a queued screenshot prompt, while a
+// normal user turn in another Session remains untouched.
+function _cancelVisualFollowups(sessionId, parentRequestId) {
+    const sid = String(sessionId || '');
+    const parent = String(parentRequestId || '');
+    if (!window._cancelledVisualFollowups) window._cancelledVisualFollowups = new Set();
+    if (!window._visualFollowupStates) window._visualFollowupStates = new Map();
+    const pending = Array.isArray(window._pendingHiddenChats) ? window._pendingHiddenChats : [];
+    window._pendingHiddenChats = pending.filter(item => {
+        const opts = item?.options || {};
+        const sameSession = !sid || String(item?.sessionId || '') === sid;
+        const sameParent = !parent || String(opts.parentRequestId || '') === parent;
+        if (!sameSession || !sameParent || !item?.followupKey) return true;
+        window._cancelledVisualFollowups.add(item.followupKey);
+        window._visualFollowupStates.set(item.followupKey, 'cancelled');
+        return false;
+    });
+    // A running child is stopped by the normal case-scoped /chat/abort path;
+    // mark it here as well so a buffered client response cannot be rendered
+    // if the provider flushes after cancellation.
+    for (const [key, state] of window._visualFollowupStates.entries()) {
+        if (state !== 'running') continue;
+        const prefix = parent ? `${sid}|${parent}|` : `${sid}|`;
+        if (key.startsWith(prefix)) {
+            window._cancelledVisualFollowups.add(key);
+            window._visualFollowupStates.set(key, 'cancelled');
+        }
+    }
+}
+window._cancelVisualFollowups = _cancelVisualFollowups;
+
+// Queue one multimodal follow-up for visual evidence produced by either the
+// SSE or JSON chat transport.  Keeping this at the transport boundary avoids
+// making the server response format decide whether a chart is actually
+// analyzed.  The URLs are resolved and converted to image blocks by the
+// server-side LLM runtime, while this browser layer keeps the follow-up hidden
+// from the ordinary chat stream and preserves the owning reply identity.
+function _queueVisualAnalysisFollowUp(attachments, userText, turnIdentity, options = {}) {
+    const visualEvidence = (Array.isArray(attachments) ? attachments : [])
+        .filter(item => item && item.url && (item.visual_analysis === true || options.includeAll === true));
+    const uniqueUrls = [...new Set(visualEvidence.map(item => String(item.url || '')).filter(Boolean))].slice(0, 4);
+    if (!uniqueUrls.length) return false;
+    const visualAttachmentLabels = [...new Set(visualEvidence.flatMap(item => {
+        const metadata = item.view_metadata || item.viewMetadata || {};
+        const target = String(item.target || metadata.target || '').toLowerCase();
+        const labels = [item.title, item.label, metadata.title, metadata.label]
+            .map(value => String(value || '').trim())
+            .filter(Boolean);
+        const targetLabel = {
+            'viewer-axial': '轴位',
+            'viewer-sagittal': '矢状位',
+            'viewer-coronal': '冠状位',
+            'dvh': 'DVH曲线',
+            'dose-overview': '剂量分布',
+        }[target];
+        if (targetLabel) labels.push(targetLabel);
+        return labels;
+    }))];
+    const parentRequestId = String(turnIdentity?.requestId || '');
+    const parentUserMessageId = String(turnIdentity?.userMessageId || '');
+    const parentAssistantMessageId = String(turnIdentity?.messageId || '');
+    const ownerAttachment = visualEvidence.find(item => item?.session_id || item?.sessionId);
+    const ownerSessionId = String(
+        options.sessionId
+        || turnIdentity?.sessionId
+        || ownerAttachment?.session_id
+        || ownerAttachment?.sessionId
+        || activeSessionId
+        || '',
+    );
+    const followupKey = [
+        ownerSessionId,
+        parentRequestId,
+        ...uniqueUrls.sort(),
+    ].join('|');
+    if (!window._visualFollowupStates) window._visualFollowupStates = new Map();
+    const existingState = window._visualFollowupStates.get(followupKey);
+    if (existingState === 'queued' || existingState === 'running' || existingState === 'done') {
+        uiDebugLog('[visual-followup] duplicate suppressed:', followupKey);
+        return false;
+    }
+    const visualContext = uniqueUrls.map(url => `[Screenshot captured: ${url}]`).join('\n');
+    const language = String(turnIdentity?.responseLanguage || '').toLowerCase().startsWith('zh')
+        ? 'Chinese' : 'English';
+    const followupRequestId = typeof createChatIdentity === 'function'
+        ? createChatIdentity('visual-followup')
+        : `visual-followup-${Date.now()}`;
+    _enqueueHiddenChat(
+        `${visualContext}\n\nUser request: ${String(userText || '').trim()}\nAnalyze the supplied screenshot(s) and answer the user's request directly. `
+        + `Use ${language} for every user-visible sentence. `
+        + 'Do not request another screenshot. Do not repeat attachment titles or standalone viewer labels in the answer; the browser already renders those labels below each image. Mention uncertainty instead of inventing details.',
+        {
+            visualFollowUp: true,
+            internalFollowup: true,
+            hiddenUserMessage: true,
+            preserveLastUserMessage: true,
+            // Execution identity is unique. Reusing the parent request ID
+            // makes ChatTaskManager return the completed parent task and is
+            // the root of stale screenshots leaking into later questions.
+            requestId: followupRequestId,
+            userMessageId: `user-${followupRequestId}`,
+            assistantMessageId: `assistant-${followupRequestId}`,
+            parentRequestId,
+            parentUserMessageId,
+            parentAssistantMessageId,
+            followupKey,
+            responseLanguage: turnIdentity?.responseLanguage || '',
+            screenshotMode: options.screenshotMode || 'chat',
+            visualAttachmentLabels,
+            sessionId: ownerSessionId,
+        },
+    );
+    return true;
+}
+
+// A screenshot attachment already renders its localized title/caption in the
+// original assistant bubble.  Some multimodal providers echo those labels as
+// separate lines (for example "轴位" twice) instead of writing analysis.
+// Remove only exact standalone labels from the hidden child's final prose;
+// sentences that discuss an axial/sagittal/coronal view remain untouched.
+function _stripVisualAttachmentEchoes(text, labels = []) {
+    const known = new Set([
+        '轴位', '矢状位', '冠状位', 'DVH曲线', '剂量分布',
+        'Axial', 'Sagittal', 'Coronal', 'DVH', 'Dose distribution',
+        ...(Array.isArray(labels) ? labels : []),
+    ].map(value => String(value || '').trim().toLowerCase()).filter(Boolean));
+    if (!known.size) return String(text || '');
+    return String(text || '')
+        .split(/\r?\n/)
+        .filter(line => !known.has(String(line || '').trim().toLowerCase()))
+        .join('\n')
+        .replace(/\n{3,}/g, '\n\n')
+        .trim();
+}
+window._stripVisualAttachmentEchoes = _stripVisualAttachmentEchoes;
 
 async function _flushHiddenChatQueue() {
     if (window._chatStreaming || window._hiddenChatFlushRunning) return;
@@ -1410,6 +1564,14 @@ async function _flushHiddenChatQueue() {
     if (index < 0) return;
     const next = window._pendingHiddenChats.splice(index, 1)[0];
     if (!next || !next.message) return;
+    const followupKey = String(next.followupKey || '');
+    if (followupKey && window._cancelledVisualFollowups?.has(followupKey)) {
+        if (window._visualFollowupStates) window._visualFollowupStates.set(followupKey, 'cancelled');
+        return _flushHiddenChatQueue();
+    }
+    if (followupKey && window._visualFollowupStates) {
+        window._visualFollowupStates.set(followupKey, 'running');
+    }
     window._hiddenChatFlushRunning = true;
     try {
         await sendChat(next.message, Object.assign({
@@ -1418,6 +1580,10 @@ async function _flushHiddenChatQueue() {
             preserveLastUserMessage: true,
         }, next.options || {}));
     } finally {
+        if (followupKey && window._visualFollowupStates) {
+            const cancelled = window._cancelledVisualFollowups?.has(followupKey);
+            window._visualFollowupStates.set(followupKey, cancelled ? 'cancelled' : 'done');
+        }
         window._hiddenChatFlushRunning = false;
         if (Array.isArray(window._pendingHiddenChats) && window._pendingHiddenChats.length) {
             setTimeout(() => { try { _flushHiddenChatQueue(); } catch (_) {} }, 0);
@@ -1444,6 +1610,10 @@ window.detachActiveChatTurn = function detachActiveChatTurn(reason) {
     window._chatTurnActive = false;
     window._chatStreaming = false;
     window._chatTurnCancelUi = null;
+    // This flag is process-wide UI state, not a Session property. Clear it
+    // during detach so a newly selected Session cannot mistake its first
+    // ordinary message for the old Session's hidden visual child.
+    window._activeChatInternalFollowup = false;
     if (window._activeChatTaskSessionId === sessionId) {
         window._activeChatTaskId = null;
         window._activeChatTaskSessionId = null;
@@ -1455,9 +1625,10 @@ window.detachActiveChatTurn = function detachActiveChatTurn(reason) {
 window.cancelActiveChatTurn = async function cancelActiveChatTurn() {
     // Do not let a screenshot-analysis follow-up queued by the previous case
     // run after the user switches to another case.
-    if (Array.isArray(window._pendingHiddenChats)) {
-        window._pendingHiddenChats = window._pendingHiddenChats.filter(item => item?.sessionId !== activeSessionId);
-    }
+    _cancelVisualFollowups(
+        activeSessionId,
+        '',
+    );
     if (!window._chatTurnActive && !window._chatStreaming
         && !(typeof isStreaming !== 'undefined' && isStreaming)) return true;
     if (typeof sendChat === 'function') {
@@ -1471,6 +1642,17 @@ async function sendChat(prefill, options) {
     const opts = options || {};
     const input = document.getElementById('chatInput');
     const isResumingTask = !!opts.resumeTaskId;
+    const isInternalFollowup = !!opts.internalFollowup || !!opts.visualFollowUp;
+    const parentRequestId = String(opts.parentRequestId || opts.parent_request_id || '');
+    const parentUserMessageId = String(opts.parentUserMessageId || opts.parent_user_message_id || '');
+    const parentAssistantMessageId = String(opts.parentAssistantMessageId || opts.parent_assistant_message_id || '');
+    // A hidden screenshot-analysis child is subordinate to the preceding
+    // visible reply. Any new ordinary user turn invalidates that child,
+    // including a child that is still queued and therefore not yet covered by
+    // the active-stream Stop branch below.
+    if (!isInternalFollowup && !isResumingTask) {
+        _cancelVisualFollowups(activeSessionId, '');
+    }
     // Stop acknowledgement is a per-session barrier. Without it, an
     // immediate follow-up request can race the prior /chat/abort cleanup and
     // receive the old turn's already-aborted signal.
@@ -1495,8 +1677,23 @@ async function sendChat(prefill, options) {
         if (typeof addChat === 'function') addChat('user', queuedText, true, Date.now(), false, activeSessionId);
         window._lastUserMessage = queuedText;
         _queueChatTurn(activeSessionId, queuedText);
+        // A hidden screenshot-analysis child is subordinate to the previous
+        // reply. A new explicit user message supersedes it immediately, so it
+        // must not occupy the case task slot or leak its prompt into the next
+        // turn.
+        const replacingInternalFollowup = window._activeChatInternalFollowup
+            && !opts.hiddenUserMessage
+            && !opts.internalFollowup;
+        if (replacingInternalFollowup) {
+            await sendChat(undefined, { suppressStopNotice: true });
+            if (String(activeSessionId || '') === String(window._activeChatTaskSessionId || activeSessionId)) {
+                setTimeout(() => { try { _flushQueuedChatTurns(); } catch (_) {} }, 0);
+            }
+        }
         if (typeof addChat === 'function') {
-            addChat('system', 'Queued for this case; the current task will finish first.', true, Date.now(), false, activeSessionId);
+            if (!replacingInternalFollowup) {
+                addChat('system', 'Queued for this case; the current task will finish first.', true, Date.now(), false, activeSessionId);
+            }
         }
         return true;
     }
@@ -1511,9 +1708,10 @@ async function sendChat(prefill, options) {
         const stopSessionId = String(window._activeChatTaskSessionId || activeSessionId || '');
         const stopTurnGeneration = Number(window._activeChatTurnGeneration || 0);
         const stopTurnAbortController = chatAbortController;
+        _cancelVisualFollowups(stopSessionId, '');
         if (stopSessionId) window._explicitChatStopSessions[stopSessionId] = true;
         try {
-            if (typeof window._chatTurnCancelUi === 'function') window._chatTurnCancelUi('Stopped');
+            if (!opts.suppressStopNotice && typeof window._chatTurnCancelUi === 'function') window._chatTurnCancelUi('Stopped');
         } catch (_) {}
         try {
             if (typeof window.cancelVisibleChatProgress === 'function') {
@@ -1569,6 +1767,15 @@ async function sendChat(prefill, options) {
                 delete window._sessionChatStopPromises[stopSessionId];
                 delete window._explicitChatStopSessions[stopSessionId];
             }
+        }
+        // A user message entered while the previous task was active is a
+        // legitimate next turn, not a reason to leave the input queue stuck
+        // forever.  The server-side task barrier has completed here, so it is
+        // now safe to dispatch that queued message under the same Session.
+        if (stopSessionId === String(activeSessionId || '')) {
+            setTimeout(() => {
+                try { _flushQueuedChatTurns(); } catch (_) {}
+            }, 0);
         }
         return;
     }
@@ -1650,11 +1857,22 @@ async function sendChat(prefill, options) {
     const detectedTurnLanguage = typeof detectConversationLanguage === 'function'
         ? detectConversationLanguage(text)
         : '';
+    const displayRequestId = isInternalFollowup && parentRequestId
+        ? parentRequestId : turnRequestId;
+    const displayUserMessageId = isInternalFollowup && parentUserMessageId
+        ? parentUserMessageId : turnUserMessageId;
+    const displayAssistantMessageId = isInternalFollowup && parentAssistantMessageId
+        ? parentAssistantMessageId : turnAssistantMessageId;
     const turnIdentity = {
-        requestId: turnRequestId,
-        userMessageId: turnUserMessageId,
-        messageId: turnAssistantMessageId,
-        responseLanguage: detectedTurnLanguage
+        // The parent identity is used only for visible rendering and durable
+        // transcript merging. The request sent to the server remains the
+        // unique child identity above.
+        requestId: displayRequestId,
+        userMessageId: displayUserMessageId,
+        messageId: displayAssistantMessageId,
+        sessionId: turnSessionId,
+        responseLanguage: opts.responseLanguage
+            || detectedTurnLanguage
             || (typeof conversationLanguageForSession === 'function'
                 ? conversationLanguageForSession(turnSessionId)
                 : '')
@@ -1662,7 +1880,7 @@ async function sendChat(prefill, options) {
             || window._i18nLang
             || '',
     };
-    if (!opts.hiddenUserMessage && !isResumingTask && typeof addChat === 'function') {
+    if (!isInternalFollowup && !opts.hiddenUserMessage && !isResumingTask && typeof addChat === 'function') {
         addChat('user', text, true, Date.now(), false, turnSessionId, {
             requestId: turnRequestId,
             messageId: turnUserMessageId,
@@ -1698,6 +1916,9 @@ async function sendChat(prefill, options) {
     window._chatTurnGeneration = turnGeneration;
     window._activeChatTurnGeneration = turnGeneration;
     window._activeChatTaskSessionId = turnSessionId;
+    window._activeChatRequestId = turnRequestId;
+    window._activeChatParentRequestId = parentRequestId || turnRequestId;
+    window._activeChatInternalFollowup = isInternalFollowup;
     _setCaseTaskState(turnSessionId, 'connecting', turnTaskId || undefined);
     window._chatStreaming = false;
 
@@ -2024,7 +2245,8 @@ async function sendChat(prefill, options) {
         chatAbortController = (typeof AbortController !== 'undefined') ? new AbortController() : null;
         turnAbortController = chatAbortController;
         setStreamingState(true);
-        thinkingEl = (typeof showThinkingIndicator === 'function') ? showThinkingIndicator() : null;
+        thinkingEl = (!isInternalFollowup && typeof showThinkingIndicator === 'function')
+            ? showThinkingIndicator() : null;
         // Snapshot the turn start time here, before the SSE connection
         // opens.  On task resume the saved timestamp is fed to
         // createLiveThinkingChain so the header clock shows the real
@@ -2037,7 +2259,7 @@ async function sendChat(prefill, options) {
         // has entered the agent pipeline. The two entries below are local UI
         // state only; their stable ids are reconciled with the first genuine
         // server trace events instead of being retained as fake history.
-        if (!isResumingTask && typeof createLiveThinkingChain === 'function') {
+        if (!isInternalFollowup && !isResumingTask && typeof createLiveThinkingChain === 'function') {
             if (thinkingEl && typeof removeThinkingIndicator === 'function') {
                 removeThinkingIndicator(thinkingEl);
                 thinkingEl = null;
@@ -2102,7 +2324,10 @@ async function sendChat(prefill, options) {
                         request_id: turnRequestId,
                         user_message_id: turnUserMessageId,
                         assistant_message_id: turnAssistantMessageId,
-                        internal_followup: !!opts.internalFollowup,
+                        parent_request_id: parentRequestId || undefined,
+                        parent_user_message_id: parentUserMessageId || undefined,
+                        parent_assistant_message_id: parentAssistantMessageId || undefined,
+                        internal_followup: isInternalFollowup,
                         response_language: turnIdentity.responseLanguage
                             || window._responseLanguage
                             || window._i18nLang
@@ -2163,6 +2388,21 @@ async function sendChat(prefill, options) {
                         screenshotLayout: 'auto',
                     },
                 ));
+            }
+            const visualAttachments = (presentation.attachments || []).filter(item =>
+                item && item.visual_analysis === true && item.url
+            );
+            if (visualAttachments.length) {
+                _queueVisualAnalysisFollowUp(
+                    visualAttachments,
+                    text,
+                    turnIdentity,
+                    {
+                        sessionId: turnSessionId,
+                        screenshotMode: 'chat',
+                        includeAll: true,
+                    },
+                );
             }
             setStreamingState(false);
             return;
@@ -2275,6 +2515,16 @@ async function sendChat(prefill, options) {
                         window._todoTurnToolCount = 0;
                     }
                     if (currentEvent === 'step' && data) {
+                        if (isInternalFollowup) {
+                            // Hidden visual-analysis children have no
+                            // independent Execution Trace in the chat. The
+                            // server persists a sanitized summary into the
+                            // parent reply; keeping these steps out of the
+                            // DOM prevents screenshot prompts/tool payloads
+                            // from escaping into the normal chat stream.
+                            steps.push(_traceStepForDisplay(data, turnSessionId, turnIdentity.responseLanguage));
+                            continue;
+                        }
                         const traced = reconcileOptimisticTraceStep(
                             _traceStepForDisplay(data, turnSessionId, turnIdentity.responseLanguage),
                         );
@@ -2477,7 +2727,33 @@ async function sendChat(prefill, options) {
                                 const _ssQuestion = _ssPlan.question || _ssCmd.question || '';
                                 const _ssTarget = _ssPlan.views?.[0]?.target
                                     || _normalizeScreenshotRequestTarget(_ssCmd.target || 'full', _ssQuestion);
-                                const _ssKey = String(data.id || JSON.stringify(_ssPlan));
+                                // Providers may emit the same completed tool
+                                // step more than once with different event IDs
+                                // (tool result + replay + review pass). Dedupe
+                                // by the semantic capture plan, not by the
+                                // transport step ID, otherwise one request
+                                // creates repeated report/chat figures.
+                                const _ssFingerprint = JSON.stringify({
+                                    mode: _ssPlan.mode || 'chat',
+                                    layout: _ssPlan.layout || 'auto',
+                                    target: _ssPlan.target || _ssTarget,
+                                    question: _ssQuestion,
+                                    views: (Array.isArray(_ssPlan.views) ? _ssPlan.views : []).map(view => {
+                                        if (typeof view === 'string') return view;
+                                        const item = view || {};
+                                        return {
+                                            target: item.target || item.viewer || '',
+                                            viewer: item.viewer || '',
+                                            slice: item.slice ?? item.slice_index ?? null,
+                                            camera: item.camera || item.camera_direction || '',
+                                            focus: item.focus || item.object_id || '',
+                                        };
+                                    }),
+                                    object_ids: _ssPlan.object_ids || [],
+                                    data_tree_node_ids: _ssPlan.data_tree_node_ids || [],
+                                    focus: _ssPlan.focus || {},
+                                });
+                                const _ssKey = `${turnRequestId}|${_ssFingerprint}`;
                                 if (screenshotTaskKeys.has(_ssKey)) {
                                     uiDebugLog('[SSE-STEP] Ignoring duplicate screenshot completion:', _ssKey);
                                 } else {
@@ -2700,7 +2976,8 @@ async function sendChat(prefill, options) {
                         if (!finalTextStreamStarted) {
                             finalTextStreamStarted = true;
                             responseText = '';
-                            if (!_hasReportGenerationAction(steps)
+                            if (!isInternalFollowup
+                                && !_hasReportGenerationAction(steps)
                                 && !responseEl && typeof createStreamingResponse === 'function') {
                                 if (thinkingEl && typeof removeThinkingIndicator === 'function') removeThinkingIndicator(thinkingEl);
                                 responseEl = createStreamingResponse(turnRequestId, turnAssistantMessageId);
@@ -2708,7 +2985,7 @@ async function sendChat(prefill, options) {
                             }
                         }
                         responseText += String(data.text);
-                        if (!_hasReportGenerationAction(steps)
+                        if (!isInternalFollowup && !_hasReportGenerationAction(steps)
                             && responseEl && typeof updateStreamingResponse === 'function') {
                             responseEl.classList.add('is-streaming');
                             responseEl.setAttribute('aria-busy', 'true');
@@ -2726,13 +3003,13 @@ async function sendChat(prefill, options) {
                         }
                         responseText = data.response;
                         const deferUntilUIActionsFinish = _hasReportGenerationAction(steps);
-                        if (!deferUntilUIActionsFinish
+                        if (!isInternalFollowup && !deferUntilUIActionsFinish
                             && !responseEl && typeof createStreamingResponse === 'function') {
                             if (thinkingEl && typeof removeThinkingIndicator === 'function') removeThinkingIndicator(thinkingEl);
                             responseEl = createStreamingResponse(turnRequestId, turnAssistantMessageId);
                             if (todo && responseEl.parentElement) responseEl.parentElement.appendChild(todo.root);
                         }
-                        if (!deferUntilUIActionsFinish
+                        if (!isInternalFollowup && !deferUntilUIActionsFinish
                             && responseEl && typeof updateStreamingResponse === 'function') {
                             updateStreamingResponse(responseEl, responseText);
                         }
@@ -2868,8 +3145,37 @@ async function sendChat(prefill, options) {
             }
         }
         if (String(activeSessionId || '') !== turnSessionId) return;
-        const presentationAttachments = [...screenshotResults, ...sessionContentResults].filter(
-            item => item && typeof item === 'object',
+        // Screenshot/tool events may be replayed after a reconnect with new
+        // event or attachment ids.  Preserve one durable artifact per URL in
+        // the assistant reply; otherwise the same image is rendered and
+        // persisted repeatedly with identical captions.
+        const presentationAttachments = [];
+        const presentationAttachmentKeys = new Set();
+        const presentationSemanticKeys = new Set();
+        [...screenshotResults, ...sessionContentResults].forEach(item => {
+            if (!item || typeof item !== 'object') return;
+            const key = String(item.url || item.id || '').trim();
+            const metadata = item.view_metadata || item.viewMetadata || {};
+            const semanticKey = typeof window.chatAttachmentSemanticKey === 'function'
+                ? window.chatAttachmentSemanticKey(item)
+                : [
+                    String(item.mode || screenshotGallery.mode || 'chat'),
+                    String(item.planning_id || item.planningId || ''),
+                    String(metadata.figure_group || metadata.figureGroup || ''),
+                    String(metadata.figure_number || metadata.figureNumber || ''),
+                    String(metadata.subfigure || ''),
+                    String(metadata.capture_role || metadata.captureRole || ''),
+                    String(metadata.index ?? ''),
+                    String(item.request_id || turnIdentity?.requestId || ''),
+                    String(item.target || ''),
+                ].join('|');
+            if (!key || presentationAttachmentKeys.has(key) || presentationSemanticKeys.has(semanticKey)) return;
+            presentationAttachmentKeys.add(key);
+            presentationSemanticKeys.add(semanticKey);
+            presentationAttachments.push(item);
+        });
+        const visualContentResults = sessionContentResults.filter(item =>
+            item && item.visual_analysis === true && item.url
         );
 
         // A screenshot requested for explanation is visual context, not the
@@ -2877,26 +3183,22 @@ async function sendChat(prefill, options) {
         // captures have uploaded. The hidden request is intentionally not a
         // new screenshot command, so the model must analyze the image and the
         // completeness checker can validate the actual user request.
-        if (screenshotResults.length && _isVisualAnalysisRequest(text)) {
-            const uniqueUrls = [...new Set(screenshotResults.map(item => item.url).filter(Boolean))].slice(0, 4);
-            if (uniqueUrls.length) {
-                const visualContext = uniqueUrls.map(url => `[Screenshot captured: ${url}]`).join('\n');
-                _enqueueHiddenChat(
-                    `${visualContext}\n\nUser request: ${text}\nAnalyze the supplied screenshot(s) and answer the user's request directly. `
-                    + `Use ${String(turnIdentity.responseLanguage || '').toLowerCase().startsWith('zh') ? 'Chinese' : 'English'} for every user-visible sentence. `
-                    + 'Do not request another screenshot. Mention uncertainty instead of inventing details.',
-                    {
-                        visualFollowUp: true,
-                        internalFollowup: true,
-                        hiddenUserMessage: true,
-                        preserveLastUserMessage: true,
-                        requestId: turnRequestId,
-                        userMessageId: turnUserMessageId,
-                        assistantMessageId: turnAssistantMessageId,
-                        screenshotMode: screenshotGallery.mode || 'chat',
-                    }
-                );
-            }
+        const shouldAnalyzeVisualEvidence = (
+            !isInternalFollowup
+            && ((screenshotResults.length && _isVisualAnalysisRequest(text))
+                || visualContentResults.length > 0)
+        );
+        if (shouldAnalyzeVisualEvidence) {
+            _queueVisualAnalysisFollowUp(
+                screenshotResults.concat(visualContentResults),
+                text,
+                turnIdentity,
+                {
+                    sessionId: turnSessionId,
+                    screenshotMode: screenshotGallery.mode || 'chat',
+                    includeAll: true,
+                },
+            );
         }
 
         // No steps arrived — clean up the thinking indicator
@@ -2982,7 +3284,11 @@ async function sendChat(prefill, options) {
         // capture phase; keep the chat clean and show the later multimodal
         // answer instead. For a pure screenshot request the gallery itself is
         // the answer, matching the existing UI behavior.
-        const suppressScreenshotAck = _isScreenshotAckResponse(renderedFinalText, steps);
+        const suppressScreenshotAck = _isScreenshotAckResponse(
+            renderedFinalText,
+            steps,
+            visualContentResults,
+        );
         if (suppressScreenshotAck && responseEl) {
             try {
                 responseEl.textContent = '';
@@ -2992,7 +3298,26 @@ async function sendChat(prefill, options) {
             } catch (_) {}
             responseEl = null;
         }
-        if (!suppressScreenshotAck && responseEl && typeof finalizeStreamingResponse === 'function') {
+        if (isInternalFollowup) {
+            renderedFinalText = _stripVisualAttachmentEchoes(
+                renderedFinalText,
+                opts.visualAttachmentLabels || [],
+            );
+            // Merge the child answer into the original screenshot reply. The
+            // child has its own server task/request ID, but no visible user
+            // bubble, Trace, footer, or standalone assistant message.
+            if (renderedFinalText.trim() && typeof addChat === 'function') {
+                addChat('bot-response', renderedFinalText, true, Date.now(), false, turnSessionId, Object.assign(
+                    {},
+                    turnIdentity,
+                    {
+                        attachments: [],
+                        screenshotLayout: screenshotGallery.layout || 'auto',
+                    },
+                ));
+            }
+            responseEl = null;
+        } else if (!suppressScreenshotAck && responseEl && typeof finalizeStreamingResponse === 'function') {
             const meta = _buildTurnMeta(Object.assign({}, turnIdentity, {
                 attachments: presentationAttachments,
                 screenshotLayout: screenshotGallery.layout || 'auto',
@@ -3046,17 +3371,19 @@ async function sendChat(prefill, options) {
             if (detachedResponse && typeof saveSessionMessage === 'function') {
                 saveSessionMessage('bot-response', detachedResponse, null, Date.now(), turnSessionId, _buildTurnMeta(turnIdentity));
             }
-            try {
-            saveSessionMessage('thinking', '', steps, Date.now(), turnSessionId, {
-                requestId: turnRequestId,
-                messageId: `trace-${turnRequestId}`,
-                messageKind: 'execution_trace',
-                turnSequence: 1,
-                replyToMessageId: turnAssistantMessageId,
-                responseLanguage: turnIdentity.responseLanguage,
-                traceLanguage: turnIdentity.responseLanguage,
-            });
-            } catch (_) {}
+            if (!isInternalFollowup) {
+                try {
+                    saveSessionMessage('thinking', '', steps, Date.now(), turnSessionId, {
+                        requestId: turnRequestId,
+                        messageId: `trace-${turnRequestId}`,
+                        messageKind: 'execution_trace',
+                        turnSequence: 1,
+                        replyToMessageId: turnAssistantMessageId,
+                        responseLanguage: turnIdentity.responseLanguage,
+                        traceLanguage: turnIdentity.responseLanguage,
+                    });
+                } catch (_) {}
+            }
             return;
         }
 
@@ -3070,7 +3397,7 @@ async function sendChat(prefill, options) {
         if (explicitlyStopped) {
             cancelTurnUi('Stopped');
             _setCaseTaskState(turnSessionId, 'cancelled', null);
-            if (typeof addChat === 'function') {
+            if (!isInternalFollowup && typeof addChat === 'function') {
                 addChat('system', _chatLanguageForSession(turnSessionId) === 'zh' ? '已停止。' : 'Stopped.',
                     true, Date.now(), false, turnSessionId);
             }
@@ -3102,7 +3429,12 @@ async function sendChat(prefill, options) {
             _setCaseTaskState(turnSessionId, 'failed', null);
             console.warn('[chat] Send failed', e);
             if (typeof addChat === 'function') {
-                addChat('error', _chatUserVisibleFailure(turnSessionId, 'request'), true,
+                const visualFailure = isInternalFollowup
+                    ? (String(turnIdentity.responseLanguage || '').toLowerCase().startsWith('zh')
+                        ? '截图已生成，但当前图像分析暂时不可用；截图仍保留在原回复中。'
+                        : 'The screenshot was captured, but visual analysis is temporarily unavailable. The image remains attached to the original reply.')
+                    : _chatUserVisibleFailure(turnSessionId, 'request');
+                addChat(isInternalFollowup ? 'bot-response' : 'error', visualFailure, true,
                     Date.now(), false, turnSessionId, turnIdentity);
             } else {
                 console.error('sendChat failed and addChat missing:', e);
@@ -3120,39 +3452,44 @@ async function sendChat(prefill, options) {
             && (turnCompleted || turnFailed || !reconnectNeeded)) {
             window._activeChatTaskId = null;
             window._activeChatTaskSessionId = null;
+            window._activeChatRequestId = null;
+            window._activeChatParentRequestId = null;
+            window._activeChatInternalFollowup = false;
         }
         if (isCurrentTurn) {
-            // Safety net: if the server never emitted a routing/local-intent
-            // step that reconcileOptimisticTraceStep could merge into, the
-            // optimistic routing row stays pending forever. Force any leftover
-            // client-router-* / client-user-* pending row to done before the
-            // chain folds so the trace cannot show a stuck "Analyzing request"
-            // state after the response has already been delivered.
-            for (const s of steps) {
-                if (s && typeof s.id === 'string'
-                    && (s.id === optimisticTraceStepIds.router
-                        || s.id === optimisticTraceStepIds.user)
-                    && (s.status === 'pending' || s.status === 'active')) {
-                    s.status = 'done';
+            if (!isInternalFollowup) {
+                // Safety net: if the server never emitted a routing/local-intent
+                // step that reconcileOptimisticTraceStep could merge into, the
+                // optimistic routing row stays pending forever. Force any leftover
+                // client-router-* / client-user-* pending row to done before the
+                // chain folds so the trace cannot show a stuck "Analyzing request"
+                // state after the response has already been delivered.
+                for (const s of steps) {
+                    if (s && typeof s.id === 'string'
+                        && (s.id === optimisticTraceStepIds.router
+                            || s.id === optimisticTraceStepIds.user)
+                        && (s.status === 'pending' || s.status === 'active')) {
+                        s.status = 'done';
+                    }
                 }
+                // Collapse the thinking chain when the send button transitions
+                // back to ready state, so the user sees the full response and
+                // footer before the trace folds.
+                if (chainEl && typeof finalizeThinkingChain === 'function') {
+                    finalizeThinkingChain(chainEl, headerEl, steps);
+                }
+                try {
+                    saveSessionMessage('thinking', '', steps, Date.now(), turnSessionId, {
+                        requestId: turnRequestId,
+                        messageId: `trace-${turnRequestId}`,
+                        messageKind: 'execution_trace',
+                        turnSequence: 1,
+                        replyToMessageId: turnAssistantMessageId,
+                        responseLanguage: turnIdentity.responseLanguage,
+                        traceLanguage: turnIdentity.responseLanguage,
+                    });
+                } catch (_) {}
             }
-            // Collapse the thinking chain when the send button transitions
-            // back to ready state, so the user sees the full response and
-            // footer before the trace folds.
-            if (chainEl && typeof finalizeThinkingChain === 'function') {
-                finalizeThinkingChain(chainEl, headerEl, steps);
-            }
-            try {
-            saveSessionMessage('thinking', '', steps, Date.now(), turnSessionId, {
-                requestId: turnRequestId,
-                messageId: `trace-${turnRequestId}`,
-                messageKind: 'execution_trace',
-                turnSequence: 1,
-                replyToMessageId: turnAssistantMessageId,
-                responseLanguage: turnIdentity.responseLanguage,
-                traceLanguage: turnIdentity.responseLanguage,
-            });
-            } catch (_) {}
             window._chatStreaming = false;
             setStreamingState(false);
             setTimeout(() => { try { _flushHiddenChatQueue(); } catch (_) {} }, 0);
@@ -3406,6 +3743,12 @@ window.resumeSessionChatTask = async function resumeSessionChatTask(options = {}
             requestId: task.request_id || taskId,
             userMessageId: task.user_message_id || `user-${task.request_id || taskId}`,
             assistantMessageId: task.assistant_message_id || `assistant-${task.request_id || taskId}`,
+            parentRequestId: task.parent_request_id || '',
+            parentUserMessageId: task.parent_user_message_id || '',
+            parentAssistantMessageId: task.parent_assistant_message_id || '',
+            internalFollowup: !!task.internal_followup,
+            visualFollowUp: !!task.internal_followup,
+            responseLanguage: task.response_language || '',
             resumeMessage: task.message || '',
             skipIntentShortcuts: true,
             preserveLastUserMessage: true,

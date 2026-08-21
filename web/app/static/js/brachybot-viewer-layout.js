@@ -1084,7 +1084,12 @@ async function reconstructOrgan3D(id, silent = false) {
                     const res = await fetch(API + '/viewer/3d_mask', {
                         method: 'POST',
                         headers: _viewer3DRequestHeaders(requestScope, { 'Content-Type': 'application/json' }),
-                        body: JSON.stringify({ label_id: labelIds[i], source: 'ctv', smoothing: 1 }),
+                        body: JSON.stringify({
+                            label_id: labelIds[i],
+                            source: 'ctv',
+                            smoothing: 1,
+                            allow_missing: silent,
+                        }),
                     });
                     if (res.ok) {
                         const data = await res.json();
@@ -1151,10 +1156,18 @@ async function reconstructOrgan3D(id, silent = false) {
                         source,
                         mask_id: mask.serverMaskId || mask.mask_id || id,
                         smoothing: 1,
+                        allow_missing: silent,
                     }),
                 });
                 if (!res.ok) {
                     const errData = await res.json().catch(() => ({}));
+                    const deferred = silent && [202, 404, 409].includes(res.status);
+                    if (deferred) {
+                        return {
+                            pending: res.status === 202,
+                            code: errData.code || `viewer_mask_http_${res.status}`,
+                        };
+                    }
                     throw new Error(errData.error || `HTTP ${res.status}`);
                 }
                 const data = await res.json();
@@ -1178,7 +1191,12 @@ async function reconstructOrgan3D(id, silent = false) {
         const res = await fetch(API + '/viewer/3d_mask', {
             method: 'POST',
             headers: _viewer3DRequestHeaders(requestScope, { 'Content-Type': 'application/json' }),
-            body: JSON.stringify({ label_id, source, smoothing: 1 }),
+        body: JSON.stringify({
+            label_id,
+            source,
+            smoothing: 1,
+            allow_missing: silent,
+        }),
         });
 
         if (!res.ok) {
@@ -1187,6 +1205,15 @@ async function reconstructOrgan3D(id, silent = false) {
             // Don't show error for "label not found" - just skip silently
             if (res.status === 400 && errMsg.includes('not found')) {
                 return;
+            }
+            // Background reconstruction is expected to race CT/mask
+            // hydration.  A missing or mismatched mask is not a user-facing
+            // reconstruction failure until the data is actually ready.
+            if (silent && [202, 404, 409].includes(res.status)) {
+                return {
+                    pending: res.status === 202,
+                    code: errData.code || `viewer_mask_http_${res.status}`,
+                };
             }
             throw new Error(errMsg);
         }

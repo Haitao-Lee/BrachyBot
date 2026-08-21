@@ -177,8 +177,11 @@ def test_report_restore_does_not_erase_newer_generated_text():
     assert "window.cancelScheduledWorkspaceSave" in report
     assert "async function persistWorkspace(reason, options = {})" in workspace
     assert "options.allowDuringRestore" in workspace
-    assert "window.persistWorkspace('report.flush', { allowDuringRestore: true })" in report
-    assert "await Promise.resolve(flushActiveReportState())" in workspace
+    assert "sessionId: ownerSessionId" in report
+    assert "workspaceSavePayload(ownerSessionId, reason)" in workspace
+    assert "reportState(ownerSessionId)" in workspace
+    assert "const previousCaseFlush = typeof flushActiveReportState === 'function'" in workspace
+    assert "flushActiveReportState({ sessionId: previousSessionId })" in workspace
     assert "ownerSessionId !== String(activeSessionId || '')" in workspace
     assert "function reportFormFromSnapshot" in workspace
     assert "const reportSection = snapshot.report" in workspace
@@ -335,12 +338,14 @@ def test_new_case_creation_avoids_empty_workspace_hydration_and_redundant_round_
     sessions = read("web/routes/session_routes.py")
     new_case = workspace.split("window.newChat =", 1)[1].split("window.switchSession =", 1)[0]
     assert "await loadServerSessions()" not in new_case
-    assert "previousCaseFlush = Promise.resolve(flushActiveReportState())" in new_case
+    assert "previousCaseFlush = typeof flushActiveReportState === 'function'" in new_case
+    assert "flushActiveReportState({ sessionId: previousSessionId })" in new_case
     assert "void previousCaseFlush.catch" in new_case
     assert "window.awaitActiveSessionReady" in workspace
     assert "The optimistic shell" in workspace
     assert "void persistWorkspace('session.switching')" not in new_case
-    assert "paintSessionShell(optimisticId, { blank: true })" in new_case
+    assert "paintSessionShell(optimisticId, { blank: true, clearWorkspace: false })" in new_case
+    assert "await yieldWorkspaceShellPaint()" in new_case
     assert "function paintSessionShell(sessionId, { clearWorkspace = true, blank = false } = {})" in workspace
     assert "if (blank)" in workspace
     assert "clearClientWorkspace({ clearReport: true, deferDisposal: true })" in workspace
@@ -376,8 +381,8 @@ def test_workspace_transitions_publish_measurable_first_paint_and_restore_stages
     assert "restore.fully_interactive" in ui_api
     # Versioned URLs are intentional cache invalidation points. Keep this
     # assertion aligned with the workspace/report artifact restore contract.
-    assert "brachybot-workspace.js?v=33" in index
-    assert "brachybot-ui-api.js?v=40" in index
+    assert "brachybot-workspace.js?v=34" in index
+    assert "brachybot-ui-api.js?v=41" in index
 
 
 def test_workspace_fetch_preserves_external_transition_abort_semantics():
@@ -558,8 +563,10 @@ def test_case_transitions_do_not_block_on_control_plane_cleanup():
         "window.deleteSession =", 1
     )[0]
     delete_block = workspace.split("window.deleteSession =", 1)[1]
-    assert "await Promise.resolve(flushActiveReportState())" in switch_block
-    assert "void persistWorkspace('session.switching')" not in switch_block
+    assert "const previousCaseFlush = typeof flushActiveReportState === 'function'" in switch_block
+    assert "void previousCaseFlush.catch" in switch_block
+    assert "await Promise.resolve(flushActiveReportState())" not in switch_block
+    assert "await persistWorkspace('session.switching')" not in switch_block
     assert "void window.brachybotAuth.releaseLease(previousSessionId)" in switch_block
     assert "await window.brachybotAuth.releaseLease(" not in switch_block
     assert "void window.brachybotAuth.acquireLease(activeSessionId)" in switch_block
@@ -574,8 +581,9 @@ def test_session_switch_paints_the_selected_shell_before_snapshot_request():
         "window.deleteSession =", 1
     )[0]
     assert "function paintSessionShell" in workspace
-    assert "paintSessionShell(id);" in switch_block
-    assert switch_block.index("paintSessionShell(id);") < switch_block.index(
+    assert "paintSessionShell(id, { clearWorkspace: false });" in switch_block
+    assert "await yieldWorkspaceShellPaint()" in switch_block
+    assert switch_block.index("paintSessionShell(id, { clearWorkspace: false });") < switch_block.index(
         "await workspaceFetch(`/api/sessions/${encodeURIComponent(id)}/select`"
     )
     assert "paintSessionShell(previousSessionId)" in switch_block
@@ -1411,7 +1419,7 @@ def test_finalized_detached_chat_keeps_start_timestamp_and_trace_for_restore():
     """A browser reconnect must recover the original turn time and tool history."""
     routes = read("web/routes/planning_routes.py")
     assert "timestamp_ms=int(task.created_at * 1000)" in routes
-    assert '"execution_trace": persisted_steps' in routes
+    assert '"execution_trace": trace_for_snapshot' in routes
     assert '"chat": {\n                        "messages": messages' in routes
 
 

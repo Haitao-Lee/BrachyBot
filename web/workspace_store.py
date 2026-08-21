@@ -70,6 +70,65 @@ MIN_OPEN_FILE_LIMIT = int(
 logger = logging.getLogger(__name__)
 
 
+def _is_internal_visual_record(record: Any) -> bool:
+    """Recognize explicit or legacy hidden screenshot-follow-up records.
+
+    This is a storage compatibility boundary, not natural-language routing.
+    New records carry ``internal_followup`` metadata.  Older snapshots may
+    contain the generated multimodal prompt as a user row, so only the exact
+    protocol shape (capture URL + ``User request`` + analysis instruction) is
+    migrated out of the visible transcript.  Ordinary user messages that
+    merely mention screenshots remain untouched.
+    """
+    if not isinstance(record, Mapping):
+        return False
+    if (
+        record.get("internal_followup") is True
+        or record.get("internalFollowup") is True
+        or (isinstance(record.get("meta"), Mapping) and (
+            record["meta"].get("internal_followup") is True
+            or record["meta"].get("internalFollowup") is True
+        ))
+        or str(record.get("message_kind") or record.get("messageKind") or "").lower()
+        == "internal_followup"
+    ):
+        return True
+    content = str(
+        record.get("content")
+        or record.get("message")
+        or record.get("text")
+        or ""
+    )
+    if not content or "[Screenshot captured:" not in content:
+        return False
+    has_request = "User request:" in content or "用户请求：" in content
+    has_instruction = (
+        "Analyze the supplied screenshot" in content
+        or "分析提供的截图" in content
+        or "Do not request another screenshot" in content
+        or "不要请求另一个截图" in content
+    )
+    return has_request and has_instruction
+
+
+def _strip_internal_visual_records(value: Any) -> Any:
+    """Remove only hidden visual-follow-up rows from durable chat sections."""
+    if not isinstance(value, Mapping):
+        return value
+    result = copy.deepcopy(dict(value))
+    for key in ("messages", "execution_trace"):
+        rows = result.get(key)
+        if isinstance(rows, list):
+            result[key] = [row for row in rows if not _is_internal_visual_record(row)]
+    if isinstance(result.get("attachments"), list):
+        result["attachments"] = _merge_attachment_list([], result["attachments"])
+    if isinstance(result.get("messages"), list):
+        for message in result["messages"]:
+            if isinstance(message, Mapping) and isinstance(message.get("attachments"), list):
+                message["attachments"] = _merge_attachment_list([], message["attachments"])
+    return result
+
+
 def _configure_open_file_limit() -> None:
     """Give the bounded mmap cache enough descriptors on POSIX hosts.
 
@@ -346,12 +405,100 @@ def _chat_record_key(record: Any) -> str:
     return "hash:" + hashlib.sha256(payload.encode("utf-8", "replace")).hexdigest()
 
 
+def _attachment_semantic_key(record: Any) -> str:
+    """Return a replay-stable identity for one logical screenshot.
+
+    Attachment IDs are transport identities and may change after an SSE
+    reconnect.  URLs are preferred, but a newly uploaded replay can also
+    receive a new URL.  Report figures therefore use their persisted figure
+    identity; ordinary multi-view captures use the parent request plus view
+    index.  We intentionally do not collapse two single-view captures from
+    different requests merely because they target the same viewer.
+    """
+    if not isinstance(record, Mapping):
+        return ""
+    metadata = record.get("view_metadata")
+    if not isinstance(metadata, Mapping):
+        metadata = record.get("viewMetadata")
+    metadata = metadata if isinstance(metadata, Mapping) else {}
+
+    def value(*keys: str) -> str:
+        for key in keys:
+            item = metadata.get(key)
+            if item is None or item == "":
+                item = record.get(key)
+            if item is not None and item != "":
+                return str(item)
+        return ""
+
+    planning_id = value("planning_id", "planningId")
+    mode = value("mode")
+    target = value("target")
+    figure_group = value("figure_group", "figureGroup")
+    figure_number = value("figure_number", "figureNumber")
+    subfigure = value("subfigure")
+    capture_role = value("capture_role", "captureRole")
+    index = value("index")
+    request_id = value("request_id", "requestId")
+
+    if figure_group or figure_number or subfigure:
+        return "figure|{}|{}|{}|{}|{}".format(
+            planning_id, figure_group, figure_number, subfigure, capture_role, target
+        )
+    if capture_role or index:
+        return "view|{}|{}|{}|{}|{}|{}".format(
+            mode, planning_id, request_id, target, capture_role, index
+        )
+    return ""
+
+
+def _attachment_record_key(record: Any) -> str:
+    """Use URL first, then a stable semantic key, for attachment merging."""
+    if isinstance(record, Mapping):
+        url = str(
+            record.get("url")
+            or record.get("src")
+            or record.get("image_url")
+            or record.get("imageUrl")
+            or record.get("screenshot_url")
+            or record.get("screenshotUrl")
+            or ""
+        ).strip()
+        if url:
+            return "url:" + url
+        semantic = _attachment_semantic_key(record)
+        if semantic:
+            return "semantic:" + semantic
+    return _chat_record_key(record)
+
+
 def _merge_record_list(existing: Any, incoming: Any) -> List[Any]:
     """Merge ID-addressed nested records such as Trace steps or attachments."""
     merged: List[Any] = []
     positions: Dict[str, int] = {}
     for record in list(existing or []) + list(incoming or []):
+        if _is_internal_visual_record(record):
+            continue
         key = _chat_record_key(record)
+        if key not in positions:
+            positions[key] = len(merged)
+            merged.append(copy.deepcopy(record))
+            continue
+        position = positions[key]
+        current = merged[position]
+        if isinstance(current, Mapping) and isinstance(record, Mapping):
+            merged[position] = _merge_chat_record(current, record)
+    return merged
+
+
+def _merge_attachment_list(existing: Any, incoming: Any) -> List[Any]:
+    """Merge screenshot attachments by durable URL or replay-stable meaning."""
+    merged: List[Any] = []
+    positions: Dict[str, int] = {}
+    for record in list(existing or []) + list(incoming or []):
+        if _is_internal_visual_record(record):
+            continue
+        key = _attachment_record_key(record)
         if key not in positions:
             positions[key] = len(merged)
             merged.append(copy.deepcopy(record))
@@ -370,7 +517,11 @@ def _merge_chat_record(existing: Mapping[str, Any], incoming: Mapping[str, Any])
 
     for key, value in incoming_safe.items():
         if key in {"steps", "attachments"} and isinstance(value, list):
-            result[key] = _merge_record_list(result.get(key), value)
+            result[key] = (
+                _merge_attachment_list(result.get(key), value)
+                if key == "attachments"
+                else _merge_record_list(result.get(key), value)
+            )
             continue
         if key == "meta" and isinstance(value, Mapping):
             current_meta = result.get("meta") if isinstance(result.get("meta"), Mapping) else {}
@@ -411,6 +562,8 @@ def _merge_chat_records(existing: Any, incoming: Any) -> List[Any]:
     merged: List[Any] = []
     positions: Dict[str, int] = {}
     for record in list(existing or []) + list(incoming or []):
+        if _is_internal_visual_record(record):
+            continue
         key = _chat_record_key(record)
         if key not in positions:
             positions[key] = len(merged)
@@ -483,7 +636,7 @@ def _merge_chat_patch(current: Mapping[str, Any], incoming: Mapping[str, Any]) -
         # not group or rank them like messages: the stable attachment ID is
         # the only identity that should decide whether two captures are the
         # same file.
-        result["attachments"] = _merge_record_list(
+        result["attachments"] = _merge_attachment_list(
             result.get("attachments"), incoming["attachments"]
         )
     # Task control fields are state, not append-only content.  The latest
@@ -491,7 +644,7 @@ def _merge_chat_patch(current: Mapping[str, Any], incoming: Mapping[str, Any]) -
     for key, value in incoming.items():
         if key not in {"messages", "execution_trace", "attachments"}:
             result[key] = _safe_json(value)
-    return result
+    return _strip_internal_visual_records(result)
 
 
 def _reconcile_chat_attachment_registry(chat: Any) -> Dict[str, Any]:
@@ -512,6 +665,11 @@ def _reconcile_chat_attachment_registry(chat: Any) -> Dict[str, Any]:
     registry = result.get("attachments")
     if not isinstance(messages, list) or not isinstance(registry, list):
         return result
+    # Normalize the registry before copying it into message rows.  A replayed
+    # capture can have a fresh ID while still pointing at the same file or
+    # carrying the same report/view identity.
+    registry = _merge_attachment_list([], registry)
+    result["attachments"] = registry
 
     def matches(message: Mapping[str, Any], attachment: Mapping[str, Any]) -> bool:
         message_id = str(attachment.get("message_id") or attachment.get("messageId") or "").strip()
@@ -534,7 +692,7 @@ def _reconcile_chat_attachment_registry(chat: Any) -> Dict[str, Any]:
         if not related:
             continue
         current = message.get("attachments") if isinstance(message.get("attachments"), list) else []
-        message["attachments"] = _merge_record_list(current, related)
+        message["attachments"] = _merge_attachment_list(current, related)
     return result
 
 
@@ -1261,7 +1419,9 @@ class WorkspaceStore:
             # row or after a stale browser checkpoint.  Reconcile the durable
             # attachment index at read time as well, so a restart never loses
             # images merely because the original writes were out of order.
-            snapshot["chat"] = _reconcile_chat_attachment_registry(snapshot["chat"])
+            snapshot["chat"] = _strip_internal_visual_records(
+                _reconcile_chat_attachment_registry(snapshot["chat"])
+            )
         snapshot["session"] = record.public_dict()
         snapshot["workspace"] = {
             "inputs_root": str(self.workspace_root(user_id, session_id) / "inputs"),
@@ -1305,7 +1465,17 @@ class WorkspaceStore:
         with self._case_guard(user_id, session_id):
             root = self.workspace_root(user_id, session_id, create=True)
             snapshot = self.load_snapshot(user_id, session_id)
-            snapshot[section] = _safe_json(dict(value or {}))
+            safe_value = dict(value or {})
+            if section == "chat":
+                # Enforce the same invariant for full-section replacement as
+                # for append-only patches.  A stale browser may replace the
+                # whole chat section after a reconnect; internal visual
+                # prompts and duplicate attachments must never become durable
+                # merely because this path bypassed the merge helper.
+                safe_value = _strip_internal_visual_records(
+                    _reconcile_chat_attachment_registry(safe_value)
+                )
+            snapshot[section] = _safe_json(safe_value)
             snapshot["saved_at"] = _now()
             self._write_snapshot(user_id, root / "snapshot.json", snapshot)
             with self._connection() as connection:
@@ -1355,7 +1525,9 @@ class WorkspaceStore:
             # Keep the message-level attachment contract materialized in the
             # snapshot itself.  This makes old clients and direct snapshot
             # readers see the same complete transcript as the new browser.
-            snapshot["chat"] = _reconcile_chat_attachment_registry(snapshot["chat"])
+            snapshot["chat"] = _strip_internal_visual_records(
+                _reconcile_chat_attachment_registry(snapshot["chat"])
+            )
         snapshot["saved_at"] = _now()
         self._write_snapshot(user_id, root / "snapshot.json", snapshot)
         with self._connection() as connection:
@@ -1942,6 +2114,15 @@ class WorkspaceStore:
                 decoded_results[str(key)] = decoded
         patient_data = _restore_json(state.get("patient_data") or {})
         conversation = _restore_json(state.get("conversation") or [])
+        # Older internal screenshot follow-ups were occasionally written to
+        # AgentMemory before the hidden-child transaction was introduced.
+        # Remove only that exact generated protocol row before it can become
+        # context for the next real user question.
+        if isinstance(conversation, list):
+            conversation = [
+                row for row in conversation
+                if not _is_internal_visual_record(row)
+            ]
         tool_results = _restore_json(state.get("tool_results") or [])
         context_summary = str(state.get("context_summary") or "")
         compaction_count = int(state.get("compaction_count") or 0)
@@ -2004,25 +2185,42 @@ class WorkspaceStore:
                 memory.planning_results.keys()
             )
         restored_aliases: List[str] = []
+        planning_reconciliation: Dict[str, Any] = {}
         if include_planning_results:
             # Historical Planning snapshots are immutable and authoritative.
-            # Recreate any missing compatibility aliases before HTTP routes
-            # expose the hydrated agent, so seeds, needles, dose, DVH, guide,
-            # and skin all become available in the same ready transition.
+            # Reconcile the registry and select a complete restore point before
+            # HTTP routes expose the hydrated agent.  A metadata checkpoint can
+            # otherwise leave the active alias pointing at a partial run while
+            # the Data Tree still lists a complete older plan.
             try:
-                from web.planning_runs import restore_active_planning_aliases
+                from web.planning_runs import reconcile_planning_history
 
-                restored_aliases = restore_active_planning_aliases(memory)
+                planning_reconciliation = reconcile_planning_history(
+                    memory,
+                    recover_running=bool(mark_interrupted),
+                )
+                restored_aliases = list(
+                    planning_reconciliation.get("restored_aliases") or []
+                )
+                setattr(
+                    agent,
+                    "_workspace_hydration_repaired",
+                    bool(
+                        planning_reconciliation.get("changed")
+                        or restored_aliases
+                    ),
+                )
             except Exception:
                 logger.exception(
-                    "workspace hydration could not restore active Planning aliases session=%s",
+                    "workspace hydration could not reconcile Planning history session=%s",
                     session_id,
                 )
         logger.info(
-            "workspace hydration arrays decoded session=%s duration_ms=%.1f result_keys=%d restored_aliases=%s",
+            "workspace hydration arrays decoded session=%s duration_ms=%.1f result_keys=%d active_planning_id=%s restored_aliases=%s",
             session_id,
             (time.perf_counter() - decode_started) * 1000.0,
             len(memory.planning_results),
+            planning_reconciliation.get("active_planning_id") or memory.retrieve("active_planning_id") or "none",
             ",".join(restored_aliases) or "none",
         )
         if isinstance(state.get("config"), Mapping):
@@ -2111,7 +2309,23 @@ class WorkspaceStore:
         reason: str,
         operation: Optional[Mapping[str, Any]] = None,
     ) -> None:
-        """Debounce high-frequency memory changes without dropping durability."""
+        """Debounce high-frequency memory changes without dropping durability.
+
+        The server installs a metadata-only Agent while a case's large
+        sidecars are being restored.  Serializing that shell is dangerous: a
+        later restart would see a syntactically valid snapshot with clinical
+        artifacts missing.  UI/report/chat patches have their own structured
+        persistence path, and clinical routes wait for the ready barrier, so
+        a full Agent checkpoint is safe only after hydration publishes ready.
+        """
+        if getattr(agent, "_workspace_hydration_in_progress", False):
+            logger.debug(
+                "Skipping Agent checkpoint during workspace hydration "
+                "session=%s reason=%s",
+                session_id,
+                reason,
+            )
+            return
         key = (user_id, session_id)
         with self._lock:
             existing = self._checkpoint_timers.pop(key, None)
@@ -2220,6 +2434,41 @@ class WorkspaceStore:
 
     def mark_session_interrupted(self, user_id: str, session_id: str, detail: str) -> Dict[str, Any]:
         snapshot = self.load_snapshot(user_id, session_id)
+        # A server restart terminates the Python task, but the last checkpoint
+        # may still label its reserved Planning run as ``running``. Preserve
+        # every immutable run and its partial artifacts, while making the
+        # lifecycle truthful so the restored Data Tree does not present a
+        # dead task as an active one.
+        agent_state = snapshot.get("agent")
+        if isinstance(agent_state, Mapping):
+            planning_results = agent_state.get("planning_results")
+            runs = (
+                planning_results.get("planning_runs")
+                if isinstance(planning_results, Mapping) else None
+            )
+            if isinstance(runs, list):
+                interrupted_at = _now()
+                updated_runs = []
+                changed = False
+                for raw_run in runs:
+                    if not isinstance(raw_run, Mapping):
+                        updated_runs.append(raw_run)
+                        continue
+                    run = dict(raw_run)
+                    if str(run.get("status") or "") == "running":
+                        run["status"] = "interrupted"
+                        run["updated_at"] = interrupted_at
+                        run["error"] = detail
+                        changed = True
+                    updated_runs.append(run)
+                if changed:
+                    snapshot["agent"] = {
+                        **dict(agent_state),
+                        "planning_results": {
+                            **dict(planning_results),
+                            "planning_runs": updated_runs,
+                        },
+                    }
         snapshot["operation"] = {
             **(snapshot.get("operation") or {}),
             "state": "interrupted",
@@ -2238,10 +2487,34 @@ class WorkspaceStore:
 
     def mark_running_sessions_interrupted(self) -> None:
         with self._connection() as connection:
-            rows = connection.execute("SELECT id, user_id FROM case_sessions WHERE status = 'active' AND recovery_status = 'running'").fetchall()
+            # Inspect all active cases: an older checkpoint can have a
+            # ``running`` Planning registry even when the session-level
+            # recovery flag was already reset to ``ready``.
+            rows = connection.execute(
+                "SELECT id, user_id, recovery_status FROM case_sessions WHERE status = 'active'"
+            ).fetchall()
         for row in rows:
             try:
-                self.mark_session_interrupted(row["user_id"], row["id"], "Server restarted before the task completed")
+                snapshot = self.load_snapshot(row["user_id"], row["id"])
+                agent_state = snapshot.get("agent")
+                planning_results = (
+                    agent_state.get("planning_results")
+                    if isinstance(agent_state, Mapping) else {}
+                )
+                runs = (
+                    planning_results.get("planning_runs")
+                    if isinstance(planning_results, Mapping) else []
+                )
+                has_running_planning = any(
+                    isinstance(item, Mapping)
+                    and str(item.get("status") or "") == "running"
+                    for item in (runs if isinstance(runs, list) else [])
+                )
+                if str(row["recovery_status"] or "") == "running" or has_running_planning:
+                    self.mark_session_interrupted(
+                        row["user_id"], row["id"],
+                        "Server restarted before the task completed",
+                    )
             except WorkspaceError:
                 continue
 

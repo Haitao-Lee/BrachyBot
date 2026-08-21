@@ -36,6 +36,32 @@ function conversationLanguageForSession(sessionId = activeSessionId) {
 }
 window.conversationLanguageForSession = conversationLanguageForSession;
 
+// Hidden multimodal screenshot analysis is an internal child of the visible
+// assistant reply.  New records carry an explicit marker; this narrow legacy
+// shape handles old snapshots that persisted the generated prompt itself.
+function isInternalChatRecord(message) {
+    if (!message || typeof message !== 'object') return false;
+    if (
+        message.internal_followup === true
+        || message.internalFollowup === true
+        || message.meta?.internal_followup === true
+        || message.meta?.internalFollowup === true
+        || String(message.message_kind || message.messageKind || '').toLowerCase() === 'internal_followup'
+    ) return true;
+    const content = String(message.content || message.message || message.text || '');
+    if (!content.includes('[Screenshot captured:')) return false;
+    return (
+        (content.includes('User request:') || content.includes('用户请求：'))
+        && (
+            content.includes('Analyze the supplied screenshot')
+            || content.includes('分析提供的截图')
+            || content.includes('Do not request another screenshot')
+            || content.includes('不要请求另一个截图')
+        )
+    );
+}
+window.isInternalChatRecord = isInternalChatRecord;
+
 // Read-only, bounded metadata for the Session-content bridge. The bridge
 // needs the real persisted conversation state, but it must not serialize raw
 // execution prompts or duplicate the entire transcript into an assistant
@@ -43,8 +69,9 @@ window.conversationLanguageForSession = conversationLanguageForSession;
 function getSessionContentSnapshot(sessionId = activeSessionId) {
     const session = sessions[String(sessionId || '')];
     const messages = Array.isArray(session?.messages) ? session.messages : [];
-    const visible = messages.filter(message => ['user', 'bot-response', 'bot'].includes(String(message?.type || '')));
-    const traces = messages.filter(message => String(message?.message_kind || '') === 'execution_trace');
+    const visibleMessages = messages.filter(message => !isInternalChatRecord(message));
+    const visible = visibleMessages.filter(message => ['user', 'bot-response', 'bot'].includes(String(message?.type || '')));
+    const traces = visibleMessages.filter(message => String(message?.message_kind || '') === 'execution_trace');
     return {
         available: !!session,
         messageCount: visible.length,
@@ -501,15 +528,56 @@ function normalizeChatAttachment(sessionId, value) {
     return attachment;
 }
 
+function chatAttachmentSemanticKey(attachment) {
+    const item = attachment && typeof attachment === 'object' ? attachment : {};
+    const metadata = item.view_metadata && typeof item.view_metadata === 'object'
+        ? item.view_metadata
+        : (item.viewMetadata && typeof item.viewMetadata === 'object' ? item.viewMetadata : {});
+    const read = (...keys) => {
+        for (const key of keys) {
+            const value = metadata[key] ?? item[key];
+            if (value !== undefined && value !== null && value !== '') return String(value);
+        }
+        return '';
+    };
+    const planning = read('planning_id', 'planningId');
+    const mode = read('mode');
+    const target = read('target');
+    const figureGroup = read('figure_group', 'figureGroup');
+    const figureNumber = read('figure_number', 'figureNumber');
+    const subfigure = read('subfigure');
+    const captureRole = read('capture_role', 'captureRole');
+    const index = read('index');
+    const requestId = read('request_id', 'requestId');
+    if (figureGroup || figureNumber || subfigure) {
+        return ['figure', planning, figureGroup, figureNumber, subfigure, captureRole, target].join('|');
+    }
+    // A view index is meaningful only inside its parent request.  Keeping the
+    // request identity here prevents a new user-requested capture from being
+    // mistaken for a replay of an earlier capture of the same viewer.
+    if (captureRole || index) {
+        return ['view', mode, planning, requestId, target, captureRole, index].join('|');
+    }
+    return '';
+}
+window.chatAttachmentSemanticKey = chatAttachmentSemanticKey;
+
 function normalizeChatAttachments(sessionId, values) {
     const normalized = [];
     const seen = new Set();
+    const seenUrls = new Set();
+    const seenSemantic = new Set();
     (Array.isArray(values) ? values : []).forEach(value => {
         const attachment = normalizeChatAttachment(sessionId, value);
         if (!attachment) return;
         const key = String(attachment.id || attachment.url || '');
-        if (!key || seen.has(key)) return;
+        const url = String(attachment.url || '').trim();
+        const semantic = chatAttachmentSemanticKey(attachment);
+        if (!key || seen.has(key) || (url && seenUrls.has(url))
+            || (semantic && seenSemantic.has(semantic))) return;
         seen.add(key);
+        if (url) seenUrls.add(url);
+        if (semantic) seenSemantic.add(semantic);
         normalized.push(attachment);
     });
     return normalized;
@@ -610,7 +678,9 @@ window.mergeSessionChatMessages = mergeSessionChatMessages;
 function normalizeSessionMessageIdentities(sessionId, messages) {
     const owner = String(sessionId || 'session');
     let activeRequestId = '';
-    const normalized = (Array.isArray(messages) ? messages : []).map((message, index) => {
+    const normalized = (Array.isArray(messages) ? messages : [])
+        .filter(message => !isInternalChatRecord(message))
+        .map((message, index) => {
         if (!message || typeof message !== 'object') return message;
         const record = message;
         if (record.type === 'user') {
@@ -656,7 +726,7 @@ function normalizeSessionMessageIdentities(sessionId, messages) {
             ...(Array.isArray(record.meta?.attachments) ? record.meta.attachments : []),
         ]);
         return record;
-    });
+        });
     // A turn is persisted by several independent writers: the browser saves
     // the final bubble as soon as it arrives, while the Trace is saved when
     // the stream is folded. Their write order is not the visual order. Group
@@ -899,9 +969,10 @@ function saveSessionMessage(type, content, steps, timestamp, sessionId = activeS
         || safeMeta.message_id
         || (requestId ? `${defaultPrefix}-${requestId}` : createChatIdentity(defaultPrefix))
     );
-    const attachments = Array.isArray(safeMeta.attachments)
-        ? safeMeta.attachments.filter(item => item && typeof item === 'object')
-        : [];
+    const attachments = normalizeChatAttachments(
+        ownerSessionId,
+        Array.isArray(safeMeta.attachments) ? safeMeta.attachments : [],
+    );
     const messageKind = String(safeMeta.messageKind || safeMeta.message_kind || (
         type === 'thinking' ? 'execution_trace' : type === 'bot-response' ? 'assistant_final' : type
     ));
@@ -939,16 +1010,13 @@ function saveSessionMessage(type, content, steps, timestamp, sessionId = activeS
             });
             existing.steps = Array.from(byId.values());
         }
-        if (attachments.length) {
-            const known = new Set((existing.attachments || []).map(item => String(item?.id || item?.url || '')));
-            existing.attachments = [...(existing.attachments || [])];
-            attachments.forEach(item => {
-                const key = String(item.id || item.url || '');
-                if (!key || known.has(key)) return;
-                known.add(key);
-                existing.attachments.push(item);
-            });
-        }
+        // Merge through the same semantic identity used during hydration.
+        // URL-only de-duplication is insufficient when a reconnect receives
+        // a new attachment id for the same report/view capture.
+        existing.attachments = normalizeChatAttachments(
+            ownerSessionId,
+            [...(existing.attachments || []), ...attachments],
+        );
         // Attachments and late Trace updates must not move a turn to the
         // bottom of the transcript. Keep the earliest durable timestamp for
         // the record; normalizeSessionMessageIdentities will place the whole
@@ -992,7 +1060,7 @@ function saveSessionMessage(type, content, steps, timestamp, sessionId = activeS
         request_id: requestId || createChatIdentity('request'),
         message_kind: messageKind,
         turn_sequence: turnSequence,
-        attachments,
+        attachments: normalizeChatAttachments(ownerSessionId, attachments),
     };
     if (traceLanguage) {
         msg.trace_language = traceLanguage;
@@ -1327,11 +1395,16 @@ function renderAssistantAttachments(shell, attachments, layout = 'auto') {
         );
         if (!attachment || !attachment.url) return;
         const attachmentId = String(attachment.id || attachment.url);
-        if (Array.from(gallery.children).some(item => String(item.dataset.attachmentId || '') === attachmentId)) return;
+        const attachmentUrl = String(attachment.url || '');
+        if (Array.from(gallery.children).some(item =>
+            String(item.dataset.attachmentId || '') === attachmentId
+            || String(item.dataset.attachmentUrl || '') === attachmentUrl
+        )) return;
         const button = document.createElement('button');
         button.type = 'button';
         button.className = 'chat-image-container chat-gallery-item';
         button.dataset.attachmentId = attachmentId;
+        button.dataset.attachmentUrl = attachmentUrl;
         const image = document.createElement('img');
         image.className = 'chat-screenshot';
         image.src = attachment.url;

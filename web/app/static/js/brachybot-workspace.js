@@ -602,7 +602,8 @@
         };
     }
 
-    function workspaceUiState() {
+    function workspaceUiState(ownerSessionId = '') {
+        const sessionId = String(ownerSessionId || (typeof activeSessionId !== 'undefined' ? activeSessionId : '') || '');
         return {
             dose_value_unit: 'gy',
             prescription_base_gy: 120,
@@ -611,7 +612,10 @@
             ),
             controls: controlState(),
             viewer: {
-                sessionId: typeof state !== 'undefined' ? state.sessionId : null,
+                // `state.sessionId` changes as soon as the new shell paints.
+                // A detached old-session save must keep the serialized viewer
+                // projection attached to the old owner instead.
+                sessionId: sessionId || (typeof state !== 'undefined' ? state.sessionId : null),
                 slices: (typeof state !== 'undefined' && state.slices) ? jsonClone(state.slices) : {},
                 settings: (typeof state !== 'undefined' && state.viewerSettings) ? jsonClone(state.viewerSettings) : {},
                 doseOpacity: typeof state !== 'undefined' ? state.doseOpacity : null,
@@ -675,7 +679,8 @@
                 figure.dataUrl = url;
                 figure._serverUrl = url;
                 delete figure._cacheKey;
-                if (typeof scheduleWorkspaceSave === 'function') {
+                if (String(sessionId || '') === String(activeSessionId || '')
+                    && typeof scheduleWorkspaceSave === 'function') {
                     scheduleWorkspaceSave('report.figure.persisted');
                 }
                 if (typeof hydrateDataTreeArtifactCatalog === 'function') {
@@ -874,8 +879,9 @@
         return filtered;
     }
 
-    function reportState() {
+    function reportState(ownerSessionId = '') {
         if (!window.reportForm) return {};
+        const sessionId = String(ownerSessionId || (typeof activeSessionId !== 'undefined' ? activeSessionId : '') || '');
         // Persist the exact Reference/Status rows that are visible in the
         // report. Preview rendering is not a durable boundary and may not have
         // run before a fast Session switch or browser close.
@@ -891,19 +897,19 @@
         // IndexedDB remains the fast local cache, but server-owned report
         // figures make restart and another browser deterministic. Uploads are
         // deliberately fire-and-forget and never delay chat/session changes.
-        if (Array.isArray(window.reportForm.figures) && activeSessionId) {
+        if (Array.isArray(window.reportForm.figures) && sessionId) {
             window.reportForm.figures.forEach(figure => {
                 if (figure?.dataUrl && figure.dataUrl.length > 10000) {
-                    queueServerReportFigureUpload(figure, activeSessionId);
+                    queueServerReportFigureUpload(figure, sessionId);
                 }
             });
         }
         const form = jsonClone(window.reportForm);
-        if (form && activeSessionId) form.sessionId = String(activeSessionId);
+        if (form && sessionId) form.sessionId = sessionId;
         // Offload large base64 figure data URLs into IndexedDB so they
         // don't bloat every persistWorkspace payload (200 KB – 1 MB).
-        if (form && Array.isArray(form.figures) && window.SessionCache && activeSessionId) {
-            const sid = String(activeSessionId);
+        if (form && Array.isArray(form.figures) && window.SessionCache && sessionId) {
+            const sid = sessionId;
             for (let i = 0; i < form.figures.length; i++) {
                 const f = form.figures[i];
                 if (f && f.dataUrl && f.dataUrl.length > 10000) {
@@ -932,7 +938,6 @@
         // top-level fields for old clients, but also maintain a per-run map so
         // switching Planning never shows the previous run's narrative or
         // screenshots under the newly selected dose/needles.
-        const sessionId = String(activeSessionId || '');
         const sameOwner = String(window.__reportWorkspaceSessionId || '') === sessionId;
         const byPlanning = sessionBoundReportMap(
             sameOwner ? window.__reportWorkspaceByPlanning : {},
@@ -1183,10 +1188,10 @@
         }
     }
 
-    function chatState() {
-        const current = (typeof sessions !== 'undefined' && typeof activeSessionId !== 'undefined') ? sessions[activeSessionId] : null;
+    function chatState(ownerSessionId = '') {
+        const sessionId = String(ownerSessionId || (typeof activeSessionId !== 'undefined' ? activeSessionId : '') || '');
+        const current = (typeof sessions !== 'undefined' && sessionId) ? sessions[sessionId] : null;
         if (!current) return {};
-        const sessionId = String(activeSessionId || '');
         const queue = (window._sessionChatQueues && Array.isArray(window._sessionChatQueues[sessionId]))
             ? jsonClone(window._sessionChatQueues[sessionId]) : [];
         const taskId = (window._activeChatTaskSessionId === sessionId ? window._activeChatTaskId : null)
@@ -1531,14 +1536,34 @@
         const applyDvh = () => {
             const chart = document.getElementById('dvhChart');
             if (!dvh || !chart || typeof Plotly === 'undefined' || !Plotly.relayout) return;
+            // A restored workspace can arrive before Plotly.newPlot has
+            // created the graph object. Plotly.relayout assumes _fullLayout
+            // and _guiEditing exist; calling it on the placeholder div throws
+            // and aborts the rest of workspace restoration. Wait for the
+            // chart's normal render pass instead of treating this as a fatal
+            // restore error.
+            if (!chart._fullLayout || !Array.isArray(chart.data) || !chart.layout) return;
             const update = {};
             if (Array.isArray(dvh.x_range) && dvh.x_range.length === 2) update['xaxis.range'] = dvh.x_range;
             if (Array.isArray(dvh.y_range) && dvh.y_range.length === 2) update['yaxis.range'] = dvh.y_range;
             if (dvh.axis_zoom_mode) chart._dvhAxisZoomMode = dvh.axis_zoom_mode;
-            if (Object.keys(update).length) Plotly.relayout(chart, update);
+            if (Object.keys(update).length) {
+                try {
+                    Plotly.relayout(chart, update);
+                } catch (error) {
+                    // Plotly can be destroyed during a rapid Session switch;
+                    // ignore only this stale presentation update.
+                    console.debug('[workspace] DVH relayout deferred:', error);
+                }
+            }
         };
         scheduleDeferredWorkspaceRestore(generation, applyDvh, 350);
         scheduleDeferredWorkspaceRestore(generation, applyDvh, 1100);
+        // Plotly may render after the planning response and after the first
+        // layout settles, especially on a cold browser cache.  Keep one last
+        // guarded pass so the saved axis range is applied without ever
+        // calling relayout on a placeholder div.
+        scheduleDeferredWorkspaceRestore(generation, applyDvh, 2200);
 
         if (scene?.display_mode === 'dose_surface' && typeof setDoseTextureMode === 'function') {
             // Recreate textures from the restored dose grid; WebGL materials
@@ -2068,9 +2093,9 @@
         return {
             session_id: ownerSessionId,
             revision: sessionRevisions[ownerSessionId] ?? revision,
-            ui_state: workspaceUiState(),
-            report: reportState(),
-            chat: chatState(),
+            ui_state: workspaceUiState(ownerSessionId),
+            report: reportState(ownerSessionId),
+            chat: chatState(ownerSessionId),
             reason,
         };
     }
@@ -2091,8 +2116,8 @@
     }
 
     async function persistWorkspace(reason, options = {}) {
-        if ((restoring && !options.allowDuringRestore) || !window.brachybotAuth?.user || !activeSessionId) return false;
-        const ownerSessionId = String(activeSessionId);
+        const ownerSessionId = String(options.sessionId || activeSessionId || '');
+        if ((restoring && !options.allowDuringRestore) || !window.brachybotAuth?.user || !ownerSessionId) return false;
         if (workspaceSaveInFlight[ownerSessionId]) {
             // UI/report/chat writes are snapshots of the same selected case.
             // Serialize them so two debounce timers cannot race their CAS
@@ -2101,13 +2126,23 @@
             return workspaceSaveInFlight[ownerSessionId];
         }
 
+        // Capture the old case's complete payload before any asynchronous
+        // retry or Session transition can change the global UI state. A
+        // retry must update only its compare-and-swap revision; rebuilding
+        // the payload from workspaceSavePayload() after a switch would send
+        // the newly selected case's report/chat under the old session_id.
+        const initialPayload = workspaceSavePayload(ownerSessionId, reason);
         const save = (async () => {
             // A server-side checkpoint can advance the revision between a
             // browser render and its debounced save. The route returns that
-            // revision, so retry once with a freshly-built payload instead of
-            // permanently stranding the client on an obsolete CAS token.
+            // revision, so retry once with the same case-owned payload and
+            // the authoritative CAS token.
             for (let attempt = 0; attempt < 2; attempt += 1) {
-                const payload = workspaceSavePayload(ownerSessionId, reason);
+                const payload = attempt === 0
+                    ? initialPayload
+                    : Object.assign({}, initialPayload, {
+                        revision: sessionRevisions[ownerSessionId] ?? initialPayload.revision,
+                    });
                 const { response, data } = await postWorkspaceSave(ownerSessionId, payload);
                 if (response.status === 409) {
                     if (data?.code === 'workspace_locked' && ownerSessionId === String(activeSessionId || '')) {
@@ -2116,11 +2151,10 @@
                     }
                     const currentRevision = Number(data?.current_revision ?? data?.revision);
                     if (data?.code === 'stale_workspace'
-                        && ownerSessionId === String(activeSessionId || '')
                         && Number.isFinite(currentRevision)
                         && attempt === 0) {
                         sessionRevisions[ownerSessionId] = currentRevision;
-                        revision = currentRevision;
+                        if (ownerSessionId === String(activeSessionId || '')) revision = currentRevision;
                         continue;
                     }
                     console.debug('[workspace] save skipped after revision conflict');
@@ -2291,6 +2325,17 @@
         return true;
     }
 
+    function yieldWorkspaceShellPaint() {
+        // A requestAnimationFrame callback runs immediately before painting.
+        // Hop once more to a task so the browser can present the selected
+        // Session shell before a potentially large old-case serialization.
+        return new Promise(resolve => {
+            const afterFrame = () => setTimeout(resolve, 0);
+            if (typeof requestAnimationFrame === 'function') requestAnimationFrame(afterFrame);
+            else setTimeout(afterFrame, 0);
+        });
+    }
+
     async function loadServerSessions({ commit = true, timeoutMs = WORKSPACE_REQUEST_TIMEOUT_MS } = {}) {
         const response = await workspaceFetch('/api/sessions', {}, timeoutMs);
         if (!response.ok) throw new Error(`Session list failed: HTTP ${response.status}`);
@@ -2451,20 +2496,6 @@
             if (previousSessionId && typeof window.releaseTrainingMonitorForSession === 'function') {
                 void window.releaseTrainingMonitorForSession(previousSessionId, 'new_session', { forceRequest: true });
             }
-            // Capture the old case payload synchronously, but do not make the
-            // new-case first paint wait behind a large snapshot/checkpoint
-            // lock. persistWorkspace binds both payload and request header to
-            // previousSessionId before its first await, so this write cannot
-            // leak into the new case even when it finishes later.
-            let previousCaseFlush = null;
-            if (typeof flushActiveReportState === 'function') {
-                previousCaseFlush = Promise.resolve(flushActiveReportState());
-            } else {
-                previousCaseFlush = Promise.resolve(persistWorkspace('session.switching'));
-            }
-            void previousCaseFlush.catch(error => {
-                console.debug('[workspace] previous case flush deferred:', error);
-            });
             // Paint a genuinely empty case on the next animation frame instead
             // of holding the previous transcript and viewer until the server
             // has allocated an id. The temporary id cannot reach a clinical
@@ -2483,15 +2514,24 @@
             // New cases are an empty control-plane shell.  Do not show an
             // opening-case resource spinner and do not schedule hydration;
             // the old case's server task remains detached and case-owned.
-            paintSessionShell(optimisticId, { blank: true });
+            paintSessionShell(optimisticId, { blank: true, clearWorkspace: false });
             recordWorkspacePerformance('create.shell_first_paint', {
                 sessionId: optimisticId,
                 startedAt: createStartedAt,
             });
-            await new Promise(resolve => {
-                if (typeof requestAnimationFrame === 'function') requestAnimationFrame(resolve);
-                else setTimeout(resolve, 0);
+            await yieldWorkspaceShellPaint();
+            // The old form/viewer is still intact while this synchronous
+            // snapshot is captured. Explicit ownership prevents it from
+            // inheriting the optimistic Session id painted above.
+            const previousCaseFlush = typeof flushActiveReportState === 'function'
+                ? Promise.resolve(flushActiveReportState({ sessionId: previousSessionId }))
+                : Promise.resolve(persistWorkspace('session.switching', { sessionId: previousSessionId }));
+            void previousCaseFlush.catch(error => {
+                console.debug('[workspace] previous case flush deferred:', error);
             });
+            if (typeof clearClientWorkspace === 'function') {
+                clearClientWorkspace({ clearReport: true, deferDisposal: true });
+            }
             let response;
             try {
                 response = await workspaceFetch('/api/sessions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: 'New case' }) }, 5000);
@@ -2593,11 +2633,6 @@
             if (previousSessionId && typeof window.releaseTrainingMonitorForSession === 'function') {
                 void window.releaseTrainingMonitorForSession(previousSessionId, 'session_switch', { forceRequest: true });
             }
-            if (typeof flushActiveReportState === 'function') {
-                await Promise.resolve(flushActiveReportState());
-            } else {
-                await persistWorkspace('session.switching');
-            }
             if (typeof window.brachybotAuth?.releaseLease === 'function') {
                 void window.brachybotAuth.releaseLease(previousSessionId).catch(error => console.debug('[workspace] lease release deferred:', error));
             }
@@ -2607,15 +2642,24 @@
             // respond on the same frame as a normal panel switch. The server
             // request remains authoritative; failure below restores the old
             // shell instead of leaving a false selection highlighted.
-            paintSessionShell(id);
+            // Keep the old clinical projection in memory for one paint only.
+            // The detached, explicitly owned checkpoint below captures it
+            // after the new sidebar/title/transcript have become visible.
+            paintSessionShell(id, { clearWorkspace: false });
             recordWorkspacePerformance('switch.shell_first_paint', {
                 sessionId: id,
                 startedAt: switchStartedAt,
             });
-            await new Promise(resolve => {
-                if (typeof requestAnimationFrame === 'function') requestAnimationFrame(resolve);
-                else setTimeout(resolve, 0);
+            await yieldWorkspaceShellPaint();
+            const previousCaseFlush = typeof flushActiveReportState === 'function'
+                ? Promise.resolve(flushActiveReportState({ sessionId: previousSessionId }))
+                : Promise.resolve(persistWorkspace('session.switching', { sessionId: previousSessionId }));
+            void previousCaseFlush.catch(error => {
+                console.debug('[workspace] previous case flush deferred:', error);
             });
+            if (typeof clearClientWorkspace === 'function') {
+                clearClientWorkspace({ clearReport: true, deferDisposal: true });
+            }
             let response;
             try {
                 response = await workspaceFetch(`/api/sessions/${encodeURIComponent(id)}/select`, { method: 'POST', signal: aborter.signal });

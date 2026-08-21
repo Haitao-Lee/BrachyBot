@@ -117,6 +117,100 @@ def test_session_content_tool_builds_localized_session_bound_command():
     assert "\u62a5\u544a" in result.metadata["trace_summary_i18n"]["zh"]
 
 
+def test_dvh_session_content_supports_native_visual_presentation():
+    result = UISessionContentTool().execute(
+        target="dvh",
+        presentation="visual",
+        mode="chat",
+        question="\u8bf7\u7ed9\u6211\u770b\u770b DVH \u7ed3\u679c",
+    )
+
+    assert result.success is True
+    assert "visual" in UISessionContentTool().input_schema["properties"]["presentation"]["enum"]
+    command = result.metadata["content_command"]
+    assert command["target"] == "dvh"
+    assert command["presentation"] == "visual"
+    assert "\u56fe\u8868" in result.metadata["trace_summary_i18n"]["zh"]
+
+
+def test_session_content_contract_preserves_ordinal_selection_and_visual_analysis():
+    """A provider may omit modifiers, but the content contract cannot lose them."""
+    result = UISessionContentTool().execute(
+        target="report_figures",
+        presentation="attachments",
+        mode="chat",
+        question="\u6253\u5f00\u6700\u540e\u4e00\u5f20\u622a\u56fe\uff0c\u89e3\u8bfb",
+    )
+
+    command = result.metadata["content_command"]
+    assert command["selection"] == {"kind": "last"}
+    assert command["analysis"] is True
+    assert command["presentation"] == "visual"
+
+    trace = ToolResultPipeline.trace_metadata("ui_content", result.metadata)
+    assert trace["content_command"]["selection"] == {"kind": "last"}
+    assert trace["content_command"]["analysis"] is True
+    assert "question" not in trace["content_command"]
+
+
+def test_session_content_contract_keeps_passive_last_item_view_fast_and_attachment_based():
+    result = UISessionContentTool().execute(
+        target="report_figures",
+        presentation="attachments",
+        mode="chat",
+        question="\u6253\u5f00\u6700\u540e\u4e00\u5f20\u622a\u56fe",
+    )
+
+    command = result.metadata["content_command"]
+    assert command["selection"] == {"kind": "last"}
+    assert command["analysis"] is False
+    assert command["presentation"] == "attachments"
+
+
+def test_prior_reply_attachment_target_preserves_source_selection_and_analysis_contract():
+    message = "\u6253\u5f00\u4e0a\u4e00\u6761\u56de\u590d\u4e2d\u7684\u6700\u540e\u4e00\u5f20\u622a\u56fe\uff0c\u89e3\u8bfb"
+    result = UISessionContentTool().execute(
+        target="reply_attachments",
+        presentation="attachments",
+        mode="chat",
+        question=message,
+    )
+
+    command = result.metadata["content_command"]
+    assert command["target"] == "reply_attachments"
+    assert command["selection"] == {"kind": "last"}
+    assert command["analysis"] is True
+    assert command["presentation"] == "visual"
+    assert "\u56de\u590d" in result.metadata["trace_summary_i18n"]["zh"]
+
+
+def test_conversational_attachment_reference_resolves_before_global_figure_collection():
+    message = "\u6253\u5f00\u4e0a\u4e00\u6761\u56de\u590d\u4e2d\u7684\u6700\u540e\u4e00\u5f20\u622a\u56fe\uff0c\u89e3\u8bfb"
+
+    assert resolve_session_content_target(message) == "reply_attachments"
+    assert resolve_session_content_presentation(message, "reply_attachments") == "attachments"
+    assert classify_local_turn(message).intent == "semantic_action"
+    # A durable owner remains authoritative when the user names it explicitly.
+    assert resolve_session_content_target("\u6253\u5f00\u6700\u540e\u4e00\u5f20\u62a5\u544a\u622a\u56fe") == "report_figures"
+
+
+def test_tool_normalization_keeps_deictic_attachment_reference_bound_to_previous_reply():
+    message = "\u6253\u5f00\u6700\u540e\u4e00\u5f20\u622a\u56fe\uff0c\u89e3\u8bfb"
+    calls = ResponseToolMixin()._normalize_tool_params([{
+        "tool": "ui_content",
+        "params": {
+            "target": "report_figures",
+            "presentation": "attachments",
+            "question": message,
+        },
+    }])
+
+    assert calls[0]["tool"] == "ui_content"
+    assert calls[0]["params"]["target"] == "reply_attachments"
+    assert calls[0]["params"]["selection"] == {"kind": "last"}
+    assert calls[0]["params"]["analysis"] is True
+
+
 def test_session_content_tool_returns_localized_unavailable_error_for_an_unknown_resource():
     result = UISessionContentTool().execute(
         target="not_a_real_resource",
@@ -267,6 +361,15 @@ def test_persisted_report_figure_request_uses_session_content_not_live_capture()
     assert calls[0]["tool"] == "ui_content"
     assert calls[0]["params"]["target"] == "report_figures"
     assert calls[0]["params"]["planning_id"] == "planning-7"
+
+
+def test_interpretive_session_content_request_uses_semantic_reasoning_not_read_only_ack():
+    message = "\u8bf7\u6253\u5f00\u5f53\u524d\u62a5\u544a\u4e2d\u7684\u622a\u56fe\u5e76\u8be6\u7ec6\u89e3\u8bfb"
+
+    assert resolve_session_content_target(message) == "report_figures"
+    policy = classify_local_turn(message)
+    assert policy.intent == "semantic_action"
+    assert "ui_content" in policy.allow_tools
 
 
 @pytest.mark.parametrize(
@@ -634,6 +737,20 @@ def test_session_content_frontend_merges_real_attachments_and_never_emits_raw_lo
     assert "_readPlanningResultsForPresentation" in ui_api
     assert "_sessionContentObjectSummary" in ui_api
     assert "function _sessionContentObjectIndex" in ui_api
+    assert "_SESSION_CONTENT_VISUAL_CAPABILITIES" in ui_api
+    assert "_captureSessionContentVisual" in ui_api
+    assert "_ensureSessionDvhChart" in ui_api
+    assert "function _selectSessionContentItems" in ui_api
+    assert "function _sessionContentRequestsVisualAnalysis" in ui_api
+    assert "function _mostRecentVisibleReplyAttachments" in ui_api
+    assert "function _appendReferencedReplyAttachments" in ui_api
+    assert "source_message_id" in ui_api
+    assert "selected_for_analysis" in ui_api
+    assert "visual_analysis: analyze" in ui_api
+    assert "visual_analysis === true" in chat
+    assert "_queueVisualAnalysisFollowUp" in chat
+    assert "visualContentResults," in chat
+    assert "presentation.attachments" in chat
     assert "function _focusSessionContentObjects" in ui_api
     for token in (
         "add(tree.ct",
@@ -664,6 +781,57 @@ def test_session_content_frontend_merges_real_attachments_and_never_emits_raw_lo
     assert "Send failed: ' + (e?.message || e)" not in chat
     assert 'presentation_tool in {"ui_screenshot", "ui_content"}' in routes
     assert '"content_command"' in routes
+
+
+def test_visual_followup_is_parent_bound_and_cannot_leak_a_hidden_trace():
+    chat = _source("web/app/static/js/brachybot-chat-todo.js")
+    tasks = _source("web/chat_tasks.py")
+    routes = _source("web/routes/planning_routes.py")
+
+    assert "const followupRequestId" in chat
+    assert "parentRequestId" in chat
+    assert "followupKey" in chat
+    assert "_cancelVisualFollowups" in chat
+    assert "const _ssFingerprint" in chat
+    assert "if (isInternalFollowup)" in chat
+    assert "saveSessionMessage('thinking'" in chat
+    assert "if (!isInternalFollowup)" in chat
+    assert '"internal_followup": True' in _source("agent_runtime/chat_workflows.py")
+    assert '"message": "Visual screenshot analysis follow-up"' in _source("agent_runtime/chat_workflows.py")
+    assert "if not internal_followup:\n            add_step(\"user\"" in _source("agent_runtime/chat_workflows.py")
+    assert "context.urlKeys" in _source("web/app/static/js/brachybot-ui-api.js")
+    assert "dataset.attachmentUrl" in _source("web/app/static/js/brachybot-chat-core.js")
+    assert '"parent_request_id"' in tasks
+    assert "public_message =" in tasks
+    assert "durable_request_id" in routes
+    assert "visual-analysis-" in routes
+    assert "trace_for_snapshot" in routes
+    assert "visual_read_only_tools" in _source("agent_runtime/llm_runtime.py")
+    assert '"ui_screenshot"' not in _source("agent_runtime/llm_runtime.py").split(
+        "_visual_read_only_tools", 1
+    )[1].split("# The local turn policy", 1)[0]
+    assert "_stripVisualAttachmentEchoes" in chat
+    assert "Do not repeat attachment titles" in chat
+    assert "opts.sessionId || activeSessionId" in chat
+
+
+def test_compacted_visual_followup_protocol_is_removed_without_erasing_real_context():
+    summary = (
+        "Previous conversation summary:\n"
+        "User: 请帮我查看当前病例\n"
+        "User: [Screenshot captured: /api/sessions/case/screenshots/dose.png]\n"
+        "Analyze the supplied screenshot(s) and answer the user's request directly.\n"
+        "Do not request another screenshot.\n"
+        "Assistant: 已完成剂量分析。"
+    )
+
+    cleaned = ChatWorkflowMixin._strip_internal_visual_context_text(summary)
+
+    assert "请帮我查看当前病例" in cleaned
+    assert "已完成剂量分析" in cleaned
+    assert "Screenshot captured" not in cleaned
+    assert "Analyze the supplied screenshot" not in cleaned
+    assert "Do not request another screenshot" not in cleaned
 
 
 def test_report_chat_and_monitor_capture_paths_remain_separate():

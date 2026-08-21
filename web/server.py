@@ -92,11 +92,15 @@ def _case_has_running_chat_task(task_manager: Any, user_id: str, session_id: str
     The task manager is deliberately optional so server startup and lightweight
     test configurations retain their existing behavior.
     """
-    active = getattr(task_manager, "active", None)
-    if not callable(active):
+    # Public task status becomes ``cancelled`` as soon as Stop is accepted,
+    # while the worker can still own the case Agent during generator cleanup.
+    # Prefer the manager's live-worker probe and retain the old active-only
+    # fallback for lightweight test/server configurations.
+    probe = getattr(task_manager, "live", None) or getattr(task_manager, "active", None)
+    if not callable(probe):
         return False
     try:
-        return active(str(user_id), str(session_id)) is not None
+        return probe(str(user_id), str(session_id)) is not None
     except Exception:
         # Cache maintenance must never interrupt a clinical workflow merely
         # because task-status introspection is temporarily unavailable.
@@ -111,18 +115,23 @@ def _persist_agent_change(
     agent: Any,
     reason: str,
 ) -> None:
-    """Schedule a checkpoint and cancel a stale cold-start restore if needed.
+    """Persist a ready Agent without interrupting a cold-start restore.
 
-    A case can be opened and edited before its large sidecars finish loading.
-    The first user mutation then becomes newer than the restore snapshot.  A
-    cancellation flag prevents the background restore from overwriting that
-    mutation with stale arrays; the normal debounced checkpoint still records
-    it asynchronously.
+    A metadata shell is intentionally installed before large sidecars finish
+    loading.  Read-time normalization and control-plane requests can touch
+    that shell, but it is not a complete clinical Agent and must never be
+    checkpointed or used to cancel the authoritative restore.  Clinical
+    mutation routes wait for the ready barrier before changing Agent memory;
+    UI-only changes use ``save_snapshot_patch`` and do not enter this callback.
     """
     if getattr(agent, "_workspace_hydration_in_progress", False):
-        cancel_event = getattr(agent, "_workspace_hydration_cancel", None)
-        if cancel_event is not None:
-            cancel_event.set()
+        logger.debug(
+            "Deferring Agent persistence callback during workspace hydration "
+            "session=%s reason=%s",
+            session_id,
+            reason,
+        )
+        return
     workspace_store.schedule_agent_checkpoint(owner_id, session_id, agent, reason)
 
 
@@ -488,6 +497,7 @@ def create_app(config: Optional[Dict] = None):
             agent._workspace_ct_ready = False
             agent._workspace_hydration_phase = "metadata"
             agent._workspace_hydration_superseded = False
+            agent._workspace_hydration_repaired = False
             agent._workspace_hydration_error = ""
             agent._workspace_ready_event = threading.Event()
             with _sessions_lock:
@@ -580,24 +590,26 @@ def create_app(config: Optional[Dict] = None):
                             and cancel_event is not None
                             and cancel_event.is_set()
                             and not superseded
-                            and retry_attempt < 3
                         ):
-                            # A user mutation raced the restore.  Give its
-                            # debounced checkpoint a moment to land, then
-                            # restore the newest snapshot instead of declaring
-                            # the stale restore complete.
+                            # A user mutation raced the restore. Give its
+                            # debounced checkpoint time to land, then restore
+                            # the newest snapshot instead of declaring the
+                            # stale restore complete. The checkpoint can encode
+                            # hundreds of NPY sidecars, so a short fixed retry
+                            # budget made the agent permanently look ready with
+                            # only CT/metadata restored.
                             retry_scheduled = True
                             current_agent._workspace_data_ready = False
                             retry_thread = threading.Thread(
                                 target=lambda: (
-                                    time.sleep(0.5),
+                                    time.sleep(min(5.0, 0.5 + retry_attempt * 0.5)),
                                     _complete_workspace_hydration(
                                         current_agent=current_agent,
                                         owner_id=owner_id,
                                         case_id=case_id,
                                         key=key,
                                         generation=generation,
-                                        retry_attempt=retry_attempt + 1,
+                                        retry_attempt=min(retry_attempt + 1, 8),
                                     ),
                                 ),
                                 name=f"brachy-hydrate-retry-{case_id[:8]}",
@@ -612,6 +624,18 @@ def create_app(config: Optional[Dict] = None):
                             current_agent._workspace_data_ready = True
                             current_agent._workspace_hydration_in_progress = False
                             current_agent._workspace_hydration_phase = "ready"
+                            if getattr(current_agent, "_workspace_hydration_repaired", False):
+                                # Reconciliation may have selected a complete
+                                # historical Planning and restored its legacy
+                                # aliases. Persist that repaired active view so
+                                # the next restart does not repeat the same
+                                # partial-plan selection.
+                                workspace_store.schedule_agent_checkpoint(
+                                    owner_id,
+                                    case_id,
+                                    current_agent,
+                                    "workspace.hydration.reconciled",
+                                )
                             logger.info(
                                 "Background case hydration completed session=%s duration_ms=%.1f",
                                 case_id, (time.perf_counter() - started) * 1000.0,
@@ -798,7 +822,24 @@ def create_app(config: Optional[Dict] = None):
             agent = getattr(g, "brachybot_agent", None)
             workspace = getattr(g, "brachybot_workspace", None)
             if agent is not None and workspace is not None:
-                workspace_store.schedule_agent_checkpoint(workspace[0], workspace[1], agent, "request.completed")
+                # Opening a case installs a metadata-only Agent shell while
+                # CT/NPY sidecars are decoded in the background.  A generic
+                # request checkpoint at that point would serialize the shell
+                # as if it were the complete workspace and can overwrite a
+                # durable planning snapshot with missing masks, seeds, dose,
+                # guide, and report artifacts.  UI bridge patches are saved
+                # separately, so defer the full Agent checkpoint until the
+                # hydration worker has published a ready Agent.
+                if getattr(agent, "_workspace_hydration_in_progress", False):
+                    logger.debug(
+                        "Deferring request checkpoint during workspace hydration "
+                        "session=%s path=%s",
+                        workspace[1], request.path,
+                    )
+                else:
+                    workspace_store.schedule_agent_checkpoint(
+                        workspace[0], workspace[1], agent, "request.completed",
+                    )
         return response
 
     @app.before_request

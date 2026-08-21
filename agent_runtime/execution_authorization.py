@@ -32,6 +32,7 @@ MUTATING_TOOLS: FrozenSet[str] = frozenset({
     "seed_planning_rule_based",
     "seed_planning_rl",
     "dose_engine",
+    "dose_recompute",
     "dose_evaluation",
     "planning_pipeline",
     "surgical_guide",

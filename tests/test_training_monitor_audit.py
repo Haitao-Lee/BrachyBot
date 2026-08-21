@@ -120,6 +120,7 @@ def test_monitor_lifecycle_keeps_feedback_and_evidence_case_scoped():
     ui_api = (root / "web/app/static/js/brachybot-ui-api.js").read_text(encoding="utf-8")
     manual = (root / "web/app/static/js/brachybot-3d-manual.js").read_text(encoding="utf-8")
     routes = (root / "web/routes/planning_routes.py").read_text(encoding="utf-8")
+    server = (root / "web/server.py").read_text(encoding="utf-8")
     css = (root / "web/app/static/css/brachybot-chat-status.css").read_text(encoding="utf-8")
 
     # A delayed timer from another case may not erase a new case's feedback.
@@ -142,7 +143,9 @@ def test_monitor_lifecycle_keeps_feedback_and_evidence_case_scoped():
     # UI telemetry must not hydrate a cold case just to answer a click.
     assert "agent = get_cached_agent(session_id) if monitor_run_matches" in routes
     assert "def monitor_control_agent(session_id):" in routes
-    assert "return get_agent(session_id, _lightweight=True)" in routes
+    assert "def ready_or_none(candidate):" in routes
+    assert "return ready_or_none(get_agent(session_id, _lightweight=True))" in routes
+    assert "Deferring request checkpoint during workspace hydration" in server
     assert "agent = monitor_control_agent(session_id)" in routes
     assert "and request_run_id" in routes
     assert "A monitor run is already active for this case." in routes

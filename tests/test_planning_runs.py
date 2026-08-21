@@ -11,6 +11,7 @@ from web.planning_runs import (
     mark_planning_run,
     publish_active_planning_state,
     publish_planning_run,
+    reconcile_planning_history,
 )
 
 
@@ -184,3 +185,40 @@ def test_activation_restores_all_planning_owned_downstream_artifacts():
     runs = list_planning_runs(agent.memory)
     assert runs[0]["visible"] is False
     assert runs[1]["visible"] is True
+
+
+def test_hydration_reconciles_partial_active_run_to_complete_persisted_run():
+    """Restart recovery must restore the complete run, not an empty shell."""
+    agent = _agent()
+    memory = agent.memory
+    memory.store = lambda key, value: memory.planning_results.__setitem__(key, value)
+
+    complete = begin_planning_run(agent, step="full", force_new=True)
+    memory.store("manual_seeds", [{"id": "seed-complete", "position": [1, 2, 3]}])
+    memory.store("manual_needles", [{"id": "needle-complete", "points": [[0, 0, 0], [1, 1, 1]]}])
+    memory.store("dose_distribution_gy", [[[120.0]]])
+    memory.store("dose_metrics", {"v100": 91.0, "d90": 122.0})
+    memory.store("dvh_data", {"CTV": {"dose": [0.0, 120.0], "volume_percent": [100.0, 91.0]}})
+    memory.store("surgical_guide", {"status": "ready", "version": 1})
+    publish_planning_run(agent, None, status="completed")
+
+    partial = begin_planning_run(agent, step="full", force_new=True)
+    memory.store("manual_seeds", [{"id": "seed-partial", "position": [4, 5, 6]}])
+    memory.store("manual_needles", [{"id": "needle-partial", "points": [[0, 0, 0], [0, 1, 0]]}])
+    # This is the persisted state observed after a restart while Planning_2
+    # was still running: it has a namespaced snapshot but no dose products.
+    publish_planning_run(agent, None, status="running")
+
+    result = reconcile_planning_history(memory, recover_running=True)
+
+    assert result["active_planning_id"] == complete
+    assert result["restored_aliases"]
+    assert memory.retrieve("active_planning_id") == complete
+    assert memory.retrieve("manual_seeds")[0]["id"] == "seed-complete"
+    assert memory.retrieve("dose_distribution_gy") == [[[120.0]]]
+    runs = list_planning_runs(memory)
+    assert runs[0]["planning_id"] == complete
+    assert runs[0]["visible"] is True
+    assert runs[1]["planning_id"] == partial
+    assert runs[1]["status"] == "interrupted"
+    assert runs[1]["visible"] is False
