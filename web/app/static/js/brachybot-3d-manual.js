@@ -336,6 +336,10 @@ function _applyAuthoritativeManualSeeds(data) {
                 seeds: [],
             };
         });
+        if (manualPlanningState.activeNeedleId
+            && !authoritativeNeedleIds.has(String(manualPlanningState.activeNeedleId))) {
+            manualPlanningState.activeNeedleId = dataTreeState.planning.needles.at(-1)?.id || null;
+        }
         dataTreeState.planning.needles.forEach(needle => {
             _upsertSceneMesh(needle.id, _makeNeedleMesh(needle));
             _syncNeedleHandles(needle);
@@ -447,6 +451,52 @@ async function _commitManualSeeds(reason, rollbackSeeds, rollbackNeedles = null)
     }
     if (typeof scheduleWorkspaceSave === 'function') {
         scheduleWorkspaceSave(`manual.seed.${reason}`);
+    }
+    return data;
+}
+
+async function _deleteNeedleAuthoritatively(needleId) {
+    const payload = _manualPayload();
+    const ownerSessionId = payload.session_id;
+    const response = await fetch(API + '/manual_planning/delete_needle', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            session_id: ownerSessionId,
+            planning_id: payload.planning_id,
+            expected_version: payload.planning_version,
+            needle_id: String(needleId),
+            reason: 'needle_delete',
+        }),
+    });
+    const data = await response.json().catch(() => null);
+    const sameSession = ownerSessionId === _activeApiSessionId();
+    if (!response.ok || !data || !data.success) {
+        // A stale-version response carries the server's current snapshot. It
+        // must win over the browser's pre-delete snapshot, otherwise a race
+        // can repaint an older Planning after a newer edit was accepted.
+        if (sameSession && Array.isArray(data?.seeds) && Array.isArray(data?.needles)) {
+            _applyAuthoritativeManualSeeds(data);
+        }
+        const error = new Error((data && data.error) || `HTTP ${response.status}`);
+        error.code = data && data.code;
+        error.authoritative = data;
+        throw error;
+    }
+    if (!sameSession) return { ...data, stale: true };
+
+    _applyAuthoritativeManualSeeds(data);
+    // A topology edit invalidates the visible dose immediately. Keeping the
+    // old overlay painted until a later recalculation would make the viewer
+    // look as if it still belongs to the deleted Needle/Seed geometry.
+    if (typeof _invalidateDoseForPlanningRun === 'function') {
+        _invalidateDoseForPlanningRun({ sessionId: ownerSessionId });
+    }
+    if (typeof window.invalidateSurgicalGuidePresentation === 'function') {
+        window.invalidateSurgicalGuidePresentation();
+    }
+    if (typeof scheduleWorkspaceSave === 'function') {
+        scheduleWorkspaceSave('manual.needle.delete');
     }
     return data;
 }
@@ -6359,12 +6409,15 @@ async function deleteSeed3D(seedId) {
 
 // Delete a needle through the same authoritative transaction as seed edits.
 async function deleteNeedle3D(needleId) {
-    const needle = dataTreeState.planning.needles.find(item => item.id === needleId);
+    const requestedNeedleId = String(needleId ?? '').trim();
+    const needle = dataTreeState.planning.needles.find(
+        item => String(item.id ?? '').trim() === requestedNeedleId,
+    );
     if (!needle || manualPlanningState.needleMutationRunning) return false;
     const confirmed = typeof _confirmAction === 'function'
         ? await _confirmAction(
-            `删除针道 ${needleId} 及其粒子？删除后剂量、DVH、报告和手术导板需要更新。`,
-            `Delete needle ${needleId} and its seeds? Dose, DVH, report, and Surgical Guide will need updating.`,
+            `删除针道 ${requestedNeedleId} 及其粒子？删除后剂量、DVH、报告和手术导板需要更新。`,
+            `Delete needle ${requestedNeedleId} and its seeds? Dose, DVH, report, and Surgical Guide will need updating.`,
             {
                 yesZh: '删除针道',
                 yesEn: 'Delete needle',
@@ -6381,48 +6434,39 @@ async function deleteNeedle3D(needleId) {
     const rollback = _cloneManualPlanningSnapshot();
     _setManualDoseProgress('running', _manualText('正在保存删除的针道…', 'Saving the needle deletion...'));
     try {
-        const trajId = needle.trajectory_id;
-        const mesh = scene3D.meshes[needleId];
-        if (mesh) {
-            scene3D.scene.remove(mesh);
-            mesh.geometry?.dispose?.();
-            if (Array.isArray(mesh.material)) mesh.material.forEach(material => material?.dispose?.());
-            else mesh.material?.dispose?.();
-            delete scene3D.meshes[needleId];
-        }
-        if (typeof _removeNeedleHandles === 'function') _removeNeedleHandles(needleId);
-        dataTreeState.planning.needles = dataTreeState.planning.needles.filter(item => item.id !== needleId);
-        if (trajId) {
-            dataTreeState.planning.seeds
-                .filter(seed => seed.trajectory_id === trajId)
-                .forEach(seed => removeSeed3D(seed.id));
-            dataTreeState.planning.seeds = dataTreeState.planning.seeds.filter(seed => seed.trajectory_id !== trajId);
-            dataTreeState.planning.trajectories = dataTreeState.planning.trajectories.filter(item => item.id !== trajId);
-        }
-        if (manualPlanningState.activeNeedleId === needleId) {
-            manualPlanningState.activeNeedleId = dataTreeState.planning.needles.at(-1)?.id || null;
-        }
-        _syncSeedsOverlayFromDataTree();
-        renderDataTree();
-        await _commitManualSeeds('needle_delete', rollback.seeds, rollback.needles);
-        reportUIEvent('manual.needle.delete', needleId, {
+        // The server owns the topology mutation. Do not optimistically submit
+        // the remaining seed list through update_seeds: that path validates
+        // surviving seed spacing and can reject deletion because of an old,
+        // unrelated overlap elsewhere in the plan.
+        const data = await _deleteNeedleAuthoritatively(requestedNeedleId);
+        if (data.stale) return false;
+        const trajId = data.deleted_trajectory_id || needle.trajectory_id;
+        const removedSeedCount = Array.isArray(data.removed_seed_ids)
+            ? data.removed_seed_ids.length
+            : 0;
+        reportUIEvent('manual.needle.delete', requestedNeedleId, {
             trajectory_id: trajId,
             remaining_needles: dataTreeState.planning.needles.length,
             remaining_seeds: dataTreeState.planning.seeds.length,
             planning_version: manualPlanningState.planningVersion,
+            removed_seed_count: removedSeedCount,
         });
         _setManualDoseProgress('done', _manualText(
-            `已删除针道 ${needleId}。相关剂量、DVH、报告和手术导板已标记为需要更新。`,
-            `Needle ${needleId} deleted. Related dose, DVH, report, and Surgical Guide are now stale.`,
+            `已删除针道 ${requestedNeedleId}。相关剂量、DVH、报告和手术导板已标记为需要更新。`,
+            `Needle ${requestedNeedleId} deleted. Related dose, DVH, report, and Surgical Guide are now stale.`,
         ));
         addChat('system', _manualText(
-            `已删除针道 ${needleId} 及其所属粒子。`,
-            `Needle ${needleId} and its seeds were deleted.`,
+            `已删除针道 ${requestedNeedleId} 及其 ${removedSeedCount} 个所属粒子。剂量、DVH、报告和手术导板已标记为过期，请确认剩余几何后重新计算剂量。`,
+            `Needle ${requestedNeedleId} and its ${removedSeedCount} dependent seeds were deleted. Dose, DVH, report, and Surgical Guide are stale; recalculate after reviewing the remaining geometry.`,
         ));
-        if (dataTreeState.planning.seeds.length > 0) scheduleManualDoseRecompute('needle_delete');
         return true;
     } catch (error) {
-        _restoreManualPlanningSnapshot(rollback);
+        // A 409 response may already have repainted the authoritative current
+        // snapshot. Only restore the local pre-delete view for transport or
+        // server failures that did not provide a newer snapshot.
+        if (!error?.authoritative?.seeds || !error?.authoritative?.needles) {
+            _restoreManualPlanningSnapshot(rollback);
+        }
         _setManualDoseProgress('error', _manualText(
             `删除针道失败：${error.message}`,
             `Needle deletion failed: ${error.message}`,

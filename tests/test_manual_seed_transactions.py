@@ -8,6 +8,8 @@ from web.routes.planning_routes import (
     _deduplicate_manual_seed_records,
     _manual_seed_geometry_settings,
     _normalize_manual_seed_records,
+    _remove_manual_needle,
+    _serialize_manual_plan,
     _submitted_manual_needles,
 )
 from web.server_support import _manual_grid_array, _seed_interference_report
@@ -203,11 +205,61 @@ def test_manual_needle_mutations_use_authoritative_backend_transactions():
 
     assert "await _persistNeedleGeometryOnly({" in manual
     assert "reason: 'needle_add'" in manual
-    assert "await _commitManualSeeds('needle_delete', rollback.seeds, rollback.needles)" in manual
+    assert "API + '/manual_planning/delete_needle'" in manual
+    assert "await _deleteNeedleAuthoritatively(requestedNeedleId)" in manual
+    assert "scheduleManualDoseRecompute('needle_delete')" not in manual
     assert "expected_version: payload.planning_version" in manual
     assert '"artifact_status": artifact_status' in routes
     assert 'memory.store("manual_plan_version", next_version)' in routes
     assert "_mark_manual_dependents_stale(" in routes
+
+
+def test_needle_delete_removes_owned_seeds_without_validating_survivors():
+    """A topology delete must succeed even when unrelated seeds are already invalid."""
+    snapshot = {
+        "needles": [
+            {
+                "id": "needle_bad",
+                "trajectory_id": "traj_bad",
+                "points": [[0, 0, 0], [0, 0, 10]],
+            },
+            {
+                "id": "needle_keep",
+                "trajectory_id": "traj_keep",
+                "points": [[1, 0, 0], [1, 0, 10]],
+            },
+        ],
+        "seeds": [
+            {"id": "seed_bad", "needle_id": "needle_bad", "trajectory_id": "traj_bad", "position": [0, 0, 5]},
+            {"id": "seed_keep_a", "trajectory_id": "traj_keep", "position": [1, 0, 5]},
+            # These two survivors intentionally overlap. Their invalidity is
+            # unrelated to deleting needle_bad and must not block the delete.
+            {"id": "seed_keep_b", "trajectory_id": "traj_keep", "position": [1, 0, 5]},
+        ],
+    }
+
+    mutation = _remove_manual_needle(snapshot, "needle_bad")
+
+    assert mutation is not None
+    assert [row["id"] for row in mutation["needles"]] == ["needle_keep"]
+    assert [row["id"] for row in mutation["removed_seeds"]] == ["seed_bad"]
+    assert [row["id"] for row in mutation["seeds"]] == ["seed_keep_a", "seed_keep_b"]
+    serialized = _serialize_manual_plan(mutation["needles"], mutation["seeds"])
+    assert [row["trajectory_id"] for row in serialized] == ["traj_keep"]
+    assert [row["id"] for row in serialized[0]["seeds"]] == ["seed_keep_a", "seed_keep_b"]
+
+
+def test_needle_delete_route_is_topology_mutation_not_seed_replacement():
+    root = __import__("pathlib").Path(__file__).resolve().parents[1]
+    routes = (root / "web/routes/planning_routes.py").read_text(encoding="utf-8")
+    start = routes.index('@app.route("/api/manual_planning/delete_needle"')
+    end = routes.index('@app.route("/api/manual_planning/update_seeds"', start)
+    delete_route = routes[start:end]
+
+    assert "_remove_manual_needle(current, needle_id)" in delete_route
+    assert "_seed_interference_report" not in delete_route
+    assert '"requires_recompute": True' in delete_route
+    assert '"removed_seed_ids": removed_seed_ids' in delete_route
 
 
 def test_manual_tree_repairs_duplicate_planning_rows_before_render():

@@ -272,6 +272,12 @@ class AgentMemory:
             self._persistence_callback = callback
 
     def _notify_persistence(self, reason: str) -> None:
+        # Internal multimodal follow-ups are execution children of an already
+        # persisted assistant reply. Their temporary tool/context messages
+        # must not trigger a workspace checkpoint while the child is running;
+        # the child restores its conversational snapshot before it exits.
+        if getattr(self, "_suppress_persistence", False):
+            return
         callback = self._persistence_callback
         if callback is None:
             return
@@ -893,9 +899,17 @@ class ToolResultPipeline:
     }
     _ANALYSIS_TOOLS = {"code_executor"}
     _UI_TOOLS = {"ui_controller", "ui_screenshot", "ui_content"}
-    _PLANNING_TOOLS = {"planning_pipeline", "seed_planning", "trajectory_planning", "dose_engine", "dose_evaluation"}
+    _PLANNING_TOOLS = {
+        "planning_pipeline",
+        "seed_planning",
+        "trajectory_planning",
+        "dose_engine",
+        "dose_recompute",
+        "dose_evaluation",
+    }
     _WEB_TOOLS = {"web_search", "web_fetch", "web_access"}
     _DOCUMENT_TOOLS = {"doc_reader"}
+    _METRIC_TOOLS = {"query_metrics"}
     # These tools provide evidence for synthesis, not a standalone answer.
     # Their raw payloads may contain arbitrary web text or internal checking
     # details and are therefore excluded from all raw fallbacks.
@@ -909,7 +923,7 @@ class ToolResultPipeline:
         "biomedparse_segmentation",
         "planning_pipeline", "seed_planning", "trajectory_planning",
         "trajectory_init", "trajectory_refine", "dose_engine", "dose_calc",
-        "dose_evaluation", "query_metrics", "surgical_guide",
+        "dose_recompute", "dose_evaluation", "query_metrics", "surgical_guide",
         "report_generator", "report_auto_fill", "ui_controller",
         "ui_screenshot", "ui_content", "ui_annotate", "doc_reader",
     }
@@ -931,7 +945,7 @@ class ToolResultPipeline:
         # Presentation tools carry an LLM-facing instruction in result.message.
         # That instruction must never become ordinary chat text or a Trace row.
         # Handle their successful and failed results before generic fallbacks.
-        if tool_name in {"ui_screenshot", "ui_content"}:
+        if tool_name in {"ui_controller", "ui_screenshot", "ui_content"}:
             return ToolResultPipeline._format_ui(tool_name, result, meta, lang)
 
         if not result.success and lang == "zh" and tool_name in ToolResultPipeline._DOCUMENT_TOOLS:
@@ -948,6 +962,8 @@ class ToolResultPipeline:
         # 2. Auto-generate based on tool category
         if tool_name in ToolResultPipeline._SEGMENTATION_TOOLS:
             return ToolResultPipeline._format_segmentation(tool_name, result, meta, lang)
+        if tool_name in ToolResultPipeline._METRIC_TOOLS:
+            return ToolResultPipeline._format_metrics(result, meta, lang)
         if tool_name in ToolResultPipeline._ANALYSIS_TOOLS:
             return ToolResultPipeline._format_analysis(tool_name, result, meta, lang)
         if tool_name in ToolResultPipeline._UI_TOOLS:
@@ -975,6 +991,114 @@ class ToolResultPipeline:
             msg = msg.replace("File info for ", "文件信息: ")
             msg = msg.replace("Filesystem browse failed: ", "文件浏览失败: ")
         return msg
+
+    @staticmethod
+    def direct_read_contract(result) -> Optional[dict]:
+        """Return a validated capability contract for a read-only result.
+
+        This is intentionally independent of the user's wording.  A tool may
+        opt into the fast response boundary only by returning the explicit
+        structured contract, which prevents arbitrary tool text from
+        bypassing the normal synthesis/review safeguards.
+        """
+        metadata = getattr(result, "metadata", {}) or {}
+        contract = metadata.get("response_contract")
+        if not isinstance(contract, dict):
+            return None
+        if (
+            not getattr(result, "success", False)
+            or contract.get("mode") != "direct_read"
+            or contract.get("requires_synthesis", True)
+            or contract.get("source") != "active_session"
+        ):
+            return None
+        return contract
+
+    @staticmethod
+    def _format_metrics(result, meta: dict, lang: str) -> str:
+        """Render saved metrics as a compact, localized user-facing result."""
+        values = result.data if isinstance(getattr(result, "data", None), dict) else {}
+        if not values:
+            values = {
+                key: value for key, value in (meta or {}).items()
+                if key not in {"response_contract", "metric_type"}
+            }
+        metric_type = str(values.get("metric_type") or meta.get("metric_type") or "")
+
+        def number(*keys):
+            for key in keys:
+                value = values.get(key)
+                if value is None:
+                    continue
+                try:
+                    return float(value)
+                except (TypeError, ValueError):
+                    continue
+            return None
+
+        def fmt(value, digits=2, suffix=""):
+            return f"{value:.{digits}f}{suffix}" if value is not None else "—"
+
+        def pct(*keys):
+            value = number(*keys)
+            if value is not None and 1.0 < value <= 100.0:
+                value /= 100.0
+            return fmt(value * 100 if value is not None else None, 2, "%")
+
+        if metric_type == "dose_metrics" or any(
+            key in values for key in ("V100", "V150", "V200", "D90", "Dmean")
+        ):
+            rows = [
+                ("V100", pct("V100", "v100")),
+                ("V150", pct("V150", "v150")),
+                ("V200", pct("V200", "v200")),
+                ("D90", f"{fmt(number('D90', 'd90'))} Gy"),
+                ("D95", f"{fmt(number('D95', 'd95'))} Gy"),
+                ("Dmean", f"{fmt(number('Dmean', 'dmean', 'mean_dose'))} Gy"),
+                ("D2", f"{fmt(number('D2', 'd2', 'D2cc', 'd2cc'))} Gy"),
+                ("Dmax", f"{fmt(number('Dmax', 'dmax', 'max_dose'))} Gy"),
+                ("CI", fmt(number("CI", "ci"), 3)),
+                ("HI", fmt(number("HI", "hi"), 3)),
+                ("Plan score", f"{fmt(number('plan_score', 'score'), 2)}/100"),
+            ]
+            rows = [(label, value) for label, value in rows if value not in {"—", "— Gy", "—/100"}]
+            prescription = number("prescription_gy", "prescribed_dose")
+            title = "当前病例剂量指标" if lang == "zh" else "Current case dose metrics"
+            intro = "以下数值直接读取当前 Session 已保存的剂量/DVH 结果。" if lang == "zh" else "The following values were read directly from the saved dose/DVH result in the active session."
+            header = "指标 | 数值" if lang == "zh" else "Metric | Value"
+            table = [f"| {header} |", "|---|---:|"]
+            for label, value in rows:
+                display_label = {
+                    "Plan score": "计划评分" if lang == "zh" else label,
+                }.get(label, label)
+                table.append(f"| {display_label} | {value} |")
+            if prescription is not None:
+                label = "处方剂量" if lang == "zh" else "Prescription"
+                table.insert(2, f"| {label} | {fmt(prescription)} Gy |")
+            return f"## {title}\n\n{intro}\n\n" + "\n".join(table)
+
+        if metric_type == "ctv_volume":
+            title = "CTV 体积" if lang == "zh" else "CTV volume"
+            return f"## {title}\n\n{fmt(number('volume_cm3'), 1)} cm³"
+        if metric_type == "seed_count":
+            title = "粒子数量" if lang == "zh" else "Seed count"
+            return f"## {title}\n\n{fmt(number('seed_count'), 0)}"
+        if metric_type == "oar_volumes":
+            title = "OAR 体积" if lang == "zh" else "OAR volumes"
+            rows = [f"| {'结构' if lang == 'zh' else 'Structure'} | {'体积 (cm³)' if lang == 'zh' else 'Volume (cm³)'} |", "|---|---:|"]
+            for name, value in sorted(values.items()):
+                try:
+                    rows.append(f"| {name} | {float(value):.2f} |")
+                except (TypeError, ValueError):
+                    continue
+            return f"## {title}\n\n" + "\n".join(rows)
+
+        # The remaining read-only metric resources are small scalar maps.
+        title = "当前病例指标" if lang == "zh" else "Current case metrics"
+        return f"## {title}\n\n" + "\n".join(
+            f"- {key}: {value}" for key, value in values.items()
+            if key not in {"response_contract", "metric_type"}
+        )
 
     @staticmethod
     def _format_document(result, meta: dict, lang: str) -> str:
@@ -1298,6 +1422,61 @@ class ToolResultPipeline:
     @staticmethod
     def _format_ui(tool_name: str, result, meta: dict, lang: str) -> str:
         """Format UI controller results."""
+        if tool_name == "ui_controller" and not result.success:
+            # Controller validation failures are expected, recoverable user
+            # errors. Keep the raw registry error in server logs/LLM context,
+            # but expose only a localized explanation and the next valid
+            # capability. This prevents internal errors from escaping into
+            # the ordinary chat stream.
+            hints = meta.get("repair_hints") if isinstance(meta, dict) else None
+            hint = hints[0] if isinstance(hints, list) and hints else {}
+            kind = str(hint.get("kind") or "") if isinstance(hint, dict) else ""
+            target = str(hint.get("target") or "") if isinstance(hint, dict) else ""
+            command = str(hint.get("command") or "") if isinstance(hint, dict) else ""
+            ranges = hint.get("accepted_range") if isinstance(hint, dict) else None
+            target_labels = {
+                "viewer.fullscreen": "查看器窗口展开",
+                "3d.fit": "3D 相机适配",
+                "viewer.zoom": "查看器缩放",
+                "viewer.fit_all": "2D 查看器适配",
+            }
+            target_labels_en = {
+                "viewer.fullscreen": "viewer card maximize",
+                "3d.fit": "3D camera fit",
+                "viewer.zoom": "viewer magnification",
+                "viewer.fit_all": "2D viewer fit",
+            }
+            if kind == "value_out_of_range" and isinstance(ranges, (list, tuple)) and len(ranges) == 2:
+                semantics = str(hint.get("value_semantics") or "value")
+                if lang == "zh":
+                    meaning = "绝对值" if semantics == "absolute" else "正增量"
+                    return (
+                        f"界面操作未执行：{target_labels.get(target, target or '当前控件')}的"
+                        f"{command}参数必须是{meaning}，可用范围为 {ranges[0]}–{ranges[1]}。"
+                        "如果要放大整个 3D 查看器，请使用查看器右上角的展开按钮；"
+                        "如果只要改变模型构图，请使用 3D 相机适配；如果要改变缩放值，"
+                        "请提供缩放百分比或正的缩放增量。"
+                    )
+                meaning = "an absolute value" if semantics == "absolute" else "a positive delta"
+                return (
+                    f"The UI action was not applied: {target_labels_en.get(target, target or 'the control')}"
+                    f" requires {meaning} in the range {ranges[0]}–{ranges[1]}. "
+                    "Use the viewer expand button to maximize the 3D card, 3d.fit only to frame "
+                    "the current meshes, or viewer.zoom with an absolute percentage/positive delta "
+                    "when changing magnification."
+                )
+            if kind == "invalid_option" and isinstance(hint, dict):
+                options = hint.get("available_values") or []
+                if lang == "zh":
+                    return f"界面操作未执行：{target_labels.get(target, target or '当前控件')}的选项无效。可用选项：{', '.join(map(str, options))}。"
+                return f"The UI action was not applied: the option for {target_labels_en.get(target, target or 'the control')} is invalid. Available options: {', '.join(map(str, options))}."
+            if kind == "missing_value":
+                if lang == "zh":
+                    return f"界面操作未执行：{target_labels.get(target, target or '当前控件')}需要明确的参数值。"
+                return f"The UI action was not applied: {target_labels_en.get(target, target or 'the control')} requires an explicit value."
+            if lang == "zh":
+                return "界面操作未执行：当前请求与可用控件能力不匹配。请说明是展开查看器、适配相机，还是调整图像缩放。"
+            return "The UI action was not applied: the request did not match an available control capability. Specify whether to maximize the viewer, fit the camera, or change image magnification."
         if tool_name in {"ui_screenshot", "ui_content"}:
             if not result.success:
                 user_errors = meta.get("user_error_i18n") or {}
@@ -1381,6 +1560,18 @@ class ToolResultPipeline:
                 "internal_only": True,
                 "user_visible": False,
             }
+        if tool_name == "query_metrics":
+            contract = source.get("response_contract")
+            return {
+                "metric_type": source.get("metric_type"),
+                "response_contract": contract if isinstance(contract, dict) else {},
+                "trace_summary_i18n": {
+                    "zh": "已读取当前 Session 中保存的结构化指标。",
+                    "en": "Loaded the saved structured metrics from the active session.",
+                },
+                "internal_only": False,
+                "user_visible": True,
+            }
         return source
 
     @staticmethod
@@ -1399,6 +1590,8 @@ class ToolResultPipeline:
                 "command",
                 "target",
                 "presentation",
+                "selection",
+                "analysis",
                 "mode",
                 "planning_id",
                 "object_ids",
@@ -1593,6 +1786,117 @@ class ToolResultPipeline:
                     "",
                     "✅ Results stored for seed planning.",
                 ]
+            return "\n".join(lines)
+
+        elif tool_name == "dose_recompute":
+            # This formatter is deliberately independent from the full plan
+            # report. A dose refresh is a focused operation, so it must still
+            # produce a useful user-facing answer when synthesis is skipped.
+            metrics = meta.get("metrics") or {}
+            if not isinstance(metrics, dict):
+                metrics = {}
+            nested_metrics = metrics.get("metrics")
+            if isinstance(nested_metrics, dict):
+                ctv_metrics = nested_metrics.get("CTV") or nested_metrics.get("ctv")
+                if isinstance(ctv_metrics, dict):
+                    merged_metrics = dict(metrics)
+                    merged_metrics.update(ctv_metrics)
+                    metrics = merged_metrics
+
+            def _metric(*keys, default=None):
+                for key in keys:
+                    value = metrics.get(key)
+                    if value is None:
+                        value = meta.get(key)
+                    if value is not None:
+                        return value
+                return default
+
+            def _number(value, default=None):
+                try:
+                    number = float(value)
+                except (TypeError, ValueError):
+                    return default
+                return number
+
+            def _dose(value):
+                number = _number(value)
+                return "—" if number is None else f"{number:.2f} Gy"
+
+            def _percent(value):
+                number = _number(value)
+                if number is None:
+                    return "—"
+                # CTV volume metrics are stored as fractions, while a few
+                # historical providers returned already-scaled percentages.
+                if abs(number) <= 1.5:
+                    number *= 100.0
+                return f"{number:.1f}%"
+
+            artifact_status = meta.get("artifact_status") or {}
+            if not isinstance(artifact_status, dict):
+                artifact_status = {}
+            stale_labels = []
+            stale_names = {
+                "report": "报告",
+                "surgical_guide": "手术导板",
+                "quality_check": "质量检查",
+            }
+            for key, label in stale_names.items():
+                if str(artifact_status.get(key) or "").lower() == "stale":
+                    stale_labels.append(label if lang == "zh" else key.replace("_", " ").title())
+
+            planning_id = meta.get("planning_id") or "—"
+            planning_label = meta.get("planning_label") or planning_id
+            total_seeds = meta.get("total_seeds", _metric("total_seeds", default="—"))
+            trajectories = meta.get("num_trajectories", _metric("num_trajectories", default="—"))
+            dose_dvh_status = "已更新" if lang == "zh" else "updated"
+            if lang == "zh":
+                lines = [
+                    "## 💊 当前 Planning 剂量重算",
+                    "",
+                    "已读取当前激活的 Planning，并重新计算了 Dose 与 DVH。",
+                    "",
+                    "| 指标 | 数值 |",
+                    "|--------|-------|",
+                    f"| Planning | {planning_label} |",
+                    f"| 粒子数 | {total_seeds} |",
+                    f"| 针道数 | {trajectories} |",
+                    f"| V100 | {_percent(_metric('v100', 'V100'))} |",
+                    f"| V150 | {_percent(_metric('v150', 'V150'))} |",
+                    f"| V200 | {_percent(_metric('v200', 'V200'))} |",
+                    f"| D90 | {_dose(_metric('d90', 'D90'))} |",
+                    f"| Dose / DVH | {dose_dvh_status} |",
+                ]
+                if stale_labels:
+                    lines.extend([
+                        "",
+                        f"⚠️ 下游结果已标记为过期，需按需重新生成：{'、'.join(stale_labels)}。",
+                    ])
+                lines.extend(["", "✅ 本次重算使用当前 Session 中已保存的针道和粒子位置，未重新进行分割或重新选取针道。"])
+            else:
+                lines = [
+                    "## 💊 Current Planning Dose Recomputed",
+                    "",
+                    "The active Planning was loaded and its Dose and DVH were recomputed.",
+                    "",
+                    "| Metric | Value |",
+                    "|--------|-------|",
+                    f"| Planning | {planning_label} |",
+                    f"| Seeds | {total_seeds} |",
+                    f"| Needles | {trajectories} |",
+                    f"| V100 | {_percent(_metric('v100', 'V100'))} |",
+                    f"| V150 | {_percent(_metric('v150', 'V150'))} |",
+                    f"| V200 | {_percent(_metric('v200', 'V200'))} |",
+                    f"| D90 | {_dose(_metric('d90', 'D90'))} |",
+                    f"| Dose / DVH | {dose_dvh_status} |",
+                ]
+                if stale_labels:
+                    lines.extend([
+                        "",
+                        f"⚠️ Dependent results are stale and should be regenerated: {', '.join(stale_labels)}.",
+                    ])
+                lines.extend(["", "✅ The recomputation used the saved needle and seed geometry in the current Session; it did not resegment or choose new paths."])
             return "\n".join(lines)
 
         elif tool_name == "dose_engine":

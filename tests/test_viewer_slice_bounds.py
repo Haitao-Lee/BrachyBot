@@ -55,3 +55,27 @@ def test_viewer_slice_clamps_index_from_previous_volume(monkeypatch):
         assert body["total_slices"] == expected_total
         assert body["requested_slice_index"] == payload["slice_index"]
 
+
+def test_viewer_load_returns_retryable_pending_while_agent_initializes(monkeypatch):
+    """Cold Session restore must not surface a false CT HTTP 500."""
+    from web.routes import viewer_routes
+
+    monkeypatch.setattr(viewer_routes, "require_api_key", lambda func: func)
+    monkeypatch.setattr(viewer_routes, "rate_limit", lambda func: func)
+
+    app = Flask(__name__)
+    app.secret_key = "test-secret"
+    viewer_routes.register_viewer_routes(
+        app,
+        lambda **_kwargs: None,
+        lambda *_args, **_kwargs: None,
+        lambda *_args, **_kwargs: {},
+    )
+
+    response = app.test_client().post(
+        "/api/viewer/load",
+        json={"ct_path": "/case/inputs/ct.nii.gz"},
+    )
+    assert response.status_code == 202
+    assert response.json["pending"] is True
+    assert response.json["code"] == "workspace_agent_initializing"

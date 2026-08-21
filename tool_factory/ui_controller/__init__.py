@@ -48,7 +48,18 @@ CONTROL_REGISTRY = {
         "commands": ["set", "increase", "decrease", "fit"],
         "value_type": "int",
         "range": [50, 300],
-        "description": "Zoom level in percent. 'fit' resets to 100% and centers."
+        # ``range`` describes an absolute value for ``set``.  Incremental
+        # commands use a delta, so they need their own contract.  Keeping the
+        # two meanings separate prevents a valid ``increase by 20`` request
+        # from being rejected as if 20% were an absolute zoom value.
+        "value_ranges": {"set": [50, 300], "increase": [1, 250], "decrease": [1, 250]},
+        "default_step": 20,
+        "description": (
+            "Viewer zoom level in percent. Use set with an absolute value "
+            "between 50 and 300; use increase/decrease with a positive delta "
+            "between 1 and 250; fit only resets the camera/view to fit. "
+            "This changes image magnification, not the viewer panel size."
+        )
     },
     "viewer.threshold": {
         "commands": ["set"],
@@ -59,7 +70,12 @@ CONTROL_REGISTRY = {
     "viewer.fullscreen": {
         "commands": ["toggle"],
         "values": ["axial", "sagittal", "coronal", "3d"],
-        "description": "Toggle fullscreen for a specific viewer"
+        "description": (
+            "Click the viewer card expand/maximize button and toggle that card "
+            "to fill the Viewers panel. Use value=3d for 'enlarge/maximize the "
+            "3D viewer' or '全屏放大三维查看器'. This changes panel layout, not "
+            "camera fit or numeric zoom."
+        )
     },
     "viewer.reset": {
         "commands": ["run"],
@@ -476,7 +492,11 @@ CONTROL_REGISTRY = {
     },
     "3d.fit": {
         "commands": ["run"],
-        "description": "Fit camera to show all 3D meshes"
+        "description": (
+            "Fit the 3D camera to the visible meshes only. This is the camera "
+            "Fit command; it does not enlarge or fullscreen the viewer card. "
+            "Use viewer.fullscreen(value=3d) for the expand/maximize button."
+        )
     },
     "3d.reset": {
         "commands": ["run"],
@@ -571,7 +591,19 @@ def get_control_registry_summary() -> str:
             if len(info.get("values", [])) > 6:
                 vals += ",..."
         desc = info.get("description", "")
-        lines.append(f"  {target} [{cmds}] {vals} — {desc}")
+        value_ranges = info.get("value_ranges")
+        contract = ""
+        if isinstance(value_ranges, dict):
+            contract = " values=" + ",".join(
+                f"{command}:{bounds[0]}..{bounds[1]}"
+                for command, bounds in value_ranges.items()
+                if isinstance(bounds, (list, tuple)) and len(bounds) == 2
+            )
+        elif "range" in info:
+            contract = f" range={info['range']}"
+        if info.get("default_step") is not None:
+            contract += f" default_step={info['default_step']}"
+        lines.append(f"  {target} [{cmds}] {vals}{contract} — {desc}")
     return "\n".join(lines)
 
 
@@ -587,6 +619,12 @@ class UIControllerTool(BaseTool):
         return (
             "Control the BrachyBot UI precisely. Use structured actions to switch panels, "
             "adjust viewer settings, toggle overlays, navigate slices, and more. "
+            "Choose actions by capability, not by button wording: viewer.fullscreen changes "
+            "the viewer card/panel size; 3d.fit changes only the 3D camera framing; "
+            "viewer.zoom changes image magnification (set is an absolute percent, "
+            "increase/decrease are positive deltas). For a request to enlarge/maximize "
+            "the 3D viewer, use viewer.fullscreen with value=3d. For a request to fit "
+            "all meshes in the current card, use 3d.fit. Never substitute one for another. "
             "Available controls:\n" + get_control_registry_summary()
         )
 
@@ -630,6 +668,7 @@ class UIControllerTool(BaseTool):
         # Validate all actions against registry
         validated = []
         errors = []
+        repair_hints = []
         for i, action in enumerate(actions):
             if not isinstance(action, dict):
                 errors.append(f"Action {i}: action must be an object")
@@ -641,11 +680,25 @@ class UIControllerTool(BaseTool):
             if target not in CONTROL_REGISTRY:
                 valid_targets = ", ".join(CONTROL_REGISTRY.keys())
                 errors.append(f"Action {i}: unknown target '{target}'. Valid: {valid_targets}")
+                repair_hints.append({
+                    "action_index": i,
+                    "requested": {"target": target, "command": command, "value": value},
+                    "kind": "unknown_target",
+                    "available_targets": list(CONTROL_REGISTRY.keys()),
+                })
                 continue
 
             reg = CONTROL_REGISTRY[target]
             if command not in reg["commands"]:
                 errors.append(f"Action {i}: unknown command '{command}' for '{target}'. Valid: {reg['commands']}")
+                repair_hints.append({
+                    "action_index": i,
+                    "requested": {"target": target, "command": command, "value": value},
+                    "kind": "unknown_command",
+                    "target": target,
+                    "available_commands": list(reg["commands"]),
+                    "description": reg.get("description", ""),
+                })
                 continue
 
             # Validate value
@@ -654,22 +707,63 @@ class UIControllerTool(BaseTool):
             requires_value = reg.get("value_required", command in {"set", "increase", "decrease"})
             if requires_value and value is None:
                 errors.append(f"Action {i}: command '{command}' for '{target}' requires a value")
+                repair_hints.append({
+                    "action_index": i,
+                    "requested": {"target": target, "command": command, "value": value},
+                    "kind": "missing_value",
+                    "target": target,
+                    "command": command,
+                    "value_type": reg.get("value_type"),
+                    "value_range": (reg.get("value_ranges", {}).get(command)
+                                    if isinstance(reg.get("value_ranges"), dict)
+                                    else reg.get("range")),
+                })
                 continue
 
             if "values" in reg and value is not None:
                 if value not in reg["values"]:
                     errors.append(f"Action {i}: invalid value '{value}' for '{target}'. Valid: {reg['values']}")
+                    repair_hints.append({
+                        "action_index": i,
+                        "requested": {"target": target, "command": command, "value": value},
+                        "kind": "invalid_option",
+                        "target": target,
+                        "command": command,
+                        "available_values": list(reg["values"]),
+                    })
                     continue
 
-            if "range" in reg and value is not None:
-                lo, hi = reg["range"]
+            command_range = reg.get("range")
+            if isinstance(reg.get("value_ranges"), dict):
+                command_range = reg["value_ranges"].get(command, command_range)
+            if command_range is not None and value is not None:
+                lo, hi = command_range
                 try:
                     v = float(value)
                     if v < lo or v > hi:
                         errors.append(f"Action {i}: value {value} out of range [{lo}, {hi}] for '{target}'")
+                        repair_hints.append({
+                            "action_index": i,
+                            "requested": {"target": target, "command": command, "value": value},
+                            "kind": "value_out_of_range",
+                            "target": target,
+                            "command": command,
+                            "accepted_range": [lo, hi],
+                            "value_semantics": "absolute" if command == "set" else "positive_delta",
+                            "default_step": reg.get("default_step"),
+                        })
                         continue
                 except (ValueError, TypeError):
                     errors.append(f"Action {i}: value '{value}' must be a number for '{target}'")
+                    repair_hints.append({
+                        "action_index": i,
+                        "requested": {"target": target, "command": command, "value": value},
+                        "kind": "value_type",
+                        "target": target,
+                        "command": command,
+                        "value_type": reg.get("value_type"),
+                        "accepted_range": [lo, hi],
+                    })
                     continue
 
             # Copy before adding execution metadata. The parsed request is
@@ -688,7 +782,12 @@ class UIControllerTool(BaseTool):
             return ToolResult(
                 success=False,
                 error="; ".join(errors),
-                metadata={"validation_errors": errors, "validated_actions": validated},
+                metadata={
+                    "validation_errors": errors,
+                    "validated_actions": validated,
+                    "repair_hints": repair_hints,
+                    "user_visible": True,
+                },
             )
 
         # Return validated actions — frontend will execute them

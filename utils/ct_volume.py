@@ -38,7 +38,38 @@ def normalize_ct_image(
     dimension = int(image.GetDimension())
     source_size = tuple(int(value) for value in image.GetSize())
 
+    # SimpleITK can represent a multi-channel volume as a 3-D vector image.
+    # It still reports dimension 3, but DICOMOrient cannot process every
+    # vector pixel type. CT input is scalar by definition, so keep the first
+    # component as the deterministic display/planning frame and record the
+    # reduction for diagnostics. This also covers loaders that expose a
+    # 4-D-looking vector volume after frame extraction.
+    try:
+        component_count = int(image.GetNumberOfComponentsPerPixel())
+    except (AttributeError, TypeError, ValueError):
+        component_count = 1
+
+    def scalar_frame(value: sitk.Image) -> Tuple[sitk.Image, int]:
+        try:
+            components = int(value.GetNumberOfComponentsPerPixel())
+        except (AttributeError, TypeError, ValueError):
+            components = 1
+        if components <= 1:
+            return value, 1
+        return sitk.VectorIndexSelectionCast(value, 0), components
+
     if dimension == 3:
+        if component_count > 1:
+            frame, reduced_components = scalar_frame(image)
+            metadata = {
+                "source_dimension": 3,
+                "source_size": list(source_size),
+                "frame_count": 1,
+                "selected_frame": None,
+                "reduced_to_3d": True,
+                "source_components": reduced_components,
+            }
+            return frame, metadata
         return image, {
             "source_dimension": 3,
             "source_size": list(source_size),
@@ -67,10 +98,14 @@ def normalize_ct_image(
     extract_size = [source_size[0], source_size[1], source_size[2], 0]
     extract_index = [0, 0, 0, int(frame_index)]
     frame = sitk.Extract(image, extract_size, extract_index)
-    return frame, {
+    frame, reduced_components = scalar_frame(frame)
+    metadata = {
         "source_dimension": 4,
         "source_size": list(source_size),
         "frame_count": frame_count,
         "selected_frame": int(frame_index),
         "reduced_to_3d": True,
     }
+    if reduced_components > 1:
+        metadata["source_components"] = reduced_components
+    return frame, metadata

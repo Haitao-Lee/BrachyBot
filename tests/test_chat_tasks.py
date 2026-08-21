@@ -270,6 +270,152 @@ def test_same_request_id_reuses_the_case_owned_task():
     gate.set()
 
 
+def test_visual_followup_has_independent_execution_identity_and_redacted_state():
+    task = ChatTask(
+        task_id="child-task",
+        user_id="user-a",
+        session_id="case-a",
+        agent=None,
+        message="[Screenshot captured: /api/sessions/case-a/screenshots/private.png]",
+        request_id="visual-child",
+        user_message_id="user-visual-child",
+        assistant_message_id="assistant-visual-child",
+        parent_request_id="parent-request",
+        parent_user_message_id="user-parent-request",
+        parent_assistant_message_id="assistant-parent-request",
+        internal_followup=True,
+        response_language="zh",
+    )
+
+    state = task.public_state()
+    assert state["request_id"] == "visual-child"
+    assert state["parent_request_id"] == "parent-request"
+    assert state["message"] == "正在分析已捕获的图像。"
+    assert "/api/sessions" not in state["message"]
+
+
+def test_worker_exposes_turn_context_without_persisting_transport_identity():
+    manager = ChatTaskManager()
+    observed = []
+
+    class _ContextAgent(_Agent):
+        def chat_with_stream(self, _message):
+            observed.append(dict(getattr(self, "_active_turn_context", {})))
+            yield _event("response", {"response": "分析完成"})
+            yield _event("done", {})
+
+    task = manager.start(
+        _App(),
+        "user-a",
+        "case-a",
+        _ContextAgent([]),
+        "hidden screenshot prompt",
+        {},
+        request_id="visual-child",
+        parent_request_id="parent-request",
+        internal_followup=True,
+        response_language="zh",
+    )
+    deadline = time.time() + 2
+    while task.status == "running" and time.time() < deadline:
+        time.sleep(0.01)
+
+    assert task.status == "completed"
+    assert observed and observed[0]["internal_followup"] is True
+    assert observed[0]["parent_request_id"] == "parent-request"
+    assert observed[0]["response_language"] == "zh"
+    assert not hasattr(task.agent, "_active_turn_context")
+
+
+def test_new_external_turn_supersedes_hidden_visual_child():
+    """A new user request must not wait behind a screenshot child forever."""
+    manager = ChatTaskManager()
+    child_started = threading.Event()
+    child_gate = threading.Event()
+
+    class _BlockingVisualAgent(_Agent):
+        def chat_with_stream(self, _message):
+            child_started.set()
+            yield _event("start", {"internal_followup": True})
+            child_gate.wait(timeout=2)
+            yield _event("response", {"response": "stale visual answer"})
+            yield _event("done", {})
+
+        def _cancel_active_turn(self):
+            super()._cancel_active_turn()
+            child_gate.set()
+
+    child_agent = _BlockingVisualAgent([])
+    child = manager.start(
+        _App(), "user-a", "case-a", child_agent, "hidden screenshot prompt", {},
+        request_id="visual-child",
+        parent_request_id="parent-request",
+        internal_followup=True,
+    )
+    assert child_started.wait(timeout=2)
+
+    external = manager.start(
+        _App(), "user-a", "case-a",
+        _Agent([
+            _event("response", {"response": "new user answer"}),
+            _event("done", {}),
+        ]),
+        "你还能干什么", {},
+        request_id="external-request",
+    )
+
+    assert child.wait_for_worker(timeout=2) is True
+    assert external.wait_for_worker(timeout=2) is True
+    assert child.status == "cancelled"
+    assert external.status == "completed"
+    assert external.response == "new user answer"
+    assert not any("stale visual answer" in event for event in external.iter_events(0))
+
+
+def test_new_external_turn_waits_for_cancelled_child_worker_to_unwind():
+    """A Stop acknowledgement must not permit concurrent Agent mutation."""
+    manager = ChatTaskManager()
+    child_started = threading.Event()
+    child_gate = threading.Event()
+
+    class _CancelledVisualAgent(_Agent):
+        def chat_with_stream(self, _message):
+            child_started.set()
+            yield _event("start", {"internal_followup": True})
+            child_gate.wait(timeout=2)
+            yield _event("response", {"response": "late child"})
+            yield _event("done", {})
+
+    child = manager.start(
+        _App(), "user-a", "case-a", _CancelledVisualAgent([]),
+        "hidden screenshot prompt", {},
+        request_id="visual-child-cancelled",
+        internal_followup=True,
+    )
+    assert child_started.wait(timeout=2)
+    assert manager.cancel(child) is True
+    assert child.status == "cancelled"
+    assert manager.live("user-a", "case-a") is child
+
+    external = manager.start(
+        _App(), "user-a", "case-a",
+        _Agent([_event("response", {"response": "fresh answer"}), _event("done", {})]),
+        "你还能干什么", {},
+        request_id="external-after-stop",
+    )
+    # The predecessor is still inside the provider/generator, so the new
+    # worker must wait rather than touching the same Agent concurrently.
+    time.sleep(0.05)
+    assert external.response == ""
+    assert not external._worker_done.is_set()
+
+    child_gate.set()
+    assert child.wait_for_worker(timeout=2) is True
+    assert external.wait_for_worker(timeout=2) is True
+    assert external.status == "completed"
+    assert external.response == "fresh answer"
+
+
 def test_cancelling_one_case_does_not_cancel_another_running_case():
     manager = ChatTaskManager()
     first_gate = threading.Event()

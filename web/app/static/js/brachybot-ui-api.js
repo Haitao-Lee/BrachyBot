@@ -43,6 +43,22 @@ function showBrachyBotNotice(message, kind = 'info', durationMs = 6000) {
 }
 window.showBrachyBotNotice = showBrachyBotNotice;
 
+// Keep this compatibility helper in the first UI bundle.  Older cached
+// versions of collectUIState called jsonClone before the workspace bundle
+// (which also has a private helper) was loaded.  A missing optional clone
+// helper must never prevent a chat request or a viewer action from being
+// submitted.  The fallback is deliberately JSON-only because UI state is a
+// persistence payload, not a place for DOM objects or typed-array buffers.
+function jsonClone(value, fallback = {}) {
+    try {
+        return JSON.parse(JSON.stringify(value));
+    } catch (error) {
+        console.warn('[ui-state] Unable to clone value:', error);
+        return fallback;
+    }
+}
+window.jsonClone = jsonClone;
+
 /**
  * Collect a declarative schema of every editable parameter in the UI.
  *
@@ -151,12 +167,7 @@ function _cloneUiStateValue(value, fallback = {}) {
     // UI state is optional context for the agent. Keep its cloning local to
     // this bundle: Workspace owns a separate private serializer and scripts
     // are loaded independently during startup.
-    try {
-        return JSON.parse(JSON.stringify(value));
-    } catch (error) {
-        console.warn('[ui-state] Unable to clone optional UI state:', error);
-        return fallback;
-    }
+    return jsonClone(value, fallback);
 }
 
 function collectUIState() {
@@ -2801,6 +2812,18 @@ async function _restoreActiveSessionWorkspace(options = {}) {
     const [labelResult, planningResult] = restoreResults;
     if (labelResult.status === 'rejected') throw labelResult.reason;
     if (planningResult.status === 'rejected') throw planningResult.reason;
+    // The planning result request and the compact registry hydrate on
+    // separate server paths. Wait for the registry's own retry loop before
+    // painting the final Data Tree; otherwise a late 202/empty response can
+    // overwrite the complete planning history just restored above.
+    if (typeof window.refreshPlanningRunCatalog === 'function') {
+        await window.refreshPlanningRunCatalog({
+            sessionId: sessionAtStart,
+            retryPending: true,
+            silent: true,
+        });
+        if (_activeApiSessionId() !== sessionAtStart) return null;
+    }
     const expectsLabels = ['ctv_array', 'ctv_mask', 'oar_array'].some(key => storedKeys.has(key));
     if (expectsLabels && labelResult.value !== true) {
         throw new Error(`Segmentation restore did not produce label volumes for session ${sessionAtStart}`);
@@ -3333,9 +3356,9 @@ async function loadDefaultParams() {
 /******** VIEWER FULLSCREEN & RESIZE ********/
 function toggleViewerFullscreen(view) {
     const card = document.getElementById('viewer' + capitalize(view));
-    if (!card) return;
+    if (!card) return { success: false, error: `Viewer card is unavailable: ${view}` };
     const panel = document.getElementById('viewersPanel');
-    if (!panel) return;
+    if (!panel) return { success: false, error: 'Viewers panel is unavailable.' };
     const viewportSnapshot = typeof window.captureViewerViewport === 'function'
         ? window.captureViewerViewport(view)
         : null;
@@ -3388,6 +3411,14 @@ function toggleViewerFullscreen(view) {
             window.syncViewerGeometry({ resetPositions: true, settleMs: 160, viewportSnapshot });
         }
     }
+    return {
+        success: true,
+        viewer: view,
+        fullscreen: card.classList.contains('fullscreen'),
+        message: card.classList.contains('fullscreen')
+            ? `${view} viewer expanded.`
+            : `${view} viewer restored.`,
+    };
 }
 
 /******** VIEWER RESIZE — free stretching with scroll overflow ********/
@@ -3973,14 +4004,31 @@ async function _executeUIActionRaw(a, options = {}) {
         if (target === 'viewer.zoom') {
             if (command === 'fit') {
                 fitView();
-            } else {
-                let v = Math.round((state.viewerSettings.zoom || 1) * 100);
-                if (command === 'set') v = parseInt(value) || v;
-                else if (command === 'increase') v += parseInt(value) || 20;
-                else if (command === 'decrease') v -= parseInt(value) || 20;
-                applyZoom(Math.max(50, Math.min(300, v)));
+                return { success: true, target, command, value: 100, message: 'Viewer zoom fitted.' };
             }
-            return;
+            let v = Math.round((state.viewerSettings.zoom || 1) * 100);
+            const raw = Number(value);
+            const step = Number.isFinite(raw) && raw > 0 ? raw : 20;
+            if (command === 'set') {
+                if (!Number.isFinite(raw)) {
+                    return { success: false, error: 'viewer.zoom set requires an absolute numeric percentage.' };
+                }
+                v = raw;
+            } else if (command === 'increase') {
+                v += step;
+            } else if (command === 'decrease') {
+                v -= step;
+            }
+            const applied = Math.max(50, Math.min(300, Math.round(v)));
+            applyZoom(applied);
+            return {
+                success: true,
+                target,
+                command,
+                requested: value,
+                applied,
+                message: `Viewer zoom set to ${applied}%.`,
+            };
         }
         if (target === 'viewer.threshold') {
             const el = document.getElementById('viewerThreshold');
@@ -3988,7 +4036,7 @@ async function _executeUIActionRaw(a, options = {}) {
             return;
         }
         if (target === 'viewer.fullscreen') {
-            toggleViewerFullscreen(value); return;
+            return toggleViewerFullscreen(value);
         }
         if (target === 'viewer.reset') {
             resetViewer(); return;
@@ -4596,7 +4644,10 @@ async function _executeUIActionRaw(a, options = {}) {
             slider.value = String(next);
             return updateLabelImage('3d');
         }
-        if (target === '3d.fit') { fitCameraToScene(); return; }
+        if (target === '3d.fit') {
+            fitCameraToScene();
+            return { success: true, target, command, message: '3D camera fitted to visible meshes.' };
+        }
         if (target === '3d.reset') {
             if (typeof reset3DView === 'function') reset3DView();
             else fitCameraToScene();
@@ -5232,6 +5283,45 @@ function _reportFiguresFromArtifactCatalog(ownerSessionId, activePlanningId) {
     }).filter(Boolean);
 }
 
+function _normalizeSessionContentSelection(selection) {
+    const source = selection && typeof selection === 'object' ? selection : {};
+    const kind = String(source.kind || 'all').trim().toLowerCase();
+    if (kind === 'first' || kind === 'last' || kind === 'all') return { kind };
+    if (kind === 'index') {
+        const index = Math.trunc(Number(source.index));
+        if (Number.isFinite(index) && index >= 1) return { kind, index };
+    }
+    return { kind: 'all' };
+}
+
+function _hasSpecificSessionContentSelection(selection) {
+    return _normalizeSessionContentSelection(selection).kind !== 'all';
+}
+
+function _selectSessionContentItems(items, selection) {
+    const ordered = Array.isArray(items) ? items : [];
+    const normalized = _normalizeSessionContentSelection(selection);
+    if (normalized.kind === 'all') return ordered;
+    if (!ordered.length) return [];
+    if (normalized.kind === 'first') return [ordered[0]];
+    if (normalized.kind === 'last') return [ordered[ordered.length - 1]];
+    return normalized.index <= ordered.length ? [ordered[normalized.index - 1]] : [];
+}
+
+function _sessionContentRequestsVisualAnalysis(command) {
+    const value = command?.analysis;
+    return value === true || String(value || '').toLowerCase() === 'true';
+}
+
+function _sessionContentSelectionMetadata(selection, analysis) {
+    const normalized = _normalizeSessionContentSelection(selection);
+    return {
+        selection_kind: normalized.kind,
+        selection_index: normalized.kind === 'index' ? normalized.index : null,
+        selected_for_analysis: analysis === true,
+    };
+}
+
 async function _appendPersistedReportFigures(plan, galleryContext, ownerSessionId) {
     const context = galleryContext || {};
     let form = window.reportForm;
@@ -5306,8 +5396,11 @@ async function _appendPersistedReportFigures(plan, galleryContext, ownerSessionI
         || Number(left.figure.sortOrder || 99) - Number(right.figure.sortOrder || 99)
         || left.index - right.index
     ));
+    const selection = _normalizeSessionContentSelection(plan?.selection);
+    const analyze = _sessionContentRequestsVisualAnalysis(plan);
+    const selectedFigures = _selectSessionContentItems(ordered, selection);
     const attachments = [];
-    ordered.forEach(({ figure, index }) => {
+    selectedFigures.forEach(({ figure, index }) => {
         const url = _safePersistedReportFigureUrl(
             figure._serverUrl || figure.dataUrl,
             ownerSessionId,
@@ -5340,6 +5433,7 @@ async function _appendPersistedReportFigures(plan, galleryContext, ownerSessionI
             planning_id: activePlanningId,
             source: 'report_artifact',
             response_language: context.responseLanguage || language,
+            visual_analysis: analyze,
             view_metadata: {
                 axis: String(figure.axis || ''),
                 figure_group: String(figure.figureGroup || ''),
@@ -5348,6 +5442,7 @@ async function _appendPersistedReportFigures(plan, galleryContext, ownerSessionI
                 sort_order: Number(figure.sortOrder) || null,
                 capture_role: String(figure.captureRole || ''),
                 capture_contract: String(figure.captureContract || ''),
+                ..._sessionContentSelectionMetadata(selection, analyze),
             },
         });
         if (attachment) attachments.push(attachment);
@@ -5426,8 +5521,11 @@ async function _appendPersistedSessionScreenshots(command, galleryContext, owner
         !requestedObjectIds.size
         || requestedObjectIds.has(String(artifact.objectId || '').toLowerCase())
     ));
+    const selection = _normalizeSessionContentSelection(command?.selection);
+    const analyze = _sessionContentRequestsVisualAnalysis(command);
+    const selectedArtifacts = _selectSessionContentItems(artifacts, selection);
     const attachments = [];
-    artifacts.forEach((artifact, index) => {
+    selectedArtifacts.forEach((artifact, index) => {
         const url = _safeSessionScreenshotUrl(artifact.url, ownerSessionId);
         if (!url) return;
         const title = artifact.isReport
@@ -5435,7 +5533,7 @@ async function _appendPersistedSessionScreenshots(command, galleryContext, owner
             : (language === 'zh' ? '\u5df2\u4fdd\u5b58\u622a\u56fe' : 'Saved screenshot');
         const attachment = _appendScreenshotToGallery(url, 'report', command?.question || '', context, {
             id: artifact.id,
-            title: `${title} ${index + 1}`,
+            title: `${title} ${Number(artifact.index) + 1 || index + 1}`,
             description: command?.question || '',
             mode: command?.mode || 'chat',
             request_id: context.requestId,
@@ -5444,10 +5542,96 @@ async function _appendPersistedSessionScreenshots(command, galleryContext, owner
             planning_id: artifact.planningId || activePlanningId,
             source: 'session_artifact',
             response_language: context.responseLanguage || language,
+            visual_analysis: analyze,
             view_metadata: {
                 filename: artifact.filename,
                 data_type: artifact.dataType,
                 report_figure: artifact.isReport,
+                ..._sessionContentSelectionMetadata(selection, analyze),
+            },
+        });
+        if (attachment) attachments.push(attachment);
+    });
+    return attachments;
+}
+
+function _mostRecentVisibleReplyAttachments(ownerSessionId, currentAssistantMessageId = '') {
+    // Chat history is the durable owner of reply attachments.  Resolve the
+    // antecedent from message identity and stored order rather than guessing
+    // from filenames, report state, or whichever panel happens to be mounted.
+    const session = typeof sessions !== 'undefined' ? sessions[String(ownerSessionId || '')] : null;
+    const messages = Array.isArray(session?.messages) ? session.messages : [];
+    const currentId = String(currentAssistantMessageId || '').trim();
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+        const message = messages[index];
+        if (!message || (typeof window.isInternalChatRecord === 'function' && window.isInternalChatRecord(message))) continue;
+        const type = String(message.type || '').toLowerCase();
+        if (!['bot', 'bot-response'].includes(type)) continue;
+        const messageId = String(message.id || message.message_id || '').trim();
+        if (currentId && messageId === currentId) continue;
+        const rawAttachments = [
+            ...(Array.isArray(message.attachments) ? message.attachments : []),
+            ...(Array.isArray(message.meta?.attachments) ? message.meta.attachments : []),
+        ];
+        const attachments = typeof window.normalizeChatAttachments === 'function'
+            ? window.normalizeChatAttachments(ownerSessionId, rawAttachments)
+            : rawAttachments.filter(item => item && typeof item === 'object' && item.url);
+        if (attachments.length) {
+            return { message, messageId, attachments };
+        }
+    }
+    return { message: null, messageId: '', attachments: [] };
+}
+
+function _safeReferencedReplyAttachmentUrl(candidate, ownerSessionId) {
+    // Reply-owned image artifacts use the same durable Session screenshot
+    // endpoint as report/chat captures.  Preserve data URLs for legacy
+    // snapshots, but do not re-embed an arbitrary third-party URL into chat.
+    const value = String(candidate || '').trim();
+    if (/^data:image\/(?:png|jpe?g|webp);base64,[a-z0-9+/=\s]+$/i.test(value)) return value;
+    return _safeSessionScreenshotUrl(value, ownerSessionId);
+}
+
+async function _appendReferencedReplyAttachments(command, galleryContext, ownerSessionId) {
+    const context = galleryContext || {};
+    const language = _screenshotLanguage(ownerSessionId, context.responseLanguage);
+    const source = _mostRecentVisibleReplyAttachments(ownerSessionId, context.messageId);
+    const selection = _normalizeSessionContentSelection(command?.selection);
+    const analyze = _sessionContentRequestsVisualAnalysis(command);
+    const selected = _selectSessionContentItems(source.attachments, selection);
+    const attachments = [];
+    selected.forEach((rawAttachment, index) => {
+        const original = rawAttachment && typeof rawAttachment === 'object' ? rawAttachment : {};
+        const url = _safeReferencedReplyAttachmentUrl(original.url, ownerSessionId);
+        if (!url) return;
+        const sourceAttachmentId = String(
+            original.id || original.attachment_id || original.attachmentId || url,
+        );
+        const attachment = _appendScreenshotToGallery(url, 'reply_attachment', command?.question || '', context, {
+            // Referencing an existing image is a new reply attachment. Give it
+            // a new owner id while retaining the source ids as immutable
+            // provenance so persistence/reconciliation never steals it from
+            // the reply that originally created it.
+            id: `reply-reference-${context.messageId || context.requestId || 'request'}-${sourceAttachmentId}`,
+            title: String(original.title || (language === 'zh' ? '\u4e0a\u4e00\u6761\u56de\u590d\u4e2d\u7684\u56fe\u50cf' : 'Image from the preceding reply')),
+            description: String(original.description || command?.question || ''),
+            mode: command?.mode || context.mode || 'chat',
+            request_id: context.requestId,
+            message_id: context.messageId,
+            session_id: ownerSessionId,
+            planning_id: String(original.planning_id || original.planningId || ''),
+            source: 'reply_attachment',
+            source_message_id: source.messageId,
+            source_attachment_id: sourceAttachmentId,
+            response_language: context.responseLanguage || language,
+            visual_analysis: analyze,
+            view_metadata: {
+                source_message_id: source.messageId,
+                source_attachment_id: sourceAttachmentId,
+                source_request_id: String(original.request_id || original.requestId || ''),
+                source_target: String(original.target || ''),
+                source_order: source.attachments.indexOf(rawAttachment) + 1,
+                ..._sessionContentSelectionMetadata(selection, analyze),
             },
         });
         if (attachment) attachments.push(attachment);
@@ -5768,9 +5952,48 @@ function _sessionContentSummary(target, planning, tree, language, command = {}) 
     }
     if (target === 'dvh' || target === 'session_summary') {
         const dvh = planning?.dvh;
-        const curveCount = Array.isArray(dvh) ? dvh.length : (dvh && typeof dvh === 'object' ? Object.keys(dvh).length : 0);
+        const curveEntries = _sessionContentDvhCurves(planning);
+        const curveCount = curveEntries.length
+            || (Array.isArray(dvh) ? dvh.length : (dvh && typeof dvh === 'object' ? Object.keys(dvh).length : 0));
         if (curveCount) {
+            if (target === 'dvh') {
+                const metricSpecs = [
+                    ['CTV V100', ['v100', 'V100', 'coverage_v100'], value => _contentPercent(value)],
+                    ['CTV V150', ['v150', 'V150'], value => _contentPercent(value)],
+                    ['CTV V200', ['v200', 'V200'], value => _contentPercent(value)],
+                    ['D90', ['d90', 'D90', 'dose_d90'], value => _contentNumber(value, 2) + ' Gy'],
+                    ['D95', ['d95', 'D95'], value => _contentNumber(value, 2) + ' Gy'],
+                    ['CI', ['ci', 'CI', 'conformity_index'], value => _contentNumber(value, 2)],
+                    ['HI', ['hi', 'HI', 'homogeneity_index'], value => _contentNumber(value, 2)],
+                    ['GI', ['gi', 'GI', 'gradient_index'], value => _contentNumber(value, 2)],
+                    ['Plan score', ['plan_score', 'score'], value => _contentNumber(value, 1) + ' / 100'],
+                ];
+                const metricLines = metricSpecs.map(([label, names, format]) => {
+                    const value = _contentMetric(metrics, names);
+                    if (value === undefined || value === null || value === '') return '';
+                    return label + ': ' + format(value);
+                }).filter(Boolean);
+                const chartLine = command.visual_capture_succeeded
+                    ? (zh ? '\u0044\u0056\u0048 \u66f2\u7ebf\u56fe\u5df2\u751f\u6210\u5e76\u9644\u5728\u672c\u6761\u56de\u590d\u4e2d\u3002' : 'The DVH chart was generated and attached to this reply.')
+                    : command.visual_capture_requested
+                        ? (zh ? '\u0044\u0056\u0048 \u6570\u636e\u5df2\u8bfb\u53d6\uff0c\u4f46\u5f53\u524d\u56fe\u8868\u6682\u65f6\u65e0\u6cd5\u622a\u53d6\uff1b\u4ee5\u4e0b\u4e3a\u5df2\u4fdd\u5b58\u7684\u7ed3\u6784\u5316\u7ed3\u679c\u3002' : 'DVH data was read, but the live chart could not be captured; the structured result below is from the persisted planning data.')
+                        : (zh ? 'DVH \u6570\u636e\u5df2\u52a0\u8f7d\uff08' + curveCount + '\u4e2a\u7ed3\u6784\u6216\u66f2\u7ebf\uff09\u3002' : 'DVH data is loaded (' + curveCount + ' structure(s) or curve(s)).');
+                lines.push(chartLine);
+                if (metricLines.length) {
+                    lines.push(zh
+                        ? '\u5f53\u524d Planning \u7684\u5173\u952e DVH \u6307\u6807\uff1a' + metricLines.join('\uff1b') + '\u3002'
+                        : 'Key DVH metrics from the current planning: ' + metricLines.join('; ') + '.');
+                } else {
+                    lines.push(zh
+                        ? '\u5f53\u524d Planning \u4e2d\u6ca1\u6709\u4fdd\u5b58\u53ef\u7528\u7684\u5173\u952e\u6307\u6807\uff0c\u8bf7\u4ee5\u56fe\u4e2d\u66f2\u7ebf\u548c\u539f\u59cb\u6570\u636e\u4e3a\u51c6\u3002'
+                        : 'The current planning has no persisted summary metrics; use the chart and source data for interpretation.');
+                }
+                lines.push(zh
+                    ? '\u8fd9\u4e9b\u6570\u503c\u6765\u81ea\u5f53\u524d Planning \u7684\u771f\u5b9e\u5242\u91cf\u7ed3\u679c\uff1b\u662f\u5426\u6ee1\u8db3\u4e34\u5e8a\u6807\u51c6\u4ecd\u9700\u7ed3\u5408\u75c5\u4f8b\u9002\u7528\u6807\u51c6\u548c\u4e13\u4e1a\u5ba1\u6838\uff0c\u7cfb\u7edf\u4e0d\u4f1a\u4ec5\u51ed\u66f2\u7ebf\u5ba3\u79f0\u901a\u8fc7\u6216\u8d85\u9650\u3002'
+                    : 'These values come from the current planning dose result. Clinical acceptability still requires the applicable case criteria and professional review; the chart alone is not a pass/fail decision.');
+            } else {
             lines.push(zh ? `DVH \u6570\u636e\u5df2\u52a0\u8f7d\uff08${curveCount}\u4e2a\u7ed3\u6784\u6216\u66f2\u7ebf\uff09\u3002` : `DVH data is loaded (${curveCount} structure(s) or curve(s)).`);
+            }
         } else if (target === 'dvh') {
             lines.push(zh ? '\u5f53\u524d\u89c4\u5212\u5c1a\u65e0\u53ef\u5c55\u793a\u7684 DVH \u6570\u636e\u3002' : 'No DVH data is currently available for presentation.');
         }
@@ -5830,10 +6053,31 @@ function _sessionContentUnavailableMessage(target, language) {
     const labels = {
         report_figures: ['\u5f53\u524d\u62a5\u544a\u5c1a\u672a\u4fdd\u5b58\u53ef\u5c55\u793a\u7684\u622a\u56fe\u3002\u8bf7\u5148\u751f\u6210\u6216\u66f4\u65b0\u62a5\u544a\u3002', 'The current report does not yet contain saved figures to present. Generate or update the report first.'],
         session_screenshots: ['\u5f53\u524d Session \u5c1a\u672a\u4fdd\u5b58\u53ef\u5c55\u793a\u7684\u622a\u56fe\u3002', 'The current Session does not yet contain saved screenshots to present.'],
+        reply_attachments: ['\u4e0a\u4e00\u6761\u53ef\u89c1\u56de\u590d\u4e2d\u6ca1\u6709\u53ef\u5448\u73b0\u7684\u56fe\u50cf\u9644\u4ef6\u3002', 'The preceding visible reply does not contain an image attachment to present.'],
         report: ['\u5f53\u524d Session \u5c1a\u65e0\u53ef\u5c55\u793a\u7684\u62a5\u544a\u5185\u5bb9\u3002', 'The current Session does not yet contain report content to present.'],
     };
     const pair = labels[target] || ['\u5f53\u524d Session \u4e2d\u6682\u672a\u627e\u5230\u8bf7\u6c42\u7684\u771f\u5b9e\u6570\u636e\u3002', 'The requested real data is not currently available in this Session.'];
     return language === 'zh' ? pair[0] : pair[1];
+}
+
+function _sessionContentSelectionUnavailableMessage(selection, language) {
+    const normalized = _normalizeSessionContentSelection(selection);
+    if (normalized.kind === 'index') {
+        return language === 'zh'
+            ? `当前 Session 中没有可呈现的第 ${normalized.index} 项内容。`
+            : `The current Session does not contain a presentable item ${normalized.index}.`;
+    }
+    if (normalized.kind === 'first') {
+        return language === 'zh'
+            ? '当前 Session 中没有可呈现的第一项内容。'
+            : 'The current Session does not contain a presentable first item.';
+    }
+    if (normalized.kind === 'last') {
+        return language === 'zh'
+            ? '当前 Session 中没有可呈现的最后一项内容。'
+            : 'The current Session does not contain a presentable last item.';
+    }
+    return _sessionContentUnavailableMessage('', language);
 }
 
 function _openSessionContentPanel(target) {
@@ -5861,6 +6105,170 @@ function _openSessionContentPanel(target) {
     if (tab && !tab.classList.contains('active')) switchPanel(panelName, tab);
 }
 
+// A Session content target can have a native visual representation in the
+// application.  Keep this contract separate from natural-language routing:
+// the target's persisted data model decides whether a chart can be rendered,
+// not whether a particular phrase happened to contain a screenshot keyword.
+const _SESSION_CONTENT_VISUAL_CAPABILITIES = Object.freeze({
+    dvh: Object.freeze({
+        screenshotTarget: 'dvh',
+        requiresPlanningData: true,
+        captureRole: 'dvh_chart',
+    }),
+});
+
+function _sessionContentVisualCapability(target, presentation) {
+    const capability = _SESSION_CONTENT_VISUAL_CAPABILITIES[String(target || '').toLowerCase()];
+    if (!capability) return null;
+    const mode = String(presentation || 'auto').toLowerCase();
+    // ``auto`` is visual for content whose persisted product is inherently a
+    // chart.  ``visual`` is available to model-driven callers that want to
+    // make that choice explicitly.  Attachments/summary remain data-only.
+    return mode === 'auto' || mode === 'visual' ? capability : null;
+}
+
+function _sessionContentDvhCurves(planning) {
+    const dvh = planning?.dvh;
+    if (!dvh || typeof dvh !== 'object') return [];
+    return Object.entries(dvh).map(([name, curve]) => {
+        const direct = curve && Array.isArray(curve.dose_bins) && Array.isArray(curve.volume_pcts)
+            ? curve
+            : curve?.cumulative;
+        return direct && Array.isArray(direct.dose_bins) && Array.isArray(direct.volume_pcts)
+            ? [name, direct]
+            : null;
+    }).filter(Boolean);
+}
+
+function _sessionContentDvhData(planning) {
+    return Object.fromEntries(_sessionContentDvhCurves(planning));
+}
+
+async function _ensureSessionDvhChart(planning) {
+    const curves = _sessionContentDvhCurves(planning);
+    if (!curves.length) return null;
+    if (typeof state !== 'undefined' && state) state.dvhData = _sessionContentDvhData(planning);
+    _openSessionContentPanel('dvh');
+    await _waitScreenshotFrames(3);
+    if (typeof drawDVH === 'function') {
+        const renderResult = drawDVH();
+        if (renderResult && typeof renderResult.then === 'function') await renderResult;
+    }
+    await _waitScreenshotFrames(3);
+    return document.getElementById('dvhChart');
+}
+
+async function _captureSessionContentVisual(target, planning, command, context, ownerSessionId) {
+    const capability = _sessionContentVisualCapability(target, command?.presentation);
+    if (!capability) return { success: false, error: 'visual_presentation_not_requested', attachments: [] };
+    const snapshot = _snapshotScreenshotViewerState();
+    try {
+        const element = capability.screenshotTarget === 'dvh'
+            ? await _ensureSessionDvhChart(planning)
+            : null;
+        if (!element) throw new Error(`${capability.screenshotTarget}_chart_unavailable`);
+        const dataUrl = await _captureScreenshotDataUrl(capability.screenshotTarget, element);
+        if (!await _validateScreenshotDataUrl(dataUrl)) {
+            throw new Error(`blank_or_invalid:${capability.screenshotTarget}`);
+        }
+        const attachmentId = String(
+            command?.attachment_id
+            || `${context.requestId || 'request'}-${capability.captureRole}`
+        );
+        const fallbackTitle = _localizedScreenshotTargetLabel(
+            capability.screenshotTarget,
+            ownerSessionId,
+            context.responseLanguage,
+        );
+        const localizedTitle = _localizedScreenshotText(
+            command?.title || fallbackTitle,
+            fallbackTitle,
+            ownerSessionId,
+            context.responseLanguage,
+        );
+        const planningId = String(command?.planning_id || planning?.planning_id || '');
+        const response = await fetch(API + '/screenshot', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-BrachyBot-Session': ownerSessionId,
+            },
+            body: JSON.stringify({
+                image: dataUrl,
+                target: capability.screenshotTarget,
+                description: command?.question || fallbackTitle,
+                title: localizedTitle,
+                mode: command?.mode || context.mode || 'chat',
+                layout: context.layout || 'auto',
+                request_id: context.requestId,
+                message_id: context.messageId,
+                attachment_id: attachmentId,
+                planning_id: planningId,
+                case_id: ownerSessionId,
+                data_version: planning?.planning_data_version || '',
+                question: command?.question || '',
+                response_language: context.responseLanguage || '',
+                view_metadata: {
+                    source: 'session_content',
+                    capture_role: capability.captureRole,
+                    native_visual: true,
+                    target: capability.screenshotTarget,
+                    planning_id: planningId,
+                },
+            }),
+        });
+        const bodyText = await response.text();
+        let payload = {};
+        try { payload = bodyText ? JSON.parse(bodyText) : {}; } catch (_) {}
+        if (!response.ok) throw new Error(payload.error || `upload_failed:${response.status}`);
+        const screenshotUrl = payload.url || payload.screenshot_url || payload.path;
+        if (!screenshotUrl) throw new Error('missing_screenshot_url');
+        const attachment = _appendScreenshotToGallery(
+            screenshotUrl,
+            capability.screenshotTarget,
+            command?.question || '',
+            context,
+            payload.attachment || {
+                id: attachmentId,
+                type: 'screenshot',
+                target: capability.screenshotTarget,
+                title: localizedTitle,
+                mode: command?.mode || context.mode || 'chat',
+                request_id: context.requestId,
+                message_id: context.messageId,
+                session_id: ownerSessionId,
+                planning_id: planningId || null,
+                response_language: context.responseLanguage || '',
+                view_metadata: {
+                    source: 'session_content',
+                    capture_role: capability.captureRole,
+                    native_visual: true,
+                },
+            },
+        );
+        const returnedAttachment = attachment || payload.attachment || {
+            id: attachmentId,
+            url: screenshotUrl,
+            target: capability.screenshotTarget,
+            title: localizedTitle,
+            mode: command?.mode || context.mode || 'chat',
+            request_id: context.requestId,
+            message_id: context.messageId,
+            session_id: ownerSessionId,
+            planning_id: planningId || null,
+            response_language: context.responseLanguage || '',
+            visual_analysis: true,
+        };
+        returnedAttachment.visual_analysis = true;
+        return { success: true, attachments: [returnedAttachment], target: capability.screenshotTarget };
+    } catch (error) {
+        console.warn('[session-content] Native visual capture failed:', error);
+        return { success: false, error: error?.message || String(error), attachments: [] };
+    } finally {
+        await _restoreScreenshotViewerState(snapshot, null);
+    }
+}
+
 // Read persisted Session data for a normal chat reply. This is intentionally
 // data-first: it never substitutes a browser screenshot for a missing report,
 // and it never synthesizes a clinical result that the Session does not contain.
@@ -5879,11 +6287,16 @@ window.presentSessionContent = async function presentSessionContent(command = {}
     if (!ownerStillActive()) return { success: false, stale: true, error: 'case_changed' };
 
     try {
-        if (typeof hydrateDataTreeArtifactCatalog === 'function') {
+        // Referenced reply attachments already live in the hydrated chat
+        // record. Avoid an unrelated Data Tree/catalog round trip before the
+        // user can reopen or interpret a just-shown image.
+        if (target !== 'reply_attachments' && typeof hydrateDataTreeArtifactCatalog === 'function') {
             await hydrateDataTreeArtifactCatalog();
         }
         if (!ownerStillActive()) return { success: false, stale: true, error: 'case_changed' };
         const presentation = String(command.presentation || 'auto').toLowerCase();
+        const selection = _normalizeSessionContentSelection(command.selection);
+        const analyze = _sessionContentRequestsVisualAnalysis(command);
         if (presentation === 'open') {
             _openSessionContentPanel(target);
         }
@@ -5903,12 +6316,28 @@ window.presentSessionContent = async function presentSessionContent(command = {}
         if (!ownerStillActive()) return { success: false, stale: true, error: 'case_changed' };
 
         let attachments = [];
+        let visualCapture = null;
+        const visualCapability = _sessionContentVisualCapability(target, presentation);
+        if (visualCapability) {
+            visualCapture = await _captureSessionContentVisual(
+                target,
+                planning,
+                Object.assign({}, command, { planning_id: requestedPlanningId }),
+                context,
+                ownerSessionId,
+            );
+            if (Array.isArray(visualCapture.attachments)) {
+                attachments.push(...visualCapture.attachments);
+            }
+        }
         if (target === 'report_figures' || target === 'report') {
             attachments = await _appendPersistedReportFigures(Object.assign({}, command, {
                 planning_id: requestedPlanningId,
             }), context, ownerSessionId);
         } else if (target === 'session_screenshots') {
             attachments = await _appendPersistedSessionScreenshots(command, context, ownerSessionId);
+        } else if (target === 'reply_attachments') {
+            attachments = await _appendReferencedReplyAttachments(command, context, ownerSessionId);
         } else if (target === 'artifact') {
             // A selected screenshot/report figure is still a durable Session
             // artifact, so embed the real file in the reply. Other Data Tree
@@ -5933,12 +6362,17 @@ window.presentSessionContent = async function presentSessionContent(command = {}
         }
         const summary = _sessionContentSummary(target, planning, tree, language, Object.assign({}, command, {
             object_ids: command.object_ids?.length ? command.object_ids : focusedObjects.map(item => item.objectId),
+            visual_capture_requested: !!visualCapability,
+            visual_capture_succeeded: !!visualCapture?.success,
+            visual_capture_error: visualCapture?.error || '',
         }));
-        if ((target === 'report_figures' || target === 'session_screenshots') && !attachments.length) {
+        if ((target === 'report_figures' || target === 'session_screenshots' || target === 'reply_attachments') && !attachments.length) {
             return {
                 success: false,
-                error: target === 'report_figures' ? 'report_figures_unavailable' : 'session_screenshots_unavailable',
-                userMessage: _sessionContentUnavailableMessage(target, language),
+                error: `${target}_unavailable`,
+                userMessage: _hasSpecificSessionContentSelection(selection)
+                    ? _sessionContentSelectionUnavailableMessage(selection, language)
+                    : _sessionContentUnavailableMessage(target, language),
                 attachments: [],
             };
         }
@@ -5951,9 +6385,17 @@ window.presentSessionContent = async function presentSessionContent(command = {}
             };
         }
         const attachmentIntro = attachments.length
-            ? (language === 'zh'
-                ? `\u5df2\u4ece\u5f53\u524d Session \u4e2d\u8bfb\u53d6 ${attachments.length} \u4e2a\u5df2\u4fdd\u5b58\u7684\u56fe\u50cf\u9644\u4ef6\u3002`
-                : `Loaded ${attachments.length} saved image attachment(s) from the current Session.`)
+            ? visualCapture?.success
+                ? (language === 'zh'
+                    ? '\u5df2\u6839\u636e\u5f53\u524d Session \u4e2d\u4fdd\u5b58\u7684\u771f\u5b9e DVH \u6570\u636e\u751f\u6210\u56fe\u8868\uff0c\u5e76\u9644\u5728\u672c\u6761\u56de\u590d\u4e2d\u3002'
+                    : 'Generated the chart from the current Session\'s persisted DVH data and attached it to this reply.')
+                : analyze
+                    ? (language === 'zh'
+                        ? `\u5df2\u8bfb\u53d6\u5e76\u9644\u4e0a ${attachments.length} \u4e2a\u9009\u4e2d\u7684\u5df2\u4fdd\u5b58\u56fe\u50cf\uff0c\u6b63\u5728\u7ed3\u5408\u56fe\u50cf\u548c\u5f53\u524d Session \u6570\u636e\u8fdb\u884c\u89e3\u8bfb\u3002`
+                        : `Loaded ${attachments.length} selected saved image attachment(s) and preparing an evidence-grounded interpretation.`)
+                : (language === 'zh'
+                    ? `\u5df2\u4ece\u5f53\u524d Session \u4e2d\u8bfb\u53d6 ${attachments.length} \u4e2a\u5df2\u4fdd\u5b58\u7684\u56fe\u50cf\u9644\u4ef6\u3002`
+                    : `Loaded ${attachments.length} saved image attachment(s) from the current Session.`)
             : '';
         const message = [attachmentIntro, summary].filter(Boolean).join('\n\n');
         if (!message) {
@@ -5964,7 +6406,15 @@ window.presentSessionContent = async function presentSessionContent(command = {}
                 attachments,
             };
         }
-        return { success: true, userMessage: message, attachments, target, planning_id: requestedPlanningId };
+        return {
+            success: true,
+            userMessage: message,
+            attachments,
+            target,
+            planning_id: requestedPlanningId,
+            selection,
+            analysis: analyze,
+        };
     } catch (error) {
         if (!ownerStillActive()) return { success: false, stale: true, error: 'case_changed' };
         console.warn('[session-content] Presentation failed', error);
@@ -5982,6 +6432,13 @@ function _appendScreenshotToGallery(url, target, question, galleryContext, attac
     if (!url) return null;
     if (!Array.isArray(context.items)) context.items = [];
     if (!context.keys) context.keys = new Set();
+    // A capture can be replayed with a fresh transport attachment id.  The
+    // URL is the durable artifact identity, so dedupe by both identities
+    // before rendering or persisting.  This prevents one screenshot event
+    // replay from becoming several identical captions in the same reply.
+    if (!context.urlKeys) context.urlKeys = new Set();
+    if (!context.semanticKeys) context.semanticKeys = new Set();
+    const urlKey = String(url).trim();
     const label = _localizedScreenshotTargetLabel(
         target,
         context.sessionId || attachmentMeta?.session_id || _activeApiSessionId(),
@@ -6003,8 +6460,28 @@ function _appendScreenshotToGallery(url, target, question, galleryContext, attac
         response_language: attachmentMeta?.response_language || context.responseLanguage || '',
     });
     const key = String(attachment.id || attachment.url);
-    if (context.keys.has(key)) return null;
+    const viewMetadata = attachment.view_metadata || attachment.viewMetadata || {};
+    const semanticKey = typeof window.chatAttachmentSemanticKey === 'function'
+        ? window.chatAttachmentSemanticKey(attachment)
+        : [
+            String(attachment.mode || context.mode || 'chat'),
+            String(attachment.planning_id || attachment.planningId || ''),
+            String(viewMetadata.figure_group || viewMetadata.figureGroup || ''),
+            String(viewMetadata.figure_number || viewMetadata.figureNumber || ''),
+            String(viewMetadata.subfigure || ''),
+            String(viewMetadata.capture_role || viewMetadata.captureRole || ''),
+            String(viewMetadata.index ?? ''),
+            String(attachment.request_id || context.requestId || ''),
+            String(attachment.target || target || ''),
+        ].join('|');
+    if (
+        context.keys.has(key)
+        || context.urlKeys.has(urlKey)
+        || context.semanticKeys.has(semanticKey)
+    ) return null;
     context.keys.add(key);
+    context.urlKeys.add(urlKey);
+    context.semanticKeys.add(semanticKey);
     const messageKind = String(
         context.messageKind
         || (attachment.mode === 'monitor' ? 'monitor_evidence' : 'assistant_final')
@@ -6347,18 +6824,46 @@ async function _interceptScreenshot(target, question, galleryContext, options = 
             if (!response.ok) throw new Error(payload.error || `upload_failed:${response.status}`);
             const screenshotUrl = payload.url || payload.screenshot_url || payload.path;
             if (!screenshotUrl) throw new Error('missing_screenshot_url');
+            const uploadedAttachment = Object.assign(
+                {},
+                payload.attachment || {},
+                {
+                    id: payload.attachment?.id || attachmentId,
+                    mode: payload.attachment?.mode || plan.mode,
+                    target: payload.attachment?.target || viewTarget,
+                    planning_id: payload.attachment?.planning_id || plan.planning_id || '',
+                    case_id: payload.attachment?.case_id || plan.case_id || ownerSessionId,
+                    data_version: payload.attachment?.data_version || plan.data_version || '',
+                    request_id: payload.attachment?.request_id || context.requestId,
+                    message_id: payload.attachment?.message_id || context.messageId,
+                    session_id: payload.attachment?.session_id || ownerSessionId,
+                    view_metadata: Object.assign(
+                        {},
+                        payload.attachment?.view_metadata || {},
+                        {
+                            index,
+                            focus: plan.focus || {},
+                            object_ids: plan.object_ids || [],
+                            data_tree_node_ids: plan.data_tree_node_ids || [],
+                            overlays: plan.overlays || {},
+                            slice: view.slice ?? view.slice_index ?? null,
+                            capture_role: view.capture_role || view.captureRole || '',
+                            mode: plan.mode || 'chat',
+                            target: viewTarget,
+                            planning_id: plan.planning_id || '',
+                            case_id: plan.case_id || ownerSessionId,
+                            data_version: plan.data_version || '',
+                            request_id: context.requestId || '',
+                        },
+                    ),
+                },
+            );
             const attachment = _appendScreenshotToGallery(
                 screenshotUrl,
                 viewTarget,
                 plan.question,
                 context,
-                payload.attachment || {
-                    id: attachmentId,
-                    mode: plan.mode,
-                    request_id: context.requestId,
-                    message_id: context.messageId,
-                    session_id: ownerSessionId,
-                },
+                uploadedAttachment,
             );
             if (attachment) attachments.push(attachment);
         }

@@ -72,10 +72,23 @@ global.fetch = async (url, options = {{}}) => {{
 }};
 
 vm.runInThisContext(fs.readFileSync('{bridge}', 'utf8'), {{ filename: 'brachybot-workspace.js' }});
+async function waitFor(predicate, timeoutMs = 100) {{
+  const deadline = Date.now() + timeoutMs;
+  while (!predicate() && Date.now() < deadline) {{
+    await new Promise(resolve => setTimeout(resolve, 1));
+  }}
+  return predicate();
+}}
 (async () => {{
   const first = window.newChat();
-  await new Promise(resolve => setImmediate(resolve));
-  assert.strictEqual(oldCaseFlushStarted, true);
+  // The bridge intentionally yields an animation-frame/task boundary so the
+  // new shell can paint before it serializes the previous case. Await the
+  // resulting state transition instead of imposing a platform-specific tick.
+  assert.strictEqual(
+    await waitFor(() => oldCaseFlushStarted),
+    true,
+    'old-case flush did not start after the first-paint boundary',
+  );
   assert(bodyClasses.has('workspace-transitioning'), 'first transition should mark the sidebar busy');
   const second = await window.newChat();
   assert.strictEqual(second.success, false);
@@ -85,7 +98,7 @@ vm.runInThisContext(fs.readFileSync('{bridge}', 'utf8'), {{ filename: 'brachybot
     first,
     new Promise((_, reject) => setTimeout(() => reject(new Error('first transition timed out')), 2000)),
   ]);
-  assert.strictEqual(result.success, true);
+  assert.strictEqual(result.success, true, 'first transition result: ' + JSON.stringify(result));
   assert.strictEqual(activeSessionId, 'new');
   assert(!bodyClasses.has('workspace-transitioning'), 'busy state should clear after completion');
   // The real bridge intentionally owns deferred UI timers. Explicitly finish
@@ -245,6 +258,9 @@ global.fetch = async (url, options = {{}}) => {{
   const body = JSON.parse(options.body);
   requests.push(body);
   if (requests.length === 1) {{
+    // A real Session switch can happen while the first request is waiting on
+    // a server checkpoint. The retry must retain A's complete payload.
+    global.activeSessionId = 'b';
     return {{ ok: false, status: 409, json: async () => ({{
       code: 'stale_workspace', current_revision: 17,
     }}) }};
@@ -258,6 +274,10 @@ vm.runInThisContext(fs.readFileSync('{bridge}', 'utf8'), {{ filename: 'brachybot
   assert.strictEqual(saved, true);
   assert.strictEqual(requests.length, 2, 'only one controlled retry is allowed');
   assert.strictEqual(requests[1].revision, 17, 'retry must use the authoritative revision');
+  assert.strictEqual(requests[1].session_id, 'a', 'retry must retain the owner case');
+  assert.deepStrictEqual(requests[1].ui_state, requests[0].ui_state);
+  assert.deepStrictEqual(requests[1].report, requests[0].report);
+  assert.deepStrictEqual(requests[1].chat, requests[0].chat);
   process.exit(0);
 }})().catch(error => {{ console.error(error); process.exit(1); }});
 """

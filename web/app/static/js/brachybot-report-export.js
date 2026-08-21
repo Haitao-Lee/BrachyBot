@@ -356,31 +356,45 @@ function _scheduleReportAutoSave() {
     const t = document.getElementById('reportAutoSaveText');
     if (t) t.textContent = 'Auto-save: pending…';
 }
-function _reportAutoSave() {
+function _reportAutoSave(options = {}) {
     try {
         const f = window.reportForm;
+        const ownerSessionId = String(
+            options.sessionId
+            || (typeof activeSessionId !== 'undefined' ? activeSessionId : '')
+            || '',
+        );
         // Quality rows are durable report content. Materialize the same
         // Reference/Status values shown in Preview before the workspace
         // serializer clones the form, including during a fast Session switch.
         syncReportQualityAssessment(f, { preserveStored: true });
-        if (typeof activeSessionId !== 'undefined' && activeSessionId) {
-            f.sessionId = String(activeSessionId);
-        }
+        if (ownerSessionId) f.sessionId = ownerSessionId;
         f.updatedAt = Date.now();
         f.editedFields = Array.from(f.editedFields || []);
         f.editedFields = new Set(f.editedFields);
         const t = document.getElementById('reportAutoSaveText');
         if (t) t.textContent = 'Auto-save: ' + new Date().toLocaleTimeString();
-        if (typeof scheduleWorkspaceSave === 'function') scheduleWorkspaceSave('report.changed');
+        // An explicit old-session flush runs after the new shell has painted.
+        // Its direct persist call below is case-bound, so do not schedule a
+        // normal active-session timer that could serialize the old report into
+        // the newly selected Session.
+        if (options.schedule !== false && typeof scheduleWorkspaceSave === 'function') {
+            scheduleWorkspaceSave('report.changed');
+        }
     } catch (e) {}
 }
 
-function flushActiveReportState() {
+function flushActiveReportState(options = {}) {
+    const ownerSessionId = String(
+        options.sessionId
+        || (typeof activeSessionId !== 'undefined' ? activeSessionId : '')
+        || '',
+    );
     if (_reportAutoSaveTimer) {
         clearTimeout(_reportAutoSaveTimer);
         _reportAutoSaveTimer = null;
     }
-    if (window.reportForm) _reportAutoSave();
+    if (window.reportForm) _reportAutoSave({ sessionId: ownerSessionId, schedule: false });
     // _reportAutoSave schedules the durable workspace write. During a case
     // transition the caller performs the old-case write immediately; cancel
     // the delayed timer before activeSessionId changes.
@@ -388,13 +402,18 @@ function flushActiveReportState() {
         window.cancelScheduledWorkspaceSave();
     }
     const writes = [];
-    if (typeof window.persistWorkspace === 'function') {
+    if (ownerSessionId && typeof window.persistWorkspace === 'function') {
         // This is an explicit old-session flush. It must be allowed while the
-        // background hydration flag is still set and must complete before the
-        // transition changes activeSessionId.
-        writes.push(Promise.resolve(window.persistWorkspace('report.flush', { allowDuringRestore: true })));
+        // background hydration flag is still set. `sessionId` pins both the
+        // payload and request header to the old case after the visible shell
+        // has already switched to the next one.
+        writes.push(Promise.resolve(window.persistWorkspace('report.flush', {
+            allowDuringRestore: true,
+            sessionId: ownerSessionId,
+        })));
     }
-    if (window.Report && Report.persist && typeof Report.persist.flush === 'function') {
+    const activeId = String((typeof activeSessionId !== 'undefined' ? activeSessionId : '') || '');
+    if (ownerSessionId === activeId && window.Report && Report.persist && typeof Report.persist.flush === 'function') {
         try { writes.push(Promise.resolve(Report.persist.flush())); } catch (_) {}
     }
     return Promise.allSettled(writes);

@@ -96,8 +96,41 @@ def test_planning_result_contract_exposes_run_identity_and_artifact_state():
         '"planning_label": active_run.get("label")',
         '"planning_status": active_run.get("status")',
         '"artifact_status": artifact_status',
+        "pending = dose_workspace_data_pending(agent)",
+        "durable_dvh = agent.memory.retrieve(\"dvh_data\")",
     ):
         assert required in result_block
+
+
+def test_2d_segmentation_uses_clinical_source_over_layer_order():
+    """CTV must stay visible above an overlapping semi-transparent OAR."""
+    viewer = read("web/app/static/js/brachybot-viewer-volume.js")
+
+    assert "function _sourceOverPackedRgba" in viewer
+    assert "Segmentation is source-over composited in a stable clinical" in viewer
+    assert "OAR is composited above open/manual masks and skin" in viewer
+    # The former mutually-exclusive writes made CTV disappear at every voxel
+    # also occupied by an OAR, regardless of the selected opacity.
+    assert "if (oA === 0 && isDataTreeNodeVisible2D(dataTreeState.oar)" not in viewer
+    assert "if (oA === 0 && isDataTreeNodeVisible2D(dataTreeState.ctv)" not in viewer
+
+
+def test_data_tree_opacity_drag_is_a_single_commit_transaction():
+    """Fast slider drags may update pixels live but must not replace their input."""
+    viewer = read("web/app/static/js/brachybot-viewer-volume.js")
+    css = read("web/app/static/css/brachybot-report-controls.css")
+
+    for required in (
+        "let _dataTreeOpacityDrag = null",
+        "function _finishDataTreeOpacityDrag",
+        "function _bindDataTreeOpacityControls",
+        "control.addEventListener('pointerdown'",
+        "if (_isDataTreeOpacityDragActive())",
+        "function _commitGroupOpacity(category)",
+    ):
+        assert required in viewer
+    assert "min-width: 54px" in css
+    assert "touch-action: none" in css
 
 
 def test_data_tree_has_independent_2d_and_3d_presentation_controls():

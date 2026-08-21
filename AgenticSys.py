@@ -611,6 +611,7 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
         )
         from tool_factory.OAR_seg import OARSegmentationTool
         from tool_factory.dose_engine import DoseEngineTool
+        from tool_factory.dose_recompute import CurrentPlanDoseRecomputeTool
         from tool_factory.dose_eval import DoseEvaluationTool
         from tool_factory.seed_plan import SeedPlanningTool
         from tool_factory.seed_seg import SeedSegmentationTool
@@ -701,6 +702,7 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
         self.registry.register(CTVModelCatalogTool())
         self.registry.register(OARSegmentationTool())
         self.registry.register(DoseEngineTool())
+        self.registry.register(CurrentPlanDoseRecomputeTool())
         self.registry.register(DoseEvaluationTool())
         self.registry.register(SeedPlanningTool())
         self.registry.register(SeedSegmentationTool())
@@ -1307,7 +1309,20 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
             # object schema). In particular, an OAR-only query must not carry
             # ``ctv_array=None`` or a model-generated string representation.
             metric_type = str(params.get("metric_type") or "all_metrics")
-            params["metrics"] = self.memory.retrieve("dose_metrics") or self.memory.retrieve("metrics") or {}
+            # Do not use ``or`` to select workspace values here. NumPy arrays
+            # and scalar NumPy values deliberately do not define a truth value;
+            # evaluating one in a boolean expression raises before the tool is
+            # called. This helper also keeps the source precedence explicit:
+            # the current durable dose metrics win over the legacy alias.
+            def _memory_first(*keys, default=None):
+                for key in keys:
+                    value = self.memory.retrieve(key)
+                    if value is not None:
+                        return value
+                return default
+
+            raw_metrics = _memory_first("dose_metrics", "metrics", default={})
+            params["metrics"] = raw_metrics if isinstance(raw_metrics, dict) else {}
             # Never trust arrays serialized by the model or by an earlier
             # tool call.  They may be a string representation of a NumPy/
             # SimpleITK object, which fails the object schema even when the
@@ -1319,8 +1334,9 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
             params.pop("oar_array", None)
             if oar_array is not None and metric_type in {"oar_volumes", "all_metrics"}:
                 params["oar_array"] = oar_array
-            params["organ_names"] = self.memory.retrieve("organ_names") or {}
-            params["ct_spacing"] = self.memory.retrieve("ct_spacing") or self.memory.retrieve("spacing") or [1, 1, 1]
+            raw_organ_names = _memory_first("organ_names", default={})
+            params["organ_names"] = raw_organ_names if isinstance(raw_organ_names, dict) else {}
+            params["ct_spacing"] = _memory_first("ct_spacing", "spacing", default=[1, 1, 1])
             ct_data = self.memory.retrieve("ct_data")
             params.pop("ct_data", None)
             if ct_data is not None and metric_type in {"hu_statistics", "all_metrics"}:
@@ -1330,7 +1346,8 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
             # use an explicit None check so the query does not fail before it
             # can report the current seed count.
             params["seed_positions"] = seed_positions if seed_positions is not None else []
-            params["total_seeds"] = self.memory.retrieve("total_seeds") or 0
+            total_seeds = self.memory.retrieve("total_seeds")
+            params["total_seeds"] = total_seeds if total_seeds is not None else 0
 
         if tool_name == "ctv_segmentation":
             # Normalize catalog/legacy aliases before injecting the active CT.
@@ -1449,7 +1466,7 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
         # be set in all code paths).
         if tool_name == "planning_pipeline":
             params["_agent"] = self
-        elif tool_name in {"report_auto_fill", "tool_creator"}:
+        elif tool_name in {"dose_recompute", "report_auto_fill", "tool_creator"}:
             params["_agent"] = self
 
         # BUG FIX 2026-06-17 (duplicate oar_segmentation): the LLM
@@ -1759,6 +1776,13 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
                     self.memory.store("dose_distribution", metadata["dose_distribution"])
             elif tool_name == "dose_engine" and result.data is not None:
                 self.memory.store("dose_distribution", result.data)
+            elif tool_name == "dose_recompute":
+                # The high-level recompute tool writes the authoritative Dose,
+                # DVH, and metric aliases itself.  Keep the conversation state
+                # explicit so the Viewer/session refresh path can react even
+                # when the request came from chat instead of a manual route.
+                self.memory.conversation_state["planning_completed"] = True
+                self.memory.store("last_dose_recompute_source", "chat")
             elif tool_name == "dose_evaluation":
                 # BUG FIX 2026-06-16 (clinical eval scaling): the
                 # dose_evaluation result has metadata shaped like

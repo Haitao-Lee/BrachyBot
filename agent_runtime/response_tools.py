@@ -16,6 +16,7 @@ from agent_runtime.turn_policy import (
     is_surgical_guide_generation_request,
     requires_planning_before_guide,
     resolve_report_request_action,
+    resolve_session_content_target,
 )
 from plans.dose_pre.model_loader import resolve_prescription_gy
 
@@ -657,7 +658,11 @@ print(json.dumps(result))
                     },
                 ])
             elif action == 'dose' and ct_path:
-                tools.append({"id": "tool_direct_dose", "tool": "dose_engine", "params": {}})
+                # Route an explicit conversational dose action to the
+                # application-level capability.  ``dose_engine`` is the
+                # low-level model contract and requires raw CT/seed arrays;
+                # the high-level tool resolves the active Planning itself.
+                tools.append({"id": "tool_direct_dose", "tool": "dose_recompute", "params": {}})
 
         return tools or None
 
@@ -1793,6 +1798,48 @@ Output (JSON array of strings):"""
         for tc in tool_calls:
             tn = tc.get("tool", "")
             p = tc.get("params", {})
+            if not isinstance(p, dict):
+                # Provider arguments are JSON objects by contract. Treat a
+                # malformed value as an empty object so the capability
+                # boundary can return a localized business error instead of
+                # crashing while inspecting ``.get`` below.
+                p = {}
+            # Providers occasionally use a descriptive function name for an
+            # already-registered capability. Normalize the tool API at this
+            # boundary instead of branching on the user's wording. This keeps
+            # natural-language understanding with the LLM while making the
+            # server contract tolerant of equivalent provider decisions.
+            _dose_aliases = {
+                "dose_calc",
+                "recalculate_dose",
+                "recompute_dose",
+                "dose_calculation",
+                "current_plan_dose",
+                "update_dose",
+            }
+            if tn in _dose_aliases:
+                tn = "dose_recompute"
+                tc = {**tc, "tool": tn, "params": dict(p or {})}
+                p = tc["params"]
+            elif tn == "dose_engine":
+                # The raw engine requires runtime image/seed payloads and is
+                # not a conversational API. If the provider selected it for
+                # a stateful request, translate the incomplete call to the
+                # high-level capability. The tool itself will then give an
+                # honest "no active Planning" result when the Session lacks
+                # usable geometry; we must not silently drop the turn.
+                raw_image = p.get("dose_image")
+                raw_seeds = p.get("seeds")
+                raw_payload_ready = (
+                    raw_image is not None
+                    and not isinstance(raw_image, str)
+                    and isinstance(raw_seeds, (list, tuple))
+                    and bool(raw_seeds)
+                )
+                if not raw_payload_ready:
+                    tn = "dose_recompute"
+                    tc = {**tc, "tool": tn, "params": dict(p)}
+                    p = tc["params"]
             # GENERAL SANITIZATION (applies to ALL tools):
             # 1) Drop any internal-field name from the params dict
             #    silently — the LLM is hallucinating; the tool's
@@ -1925,23 +1972,55 @@ Output (JSON array of strings):"""
                         if value:
                             requested_targets.append(value)
                 if requested_targets and all(value == "report" for value in requested_targets):
+                    from tool_factory.ui_content import normalize_session_content_request
+
+                    content_contract = normalize_session_content_request(
+                        question=question,
+                        presentation="attachments",
+                    )
+                    # A live-report capture proposed by the model can still be
+                    # a deictic reference to images shown in the preceding
+                    # reply. Preserve that source relation instead of silently
+                    # widening it to every report figure.
+                    content_target = (
+                        "reply_attachments"
+                        if resolve_session_content_target(question) == "reply_attachments"
+                        else "report_figures"
+                    )
                     tc = dict(tc)
                     tc["tool"] = "ui_content"
                     tc["params"] = {
-                        "target": "report_figures",
-                        "presentation": "attachments",
+                        "target": content_target,
+                        "presentation": content_contract["presentation"],
+                        "selection": content_contract["selection"],
+                        "analysis": content_contract["analysis"],
                         "mode": str(p.get("mode") or "chat"),
                         "question": question,
                         "planning_id": str(p.get("planning_id") or ""),
                     }
             elif tn == "ui_content":
-                from tool_factory.ui_content import SESSION_CONTENT_TARGETS
+                from tool_factory.ui_content import (
+                    SESSION_CONTENT_TARGETS,
+                    normalize_session_content_request,
+                )
                 target = str(p.get("target") or "").strip().lower()
                 question = str(p.get("question") or "").strip()
                 if target not in SESSION_CONTENT_TARGETS or not question:
                     logger.warning("Dropping ui_content call with unsupported target or no question")
                     continue
+                # The primary model chooses ordinary content families. Only a
+                # source-level conversational reference is canonicalized here:
+                # ``last image`` refers to the ordered attachments of the
+                # preceding reply, not to a similarly named global collection.
+                if resolve_session_content_target(question) == "reply_attachments":
+                    target = "reply_attachments"
                 p["target"] = target
+                p.update(normalize_session_content_request(
+                    question=question,
+                    presentation=p.get("presentation"),
+                    selection=p.get("selection"),
+                    analysis=p.get("analysis"),
+                ))
                 tc["params"] = p
             valid.append(tc)
         return valid

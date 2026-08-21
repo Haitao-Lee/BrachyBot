@@ -158,30 +158,44 @@
     flex-shrink: 0;
     font-family: 'JetBrains Mono', monospace;
 }
-.tree-item .opacity-slider {
-    width: 38px; height: 12px;
+.tree-item .opacity-slider,
+.tree-group-header .opacity-slider {
+    width: 54px;
+    min-width: 54px;
+    height: 22px;
     flex-shrink: 0;
     -webkit-appearance: none;
+    appearance: none;
     background: transparent;
     border-radius: 999px;
     outline: none;
-    cursor: pointer;
-    transition: background var(--t-fast) var(--ease);
-    /* The visible track is rendered by the pseudo-element below */
-    position: relative;
+    cursor: ew-resize;
+    touch-action: none;
 }
-.tree-item .opacity-slider::before {
-    content: '';
-    position: absolute;
-    top: 50%; left: 0; right: 0;
-    height: 3px;
-    transform: translateY(-50%);
-    background: var(--bg-3);
+.tree-item .opacity-slider::-webkit-slider-runnable-track,
+.tree-group-header .opacity-slider::-webkit-slider-runnable-track {
+    height: 5px;
     border-radius: 999px;
-    transition: background var(--t-fast) var(--ease);
-    pointer-events: none;
+    background: var(--bg-3);
+    border: 1px solid var(--border-hairline);
 }
-.tree-item .opacity-slider:hover::before { background: var(--border-soft); }
+.tree-item .opacity-slider::-moz-range-track,
+.tree-group-header .opacity-slider::-moz-range-track {
+    height: 5px;
+    border-radius: 999px;
+    background: var(--bg-3);
+    border: 1px solid var(--border-hairline);
+}
+.tree-item .opacity-slider:hover::-webkit-slider-runnable-track,
+.tree-group-header .opacity-slider:hover::-webkit-slider-runnable-track,
+.tree-item .opacity-slider:hover::-moz-range-track,
+.tree-group-header .opacity-slider:hover::-moz-range-track {
+    background: var(--border-soft);
+}
+.tree-item .opacity-slider:focus-visible,
+.tree-group-header .opacity-slider:focus-visible {
+    box-shadow: 0 0 0 2px var(--primary-soft);
+}
 .tree-item .recon3d-btn {
     width: 18px; height: 18px;
     border: none; background: none;
@@ -264,33 +278,24 @@
 }
 .tree-group-header .eye-btn:hover { opacity: 1; background: var(--primary-soft); color: var(--primary); }
 .tree-group-header .eye-btn.hidden { opacity: 0.15; }
-.tree-group-header .opacity-slider {
-    width: 38px; height: 3px;
-    flex-shrink: 0;
-    -webkit-appearance: none;
-    background: var(--bg-3);
-    border-radius: 999px;
-    outline: none;
-}
-.tree-group-header .opacity-slider:hover { background: var(--border-soft); }
-
 .tree-item .opacity-slider::-webkit-slider-thumb,
 .tree-group-header .opacity-slider::-webkit-slider-thumb {
     -webkit-appearance: none;
-    width: 10px; height: 10px;
+    width: 14px; height: 14px;
+    margin-top: -5px;
     border-radius: 50%;
     background: var(--primary);
-    cursor: pointer;
-    border: 1.5px solid var(--bg-2);
+    cursor: ew-resize;
+    border: 2px solid var(--bg-2);
     box-shadow: var(--shadow-xs);
 }
 .tree-item .opacity-slider::-moz-range-thumb,
 .tree-group-header .opacity-slider::-moz-range-thumb {
-    width: 10px; height: 10px;
+    width: 14px; height: 14px;
     border-radius: 50%;
     background: var(--primary);
-    cursor: pointer;
-    border: 1.5px solid var(--bg-2);
+    cursor: ew-resize;
+    border: 2px solid var(--bg-2);
     box-shadow: var(--shadow-xs);
 }
 

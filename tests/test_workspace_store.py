@@ -284,6 +284,61 @@ def test_chat_snapshot_patches_are_append_only(tmp_path):
     assert [message["content"] for message in messages] == ["first", "answer"]
 
 
+def test_legacy_hidden_screenshot_prompt_is_removed_but_real_user_text_remains(tmp_path):
+    store = WorkspaceStore(tmp_path / "runtime")
+    user = store.create_user("legacy_visual_owner", "hash")
+    case = store.create_session(user["id"], "Legacy visual case")
+    hidden_prompt = {
+        "type": "user",
+        "content": (
+            "[Screenshot captured: /api/sessions/case/screenshots/dose.png]\n\n"
+            "User request: 帮我分析剂量\n"
+            "Analyze the supplied screenshot(s) and answer the user's request directly."
+        ),
+        "timestamp": 1000,
+    }
+    real_user_message = {
+        "type": "user",
+        "content": "我想查看截图并听取分析",
+        "timestamp": 1100,
+    }
+    store.save_snapshot_patch(
+        user["id"], case.id,
+        {"chat": {"messages": [hidden_prompt, real_user_message]}},
+    )
+    messages = store.load_snapshot(user["id"], case.id)["chat"]["messages"]
+    assert [message["content"] for message in messages] == [real_user_message["content"]]
+
+
+def test_chat_section_replacement_applies_hidden_prompt_and_attachment_boundary(tmp_path):
+    store = WorkspaceStore(tmp_path / "runtime")
+    user = store.create_user("chat_replace_owner", "hash")
+    case = store.create_session(user["id"], "Chat replacement case")
+    hidden = {
+        "type": "user",
+        "message_kind": "internal_followup",
+        "content": "[Screenshot captured: /api/sessions/case/screenshots/private.png]",
+    }
+    first = {
+        "id": "capture-a",
+        "url": "/api/sessions/case/screenshots/dose.png",
+        "mode": "chat",
+        "request_id": "parent-request",
+        "view_metadata": {"target": "viewer-axial", "capture_role": "dose"},
+    }
+    replay = dict(first, id="capture-b")
+    store.replace_snapshot_section(
+        user["id"], case.id, "chat",
+        {"messages": [hidden, {"type": "bot-response", "content": "分析完成", "attachments": [first, replay]}]},
+    )
+
+    chat = store.load_snapshot(user["id"], case.id)["chat"]
+    assert all(message.get("message_kind") != "internal_followup" for message in chat["messages"])
+    attachments = chat["messages"][0]["attachments"]
+    assert len(attachments) == 1
+    assert attachments[0]["url"].endswith("dose.png")
+
+
 def test_report_snapshot_does_not_let_older_blank_form_erase_narrative(tmp_path):
     store = WorkspaceStore(tmp_path / "runtime")
     user = store.create_user("report_owner", "hash")

@@ -38,7 +38,12 @@ Use this when:
 - User asks about UI buttons or features
 - User needs help navigating the interface
 - You need to understand the current state
-- User asks 'how to do X' in the interface"""
+- User asks 'how to do X' in the interface
+
+For an actionable request, prefer the returned action_capabilities. Each
+capability is derived from the real DOM control or handler and contains the
+exact ui_controller target, command, value, and value semantics. Do not infer
+an action from a translated label or from a keyword-only source match."""
 
     input_schema = {
         "query": {
@@ -95,6 +100,129 @@ Use this when:
                 logger.warning("Failed to read UI script %s: %s", path, exc)
         return "\n".join(chunks)
 
+    @staticmethod
+    def _parse_tag_attributes(raw: str) -> Dict[str, str]:
+        """Parse HTML attributes without depending on a browser DOM.
+
+        The inspector runs on the server, while the real controls live in the
+        browser.  Returning stable attributes from the source is therefore
+        more reliable than asking the model to infer an action from visible
+        button text alone.
+        """
+        attrs: Dict[str, str] = {}
+        pattern = re.compile(
+            r"([:\w-]+)\s*(?:=\s*(?:\"([^\"]*)\"|'([^']*)'|([^\s>`]+)))?",
+            re.IGNORECASE,
+        )
+        for match in pattern.finditer(raw or ""):
+            key = match.group(1).lower()
+            value = next((item for item in match.groups()[1:] if item is not None), "")
+            attrs[key] = value
+        return attrs
+
+    @staticmethod
+    def _plain_markup_text(raw: str) -> str:
+        text = re.sub(r"<[^>]+>", " ", raw or "")
+        return re.sub(r"\s+", " ", text).strip()
+
+    @classmethod
+    def _action_from_markup(cls, attrs: Dict[str, str], handler: str = "") -> Optional[Dict[str, Any]]:
+        """Translate a real control handler into the controller contract.
+
+        This is capability discovery, not a natural-language keyword router:
+        the mapping is derived from the actual handler or explicit
+        ``data-ui-*`` metadata attached to the control.
+        """
+        target = attrs.get("data-ui-target", "").strip()
+        command = attrs.get("data-ui-command", "").strip()
+        value: Optional[str] = attrs.get("data-ui-value")
+        if target and command:
+            action: Dict[str, Any] = {"target": target, "command": command}
+            if value not in (None, ""):
+                action["value"] = value
+            # A range/number control carries its runtime value in the DOM
+            # event, not in the static HTML attribute. Preserve that fact in
+            # the capability contract so the model does not invent a
+            # hard-coded number for a slider.
+            elif attrs.get("type", "").lower() in {"range", "number"}:
+                action["value_source"] = "control"
+            return action
+
+        source = str(handler or "").replace("&quot;", '"').replace("&#39;", "'")
+        patterns = (
+            (r"toggleViewerFullscreen\(\s*['\"](axial|sagittal|coronal|3d)['\"]\s*\)",
+             lambda m: {"target": "viewer.fullscreen", "command": "toggle", "value": m.group(1)}),
+            (r"fitCameraToScene\s*\(\s*\)",
+             lambda m: {"target": "3d.fit", "command": "run"}),
+            (r"fitView\s*\(\s*\)",
+             lambda m: {"target": "viewer.fit_all", "command": "run"}),
+            (r"reset3DView\s*\(\s*\)",
+             lambda m: {"target": "3d.reset", "command": "run"}),
+            (r"setViewerLayout\(\s*['\"]([^'\"]+)['\"]\s*\)",
+             lambda m: {"target": "layout", "command": "set", "value": m.group(1)}),
+            (r"switchPanel\(\s*['\"]([^'\"]+)['\"]",
+             lambda m: {"target": "panel", "command": "switch", "value": m.group(1)}),
+            (r"setViewerTool\(\s*['\"]([^'\"]+)['\"]\s*\)",
+             lambda m: {"target": "viewer.tool", "command": "set", "value": m.group(1)}),
+            (r"applyZoom\(\s*(?:this\.value|[^)]*)\)",
+             lambda m: {"target": "viewer.zoom", "command": "set", "value_source": "control"}),
+            (r"updateSlice\(\s*['\"](axial|sagittal|coronal)['\"]",
+             lambda m: {"target": f"slice.{m.group(1)}", "command": "set", "value_source": "control"}),
+            (r"update3DMeshOpacity\s*\(",
+             lambda m: {"target": "3d.mesh_opacity", "command": "set", "value_source": "control"}),
+            (r"updateDoseOpacity\s*\(",
+             lambda m: {"target": "3d.dose_opacity", "command": "set", "value_source": "control"}),
+        )
+        for pattern, builder in patterns:
+            match = re.search(pattern, source, re.IGNORECASE)
+            if match:
+                return builder(match)
+        return None
+
+    @staticmethod
+    def _action_intents(action: Optional[Dict[str, Any]], attrs: Dict[str, str], label: str) -> List[str]:
+        explicit = attrs.get("data-ui-intents", "")
+        if explicit:
+            return [item.strip() for item in re.split(r"[,|]", explicit) if item.strip()]
+        if not action:
+            return []
+        target = action.get("target")
+        if target == "viewer.fullscreen":
+            return ["maximize viewer", "fullscreen", "expand viewer", "放大查看器", "全屏"]
+        if target == "viewer.zoom":
+            return ["viewer zoom", "zoom in", "zoom out", "缩放", "放大图像", "缩小图像"]
+        if target == "3d.fit":
+            return ["fit camera", "fit visible meshes", "适配三维相机", "显示全部模型"]
+        if target == "viewer.fit_all":
+            return ["fit 2D viewers", "适配图像", "显示完整切片"]
+        return [str(label).strip()] if str(label).strip() else []
+
+    @classmethod
+    def _capability_from_control(
+        cls, attrs: Dict[str, str], label: str, handler: str = "", role: str = "button"
+    ) -> Optional[Dict[str, Any]]:
+        action = cls._action_from_markup(attrs, handler)
+        if not action:
+            return None
+        item: Dict[str, Any] = {
+            "role": role,
+            "id": attrs.get("id") or None,
+            "label": label or attrs.get("title") or attrs.get("aria-label") or "",
+            "action": action,
+            "semantic_intents": cls._action_intents(action, attrs, label),
+        }
+        for key in ("title", "aria-label", "min", "max", "step", "type"):
+            if attrs.get(key) not in (None, ""):
+                item[key.replace("-", "_")] = attrs[key]
+        if action.get("target") == "viewer.zoom":
+            item["value_semantics"] = {
+                "set": "absolute percent",
+                "increase": "positive delta",
+                "decrease": "positive delta",
+                "fit": "camera/view fit, not panel maximize",
+            }
+        return item
+
     def _scan_ui_elements(self) -> Dict:
         """Dynamically scan the HTML for UI elements."""
         html = self._load_html()
@@ -107,7 +235,11 @@ Use this when:
             "tabs": [],
             "inputs": [],
             "viewers": [],
-            "controls": []
+            "controls": [],
+            # Structured capabilities are the bridge between the real DOM and
+            # ui_controller.  They prevent the model from guessing a target
+            # from a translated button label such as "Zoom" or "放大".
+            "action_capabilities": [],
         }
 
         # Find panel tabs
@@ -119,16 +251,55 @@ Use this when:
                 "text": tab_text.strip(),
             })
 
-        # Find buttons with onclick
-        btn_pattern = r'<button[^>]*class="([^"]*)"[^>]*onclick="([^"]*)"[^>]*>([^<]*)<'
-        buttons = re.findall(btn_pattern, html)
-        for btn_class, onclick, text in buttons:
-            if text.strip():
-                elements["buttons"].append({
-                    "text": text.strip(),
-                    "onclick": onclick[:100],
-                    "class": btn_class[:50],
-                })
+        # Find buttons in any attribute order and retain their executable
+        # action identity, label, tooltip, and semantic intent.
+        btn_pattern = re.compile(r"<button\b(?P<attrs>[^>]*)>(?P<body>.*?)</button>", re.IGNORECASE | re.DOTALL)
+        for match in btn_pattern.finditer(html):
+            attrs = self._parse_tag_attributes(match.group("attrs"))
+            text = self._plain_markup_text(match.group("body"))
+            onclick = attrs.get("onclick", "")
+            label = text or attrs.get("title") or attrs.get("aria-label") or attrs.get("id", "")
+            if not label and not onclick:
+                continue
+            button = {
+                "id": attrs.get("id") or None,
+                "text": text,
+                "title": attrs.get("title", ""),
+                "aria_label": attrs.get("aria-label", ""),
+                "onclick": onclick[:160],
+                "class": attrs.get("class", "")[:80],
+            }
+            capability = self._capability_from_control(attrs, label, onclick)
+            if capability:
+                button["action"] = capability["action"]
+                button["semantic_intents"] = capability["semantic_intents"]
+                elements["action_capabilities"].append(capability)
+            elements["buttons"].append(button)
+
+        # Inputs/selects are controls too.  In particular the zoom slider has
+        # no visible "zoom in" button, but it exposes an exact range and step.
+        input_pattern = re.compile(r"<(input|select|textarea)\b(?P<attrs>[^>]*)>", re.IGNORECASE | re.DOTALL)
+        for match in input_pattern.finditer(html):
+            attrs = self._parse_tag_attributes(match.group("attrs"))
+            label = attrs.get("aria-label") or attrs.get("title") or attrs.get("id", "")
+            capability = self._capability_from_control(
+                attrs, label, attrs.get("oninput", "") or attrs.get("onchange", ""), role=match.group(1).lower()
+            )
+            control = {
+                "id": attrs.get("id") or None,
+                "type": attrs.get("type", match.group(1).lower()),
+                "min": attrs.get("min"),
+                "max": attrs.get("max"),
+                "step": attrs.get("step"),
+                "value": attrs.get("value"),
+                "oninput": attrs.get("oninput", "")[:160],
+                "onchange": attrs.get("onchange", "")[:160],
+            }
+            if capability:
+                control["action"] = capability["action"]
+                control["semantic_intents"] = capability["semantic_intents"]
+                elements["action_capabilities"].append(capability)
+            elements["inputs"].append(control)
 
         # Find viewer cards
         viewer_pattern = r'class="viewer-card[^"]*"[^>]*id="([^"]*)"'
@@ -179,6 +350,21 @@ Use this when:
         results = []
         keyword_lower = keyword.lower()
 
+        # Search structured action capabilities first.  This is semantic UI
+        # metadata from real controls, not a hard-coded phrase-to-command map.
+        scanned = self._scan_ui_elements()
+        for capability in scanned.get("action_capabilities", []):
+            haystack = " ".join([
+                str(capability.get("label", "")),
+                str(capability.get("title", "")),
+                " ".join(str(item) for item in capability.get("semantic_intents", [])),
+                json.dumps(capability.get("action", {}), ensure_ascii=False),
+            ]).lower()
+            if keyword_lower in haystack:
+                results.append({"type": "action_capability", **capability})
+
+        # Keep the source search for comments, IDs, and implementation details.
+        # Structured capabilities above are deliberately returned first.
         # Search in button text
         btn_pattern = r'<button[^>]*>([^<]*)</button>'
         for match in re.finditer(btn_pattern, html):
@@ -337,10 +523,16 @@ Use this when:
         elif query == "scan":
             # Dynamically scan UI elements
             elements = self._scan_ui_elements()
+            if keyword:
+                elements["matched_actions"] = self._search_component(keyword)
             return ToolResult(
                 success=True,
                 data=elements,
-                message=f"Scanned {len(elements.get('tabs', []))} tabs, {len(elements.get('buttons', []))} buttons"
+                message=(
+                    f"Scanned {len(elements.get('tabs', []))} tabs, "
+                    f"{len(elements.get('buttons', []))} buttons, "
+                    f"{len(elements.get('action_capabilities', []))} executable UI capabilities"
+                )
             )
 
         elif query == "component":

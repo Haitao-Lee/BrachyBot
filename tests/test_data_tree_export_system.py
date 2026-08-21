@@ -246,6 +246,25 @@ def test_query_metrics_accepts_numpy_seed_positions_and_reports_oar_metrics():
     assert all_result.metadata["stomach"] == 0.01
 
 
+def test_query_metrics_all_metrics_reports_missing_sources_without_failing():
+    """A partial workspace must produce typed availability, not a fake error."""
+    from tool_factory.viewer_command.query_metrics import QueryMetricsTool
+
+    result = QueryMetricsTool()._execute(
+        metric_type="all_metrics",
+        metrics={"v100": 0.91, "d90": 120.0},
+        seed_positions=np.zeros((0, 3), dtype=np.float32),
+        total_seeds=0,
+    )
+
+    assert result.success is True
+    assert result.metadata["metric_type"] == "all_metrics"
+    assert "unavailable" in result.metadata
+    assert "ctv_volume" in result.metadata["unavailable"]
+    assert "_missing" in result.data
+    assert "hu_statistics" in result.data["_missing"]
+
+
 def test_structure_classification_is_bidirectional_and_persistent(tmp_path):
     store, user, session, agent = _case(tmp_path)
     memory = agent.memory

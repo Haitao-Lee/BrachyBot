@@ -166,6 +166,98 @@ def test_provider_tool_schema_hides_server_injected_fields():
     assert "image_path" in tool["properties"]
 
 
+def test_query_metrics_workspace_inputs_are_server_injected():
+    """A model must not be able to break a live metric read with fake arrays."""
+    from tool_factory.viewer_command.query_metrics import QueryMetricsTool
+
+    properties = QueryMetricsTool().input_schema["properties"]
+    for field in (
+        "metrics",
+        "ctv_array",
+        "oar_array",
+        "organ_names",
+        "ct_spacing",
+        "ct_data",
+        "seed_positions",
+        "total_seeds",
+    ):
+        assert properties[field]["x-server-injected"] is True
+
+    # Only the user-selectable metric type should reach the provider schema.
+    from agent_runtime.core import ToolRegistry
+
+    class _NamedMetricsTool(_Tool):
+        name = "query_metrics"
+
+    registry = ToolRegistry()
+    registry.register(_NamedMetricsTool(QueryMetricsTool().input_schema))
+    provider_schema = registry.to_openai_tools()[0]["function"]["parameters"]
+    assert list(provider_schema["properties"]) == ["metric_type"]
+
+
+def test_agent_query_metrics_uses_live_workspace_values_without_numpy_truth_checks():
+    """A follow-up metric read must not validate or truth-test model arrays."""
+    import numpy as np
+
+    from AgenticSys import BrachyAgent
+    from agent_runtime.core import ToolRegistry
+    from tool_factory.viewer_command.query_metrics import QueryMetricsTool
+
+    class _Memory:
+        def __init__(self):
+            self.values = {
+                "dose_metrics": {"v100": 0.914, "d90": 122.5},
+                "ct_spacing": np.asarray([0.7, 0.7, 5.0]),
+                "seed_positions": np.asarray([[1.0, 2.0, 3.0]]),
+                "total_seeds": np.int64(1),
+            }
+            self.conversation_state = {"last_tool_calls": []}
+            self.logged = []
+
+        def retrieve(self, key):
+            return self.values.get(key)
+
+        def get_ui_state(self):
+            return {}
+
+        def store(self, key, value):
+            self.values[key] = value
+
+        def log_tool_call(self, *args):
+            self.logged.append(args)
+
+    memory = _Memory()
+    registry = ToolRegistry()
+    registry.register(QueryMetricsTool())
+    agent = object.__new__(BrachyAgent)
+    agent.memory = memory
+    agent.registry = registry
+    agent.run_ledger = RunLedger()
+    agent.tool_gateway = ToolCallGateway(agent.run_ledger)
+
+    # These are the kinds of values that previously leaked from an LLM call.
+    params = {
+        "metric_type": "dose_metrics",
+        "metrics": "stale model text",
+        "ctv_array": "array([...])",
+        "oar_array": "array([...])",
+        "organ_names": "stale names",
+        "ct_spacing": "stale spacing",
+        "total_seeds": "stale count",
+    }
+
+    result = agent._execute_tool_with_memory("query_metrics", params)
+
+    assert result.success is True
+    assert result.data["V100"] == 0.914
+    assert params["metrics"] == memory.values["dose_metrics"]
+    assert "ctv_array" not in params
+    assert "oar_array" not in params
+    assert isinstance(params["ct_spacing"], np.ndarray)
+    assert isinstance(params["total_seeds"], np.integer)
+    assert memory.logged
+
+
 def test_local_turn_policy_shortcuts_only_low_risk_requests():
     from agent_runtime.turn_policy import classify_local_turn, filter_tool_schemas
 
@@ -350,6 +442,49 @@ def test_ui_controller_registers_parameter_targets():
     # Unknown target still rejected.
     bad = tool.execute(actions=[{"target": "parameter.nope", "command": "run"}])
     assert bad.success is False
+
+
+def test_ui_controller_separates_panel_maximize_camera_fit_and_zoom_delta():
+    from agent_runtime.core import ToolResultPipeline
+    from tool_factory.ui_controller import UIControllerTool
+
+    tool = UIControllerTool()
+
+    # A delta is not an absolute zoom percentage.  This was the regression
+    # behind the user-visible "20 out of range [50, 300]" error.
+    delta = tool.execute(actions=[{
+        "target": "viewer.zoom", "command": "increase", "value": 20,
+    }])
+    assert delta.success is True
+
+    absolute_too_small = tool.execute(actions=[{
+        "target": "viewer.zoom", "command": "set", "value": 20,
+    }])
+    assert absolute_too_small.success is False
+    hint = absolute_too_small.metadata["repair_hints"][0]
+    assert hint["value_semantics"] == "absolute"
+    assert hint["accepted_range"] == [50, 300]
+    localized = ToolResultPipeline.format("ui_controller", absolute_too_small, "zh")
+    assert "界面操作未执行" in localized
+    assert "Error:" not in localized
+
+    # Maximizing the 3D card and fitting its camera are separate capabilities.
+    maximize = tool.execute(actions=[{
+        "target": "viewer.fullscreen", "command": "toggle", "value": "3d",
+    }])
+    fit = tool.execute(actions=[{"target": "3d.fit", "command": "run"}])
+    assert maximize.success is True
+    assert fit.success is True
+
+
+def test_ui_inspector_reports_real_viewer_capabilities_from_dom_contracts():
+    from tool_factory.ui_inspector import UIInspectorTool
+
+    capabilities = UIInspectorTool()._scan_ui_elements()["action_capabilities"]
+    actions = [item["action"] for item in capabilities]
+    assert {"target": "viewer.fullscreen", "command": "toggle", "value": "3d"} in actions
+    assert {"target": "viewer.zoom", "command": "set", "value_source": "control"} in actions
+    assert {"target": "viewer.fit_all", "command": "run"} in actions
 
 
 def test_surgical_guide_schema_enumerates_manufacturing_parameters():

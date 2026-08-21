@@ -1205,6 +1205,25 @@ window.hydrateCompletedSegmentationArtifacts = function hydrateCompletedSegmenta
 let _pixelBuffer = null;
 let _imageDataBuffer = null;
 
+function _sourceOverPackedRgba(bgR, bgG, bgB, bgA, fgR, fgG, fgB, fgOpacity) {
+    // Keep the hot 512 x 512 raster path allocation-free.  The packed return
+    // value represents straight-alpha RGBA in little-endian component order:
+    // r | g << 8 | b << 16 | a << 24.  Callers unpack with unsigned shifts.
+    const foregroundAlpha = Math.max(0, Math.min(1, Number(fgOpacity) || 0));
+    if (foregroundAlpha <= 0) {
+        return ((Math.round(bgA) << 24) | (Math.round(bgB) << 16)
+            | (Math.round(bgG) << 8) | Math.round(bgR)) >>> 0;
+    }
+    const backgroundAlpha = Math.max(0, Math.min(1, (Number(bgA) || 0) / 255));
+    const outputAlpha = foregroundAlpha + backgroundAlpha * (1 - foregroundAlpha);
+    if (outputAlpha <= 0) return 0;
+    const outputR = (fgR * foregroundAlpha + bgR * backgroundAlpha * (1 - foregroundAlpha)) / outputAlpha;
+    const outputG = (fgG * foregroundAlpha + bgG * backgroundAlpha * (1 - foregroundAlpha)) / outputAlpha;
+    const outputB = (fgB * foregroundAlpha + bgB * backgroundAlpha * (1 - foregroundAlpha)) / outputAlpha;
+    return ((Math.round(outputAlpha * 255) << 24) | (Math.round(outputB) << 16)
+        | (Math.round(outputG) << 8) | Math.round(outputR)) >>> 0;
+}
+
 function renderOverlayFromVolume(axis, sliceIndex) {
     if (!volumeShape) return;
 
@@ -1301,7 +1320,9 @@ function renderOverlayFromVolume(axis, sliceIndex) {
 
             let r = 0, g = 0, b = 0, a = 0;
 
-            // OAR takes priority (drawn on top)
+            // Segmentation is source-over composited in a stable clinical
+            // layer order: OAR first, then CTV.  CTV therefore remains
+            // legible wherever it overlaps a semi-transparent OAR.
             if (oarVisible && oarLabelData && oarLabelData.length > flatIdx) {
                 const oarVal = oarLabelData[flatIdx];
                 if (oarVal > 0) {
@@ -1310,24 +1331,25 @@ function renderOverlayFromVolume(axis, sliceIndex) {
                     if (visible) {
                         const color = oarLabelColorLUT[oarVal] || [200, 200, 200];
                         const opacity = organOpacities[oarVal] !== undefined ? organOpacities[oarVal] : 0.5;
-                        r = color[0];
-                        g = color[1];
-                        b = color[2];
-                        a = Math.round(opacity * 255);
+                        const composed = _sourceOverPackedRgba(r, g, b, a, color[0], color[1], color[2], opacity);
+                        r = composed & 0xff;
+                        g = (composed >>> 8) & 0xff;
+                        b = (composed >>> 16) & 0xff;
+                        a = composed >>> 24;
                     }
                 }
             }
 
-            // CTV drawn underneath (only if no OAR at this pixel)
-            if (ctvVisible && a === 0 && ctvLabelData && ctvLabelData.length > flatIdx) {
+            if (ctvVisible && ctvLabelData && ctvLabelData.length > flatIdx) {
                 const ctvVal = ctvLabelData[flatIdx];
                 if (ctvVal > 0) {
                     const color = ctvLabelColorLUT[ctvVal] || [255, 48, 76];
                     const opacity = dataTreeState.ctv.opacity ?? 0.7;
-                    r = color[0];
-                    g = color[1];
-                    b = color[2];
-                    a = Math.round(opacity * 255);
+                    const composed = _sourceOverPackedRgba(r, g, b, a, color[0], color[1], color[2], opacity);
+                    r = composed & 0xff;
+                    g = (composed >>> 8) & 0xff;
+                    b = (composed >>> 16) & 0xff;
+                    a = composed >>> 24;
                 }
             }
 
@@ -1556,8 +1578,11 @@ function renderSliceFromVolume(axis, sliceIndex) {
                     }
                 }
 
-                // OAR overlay
-                if (oA === 0 && isDataTreeNodeVisible2D(dataTreeState.oar) && state.viewerSettings.showOAR && oarLabelData && oarLabelData.length > flatIdx) {
+                // OAR is composited above open/manual masks and skin.  CTV
+                // gets a second source-over pass immediately afterward so it
+                // cannot disappear simply because an OAR occupies the same
+                // voxel in the displayed slice.
+                if (isDataTreeNodeVisible2D(dataTreeState.oar) && state.viewerSettings.showOAR && oarLabelData && oarLabelData.length > flatIdx) {
                     const oarVal = oarLabelData[flatIdx];
                     if (oarVal > 0) {
                         const visible = !dataTreeState.organs.length ||
@@ -1565,13 +1590,16 @@ function renderSliceFromVolume(axis, sliceIndex) {
                         if (visible) {
                             const color = oarLabelColorLUT[oarVal] || [200, 200, 200];
                             const opacity = organOpacities[oarVal] !== undefined ? organOpacities[oarVal] : 0.5;
-                            oR = color[0]; oG = color[1]; oB = color[2]; oA = Math.round(opacity * 255);
+                            const composed = _sourceOverPackedRgba(oR, oG, oB, oA, color[0], color[1], color[2], opacity);
+                            oR = composed & 0xff;
+                            oG = (composed >>> 8) & 0xff;
+                            oB = (composed >>> 16) & 0xff;
+                            oA = composed >>> 24;
                         }
                     }
                 }
 
-                // CTV overlay (only if no OAR at this pixel)
-                if (oA === 0 && isDataTreeNodeVisible2D(dataTreeState.ctv) && state.viewerSettings.showCTV && ctvLabelData && ctvLabelData.length > flatIdx) {
+                if (isDataTreeNodeVisible2D(dataTreeState.ctv) && state.viewerSettings.showCTV && ctvLabelData && ctvLabelData.length > flatIdx) {
                     const ctvVal = ctvLabelData[flatIdx];
                     if (ctvVal > 0) {
                         const color = ctvLabelColorLUT[ctvVal] || [255, 48, 76];
@@ -1582,7 +1610,11 @@ function renderSliceFromVolume(axis, sliceIndex) {
                                     ?? labelState?.opacity
                                     ?? dataTreeState.ctv.opacity
                                     ?? 0.7;
-                                oR = color[0]; oG = color[1]; oB = color[2]; oA = Math.round(opacity * 255);
+                                const composed = _sourceOverPackedRgba(oR, oG, oB, oA, color[0], color[1], color[2], opacity);
+                                oR = composed & 0xff;
+                                oG = (composed >>> 8) & 0xff;
+                                oB = (composed >>> 16) & 0xff;
+                                oA = composed >>> 24;
                             }
                     }
                 }
@@ -3408,11 +3440,84 @@ window.hydrateOarDataTreeFromPayload = function hydrateOarDataTreeFromPayload(pa
     return true;
 };
 
+// Data Tree range inputs used to re-render their own DOM every 150 ms.  That
+// replaced the native range element while it was being dragged, which made the
+// thumb lose pointer capture and appear to lag behind a fast pointer.  Treat a
+// drag as a small transaction: update the viewer live and rebuild the tree only
+// after the pointer is released.
+let _dataTreeOpacityDrag = null;
+let _dataTreeOpacityRerenderPending = false;
+let _dataTreeOpacityVisualFrame = null;
+let _pendingGroupOpacityCategory = null;
+
+function _isDataTreeOpacityDragActive() {
+    return !!_dataTreeOpacityDrag;
+}
+
+function _requestDataTreeOpacityVisualRefresh() {
+    if (_dataTreeOpacityVisualFrame) return;
+    const schedule = typeof requestAnimationFrame === 'function'
+        ? requestAnimationFrame
+        : callback => setTimeout(callback, 0);
+    _dataTreeOpacityVisualFrame = schedule(() => {
+        _dataTreeOpacityVisualFrame = null;
+        if (state.ctLoaded) reloadOverlays();
+        redrawSeedNeedleOverlays();
+        requestViewerVisualRefresh('data-tree-opacity');
+    });
+}
+
+function _finishDataTreeOpacityDrag(event) {
+    const active = _dataTreeOpacityDrag;
+    if (!active) return;
+    if (event?.pointerId !== undefined && active.pointerId !== undefined && event.pointerId !== active.pointerId) return;
+    try {
+        if (active.control?.hasPointerCapture?.(active.pointerId)) {
+            active.control.releasePointerCapture(active.pointerId);
+        }
+    } catch (_) {}
+    _dataTreeOpacityDrag = null;
+    clearTimeout(_groupOpacityTimer);
+    const pendingCategory = _pendingGroupOpacityCategory;
+    _pendingGroupOpacityCategory = null;
+    if (pendingCategory) {
+        _dataTreeOpacityRerenderPending = false;
+        _commitGroupOpacity(pendingCategory);
+    } else if (_dataTreeOpacityRerenderPending) {
+        _dataTreeOpacityRerenderPending = false;
+        renderDataTree();
+    }
+}
+
+function _bindDataTreeOpacityControls(body) {
+    body.querySelectorAll('input.opacity-slider').forEach(control => {
+        control.addEventListener('pointerdown', event => {
+            event.stopPropagation();
+            _dataTreeOpacityDrag = { control, pointerId: event.pointerId };
+            try { control.setPointerCapture?.(event.pointerId); } catch (_) {}
+        });
+        control.addEventListener('keydown', event => event.stopPropagation());
+    });
+}
+
+if (!window.__brachybotDataTreeOpacityDragEndBound) {
+    window.__brachybotDataTreeOpacityDragEndBound = true;
+    document.addEventListener('pointerup', _finishDataTreeOpacityDrag, true);
+    document.addEventListener('pointercancel', _finishDataTreeOpacityDrag, true);
+    window.addEventListener('blur', () => _finishDataTreeOpacityDrag(), true);
+}
+
 // Debounced version to prevent excessive re-renders
 let _renderDataTreeTimer = null;
 function renderDataTreeDebounced() {
     clearTimeout(_renderDataTreeTimer);
-    _renderDataTreeTimer = setTimeout(renderDataTree, 50);
+    _renderDataTreeTimer = setTimeout(() => {
+        if (_isDataTreeOpacityDragActive()) {
+            _dataTreeOpacityRerenderPending = true;
+            return;
+        }
+        renderDataTree();
+    }, 50);
 }
 
 function renderDataTree() {
@@ -3859,11 +3964,28 @@ function renderDataTree() {
     const planningEntries = _planningVisualEntries();
     const planningRuns = Array.isArray(dataTreeState.planning.runs)
         ? dataTreeState.planning.runs : [];
-    const activePlanningId = String(
+    const preferredActivePlanningId = String(
         dataTreeState.planning.activePlanningId
         || dataTreeState.planning.id
         || planningRuns.find(run => run && run.visible)?.planning_id
         || '',
+    );
+    // A stale active alias can survive the metadata pass while a restarted
+    // case is still decoding its registry. Never synthesize a second legacy
+    // active wrapper when the compact catalog already has authoritative IDs.
+    const planningIds = new Set(planningRuns
+        .map(run => String(run?.planning_id || ''))
+        .filter(Boolean));
+    const activePlanningId = String(
+        planningRuns.length > 0
+            ? (planningIds.has(preferredActivePlanningId)
+                ? preferredActivePlanningId
+                : String(
+                    planningRuns.find(run => run?.visible === true)?.planning_id
+                    || planningRuns[planningRuns.length - 1]?.planning_id
+                    || '',
+                ))
+            : preferredActivePlanningId,
     );
     const activePlanningRun = planningRuns.find(
         run => String(run?.planning_id || '') === activePlanningId,
@@ -4201,6 +4323,7 @@ function renderDataTree() {
     }
 
     body.innerHTML = html;
+    _bindDataTreeOpacityControls(body);
     _restoreTreeGroupExpansionState(body);
     requestViewerVisualRefresh('data-tree-render');
 }
@@ -6275,10 +6398,20 @@ function setGroupVisibility(category, visible) {
 }
 
 let _groupOpacityTimer = null;
+function _commitGroupOpacity(category) {
+    renderDataTree();
+    if (state.ctLoaded) loadAllSlices();
+    redrawSeedNeedleOverlays();
+    requestViewerVisualRefresh('group-opacity');
+    applyDataTreeViewVisibility();
+    _scheduleDataTreeSave(`viewer.group_opacity:${category}`);
+}
+
 function setGroupOpacity(category, value) {
-    // Existing opacity sliders remain authoritative. Reapply independent
-    // view state after their synchronous material updates complete.
-    requestAnimationFrame(() => applyDataTreeViewVisibility());
+    // Mesh materials are updated synchronously below. Repaint 2D projection
+    // layers on the next frame instead of re-creating the slider DOM while
+    // the pointer is still captured by the native range input.
+    _requestDataTreeOpacityVisualRefresh();
     const opacity = parseInt(value) / 100;
     if (category === 'segmentation') {
         dataTreeState.ctv.opacity = opacity;
@@ -6385,15 +6518,18 @@ function setGroupOpacity(category, value) {
             applyMeshOpacity(scene3D.meshes[o.id], opacity, o.visible !== false);
         });
     }
-    // Debounce tree re-render and overlay reload
+    // Persist the final state after a short quiet period. A drag keeps its
+    // original input node alive until pointerup so high-speed adjustments do
+    // not lose capture or snap back to an older DOM value.
     clearTimeout(_groupOpacityTimer);
     _groupOpacityTimer = setTimeout(() => {
-        renderDataTree();
-        if (state.ctLoaded) loadAllSlices();
-        redrawSeedNeedleOverlays();
-        requestViewerVisualRefresh('group-opacity');
-        applyDataTreeViewVisibility();
-        _scheduleDataTreeSave(`viewer.group_opacity:${category}`);
+        _groupOpacityTimer = null;
+        if (_isDataTreeOpacityDragActive()) {
+            _pendingGroupOpacityCategory = category;
+            _dataTreeOpacityRerenderPending = true;
+            return;
+        }
+        _commitGroupOpacity(category);
     }, 150);
 }
 

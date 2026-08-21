@@ -50,6 +50,13 @@ class ChatTask:
     request_id: str = ""
     user_message_id: str = ""
     assistant_message_id: str = ""
+    # A visual-analysis follow-up is a real execution task, but its result is
+    # presented inside the original assistant reply. Keep execution identity
+    # and transcript identity separate so retries cannot replay the parent
+    # task or attach a child answer to a later user turn.
+    parent_request_id: str = ""
+    parent_user_message_id: str = ""
+    parent_assistant_message_id: str = ""
     internal_followup: bool = False
     response_language: str = ""
     created_at: float = field(default_factory=time.time)
@@ -75,6 +82,9 @@ class ChatTask:
         self.assistant_message_id = str(
             self.assistant_message_id or f"assistant-{self.request_id}"
         )
+        self.parent_request_id = str(self.parent_request_id or "")
+        self.parent_user_message_id = str(self.parent_user_message_id or "")
+        self.parent_assistant_message_id = str(self.parent_assistant_message_id or "")
         self._events: List[str] = []
         self._terminal_event_seen = False
         self._condition = threading.Condition()
@@ -215,12 +225,23 @@ class ChatTask:
 
     def public_state(self) -> Dict[str, Any]:
         with self._condition:
+            public_message = self.message
+            if self.internal_followup:
+                public_message = (
+                    "正在分析已捕获的图像。"
+                    if str(self.response_language).lower().startswith("zh")
+                    else "Analyzing captured visual evidence."
+                )
             return {
                 "task_id": self.task_id,
                 "request_id": self.request_id,
                 "user_message_id": self.user_message_id,
                 "assistant_message_id": self.assistant_message_id,
+                "parent_request_id": self.parent_request_id or None,
+                "parent_user_message_id": self.parent_user_message_id or None,
+                "parent_assistant_message_id": self.parent_assistant_message_id or None,
                 "internal_followup": bool(self.internal_followup),
+                "response_language": self.response_language or None,
                 "session_id": self.session_id,
                 "status": self.status,
                 "phase": (
@@ -228,7 +249,9 @@ class ChatTask:
                     if self.status == "running" and self.completion_status
                     else self.status
                 ),
-                "message": self.message,
+                # Never expose the hidden multimodal prompt or its screenshot
+                # URLs through task recovery metadata.
+                "message": public_message,
                 "created_at": self.created_at,
                 "finished_at": self.finished_at,
                 "event_count": len(self._events),
@@ -259,6 +282,24 @@ class ChatTaskManager:
                 task for task in self._tasks.values()
                 if (task.user_id, task.session_id) == self._owner_key(user_id, session_id)
                 and task.status == "running"
+            ]
+            return max(candidates, key=lambda task: task.created_at, default=None)
+
+    def live(self, user_id: str, session_id: str) -> Optional[ChatTask]:
+        """Return the newest worker that has not left the Agent yet.
+
+        ``ChatTask.cancel`` changes the public status immediately so the
+        browser can stop its progress indicator.  That status is not proof
+        that the worker has released Agent memory or restored an internal
+        follow-up snapshot.  Lifecycle decisions that can start another
+        turn must use this method to avoid concurrent case mutation.
+        """
+        with self._lock:
+            self._purge_locked()
+            candidates = [
+                task for task in self._tasks.values()
+                if (task.user_id, task.session_id) == self._owner_key(user_id, session_id)
+                and not task._worker_done.is_set()
             ]
             return max(candidates, key=lambda task: task.created_at, default=None)
 
@@ -293,6 +334,9 @@ class ChatTaskManager:
         request_id: str = "",
         user_message_id: str = "",
         assistant_message_id: str = "",
+        parent_request_id: str = "",
+        parent_user_message_id: str = "",
+        parent_assistant_message_id: str = "",
         internal_followup: bool = False,
         response_language: str = "",
     ) -> ChatTask:
@@ -302,6 +346,9 @@ class ChatTaskManager:
         workspace hydration.  A browser can receive a task immediately while
         the worker reconstructs the case-owned Agent in the background.
         """
+        # Captured before the worker closure is created so ordinary turns do
+        # not close over an unassigned local when there is no predecessor.
+        predecessor: Optional[ChatTask] = None
         with self._lock:
             self._purge_locked()
             request_key = str(request_id or "")
@@ -310,11 +357,40 @@ class ChatTaskManager:
                     task for task in self._tasks.values()
                     if (task.user_id, task.session_id) == self._owner_key(user_id, session_id)
                     and task.request_id == request_key
+                    and bool(task.internal_followup) == bool(internal_followup)
                 ), None)
                 if duplicate is not None:
                     return duplicate
-            if self.active(user_id, session_id) is not None:
-                raise RuntimeError("A chat task is already running for this case")
+            # ``active`` only represents the public running state.  A task
+            # that was just cancelled can still be executing its generator
+            # finalizer and restoring AgentMemory.  Treat that worker as the
+            # predecessor too, otherwise a new user turn can enter the same
+            # Agent concurrently and inherit the old screenshot prompt.
+            live = self.live(user_id, session_id)
+            if live is not None:
+                # A screenshot analysis is a child of an already visible
+                # assistant reply. A new user instruction supersedes it
+                # instead of waiting behind it or inheriting its prompt. The
+                # new worker still waits for the old worker thread to leave
+                # the Agent so two turns cannot mutate one AgentMemory at
+                # the same time.
+                if not internal_followup and live.internal_followup:
+                    predecessor = live
+                    live._skip_finalization = True
+                    if live.status == "running":
+                        self.cancel(live)
+                elif live.status != "running":
+                    # The browser may already have received a cancellation
+                    # acknowledgement.  The new turn starts only after the
+                    # cancelled worker has actually unwound.
+                    predecessor = live
+                    # A terminal task can still be inside its finalizer until
+                    # ``_worker_done`` is set.  Once a newer turn owns the
+                    # case, the old worker must not checkpoint or append a
+                    # late response after the predecessor barrier opens.
+                    live._skip_finalization = True
+                else:
+                    raise RuntimeError("A chat task is already running for this case")
             task = ChatTask(
                 task_id=uuid.uuid4().hex,
                 user_id=str(user_id),
@@ -324,6 +400,9 @@ class ChatTaskManager:
                 request_id=str(request_id or ""),
                 user_message_id=str(user_message_id or ""),
                 assistant_message_id=str(assistant_message_id or ""),
+                parent_request_id=str(parent_request_id or ""),
+                parent_user_message_id=str(parent_user_message_id or ""),
+                parent_assistant_message_id=str(parent_assistant_message_id or ""),
                 internal_followup=bool(internal_followup),
                 response_language=str(response_language or ""),
             )
@@ -333,6 +412,10 @@ class ChatTaskManager:
             finalized = False
             terminal_event = ""
             try:
+                if predecessor is not None:
+                    predecessor.wait_for_worker(timeout=None)
+                    if not task.is_running():
+                        return
                 if start_gate is not None:
                     start_gate.wait()
                 if not task.is_running():
@@ -373,27 +456,66 @@ class ChatTaskManager:
                         raise RuntimeError("Agent not available")
                     agent = task.agent
                     agent.memory.set_ui_state(ui_state or {})
-                    for event in agent.chat_with_stream(task.message):
-                        # Explicit Stop is the only normal cancellation path.
-                        # Providers may flush a buffered event after their
-                        # cancellation hook returns; never let it mutate the
-                        # owning case or leak into a later replay.
-                        if not task.is_running():
-                            break
-                        # The Agent's ``done`` event is a protocol boundary,
-                        # not proof that case data is durable. Hold it until
-                        # arrays, chat, report state, and operation metadata
-                        # have committed to the owning workspace.
-                        event_name, _ = _event_parts(event)
-                        if event_name == "done":
-                            terminal_event = (
-                                event.decode("utf-8", errors="replace")
-                                if isinstance(event, bytes) else str(event or "")
-                            )
-                            continue
-                        if not task.is_running():
-                            break
-                        task.publish(event)
+                    previous_turn_context = getattr(agent, "_active_turn_context", None)
+                    agent._active_turn_context = {
+                        "internal_followup": bool(task.internal_followup),
+                        "request_id": task.request_id,
+                        "parent_request_id": task.parent_request_id,
+                        "parent_user_message_id": task.parent_user_message_id,
+                        "parent_assistant_message_id": task.parent_assistant_message_id,
+                        # Keep the language attached to the task identity as
+                        # well as the durable chat row.  A recovered visual
+                        # child must not fall back to the next turn's or the
+                        # global UI language while it is being rendered.
+                        "response_language": task.response_language,
+                    }
+                    turn_stream = None
+                    try:
+                        turn_stream = agent.chat_with_stream(task.message)
+                        for event in turn_stream:
+                            # Explicit Stop is the only normal cancellation path.
+                            # Providers may flush a buffered event after their
+                            # cancellation hook returns; never let it mutate the
+                            # owning case or leak into a later replay.
+                            if not task.is_running():
+                                break
+                            # The Agent's ``done`` event is a protocol boundary,
+                            # not proof that case data is durable. Hold it until
+                            # arrays, chat, report state, and operation metadata
+                            # have committed to the owning workspace.
+                            event_name, _ = _event_parts(event)
+                            if event_name == "done":
+                                terminal_event = (
+                                    event.decode("utf-8", errors="replace")
+                                    if isinstance(event, bytes) else str(event or "")
+                                )
+                                continue
+                            if not task.is_running():
+                                break
+                            task.publish(event)
+                    finally:
+                        # The workflow wrapper uses generator finalization to
+                        # restore its temporary internal memory snapshot. An
+                        # early Stop or superseding user turn must close the
+                        # stream explicitly; waiting for GC leaves the old
+                        # Agent turn holding memory and task ownership.
+                        close_stream = getattr(turn_stream, "close", None)
+                        if callable(close_stream):
+                            try:
+                                close_stream()
+                            except Exception:
+                                logger.debug(
+                                    "Unable to close chat stream for task %s",
+                                    task.task_id,
+                                    exc_info=True,
+                                )
+                        if previous_turn_context is None:
+                            try:
+                                delattr(agent, "_active_turn_context")
+                            except AttributeError:
+                                pass
+                        else:
+                            agent._active_turn_context = previous_turn_context
                     if task.is_running():
                         task.completion_status = "completed"
                         # The final response is gated by the lightweight chat
@@ -491,7 +613,10 @@ class ChatTaskManager:
         still reading them would create retries, missing CT errors, and stale
         checkpoints against a non-existent workspace.
         """
-        task = self.active(user_id, session_id)
+        # Deletion must wait for a cancelled-but-still-unwinding worker too;
+        # moving the workspace while it is still reading creates intermittent
+        # missing-case and partial-hydration failures.
+        task = self.active(user_id, session_id) or self.live(user_id, session_id)
         if task is None:
             return True
         task._skip_finalization = True

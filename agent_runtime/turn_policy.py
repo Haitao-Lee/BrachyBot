@@ -27,7 +27,7 @@ CLINICAL_TOOLS: FrozenSet[str] = frozenset({
     "biomedparse_segmentation",
     "trajectory_init", "trajectory_refine", "trajectory_planning",
     "seed_planning", "seed_planning_rule_based", "seed_planning_rl",
-    "dose_engine", "dose_evaluation", "planning_pipeline",
+    "dose_engine", "dose_recompute", "dose_evaluation", "planning_pipeline",
     "surgical_guide",
     "clinical_kb", "safety_validator", "plan_quality_scorer",
     "oar_constraint_checker", "plan_refinement", "report_auto_fill",
@@ -216,6 +216,12 @@ def _requires_semantic_resolution(message: str) -> bool:
         # to repeat the operation being discussed.
         "\u6211\u662f\u8bf4", "\u6211\u7684\u610f\u601d", "\u8bf4\u9519", "\u6539\u4e3a", "\u539f\u56e0",
         "\u4e3a\u4ec0\u4e48", "\u62a5\u9519", "\u5931\u8d25", "i mean", "correction", "why", "failed", "error",
+        # Interpretation and synthesis need the primary LLM to decide how
+        # evidence should be selected and explained. These are discourse
+        # markers, not a map from phrase to a particular clinical tool.
+        "\u5206\u6790", "\u89e3\u8bfb", "\u89e3\u91ca", "\u8bf4\u660e", "\u63cf\u8ff0", "\u4ecb\u7ecd",
+        "\u8bc4\u4f30", "\u8bc4\u4ef7", "\u5224\u65ad", "\u6bd4\u8f83", "\u5bf9\u6bd4", "\u6709\u4ec0\u4e48\u95ee\u9898",
+        "analyze", "analyse", "interpret", "explain", "describe", "assess", "evaluate", "compare", "findings",
     )
     return any(marker in text for marker in semantic_markers)
 
@@ -340,11 +346,6 @@ def _is_current_case_dose_query(message: str) -> bool:
         "recommendation", "prescription", "\u6307\u5357", "\u6807\u51c6",
         "\u9650\u503c", "\u8010\u53d7", "\u53c2\u8003", "\u5904\u65b9",
     )
-    action_terms = (
-        "calculate", "recalculate", "recompute", "evaluate dose",
-        "dose evaluation", "\u8ba1\u7b97", "\u91cd\u65b0\u8ba1\u7b97",
-        "\u91cd\u65b0\u8bc4\u4f30", "\u91cd\u65b0\u89c4\u5212",
-    )
     current_terms = (
         "current", "currently", "this case", "active case", "now",
         "\u5f53\u524d", "\u73b0\u5728", "\u672c\u4f8b", "\u672c\u75c5\u4f8b",
@@ -353,7 +354,31 @@ def _is_current_case_dose_query(message: str) -> bool:
     question_terms = (
         "how", "what", "\u600e\u4e48\u6837", "\u5982\u4f55", "\u600e\u4e48",
         "\u60c5\u51b5", "\u7ed3\u679c", "\u770b\u770b", "\u600e\u4e48\u4e86",
+        "\u591a\u5c11", "\u6307\u6807", "metrics", "values", "key metrics",
     )
+
+    # Distinguish a mutating imperative from an attributive description such
+    # as "当前计算的剂量结果".  Substring matching on "计算" incorrectly
+    # turned a read into a re-calculation and sent it through the expensive
+    # tool/LLM/review chain.  The mutation grammar requires an action frame
+    # (request/command verb + dose object); calculated/computed result nouns
+    # remain read-only.
+    calculated_result_noun = bool(re.search(
+        r"(?:计算|评估|计算得到|评估得到)(?:的|出来的|得到的)"
+        r"(?:剂量|剂量分布|剂量结果|剂量指标|dose|dvh)",
+        text,
+        re.IGNORECASE,
+    ))
+    mutation_request = bool(re.search(
+        r"(?:请|帮我|需要|执行|开始|进行|马上|现在|重新|再次|再)"
+        r".{0,16}(?:计算|重算|评估|更新).{0,10}"
+        r"(?:剂量|剂量分布|剂量结果|dvh|dose)"
+        r"|(?:重新|再次|再).{0,8}(?:规划|计划)"
+        r"|\b(?:please\s+)?(?:recalculate|recompute|calculate|update|run|evaluate)"
+        r"\b.{0,24}\b(?:dose|dvh|dose metrics?)\b",
+        text,
+        re.IGNORECASE,
+    ))
     has_dose = any(term in text for term in dose_terms)
     asks_for_current_state = any(term in text for term in current_terms) or any(
         term in text for term in question_terms
@@ -362,7 +387,7 @@ def _is_current_case_dose_query(message: str) -> bool:
         has_dose
         and asks_for_current_state
         and not any(term in text for term in standards_terms)
-        and not any(term in text for term in action_terms)
+        and not (mutation_request and not calculated_result_noun)
     )
 
 
@@ -540,6 +565,54 @@ def is_surgical_guide_generation_request(message: str) -> bool:
     return not passive_failure or imperative
 
 
+def _references_prior_reply_attachments(message: str) -> bool:
+    """Return whether a visual noun resolves to the conversational antecedent.
+
+    This recognizes a discourse reference, not a report-specific command.  A
+    phrase such as ``open the last screenshot`` has no stable report, Viewer,
+    or Data Tree owner; when it carries a positional/deictic reference, its
+    only unambiguous owner is the preceding visible assistant reply.  Explicit
+    collection owners (for example, "last report figure") retain their own
+    Session resource family.
+    """
+    text = str(message or "").strip().lower()
+    if not text:
+        return False
+    attachment_terms = (
+        "screenshot", "image", "picture", "figure", "attachment", "photo",
+        "\u622a\u56fe", "\u56fe\u50cf", "\u56fe\u7247", "\u56fe", "\u9644\u4ef6", "\u9644\u56fe",
+    )
+    if not any(term in text for term in attachment_terms):
+        return False
+
+    explicit_reply_terms = (
+        "previous reply", "previous response", "prior reply", "prior response",
+        "above reply", "above response", "last reply", "last response",
+        "earlier reply", "earlier response",
+        "\u4e0a\u4e00\u6761\u56de\u590d", "\u4e0a\u6761\u56de\u590d", "\u524d\u4e00\u6761\u56de\u590d", "\u4e0a\u4e00\u8f6e\u56de\u590d",
+        "\u4e0a\u4e00\u6761\u6d88\u606f", "\u524d\u9762\u7684\u56de\u590d", "\u4e0a\u9762\u7684\u56de\u590d", "\u521a\u624d\u7684\u56de\u590d",
+    )
+    if any(term in text for term in explicit_reply_terms):
+        return True
+
+    # An ordinal image reference without an explicit durable collection is a
+    # deictic reference to the images just shown in the conversation.  Keep
+    # report/session/history ownership explicit so "last report figure" and
+    # "last saved Session screenshot" stay attached to their real collections.
+    explicit_collection_terms = (
+        "report", "session", "workspace", "saved", "history", "all screenshots",
+        "\u62a5\u544a", "\u5f53\u524d\u4f1a\u8bdd", "\u5f53\u524d\u6848\u4f8b", "\u5de5\u4f5c\u533a", "\u5df2\u4fdd\u5b58", "\u5386\u53f2", "\u6240\u6709\u622a\u56fe",
+    )
+    if any(term in text for term in explicit_collection_terms):
+        return False
+    return bool(re.search(
+        r"(?:\u6700\u540e|\u6700\u672b|\u7b2c\s*\d+|\u9996\u4e2a|\u7b2c\u4e00|\u8fd9\u5f20|\u90a3\u5f20|\u4e0a\u9762\u7684|\u524d\u9762\u7684|\u521a\u624d\u7684|"
+        r"\b(?:last|latest|final|first|this|that|above|previous|prior|\d+(?:st|nd|rd|th))\b)",
+        text,
+        flags=re.IGNORECASE,
+    ))
+
+
 def resolve_session_content_target(message: str) -> Optional[str]:
     """Resolve a read-only request for persisted current-Session content.
 
@@ -557,6 +630,13 @@ def resolve_session_content_target(message: str) -> Optional[str]:
     report_action = resolve_report_request_action(text)
     if report_action == "regenerate":
         return None
+
+    # Resolve conversational attachment references before global report
+    # families.  The browser owns the actual message/attachment association,
+    # so this target preserves the source relationship instead of guessing from
+    # a report filename or a currently mounted panel.
+    if _references_prior_reply_attachments(text):
+        return "reply_attachments"
 
     if report_action:
         return "report_figures" if report_action == "view_figures" else "report"
@@ -620,7 +700,7 @@ def resolve_session_content_presentation(message: str, target: Optional[str] = N
     never changes the object's visibility or planning data.
     """
     resolved_target = str(target or resolve_session_content_target(message) or "").lower()
-    if resolved_target in {"report_figures", "session_screenshots"}:
+    if resolved_target in {"report_figures", "session_screenshots", "reply_attachments"}:
         return "attachments"
     text = str(message or "").strip().lower()
     explicit_selected = any(term in text for term in (

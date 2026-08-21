@@ -52,6 +52,7 @@ _SAFE_TOOL_FALLBACKS = frozenset({
     "trajectory_init",
     "trajectory_refine",
     "dose_engine",
+    "dose_recompute",
     "dose_calc",
     "dose_evaluation",
     "query_metrics",
@@ -89,12 +90,28 @@ def _is_safe_accumulated_text(text: str) -> bool:
     return bool(normalized) and not any(marker in normalized for marker in _INTERNAL_FALLBACK_MARKERS)
 
 
-def _tool_fallback_message(lang: str, has_failures: bool = False) -> str:
+def _tool_fallback_message(
+    lang: str,
+    has_failures: bool = False,
+    failure_notes: Optional[List[str]] = None,
+) -> str:
+    """Return a safe fallback that still explains a recoverable UI failure.
+
+    A blank model response must not erase the only actionable information
+    produced by a typed tool error. The failure notes already contain the
+    bounded, localized result from the response pipeline; raw tool payloads
+    are never interpolated here.
+    """
+    detail = next((str(item).strip() for item in (failure_notes or []) if str(item).strip()), "")
     if lang == "zh":
         if has_failures:
+            if detail:
+                return f"{detail}\n\n这次操作没有完成。请根据上面的可用控件说明重新发出请求。"
             return "部分处理步骤未完成，且当前没有生成可展示的正式回复。请查看执行追踪中的错误，并重试或调整请求。"
         return "相关检索或处理步骤已结束，但当前没有生成可展示的综合回复。请重新提问，或提供更明确的分析目标。"
     if has_failures:
+        if detail:
+            return f"{detail}\n\nThe action was not completed. Retry using the capability described above."
         return "Some processing steps did not complete, and no user-facing answer was generated. Review the execution trace and retry or refine the request."
     return "The requested retrieval or processing steps finished, but no user-facing synthesis was generated. Please retry with a more specific question."
 
@@ -440,7 +457,15 @@ class LLMRuntimeMixin:
         # in the current conversation. Without this, the LLM sees
         # "crystallized skill: planning_pipeline" and tries to run
         # planning on stale/missing data.
-        _ct_in_memory = self.memory.retrieve("ct_image") is not None
+        # Hydration can restore a usable CT as a durable path or ndarray before
+        # the Viewer publishes ``ct_loaded`` and before the in-memory SimpleITK
+        # object is rebuilt.  Treat all canonical CT representations as
+        # available here so a stateful current-Planning tool is not filtered out
+        # during that short UI hydration window.
+        _ct_in_memory = any(
+            self.memory.retrieve(key) is not None
+            for key in ("ct_image", "ct_data", "ct_path")
+        )
         _no_files_loaded = not AgentMemory.is_ct_loaded(ui_state_for_override) and not _ct_in_memory
 
         # === LANGUAGE DIRECTIVE (top-level) ===
@@ -779,6 +804,7 @@ class LLMRuntimeMixin:
         _input_missing = False
         accumulated_text = ""  # Preserve text across LLM iterations
         _failed_tools = set()  # Track tools that returned 0/empty results
+        _direct_read_candidate = None
         _lang = self.memory.user_lang
         total_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
         total_latency_ms = 0.0
@@ -968,6 +994,8 @@ class LLMRuntimeMixin:
                     tc["params"] = params
                 tool_id = tc.get("id", f"tool_{step_id_ref[0]}")
                 tool_succeeded = True
+                tool_result = None
+                _direct_candidate_for_tool = None
 
                 # Skip duplicate tool calls that already failed (returned 0/empty)
                 _tool_key = f"{tool_name}:{json.dumps(params, sort_keys=True, default=str)[:100]}"
@@ -1028,6 +1056,7 @@ class LLMRuntimeMixin:
                     logger.info(f"[TOOL-LOOP] About to execute {tool_name}, params_keys={list(params.keys())}")
                     try:
                         result = self._execute_tool_with_memory(tool_name, params)
+                        tool_result = result
                         tool_succeeded = bool(result.success)
                         result_text = ToolResultPipeline.format(tool_name, result, lang=_lang)
                         _metadata = getattr(result, "metadata", {}) or {}
@@ -1058,6 +1087,9 @@ class LLMRuntimeMixin:
                         if tool_name in {"ui_screenshot", "ui_content"}
                         else f"Unknown tool: {tool_name}. Available: {self.registry.tool_names}"
                     )
+
+                if tool_result is not None and ToolResultPipeline.direct_read_contract(tool_result):
+                    _direct_candidate_for_tool = result_text
 
                 step_status = "done" if tool_succeeded else "error"
                 steps[-1]["status"] = step_status
@@ -1114,12 +1146,22 @@ class LLMRuntimeMixin:
                 self.memory.add_message("assistant", f"[Called {tool_name}]")
                 self.memory.add_message("user", f"[Tool result: {_fc_text[:500]}]")
 
+                if _direct_candidate_for_tool and len(tool_calls) == 1:
+                    _direct_read_candidate = _direct_candidate_for_tool
+
             # Browser screenshots are captured and uploaded after the SSE
             # turn. A server-side follow-up round cannot see that image yet,
             # so it can only repeat the request. Stop after a screenshot-only
             # batch; the frontend will either show it or send one multimodal
             # analysis follow-up containing the uploaded image.
             if tool_calls and all(tc.get("tool") in {"ui_screenshot", "ui_content"} for tc in tool_calls):
+                break
+
+            # A typed read-only result is already a complete response. Avoid
+            # a second provider round that merely rephrases deterministic
+            # metrics, and let the outer workflow skip review for this turn.
+            if len(tool_calls) == 1 and _direct_read_candidate:
+                final_response = _direct_read_candidate
                 break
 
             # After all tools executed, instruct LLM to continue or summarize.
@@ -1241,9 +1283,9 @@ class LLMRuntimeMixin:
                         final_response = accumulated_text
                         logger.info(f"Using accumulated_text as fallback: {len(final_response)} chars")
                     else:
-                        final_response = _tool_fallback_message(_fallback_lang, bool(failure_notes))
+                        final_response = _tool_fallback_message(_fallback_lang, bool(failure_notes), failure_notes)
                 elif failure_notes:
-                    final_response = _tool_fallback_message(_fallback_lang, True)
+                    final_response = _tool_fallback_message(_fallback_lang, True, failure_notes)
                 else:
                     final_response = _tool_fallback_message(_fallback_lang)
                     logger.warning(f"Tool result fallback: no results found in {len(messages)} messages")
@@ -1612,7 +1654,14 @@ class LLMRuntimeMixin:
         # in the current conversation. Without this, the LLM sees
         # "crystallized skill: planning_pipeline" and tries to run
         # planning on stale/missing data.
-        _ct_in_memory = self.memory.retrieve("ct_image") is not None
+        # Keep the non-streaming and streaming readiness contracts identical.
+        # A restored path/array is enough for ``dose_recompute`` to lazily
+        # rebuild the CT runtime; waiting for the Viewer flag causes an empty
+        # tool turn and the generic "no combined reply" fallback.
+        _ct_in_memory = any(
+            self.memory.retrieve(key) is not None
+            for key in ("ct_image", "ct_data", "ct_path")
+        )
         _no_files_loaded = not AgentMemory.is_ct_loaded(ui_state_for_override) and not _ct_in_memory
 
         # === LANGUAGE DIRECTIVE (top-level) ===
@@ -1906,6 +1955,7 @@ class LLMRuntimeMixin:
         _input_missing = False
         accumulated_text = ""  # Preserve text across LLM iterations
         _failed_tools = set()  # Track tools that returned 0/empty results for longer responses
+        _direct_read_candidate = None
         total_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
         total_latency_ms = 0.0
         llm_calls = 0
@@ -1962,10 +2012,21 @@ class LLMRuntimeMixin:
                 # If no CT files are loaded, limit to non-CT-dependent tools
                 # (utility tools like tool_creator, env_manager, shell_executor still work without CT)
                 ui_state = self.memory.get_ui_state()
-                ct_loaded = AgentMemory.is_ct_loaded(ui_state)
+                # The Viewer flag is not the only readiness source. During
+                # Session hydration durable CT/Planning state can be usable a
+                # few moments before the browser publishes ``ct_loaded``.
+                # Blocking clinical tools in that window turns a valid request
+                # into an empty tool turn.
+                ct_loaded = (
+                    AgentMemory.is_ct_loaded(ui_state)
+                    or self.memory.retrieve("ct_image") is not None
+                    or self.memory.retrieve("ct_data") is not None
+                    or bool(self.memory.retrieve("ct_path"))
+                )
                 if not ct_loaded and tools_for_llm is not None:
                     _allowed_without_ct = {
                         "report_generator", "clinical_kb", "doc_reader", "case_memory",
+                        "dose_recompute",
                         "tool_creator", "env_manager", "shell_executor", "code_executor",
                         "ui_inspector", "ui_controller", "ui_screenshot", "ui_content", "ui_annotate",
                         "filesystem_browser", "safety_validator",
@@ -1980,6 +2041,32 @@ class LLMRuntimeMixin:
                     tools_for_llm = [
                         t for t in tools_for_llm
                         if t.get("function", {}).get("name", "") in _external_tools
+                    ]
+
+                # A visual-analysis follow-up is a child of an already
+                # completed screenshot request.  Its image URLs are supplied
+                # as multimodal evidence; it must never capture another
+                # screenshot, mutate the case, or start a clinical workflow.
+                # Keeping this boundary at the provider schema (rather than
+                # relying on prompt wording or keyword routing) prevents a
+                # late child from hijacking the next ordinary user turn.
+                internal_followup = bool(
+                    (getattr(self, "_active_turn_context", {}) or {}).get(
+                        "internal_followup"
+                    )
+                )
+                if internal_followup and tools_for_llm is not None:
+                    _visual_read_only_tools = {
+                        "case_memory",
+                        "doc_reader",
+                        "dvh_curve",
+                        "query_metrics",
+                        "ui_content",
+                    }
+                    tools_for_llm = [
+                        tool for tool in tools_for_llm
+                        if tool.get("function", {}).get("name", "")
+                        in _visual_read_only_tools
                     ]
 
                 # The local turn policy is deliberately applied after the
@@ -2632,7 +2719,12 @@ class LLMRuntimeMixin:
                                 if _times:
                                     _parts.append(f"Substep timings: {_times}")
                                 result_text = "\n".join(_parts)
-                            if result.success and hasattr(result, "metadata") and result.metadata:
+                            if (
+                                result.success
+                                and hasattr(result, "metadata")
+                                and result.metadata
+                                and not ToolResultPipeline.direct_read_contract(result)
+                            ):
                                 metrics_summary = {}
                                 for k, v in result.metadata.items():
                                     if isinstance(v, (int, float)) and not isinstance(v, bool):
@@ -2666,6 +2758,11 @@ class LLMRuntimeMixin:
                         if tool_name in {"ui_screenshot", "ui_content"}
                         else f"Unknown tool: {tool_name}. Available: {self.registry.tool_names}"
                     )
+
+                if tool_result is not None and ToolResultPipeline.direct_read_contract(tool_result):
+                    # Keep the full localized result, not the 300-character
+                    # trace preview, for the direct response boundary.
+                    _direct_read_candidate = result_text
 
                 if tool_result is not None:
                     step_status = "done" if tool_result.success else "error"
@@ -2815,6 +2912,13 @@ class LLMRuntimeMixin:
             if tool_calls and all(tc.get("tool") in {"ui_screenshot", "ui_content"} for tc in tool_calls):
                 break
 
+            # A typed read-only result is already a complete response. Avoid
+            # a second provider round that merely rephrases deterministic
+            # metrics, and let the outer workflow skip review for this turn.
+            if len(tool_calls) == 1 and _direct_read_candidate:
+                final_response = _direct_read_candidate
+                break
+
             # After all tools executed, instruct LLM to continue or summarize.
             # The previous instruction let the LLM run open-ended, which
             # often produced mid-sentence truncation. Constrain the response
@@ -2920,7 +3024,7 @@ class LLMRuntimeMixin:
                     prefix = ("基于当前病例结果：\n\n" if _fb_lang == "zh" else "Based on the current case results:\n\n")
                     final_response = prefix + "\n\n".join(tool_results_text)
                 elif failure_notes:
-                    final_response = _tool_fallback_message(_fb_lang, True)
+                    final_response = _tool_fallback_message(_fb_lang, True, failure_notes)
                 else:
                     final_response = _tool_fallback_message(_fb_lang)
             else:
