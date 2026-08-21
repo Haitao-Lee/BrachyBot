@@ -74,6 +74,22 @@ _INTERNAL_FALLBACK_MARKERS = (
 )
 
 
+def _internal_followup_language(turn_context: Optional[Dict]) -> str:
+    """Return the visible parent's language for a hidden child request.
+
+    The text passed to a screenshot-analysis child contains English transport
+    instructions in addition to the original user request. The child must
+    inherit the parent's already-resolved response language instead of
+    treating those instructions as a new English conversation.
+    """
+    raw = str((turn_context or {}).get("response_language") or "").strip().lower()
+    if raw.startswith("zh"):
+        return "zh"
+    if raw.startswith("en"):
+        return "en"
+    return ""
+
+
 def _fallback_tool_name(step: Dict) -> str:
     return str(step.get("tool") or step.get("name") or "").strip().lower()
 
@@ -114,6 +130,27 @@ def _tool_fallback_message(
             return f"{detail}\n\nThe action was not completed. Retry using the capability described above."
         return "Some processing steps did not complete, and no user-facing answer was generated. Review the execution trace and retry or refine the request."
     return "The requested retrieval or processing steps finished, but no user-facing synthesis was generated. Please retry with a more specific question."
+
+
+def _visual_analysis_unavailable_message(lang: str) -> str:
+    """Return an honest fallback for a screenshot-analysis child.
+
+    A visual child owns evidence interpretation, not attachment presentation.
+    Returning generic tool output here would make a missing model synthesis
+    look like a completed image analysis and can tempt a later turn to repeat
+    the same visual request. Keep the failure inside the parent reply and do
+    not claim facts that were not actually derived from the supplied image.
+    """
+    if str(lang or "").lower().startswith("zh"):
+        return (
+            "所选图像已保留在当前回复中，但图像分析服务这次没有返回可验证的解读。"
+            "我不能据此给出可靠结论；请稍后重试，或告诉我希望重点查看的结构或剂量指标。"
+        )
+    return (
+        "The selected image remains attached to this reply, but the visual analysis "
+        "service did not return a verifiable interpretation. I cannot make a reliable "
+        "claim from it; please retry or specify the structure or dose metric to inspect."
+    )
 
 
 def _evidence_fallback_summary(step: Dict, lang: str, failed: bool = False) -> str:
@@ -446,6 +483,13 @@ class LLMRuntimeMixin:
         """
         LLM-driven function calling loop with enhanced self-evolving memory.
         """
+        turn_context = getattr(self, "_active_turn_context", {}) or {}
+        internal_followup = bool(turn_context.get("internal_followup"))
+        inherited_language = (
+            _internal_followup_language(turn_context)
+            if internal_followup
+            else ""
+        )
         # Auto-compact conversation history if too long
         if self.memory.needs_compaction():
             self.memory.compact(keep_last=6)
@@ -483,24 +527,42 @@ class LLMRuntimeMixin:
             # UI locale is presentation state, not an instruction to translate
             # the clinical conversation. Keep the LLM reply in the language
             # of the current user message while Report/static UI remain global.
-            _lang_info = _lang_detect(message)
+            _lang_info = (
+                {
+                    "code": inherited_language,
+                    "name": "Chinese" if inherited_language == "zh" else "English",
+                    "source": "parent_turn",
+                }
+                if inherited_language
+                else _lang_detect(message)
+            )
             enhanced_context += "\n" + _lang_clause(_lang_info) + "\n"
             # Persist for next-turn fallback (short messages like
             # "yes" / "do it" inherit the previous language instead
             # of being re-classified as English).
-            try:
-                self.memory.store("session_language", _lang_info)
-            except Exception as exc:
-                logger.debug("Could not persist session language: %s", exc)
+            if not internal_followup:
+                try:
+                    self.memory.store("session_language", _lang_info)
+                except Exception as exc:
+                    logger.debug("Could not persist session language: %s", exc)
         except Exception as _e:
             logger.debug(f"language detection failed: {_e}")
-        if _no_files_loaded:
+        if internal_followup:
+            enhanced_context += (
+                "\n### Visual Evidence Analysis Child\n"
+                "This is a hidden continuation of one visible user reply. "
+                "Use only the supplied image evidence and any allowed read-only case data. "
+                "Answer the embedded parent request with a substantive, standalone interpretation. "
+                "Do not present attachments again, capture another screenshot, start a workflow, "
+                "or mention this internal transport.\n"
+            )
+        if _no_files_loaded and not internal_followup:
             enhanced_context += "\n### ⚠️ OVERRIDE: NO CT FILES LOADED — DO NOT USE TOOLS\n"
             enhanced_context += "CRITICAL: No CT image is loaded in this session. You MUST NOT call any planning, segmentation, dose, or analysis tools.\n"
             enhanced_context += "Instead, respond DIRECTLY to the user in their language with a helpful message explaining that a CT image needs to be uploaded first.\n"
             enhanced_context += "For example: tell them to upload a CT file using the input panel, or explain what brachytherapy planning requires.\n"
             enhanced_context += "Provide useful clinical context about the procedure they requested.\n\n"
-        if self.enhanced:
+        if self.enhanced and not internal_followup:
             try:
                 pre_ctx = self.enhanced.pre_task_hook(message)
                 if pre_ctx.get("reflexion_warnings") and self.memory.retrieve("ct_image") is not None:
@@ -660,7 +722,9 @@ class LLMRuntimeMixin:
         # External-project requests are source-bound to public web tools.  Do
         # this before direct-tool routing so a follow-up such as "where is its
         # source code" cannot fall through to local filesystem tools.
-        _external_project_query = self._detect_external_project_query(message)
+        _external_project_query = (
+            None if internal_followup else self._detect_external_project_query(message)
+        )
 
         # The chat_with_stream path gates direct tool detection on
         # classify_local_turn.  In the LLM runtime the message always goes
@@ -677,17 +741,20 @@ class LLMRuntimeMixin:
             and _active_policy.action_plan.requires_tool("planning_pipeline")
         )
         if (
-            (
-                getattr(_active_policy, "direct_execution", False)
-                and _active_intent in (
-                    "segmentation",
-                    "planning",
-                    "treatment_plan",
-                    "clinical_planning",
-                    "surgical_guide_generation",
+            not internal_followup
+            and (
+                (
+                    getattr(_active_policy, "direct_execution", False)
+                    and _active_intent in (
+                        "segmentation",
+                        "planning",
+                        "treatment_plan",
+                        "clinical_planning",
+                        "surgical_guide_generation",
+                    )
                 )
+                or _has_explicit_planning_action_plan
             )
-            or _has_explicit_planning_action_plan
         ):
             _direct_tool_calls = self._detect_tool_request(message)
         if _direct_tool_calls:
@@ -705,7 +772,9 @@ class LLMRuntimeMixin:
 
         # Force web search for real-time queries and named external projects.
         _forced_search_query = (
-            self._detect_realtime_query(message) or _external_project_query
+            None
+            if internal_followup
+            else (self._detect_realtime_query(message) or _external_project_query)
         )
         _forced_search_type = (
             "github_repos"
@@ -936,6 +1005,23 @@ class LLMRuntimeMixin:
             # Filter out tool calls with empty required params, normalize param names
             valid_tool_calls = self._normalize_tool_params(tool_calls)
 
+            if internal_followup:
+                # The non-streaming compatibility path must honor the same
+                # typed visual-child boundary as SSE. A child receives image
+                # evidence from its parent reply and may read case data, but
+                # it must not present that reply again or start another
+                # browser capture/workflow.
+                _visual_read_only_tools = {
+                    "case_memory",
+                    "doc_reader",
+                    "dvh_curve",
+                    "query_metrics",
+                }
+                valid_tool_calls = [
+                    call for call in valid_tool_calls
+                    if call.get("tool", "") in _visual_read_only_tools
+                ]
+
             if _external_project_query:
                 valid_tool_calls = [
                     tc for tc in valid_tool_calls
@@ -1154,7 +1240,11 @@ class LLMRuntimeMixin:
             # so it can only repeat the request. Stop after a screenshot-only
             # batch; the frontend will either show it or send one multimodal
             # analysis follow-up containing the uploaded image.
-            if tool_calls and all(tc.get("tool") in {"ui_screenshot", "ui_content"} for tc in tool_calls):
+            if (
+                not internal_followup
+                and tool_calls
+                and all(tc.get("tool") in {"ui_screenshot", "ui_content"} for tc in tool_calls)
+            ):
                 break
 
             # A typed read-only result is already a complete response. Avoid
@@ -1267,7 +1357,14 @@ class LLMRuntimeMixin:
                 final_response = ""
 
         if not final_response:
-            if tools_executed:
+            if internal_followup:
+                # A visual child must never downgrade into a raw tool dump or
+                # generic retrieval fallback. Its only user-visible job is a
+                # substantive image interpretation for the owning reply.
+                final_response = _visual_analysis_unavailable_message(
+                    inherited_language or getattr(self.memory, "user_lang", "en")
+                )
+            elif tools_executed:
                 _fallback_lang = "zh" if str(getattr(self.memory, "user_lang", "en") or "en").lower().startswith("zh") else "en"
                 tool_results_text, failure_notes = _collect_tool_fallback_text(
                     steps, messages, _fallback_lang
@@ -1618,6 +1715,13 @@ class LLMRuntimeMixin:
             return yield_event(event_type, data)
 
         _turn_token = self._current_turn_token()
+        turn_context = getattr(self, "_active_turn_context", {}) or {}
+        internal_followup = bool(turn_context.get("internal_followup"))
+        inherited_language = (
+            _internal_followup_language(turn_context)
+            if internal_followup
+            else ""
+        )
 
         def _cancelled():
             return self._is_turn_cancelled(_turn_token)
@@ -1676,22 +1780,40 @@ class LLMRuntimeMixin:
             # Do not let the global UI language override the language of this
             # chat turn. The request remains the source of truth for assistant
             # prose and Execution Trace summaries.
-            _lang_info = _lang_detect(message)
+            _lang_info = (
+                {
+                    "code": inherited_language,
+                    "name": "Chinese" if inherited_language == "zh" else "English",
+                    "source": "parent_turn",
+                }
+                if inherited_language
+                else _lang_detect(message)
+            )
             logger.info(f"[LANG] Detected: {_lang_info['code']} (source={_lang_info['source']}), msg='{message[:50]}'")
             enhanced_context += "\n" + _lang_clause(_lang_info) + "\n"
-            try:
-                self.memory.store("session_language", _lang_info)
-            except Exception as exc:
-                logger.debug("Could not persist session language: %s", exc)
+            if not internal_followup:
+                try:
+                    self.memory.store("session_language", _lang_info)
+                except Exception as exc:
+                    logger.debug("Could not persist session language: %s", exc)
         except Exception as _e:
             logger.debug(f"language detection failed: {_e}")
-        if _no_files_loaded:
+        if internal_followup:
+            enhanced_context += (
+                "\n### Visual Evidence Analysis Child\n"
+                "This is a hidden continuation of one visible user reply. "
+                "Use only the supplied image evidence and any allowed read-only case data. "
+                "Answer the embedded parent request with a substantive, standalone interpretation. "
+                "Do not present attachments again, capture another screenshot, start a workflow, "
+                "or mention this internal transport.\n"
+            )
+        if _no_files_loaded and not internal_followup:
             enhanced_context += "\n### ⚠️ OVERRIDE: NO CT FILES LOADED — DO NOT USE TOOLS\n"
             enhanced_context += "CRITICAL: No CT image is loaded in this session. You MUST NOT call any planning, segmentation, dose, or analysis tools.\n"
             enhanced_context += "Instead, respond DIRECTLY to the user in their language with a helpful message explaining that a CT image needs to be uploaded first.\n"
             enhanced_context += "For example: tell them to upload a CT file using the input panel, or explain what brachytherapy planning requires.\n"
             enhanced_context += "Provide useful clinical context about the procedure they requested.\n\n"
-        if self.enhanced:
+        if self.enhanced and not internal_followup:
             try:
                 pre_ctx = self.enhanced.pre_task_hook(message)
                 if pre_ctx.get("reflexion_warnings") and self.memory.retrieve("ct_image") is not None:
@@ -1850,9 +1972,13 @@ class LLMRuntimeMixin:
 
         # Force web search for real-time queries and named external projects.
         # Uses direct Bing/Baidu search instead of PubMed-based general search
-        _external_project_query = self._detect_external_project_query(message)
+        _external_project_query = (
+            None if internal_followup else self._detect_external_project_query(message)
+        )
         _forced_search_query = (
-            self._detect_realtime_query(message) or _external_project_query
+            None
+            if internal_followup
+            else (self._detect_realtime_query(message) or _external_project_query)
         )
         _forced_search_type = (
             "github_repos"
@@ -2050,18 +2176,12 @@ class LLMRuntimeMixin:
                 # Keeping this boundary at the provider schema (rather than
                 # relying on prompt wording or keyword routing) prevents a
                 # late child from hijacking the next ordinary user turn.
-                internal_followup = bool(
-                    (getattr(self, "_active_turn_context", {}) or {}).get(
-                        "internal_followup"
-                    )
-                )
                 if internal_followup and tools_for_llm is not None:
                     _visual_read_only_tools = {
                         "case_memory",
                         "doc_reader",
                         "dvh_curve",
                         "query_metrics",
-                        "ui_content",
                     }
                     tools_for_llm = [
                         tool for tool in tools_for_llm
@@ -2909,7 +3029,11 @@ class LLMRuntimeMixin:
             # The browser captures/uploads screenshots after the SSE turn.
             # Continuing server-side can only repeat the same capture because
             # the image is not available to this loop yet.
-            if tool_calls and all(tc.get("tool") in {"ui_screenshot", "ui_content"} for tc in tool_calls):
+            if (
+                not internal_followup
+                and tool_calls
+                and all(tc.get("tool") in {"ui_screenshot", "ui_content"} for tc in tool_calls)
+            ):
                 break
 
             # A typed read-only result is already a complete response. Avoid
@@ -3014,7 +3138,11 @@ class LLMRuntimeMixin:
         # If final_response is still empty, try fallbacks
         if not final_response:
             _fb_lang = "zh" if str(getattr(self.memory, "user_lang", "en") or "en").lower().startswith("zh") else "en"
-            if accumulated_text and not tools_executed and _is_safe_accumulated_text(accumulated_text):
+            if internal_followup:
+                final_response = _visual_analysis_unavailable_message(
+                    inherited_language or _fb_lang
+                )
+            elif accumulated_text and not tools_executed and _is_safe_accumulated_text(accumulated_text):
                 final_response = accumulated_text
             elif tools_executed:
                 tool_results_text, failure_notes = _collect_tool_fallback_text(
@@ -3030,7 +3158,7 @@ class LLMRuntimeMixin:
             else:
                 final_response = _tool_fallback_message(_fb_lang)
 
-        ui_screenshot_response = _ui_screenshot_turn_response()
+        ui_screenshot_response = None if internal_followup else _ui_screenshot_turn_response()
         if ui_screenshot_response is not None:
             final_response = ui_screenshot_response
 

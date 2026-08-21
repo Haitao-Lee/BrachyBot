@@ -13,6 +13,12 @@ from agent_runtime.turn_policy import (
     resolve_report_request_action,
     resolve_session_content_presentation,
     resolve_session_content_target,
+    visual_analysis_policy,
+)
+from agent_runtime.visual_evidence import (
+    VISUAL_EVIDENCE_PROTOCOL_MARKER,
+    build_visual_evidence_prompt,
+    normalize_visual_evidence_context,
 )
 from tool_factory import ToolResult
 from tool_factory.ui_content import UISessionContentTool
@@ -192,6 +198,16 @@ def test_conversational_attachment_reference_resolves_before_global_figure_colle
     assert classify_local_turn(message).intent == "semantic_action"
     # A durable owner remains authoritative when the user names it explicitly.
     assert resolve_session_content_target("\u6253\u5f00\u6700\u540e\u4e00\u5f20\u62a5\u544a\u622a\u56fe") == "report_figures"
+
+
+def test_visual_analysis_child_uses_a_dedicated_role_instead_of_text_routing():
+    """Uploaded evidence must not be reclassified as another ui_content request."""
+    policy = visual_analysis_policy()
+
+    assert policy.intent == "visual_analysis"
+    assert policy.use_router is False
+    assert policy.use_completeness is False
+    assert policy.allow_tools is None
 
 
 def test_tool_normalization_keeps_deictic_attachment_reference_bound_to_previous_reply():
@@ -748,7 +764,10 @@ def test_session_content_frontend_merges_real_attachments_and_never_emits_raw_lo
     assert "selected_for_analysis" in ui_api
     assert "visual_analysis: analyze" in ui_api
     assert "visual_analysis === true" in chat
+    assert "result.analysis === true" in chat
     assert "_queueVisualAnalysisFollowUp" in chat
+    assert "visualAnalysisContinuation" in chat
+    assert "_visualAnalysisUnavailableMessage" in chat
     assert "visualContentResults," in chat
     assert "presentation.attachments" in chat
     assert "function _focusSessionContentObjects" in ui_api
@@ -781,6 +800,8 @@ def test_session_content_frontend_merges_real_attachments_and_never_emits_raw_lo
     assert "Send failed: ' + (e?.message || e)" not in chat
     assert 'presentation_tool in {"ui_screenshot", "ui_content"}' in routes
     assert '"content_command"' in routes
+    assert "visual_analysis_continuation" in routes
+    assert 'get("analysis")' in routes
 
 
 def test_visual_followup_is_parent_bound_and_cannot_leak_a_hidden_trace():
@@ -796,6 +817,8 @@ def test_visual_followup_is_parent_bound_and_cannot_leak_a_hidden_trace():
     assert "if (isInternalFollowup)" in chat
     assert "saveSessionMessage('thinking'" in chat
     assert "if (!isInternalFollowup)" in chat
+    assert "linked_internal_followup" in tasks
+    assert "not linked to the active parent task" in tasks
     assert '"internal_followup": True' in _source("agent_runtime/chat_workflows.py")
     assert '"message": "Visual screenshot analysis follow-up"' in _source("agent_runtime/chat_workflows.py")
     assert "if not internal_followup:\n            add_step(\"user\"" in _source("agent_runtime/chat_workflows.py")
@@ -807,12 +830,63 @@ def test_visual_followup_is_parent_bound_and_cannot_leak_a_hidden_trace():
     assert "visual-analysis-" in routes
     assert "trace_for_snapshot" in routes
     assert "visual_read_only_tools" in _source("agent_runtime/llm_runtime.py")
-    assert '"ui_screenshot"' not in _source("agent_runtime/llm_runtime.py").split(
-        "_visual_read_only_tools", 1
+    visual_filter = _source("agent_runtime/llm_runtime.py").split(
+        "if internal_followup and tools_for_llm is not None:", 1
     )[1].split("# The local turn policy", 1)[0]
+    assert '"ui_screenshot"' not in visual_filter
+    assert '"ui_content"' not in visual_filter
+    workflow_source = _source("agent_runtime/chat_workflows.py")
+    assert "visual_analysis_policy()" in workflow_source
+    assert "if not internal_followup and local_policy.intent == \"session_content_query\":" in workflow_source
     assert "_stripVisualAttachmentEchoes" in chat
-    assert "Do not repeat attachment titles" in chat
+    assert "const visualContext" in chat
+    assert "visual_context: isInternalFollowup" in chat
+    assert "Visual evidence analysis follow-up." in chat
     assert "opts.sessionId || activeSessionId" in chat
+    assert "build_visual_evidence_prompt" in routes
+    assert "normalize_visual_evidence_context" in routes
+
+
+def test_typed_visual_evidence_context_is_bound_to_the_current_session():
+    """A visual child can only read evidence owned by its active workspace."""
+    session_id = "a" * 32
+    raw_context = {
+        "version": 1,
+        "evidence_urls": [
+            f"/api/sessions/{session_id}/screenshots/dose-overview.png",
+            f"/api/sessions/{session_id}/screenshots/dvh.png",
+        ],
+        "parent_request": "打开最后一张截图，解读当前剂量结果",
+        "attachment_labels": ["剂量分布", "DVH 曲线"],
+    }
+
+    context = normalize_visual_evidence_context(raw_context, session_id)
+
+    assert context is not None
+    assert context["evidence_urls"] == raw_context["evidence_urls"]
+    prompt = build_visual_evidence_prompt(context, "zh-CN")
+    assert VISUAL_EVIDENCE_PROTOCOL_MARKER in prompt
+    assert raw_context["parent_request"] in prompt
+    assert "Use Chinese for every user-visible sentence" in prompt
+    assert normalize_visual_evidence_context(raw_context, "b" * 32) is None
+
+
+def test_compacted_visual_child_stops_before_a_later_real_user_turn():
+    """An interrupted legacy child must not erase or steer the next question."""
+    summary = (
+        f"User: {VISUAL_EVIDENCE_PROTOCOL_MARKER}\n"
+        "[Screenshot captured: /api/sessions/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/screenshots/dose.png]\n"
+        "User request: 打开最后一张截图，解读\n"
+        "Analyze the supplied screenshot(s) and answer the user's request directly.\n"
+        "Do not request another screenshot.\n"
+        "User: 你还可以做什么"
+    )
+
+    cleaned = ChatWorkflowMixin._strip_internal_visual_context_text(summary)
+
+    assert "打开最后一张截图" not in cleaned
+    assert "Screenshot captured" not in cleaned
+    assert "你还可以做什么" in cleaned
 
 
 def test_compacted_visual_followup_protocol_is_removed_without_erasing_real_context():
@@ -832,6 +906,25 @@ def test_compacted_visual_followup_protocol_is_removed_without_erasing_real_cont
     assert "Screenshot captured" not in cleaned
     assert "Analyze the supplied screenshot" not in cleaned
     assert "Do not request another screenshot" not in cleaned
+
+
+def test_compacted_visual_followup_removes_the_embedded_parent_request_too():
+    """An old partial cleanup must not leave a stale command for the next turn."""
+    summary = (
+        "User: [Screenshot captured: /api/sessions/case/screenshots/dose.png]\n"
+        "User request: 打开最后一张截图，解读\n"
+        "Use Chinese for every user-visible sentence.\n"
+        "Do not repeat attachment titles or standalone viewer labels in the answer.\n"
+        "Assistant: 已完成剂量分析。\n"
+        "User: 你还可以做什么"
+    )
+
+    cleaned = ChatWorkflowMixin._strip_internal_visual_context_text(summary)
+
+    assert "打开最后一张截图" not in cleaned
+    assert "Do not repeat attachment" not in cleaned
+    assert "已完成剂量分析" in cleaned
+    assert "你还可以做什么" in cleaned
 
 
 def test_report_chat_and_monitor_capture_paths_remain_separate():

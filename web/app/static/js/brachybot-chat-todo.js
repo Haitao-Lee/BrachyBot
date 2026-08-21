@@ -1096,6 +1096,13 @@ function _chatUserVisibleFailure(sessionId, kind = 'request') {
     return zh ? pair[0] : pair[1];
 }
 
+function _visualAnalysisUnavailableMessage(sessionId, responseLanguage = '') {
+    const language = String(responseLanguage || _chatLanguageForSession(sessionId) || '').toLowerCase();
+    return language.startsWith('zh')
+        ? '截图已生成，但当前图像解读暂时不可用；图片仍保留在原回复中。'
+        : 'The screenshot was captured, but visual analysis is temporarily unavailable. The image remains attached to the original reply.';
+}
+
 async function _presentJsonSessionContent(steps, sessionId, turnIdentity) {
     const commands = (Array.isArray(steps) ? steps : [])
         .filter(step => step && step.tool === 'ui_content')
@@ -1150,7 +1157,14 @@ async function _presentJsonSessionContent(steps, sessionId, turnIdentity) {
                 attachments: [],
             };
         }
-        if (Array.isArray(result?.attachments)) attachments.push(...result.attachments);
+        if (Array.isArray(result?.attachments)) {
+            attachments.push(...result.attachments.map(attachment => Object.assign({}, attachment, {
+                // ``analysis`` belongs to the structured ui_content
+                // contract. Preserve it on every attachment instead of
+                // relying on a transport-specific capture flag.
+                visual_analysis: attachment?.visual_analysis === true || result.analysis === true,
+            })));
+        }
         if (result?.userMessage) messages.push(String(result.userMessage));
     }
     return {
@@ -1499,16 +1513,23 @@ function _queueVisualAnalysisFollowUp(attachments, userText, turnIdentity, optio
         uiDebugLog('[visual-followup] duplicate suppressed:', followupKey);
         return false;
     }
-    const visualContext = uniqueUrls.map(url => `[Screenshot captured: ${url}]`).join('\n');
-    const language = String(turnIdentity?.responseLanguage || '').toLowerCase().startsWith('zh')
-        ? 'Chinese' : 'English';
+    // Do not serialize the evidence URLs, parent request, and transport
+    // instructions into a fake chat message.  That used to make a visual
+    // child indistinguishable from a normal user turn after compaction or a
+    // delayed task replay.  The API now receives a typed, parent-bound
+    // visual context and reconstructs an ephemeral multimodal prompt only
+    // inside the child worker.
+    const visualContext = {
+        version: 1,
+        evidence_urls: uniqueUrls,
+        parent_request: String(userText || '').trim(),
+        attachment_labels: visualAttachmentLabels,
+    };
     const followupRequestId = typeof createChatIdentity === 'function'
         ? createChatIdentity('visual-followup')
         : `visual-followup-${Date.now()}`;
     _enqueueHiddenChat(
-        `${visualContext}\n\nUser request: ${String(userText || '').trim()}\nAnalyze the supplied screenshot(s) and answer the user's request directly. `
-        + `Use ${language} for every user-visible sentence. `
-        + 'Do not request another screenshot. Do not repeat attachment titles or standalone viewer labels in the answer; the browser already renders those labels below each image. Mention uncertainty instead of inventing details.',
+        'Visual evidence analysis follow-up.',
         {
             visualFollowUp: true,
             internalFollowup: true,
@@ -1527,6 +1548,7 @@ function _queueVisualAnalysisFollowUp(attachments, userText, turnIdentity, optio
             responseLanguage: turnIdentity?.responseLanguage || '',
             screenshotMode: options.screenshotMode || 'chat',
             visualAttachmentLabels,
+            visualContext,
             sessionId: ownerSessionId,
         },
     );
@@ -2328,6 +2350,12 @@ async function sendChat(prefill, options) {
                         parent_user_message_id: parentUserMessageId || undefined,
                         parent_assistant_message_id: parentAssistantMessageId || undefined,
                         internal_followup: isInternalFollowup,
+                        // Typed evidence belongs only to a linked hidden
+                        // visual child. Ordinary user text never carries
+                        // prior attachments or a parent request implicitly.
+                        visual_context: isInternalFollowup && opts.visualContext
+                            ? opts.visualContext
+                            : undefined,
                         response_language: turnIdentity.responseLanguage
                             || window._responseLanguage
                             || window._i18nLang
@@ -2353,8 +2381,17 @@ async function sendChat(prefill, options) {
                 sessionId: turnSessionId,
             });
             if (typeof addChat === 'function') {
-                addChat('bot-response', _chatUserVisibleFailure(turnSessionId, 'request'), true,
-                    Date.now(), false, turnSessionId, turnIdentity);
+                addChat(
+                    isInternalFollowup ? 'bot-response' : 'error',
+                    isInternalFollowup
+                        ? _visualAnalysisUnavailableMessage(turnSessionId, turnIdentity.responseLanguage)
+                        : _chatUserVisibleFailure(turnSessionId, 'request'),
+                    true,
+                    Date.now(),
+                    false,
+                    turnSessionId,
+                    turnIdentity,
+                );
             }
             setStreamingState(false);
             // Resume callers must be able to distinguish an HTTP failure
@@ -2375,11 +2412,15 @@ async function sendChat(prefill, options) {
                     ? _reportGenerationFailureMessage(turnSessionId)
                     : _chatUserVisibleFailure(turnSessionId, 'request'))
                 : '';
+            const visualAttachments = (presentation.attachments || []).filter(item =>
+                item && item.visual_analysis === true && item.url
+            );
+            const visualAnalysisContinuation = !isInternalFollowup && visualAttachments.length > 0;
             const reply = uiFailure
-                || presentation.userMessage
+                || (visualAnalysisContinuation ? '' : presentation.userMessage)
                 || (data && (data.response || data.reply || data.content))
-                || _chatUserVisibleFailure(turnSessionId, 'response');
-            if (typeof addChat === 'function') {
+                || (visualAnalysisContinuation ? '' : _chatUserVisibleFailure(turnSessionId, 'response'));
+            if (reply && typeof addChat === 'function') {
                 addChat('bot-response', reply, true, Date.now(), false, turnSessionId, Object.assign(
                     {},
                     turnIdentity,
@@ -2389,9 +2430,6 @@ async function sendChat(prefill, options) {
                     },
                 ));
             }
-            const visualAttachments = (presentation.attachments || []).filter(item =>
-                item && item.visual_analysis === true && item.url
-            );
             if (visualAttachments.length) {
                 _queueVisualAnalysisFollowUp(
                     visualAttachments,
@@ -2820,7 +2858,18 @@ async function sendChat(prefill, options) {
                                             },
                                     ).then(result => {
                                         if (result?.success && Array.isArray(result.attachments)) {
-                                            sessionContentResults.push(...result.attachments);
+                                            // Persist the structured visual-analysis request
+                                            // with the attachment. A reply attachment may be
+                                            // a durable image from an earlier turn and does
+                                            // not otherwise carry a capture-specific flag.
+                                            sessionContentResults.push(...result.attachments.map(attachment => Object.assign(
+                                                {},
+                                                attachment,
+                                                {
+                                                    visual_analysis: attachment?.visual_analysis === true
+                                                        || result.analysis === true,
+                                                },
+                                            )));
                                         }
                                         if (result?.userMessage) {
                                             presentationMessages.push(String(result.userMessage));
@@ -3048,7 +3097,9 @@ async function sendChat(prefill, options) {
                         // normal chat; it remains available to developers in the
                         // console and through the server-side log correlation.
                         if (!responseText) {
-                            responseText = _chatUserVisibleFailure(turnSessionId, 'request');
+                            responseText = isInternalFollowup
+                                ? _visualAnalysisUnavailableMessage(turnSessionId, turnIdentity.responseLanguage)
+                                : _chatUserVisibleFailure(turnSessionId, 'request');
                             finalResponseReceived = true;
                         }
                     } else if (currentEvent === 'done') {
@@ -3188,17 +3239,26 @@ async function sendChat(prefill, options) {
             && ((screenshotResults.length && _isVisualAnalysisRequest(text))
                 || visualContentResults.length > 0)
         );
-        if (shouldAnalyzeVisualEvidence) {
-            _queueVisualAnalysisFollowUp(
-                screenshotResults.concat(visualContentResults),
-                text,
-                turnIdentity,
-                {
-                    sessionId: turnSessionId,
-                    screenshotMode: screenshotGallery.mode || 'chat',
-                    includeAll: true,
-                },
-            );
+        const visualAnalysisQueued = shouldAnalyzeVisualEvidence && _queueVisualAnalysisFollowUp(
+            screenshotResults.concat(visualContentResults),
+            text,
+            turnIdentity,
+            {
+                sessionId: turnSessionId,
+                screenshotMode: screenshotGallery.mode || 'chat',
+                includeAll: true,
+            },
+        );
+        // The parent presentation turn owns the images, while the linked
+        // child owns their interpretation. Keep that two-stage contract even
+        // if the child was already queued by an SSE replay; otherwise an
+        // acknowledgement can overwrite the eventual analysis in the same
+        // assistant reply.
+        const visualAnalysisContinuation = shouldAnalyzeVisualEvidence && (
+            screenshotResults.length > 0 || visualContentResults.length > 0
+        );
+        if (visualAnalysisQueued) {
+            uiDebugLog('[visual-followup] queued for parent request:', turnIdentity?.requestId || '');
         }
 
         // No steps arrived — clean up the thinking indicator
@@ -3253,42 +3313,53 @@ async function sendChat(prefill, options) {
         const presentationTools = steps.filter(step => step && step.type === 'tool' && step.tool);
         const isPresentationOnlyTurn = presentationTools.length > 0
             && presentationTools.every(step => ['ui_screenshot', 'ui_content'].includes(step.tool));
-        // The browser is authoritative for persisted Session content. Its
-        // result replaces only an empty/internal acknowledgement, never a
-        // substantive analysis written by the model.
-        if (presentationMessage && (
-            isPresentationOnlyTurn
-            || !renderedFinalText.trim()
-            || genericFinalResponse.test(renderedFinalText.trim())
-        )) {
-            renderedFinalText = presentationMessage;
-            finalResponseReceived = true;
-        }
-        // A tool-only turn can legitimately finish without a model-written
-        // sentence (for example, a dose inspection request whose tool only
-        // returned structured metrics).  Do not show the internal generic
-        // acknowledgement; turn the real current-case metrics into a small,
-        // language-matched answer instead.
-        if (!renderedFinalText.trim() || genericFinalResponse.test(renderedFinalText.trim())) {
-            const doseFallback = await _buildDoseResultsFallback(text, turnSessionId);
-            if (doseFallback) {
-                renderedFinalText = doseFallback;
-                finalResponseReceived = true;
-            }
-        }
-        if (!renderedFinalText.trim() || genericFinalResponse.test(renderedFinalText.trim())) {
-            renderedFinalText = _chatUserVisibleFailure(turnSessionId, 'response');
-            finalResponseReceived = true;
-        }
         // For an analysis request the acknowledgement is only an internal
         // capture phase; keep the chat clean and show the later multimodal
         // answer instead. For a pure screenshot request the gallery itself is
         // the answer, matching the existing UI behavior.
-        const suppressScreenshotAck = _isScreenshotAckResponse(
+        const suppressScreenshotAck = visualAnalysisContinuation || _isScreenshotAckResponse(
             renderedFinalText,
             steps,
             visualContentResults,
         );
+        if (!suppressScreenshotAck) {
+            // The browser is authoritative for persisted Session content. Its
+            // result replaces only an empty/internal acknowledgement, never a
+            // substantive analysis written by the model.
+            if (presentationMessage && (
+                isPresentationOnlyTurn
+                || !renderedFinalText.trim()
+                || genericFinalResponse.test(renderedFinalText.trim())
+            )) {
+                renderedFinalText = presentationMessage;
+                finalResponseReceived = true;
+            }
+            // A tool-only turn can legitimately finish without a model-written
+            // sentence (for example, a dose inspection request whose tool only
+            // returned structured metrics). Do not show the internal generic
+            // acknowledgement; turn the real current-case metrics into a small,
+            // language-matched answer instead.
+            if (!renderedFinalText.trim() || genericFinalResponse.test(renderedFinalText.trim())) {
+                if (isInternalFollowup) {
+                    renderedFinalText = _visualAnalysisUnavailableMessage(
+                        turnSessionId,
+                        turnIdentity.responseLanguage,
+                    );
+                } else {
+                    const doseFallback = await _buildDoseResultsFallback(text, turnSessionId);
+                    if (doseFallback) {
+                        renderedFinalText = doseFallback;
+                    }
+                }
+                finalResponseReceived = true;
+            }
+            if (!renderedFinalText.trim() || genericFinalResponse.test(renderedFinalText.trim())) {
+                renderedFinalText = isInternalFollowup
+                    ? _visualAnalysisUnavailableMessage(turnSessionId, turnIdentity.responseLanguage)
+                    : _chatUserVisibleFailure(turnSessionId, 'response');
+                finalResponseReceived = true;
+            }
+        }
         if (suppressScreenshotAck && responseEl) {
             try {
                 responseEl.textContent = '';

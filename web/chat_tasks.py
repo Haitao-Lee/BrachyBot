@@ -368,13 +368,47 @@ class ChatTaskManager:
             # Agent concurrently and inherit the old screenshot prompt.
             live = self.live(user_id, session_id)
             if live is not None:
+                # A visual-analysis child may be submitted as soon as the
+                # browser receives the parent's terminal SSE event. The
+                # parent can still be inside its persistence/finalization
+                # block at that point, so its public ``status`` may remain
+                # ``running`` for a few more milliseconds. This is a valid
+                # sequential continuation only when it is explicitly bound
+                # to that exact visible parent turn. The worker below waits
+                # on ``predecessor`` before it may touch AgentMemory.
+                linked_internal_followup = (
+                    bool(internal_followup)
+                    and not bool(live.internal_followup)
+                    and bool(parent_request_id)
+                    and str(parent_request_id) == str(live.request_id)
+                    and (
+                        not parent_user_message_id
+                        or not live.user_message_id
+                        or str(parent_user_message_id) == str(live.user_message_id)
+                    )
+                    and (
+                        not parent_assistant_message_id
+                        or not live.assistant_message_id
+                        or str(parent_assistant_message_id) == str(live.assistant_message_id)
+                    )
+                )
                 # A screenshot analysis is a child of an already visible
                 # assistant reply. A new user instruction supersedes it
                 # instead of waiting behind it or inheriting its prompt. The
                 # new worker still waits for the old worker thread to leave
                 # the Agent so two turns cannot mutate one AgentMemory at
                 # the same time.
-                if not internal_followup and live.internal_followup:
+                if linked_internal_followup:
+                    predecessor = live
+                elif internal_followup:
+                    # Do not let an orphaned child prompt attach to an
+                    # unrelated live turn. This is an identity boundary, not
+                    # a text/keyword rule: the browser must provide stable
+                    # request/message identifiers of its parent reply.
+                    raise RuntimeError(
+                        "Visual analysis follow-up is not linked to the active parent task"
+                    )
+                elif live.internal_followup:
                     predecessor = live
                     live._skip_finalization = True
                     if live.status == "running":

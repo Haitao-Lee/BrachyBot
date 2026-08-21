@@ -68,6 +68,29 @@ class LocalTurnPolicy:
     action_plan: Optional[ActionPlan] = None
 
 
+def visual_analysis_policy() -> LocalTurnPolicy:
+    """Return the execution policy for a hidden screenshot-analysis child.
+
+    A visual follow-up is not a second user turn. Its prompt contains the
+    parent request plus uploaded image evidence, which can resemble an
+    ordinary content-navigation request when classified as plain text. Give
+    it a distinct role instead: the LLM remains responsible for interpreting
+    the supplied evidence, while the runtime applies its separate read-only
+    provider-tool boundary.
+    """
+    return LocalTurnPolicy(
+        intent="visual_analysis",
+        complexity="medium",
+        requires_review=False,
+        use_router=False,
+        use_completeness=False,
+        # Do not text-whitelist the model's reasoning tools here. The
+        # runtime's typed visual-child boundary restricts provider schemas to
+        # safe read-only case data after normal Session/CT safety filtering.
+        allow_tools=None,
+    )
+
+
 def _has_cjk(text: str) -> bool:
     return bool(re.search(r"[\u3400-\u4dbf\u4e00-\u9fff]", text or ""))
 

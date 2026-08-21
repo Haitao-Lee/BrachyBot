@@ -27,6 +27,10 @@ from web.auth import current_user
 from web.chat_tasks import ChatTask, ChatTaskManager
 from web.workspace_store import WorkspaceError, WorkspaceQuotaExceeded, WorkspaceNotFound
 from agent_runtime.core import resolve_reference_direction_input
+from agent_runtime.visual_evidence import (
+    build_visual_evidence_prompt,
+    normalize_visual_evidence_context,
+)
 from web.planning_runs import (
     activate_planning_run,
     active_planning_id,
@@ -1375,13 +1379,37 @@ def register_planning_routes(
                     }
                 ]
                 screenshot_capture_phase = bool(screenshot_steps) and not non_screenshot_tools
-                if not final_response or re.match(
-                    r"^Tools executed\. Check the execution trace above for results\.?$",
-                    str(final_response).strip(),
-                    re.I,
+                # ``ui_content`` can attach existing Session-owned images
+                # before a hidden visual-analysis child writes the actual
+                # interpretation. Treat the explicit tool contract as the
+                # boundary here, rather than inspecting any generated prose:
+                # the parent reply must not persist an acknowledgement or a
+                # generic fallback that races the child answer.
+                visual_analysis_continuation = (
+                    not task.internal_followup
+                    and any(
+                        str(step.get("tool") or "") == "ui_content"
+                        and str(step.get("status") or "") == "done"
+                        and isinstance(step.get("metadata"), dict)
+                        and isinstance(step.get("metadata", {}).get("content_command"), dict)
+                        and bool(step.get("metadata", {}).get("content_command", {}).get("analysis"))
+                        for step in persisted_steps
+                    )
+                )
+                if (
+                    not visual_analysis_continuation
+                    and not screenshot_capture_phase
+                    and (
+                        not final_response
+                        or re.match(
+                            r"^Tools executed\. Check the execution trace above for results\.?$",
+                            str(final_response).strip(),
+                            re.I,
+                        )
+                    )
                 ):
                     final_response = fallback_task_response(task) or final_response
-                if screenshot_capture_phase and not task.internal_followup:
+                if (screenshot_capture_phase or visual_analysis_continuation) and not task.internal_followup:
                     final_response = ""
                 if final_response:
                     append_message(
@@ -5227,7 +5255,13 @@ def register_planning_routes(
         )[:160]
         internal_followup = bool(data.get("internal_followup", False))
         response_language = str(data.get("response_language") or "")[:8]
-        if not message and not image_path:
+        visual_context_payload = data.get("visual_context")
+        if visual_context_payload is not None and not internal_followup:
+            # Evidence envelopes are a private continuation protocol.  A
+            # normal user turn must never smuggle a previous reply's images
+            # into the next AgentMemory context.
+            return jsonify({"error": "visual_context requires internal_followup"}), 400
+        if not message and not image_path and visual_context_payload is None:
             return jsonify({"error": "message or image is required"}), 400
 
         # ``session_id`` remains tolerated in older browser payloads, but the
@@ -5257,6 +5291,27 @@ def register_planning_routes(
             if agent is None:
                 return jsonify({"error": "Agent not available"}), 500
 
+        # New clients send a typed visual envelope instead of serializing the
+        # parent request and screenshot URLs into the chat message.  Validate
+        # it only after the authenticated case Session is known, so a child
+        # can never attach evidence from another case.  Older clients omit the
+        # envelope and retain the legacy text transport for compatibility.
+        visual_context = None
+        if internal_followup and visual_context_payload is not None:
+            context_session_id = str(
+                session_id
+                or getattr(getattr(agent, "memory", None), "session_id", "")
+                or ""
+            )
+            visual_context = normalize_visual_evidence_context(
+                visual_context_payload,
+                context_session_id,
+            )
+            if visual_context is None:
+                return jsonify({
+                    "error": "visual_context must contain current-session screenshot evidence and a parent request",
+                }), 400
+
         # Clear-context with no new turn is an explicit synchronous operation;
         # a queued turn below applies the clear inside its worker before chat.
         if clear_context and not message and not image_path:
@@ -5278,9 +5333,14 @@ def register_planning_routes(
         if image_path and not message:
             message = "Please analyze this image"
 
-        # Include image path in message if provided
+        # Include image path in message if provided. A validated visual child
+        # uses its own short-lived prompt; its generic browser message is not
+        # part of the provider context and therefore cannot pollute a later
+        # normal user turn through compaction or task replay.
         full_message = message
-        if image_path:
+        if visual_context is not None:
+            full_message = build_visual_evidence_prompt(visual_context, response_language)
+        elif image_path:
             full_message = f"{message}\n\n[Uploaded image path: {image_path}]"
 
         if stream:

@@ -1,4 +1,5 @@
 import threading
+import threading
 import time
 from unittest.mock import patch
 
@@ -243,6 +244,111 @@ def test_same_case_rejects_concurrent_turn_but_other_case_is_allowed():
     manager.cancel(first)
     manager.cancel(second)
     gate.set()
+
+
+def test_linked_visual_followup_waits_for_parent_finalization():
+    """A visual child is sequential, even while its parent publishes done."""
+
+    manager = ChatTaskManager()
+    parent_started = threading.Event()
+    release_parent_stream = threading.Event()
+    parent_finalizer_started = threading.Event()
+    release_parent_finalizer = threading.Event()
+    child_started = threading.Event()
+
+    class _ParentAgent(_Agent):
+        def chat_with_stream(self, _message):
+            yield _event("start", {})
+            parent_started.set()
+            release_parent_stream.wait(timeout=2)
+            yield _event("response", {"response": "evidence captured"})
+            yield _event("done", {})
+
+    class _ChildAgent(_Agent):
+        def chat_with_stream(self, _message):
+            child_started.set()
+            yield _event("response", {"response": "image interpretation"})
+            yield _event("done", {})
+
+    def finish_parent(_task):
+        parent_finalizer_started.set()
+        release_parent_finalizer.wait(timeout=2)
+        return True
+
+    parent = manager.start(
+        _App(),
+        "user-a",
+        "case-a",
+        _ParentAgent([]),
+        "open the last screenshot and interpret it",
+        {},
+        on_finish=finish_parent,
+        request_id="parent-request",
+        user_message_id="user-parent-request",
+        assistant_message_id="assistant-parent-request",
+    )
+    assert parent_started.wait(timeout=2)
+    release_parent_stream.set()
+    assert parent_finalizer_started.wait(timeout=2)
+
+    child = manager.start(
+        _App(),
+        "user-a",
+        "case-a",
+        _ChildAgent([]),
+        "hidden visual evidence",
+        {},
+        request_id="visual-child-request",
+        user_message_id="user-visual-child-request",
+        assistant_message_id="assistant-visual-child-request",
+        parent_request_id="parent-request",
+        parent_user_message_id="user-parent-request",
+        parent_assistant_message_id="assistant-parent-request",
+        internal_followup=True,
+        response_language="zh",
+    )
+
+    # The child was accepted while the parent still owns AgentMemory, but it
+    # cannot enter the child Agent until the parent's finalizer completes.
+    assert not child_started.wait(timeout=0.1)
+    release_parent_finalizer.set()
+
+    assert parent.wait_for_worker(timeout=2)
+    assert child.wait_for_worker(timeout=2)
+    assert parent.status == "completed"
+    assert child.status == "completed"
+    assert child.response == "image interpretation"
+
+
+def test_internal_followup_rejects_an_unrelated_live_parent():
+    """A child must never inherit an unrelated live turn's AgentMemory."""
+
+    manager = ChatTaskManager()
+    gate = threading.Event()
+    started = threading.Event()
+
+    class _BlockingAgent(_Agent):
+        def chat_with_stream(self, _message):
+            yield _event("start", {})
+            started.set()
+            gate.wait(timeout=2)
+            yield _event("done", {})
+
+    parent = manager.start(
+        _App(), "user-a", "case-a", _BlockingAgent([]), "parent", {},
+        request_id="parent-request",
+    )
+    assert started.wait(timeout=2)
+    with pytest.raises(RuntimeError, match="not linked"):
+        manager.start(
+            _App(), "user-a", "case-a", _Agent([]), "orphaned child", {},
+            request_id="child-request",
+            parent_request_id="other-parent-request",
+            internal_followup=True,
+        )
+    manager.cancel(parent)
+    gate.set()
+    assert parent.wait_for_worker(timeout=2)
 
 
 def test_same_request_id_reuses_the_case_owned_task():

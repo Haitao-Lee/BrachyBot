@@ -20,10 +20,12 @@ import SimpleITK as sitk
 from agent_runtime.core import PlanningPhase, ToolResultPipeline, resolve_reference_direction_input
 from agent_runtime.contracts import RunStatus
 from agent_runtime.execution_authorization import TurnExecutionAuthorization
+from agent_runtime.visual_evidence import VISUAL_EVIDENCE_PROTOCOL_MARKER
 from agent_runtime.turn_policy import (
     classify_local_turn,
     resolve_session_content_presentation,
     resolve_session_content_target,
+    visual_analysis_policy,
 )
 from plans.dose_pre.model_loader import (
     DEFAULT_PRESCRIPTION_GY,
@@ -38,30 +40,123 @@ logger = logging.getLogger(__name__)
 
 class ChatWorkflowMixin:
     @staticmethod
+    def _internal_followup_language(turn_context: Dict[str, Any]) -> str:
+        """Return the original user language for a hidden child turn.
+
+        Screenshot analysis is an implementation detail of the visible parent
+        reply. Its generated multimodal prompt contains English protocol text,
+        so inferring language from that prompt would incorrectly override the
+        language chosen by the real user. The task layer persists the parent's
+        response language expressly for this hand-off.
+        """
+        raw = str((turn_context or {}).get("response_language") or "").strip().lower()
+        if raw.startswith("zh"):
+            return "zh"
+        if raw.startswith("en"):
+            return "en"
+        return ""
+
+    @staticmethod
     def _strip_internal_visual_context_text(value: Any) -> str:
-        """Remove generated screenshot-child protocol lines from summaries.
+        """Remove complete generated screenshot-child blocks from summaries.
 
         A hidden multimodal child can be compacted into ``AgentMemory``'s
-        plain-text summary before the child finishes.  Removing only the
-        protocol markers is intentionally narrow: ordinary user discussion
-        about screenshots remains valid context, while raw attachment URLs
-        and the child instruction cannot steer the next independent turn.
+        plain-text summary before the child finishes. Removing only the URL
+        and instruction lines is insufficient because the embedded
+        ``User request: ...`` line then survives as an apparently current
+        command and can steer a later unrelated turn. The generated protocol
+        has a stable structure, so remove the whole block up to the next
+        assistant record while preserving real user/assistant discussion.
         """
         text = str(value or "")
         if not text:
             return ""
-        protocol_markers = (
-            "[Screenshot captured:",
-            "Analyze the supplied screenshot(s)",
-            "Do not request another screenshot.",
+        lines = text.splitlines()
+        cleaned: List[str] = []
+        assistant_boundary = re.compile(
+            r"^\s*(?:assistant|brachybot|助手|机器人|ai)\s*:", re.IGNORECASE,
+        )
+        user_boundary = re.compile(r"^\s*(?:user|用户)\s*:", re.IGNORECASE)
+        protocol_marker = VISUAL_EVIDENCE_PROTOCOL_MARKER
+        terminal_markers = (
+            "Analyze the supplied screenshot",
+            "Do not request another screenshot",
+            "Do not repeat attachment titles",
+            "Mention uncertainty instead of inventing details",
+            "Use Chinese for every user-visible sentence",
+            "Use English for every user-visible sentence",
             "分析提供的截图",
             "不要请求另一个截图",
+            "不要重复附件标题",
+            "如无法确认请说明不确定性",
         )
-        lines = [
-            line for line in text.splitlines()
-            if not any(marker in line for marker in protocol_markers)
-        ]
-        return "\n".join(lines).strip()
+
+        index = 0
+        while index < len(lines):
+            # A compacted block normally starts with ``User: [Screenshot ...]``.
+            # It can also begin directly at the screenshot line after a legacy
+            # compaction pass, so include either shape in the candidate.  Do
+            # not begin a candidate at every ``User:`` line: doing so could
+            # consume a real later user request when an interrupted child has
+            # no assistant response yet.
+            starts_with_user = bool(user_boundary.match(lines[index]))
+            starts_with_capture = "[Screenshot captured:" in lines[index]
+            starts_with_embedded_request = "User request:" in lines[index] or "用户请求：" in lines[index]
+            starts_with_protocol = protocol_marker in lines[index]
+            if not (
+                starts_with_capture
+                or starts_with_embedded_request
+                or starts_with_protocol
+                or (starts_with_user and (starts_with_capture or starts_with_protocol))
+            ):
+                cleaned.append(lines[index])
+                index += 1
+                continue
+
+            end = index + 1
+            while end < len(lines):
+                if assistant_boundary.match(lines[end]):
+                    break
+                candidate_so_far = "\n".join(lines[index:end])
+                # A worker may have been cancelled before it wrote its child
+                # assistant response.  Once the generated protocol is
+                # complete, the following real ``User:`` record is a hard
+                # boundary, not part of the visual child.
+                if (
+                    user_boundary.match(lines[end])
+                    and any(marker in candidate_so_far for marker in terminal_markers)
+                    and (
+                        "[Screenshot captured:" in candidate_so_far
+                        or "User request:" in candidate_so_far
+                        or "用户请求：" in candidate_so_far
+                        or protocol_marker in candidate_so_far
+                    )
+                ):
+                    break
+                end += 1
+            candidate = "\n".join(lines[index:end])
+            has_capture = "[Screenshot captured:" in candidate
+            has_embedded_request = "User request:" in candidate or "用户请求：" in candidate
+            has_protocol = protocol_marker in candidate
+            has_terminal_instruction = any(marker in candidate for marker in terminal_markers)
+            # The second clause repairs summaries already partially cleaned by
+            # prior versions, where only the generated request plus terminal
+            # instruction survived after the original capture URL was removed.
+            is_generated_block = (
+                (has_capture or has_protocol) and has_terminal_instruction
+            ) or (
+                has_embedded_request
+                and has_terminal_instruction
+                and (starts_with_user or starts_with_embedded_request or starts_with_protocol)
+            )
+            if is_generated_block:
+                if cleaned and user_boundary.match(cleaned[-1]) and not cleaned[-1].split(":", 1)[-1].strip():
+                    cleaned.pop()
+                index = end
+                continue
+            cleaned.append(lines[index])
+            index += 1
+        return "\n".join(cleaned).strip()
 
     @staticmethod
     def _is_internal_visual_context_entry(entry: Any) -> bool:
@@ -87,8 +182,7 @@ class ChatWorkflowMixin:
         if marked:
             return True
         content = str(content or "")
-        if "[Screenshot captured:" not in content:
-            return False
+        has_capture = "[Screenshot captured:" in content
         has_request = "User request:" in content or "用户请求：" in content
         has_instruction = (
             "Analyze the supplied screenshot" in content
@@ -96,7 +190,19 @@ class ChatWorkflowMixin:
             or "Do not request another screenshot" in content
             or "不要请求另一个截图" in content
         )
-        return has_request and has_instruction
+        has_terminal_instruction = (
+            "Do not repeat attachment titles" in content
+            or "Mention uncertainty instead of inventing details" in content
+            or "不要重复附件标题" in content
+            or "如无法确认请说明不确定性" in content
+        )
+        return (
+            has_capture and (has_instruction or has_terminal_instruction)
+        ) or (
+            has_request
+            and has_terminal_instruction
+            and (has_instruction or has_terminal_instruction)
+        )
 
     def _purge_orphaned_visual_context(self) -> None:
         """Remove legacy hidden visual prompts before a new user turn.
@@ -1153,6 +1259,11 @@ class ChatWorkflowMixin:
     def chat(self, message: str) -> str:
         turn_context = getattr(self, "_active_turn_context", {}) or {}
         internal_followup = bool(turn_context.get("internal_followup"))
+        inherited_language = (
+            self._internal_followup_language(turn_context)
+            if internal_followup
+            else ""
+        )
         if not internal_followup:
             self._purge_orphaned_visual_context()
         self._begin_turn(message)
@@ -1161,20 +1272,27 @@ class ChatWorkflowMixin:
         # lets a later question inherit the previous screenshot task.
         if not internal_followup:
             self.memory.add_message("user", message)
-        try:
-            from memory.language import detect as _detect_turn_language
-            _language = _detect_turn_language(message)
-            self.memory.user_lang = "zh" if _language.get("code") == "zh" else "en"
-        except Exception:
-            self.memory.user_lang = "zh" if re.search(r'[\u4e00-\u9fff]', message) else "en"
+        if inherited_language:
+            self.memory.user_lang = inherited_language
+        else:
+            try:
+                from memory.language import detect as _detect_turn_language
+                _language = _detect_turn_language(message)
+                self.memory.user_lang = "zh" if _language.get("code") == "zh" else "en"
+            except Exception:
+                self.memory.user_lang = "zh" if re.search(r'[\u4e00-\u9fff]', message) else "en"
         self._active_trace_language = self.memory.user_lang
 
         # A current-case result question is a local read-only data query.
         # Resolve it before the enhanced agent and generic LLM router so it
         # cannot trigger clinical_kb/web_fetch or an unnecessary second LLM.
-        local_policy = classify_local_turn(
-            message,
-            pending_tumor_site=self._pending_tumor_site_clarification(),
+        local_policy = (
+            visual_analysis_policy()
+            if internal_followup
+            else classify_local_turn(
+                message,
+                pending_tumor_site=self._pending_tumor_site_clarification(),
+            )
         )
         self._activate_turn_policy(local_policy)
         if local_policy.intent == "case_dose_query":
@@ -1206,7 +1324,7 @@ class ChatWorkflowMixin:
             self._finish_turn(response)
             return response
 
-        if local_policy.intent == "session_content_query":
+        if not internal_followup and local_policy.intent == "session_content_query":
             target = resolve_session_content_target(message) or "session_summary"
             response = self._session_content_response(target, self.memory.user_lang)
             self.memory.add_message("assistant", response)
@@ -1214,7 +1332,7 @@ class ChatWorkflowMixin:
             self._finish_turn(response)
             return response
 
-        if self.enhanced:
+        if self.enhanced and not internal_followup:
             self.enhanced.pre_task_hook(message)
 
         if self.brain_available:
@@ -1233,9 +1351,10 @@ class ChatWorkflowMixin:
             else:
                 response = self._rule_based_chat(message)
 
-        self._record_experience(message, response)
+        if not internal_followup:
+            self._record_experience(message, response)
 
-        if self.enhanced:
+        if self.enhanced and not internal_followup:
             tool_chain = []
             tool_results = []
             for step in self.memory.tool_results[-10:]:
@@ -1252,17 +1371,25 @@ class ChatWorkflowMixin:
     def chat_with_trace(self, message: str) -> Dict[str, Any]:
         turn_context = getattr(self, "_active_turn_context", {}) or {}
         internal_followup = bool(turn_context.get("internal_followup"))
+        inherited_language = (
+            self._internal_followup_language(turn_context)
+            if internal_followup
+            else ""
+        )
         if not internal_followup:
             self._purge_orphaned_visual_context()
         self._begin_turn(message)
         if not internal_followup:
             self.memory.add_message("user", message)
-        try:
-            from memory.language import detect as _detect_turn_language
-            _language = _detect_turn_language(message)
-            self.memory.user_lang = "zh" if _language.get("code") == "zh" else "en"
-        except Exception:
-            self.memory.user_lang = "zh" if re.search(r'[一-鿿]', message) else "en"
+        if inherited_language:
+            self.memory.user_lang = inherited_language
+        else:
+            try:
+                from memory.language import detect as _detect_turn_language
+                _language = _detect_turn_language(message)
+                self.memory.user_lang = "zh" if _language.get("code") == "zh" else "en"
+            except Exception:
+                self.memory.user_lang = "zh" if re.search(r'[一-鿿]', message) else "en"
         self._active_trace_language = self.memory.user_lang
         steps = []
         step_id = [0]
@@ -1287,9 +1414,13 @@ class ChatWorkflowMixin:
         # Local classification only controls expensive routing/review/tool
         # policy. The configured LLM still generates the user-facing answer,
         # including greetings and self-description requests.
-        local_policy = classify_local_turn(
-            message,
-            pending_tumor_site=self._pending_tumor_site_clarification(),
+        local_policy = (
+            visual_analysis_policy()
+            if internal_followup
+            else classify_local_turn(
+                message,
+                pending_tumor_site=self._pending_tumor_site_clarification(),
+            )
         )
         self._activate_turn_policy(local_policy)
 
@@ -1364,7 +1495,7 @@ class ChatWorkflowMixin:
                 "llm_meta": {"usage": {}, "latency_ms": 0, "llm_calls": 0, "route": "local_report_generation"},
             }
 
-        if local_policy.intent == "session_content_query":
+        if not internal_followup and local_policy.intent == "session_content_query":
             target = resolve_session_content_target(message) or "session_summary"
             from tool_factory.ui_content import normalize_session_content_request
 
@@ -1429,7 +1560,7 @@ class ChatWorkflowMixin:
                 "llm_meta": {"usage": {}, "latency_ms": 0, "llm_calls": 0, "route": "local_session_content"},
             }
 
-        if self.enhanced:
+        if self.enhanced and not internal_followup:
             pre_ctx = self.enhanced.pre_task_hook(message)
             if self._planning_requested(message) and pre_ctx.get("matched_sop"):
                 sop = pre_ctx["matched_sop"]
@@ -1484,9 +1615,10 @@ class ChatWorkflowMixin:
                 response = self._rule_based_chat_with_steps(message, steps, step_id)
             llm_meta = {"usage": {}, "latency_ms": 0, "llm_calls": 0}
 
-        self._record_experience(message, response, steps)
+        if not internal_followup:
+            self._record_experience(message, response, steps)
 
-        if self.enhanced:
+        if self.enhanced and not internal_followup:
             tool_chain = [s.get("tool", "") for s in steps if s.get("type") == "tool"]
             tool_results = [(s.get("tool", ""), s.get("status") == "done", s.get("result", "")) for s in steps if s.get("type") == "tool"]
             self.enhanced.post_task_hook(
@@ -1501,7 +1633,7 @@ class ChatWorkflowMixin:
             }, ensure_ascii=False))
 
         # WORKFLOW ENFORCER: If user requested planning but LLM didn't execute tools, force-execute
-        is_planning_request = self._planning_requested(message)
+        is_planning_request = not internal_followup and self._planning_requested(message)
         if is_planning_request:
             has_ctv = (
                 self.memory.retrieve("ctv_array") is not None
@@ -1745,6 +1877,11 @@ class ChatWorkflowMixin:
         """Streaming version of chat_with_trace. Yields SSE events."""
         turn_context = getattr(self, "_active_turn_context", {}) or {}
         internal_followup = bool(turn_context.get("internal_followup"))
+        inherited_language = (
+            self._internal_followup_language(turn_context)
+            if internal_followup
+            else ""
+        )
         if not internal_followup:
             self._purge_orphaned_visual_context()
         self._begin_turn(message)
@@ -1753,14 +1890,17 @@ class ChatWorkflowMixin:
         # transport-only evidence owned by the parent assistant reply.
         if not internal_followup:
             self.memory.add_message("user", message)
-        try:
-            from memory.language import detect as _detect_turn_language
-            _language = _detect_turn_language(message)
-            self.memory.user_lang = "zh" if _language.get("code") == "zh" else "en"
-        except Exception:
-            # Trace locale follows this user request, independent of the
-            # application-wide locale used by persistent panels and reports.
-            self.memory.user_lang = "zh" if re.search(r"[\u4e00-\u9fff]", message) else "en"
+        if inherited_language:
+            self.memory.user_lang = inherited_language
+        else:
+            try:
+                from memory.language import detect as _detect_turn_language
+                _language = _detect_turn_language(message)
+                self.memory.user_lang = "zh" if _language.get("code") == "zh" else "en"
+            except Exception:
+                # Trace locale follows this user request, independent of the
+                # application-wide locale used by persistent panels and reports.
+                self.memory.user_lang = "zh" if re.search(r"[\u4e00-\u9fff]", message) else "en"
         steps = []
         step_id = [0]
         response = ""  # Initialize response variable
@@ -1896,11 +2036,18 @@ class ChatWorkflowMixin:
         # back to the previous session's language for ambiguous
         # short messages. See memory/language.py for the full
         # detection rules and the rationale for top-level injection.
-        try:
-            from memory.language import detect as _lang_detect_start
-            _lang_info_start = _lang_detect_start(message)
-        except Exception:
-            _lang_info_start = {"code": "en", "name": "English", "source": "default"}
+        if inherited_language:
+            _lang_info_start = {
+                "code": inherited_language,
+                "name": "Chinese" if inherited_language == "zh" else "English",
+                "source": "parent_turn",
+            }
+        else:
+            try:
+                from memory.language import detect as _lang_detect_start
+                _lang_info_start = _lang_detect_start(message)
+            except Exception:
+                _lang_info_start = {"code": "en", "name": "English", "source": "default"}
         _trace_lang = "zh" if _lang_info_start.get("code") == "zh" else "en"
         # The request locale is the source of truth for this turn's trace and
         # direct-tool response. Persistent panels/reports deliberately use a
@@ -1951,9 +2098,13 @@ class ChatWorkflowMixin:
 
         # The local policy is an execution hint only. It does not synthesize
         # an answer; all user-facing text continues through the configured LLM.
-        local_policy = classify_local_turn(
-            message,
-            pending_tumor_site=self._pending_tumor_site_clarification(),
+        local_policy = (
+            visual_analysis_policy()
+            if internal_followup
+            else classify_local_turn(
+                message,
+                pending_tumor_site=self._pending_tumor_site_clarification(),
+            )
         )
         self._activate_turn_policy(local_policy)
 
@@ -2093,7 +2244,7 @@ class ChatWorkflowMixin:
         # browser against the owner Session, not recaptured from a potentially
         # unmounted panel. The tool step carries only a compact, localized
         # command; the frontend resolves attachments and structured data.
-        if local_policy.intent == "session_content_query":
+        if not internal_followup and local_policy.intent == "session_content_query":
             target = resolve_session_content_target(message) or "session_summary"
             from tool_factory.ui_content import normalize_session_content_request
 
@@ -2496,7 +2647,7 @@ class ChatWorkflowMixin:
             return
 
         # Enhanced context
-        if self.enhanced:
+        if self.enhanced and not internal_followup:
             pre_ctx = self.enhanced.pre_task_hook(message)
             if self._planning_requested(message) and pre_ctx.get("matched_sop"):
                 sop = pre_ctx["matched_sop"]
@@ -2678,7 +2829,10 @@ class ChatWorkflowMixin:
         elif _response_len > 500 and local_policy.use_completeness:
             _needs_review = True
             _review_reason = f"long_response: {_response_len} chars"
-        elif ("ui_screenshot" in _tools_called and _visual_analysis_request) or "[Screenshot captured:" in message:
+        elif not internal_followup and (
+            ("ui_screenshot" in _tools_called and _visual_analysis_request)
+            or "[Screenshot captured:" in message
+        ):
             # A screenshot used as evidence needs a final completeness pass,
             # even when the router labels the request as low complexity.
             _needs_review = True
@@ -2879,7 +3033,9 @@ class ChatWorkflowMixin:
         ) if _needs_review else 0
 
         # WORKFLOW ENFORCER: If user requested planning but LLM didn't execute tools, force-execute
-        is_planning_request = self._planning_requested(message)
+        # The generated visual-child prompt embeds the parent request as
+        # evidence. It must never reactivate the parent workflow enforcer.
+        is_planning_request = not internal_followup and self._planning_requested(message)
         _workflow_enforced = False
         if is_planning_request:
             has_ctv = (
