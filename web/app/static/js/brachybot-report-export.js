@@ -11,7 +11,7 @@ function _oarVolumePercent(value, units) {
     return n >= 0 && n <= 1 ? n * 100 : (n >= 0 && n <= 100 ? n : null);
 }
 
-function _composite2DViewerCanvas(axis) {
+function _composite2DViewerCanvas(axis, options = {}) {
     const sliceCanvas = document.getElementById('sliceCanvas' + axis.charAt(0).toUpperCase() + axis.slice(1));
     if (!sliceCanvas || sliceCanvas.width < 1 || sliceCanvas.height < 1) return null;
     const cap = axis.charAt(0).toUpperCase() + axis.slice(1);
@@ -44,7 +44,15 @@ function _composite2DViewerCanvas(axis) {
         const layer = document.getElementById(id);
         if (!layer || layer.width < 1 || layer.height < 1) return;
         const style = window.getComputedStyle ? window.getComputedStyle(layer) : layer.style;
-        const opacity = Number.parseFloat(style?.opacity ?? '1');
+        const liveOpacity = Number.parseFloat(style?.opacity ?? '1');
+        const captureDoseOpacity = id === `doseOverlayCanvas${cap}`
+            ? Number(options.doseOpacity)
+            : NaN;
+        // Publication captures can make dose easier to inspect without
+        // mutating the operator's live Data Tree/Viewer opacity.
+        const opacity = Number.isFinite(captureDoseOpacity)
+            ? Math.max(0, Math.min(1, captureDoseOpacity))
+            : liveOpacity;
         if (style?.display === 'none' || style?.visibility === 'hidden' || opacity <= 0) return;
         try {
             ctx.save();

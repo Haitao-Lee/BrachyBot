@@ -217,6 +217,76 @@ def _now() -> float:
     return time.time()
 
 
+def _workspace_recovery_status(snapshot: Mapping[str, Any]) -> str:
+    """Return the indexed recovery state for a durable snapshot.
+
+    ``snapshot.json`` is the lifecycle authority. The SQLite column is only
+    an index used to find work that may need restart reconciliation, so every
+    snapshot write must derive the index from the merged operation state.
+    """
+    operation = snapshot.get("operation")
+    state = str(operation.get("state") or "ready") if isinstance(operation, Mapping) else "ready"
+    if state == "running":
+        return "running"
+    if state == "interrupted":
+        return "interrupted"
+    return "ready"
+
+
+def _chat_task_status(snapshot: Mapping[str, Any]) -> str:
+    chat = snapshot.get("chat")
+    return str(chat.get("task_status") or "") if isinstance(chat, Mapping) else ""
+
+
+def _interrupt_running_planning_runs(
+    snapshot: Mapping[str, Any],
+    detail: str,
+) -> Tuple[Dict[str, Any], bool]:
+    """Close orphaned Planning runs without changing Session task state.
+
+    Planning history and the Session operation are separate lifecycles. A
+    process restart can strand an individual run after the chat transaction
+    has already reached a terminal state. In that case only the run is
+    interrupted; manufacturing a Session-level interruption would create a
+    false persistent recovery banner for a completed user request.
+    """
+    updated_snapshot = dict(snapshot)
+    agent_state = updated_snapshot.get("agent")
+    if not isinstance(agent_state, Mapping):
+        return updated_snapshot, False
+    planning_results = agent_state.get("planning_results")
+    runs = (
+        planning_results.get("planning_runs")
+        if isinstance(planning_results, Mapping) else None
+    )
+    if not isinstance(runs, list):
+        return updated_snapshot, False
+
+    interrupted_at = _now()
+    updated_runs = []
+    changed = False
+    for raw_run in runs:
+        if not isinstance(raw_run, Mapping):
+            updated_runs.append(raw_run)
+            continue
+        run = dict(raw_run)
+        if str(run.get("status") or "") == "running":
+            run["status"] = "interrupted"
+            run["updated_at"] = interrupted_at
+            run["error"] = detail
+            changed = True
+        updated_runs.append(run)
+    if changed:
+        updated_snapshot["agent"] = {
+            **dict(agent_state),
+            "planning_results": {
+                **dict(planning_results),
+                "planning_runs": updated_runs,
+            },
+        }
+    return updated_snapshot, changed
+
+
 def _safe_json(value: Any) -> Any:
     """Return a JSON-compatible value without silently serialising objects.
 
@@ -1478,11 +1548,12 @@ class WorkspaceStore:
             snapshot[section] = _safe_json(safe_value)
             snapshot["saved_at"] = _now()
             self._write_snapshot(user_id, root / "snapshot.json", snapshot)
+            recovery_status = _workspace_recovery_status(snapshot)
             with self._connection() as connection:
                 connection.execute(
-                    "UPDATE case_sessions SET updated_at = ?, revision = revision + 1 "
+                    "UPDATE case_sessions SET updated_at = ?, revision = revision + 1, recovery_status = ? "
                     "WHERE id = ? AND user_id = ?",
-                    (_now(), session_id, user_id),
+                    (_now(), recovery_status, session_id, user_id),
                 )
             self._audit(user_id, session_id, reason, {"section": section})
             return self.load_snapshot(user_id, session_id)
@@ -1530,10 +1601,12 @@ class WorkspaceStore:
             )
         snapshot["saved_at"] = _now()
         self._write_snapshot(user_id, root / "snapshot.json", snapshot)
+        recovery_status = _workspace_recovery_status(snapshot)
         with self._connection() as connection:
             connection.execute(
-                "UPDATE case_sessions SET updated_at = ?, revision = revision + 1 WHERE id = ? AND user_id = ?",
-                (_now(), session_id, user_id),
+                "UPDATE case_sessions SET updated_at = ?, revision = revision + 1, recovery_status = ? "
+                "WHERE id = ? AND user_id = ?",
+                (_now(), recovery_status, session_id, user_id),
             )
         self._audit(user_id, session_id, reason, {"keys": sorted(patch.keys())})
         return self.load_snapshot(user_id, session_id)
@@ -2439,36 +2512,7 @@ class WorkspaceStore:
         # every immutable run and its partial artifacts, while making the
         # lifecycle truthful so the restored Data Tree does not present a
         # dead task as an active one.
-        agent_state = snapshot.get("agent")
-        if isinstance(agent_state, Mapping):
-            planning_results = agent_state.get("planning_results")
-            runs = (
-                planning_results.get("planning_runs")
-                if isinstance(planning_results, Mapping) else None
-            )
-            if isinstance(runs, list):
-                interrupted_at = _now()
-                updated_runs = []
-                changed = False
-                for raw_run in runs:
-                    if not isinstance(raw_run, Mapping):
-                        updated_runs.append(raw_run)
-                        continue
-                    run = dict(raw_run)
-                    if str(run.get("status") or "") == "running":
-                        run["status"] = "interrupted"
-                        run["updated_at"] = interrupted_at
-                        run["error"] = detail
-                        changed = True
-                    updated_runs.append(run)
-                if changed:
-                    snapshot["agent"] = {
-                        **dict(agent_state),
-                        "planning_results": {
-                            **dict(planning_results),
-                            "planning_runs": updated_runs,
-                        },
-                    }
+        snapshot, _ = _interrupt_running_planning_runs(snapshot, detail)
         snapshot["operation"] = {
             **(snapshot.get("operation") or {}),
             "state": "interrupted",
@@ -2496,6 +2540,9 @@ class WorkspaceStore:
         for row in rows:
             try:
                 snapshot = self.load_snapshot(row["user_id"], row["id"])
+                operation = snapshot.get("operation") if isinstance(snapshot.get("operation"), Mapping) else {}
+                operation_state = str(operation.get("state") or "")
+                chat_status = _chat_task_status(snapshot)
                 agent_state = snapshot.get("agent")
                 planning_results = (
                     agent_state.get("planning_results")
@@ -2510,11 +2557,104 @@ class WorkspaceStore:
                     and str(item.get("status") or "") == "running"
                     for item in (runs if isinstance(runs, list) else [])
                 )
-                if str(row["recovery_status"] or "") == "running" or has_running_planning:
+
+                # Older builds wrote the terminal chat transcript to the
+                # snapshot but left the SQLite recovery index at ``running``.
+                # Their next startup then overwrote the completed operation
+                # with this synthetic interruption. Repair that exact durable
+                # contradiction instead of leaving a permanent false banner.
+                false_restart_interruption = (
+                    operation_state == "interrupted"
+                    and str(operation.get("message") or "")
+                    == "Server restarted before the task completed"
+                    and chat_status in {"completed", "done"}
+                )
+                if false_restart_interruption:
+                    snapshot, planning_runs_interrupted = _interrupt_running_planning_runs(
+                        snapshot,
+                        "Server restarted before this Planning completed",
+                    )
+                    repaired_operation = dict(operation)
+                    repaired_operation["state"] = "ready"
+                    repaired_operation["message"] = "Chat response completed"
+                    repaired_operation["updated_at"] = _now()
+                    repaired_operation.pop("interrupted_at", None)
+                    snapshot["operation"] = repaired_operation
+                    snapshot["saved_at"] = _now()
+                    self._write_snapshot(
+                        row["user_id"], self._snapshot_path(row["user_id"], row["id"]), snapshot,
+                    )
+                    with self._connection() as connection:
+                        connection.execute(
+                            "UPDATE case_sessions SET recovery_status = 'ready', updated_at = ?, "
+                            "revision = revision + 1 WHERE id = ? AND user_id = ?",
+                            (_now(), row["id"], row["user_id"]),
+                        )
+                    self._audit(
+                        row["user_id"], row["id"], "operation.restart_state_repaired",
+                        {
+                            "chat_status": chat_status,
+                            "planning_runs_interrupted": planning_runs_interrupted,
+                        },
+                    )
+                    continue
+
+                active_chat = chat_status in {"running", "pending", "queued", "stopping"}
+                snapshot_running = operation_state == "running" or active_chat
+                terminal_snapshot = operation_state in {"ready", "interrupted"} or chat_status in {
+                    "completed", "done", "cancelled", "canceled", "failed", "error",
+                }
+                stale_index_without_snapshot_state = (
+                    str(row["recovery_status"] or "") == "running"
+                    and not terminal_snapshot
+                )
+                if snapshot_running or stale_index_without_snapshot_state:
                     self.mark_session_interrupted(
                         row["user_id"], row["id"],
                         "Server restarted before the task completed",
                     )
+                    continue
+
+                # A Planning child may have missed its final status write even
+                # though the chat/Session transaction completed. Close only
+                # that orphaned child. The completed Session must stay ready
+                # and must not show a global restart-recovery notification.
+                if has_running_planning and terminal_snapshot:
+                    snapshot, changed = _interrupt_running_planning_runs(
+                        snapshot,
+                        "Server restarted before this Planning completed",
+                    )
+                    if changed:
+                        snapshot["saved_at"] = _now()
+                        self._write_snapshot(
+                            row["user_id"],
+                            self._snapshot_path(row["user_id"], row["id"]),
+                            snapshot,
+                        )
+                        with self._connection() as connection:
+                            connection.execute(
+                                "UPDATE case_sessions SET recovery_status = 'ready', updated_at = ?, "
+                                "revision = revision + 1 WHERE id = ? AND user_id = ?",
+                                (_now(), row["id"], row["user_id"]),
+                            )
+                        self._audit(
+                            row["user_id"], row["id"],
+                            "planning.restart_state_reconciled",
+                            {"operation_state": operation_state, "chat_status": chat_status},
+                        )
+                    continue
+
+                # A terminal snapshot wins over the denormalized SQLite
+                # index. This is the normal completed-task path and prevents
+                # a later startup from manufacturing an interruption popup.
+                desired_status = _workspace_recovery_status(snapshot)
+                if str(row["recovery_status"] or "") != desired_status:
+                    with self._connection() as connection:
+                        connection.execute(
+                            "UPDATE case_sessions SET recovery_status = ?, updated_at = ? "
+                            "WHERE id = ? AND user_id = ?",
+                            (desired_status, _now(), row["id"], row["user_id"]),
+                        )
             except WorkspaceError:
                 continue
 

@@ -5029,16 +5029,20 @@ function _clampDoseOverlayOpacity(value, fallback = 0.4) {
 // that cache hits, asynchronous slice arrivals, and rapid slider scrubbing all
 // use the same Data Tree setting without waiting for a final repaint.
 function getDoseOverlayOpacity() {
-    const runtimeOpacity = typeof state !== 'undefined'
-        ? state?.doseOverlay?.opacity
-        : undefined;
-    if (Number.isFinite(Number(runtimeOpacity))) {
-        return _clampDoseOverlayOpacity(runtimeOpacity);
-    }
+    // The Data Tree value is the operator-owned presentation state. Report
+    // and screenshot captures may request a different offscreen alpha, but
+    // they must never replace the live Viewer setting while slices are being
+    // scrubbed.
     const savedOpacity = typeof dataTreeState !== 'undefined'
         ? dataTreeState?.planning?.doseOverlay?.opacity
         : undefined;
-    return _clampDoseOverlayOpacity(savedOpacity);
+    if (Number.isFinite(Number(savedOpacity))) {
+        return _clampDoseOverlayOpacity(savedOpacity);
+    }
+    const runtimeOpacity = typeof state !== 'undefined'
+        ? state?.doseOverlay?.opacity
+        : undefined;
+    return _clampDoseOverlayOpacity(runtimeOpacity);
 }
 
 function applyDoseOverlayLayerOpacity(targetCanvas = null) {

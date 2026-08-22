@@ -222,9 +222,9 @@ def create_app(config: Optional[Dict] = None):
     app.config["MAX_CONTENT_LENGTH"] = 500 * 1024 * 1024  # 500MB max upload
 
     workspace_store = WorkspaceStore(config.get("runtime_dir"))
-    # A process cannot safely resume GPU/LLM work that disappeared during a
-    # restart.  Preserve the last checkpoint and expose it as interrupted.
-    workspace_store.mark_running_sessions_interrupted()
+    # WorkspaceStore reconciles restart lifecycle state once, immediately
+    # after opening its database. Running the scan again here used to race the
+    # first repair pass and advance revisions twice for the same Session.
     workspace_store.purge_expired_trash()
     configure_auth(app, workspace_store, config)
     register_auth_routes(app, workspace_store)

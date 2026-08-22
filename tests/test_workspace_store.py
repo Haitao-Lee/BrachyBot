@@ -894,6 +894,113 @@ def test_running_operation_is_marked_interrupted_after_restart(tmp_path):
     assert snapshot["operation"]["checkpoint"]["step"] == "dose_calc"
 
 
+def test_terminal_snapshot_patch_updates_recovery_index_before_restart(tmp_path):
+    """A completed chat transaction must clear the denormalized running index."""
+    runtime = tmp_path / "runtime"
+    store = WorkspaceStore(runtime)
+    user = store.create_user("terminal_patch_user", "hash")
+    case = store.create_session(user["id"], "Completed case")
+    agent = _Agent()
+    store.mark_operation(user["id"], case.id, agent, {
+        "state": "running",
+        "message": "Planning is in progress",
+        "checkpoint": {"kind": "chat", "task_id": "task-complete"},
+    })
+
+    store.save_snapshot_patch(user["id"], case.id, {
+        "chat": {
+            "task_id": None,
+            "last_task_id": "task-complete",
+            "task_status": "completed",
+        },
+        "operation": {
+            "state": "ready",
+            "message": "Chat response completed",
+            "checkpoint": {
+                "kind": "chat",
+                "task_id": "task-complete",
+                "status": "completed",
+            },
+        },
+    }, reason="chat.task.finalized")
+
+    assert store.get_session(user["id"], case.id).recovery_status == "ready"
+    restarted = WorkspaceStore(runtime)
+    snapshot = restarted.load_snapshot(user["id"], case.id)
+    assert snapshot["operation"]["state"] == "ready"
+    assert "interrupted_at" not in snapshot["operation"]
+
+
+def test_restart_repairs_legacy_false_interruption_for_completed_chat(tmp_path):
+    """Sessions corrupted by the old stale-index scan heal on next startup."""
+    runtime = tmp_path / "runtime"
+    store = WorkspaceStore(runtime)
+    user = store.create_user("legacy_restart_user", "hash")
+    case = store.create_session(user["id"], "Legacy false interruption")
+    store.save_snapshot_patch(user["id"], case.id, {
+        "chat": {
+            "task_id": None,
+            "last_task_id": "legacy-task",
+            "task_status": "completed",
+        },
+        "operation": {
+            "state": "ready",
+            "checkpoint": {
+                "kind": "chat",
+                "task_id": "legacy-task",
+                "status": "completed",
+            },
+        },
+    })
+    store.mark_session_interrupted(
+        user["id"], case.id, "Server restarted before the task completed",
+    )
+    assert store.load_snapshot(user["id"], case.id)["operation"]["state"] == "interrupted"
+
+    restarted = WorkspaceStore(runtime)
+    snapshot = restarted.load_snapshot(user["id"], case.id)
+    assert snapshot["operation"]["state"] == "ready"
+    assert snapshot["operation"]["message"] == "Chat response completed"
+    assert restarted.get_session(user["id"], case.id).recovery_status == "ready"
+
+
+def test_restart_closes_orphaned_planning_run_without_interrupting_completed_session(tmp_path):
+    """Planning child recovery must not create a global task interruption."""
+    runtime = tmp_path / "runtime"
+    store = WorkspaceStore(runtime)
+    user = store.create_user("orphaned_planning_user", "hash")
+    case = store.create_session(user["id"], "Completed chat with orphaned run")
+    agent = _Agent()
+    agent.memory.planning_results["planning_runs"] = [{
+        "planning_id": "planning-orphaned",
+        "status": "running",
+        "visible": True,
+    }]
+    agent.memory._planning_versions["planning_runs"] = 1
+    store.snapshot_agent(
+        user["id"],
+        case.id,
+        agent,
+        reason="completed_with_orphaned_planning",
+        operation={"state": "ready", "message": "Chat response completed"},
+    )
+    store.save_snapshot_patch(user["id"], case.id, {
+        "chat": {
+            "task_id": None,
+            "last_task_id": "completed-task",
+            "task_status": "completed",
+        },
+    })
+
+    restarted = WorkspaceStore(runtime)
+    snapshot = restarted.load_snapshot(user["id"], case.id)
+    assert snapshot["operation"]["state"] == "ready"
+    assert restarted.get_session(user["id"], case.id).recovery_status == "ready"
+    runs = snapshot["agent"]["planning_results"]["planning_runs"]
+    assert runs[0]["status"] == "interrupted"
+    assert runs[0]["error"] == "Server restarted before this Planning completed"
+
+
 def test_checkpoint_reuses_unchanged_arrays_and_prunes_replaced_versions(tmp_path):
     store = WorkspaceStore(tmp_path / "runtime")
     user = store.create_user("array_owner", "hash")

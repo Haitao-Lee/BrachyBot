@@ -764,7 +764,11 @@ def test_frontend_session_wrapper_and_dvh_do_not_drop_case_data():
     ui_api = (root / "web/app/static/js/brachybot-ui-api.js").read_text(encoding="utf-8")
     dvh = (root / "web/app/static/js/brachybot-dvh-planning.js").read_text(encoding="utf-8")
 
-    assert "headers.set('X-BrachyBot-Session', _activeApiSessionId())" in ui_api
+    # Capture the owner before dispatch. Reading the active Session again
+    # while constructing headers can bind an in-flight request to a newly
+    # selected case during a fast workspace transition.
+    assert "const requestSessionId = _activeApiSessionId()" in ui_api
+    assert "headers.set('X-BrachyBot-Session', requestSessionId)" in ui_api
     assert "fetch(API + '/planning/clear'" not in ui_api
     assert ".slice(0, 30)" not in dvh
 
