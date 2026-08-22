@@ -1659,8 +1659,6 @@ async function refreshPlanningUI(options = {}) {
                     };
 
                     const origSlices = { axial: state.slices.axial, sagittal: state.slices.sagittal, coronal: state.slices.coronal };
-                    const origOpacity = state.doseOverlay.opacity;
-                    state.doseOverlay.opacity = 0.75;
 
                     for (const cfg of axesCfg) {
                         const slider = document.getElementById('slider' + cfg.ax.charAt(0).toUpperCase() + cfg.ax.slice(1));
@@ -1672,7 +1670,7 @@ async function refreshPlanningUI(options = {}) {
                     await new Promise(r => setTimeout(r, 400));
 
                     for (const cfg of axesCfg) {
-                        const composite = _composite2DViewerCanvas(cfg.ax);
+                        const composite = _composite2DViewerCanvas(cfg.ax, { doseOpacity: 0.75 });
                         if (composite && composite.length > 1000) {
                             const idx = window.reportForm.figures.findIndex(f => f && f.axis === cfg.axis);
                             const entry = {
@@ -1690,7 +1688,6 @@ async function refreshPlanningUI(options = {}) {
                         }
                     }
 
-                    state.doseOverlay.opacity = origOpacity;
                     for (const [ax, sl] of Object.entries(origSlices)) {
                         const slider = document.getElementById('slider' + ax.charAt(0).toUpperCase() + ax.slice(1));
                         if (slider) slider.value = sl;

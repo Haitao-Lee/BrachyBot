@@ -551,7 +551,7 @@ def test_needle_render_scheduler_survives_mixed_static_asset_revisions():
     # index.html. A stale assertion here falsely reports a deployment bug and
     # hides whether the endpoint interaction bundle is really versioned.
     assert "brachybot-viewer-layout.js?v=30" in index
-    assert "brachybot-3d-manual.js?v=61" in index
+    assert "brachybot-3d-manual.js?v=62" in index
     assert "scene3D.requestRender(1)" in layout
     assert "scene3D.requestRender(2)" in layout
     assert "window.requestRender = requestRender;" in manual
@@ -566,6 +566,11 @@ def test_dose_overlay_opacity_is_invariant_during_slice_scrubbing():
     """
     manual = (ROOT / "web/app/static/js/brachybot-3d-manual.js").read_text(encoding="utf-8")
     annotation = (ROOT / "web/app/static/js/brachybot-manual-annotation.js").read_text(encoding="utf-8")
+    viewer = (ROOT / "web/app/static/js/brachybot-viewer-volume.js").read_text(encoding="utf-8")
+    report_export = (ROOT / "web/app/static/js/brachybot-report-export.js").read_text(encoding="utf-8")
+    report_editor = (ROOT / "web/app/static/js/brachybot-report-editor.js").read_text(encoding="utf-8")
+    dvh_planning = (ROOT / "web/app/static/js/brachybot-dvh-planning.js").read_text(encoding="utf-8")
+    ui_api = (ROOT / "web/app/static/js/brachybot-ui-api.js").read_text(encoding="utf-8")
     index = (ROOT / "web/app/index.html").read_text(encoding="utf-8")
 
     setter = manual.split("function setDoseOverlayOpacity(val)", 1)[1].split(
@@ -580,6 +585,10 @@ def test_dose_overlay_opacity_is_invariant_during_slice_scrubbing():
 
     assert "function getDoseOverlayOpacity()" in manual
     assert "function applyDoseOverlayLayerOpacity(targetCanvas = null)" in manual
+    opacity_getter = manual.split("function getDoseOverlayOpacity()", 1)[1].split(
+        "function applyDoseOverlayLayerOpacity", 1
+    )[0]
+    assert opacity_getter.index("savedOpacity") < opacity_getter.index("runtimeOpacity")
     assert "applyDoseOverlayLayerOpacity(doseCanvas);" in renderer
     assert "imageData.data[idx + 3] = 255;" in renderer
     assert "Math.floor(opacity * 255)" not in renderer
@@ -590,8 +599,22 @@ def test_dose_overlay_opacity_is_invariant_during_slice_scrubbing():
     assert "applyDoseOverlayLayerOpacity();" in (
         ROOT / "web/app/static/js/brachybot-viewer-volume.js"
     ).read_text(encoding="utf-8")
-    assert "brachybot-viewer-volume.js?v=36" in index
-    assert "brachybot-3d-manual.js?v=61" in index
+    update_slice = viewer.split("function updateSlice(view, val)", 1)[1].split(
+        "let _viewerRefreshTimer", 1
+    )[0]
+    assert update_slice.index("applyDoseOverlayLayerOpacity(") < update_slice.index(
+        "renderSliceFromVolume(view, sliceIndex)"
+    )
+    assert "function _composite2DViewerCanvas(axis, options = {})" in report_export
+    assert "options.doseOpacity" in report_export
+    assert "state.doseOverlay.opacity = 0.75" not in report_editor
+    assert "state.doseOverlay.opacity = 0.75" not in dvh_planning
+    assert "state.doseOverlay.opacity = 0.7" not in ui_api
+    assert "_composite2DViewerCanvas(cfg.ax, { doseOpacity: 0.75 })" in report_editor
+    assert "_composite2DViewerCanvas(cfg.ax, { doseOpacity: 0.75 })" in dvh_planning
+    assert "_composite2DViewerCanvas(a.ax, { doseOpacity: 0.7 })" in ui_api
+    assert "brachybot-viewer-volume.js?v=37" in index
+    assert "brachybot-3d-manual.js?v=62" in index
     assert "brachybot-manual-annotation.js?v=14" in index
 
 

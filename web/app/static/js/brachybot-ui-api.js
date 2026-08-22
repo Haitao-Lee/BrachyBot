@@ -4895,14 +4895,9 @@ async function _captureDoseOverviewDataUrl() {
         coronal: state.slices?.coronal || 0,
     };
     let origVisible = null;
-    let origOpacity = null;
     if (state.doseOverlay) {
         origVisible = state.doseOverlay.visible;
-        origOpacity = state.doseOverlay.opacity;
         state.doseOverlay.visible = true;
-        if (typeof state.doseOverlay.opacity === 'number' && state.doseOverlay.opacity < 0.55) {
-            state.doseOverlay.opacity = 0.7;
-        }
         updateDoseColorbars(true, state.doseOverlay.doseMin, state.doseOverlay.doseMax);
     }
     const pv = state.doseOverlay && state.doseOverlay.peakVoxel;
@@ -4917,7 +4912,6 @@ async function _captureDoseOverviewDataUrl() {
         }
         if (state.doseOverlay && origVisible !== null) {
             state.doseOverlay.visible = origVisible;
-            state.doseOverlay.opacity = origOpacity;
             updateDoseColorbars(state.doseOverlay.visible, state.doseOverlay.doseMin, state.doseOverlay.doseMax);
         }
     };
@@ -4945,7 +4939,10 @@ async function _captureDoseOverviewDataUrl() {
             { ax: 'axial', label: 'Axial' },
             { ax: 'sagittal', label: 'Sagittal' },
             { ax: 'coronal', label: 'Coronal' },
-        ].map(a => ({ ...a, dataUrl: _composite2DViewerCanvas(a.ax) })).filter(x => x.dataUrl);
+        ].map(a => ({
+            ...a,
+            dataUrl: _composite2DViewerCanvas(a.ax, { doseOpacity: 0.7 }),
+        })).filter(x => x.dataUrl);
         if (!imgs.length) return null;
 
         // The report uses one composed evidence figure. Reuse that visual

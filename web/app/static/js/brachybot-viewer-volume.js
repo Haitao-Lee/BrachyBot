@@ -1994,6 +1994,14 @@ function updateSlice(view, val) {
     state.slices[view] = sliceIndex;
     const label = document.getElementById('sliceLabel' + capitalize(view));
     if (label) label.textContent = sliceIndex;
+    // Apply the operator's Data Tree opacity before any synchronous CT work
+    // or asynchronous dose response can paint this frame. This keeps the
+    // existing layer invariant for the complete pointer-drag lifecycle.
+    if (typeof applyDoseOverlayLayerOpacity === 'function') {
+        applyDoseOverlayLayerOpacity(
+            document.getElementById('doseOverlayCanvas' + capitalize(view)),
+        );
+    }
 
     // Use volume-based rendering for instant response
     if (volumeData && volumeShape) {

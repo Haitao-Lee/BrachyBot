@@ -1446,18 +1446,17 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
             const pv = state.doseOverlay.peakVoxel;
             uiDebugLog('[Report] Figure 2: starting dose+DVH capture, peak voxel:', pv);
 
-            // Save original slices and opacity
+            // Save the operator's slices and visibility. Capture-specific
+            // dose opacity is applied only by the offscreen compositor.
             const origSlices = {
                 axial: state.slices.axial,
                 sagittal: state.slices.sagittal,
                 coronal: state.slices.coronal,
             };
-            const origOpacity = state.doseOverlay.opacity;
             const origVisible = state.doseOverlay.visible;
 
-            // Ensure dose overlay is visible and high opacity for screenshot
+            // Ensure dose data is rendered; do not change live opacity.
             state.doseOverlay.visible = true;
-            state.doseOverlay.opacity = 0.75;
 
             // Navigate all 3 views to peak dose voxel
             const axesCfg = [
@@ -1486,7 +1485,7 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
 
             // Capture all 3 views
             for (const cfg of axesCfg) {
-                const composite = _composite2DViewerCanvas(cfg.ax);
+                const composite = _composite2DViewerCanvas(cfg.ax, { doseOpacity: 0.75 });
                 if (composite) {
                     _push(cfg.title, cfg.caption, composite, cfg.axis, {
                         figureGroup: 'figure2', figureNumber: 2,
@@ -1688,9 +1687,8 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
                 }
             }
 
-            // Restore original slices and opacity
+            // Restore original slices and visibility.
             if (!isCurrentCapture()) return { stale: true };
-            state.doseOverlay.opacity = origOpacity;
             state.doseOverlay.visible = origVisible;
             for (const [ax, sl] of Object.entries(origSlices)) {
                 const slider = document.getElementById('slider' + ax.charAt(0).toUpperCase() + ax.slice(1));
