@@ -551,10 +551,48 @@ def test_needle_render_scheduler_survives_mixed_static_asset_revisions():
     # index.html. A stale assertion here falsely reports a deployment bug and
     # hides whether the endpoint interaction bundle is really versioned.
     assert "brachybot-viewer-layout.js?v=30" in index
-    assert "brachybot-3d-manual.js?v=60" in index
+    assert "brachybot-3d-manual.js?v=61" in index
     assert "scene3D.requestRender(1)" in layout
     assert "scene3D.requestRender(2)" in layout
     assert "window.requestRender = requestRender;" in manual
+
+
+def test_dose_overlay_opacity_is_invariant_during_slice_scrubbing():
+    """Cached and asynchronous dose slices must share one layer opacity.
+
+    Regression: opacity used to be baked into every slice's pixels. Rapidly
+    scrubbing a slice slider could therefore display an opaque intermediate
+    frame until the final, debounced repaint restored the Data Tree opacity.
+    """
+    manual = (ROOT / "web/app/static/js/brachybot-3d-manual.js").read_text(encoding="utf-8")
+    annotation = (ROOT / "web/app/static/js/brachybot-manual-annotation.js").read_text(encoding="utf-8")
+    index = (ROOT / "web/app/index.html").read_text(encoding="utf-8")
+
+    setter = manual.split("function setDoseOverlayOpacity(val)", 1)[1].split(
+        "// ============ DOSE CONTOUR", 1
+    )[0]
+    renderer = manual.split("function renderDoseOverlayOnLayer", 1)[1].split(
+        "function toggleDoseOverlayVisibility", 1
+    )[0]
+    geometry = annotation.split("function _applySliceLayerGeometry", 1)[1].split(
+        "function _syncExistingSliceLayer", 1
+    )[0]
+
+    assert "function getDoseOverlayOpacity()" in manual
+    assert "function applyDoseOverlayLayerOpacity(targetCanvas = null)" in manual
+    assert "applyDoseOverlayLayerOpacity(doseCanvas);" in renderer
+    assert "imageData.data[idx + 3] = 255;" in renderer
+    assert "Math.floor(opacity * 255)" not in renderer
+    assert "dataTreeState.planning.doseOverlay.opacity = opacity;" in setter
+    assert "_scheduleDataTreeSave('viewer.opacity:dose_overlay')" in setter
+    assert "updateSlice(" not in setter
+    assert "applyDoseOverlayLayerOpacity(layerCanvas);" in geometry
+    assert "applyDoseOverlayLayerOpacity();" in (
+        ROOT / "web/app/static/js/brachybot-viewer-volume.js"
+    ).read_text(encoding="utf-8")
+    assert "brachybot-viewer-volume.js?v=36" in index
+    assert "brachybot-3d-manual.js?v=61" in index
+    assert "brachybot-manual-annotation.js?v=14" in index
 
 
 def test_manual_seed_defaults_to_needle_middle_and_is_proximity_selectable():

@@ -1081,6 +1081,10 @@ function _applySliceLayerGeometry(geometry, layerCanvas, zIndex) {
         ? ''
         : _viewerTransformString();
     layerCanvas.style.transformOrigin = 'center center';
+    if (layerCanvas.id?.startsWith('doseOverlayCanvas')
+        && typeof applyDoseOverlayLayerOpacity === 'function') {
+        applyDoseOverlayLayerOpacity(layerCanvas);
+    }
     return true;
 }
 
@@ -1255,6 +1259,9 @@ function renderDoseForCurrentSlice(axis, sliceIndex) {
         sliceCanvas._doseCanvas = doseCanvas;
     }
     _syncLayerToSliceCanvas(axis, doseCanvas, 5);
+    if (typeof applyDoseOverlayLayerOpacity === 'function') {
+        applyDoseOverlayLayerOpacity(doseCanvas);
+    }
 
     const cacheKey = axis + '_' + sliceIndex;
     if (state.doseOverlay.slices[cacheKey]) {
