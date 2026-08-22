@@ -2348,6 +2348,26 @@
         return data;
     }
 
+    window.reconcileActiveSession = async function reconcileActiveSession(preferredSessionId = '') {
+        const preferred = String(preferredSessionId || '').trim().toLowerCase();
+        const data = await loadServerSessions({ commit: false });
+        const nextSessions = sessionMapFromPayload(data);
+        const nextIds = Object.keys(nextSessions);
+        const serverActive = String(data.active_session_id || '').trim().toLowerCase();
+        const resolved = preferred && nextSessions[preferred]
+            ? preferred
+            : (serverActive && nextSessions[serverActive] ? serverActive : (nextIds[0] || ''));
+        if (!resolved) {
+            throw new Error('No available case session was found.');
+        }
+        sessions = nextSessions;
+        activeSessionId = resolved;
+        if (typeof state !== 'undefined') state.sessionId = resolved;
+        updateRecycleBinCount(data?.trashed_count);
+        renderSessionList();
+        return resolved;
+    };
+
     async function loadActiveWorkspace({
         commit = true,
         timeoutMs = WORKSPACE_REQUEST_TIMEOUT_MS,
@@ -2396,7 +2416,23 @@
     async function recoverWorkspaceAfterTransitionFailure(generation) {
         try {
             const sessionData = await loadServerSessions({ commit: false, timeoutMs: WORKSPACE_RECOVERY_TIMEOUT_MS });
-            const workspace = await loadActiveWorkspace({ commit: false, timeoutMs: WORKSPACE_RECOVERY_TIMEOUT_MS });
+            const availableSessions = sessionMapFromPayload(sessionData);
+            const serverActive = String(sessionData.active_session_id || '');
+            const recoverySessionId = serverActive && availableSessions[serverActive]
+                ? serverActive
+                : (Object.keys(availableSessions)[0] || '');
+            if (!recoverySessionId) {
+                throw new Error('No available case session was found during recovery.');
+            }
+            // The failed transition may leave the browser pointing at an
+            // optimistic, deleted, or otherwise stale case. Bind the recovery
+            // snapshot to the authoritative server list instead of replaying
+            // that stale identity and cascading 404s across every API call.
+            const workspace = await loadActiveWorkspace({
+                commit: false,
+                timeoutMs: WORKSPACE_RECOVERY_TIMEOUT_MS,
+                sessionId: recoverySessionId,
+            });
             if (!isCurrentTransition(generation)) return;
             applySessionList(sessionData);
             revision = workspace?.session?.revision ?? null;
@@ -2534,7 +2570,7 @@
             }
             let response;
             try {
-                response = await workspaceFetch('/api/sessions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: 'New case' }) }, 5000);
+                response = await workspaceFetch('/api/sessions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: 'New case' }) });
             } catch (error) {
                 delete sessions[optimisticId];
                 if (pendingSessionCreationId === optimisticId) pendingSessionCreationId = null;

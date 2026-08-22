@@ -13,6 +13,57 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="Node.js is required for browser bridge runtime coverage")
+def test_reconcile_active_session_replaces_a_stale_browser_case():
+    """A deleted/stale local case must be replaced before an upload starts."""
+
+    bridge = (ROOT / "web/app/static/js/brachybot-workspace.js").as_posix()
+    script = rf"""
+const assert = require('assert');
+const fs = require('fs');
+const vm = require('vm');
+
+const stale = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+const durable = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+global.window = {{}};
+global.document = {{
+  body: {{ classList: {{ toggle() {{}}, add() {{}}, remove() {{}} }} }},
+  getElementById() {{ return null; }},
+  querySelectorAll() {{ return []; }},
+}};
+global.sessions = {{ [stale]: {{ id: stale, title: 'Stale case', messages: [] }} }};
+global.activeSessionId = stale;
+global.state = {{ sessionId: stale }};
+global.renderSessionList = () => {{}};
+global.fetch = async (url) => {{
+  assert.strictEqual(url, '/api/sessions');
+  return {{ ok: true, json: async () => ({{
+    active_session_id: durable,
+    sessions: [{{ id: durable, title: 'Durable case', created_at: 1, updated_at: 2 }}],
+    trashed_count: 0,
+  }}) }};
+}};
+
+vm.runInThisContext(fs.readFileSync('{bridge}', 'utf8'), {{ filename: 'brachybot-workspace.js' }});
+(async () => {{
+  const resolved = await window.reconcileActiveSession(stale);
+  assert.strictEqual(resolved, durable);
+  assert.strictEqual(activeSessionId, durable);
+  assert.strictEqual(state.sessionId, durable);
+  assert.deepStrictEqual(Object.keys(sessions), [durable]);
+  process.exit(0);
+}})().catch(error => {{ console.error(error); process.exit(1); }});
+"""
+    completed = subprocess.run(
+        ["node", "-e", script],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert completed.returncode == 0, completed.stderr or completed.stdout
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="Node.js is required for browser bridge runtime coverage")
 def test_second_case_transition_cannot_overtake_first_request():
     """A slow create cannot be overtaken by a second sidebar click.
 
