@@ -941,7 +941,9 @@ def test_restart_repairs_legacy_false_interruption_for_completed_chat(tmp_path):
         "chat": {
             "task_id": None,
             "last_task_id": "legacy-task",
-            "task_status": "completed",
+            # Older releases reset this field to idle after completing the
+            # task; the matching completed checkpoint is the durable proof.
+            "task_status": "idle",
         },
         "operation": {
             "state": "ready",

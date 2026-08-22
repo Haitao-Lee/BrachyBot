@@ -238,6 +238,43 @@ def _chat_task_status(snapshot: Mapping[str, Any]) -> str:
     return str(chat.get("task_status") or "") if isinstance(chat, Mapping) else ""
 
 
+def _chat_task_is_durably_complete(snapshot: Mapping[str, Any]) -> bool:
+    """Recognize current and legacy persisted chat completion contracts.
+
+    Older snapshots reset ``chat.task_status`` to ``idle`` after finalizing a
+    task. They still persist an unambiguous terminal checkpoint whose task ID
+    matches ``chat.last_task_id`` and clear ``chat.task_id``. Use those
+    structured lifecycle fields rather than message text or user-language
+    heuristics when reconciling restart state.
+    """
+    chat = snapshot.get("chat")
+    if not isinstance(chat, Mapping):
+        return False
+    status = str(chat.get("task_status") or "")
+    if status in {"completed", "done"}:
+        return True
+    if chat.get("task_id"):
+        return False
+    operation = snapshot.get("operation")
+    checkpoint = (
+        operation.get("checkpoint")
+        if isinstance(operation, Mapping) else None
+    )
+    if not isinstance(checkpoint, Mapping):
+        return False
+    if str(checkpoint.get("kind") or "") != "chat":
+        return False
+    if str(checkpoint.get("status") or "") not in {"completed", "done"}:
+        return False
+    checkpoint_task_id = str(checkpoint.get("task_id") or "")
+    last_task_id = str(chat.get("last_task_id") or "")
+    return bool(
+        checkpoint_task_id
+        and last_task_id
+        and checkpoint_task_id == last_task_id
+    )
+
+
 def _interrupt_running_planning_runs(
     snapshot: Mapping[str, Any],
     detail: str,
@@ -2567,7 +2604,7 @@ class WorkspaceStore:
                     operation_state == "interrupted"
                     and str(operation.get("message") or "")
                     == "Server restarted before the task completed"
-                    and chat_status in {"completed", "done"}
+                    and _chat_task_is_durably_complete(snapshot)
                 )
                 if false_restart_interruption:
                     snapshot, planning_runs_interrupted = _interrupt_running_planning_runs(
@@ -2603,7 +2640,7 @@ class WorkspaceStore:
                 snapshot_running = operation_state == "running" or active_chat
                 terminal_snapshot = operation_state in {"ready", "interrupted"} or chat_status in {
                     "completed", "done", "cancelled", "canceled", "failed", "error",
-                }
+                } or _chat_task_is_durably_complete(snapshot)
                 stale_index_without_snapshot_state = (
                     str(row["recovery_status"] or "") == "running"
                     and not terminal_snapshot
