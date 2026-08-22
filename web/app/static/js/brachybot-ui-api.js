@@ -740,7 +740,15 @@ var manualPlanningState = {
 };
 
 function _activeApiSessionId() {
-    return (typeof activeSessionId !== 'undefined' && activeSessionId) || state.sessionId || 'web';
+    const candidate = (typeof activeSessionId !== 'undefined' && activeSessionId)
+        || state.sessionId
+        || '';
+    const normalized = String(candidate || '').trim().toLowerCase();
+    // Presentation-only placeholders (for example "web" or "pending-...")
+    // are never valid request identities. Sending one as a case header makes
+    // every data-plane endpoint correctly reject the request as a cross-case
+    // access, which then strands uploads and workspace recovery behind 404s.
+    return /^[a-f0-9]{32}$/.test(normalized) ? normalized : '';
 }
 
 function _shouldLogTrainingFeedback(message, type = '', label = '') {
@@ -1079,8 +1087,17 @@ function instrumentUIControls() {
         const nextInit = Object.assign({}, init || {});
         const headers = new Headers(nextInit.headers || (input && input.headers) || {});
         if (key && !headers.has('X-API-Key')) headers.set('X-API-Key', key);
-        if (!headers.has('X-BrachyBot-Session')) {
-            headers.set('X-BrachyBot-Session', _activeApiSessionId());
+        const pathname = (() => {
+            try { return new URL(url, window.location.href).pathname; }
+            catch (_) { return ''; }
+        })();
+        const controlPlaneRequest = pathname.startsWith('/api/auth/')
+            || pathname === '/api/workspace/lease'
+            || pathname === '/api/sessions'
+            || pathname.startsWith('/api/sessions/');
+        const requestSessionId = _activeApiSessionId();
+        if (requestSessionId && !controlPlaneRequest && !headers.has('X-BrachyBot-Session')) {
+            headers.set('X-BrachyBot-Session', requestSessionId);
         }
         nextInit.headers = headers;
         return nativeFetch(input, nextInit);
@@ -1124,10 +1141,11 @@ function _uploadProgressElements(targetId) {
 async function handleFileSelect(input, targetId) {
     const files = input.files ? Array.from(input.files) : [];
     if (files.length === 0) return;
-    const ownerSessionId = String(_activeApiSessionId());
-    const ownerCtPath = (document.getElementById('ctPath')?.value || '').trim();
-    const ownerTumorType = document.getElementById('ctvModelSelect')?.value || null;
-    const isCurrentOwner = () => ownerSessionId === String(_activeApiSessionId());
+    let ownerSessionId = '';
+    let ownerCtPath = '';
+    let ownerTumorType = null;
+    const isCurrentOwner = () => !!ownerSessionId
+        && ownerSessionId === String(_activeApiSessionId());
 
     const pathInput = document.getElementById(targetId);
     const { overlay, progressText, progressFilename } = _uploadProgressElements(targetId);
@@ -1149,6 +1167,31 @@ async function handleFileSelect(input, targetId) {
     pathInput.disabled = true;
 
     try {
+        const uploadLanguage = window._i18nLang === 'zh' ? 'zh' : 'en';
+        if (typeof window.awaitActiveSessionReady !== 'function') {
+            throw new Error(uploadLanguage === 'zh'
+                ? '病例工作区仍在启动，请稍候后重试。'
+                : 'The case workspace is still starting. Please wait a moment and retry.');
+        }
+        ownerSessionId = String(await window.awaitActiveSessionReady());
+        if (!/^[a-f0-9]{32}$/.test(ownerSessionId)) {
+            throw new Error(uploadLanguage === 'zh'
+                ? '当前病例不可用。'
+                : 'The selected case is unavailable.');
+        }
+        if (typeof window.reconcileActiveSession === 'function') {
+            const requestedSessionId = ownerSessionId;
+            const reconciledSessionId = String(await window.reconcileActiveSession(ownerSessionId));
+            ownerSessionId = reconciledSessionId;
+            if (reconciledSessionId !== requestedSessionId && targetId !== 'ctPath') {
+                throw new Error(uploadLanguage === 'zh'
+                    ? '病例已切换，未导入该 Mask。请等待新病例加载完成后重新选择文件。'
+                    : 'The case changed, so the mask was not imported. Wait for the new case to load and select the file again.');
+            }
+        }
+        ownerCtPath = (document.getElementById('ctPath')?.value || '').trim();
+        ownerTumorType = document.getElementById('ctvModelSelect')?.value || null;
+
         const formData = new FormData();
         // Append every file with the same form key — the server's
         // `getlist('file')` collects them all. For folder uploads each
@@ -1168,7 +1211,7 @@ async function handleFileSelect(input, targetId) {
         }
 
         const data = await res.json();
-        if (isCurrentOwner()) {
+        if (!ownerSessionId || isCurrentOwner()) {
             pathInput.value = data.path;
             pathInput.disabled = false;
         }
@@ -1205,11 +1248,17 @@ async function handleFileSelect(input, targetId) {
             overlay.classList.remove('active');
             pathInput.value = '';
             pathInput.disabled = false;
-            showBrachyBotNotice(`File upload failed: ${e.message || e}`, 'error');
+            const message = String(e?.message || e || '');
+            showBrachyBotNotice(
+                window._i18nLang === 'zh'
+                    ? `文件上传失败：${message}`
+                    : `File upload failed: ${message}`,
+                'error',
+            );
         }
     }
 
-    if (isCurrentOwner()) input.value = '';
+    if (!ownerSessionId || isCurrentOwner()) input.value = '';
 }
 
 /** Import a user-provided label into the session-scoped agent memory. */

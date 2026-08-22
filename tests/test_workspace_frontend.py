@@ -381,8 +381,46 @@ def test_workspace_transitions_publish_measurable_first_paint_and_restore_stages
     assert "restore.fully_interactive" in ui_api
     # Versioned URLs are intentional cache invalidation points. Keep this
     # assertion aligned with the workspace/report artifact restore contract.
-    assert "brachybot-workspace.js?v=34" in index
-    assert "brachybot-ui-api.js?v=41" in index
+    assert "brachybot-workspace.js?v=35" in index
+    assert "brachybot-ui-api.js?v=42" in index
+
+
+def test_case_owned_api_requests_never_use_presentation_placeholders():
+    """Uploads and data requests must carry only durable server case IDs."""
+    ui_api = read("web/app/static/js/brachybot-ui-api.js")
+    workspace = read("web/app/static/js/brachybot-workspace.js")
+
+    session_helper = ui_api.split("function _activeApiSessionId()", 1)[1].split(
+        "function _shouldLogTrainingFeedback", 1
+    )[0]
+    assert "'web'" not in session_helper
+    assert "/^[a-f0-9]{32}$/.test(normalized)" in session_helper
+
+    fetch_wrapper = ui_api.split("function brachybotFetch", 1)[1].split(
+        "// Abort controller for stopping streaming responses", 1
+    )[0]
+    assert "controlPlaneRequest" in fetch_wrapper
+    assert "requestSessionId && !controlPlaneRequest" in fetch_wrapper
+
+    upload = ui_api.split("async function handleFileSelect", 1)[1].split(
+        "/** Import a user-provided label", 1
+    )[0]
+    assert "await window.awaitActiveSessionReady()" in upload
+    assert "await window.reconcileActiveSession(ownerSessionId)" in upload
+    assert "headers: { 'X-BrachyBot-Session': ownerSessionId }" in upload
+
+    assert "window.reconcileActiveSession" in workspace
+
+
+def test_transition_recovery_uses_the_server_authoritative_case():
+    """A stale browser case must not cascade 404s after transition failure."""
+    workspace = read("web/app/static/js/brachybot-workspace.js")
+    recovery = workspace.split("async function recoverWorkspaceAfterTransitionFailure", 1)[1].split(
+        "window.loadSessions", 1
+    )[0]
+    assert "const recoverySessionId" in recovery
+    assert "sessionId: recoverySessionId" in recovery
+    assert "loadActiveWorkspace({ commit: false" not in recovery
 
 
 def test_workspace_fetch_preserves_external_transition_abort_semantics():
