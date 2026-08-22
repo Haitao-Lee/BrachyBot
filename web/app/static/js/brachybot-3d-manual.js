@@ -5018,6 +5018,45 @@ let _doseOverlayOpacity = 0.5;
 // dose state of the newly selected workspace.
 let _doseOverlayLoadGeneration = 0;
 
+function _clampDoseOverlayOpacity(value, fallback = 0.4) {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) return fallback;
+    return Math.max(0, Math.min(1, numeric));
+}
+
+// Dose opacity is a presentation property of the overlay layer, not a pixel
+// property of an individual cached slice. Keeping it on the canvas guarantees
+// that cache hits, asynchronous slice arrivals, and rapid slider scrubbing all
+// use the same Data Tree setting without waiting for a final repaint.
+function getDoseOverlayOpacity() {
+    const runtimeOpacity = typeof state !== 'undefined'
+        ? state?.doseOverlay?.opacity
+        : undefined;
+    if (Number.isFinite(Number(runtimeOpacity))) {
+        return _clampDoseOverlayOpacity(runtimeOpacity);
+    }
+    const savedOpacity = typeof dataTreeState !== 'undefined'
+        ? dataTreeState?.planning?.doseOverlay?.opacity
+        : undefined;
+    return _clampDoseOverlayOpacity(savedOpacity);
+}
+
+function applyDoseOverlayLayerOpacity(targetCanvas = null) {
+    const opacity = getDoseOverlayOpacity();
+    const canvases = targetCanvas
+        ? [targetCanvas]
+        : ['Axial', 'Sagittal', 'Coronal']
+            .map(axis => document.getElementById(`doseOverlayCanvas${axis}`))
+            .filter(Boolean);
+    canvases.forEach(canvas => {
+        canvas.style.opacity = String(opacity);
+        canvas.dataset.doseOpacity = String(opacity);
+    });
+    return opacity;
+}
+window.getDoseOverlayOpacity = getDoseOverlayOpacity;
+window.applyDoseOverlayLayerOpacity = applyDoseOverlayLayerOpacity;
+
 function _doseOverlaySessionId() {
     if (typeof activeSessionId !== 'undefined' && activeSessionId) return String(activeSessionId);
     return String(state?.sessionId || '');
@@ -5671,8 +5710,10 @@ async function _loadDoseOverlayImpl(retryAttempt = 0) {
         }
         // Preserve user-set opacity when reloading (e.g. after manual
         // recompute or when Dose Surface triggers a reload). Default to
-        // 0.5 only on the very first load.
-        const prevOpacity = state.doseOverlay?.opacity;
+        // 0.4 only on the very first load.
+        const prevOpacity = Number.isFinite(Number(state.doseOverlay?.opacity))
+            ? state.doseOverlay.opacity
+            : dataTreeState?.planning?.doseOverlay?.opacity;
         state.doseOverlay = {
             shape: data.dose_shape,
             planningId: data.planning_id || _doseContourPlanningId(),
@@ -5688,7 +5729,7 @@ async function _loadDoseOverlayImpl(retryAttempt = 0) {
             doseUnits: data.dose_units || 'normalized_model_output',
             doseScaleGy: data.dose_scale_gy || _getDoseScaleGy(),
             visible: true,
-            opacity: Number.isFinite(prevOpacity) ? prevOpacity : 0.4,
+            opacity: _clampDoseOverlayOpacity(prevOpacity),
             slices: {},  // Cache: {axis_index: sliceData}
             maxSlice: {
                 axial: (data.dose_shape?.[0] || 200) - 1,
@@ -5703,6 +5744,10 @@ async function _loadDoseOverlayImpl(retryAttempt = 0) {
                     : data.peak_voxel.z,
             } : null,
         };
+        if (dataTreeState?.planning?.doseOverlay) {
+            dataTreeState.planning.doseOverlay.opacity = state.doseOverlay.opacity;
+        }
+        applyDoseOverlayLayerOpacity();
         if (typeof invalidateDoseOverlayRenderCache === 'function') invalidateDoseOverlayRenderCache();
 
         renderDataTree();
@@ -5874,7 +5919,7 @@ function renderDoseOverlayOnLayer(doseCanvas, axis, sliceIndex, sliceData) {
     const cols = sliceData[0]?.length || 0;
     if (rows === 0 || cols === 0) return;
 
-    const opacity = state.doseOverlay.opacity;
+    applyDoseOverlayLayerOpacity(doseCanvas);
     const tmpCanvas = document.createElement('canvas');
     tmpCanvas.width = w;
     tmpCanvas.height = h;
@@ -5895,7 +5940,9 @@ function renderDoseOverlayOnLayer(doseCanvas, axis, sliceIndex, sliceData) {
             imageData.data[idx] = r;
             imageData.data[idx + 1] = g;
             imageData.data[idx + 2] = b;
-            imageData.data[idx + 3] = Math.floor(opacity * 255);
+            // The canvas owns opacity. Pixels remain fully opaque so changing
+            // a Data Tree slider never requires regenerating every dose slice.
+            imageData.data[idx + 3] = 255;
         }
     }
     tmpCtx.putImageData(imageData, 0, 0);
@@ -5939,20 +5986,23 @@ function toggleDoseOverlayVisibility() {
 
 function setDoseOverlayOpacity(val) {
     if (!state.doseOverlay) return;
-    state.doseOverlay.opacity = val / 100;
+    const opacity = _clampDoseOverlayOpacity(Number(val) / 100);
+    state.doseOverlay.opacity = opacity;
+    if (dataTreeState?.planning?.doseOverlay) {
+        dataTreeState.planning.doseOverlay.opacity = opacity;
+    }
+    // Apply synchronously while the pointer is captured by the slider. This
+    // avoids expensive slice redraws and keeps opacity invariant during scrub.
+    applyDoseOverlayLayerOpacity();
     // Update label
     const label = document.getElementById('doseOpacityVal');
     if (label) label.textContent = val + '%';
     // Keep the data tree slider in sync so it doesn't jump on the next render.
     const treeSlider = document.querySelector('[data-item="dose_overlay"] .opacity-slider');
     if (treeSlider) treeSlider.value = val;
-    // Force re-render by clearing the "last rendered" tracker
-    // (otherwise the cache check skips re-render when slice hasn't changed)
-    if (typeof invalidateDoseOverlayRenderCache === 'function') invalidateDoseOverlayRenderCache();
-    // Re-render current slices
-    updateSlice('axial', state.slices.axial);
-    updateSlice('coronal', state.slices.coronal);
-    updateSlice('sagittal', state.slices.sagittal);
+    if (typeof _scheduleDataTreeSave === 'function') {
+        _scheduleDataTreeSave('viewer.opacity:dose_overlay');
+    }
 }
 
 // ============ DOSE CONTOUR LINES (iso-dose lines on 2D viewers) ============

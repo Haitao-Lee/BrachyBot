@@ -2793,7 +2793,9 @@ function reconcileDataTreeVisualNodes() {
             // Preserved on the dose node so a refresh does not reset them.
             colorbarVisible2D: dataTreeState.planning.doseOverlay?.colorbarVisible2D !== false,
             colorbarVisible3D: dataTreeState.planning.doseOverlay?.colorbarVisible3D !== false,
-            opacity: Number(overlay.opacity ?? state.doseOpacity ?? 0.4),
+            opacity: typeof getDoseOverlayOpacity === 'function'
+                ? getDoseOverlayOpacity()
+                : Number(overlay.opacity ?? state.doseOpacity ?? 0.4),
             color: '#f59e0b', loaded: true,
         }, 'dose_contour_2d', 'planning')
         : null;
@@ -4235,7 +4237,9 @@ function renderDataTree() {
     // Dose overlay toggle (2D overlay on CT slices)
     if (dataTreeState.planning.doseOverlay) {
         const ovVis = isDataTreeNodeVisible2D(dataTreeState.planning.doseOverlay);
-        const ovOp = state.doseOverlay.opacity;
+        const ovOp = typeof getDoseOverlayOpacity === 'function'
+            ? getDoseOverlayOpacity()
+            : Number(state.doseOverlay?.opacity ?? dataTreeState.planning.doseOverlay.opacity ?? 0.4);
         html += `<div class="tree-item" data-item="dose_overlay" data-node-id="${escHtml(dataTreeState.planning.doseOverlay.nodeId || 'dose_overlay')}" data-node-type="dose_contour_2d" data-status="${escHtml(dataTreeState.planning.doseOverlay.status || 'ready')}" onclick="handleTreeItemClick('dose_overlay', event)" oncontextmenu="event.preventDefault();event.stopPropagation();handleTreeItemRightClick('dose_overlay', event)" style="display:flex;align-items:center;gap:6px;padding:2px 8px;font-size:0.7rem;">
             <button class="eye-btn ${ovVis ? '' : 'hidden'}" onclick="event.stopPropagation();toggleDataVisibility('dose_overlay')" style="font-size:0.65rem;">${ovVis ? '&#128065;' : '&#128064;'}</button>
             <span style="color:#22d3ee;">◉</span>
@@ -6461,6 +6465,12 @@ function setGroupOpacity(category, value) {
                 applyMeshOpacity(scene3D.meshes[`dose_iso_${level.threshold}`], opacity, level.visible !== false);
             });
             if (state.doseOverlay) state.doseOverlay.opacity = opacity;
+            if (dataTreeState.planning.doseOverlay) {
+                dataTreeState.planning.doseOverlay.opacity = opacity;
+            }
+            if (typeof applyDoseOverlayLayerOpacity === 'function') {
+                applyDoseOverlayLayerOpacity();
+            }
             (dataTreeState.planning.meshes || []).forEach(item => {
                 applyMeshOpacity(scene3D.meshes[item.id], opacity, item.visible !== false);
             });
