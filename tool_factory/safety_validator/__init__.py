@@ -240,7 +240,11 @@ Capabilities:
                 "description": "Action: validate, check_dose, check_coverage, check_hotspots, pre_export",
                 "enum": ["validate", "check_dose", "check_coverage", "check_hotspots", "pre_export"]
             },
-            "plan": {"type": "object", "description": "Plan data with metrics"},
+            "plan": {
+                "type": "object",
+                "description": "Current active Planning data injected by the server",
+                "x-server-injected": True,
+            },
             "organ": {"type": "string", "description": "Specific organ to check (for check_dose)"},
             "tumor_type": {"type": "string", "description": "Tumor site for per-site thresholds (e.g. 'prostate', 'cervical', 'pancreatic')"},
             "strict": {
@@ -339,8 +343,27 @@ Capabilities:
                 "severity": "WARNING",
                 "message": "No source-backed clinical standard is available for this site.",
             })
+        # Clinical standards store volume metrics as fractions and D90 as a
+        # fraction of prescription. Restored dose results normally expose Gy;
+        # normalize them once here before applying any source-backed rule.
+        rule_metrics = dict(metrics)
+        for key in ("v100", "v150", "v200"):
+            if rule_metrics.get(key) is not None:
+                rule_metrics[key] = normalized_fraction(rule_metrics[key])
+        d90 = rule_metrics.get("d90")
+        if isinstance(d90, (int, float)) and d90 > 5:
+            prescription = resolve_prescription_gy(
+                plan.get("plan_config") if isinstance(plan.get("plan_config"), dict) else {},
+                metrics,
+            )
+            rule_metrics["d90"] = (
+                d90 / prescription
+                if isinstance(prescription, (int, float)) and prescription > 0
+                else None
+            )
+
         for rule in rules:
-            result = self._check_rule(metrics, rule, strict)
+            result = self._check_rule(rule_metrics, rule, strict)
             if result:
                 if result["severity"] == "CRITICAL":
                     violations.append(result)
@@ -391,21 +414,34 @@ Capabilities:
                 "message": f"OAR violation: {ov.get('organ', 'unknown')} exceeds dose limit",
             })
 
-        safe = standards_available and len(violations) == 0
+        # A warning means the plan remains conditional.  Calling that state
+        # "safe" allowed downstream language models to turn an advisory dose
+        # review into clinical approval.
+        safe = standards_available and not violations and not warnings
         site = _normalize_tumor_type(tumor_type)
+        status = "passed" if safe else ("failed" if violations else "conditional")
 
         return ToolResult(
             success=True,
             data={
                 "safe": safe,
+                "status": status,
                 "critical_violations": violations,
                 "warnings": warnings,
                 "total_issues": len(violations) + len(warnings),
                 "strict_mode": strict,
                 "site": site,
                 "standards_available": standards_available,
+                "assessment_scope": "dosimetric_plan_review",
+                "clinical_efficacy_assessed": False,
+                "surgical_feasibility_assessed": False,
             },
-            message=f"Validation {'PASSED' if safe else 'FAILED'} ({site}): {len(violations)} critical, {len(warnings)} warnings"
+            message=(
+                f"Validation {status.upper()} ({site}): "
+                f"{len(violations)} critical, {len(warnings)} warnings. "
+                "This is a dosimetric plan review, not a clinical efficacy or "
+                "surgical feasibility determination."
+            ),
         )
 
     def _check_dose(self, plan: Dict, organ: str, tumor_type: str = "") -> ToolResult:

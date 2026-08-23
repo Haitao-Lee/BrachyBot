@@ -1321,7 +1321,10 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
                         return value
                 return default
 
-            raw_metrics = _memory_first("dose_metrics", "metrics", default={})
+            from web.planning_runs import current_planning_context
+
+            current_plan = current_planning_context(self.memory)
+            raw_metrics = current_plan.get("metrics", {})
             params["metrics"] = raw_metrics if isinstance(raw_metrics, dict) else {}
             # Never trust arrays serialized by the model or by an earlier
             # tool call.  They may be a string representation of a NumPy/
@@ -1347,7 +1350,25 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
             # can report the current seed count.
             params["seed_positions"] = seed_positions if seed_positions is not None else []
             total_seeds = self.memory.retrieve("total_seeds")
-            params["total_seeds"] = total_seeds if total_seeds is not None else 0
+            params["total_seeds"] = (
+                total_seeds
+                if total_seeds is not None
+                else current_plan.get("total_seeds", 0)
+            )
+
+        if tool_name == "safety_validator":
+            # The selected Planning is server-owned clinical state, not an LLM
+            # argument.  Resolve it through the same active-run contract used
+            # by metric reads so restart hydration and Planning switching can
+            # never produce a split-brain assessment.
+            from web.planning_runs import current_planning_context
+
+            current_plan = current_planning_context(self.memory)
+            params.pop("plan", None)
+            if current_plan.get("metrics"):
+                params["plan"] = current_plan
+            if not params.get("tumor_type") and current_plan.get("tumor_type"):
+                params["tumor_type"] = current_plan["tumor_type"]
 
         if tool_name == "ctv_segmentation":
             # Normalize catalog/legacy aliases before injecting the active CT.

@@ -933,3 +933,89 @@ def planning_run_snapshot(memory: Any, planning_id: Optional[str] = None) -> Dic
         return {}
     value = memory.retrieve(PLANNING_RUN_PREFIX + target)
     return dict(value) if isinstance(value, Mapping) else {}
+
+
+def current_planning_context(memory: Any) -> Dict[str, Any]:
+    """Return a compact, version-correct view of the active Planning run.
+
+    Clinical read tools must not depend on whichever legacy alias happens to
+    be populated after hydration.  When the active alias and active run agree,
+    the live alias wins so unsnapshotted edits remain visible.  When they do
+    not agree, the immutable active-run snapshot wins so data from another
+    Planning can never leak into the assessment.
+
+    The returned object intentionally excludes dose arrays and detailed mesh
+    geometry.  It is safe to inject into metric/review tools and small enough
+    to pass through the tool gateway without duplicating case artifacts.
+    """
+    # This is a read boundary.  Do not call ``active_planning_id`` here because
+    # its legacy migration path can mutate memory while a read-only tool is
+    # being executed.
+    planning_id = str(
+        memory.retrieve(ACTIVE_PLANNING_ID_KEY)
+        or memory.retrieve(PLANNING_RUN_ID_KEY)
+        or ""
+    )
+    alias_id = str(memory.retrieve(PLANNING_RUN_ID_KEY) or "")
+    snapshot = planning_run_snapshot(memory, planning_id) if planning_id else {}
+    prefer_live = not planning_id or alias_id == planning_id
+
+    def read(*keys: str, default: Any = None) -> Any:
+        if prefer_live:
+            for key in keys:
+                value = memory.retrieve(key)
+                if value is not None:
+                    return value
+        for key in keys:
+            value = snapshot.get(key)
+            if value is not None:
+                return value
+        return default
+
+    metrics = read(
+        "dose_metrics", "algorithm_plan_dose_metrics", "metrics", default={}
+    )
+    plan_config = read("plan_config", default={})
+    total_seeds = read("total_seeds", default=0)
+    num_trajectories = read("num_trajectories", default=0)
+    try:
+        total_seeds = int(total_seeds or 0)
+    except (TypeError, ValueError):
+        total_seeds = 0
+    try:
+        num_trajectories = int(num_trajectories or 0)
+    except (TypeError, ValueError):
+        num_trajectories = 0
+
+    if total_seeds <= 0:
+        serialized = read("seed_plan_serialized", default={})
+        seeds = serialized.get("seeds") if isinstance(serialized, Mapping) else None
+        if isinstance(seeds, (list, tuple)):
+            total_seeds = len(seeds)
+        else:
+            manual_seeds = read("manual_seeds", default=[])
+            if isinstance(manual_seeds, (list, tuple)):
+                total_seeds = len(manual_seeds)
+    if num_trajectories <= 0:
+        for key in ("manual_needles", "refined_trajectories", "trajectories"):
+            value = read(key, default=[])
+            if isinstance(value, (list, tuple)) and value:
+                num_trajectories = len(value)
+                break
+
+    tumor_type = (
+        read("tumor_type", default="")
+        or memory.retrieve("tumor_type_used")
+        or memory.retrieve("tumor_type")
+        or ""
+    )
+    return {
+        "planning_id": planning_id or alias_id or None,
+        "metrics": dict(metrics) if isinstance(metrics, Mapping) else {},
+        "plan_config": dict(plan_config) if isinstance(plan_config, Mapping) else {},
+        "tumor_type": str(tumor_type or ""),
+        "total_seeds": total_seeds,
+        "num_trajectories": num_trajectories,
+        "geometry_available": bool(total_seeds and num_trajectories),
+        "source": "active_planning_run" if planning_id else "legacy_active_aliases",
+    }
