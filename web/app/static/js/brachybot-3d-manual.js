@@ -5959,6 +5959,10 @@ function renderDoseOverlayOnLayer(doseCanvas, axis, sliceIndex, sliceData) {
     // slice while an asynchronous request is in flight.
     doseCanvas.dataset.renderedAxis = axis;
     doseCanvas.dataset.renderedSlice = String(sliceIndex);
+    doseCanvas.dataset.dosePending = 'false';
+    if (typeof window.syncDoseOverlayFrameVisibility === 'function') {
+        window.syncDoseOverlayFrameVisibility(axis, sliceIndex, doseCanvas);
+    }
 }
 
 function toggleDoseOverlayVisibility() {

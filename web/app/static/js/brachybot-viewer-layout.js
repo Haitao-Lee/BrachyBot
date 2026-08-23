@@ -614,7 +614,7 @@ function resetViewer() {
     syncViewerGeometry({ resetPositions: true, settleMs: 80 });
 }
 
-function renderSliceToCanvas(axis, sliceData) {
+function renderSliceToCanvas(axis, sliceData, sliceIndex = state.slices?.[axis]) {
     const renderGeneration = window.__viewerRenderGeneration || 0;
     const canvasId = 'sliceCanvas' + capitalize(axis);
     const canvas = document.getElementById(canvasId);
@@ -628,6 +628,9 @@ function renderSliceToCanvas(axis, sliceData) {
         const img = new Image();
         img.onload = () => {
             if (renderGeneration !== (window.__viewerRenderGeneration || 0)) return;
+            // PNG decoding is asynchronous. A result for an older slider
+            // position must never replace the CT frame currently requested.
+            if (Number(state.slices?.[axis]) !== Number(sliceIndex)) return;
             // Calculate display size maintaining aspect ratio
             const containerRect = container.getBoundingClientRect();
             const containerW = containerRect.width;
@@ -699,6 +702,15 @@ function renderSliceToCanvas(axis, sliceData) {
             canvas._offsetX = (containerW - displayW) / 2;
             canvas._offsetY = (containerH - displayH) / 2;
 
+            if (typeof window.mark2DViewerBaseSliceRendered === 'function') {
+                window.mark2DViewerBaseSliceRendered(axis, sliceIndex);
+            } else {
+                canvas.dataset.requestedAxis = axis;
+                canvas.dataset.requestedSlice = String(sliceIndex);
+                canvas.dataset.renderedAxis = axis;
+                canvas.dataset.renderedSlice = String(sliceIndex);
+            }
+
             // Update crosshair canvas size
             const crossCanvas = document.getElementById('crosshairCanvas' + capitalize(axis));
             if (crossCanvas) {
@@ -765,6 +777,14 @@ function renderSliceToCanvas(axis, sliceData) {
     }
 
     canvas.style.display = 'block';
+    if (typeof window.mark2DViewerBaseSliceRendered === 'function') {
+        window.mark2DViewerBaseSliceRendered(axis, sliceIndex);
+    } else {
+        canvas.dataset.requestedAxis = axis;
+        canvas.dataset.requestedSlice = String(sliceIndex);
+        canvas.dataset.renderedAxis = axis;
+        canvas.dataset.renderedSlice = String(sliceIndex);
+    }
     const placeholder = canvas.parentElement.querySelector('.viewer-no-data');
     if (placeholder) placeholder.style.display = 'none';
 

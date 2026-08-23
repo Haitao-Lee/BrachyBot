@@ -550,7 +550,7 @@ def test_needle_render_scheduler_survives_mixed_static_asset_revisions():
     # Keep this contract aligned with the actual cache-busting revisions in
     # index.html. A stale assertion here falsely reports a deployment bug and
     # hides whether the endpoint interaction bundle is really versioned.
-    assert "brachybot-viewer-layout.js?v=30" in index
+    assert "brachybot-viewer-layout.js?v=31" in index
     assert "brachybot-3d-manual.js?v=62" in index
     assert "scene3D.requestRender(1)" in layout
     assert "scene3D.requestRender(2)" in layout
@@ -602,9 +602,28 @@ def test_dose_overlay_opacity_is_invariant_during_slice_scrubbing():
     update_slice = viewer.split("function updateSlice(view, val)", 1)[1].split(
         "let _viewerRefreshTimer", 1
     )[0]
+    dose_dispatch = annotation.split("function renderDoseForCurrentSlice", 1)[1].split(
+        "// ==================== SEED/NEEDLE", 1
+    )[0]
+    server_renderer = (
+        ROOT / "web/app/static/js/brachybot-viewer-layout.js"
+    ).read_text(encoding="utf-8").split("function renderSliceToCanvas", 1)[1].split(
+        "function syncViewerGeometry", 1
+    )[0]
     assert update_slice.index("applyDoseOverlayLayerOpacity(") < update_slice.index(
         "renderSliceFromVolume(view, sliceIndex)"
     )
+    assert "mark2DViewerBaseSliceRequested(view, sliceIndex)" in update_slice
+    assert "function syncDoseOverlayFrameVisibility" in annotation
+    assert "baseCanvas.dataset.renderedSlice === expectedSlice" in annotation
+    assert "doseCanvas.dataset.renderedSlice === expectedSlice" in annotation
+    assert "doseCanvas.style.visibility = ready ? 'visible' : 'hidden';" in annotation
+    assert "doseCanvas.dataset.dosePending = 'true';" in dose_dispatch
+    assert dose_dispatch.index("doseCanvas.dataset.dosePending = 'true';") < dose_dispatch.index(
+        "fetchDoseOverlaySlice(axis, sliceIndex)"
+    )
+    assert "Number(state.slices?.[axis]) !== Number(sliceIndex)" in server_renderer
+    assert "mark2DViewerBaseSliceRendered(axis, sliceIndex)" in server_renderer
     assert "function _composite2DViewerCanvas(axis, options = {})" in report_export
     assert "options.doseOpacity" in report_export
     assert "state.doseOverlay.opacity = 0.75" not in report_editor
@@ -613,9 +632,9 @@ def test_dose_overlay_opacity_is_invariant_during_slice_scrubbing():
     assert "_composite2DViewerCanvas(cfg.ax, { doseOpacity: 0.75 })" in report_editor
     assert "_composite2DViewerCanvas(cfg.ax, { doseOpacity: 0.75 })" in dvh_planning
     assert "_composite2DViewerCanvas(a.ax, { doseOpacity: 0.7 })" in ui_api
-    assert "brachybot-viewer-volume.js?v=37" in index
+    assert "brachybot-viewer-volume.js?v=38" in index
     assert "brachybot-3d-manual.js?v=62" in index
-    assert "brachybot-manual-annotation.js?v=14" in index
+    assert "brachybot-manual-annotation.js?v=15" in index
 
 
 def test_manual_seed_defaults_to_needle_middle_and_is_proximity_selectable():

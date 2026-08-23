@@ -1385,6 +1385,10 @@ async function _retryLabelVolumeLoad(options, attempt) {
 function renderSliceFromVolume(axis, sliceIndex) {
     if (!volumeData || !volumeShape) return;
 
+    if (typeof window.mark2DViewerBaseSliceRequested === 'function') {
+        window.mark2DViewerBaseSliceRequested(axis, sliceIndex);
+    }
+
     const [Z, Y, X] = volumeShape;
     const wc = state.viewerSettings.level;
     const ww = state.viewerSettings.window;
@@ -1676,6 +1680,15 @@ function renderSliceFromVolume(axis, sliceIndex) {
     canvas._offsetX = (containerW - displayW) / 2;
     canvas._offsetY = (containerH - displayH) / 2;
 
+    if (typeof window.mark2DViewerBaseSliceRendered === 'function') {
+        window.mark2DViewerBaseSliceRendered(axis, sliceIndex);
+    } else {
+        canvas.dataset.requestedAxis = axis;
+        canvas.dataset.requestedSlice = String(sliceIndex);
+        canvas.dataset.renderedAxis = axis;
+        canvas.dataset.renderedSlice = String(sliceIndex);
+    }
+
     const crossCanvas = document.getElementById('crosshairCanvas' + capitalize(axis));
     if (crossCanvas) {
         // Use CT canvas pixel dimensions for consistent alignment
@@ -1883,7 +1896,7 @@ function clearSliceCache() {
 function renderCachedSlice(axis, sliceIndex) {
     const cached = sliceCache[axis][sliceIndex];
     if (cached) {
-        renderSliceToCanvas(axis, cached);
+        renderSliceToCanvas(axis, cached, sliceIndex);
         return true;
     }
     return false;
@@ -1895,7 +1908,7 @@ async function loadSlice(axis, sliceIndex) {
 
     const cached = sliceCache[axis][sliceIndex];
     if (cached) {
-        renderSliceToCanvas(axis, cached);
+        renderSliceToCanvas(axis, cached, sliceIndex);
         return;
     }
 
@@ -1927,7 +1940,7 @@ async function loadSlice(axis, sliceIndex) {
             || Number(state?.slices?.[axis]) !== Number(sliceIndex)) return;
         if (data.success) {
             sliceCache[axis][sliceIndex] = data.data;
-            renderSliceToCanvas(axis, data.data);
+            renderSliceToCanvas(axis, data.data, sliceIndex);
         }
     } catch (e) {
         if (e?.name !== 'AbortError') console.error('Failed to load slice:', e);
@@ -1992,6 +2005,9 @@ function resizeCanvas(axis) {
 function updateSlice(view, val) {
     const sliceIndex = parseInt(val);
     state.slices[view] = sliceIndex;
+    if (typeof window.mark2DViewerBaseSliceRequested === 'function') {
+        window.mark2DViewerBaseSliceRequested(view, sliceIndex);
+    }
     const label = document.getElementById('sliceLabel' + capitalize(view));
     if (label) label.textContent = sliceIndex;
     // Apply the operator's Data Tree opacity before any synchronous CT work

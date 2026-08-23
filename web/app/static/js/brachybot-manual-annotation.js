@@ -1235,8 +1235,75 @@ function requestDoseOverlayBootstrap(axis, sliceIndex) {
     };
 }
 
+function _sliceFrameKey(sliceIndex) {
+    const value = Number(sliceIndex);
+    return Number.isFinite(value) ? String(Math.trunc(value)) : '';
+}
+
+function syncDoseOverlayFrameVisibility(axis, sliceIndex, targetCanvas = null) {
+    const expectedSlice = _sliceFrameKey(sliceIndex);
+    const baseCanvas = getSliceCanvas(axis);
+    const doseCanvas = targetCanvas
+        || document.getElementById('doseOverlayCanvas' + capitalize(axis));
+    if (!baseCanvas || !doseCanvas || !expectedSlice) return false;
+
+    const baseMatches = baseCanvas.dataset.requestedSlice === expectedSlice
+        && baseCanvas.dataset.renderedSlice === expectedSlice;
+    const doseMatches = doseCanvas.dataset.requestedSlice === expectedSlice
+        && doseCanvas.dataset.renderedSlice === expectedSlice
+        && doseCanvas.dataset.dosePending !== 'true';
+    const ready = !!(state.doseOverlay?.visible && baseMatches && doseMatches);
+
+    // Keep the canvas in the layer stack so its geometry stays synchronized,
+    // but never expose a dose frame that belongs to a different CT slice.
+    // This is the actual scrub invariant; opacity alone cannot make a stale
+    // dose frame visually correct over a newly requested CT frame.
+    doseCanvas.style.visibility = ready ? 'visible' : 'hidden';
+    doseCanvas.dataset.frameReady = ready ? 'true' : 'false';
+    if (typeof applyDoseOverlayLayerOpacity === 'function') {
+        applyDoseOverlayLayerOpacity(doseCanvas);
+    }
+    return ready;
+}
+window.syncDoseOverlayFrameVisibility = syncDoseOverlayFrameVisibility;
+
+function mark2DViewerBaseSliceRequested(axis, sliceIndex) {
+    const frameKey = _sliceFrameKey(sliceIndex);
+    const baseCanvas = getSliceCanvas(axis);
+    if (!baseCanvas || !frameKey) return false;
+    baseCanvas.dataset.requestedAxis = axis;
+    baseCanvas.dataset.requestedSlice = frameKey;
+
+    const doseCanvas = document.getElementById('doseOverlayCanvas' + capitalize(axis));
+    if (doseCanvas) {
+        doseCanvas.dataset.requestedAxis = axis;
+        doseCanvas.dataset.requestedSlice = frameKey;
+        syncDoseOverlayFrameVisibility(axis, sliceIndex, doseCanvas);
+    }
+    return true;
+}
+window.mark2DViewerBaseSliceRequested = mark2DViewerBaseSliceRequested;
+
+function mark2DViewerBaseSliceRendered(axis, sliceIndex) {
+    const frameKey = _sliceFrameKey(sliceIndex);
+    const baseCanvas = getSliceCanvas(axis);
+    if (!baseCanvas || !frameKey) return false;
+    // A decoded server PNG may finish after the user has already moved on.
+    // Reject it before it can declare itself as the current base frame.
+    if (Number(state.slices?.[axis]) !== Number(sliceIndex)) return false;
+    baseCanvas.dataset.requestedAxis = axis;
+    baseCanvas.dataset.requestedSlice = frameKey;
+    baseCanvas.dataset.renderedAxis = axis;
+    baseCanvas.dataset.renderedSlice = frameKey;
+    syncDoseOverlayFrameVisibility(axis, sliceIndex);
+    return true;
+}
+window.mark2DViewerBaseSliceRendered = mark2DViewerBaseSliceRendered;
+
 function renderDoseForCurrentSlice(axis, sliceIndex) {
     if (!state.doseOverlay || !state.doseOverlay.visible) {
+        const existingCanvas = document.getElementById('doseOverlayCanvas' + capitalize(axis));
+        if (existingCanvas) existingCanvas.style.visibility = 'hidden';
         const doseNode = (
             typeof dataTreeState !== 'undefined' && dataTreeState?.planning
         ) ? dataTreeState.planning.doseOverlay : null;
@@ -1246,6 +1313,7 @@ function renderDoseForCurrentSlice(axis, sliceIndex) {
         return;
     }
     _doseDesiredSlice[axis] = sliceIndex;
+    mark2DViewerBaseSliceRequested(axis, sliceIndex);
     const sliceCanvas = getSliceCanvas(axis);
     if (!sliceCanvas) return;
     const doseCanvasId = 'doseOverlayCanvas' + capitalize(axis);
@@ -1254,14 +1322,17 @@ function renderDoseForCurrentSlice(axis, sliceIndex) {
         doseCanvas = document.createElement('canvas');
         doseCanvas.id = doseCanvasId;
         const parent = sliceCanvas.parentElement;
-        doseCanvas.style.cssText = 'position:absolute;pointer-events:none;z-index:5;display:block;';
+        doseCanvas.style.cssText = 'position:absolute;pointer-events:none;z-index:5;display:block;visibility:hidden;';
         parent.appendChild(doseCanvas);
         sliceCanvas._doseCanvas = doseCanvas;
     }
+    doseCanvas.dataset.requestedAxis = axis;
+    doseCanvas.dataset.requestedSlice = _sliceFrameKey(sliceIndex);
     _syncLayerToSliceCanvas(axis, doseCanvas, 5);
     if (typeof applyDoseOverlayLayerOpacity === 'function') {
         applyDoseOverlayLayerOpacity(doseCanvas);
     }
+    syncDoseOverlayFrameVisibility(axis, sliceIndex, doseCanvas);
 
     const cacheKey = axis + '_' + sliceIndex;
     if (state.doseOverlay.slices[cacheKey]) {
@@ -1273,6 +1344,8 @@ function renderDoseForCurrentSlice(axis, sliceIndex) {
             _doseLastRendered[axis] = sliceIndex;
             doseCanvas._doseRenderEpoch = _doseOverlayRenderEpoch;
         }
+        doseCanvas.dataset.dosePending = 'false';
+        syncDoseOverlayFrameVisibility(axis, sliceIndex, doseCanvas);
         _clearDoseSliceRetry(axis, sliceIndex);
     } else {
         // Cache miss — show nearest cached slice as placeholder, then
@@ -1285,6 +1358,7 @@ function renderDoseForCurrentSlice(axis, sliceIndex) {
             doseCtx?.clearRect(0, 0, doseCanvas.width, doseCanvas.height);
         } catch (_) {}
         doseCanvas.dataset.dosePending = 'true';
+        syncDoseOverlayFrameVisibility(axis, sliceIndex, doseCanvas);
         const renderEpoch = _doseOverlayRenderEpoch;
         fetchDoseOverlaySlice(axis, sliceIndex).then(sliceData => {
             const isCurrentRequest = state.doseOverlay
@@ -1295,10 +1369,11 @@ function renderDoseForCurrentSlice(axis, sliceIndex) {
                 && doseCanvas.isConnected;
             if (sliceData && isCurrentRequest) {
                 try {
+                    doseCanvas.dataset.dosePending = 'false';
                     renderDoseOverlayOnLayer(doseCanvas, axis, sliceIndex, sliceData);
                     _doseLastRendered[axis] = sliceIndex;
                     doseCanvas._doseRenderEpoch = _doseOverlayRenderEpoch;
-                    doseCanvas.dataset.dosePending = 'false';
+                    syncDoseOverlayFrameVisibility(axis, sliceIndex, doseCanvas);
                     _clearDoseSliceRetry(axis, sliceIndex);
                 } catch (e) { console.warn(`[dose] render error after fetch:`, e); }
             } else if (sliceData && state.doseOverlay && state.doseOverlay.visible
@@ -1314,10 +1389,11 @@ function renderDoseForCurrentSlice(axis, sliceIndex) {
                 // overlay could stay frozen on an older slice even though the
                 // fresh slice data was already fetched and cached.
                 try {
+                    doseCanvas.dataset.dosePending = 'false';
                     renderDoseOverlayOnLayer(doseCanvas, axis, sliceIndex, sliceData);
                     _doseLastRendered[axis] = sliceIndex;
                     doseCanvas._doseRenderEpoch = _doseOverlayRenderEpoch;
-                    doseCanvas.dataset.dosePending = 'false';
+                    syncDoseOverlayFrameVisibility(axis, sliceIndex, doseCanvas);
                     _clearDoseSliceRetry(axis, sliceIndex);
                     uiDebugLog(`[dose] painted via race-tolerant path for ${axis}_${sliceIndex}`);
                 } catch (e) { console.warn(`[dose] race-tolerant render error:`, e); }
