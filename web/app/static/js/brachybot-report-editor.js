@@ -948,7 +948,7 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
     // Native subfigures are placed one per A4 evidence page. Retain enough
     // pixels for seed distribution and needle geometry to remain legible in
     // both the preview and exported PDF.
-    const REPORT_FIGURE_LONG_EDGE = 1800;
+    const REPORT_FIGURE_LONG_EDGE = 2400;
 
     async function _waitForReportDoseSlice(axis, sliceIndex, timeoutMs = 12000) {
         const cap = axis.charAt(0).toUpperCase() + axis.slice(1);
@@ -1659,7 +1659,11 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
                                     return null;
                                 }
                             }
-                            const url = _captureReportCanvasCrop(canvas, REPORT_DOSE_SURFACE_ASPECT);
+                            const url = _captureReportCanvasCrop(
+                                canvas,
+                                REPORT_DOSE_SURFACE_ASPECT,
+                                REPORT_FIGURE_LONG_EDGE,
+                            );
                             if (!url || url.length < 5000) return null;
                             uiDebugLog('[Report] 3D dose-surface capture', label, ':', Math.round(url.length / 1024), 'KB');
                             return url;
@@ -1707,7 +1711,7 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
                     try {
                         await new Promise(r => setTimeout(r, 500)); // let Plotly finish rendering
                         if (!isCurrentCapture()) return { stale: true };
-                        dvhDataUrl = await Plotly.toImage(dvhEl, { format: 'png', width: 1200, height: 400 });
+                        dvhDataUrl = await Plotly.toImage(dvhEl, { format: 'png', width: 2400, height: 800 });
                         uiDebugLog('[Report] DVH captured via Plotly:', Math.round(dvhDataUrl.length / 1024), 'KB');
                     } catch (e) {
                         console.warn('[Report] Plotly.toImage failed:', e);

@@ -1006,7 +1006,9 @@ function _updateReportPreview() {
                     const subfigure = String(figure.subfigure || String.fromCharCode(97 + fallbackIndex)).toLowerCase();
                     const display = _reportFigureDisplayText(figure);
                     return `<figure class="hp-subfigure">
-                        <img src="${escHtml(imageUrl)}" alt="${escHtml(display.title)}"/>
+                        <div class="hp-subfigure-media">
+                            <img src="${escHtml(imageUrl)}" alt="${escHtml(display.title)}"/>
+                        </div>
                         <figcaption><b>${escHtml(s.figCaption)} ${figureNumber}(${escHtml(subfigure)}) - ${escHtml(display.title)}</b>${display.caption ? ': ' + escHtml(display.caption) : ''}</figcaption>
                     </figure>`;
                 }).join('')}</div>
@@ -1361,6 +1363,35 @@ function hideExportMenu() {
     if (m) m.style.display = 'none';
 }
 
+async function _waitForReportPrintAssets(printWindow, timeoutMs = 15000) {
+    const documentRef = printWindow?.document;
+    if (!documentRef) return;
+    const imageTasks = Array.from(documentRef.images || []).map(image => {
+        if (image.complete) {
+            return typeof image.decode === 'function'
+                ? image.decode().catch(() => undefined)
+                : Promise.resolve();
+        }
+        return new Promise(resolve => {
+            image.addEventListener('load', resolve, { once: true });
+            image.addEventListener('error', resolve, { once: true });
+        });
+    });
+    const fontTask = documentRef.fonts?.ready
+        ? Promise.resolve(documentRef.fonts.ready).catch(() => undefined)
+        : Promise.resolve();
+    await Promise.race([
+        Promise.all([fontTask, ...imageTasks]),
+        new Promise(resolve => setTimeout(resolve, timeoutMs)),
+    ]);
+    // Let decoded intrinsic dimensions and font metrics reach print layout.
+    // Printing on a fixed timer allowed a wide screenshot to paginate before
+    // the A4 media box had constrained it.
+    await new Promise(resolve => printWindow.requestAnimationFrame(() => (
+        printWindow.requestAnimationFrame(resolve)
+    )));
+}
+
 async function exportReportPDF() {
     // Auto-capture visual evidence before rendering PDF.
     try { await autoCaptureReportFigures(); } catch (e) { console.warn('autoCaptureReportFigures failed:', e); }
@@ -1377,7 +1408,11 @@ async function exportReportPDF() {
     if (!printWindow) { _setReportStatus('Popup blocked', 'warn'); return; }
     printWindow.document.write(`<!DOCTYPE html><html><head><title>${_tr('reportTitle')}</title><style>${css}</style></head><body class="report-print">${pagesHtml}</body></html>`);
     printWindow.document.close();
-    setTimeout(() => { printWindow.focus(); printWindow.print(); }, 500);
+    await _waitForReportPrintAssets(printWindow);
+    if (!printWindow.closed) {
+        printWindow.focus();
+        printWindow.print();
+    }
     _setReportStatus('Saved PDF', 'ok');
 }
 
@@ -1478,7 +1513,9 @@ function _printableCss() {
         html, body { margin: 0; padding: 0; background: #fff; color: #000; }
         body.report-print { background: #fff; padding: 0; color: #000; }
         .report-page {
-            width: 210mm; min-height: 297mm; padding: 18mm 16mm 18mm 16mm;
+            width: 210mm; min-width: 210mm; max-width: 210mm;
+            min-height: 297mm;
+            padding: 18mm 16mm 18mm 16mm;
             background: #fff; color: #000;
             box-sizing: border-box; page-break-after: always; break-after: page;
             position: relative;
@@ -1487,9 +1524,10 @@ function _printableCss() {
             font-feature-settings: "tnum" 1, "lnum" 1;
             page: reportPortrait;
         }
-        .report-figure-page { height: 297mm; max-height: 297mm; }
+        .report-figure-page { height: 297mm; min-height: 297mm; max-height: 297mm; overflow: hidden; contain: layout paint; }
         .report-page--landscape {
-            width: 297mm; min-height: 210mm; height: 210mm; max-height: 210mm;
+            width: 297mm; min-width: 297mm; max-width: 297mm;
+            min-height: 210mm; height: 210mm; max-height: 210mm;
             padding: 14mm 16mm 14mm 16mm; page: reportLandscape;
         }
         .report-page:last-child { page-break-after: auto; }
@@ -1540,10 +1578,11 @@ function _printableCss() {
            box, and image share the same width constraint so browser preview
            scaling cannot let a wide canvas escape or crop the PDF page. */
         .report-figure-page { display: flex; flex-direction: column; max-width: none; min-width: 0; overflow: hidden; box-sizing: border-box; }
-        .hp-subfigure-list { display: flex; flex-direction: column; justify-content: center; flex: 1 1 auto; width: 100%; min-width: 0; min-height: 0; max-width: 100%; overflow: hidden; }
+        .hp-subfigure-list { display: flex; flex-direction: column; justify-content: center; flex: 1 1 0; width: 100%; min-width: 0; min-height: 0; max-width: 100%; overflow: hidden; }
         .hp-subfigure { display: flex; flex-direction: column; justify-content: center; flex: 1 1 auto; width: 100%; max-width: 100%; min-width: 0; margin: 0; text-align: center; page-break-inside: avoid; break-inside: avoid; min-height: 0; overflow: hidden; box-sizing: border-box; }
-        .hp-subfigure img { display: block; width: auto; max-width: 100%; min-width: 0; height: auto; max-height: 176mm; object-fit: contain; margin: 0 auto; border: 1px solid #cbd5e1; background: #020617; box-sizing: border-box; }
-        .report-page--landscape .hp-subfigure img { max-height: 132mm; }
+        .hp-subfigure-media { display: flex; align-items: center; justify-content: center; flex: 1 1 0; width: 100%; max-width: 100%; min-width: 0; min-height: 0; max-height: 176mm; overflow: hidden; box-sizing: border-box; }
+        .hp-subfigure img { display: block; flex: 0 1 auto; width: auto !important; max-width: 100% !important; min-width: 0; height: auto !important; max-height: 100% !important; object-fit: contain; margin: 0 auto; border: 1px solid #cbd5e1; background: #020617; box-sizing: border-box; }
+        .report-page--landscape .hp-subfigure-media { max-height: 132mm; }
         .hp-subfigure figcaption { font-size: 9pt; line-height: 1.35; color: #334155; margin-top: 1.5mm; font-style: italic; }
         .hp-references { font-size: 9pt; line-height: 1.55; padding-left: 6mm; }
         .hp-references li { margin-bottom: 1.5mm; text-indent: -5mm; padding-left: 5mm; }
