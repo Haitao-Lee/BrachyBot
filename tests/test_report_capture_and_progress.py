@@ -22,7 +22,7 @@ def test_figure_one_detail_view_keeps_the_complete_ctv_in_frame():
     assert "id === 'skin_surface'" in source
     assert "guide_skin_surface" in source
     assert "includeOars: true, includeNeedles: true" in source
-    assert "REPORT_FIGURE_LONG_EDGE = 1800" in source
+    assert "REPORT_FIGURE_LONG_EDGE = 2400" in source
     assert "_captureReportCanvasCrop(c, targetAspect, maxOutputEdge)" in source
 
 
@@ -123,7 +123,16 @@ def test_native_report_images_use_one_bounded_evidence_page_each():
     assert "max-height: 176mm" in source
     assert "max-height: 132mm" in source
     assert "overflow: hidden" in source
+    assert "class=\"hp-subfigure-media\"" in source
+    assert ".report-figure-page { height: 297mm; min-height: 297mm; max-height: 297mm" in source
+    assert "width: 297mm; min-width: 297mm; max-width: 297mm" in source
+    assert "async function _waitForReportPrintAssets" in source
+    assert "await _waitForReportPrintAssets(printWindow);" in source
+    assert "documentRef.fonts?.ready" in source
+    assert "image.decode()" in source
+    assert "REPORT_FIGURE_LONG_EDGE = 2400" in _read("web/app/static/js/brachybot-report-editor.js")
     assert ".report-figure-page .hp-subfigure img" in screen_css
+    assert ".report-figure-page .hp-subfigure-media" in screen_css
     assert ".report-page--landscape" in screen_css
     assert "width: 297mm" in screen_css
     assert "max-height: 176mm" in screen_css

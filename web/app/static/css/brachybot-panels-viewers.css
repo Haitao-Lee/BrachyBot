@@ -757,6 +757,8 @@
 .report-pages { display: flex; flex-direction: column; align-items: center; gap: 0; }
 .report-page {
     width: 210mm;
+    min-width: 210mm;
+    max-width: 210mm;
     min-height: 297mm;
     padding: 18mm 16mm 18mm 16mm;
     background: #fff;
@@ -778,15 +780,21 @@
     line-height: 1.5;
     color: #000;
     overflow: hidden;
+    contain: layout paint;
     font-feature-settings: "tnum" 1, "lnum" 1;
 }
 .report-page:last-child { page-break-after: auto; break-after: auto; }
 .report-figure-page {
+    display: flex;
+    flex-direction: column;
     height: 297mm;
+    min-height: 297mm;
     max-height: 297mm;
 }
 .report-page--landscape {
     width: 297mm;
+    min-width: 297mm;
+    max-width: 297mm;
     min-height: 210mm;
     height: 210mm;
     max-height: 210mm;
@@ -798,18 +806,20 @@
    the preview has its own stylesheet and must not fall back to an image's
    intrinsic pixel width. */
 .report-figure-page .hp-subfigure-list,
-.report-figure-page .hp-subfigure {
+.report-figure-page .hp-subfigure,
+.report-figure-page .hp-subfigure-media {
     width: 100%;
     max-width: 100%;
     min-width: 0;
     box-sizing: border-box;
     overflow: hidden;
+    contain: layout paint;
 }
 .report-figure-page .hp-subfigure-list {
     display: flex;
     flex-direction: column;
     justify-content: center;
-    flex: 1 1 auto;
+    flex: 1 1 0;
     min-height: 0;
 }
 .report-figure-page .hp-subfigure {
@@ -823,18 +833,27 @@
     page-break-inside: avoid;
     break-inside: avoid;
 }
+.report-figure-page .hp-subfigure-media {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: 1 1 0;
+    min-height: 0;
+    max-height: 176mm;
+}
 .report-figure-page .hp-subfigure img {
     display: block;
-    width: auto;
-    max-width: 100%;
+    flex: 0 1 auto;
+    width: auto !important;
+    max-width: 100% !important;
     min-width: 0;
-    height: auto;
-    max-height: 176mm;
+    height: auto !important;
+    max-height: 100% !important;
     object-fit: contain;
     margin: 0 auto;
     box-sizing: border-box;
 }
-.report-page--landscape .hp-subfigure img {
+.report-page--landscape .hp-subfigure-media {
     max-height: 132mm;
 }
 .report-page::before {
