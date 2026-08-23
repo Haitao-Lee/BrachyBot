@@ -195,6 +195,23 @@ def test_query_metrics_workspace_inputs_are_server_injected():
     assert list(provider_schema["properties"]) == ["metric_type"]
 
 
+def test_safety_validator_plan_is_server_injected():
+    """The provider selects a check; it never serializes clinical plan data."""
+    from agent_runtime.core import ToolRegistry
+    from tool_factory.safety_validator import SafetyValidatorTool
+
+    assert SafetyValidatorTool().input_schema["properties"]["plan"]["x-server-injected"] is True
+
+    class _NamedSafetyTool(_Tool):
+        name = "safety_validator"
+
+    registry = ToolRegistry()
+    registry.register(_NamedSafetyTool(SafetyValidatorTool().input_schema))
+    provider_schema = registry.to_openai_tools()[0]["function"]["parameters"]
+    assert "plan" not in provider_schema["properties"]
+    assert "action" in provider_schema["properties"]
+
+
 def test_agent_query_metrics_uses_live_workspace_values_without_numpy_truth_checks():
     """A follow-up metric read must not validate or truth-test model arrays."""
     import numpy as np
@@ -255,6 +272,68 @@ def test_agent_query_metrics_uses_live_workspace_values_without_numpy_truth_chec
     assert "oar_array" not in params
     assert isinstance(params["ct_spacing"], np.ndarray)
     assert isinstance(params["total_seeds"], np.integer)
+    assert memory.logged
+
+
+def test_agent_safety_validator_reads_hydrated_active_planning_snapshot():
+    """A restored Session must validate the same Planning that metrics reads use."""
+    from AgenticSys import BrachyAgent
+    from agent_runtime.core import ToolRegistry
+    from tool_factory.safety_validator import SafetyValidatorTool
+
+    class _Memory:
+        def __init__(self):
+            planning_id = "planning-restored"
+            self.values = {
+                "active_planning_id": planning_id,
+                "planning_run_id": planning_id,
+                "tumor_type_used": "nnunet_pancreatic",
+                f"planning_run:{planning_id}": {
+                    "dose_metrics": {
+                        "v100": 0.903,
+                        "v150": 0.6543,
+                        "v200": 0.4407,
+                        "d90": 120.59,
+                    },
+                    "plan_config": {"prescription_gy": 120.0},
+                    "total_seeds": 35,
+                    "num_trajectories": 5,
+                },
+            }
+            self.conversation_state = {"last_tool_calls": []}
+            self.logged = []
+
+        def retrieve(self, key, default=None):
+            return self.values.get(key, default)
+
+        def get_ui_state(self):
+            return {}
+
+        def store(self, key, value):
+            self.values[key] = value
+
+        def log_tool_call(self, *args):
+            self.logged.append(args)
+
+    memory = _Memory()
+    registry = ToolRegistry()
+    registry.register(SafetyValidatorTool())
+    agent = object.__new__(BrachyAgent)
+    agent.memory = memory
+    agent.registry = registry
+    agent.run_ledger = RunLedger()
+    agent.tool_gateway = ToolCallGateway(agent.run_ledger)
+    params = {"action": "validate"}
+
+    result = agent._execute_tool_with_memory("safety_validator", params)
+
+    assert result.success is True
+    assert params["plan"]["planning_id"] == "planning-restored"
+    assert params["plan"]["metrics"]["v100"] == 0.903
+    assert params["plan"]["total_seeds"] == 35
+    assert result.data["status"] == "conditional"
+    assert result.data["clinical_efficacy_assessed"] is False
+    assert result.data["surgical_feasibility_assessed"] is False
     assert memory.logged
 
 
@@ -517,7 +596,20 @@ def test_honest_failure_summary_detects_failed_tools():
     # The honest-failure prompt must never tell the LLM to claim success.
     rendered = _HONEST_FAILURE_PROMPT.format(failures=summary)
     assert "Do NOT claim success" in rendered
+    assert "clinical efficacy, procedural safety, or approval" in rendered
     assert "tool executed" not in rendered.lower() or "Do NOT say 'tool executed'" in rendered
+
+
+def test_system_prompts_separate_plan_quality_from_patient_outcome():
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    system_prompt = (root / "config/prompts/system_prompt.md").read_text(encoding="utf-8")
+    medical_prompt = (root / "config/prompts/medical_safety.md").read_text(encoding="utf-8")
+
+    assert "dosimetric plan quality, surgical/geometric feasibility, and patient treatment efficacy" in system_prompt
+    assert "they do not by themselves establish" in system_prompt
+    assert "not direct evidence of patient-level" in medical_prompt
 
 
 class _WebResult:

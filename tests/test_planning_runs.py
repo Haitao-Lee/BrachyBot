@@ -5,6 +5,7 @@ from web.planning_runs import (
     PLANNING_RUN_PREFIX,
     activate_planning_run,
     begin_planning_run,
+    current_planning_context,
     fork_planning_run,
     invalidate_planning_dependents,
     list_planning_runs,
@@ -71,6 +72,40 @@ def test_full_runs_are_immutable_and_activation_restores_selected_aliases():
     assert agent.memory.retrieve(PLANNING_RUN_PREFIX + second)["manual_seeds"][0]["id"] == "seed-b"
     assert list_planning_runs(agent.memory)[0]["visible"] is True
     assert list_planning_runs(agent.memory)[1]["visible"] is False
+
+
+def test_current_planning_context_never_mixes_active_run_with_foreign_aliases():
+    agent = _agent()
+    memory = agent.memory
+    memory.store = lambda key, value: memory.planning_results.__setitem__(key, value)
+    active_id = "planning-active"
+    memory.planning_results.update({
+        "active_planning_id": active_id,
+        "planning_run_id": "planning-foreign",
+        "dose_metrics": {"v100": 0.25, "d90": 30.0},
+        "total_seeds": 999,
+        f"{PLANNING_RUN_PREFIX}{active_id}": {
+            "dose_metrics": {"v100": 0.903, "d90": 120.59},
+            "plan_config": {"prescription_gy": 120.0},
+            "total_seeds": 35,
+            "num_trajectories": 5,
+        },
+    })
+
+    restored = current_planning_context(memory)
+
+    assert restored["planning_id"] == active_id
+    assert restored["metrics"]["v100"] == 0.903
+    assert restored["total_seeds"] == 35
+    assert restored["num_trajectories"] == 5
+    assert restored["source"] == "active_planning_run"
+
+    # Once the legacy aliases identify the same active run, a live edit is
+    # newer than the immutable checkpoint and must be visible immediately.
+    memory.planning_results["planning_run_id"] = active_id
+    memory.planning_results["dose_metrics"] = {"v100": 0.91, "d90": 123.0}
+    live = current_planning_context(memory)
+    assert live["metrics"]["v100"] == 0.91
 
 
 def test_stepwise_stages_reuse_running_run_but_completed_replan_forks():

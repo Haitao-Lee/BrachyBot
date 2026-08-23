@@ -900,6 +900,45 @@ def test_quality_scorer_and_safety_validator_do_not_use_generic_site_defaults():
     assert validation.data["safe"] is False
 
 
+def test_safety_validator_treats_source_backed_warnings_as_conditional():
+    from tool_factory.safety_validator import SafetyValidatorTool
+
+    validation = SafetyValidatorTool().execute(
+        action="validate",
+        tumor_type="nnunet_pancreatic",
+        plan={
+            "metrics": {"v100": 0.903, "v200": 0.4407, "d90": 120.59},
+            "plan_config": {"prescription_gy": 120.0},
+        },
+    )
+
+    assert validation.success
+    assert validation.data["safe"] is False
+    assert validation.data["status"] == "conditional"
+    assert validation.data["clinical_efficacy_assessed"] is False
+    assert "not a clinical efficacy" in validation.message
+
+
+def test_safety_validator_normalizes_restored_d90_gy_before_rules():
+    from tool_factory.safety_validator import SafetyValidatorTool
+
+    validation = SafetyValidatorTool().execute(
+        action="validate",
+        tumor_type="nnunet_pancreatic",
+        plan={
+            "metrics": {"v100": 0.91, "v200": 0.20, "d90": 90.0},
+            "plan_config": {"prescription_gy": 120.0},
+        },
+    )
+
+    assert validation.success
+    d90_warnings = [
+        item for item in validation.data["warnings"] if item.get("metric") == "d90"
+    ]
+    assert d90_warnings
+    assert d90_warnings[0]["value"] == pytest.approx(0.75)
+
+
 def test_quality_scorer_uses_only_available_source_backed_metrics():
     from tool_factory.plan_quality.plan_quality_scorer import PlanQualityScorerTool
 
