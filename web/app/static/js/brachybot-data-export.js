@@ -262,12 +262,20 @@
             }
             return;
         }
+        // Download through an authenticated fetch instead of a plain link
+        // navigation: the deployment API-key boundary requires the
+        // X-API-Key header, which a browser navigation cannot carry.
+        const response = await fetch(job.download_url || `/api/data/exports/${encodeURIComponent(job.job_id)}/download`);
+        if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob);
         const link = document.createElement('a');
-        link.href = job.download_url;
-        link.download = '';
+        link.href = url;
+        link.download = `${job.folder_name || `BrachyBot_Session_${state.sessionId}`}.zip`;
         document.body.appendChild(link);
         link.click();
         link.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 30000);
     }
 
     function updateProgress(job) {

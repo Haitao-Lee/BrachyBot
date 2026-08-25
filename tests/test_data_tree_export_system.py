@@ -631,6 +631,46 @@ def test_delete_uses_backend_data_and_invalidates_dependents(tmp_path):
     assert snapshot["report"]["form"]["figures"] == []
 
 
+def test_report_cleanup_invalidates_quota_after_the_final_unlink(
+    tmp_path, monkeypatch,
+):
+    """A usage read between snapshot and PDF deletion must not stay cached."""
+
+    def disk_usage(store, user_id):
+        total = 0
+        for base in (
+            store.workspaces_dir / str(user_id),
+            store.trash_dir / str(user_id),
+        ):
+            if not base.exists():
+                continue
+            for path in base.rglob("*"):
+                if path.is_file():
+                    total += path.stat().st_size
+        return total
+
+    for name, object_id in (
+        ("group-report", "group:report"),
+        ("ct-delete", "image:ct"),
+    ):
+        store, user, session, agent = _case(tmp_path / name)
+        original_replace = store.replace_snapshot_section
+
+        def replace_and_repopulate(*args, _store=store, _user=user, **kwargs):
+            result = original_replace(*args, **kwargs)
+            _store.user_storage_bytes(_user["id"])
+            return result
+
+        monkeypatch.setattr(
+            store, "replace_snapshot_section", replace_and_repopulate,
+        )
+        _delete_object(store, user, session.id, agent, object_id)
+
+        assert store.user_storage_bytes(user["id"]) == disk_usage(
+            store, user["id"]
+        )
+
+
 def test_frontend_exposes_three_export_levels_and_real_mutations():
     root = Path(__file__).resolve().parents[1]
     viewer = (

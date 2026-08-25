@@ -5,7 +5,12 @@ from unittest.mock import patch
 
 import pytest
 
-from web.chat_tasks import ChatTask, ChatTaskManager
+from web.chat_tasks import (
+    MAX_TASK_JOURNAL_EVENTS,
+    MAX_TASK_STEPS,
+    ChatTask,
+    ChatTaskManager,
+)
 from web.server import _case_has_running_chat_task
 
 
@@ -670,3 +675,23 @@ def test_failed_case_commit_never_emits_a_false_done_event():
     assert task.result_committed is False
     assert not any(item.startswith("event: done") for item in events)
     assert any("Case results could not be saved" in item for item in events)
+
+
+def test_task_steps_and_cancel_event_remain_bounded_after_overflow():
+    task = ChatTask("bounded-task", "user-a", "case-a", _Agent([]), "hello")
+    overflow = 25
+    for index in range(MAX_TASK_JOURNAL_EVENTS + overflow):
+        task.publish(_event("step", {"id": index, "status": "done"}))
+
+    assert len(task._events) == MAX_TASK_JOURNAL_EVENTS
+    assert len(task.steps) == MAX_TASK_STEPS
+    assert task.steps[0]["id"] == overflow
+    assert task.event_count() == MAX_TASK_JOURNAL_EVENTS + overflow
+
+    assert task.cancel() is True
+    assert len(task._events) == MAX_TASK_JOURNAL_EVENTS
+    assert task.event_count() == MAX_TASK_JOURNAL_EVENTS + overflow + 1
+
+    replayed = list(task.iter_events(0))
+    assert len(replayed) == MAX_TASK_JOURNAL_EVENTS
+    assert replayed[-1] == _event("done", {"cancelled": True})

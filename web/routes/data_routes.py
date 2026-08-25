@@ -539,6 +539,10 @@ def _delete_object(
         if not path.is_file():
             raise ExportError("Screenshot was not found")
         path.unlink()
+        # The bytes are gone even when no chat attachment referenced the
+        # file (in which case no snapshot write below invalidates the
+        # quota cache), so drop the cached storage total here.
+        store.invalidate_storage_usage(str(user["id"]))
         snapshot = store.load_snapshot(str(user["id"]), session_id)
         chat = dict(snapshot.get("chat") or {})
         changed = False
@@ -704,6 +708,11 @@ def _delete_object(
             for report_path in report_root.iterdir():
                 if report_path.is_file():
                     report_path.unlink()
+        # The report PDFs are removed after replace_snapshot_section() has
+        # completed its own quota bookkeeping.  A concurrent usage read can
+        # therefore repopulate the cache before these final unlinks; always
+        # invalidate after the last direct filesystem mutation.
+        store.invalidate_storage_usage(str(user["id"]))
         return {"object_id": "image:ct", "invalidated": ["all_case_data"]}
 
     if candidate.startswith("needle:") or candidate.startswith("needle_"):
@@ -884,6 +893,7 @@ def _delete_object(
         if not pdfs:
             raise ExportError("Report PDF was not found")
         pdfs[0].unlink()
+        store.invalidate_storage_usage(str(user["id"]))
         return {"object_id": candidate, "invalidated": ["report_pdf"]}
 
     if candidate in {"report:data", "report", "group:report"}:
@@ -899,6 +909,10 @@ def _delete_object(
                 for path in report_root.glob("*.pdf"):
                     if path.is_file():
                         path.unlink()
+            # See the CT deletion path above: snapshot replacement and PDF
+            # removal are separate filesystem mutations, so the final unlink
+            # needs its own invalidation boundary.
+            store.invalidate_storage_usage(str(user["id"]))
         return {"object_id": candidate, "invalidated": ["report"]}
 
     if candidate in {"planning", "group:planning"}:

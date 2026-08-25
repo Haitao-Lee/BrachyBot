@@ -15,8 +15,21 @@ import logging
 import threading
 import time
 import uuid
+from collections import deque
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Callable, Deque, Dict, Iterable, List, Optional, Tuple
+
+# Long or repetitive agent workflows can publish tens of thousands of raw
+# events (tool payloads, text chunks) into one task journal. Retaining every
+# event grows process memory without bound while the task runs, so journals
+# are capped. The cap is far above any real turn's event count; a subscriber
+# that resumes from a sequence older than the retained window replays what
+# remains instead of the trimmed prefix.
+MAX_TASK_JOURNAL_EVENTS = 2000
+# Step metadata is persisted separately from the replay journal.  It needs an
+# independent bound or a tool-heavy task can still retain every decoded step
+# after the corresponding raw events have been trimmed.
+MAX_TASK_STEPS = 2000
 
 logger = logging.getLogger(__name__)
 
@@ -85,7 +98,11 @@ class ChatTask:
         self.parent_request_id = str(self.parent_request_id or "")
         self.parent_user_message_id = str(self.parent_user_message_id or "")
         self.parent_assistant_message_id = str(self.parent_assistant_message_id or "")
-        self._events: List[str] = []
+        self._events: Deque[str] = deque()
+        # Absolute sequence number of ``_events[0]``. Trimming the front of
+        # the journal advances this offset so subscriber sequence numbers
+        # stay stable across reconnects.
+        self._event_base = 0
         self._terminal_event_seen = False
         self._condition = threading.Condition()
         self._commit_step_id = f"workspace-commit-{self.task_id}"
@@ -114,6 +131,13 @@ class ChatTask:
     def encode_event(event_name: str, data: Dict[str, Any]) -> str:
         return f"event: {event_name}\ndata: {json.dumps(data)}\n\n"
 
+    def _append_event_locked(self, text: str) -> None:
+        """Append one event while preserving the bounded absolute sequence."""
+        self._events.append(text)
+        while len(self._events) > MAX_TASK_JOURNAL_EVENTS:
+            self._events.popleft()
+            self._event_base += 1
+
     def publish(self, raw: Any) -> None:
         """Append an event and notify every current/future subscriber."""
         text = raw.decode("utf-8", errors="replace") if isinstance(raw, bytes) else str(raw or "")
@@ -132,23 +156,25 @@ class ChatTask:
         ):
             logger.debug("Suppressing internal workspace checkpoint step for task %s", self.task_id)
             return
-        if event_name == "step" and isinstance(data, dict):
-            self.steps.append(dict(data))
-        elif event_name == "response" and isinstance(data, dict):
-            self.response = str(data.get("response") or "")
-            self.streamed_response = ""
-        elif event_name == "final_text_chunk" and isinstance(data, dict):
-            # Keep a durable fallback if the provider disconnects after the
-            # text stream but before the aggregate response event arrives.
-            self.streamed_response += str(data.get("text") or "")
-        elif event_name == "error" and isinstance(data, dict):
-            self.error = str(data.get("message") or data.get("error") or "")
-        elif event_name == "done" and isinstance(data, dict) and data.get("cancelled"):
-            self.status = "cancelled"
-        if event_name == "done":
-            self._terminal_event_seen = True
         with self._condition:
-            self._events.append(text)
+            if event_name == "step" and isinstance(data, dict):
+                self.steps.append(dict(data))
+                if len(self.steps) > MAX_TASK_STEPS:
+                    del self.steps[:-MAX_TASK_STEPS]
+            elif event_name == "response" and isinstance(data, dict):
+                self.response = str(data.get("response") or "")
+                self.streamed_response = ""
+            elif event_name == "final_text_chunk" and isinstance(data, dict):
+                # Keep a durable fallback if the provider disconnects after
+                # the text stream but before the aggregate response arrives.
+                self.streamed_response += str(data.get("text") or "")
+            elif event_name == "error" and isinstance(data, dict):
+                self.error = str(data.get("message") or data.get("error") or "")
+            elif event_name == "done" and isinstance(data, dict) and data.get("cancelled"):
+                self.status = "cancelled"
+            if event_name == "done":
+                self._terminal_event_seen = True
+            self._append_event_locked(text)
             self._condition.notify_all()
 
     def finish(self, status: str = "completed", error: str = "") -> None:
@@ -179,14 +205,16 @@ class ChatTask:
             self.completion_status = "cancelled"
             self.finished_at = time.time()
             if not self._terminal_event_seen:
-                self._events.append(self.encode_event("done", {"cancelled": True}))
+                self._append_event_locked(
+                    self.encode_event("done", {"cancelled": True})
+                )
                 self._terminal_event_seen = True
             self._condition.notify_all()
         return True
 
     def event_count(self) -> int:
         with self._condition:
-            return len(self._events)
+            return self._event_base + len(self._events)
 
     def set_persistence_status(self, status: str, error: str = "") -> None:
         with self._condition:
@@ -204,7 +232,14 @@ class ChatTask:
         while True:
             heartbeat = False
             with self._condition:
-                while index >= len(self._events) and self.status == "running":
+                relative = index - self._event_base
+                if relative < 0:
+                    # The requested prefix was trimmed by the bounded journal;
+                    # replay everything that remains rather than failing the
+                    # reconnect.
+                    index = self._event_base
+                    relative = 0
+                while relative >= len(self._events) and self.status == "running":
                     # A long model/tool phase may legitimately produce no
                     # user-visible event for a while. Emit a protocol comment
                     # after a bounded idle interval so reverse proxies and
@@ -213,9 +248,10 @@ class ChatTask:
                     if not self._condition.wait(timeout=10.0):
                         heartbeat = True
                         break
-                batch = self._events[index:]
-                index = len(self._events)
-                terminal = self.status != "running" and index >= len(self._events)
+                    relative = max(0, index - self._event_base)
+                batch = list(self._events)[relative:] if relative < len(self._events) else []
+                index = self._event_base + len(self._events)
+                terminal = self.status != "running" and (index - self._event_base) >= len(self._events)
             for event in batch:
                 yield event
             if heartbeat and not terminal:
@@ -254,7 +290,7 @@ class ChatTask:
                 "message": public_message,
                 "created_at": self.created_at,
                 "finished_at": self.finished_at,
-                "event_count": len(self._events),
+                "event_count": self._event_base + len(self._events),
                 "response_available": bool(self.response or self.streamed_response),
                 "result_committed": bool(self.result_committed),
                 "persistence_status": self.persistence_status,

@@ -1,5 +1,8 @@
 from pathlib import Path
 
+import numpy as np
+import pytest
+
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -356,6 +359,24 @@ def test_reviewed_response_is_streamed_without_creating_duplicate_bubbles():
     assert "el.classList.remove('is-streaming')" in core
 
 
+def test_live_chat_auto_follow_survives_stream_and_workflow_dock_reflow():
+    """A live reply must remain fully visible after every async layout mutation."""
+    ui = (ROOT / "web/app/static/js/brachybot-chat-todo.js").read_text(encoding="utf-8")
+    core = (ROOT / "web/app/static/js/brachybot-chat-core.js").read_text(encoding="utf-8")
+
+    assert "function requestChatScrollToBottom(options = {})" in core
+    assert "new ResizeObserver" in core
+    assert "window.requestAnimationFrame" in core
+    assert "if (!force && !_chatAutoFollow) return;" in core
+    assert "requestChatScrollToBottom();" in core.split(
+        "function updateStreamingResponse", 1
+    )[1].split("function finalizeStreamingResponse", 1)[0]
+    assert "container.appendChild(row);\n    requestChatScrollToBottom();" in core
+    assert "existingBlock.scrollIntoView" not in core
+    assert "responseEl.parentElement.appendChild(todo.root)" not in ui
+    assert "requestChatScrollToBottom" in ui
+
+
 def test_review_feedback_stays_internal_and_needle_overlay_is_entry_clipped():
     workflows = (ROOT / "agent_runtime/chat_workflows.py").read_text(encoding="utf-8")
     overlay = (ROOT / "web/app/static/js/brachybot-manual-annotation.js").read_text(encoding="utf-8")
@@ -524,6 +545,49 @@ def test_position_only_needle_edit_has_a_safe_persistence_endpoint():
     assert "reason: 'needle_drag'" in manual
 
 
+def test_manual_needle_safety_diff_validates_only_new_or_changed_segments():
+    from web.server_support import _changed_manual_needles
+
+    previous = [
+        {"id": "needle_1", "trajectory_id": "traj_1", "points": [[1, 2, 3], [1, 8, 3]]},
+        {"id": "needle_2", "trajectory_id": "traj_2", "points": [[4, 2, 3], [4, 8, 3]]},
+    ]
+    submitted = [
+        # A restored browser can renumber an algorithm needle. Stable
+        # trajectory ownership still proves that its segment is unchanged.
+        {"id": "restored_needle_1", "trajectory_id": "traj_1", "points": [[1, 2, 3], [1, 8, 3]]},
+        {"id": "needle_2", "trajectory_id": "traj_2", "points": [[4, 2, 3], [4, 8, 3]]},
+        {"id": "needle_manual_1", "trajectory_id": "manual_traj_1", "points": [[7, 2, 3], [7, 8, 3]]},
+    ]
+
+    changed = _changed_manual_needles(previous, submitted)
+    assert [item["id"] for item in changed] == ["needle_manual_1"]
+
+    submitted[1]["points"][1][0] = 4.5
+    changed = _changed_manual_needles(previous, submitted)
+    assert [item["id"] for item in changed] == ["needle_2", "needle_manual_1"]
+
+
+def test_display_dose_volume_quantization_is_bounded_and_reversible():
+    from web.routes.planning_routes import _quantize_dose_overlay_volume
+
+    dose = np.linspace(-0.25, 3.75, 60, dtype=np.float32).reshape(3, 4, 5)
+    encoded, minimum, scale = _quantize_dose_overlay_volume(dose)
+    restored = minimum + encoded.astype(np.float32) * scale
+
+    assert encoded.shape == dose.shape
+    assert encoded.dtype.itemsize == 2
+    assert encoded.flags.c_contiguous
+    assert np.max(np.abs(restored - dose)) <= scale / 2 + 1e-6
+
+    constant, constant_minimum, constant_scale = _quantize_dose_overlay_volume(
+        np.full((2, 3, 4), 0.75, dtype=np.float32)
+    )
+    assert not np.any(constant)
+    assert constant_minimum == pytest.approx(0.75)
+    assert constant_scale == 0.0
+
+
 def test_needle_endpoint_interaction_uses_scene_render_scheduler_and_seed_clipped_geometry():
     layout = (ROOT / "web/app/static/js/brachybot-viewer-layout.js").read_text(encoding="utf-8")
     manual = (ROOT / "web/app/static/js/brachybot-3d-manual.js").read_text(encoding="utf-8")
@@ -551,7 +615,7 @@ def test_needle_render_scheduler_survives_mixed_static_asset_revisions():
     # index.html. A stale assertion here falsely reports a deployment bug and
     # hides whether the endpoint interaction bundle is really versioned.
     assert "brachybot-viewer-layout.js?v=31" in index
-    assert "brachybot-3d-manual.js?v=62" in index
+    assert "brachybot-3d-manual.js?v=64" in index
     assert "scene3D.requestRender(1)" in layout
     assert "scene3D.requestRender(2)" in layout
     assert "window.requestRender = requestRender;" in manual
@@ -624,6 +688,14 @@ def test_dose_overlay_opacity_is_invariant_during_slice_scrubbing():
     )
     assert "Number(state.slices?.[axis]) !== Number(sliceIndex)" in server_renderer
     assert "mark2DViewerBaseSliceRendered(axis, sliceIndex)" in server_renderer
+    assert "state.doseOverlay.volumeData instanceof Uint16Array" in dose_dispatch
+    assert "renderDoseOverlayVolumeOnLayer" in dose_dispatch
+    assert "function loadDoseOverlayVolume" in manual
+    assert "function doseOverlaySliceCacheKey" in manual
+    assert "const cacheKey = doseOverlaySliceCacheKey(axis, sliceIndex, ownerOverlay);" in manual
+    assert '@app.route("/api/planning/dose_overlay_volume", methods=["GET"])' in (
+        ROOT / "web/routes/planning_routes.py"
+    ).read_text(encoding="utf-8")
     assert "function _composite2DViewerCanvas(axis, options = {})" in report_export
     assert "options.doseOpacity" in report_export
     assert "state.doseOverlay.opacity = 0.75" not in report_editor
@@ -633,8 +705,8 @@ def test_dose_overlay_opacity_is_invariant_during_slice_scrubbing():
     assert "_composite2DViewerCanvas(cfg.ax, { doseOpacity: 0.75 })" in dvh_planning
     assert "_composite2DViewerCanvas(a.ax, { doseOpacity: 0.7 })" in ui_api
     assert "brachybot-viewer-volume.js?v=38" in index
-    assert "brachybot-3d-manual.js?v=62" in index
-    assert "brachybot-manual-annotation.js?v=15" in index
+    assert "brachybot-3d-manual.js?v=64" in index
+    assert "brachybot-manual-annotation.js?v=16" in index
 
 
 def test_manual_seed_defaults_to_needle_middle_and_is_proximity_selectable():
@@ -646,10 +718,17 @@ def test_manual_seed_defaults_to_needle_middle_and_is_proximity_selectable():
     endpoint, merge with the endpoint handle sphere, and become ungrabbable."""
     manual = (ROOT / "web/app/static/js/brachybot-3d-manual.js").read_text(encoding="utf-8")
     add_block = manual.split("async function addManualSeed()", 1)[1].split("_upsertSceneMesh(seed.id", 1)[0]
-    # The first seed must be placed around the midpoint, not at an endpoint.
-    assert "0.5 - spread * Math.ceil(existing / 2)" in add_block
-    assert "0.5 + spread * Math.ceil(existing / 2)" in add_block
-    assert "Math.max(0.18, Math.min(0.82, frac))" in add_block
+    # Seed placement now delegates to the free-slot search. The helper keeps
+    # the same usable span away from both endpoint handles (0.18-0.82) and
+    # places each seed at the candidate with the largest nearest-neighbour
+    # gap, so an empty needle resolves to its midpoint region — never an
+    # endpoint.
+    assert "_findFreeSeedSlotOnNeedle(needle)" in add_block
+    helper_block = manual.split("function _findFreeSeedSlotOnNeedle(", 1)[1].split("function _cloneManualSeeds", 1)[0]
+    assert "const lo = 0.18;" in helper_block
+    assert "const hi = 0.82;" in helper_block
+    assert "bestGapMm" in helper_block and "nearestMm" in helper_block
+    assert "minGapMm = seedLengthMm + 2 * seedRadiusMm + 0.5" in helper_block
     assert "0.22" not in add_block
     # The 3D pick must prefer a seed near the pointer over an endpoint handle.
     assert "prefer that seed over any endpoint handle" in manual

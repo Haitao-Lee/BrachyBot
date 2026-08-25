@@ -70,6 +70,117 @@ MIN_OPEN_FILE_LIMIT = int(
 logger = logging.getLogger(__name__)
 
 
+def _ui_control_value(ui_state: Any, control_id: str, default: Any = None) -> Any:
+    if not isinstance(ui_state, Mapping):
+        return default
+    controls = ui_state.get("controls")
+    if not isinstance(controls, Mapping):
+        return default
+    control = controls.get(control_id)
+    if not isinstance(control, Mapping):
+        return default
+    return control.get("value", default)
+
+
+def _repair_restored_manual_ctv(
+    planning_results: Dict[str, Any],
+    ui_state: Any,
+) -> bool:
+    """Migrate a legacy uploaded multi-label CTV to the binary plan contract.
+
+    Older snapshots persisted every positive source label as active CTV.  In
+    addition to inflating volume, labels 2/3 are reserved as hard obstacles by
+    the trajectory pipeline.  Hydration is the only boundary that sees every
+    restored array before publication, so repair the case atomically there.
+    """
+
+    if str(planning_results.get("ctv_source") or "") != "manual_label":
+        return False
+    if (
+        planning_results.get("ctv_normalized_binary") is True
+        and int(planning_results.get("ctv_normalization_version") or 0) >= 1
+    ):
+        return False
+
+    source = planning_results.get("ctv_array")
+    if source is None:
+        source = planning_results.get("ctv_label_data")
+    if source is None:
+        return False
+
+    from tool_factory.segmentation_alignment import select_label_as_binary
+
+    requested_target = planning_results.get("ctv_target_value")
+    if requested_target is None:
+        requested_target = _ui_control_value(ui_state, "targetValue", 1)
+    try:
+        binary, selection = select_label_as_binary(source, requested_target)
+    except ValueError:
+        logger.exception(
+            "Could not normalize restored manual CTV target_value=%r",
+            requested_target,
+        )
+        return False
+
+    planning_results["ctv_array"] = binary
+    planning_results["ctv_label_data"] = binary.copy()
+    existing_mask = planning_results.get("ctv_mask")
+    if existing_mask is not None:
+        try:
+            import SimpleITK as sitk
+
+            if isinstance(existing_mask, sitk.Image):
+                repaired_image = sitk.GetImageFromArray(binary)
+                repaired_image.CopyInformation(existing_mask)
+                planning_results["ctv_mask"] = repaired_image
+            elif isinstance(existing_mask, np.ndarray):
+                planning_results["ctv_mask"] = binary.copy()
+        except Exception:
+            logger.exception("Could not rebuild restored manual CTV image wrapper")
+
+    # The selected source id remains auditable, but no source label value can
+    # leak into active planning semantics after migration.
+    selected_target = int(selection["selected_target_value"])
+    planning_results["ctv_target_value"] = selected_target
+    planning_results["ctv_requested_target_value"] = int(
+        selection["requested_target_value"]
+    )
+    planning_results["ctv_source_labels"] = list(selection["source_labels"])
+    planning_results["ctv_source_label_counts"] = dict(
+        selection["source_label_counts"]
+    )
+    planning_results["ctv_normalized_binary"] = True
+    planning_results["ctv_normalization_version"] = 1
+    planning_results["ctv_full_labels"] = None
+    planning_results["ctv_embedded_oar_array"] = None
+
+    previous_map = planning_results.get("ctv_label_map")
+    names = list(previous_map.values()) if isinstance(previous_map, Mapping) else []
+    target_name = next(
+        (str(name) for name in names if "tumor" in str(name).casefold()),
+        "CTV",
+    )
+    planning_results["ctv_label_map"] = {1: target_name}
+    planning_results["ctv_label_stats"] = {}
+    voxel_count = int(selection["selected_voxel_count"])
+    planning_results["ctv_voxels"] = voxel_count
+    spacing = planning_results.get("ct_spacing")
+    if spacing is None:
+        spacing = (1.0, 1.0, 1.0)
+    try:
+        voxel_volume_mm3 = float(np.prod(np.asarray(spacing, dtype=np.float64)[:3]))
+    except Exception:
+        voxel_volume_mm3 = 1.0
+    planning_results["ctv_volume_mm3"] = float(voxel_count * voxel_volume_mm3)
+    logger.warning(
+        "Migrated restored manual CTV source labels=%s selected=%s voxels=%s",
+        selection["source_labels"],
+        selected_target,
+        voxel_count,
+    )
+    return True
+
+
 def _is_internal_visual_record(record: Any) -> bool:
     """Recognize explicit or legacy hidden screenshot-follow-up records.
 
@@ -1266,10 +1377,165 @@ class WorkspaceStore:
         # baseline for its complete stream.  The filesystem remains the
         # authority after a restart or an external filesystem change.
         self._storage_usage_cache: Dict[str, int] = {}
+        # Quota enforcement must be atomic per account. Two concurrent uploads
+        # that only read the same point-in-time total could both fit their
+        # bytes individually and overshoot the configured limit together.
+        # Serializing check-through-commit on this per-account lock closes
+        # that window without blocking unrelated accounts.
+        # Re-entrant because quota validation helpers can be called from an
+        # already active account commit section.
+        self._quota_commit_locks: Dict[str, threading.RLock] = {}
+        self._quota_reservations: Dict[str, int] = {}
+        # Direct exporters own a category for the duration of generation.
+        # Ordinary write_artifact calls take the same lock so a rollback can
+        # never erase a concurrent successful artifact in that category.
+        self._workspace_output_locks: Dict[
+            Tuple[str, str, str], threading.RLock
+        ] = {}
         self._ensure_layout()
+        # Scene exports and .part temporaries from a previous process can
+        # never be downloaded again (job records are in-memory only); reclaim
+        # them before the quota cache or trash purge touches the disk.
+        try:
+            self.purge_scene_exports()
+            self.cleanup_staging()
+        except Exception:
+            logger.debug("Startup staging cleanup failed", exc_info=True)
         self._initialize_database()
         self.purge_expired_trash()
         self.mark_running_sessions_interrupted()
+
+    @contextmanager
+    def _quota_commit_lock(self, user_id: str) -> Iterator[None]:
+        """Serialize quota-check-through-commit for one account."""
+        key = str(user_id)
+        with self._lock:
+            lock_obj = self._quota_commit_locks.get(key)
+            if lock_obj is None:
+                lock_obj = threading.RLock()
+                self._quota_commit_locks[key] = lock_obj
+        with lock_obj:
+            yield
+
+    @contextmanager
+    def _workspace_output_lock(
+        self, user_id: str, session_id: str, category: str
+    ) -> Iterator[None]:
+        key = (str(user_id), str(session_id), str(category))
+        with self._lock:
+            lock_obj = self._workspace_output_locks.get(key)
+            if lock_obj is None:
+                lock_obj = threading.RLock()
+                self._workspace_output_locks[key] = lock_obj
+        with lock_obj:
+            yield
+
+    @contextmanager
+    def workspace_output_transaction(
+        self,
+        user_id: str,
+        session_id: str,
+        category: str,
+        *,
+        additional_bytes: int = 0,
+    ) -> Iterator[Path]:
+        """Serialize and roll back a direct-to-directory workspace exporter.
+
+        Some scientific exporters require a filesystem directory and cannot
+        stream through :meth:`write_artifact`.  An account-wide byte
+        reservation protects their expected output while long generation runs
+        outside the short quota lock. A category lock and private backup then
+        make final validation/rollback atomic, so a rejected export cannot
+        leave partial files behind.
+        """
+        self.get_session(user_id, session_id)
+        safe_category = _safe_filename(category)
+        reservation = max(0, int(additional_bytes or 0))
+        reservation_key = str(user_id)
+        root = _safe_workspace_child(
+            self.workspace_root(user_id, session_id, create=True) / "artifacts",
+            safe_category,
+        )
+        backup = self.staging_dir / f"workspace-output-{secrets.token_hex(16)}"
+
+        with self._workspace_output_lock(user_id, session_id, safe_category):
+            had_root = root.is_dir()
+            backup_complete = not had_root
+            generation_started = False
+            reserved = False
+            try:
+                # Reserve expected bytes atomically, then release the account
+                # lock while the scientific exporter performs potentially
+                # long CPU/GPU work. Other writers account for this pending
+                # reservation in their own short commit sections.
+                with self._quota_commit_lock(user_id):
+                    self.ensure_capacity(user_id, reservation)
+                    with self._lock:
+                        self._quota_reservations[reservation_key] = (
+                            self._quota_reservations.get(reservation_key, 0)
+                            + reservation
+                        )
+                    reserved = True
+
+                if root.exists() and not root.is_dir():
+                    raise WorkspaceError(
+                        "Workspace output category is not a directory"
+                    )
+                if had_root:
+                    shutil.copytree(root, backup)
+                    backup_complete = True
+                root.mkdir(parents=True, exist_ok=True)
+                generation_started = True
+
+                yield root
+
+                # Direct exporters bypass write_* hooks. Validate their
+                # actual committed bytes while normal writers are excluded
+                # from the quota commit section. The transaction's own
+                # reservation is intentionally not double-counted here.
+                with self._quota_commit_lock(user_id):
+                    self._invalidate_storage_usage(user_id)
+                    user = self.get_user_by_id(user_id)
+                    if not user:
+                        raise WorkspaceNotFound("Account is unavailable")
+                    if self.user_storage_bytes(user_id) > int(
+                        user["storage_quota_bytes"]
+                    ):
+                        raise WorkspaceQuotaExceeded(
+                            "Account storage quota would be exceeded"
+                        )
+            except BaseException:
+                if generation_started:
+                    with self._quota_commit_lock(user_id):
+                        try:
+                            if root.exists():
+                                shutil.rmtree(root)
+                            if had_root and backup_complete and backup.exists():
+                                root.parent.mkdir(parents=True, exist_ok=True)
+                                shutil.move(str(backup), str(root))
+                        finally:
+                            self._invalidate_storage_usage(user_id)
+                raise
+            finally:
+                if reserved:
+                    with self._quota_commit_lock(user_id):
+                        with self._lock:
+                            remaining = max(
+                                0,
+                                self._quota_reservations.get(
+                                    reservation_key, 0
+                                ) - reservation,
+                            )
+                            if remaining:
+                                self._quota_reservations[
+                                    reservation_key
+                                ] = remaining
+                            else:
+                                self._quota_reservations.pop(
+                                    reservation_key, None
+                                )
+                if backup.exists():
+                    shutil.rmtree(backup, ignore_errors=True)
 
     def _ensure_layout(self) -> None:
         for directory in (self.runtime_dir, self.workspaces_dir, self.trash_dir, self.staging_dir):
@@ -1278,6 +1544,61 @@ class WorkspaceStore:
                 os.chmod(directory, 0o700)
             except OSError:
                 pass
+
+    def cleanup_staging(self, *, export_ttl_seconds: int = 24 * 3600, part_ttl_seconds: int = 3600) -> Dict[str, int]:
+        """Reclaim staging bytes left by crashed or completed exports.
+
+        Scene-export job records live only in process memory, so after a
+        restart nothing can ever serve their staging directories again; the
+        whole ``scene_exports`` tree is therefore removed at startup. Stale
+        ``.part`` upload temporaries (a crash between temp creation and the
+        request's ``finally`` cleanup) and any export older than the TTL are
+        removed as well. This runs on init and from the export manager's
+        activity-driven purge.
+        """
+        removed_exports = 0
+        removed_parts = 0
+        scene_root = self.staging_dir / "scene_exports"
+        now = time.time()
+        if scene_root.is_dir():
+            for child in scene_root.iterdir():
+                try:
+                    if now - child.stat().st_mtime > export_ttl_seconds:
+                        if child.is_dir():
+                            shutil.rmtree(child, ignore_errors=True)
+                        else:
+                            child.unlink(missing_ok=True)
+                        removed_exports += 1
+                except OSError:
+                    continue
+        for part in self.staging_dir.glob("*.part"):
+            try:
+                if now - part.stat().st_mtime > part_ttl_seconds:
+                    part.unlink(missing_ok=True)
+                    removed_parts += 1
+            except OSError:
+                continue
+        return {"expired_exports": removed_exports, "stale_part_files": removed_parts}
+
+    def purge_scene_exports(self) -> int:
+        """Remove every staged scene export (used at startup).
+
+        Job registries are process-local, so staged exports from a previous
+        run have no remaining authorized download path.
+        """
+        scene_root = self.staging_dir / "scene_exports"
+        removed = 0
+        if scene_root.is_dir():
+            for child in scene_root.iterdir():
+                try:
+                    if child.is_dir():
+                        shutil.rmtree(child, ignore_errors=True)
+                    else:
+                        child.unlink(missing_ok=True)
+                    removed += 1
+                except OSError:
+                    continue
+        return removed
 
     @contextmanager
     def _connection(self) -> Iterator[sqlite3.Connection]:
@@ -1311,8 +1632,7 @@ class WorkspaceStore:
                     storage_quota_bytes INTEGER NOT NULL,
                     created_at REAL NOT NULL,
                     updated_at REAL NOT NULL
-                );
-                CREATE TABLE IF NOT EXISTS case_sessions (
+                );                CREATE TABLE IF NOT EXISTS case_sessions (
                     id TEXT PRIMARY KEY,
                     user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
                     title TEXT NOT NULL,
@@ -1354,6 +1674,12 @@ class WorkspaceStore:
                     ON review_comments(user_id, session_id, created_at ASC);
                 """
             )
+            # Lightweight in-place migrations for databases created before a
+            # column existed. auth_epoch is bumped on every password change so
+            # sessions issued before the rotation stop authenticating.
+            user_columns = {row[1] for row in connection.execute("PRAGMA table_info(users)").fetchall()}
+            if "auth_epoch" not in user_columns:
+                connection.execute("ALTER TABLE users ADD COLUMN auth_epoch INTEGER NOT NULL DEFAULT 0")
         for path in (self.database_path, self.database_path.with_name(self.database_path.name + "-wal"), self.database_path.with_name(self.database_path.name + "-shm")):
             if path.exists():
                 try:
@@ -1388,15 +1714,25 @@ class WorkspaceStore:
             row = connection.execute("SELECT * FROM users WHERE username = ? COLLATE NOCASE", (str(username or "").strip(),)).fetchone()
         return dict(row) if row else None
 
-    def update_password_hash(self, user_id: str, password_hash: str) -> None:
+    def update_password_hash(self, user_id: str, password_hash: str) -> int:
+        """Rotate the password and bump the account auth epoch.
+
+        Returns the new epoch so the caller can keep its own browser session
+        signed in while every other session (which still carries the previous
+        epoch) is rejected at the authentication boundary.
+        """
         with self._connection() as connection:
             result = connection.execute(
-                "UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ? AND is_active = 1",
+                "UPDATE users SET password_hash = ?, auth_epoch = COALESCE(auth_epoch, 0) + 1, updated_at = ? WHERE id = ? AND is_active = 1",
                 (password_hash, _now(), user_id),
             )
-        if result.rowcount != 1:
-            raise WorkspaceNotFound("Account is unavailable")
+            if result.rowcount != 1:
+                raise WorkspaceNotFound("Account is unavailable")
+            row = connection.execute(
+                "SELECT COALESCE(auth_epoch, 0) AS auth_epoch FROM users WHERE id = ?", (user_id,)
+            ).fetchone()
         self._audit(user_id, None, "user.password_changed", {})
+        return int(row["auth_epoch"]) if row else 0
 
     def create_session(self, user_id: str, title: str = "New case") -> WorkspaceSession:
         session_id = uuid.uuid4().hex
@@ -2239,6 +2575,10 @@ class WorkspaceStore:
         conversation_state = _restore_json(state.get("conversation_state") or {})
         user_lang = str(state.get("user_lang") or "en")
         ui_state = _restore_json(state.get("ui_state") or {})
+        manual_ctv_repaired = bool(
+            include_planning_results
+            and _repair_restored_manual_ctv(decoded_results, ui_state)
+        )
         planning_versions = (
             {
                 str(key): int(value or 0)
@@ -2296,6 +2636,7 @@ class WorkspaceStore:
             )
         restored_aliases: List[str] = []
         planning_reconciliation: Dict[str, Any] = {}
+        setattr(agent, "_workspace_hydration_repaired", manual_ctv_repaired)
         if include_planning_results:
             # Historical Planning snapshots are immutable and authoritative.
             # Reconcile the registry and select a complete restore point before
@@ -2316,7 +2657,9 @@ class WorkspaceStore:
                     agent,
                     "_workspace_hydration_repaired",
                     bool(
-                        planning_reconciliation.get("changed")
+                        manual_ctv_repaired
+                        or getattr(agent, "_workspace_hydration_repaired", False)
+                        or planning_reconciliation.get("changed")
                         or restored_aliases
                     ),
                 )
@@ -2713,8 +3056,14 @@ class WorkspaceStore:
         token = str(owner_token or "").strip()
         if len(token) < 16:
             raise WorkspaceError("Invalid editor token")
+        try:
+            ttl_value = int(ttl_seconds)
+        except (TypeError, ValueError):
+            # Malformed client input is a request problem; clamp to the
+            # documented default instead of escaping as a server error.
+            ttl_value = 75
         now = _now()
-        expiry = now + max(15, min(int(ttl_seconds), 300))
+        expiry = now + max(15, min(ttl_value, 300))
         with self._connection() as connection:
             connection.execute("BEGIN IMMEDIATE")
             row = connection.execute("SELECT * FROM workspace_leases WHERE session_id = ?", (session_id,)).fetchone()
@@ -2804,6 +3153,10 @@ class WorkspaceStore:
         for root in (self.workspace_root(user_id, session_id), self.workspace_root(user_id, session_id, trashed=True)):
             if root.exists():
                 shutil.rmtree(root)
+        # rmtree removed bytes without any write_upload/_write_snapshot book
+        # keeping; drop the cached quota total or the account stays charged
+        # for deleted data until some unrelated write refreshes it.
+        self._invalidate_storage_usage(user_id)
         with self._connection() as connection:
             connection.execute("DELETE FROM case_sessions WHERE id = ? AND user_id = ?", (session_id, user_id))
         with self._lock:
@@ -2846,11 +3199,29 @@ class WorkspaceStore:
         with self._lock:
             self._storage_usage_cache.pop(str(user_id), None)
 
+    def invalidate_storage_usage(self, user_id: str) -> None:
+        """Public hook for route-level direct deletions.
+
+        Routes that unlink workspace files outside ``write_*`` helpers (for
+        example report PDFs or screenshots) must drop the cached quota total
+        so the freed bytes stop counting against the account immediately.
+        """
+        self._invalidate_storage_usage(user_id)
+
+    def _reserved_storage_bytes(self, user_id: str) -> int:
+        with self._lock:
+            return max(0, int(self._quota_reservations.get(str(user_id), 0)))
+
     def ensure_capacity(self, user_id: str, additional_bytes: int) -> None:
         user = self.get_user_by_id(user_id)
         if not user:
             raise WorkspaceNotFound("Account is unavailable")
-        if self.user_storage_bytes(user_id) + max(0, int(additional_bytes)) > int(user["storage_quota_bytes"]):
+        projected = (
+            self.user_storage_bytes(user_id)
+            + self._reserved_storage_bytes(user_id)
+            + max(0, int(additional_bytes))
+        )
+        if projected > int(user["storage_quota_bytes"]):
             raise WorkspaceQuotaExceeded("Account storage quota would be exceeded")
 
     def _ensure_replacement_capacity(self, user_id: str, path: Path, new_size: int) -> None:
@@ -2862,6 +3233,13 @@ class WorkspaceStore:
         self.ensure_capacity(user_id, max(0, int(new_size) - int(previous_size)))
 
     def _write_snapshot(self, user_id: str, path: Path, snapshot: Mapping[str, Any]) -> None:
+        # Snapshot JSON consumes the same account quota as uploads and
+        # generated artifacts.  It must not race a screenshot or a direct
+        # exporter after those writers have checked their available bytes.
+        with self._quota_commit_lock(user_id):
+            self._write_snapshot_locked(user_id, path, snapshot)
+
+    def _write_snapshot_locked(self, user_id: str, path: Path, snapshot: Mapping[str, Any]) -> None:
         payload = json.dumps(snapshot, ensure_ascii=False, indent=2, allow_nan=False).encode("utf-8")
         self._ensure_replacement_capacity(user_id, path, len(payload))
         _atomic_bytes(path, payload)
@@ -2881,21 +3259,44 @@ class WorkspaceStore:
 
     def write_upload(self, user_id: str, session_id: str, relative: str, stream: Any, expected_bytes: int = 0) -> Path:
         self.get_session(user_id, session_id)
-        root = self.workspace_root(user_id, session_id, create=True)
-        path = _safe_workspace_child(root / "inputs", relative)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        # Take one capacity snapshot before streaming.  Calling
-        # ``user_storage_bytes`` from the loop below previously performed an
-        # account-wide rglob for every 1 MiB chunk, making a small CT upload
-        # appear frozen when old sessions contained large NPY artifacts.
         user = self.get_user_by_id(user_id)
         if not user:
             raise WorkspaceNotFound("Account is unavailable")
+        # The capacity baseline, the streaming guard, and the final commit
+        # share one per-account lock so a concurrent upload cannot slip
+        # between the check and the replace.
+        with self._quota_commit_lock(user_id):
+            return self._write_upload_locked(user, session_id, relative, stream, expected_bytes)
+
+    def _write_upload_locked(self, user: Mapping[str, Any], session_id: str, relative: str, stream: Any, expected_bytes: int = 0) -> Path:
+        user_id = str(user["id"])
+        root = self.workspace_root(user_id, session_id, create=True)
+        path = _safe_workspace_child(root / "inputs", relative)
+        # Timestamp-based upload names have second resolution, so two
+        # same-name uploads can race. ``os.replace`` would let the later
+        # arrival silently destroy the earlier input file. Probe for a free
+        # name here, under the same per-account lock that covers the final
+        # commit, so the chosen name cannot be taken between check and
+        # write. The committed name may therefore differ from the requested
+        # one; callers must use the returned path.
+        probe = 0
+        while path.exists():
+            probe += 1
+            stem, ext = os.path.splitext(path)
+            path = Path(f"{stem}_{probe}{ext}")
+            if probe > 9999:
+                raise WorkspaceError("Unable to find a free upload name")
+        path.parent.mkdir(parents=True, exist_ok=True)
         try:
             previous_size = path.stat().st_size if path.exists() else 0
         except OSError:
             previous_size = 0
-        quota_remaining = int(user["storage_quota_bytes"]) - self.user_storage_bytes(user_id) + int(previous_size)
+        quota_remaining = (
+            int(user["storage_quota_bytes"])
+            - self.user_storage_bytes(user_id)
+            - self._reserved_storage_bytes(user_id)
+            + int(previous_size)
+        )
         expected = max(0, int(expected_bytes or 0))
         if expected and expected > quota_remaining:
             raise WorkspaceQuotaExceeded("Account storage quota would be exceeded")
@@ -2926,12 +3327,16 @@ class WorkspaceStore:
 
     def write_screenshot(self, user_id: str, session_id: str, filename: str, png: bytes) -> Path:
         self.get_session(user_id, session_id)
-        root = self.workspace_root(user_id, session_id, create=True)
-        path = _safe_workspace_child(root / "screenshots", filename)
-        self._ensure_replacement_capacity(user_id, path, len(png))
-        _atomic_bytes(path, png)
-        self._invalidate_storage_usage(user_id)
-        return path
+        # Screenshots participate in the same account-wide commit boundary as
+        # uploads.  Without this lock, one screenshot and one upload can both
+        # approve the same remaining bytes and exceed the quota together.
+        with self._quota_commit_lock(user_id):
+            root = self.workspace_root(user_id, session_id, create=True)
+            path = _safe_workspace_child(root / "screenshots", filename)
+            self._ensure_replacement_capacity(user_id, path, len(png))
+            _atomic_bytes(path, png)
+            self._invalidate_storage_usage(user_id)
+            return path
 
     def write_artifact(self, user_id: str, session_id: str, category: str, filename: str, stream: Any, expected_bytes: int = 0) -> Path:
         """Write a generated case artifact under the owned workspace.
@@ -2942,17 +3347,30 @@ class WorkspaceStore:
         self.get_session(user_id, session_id)
         safe_category = _safe_filename(category)
         safe_name = _safe_filename(filename)
-        root = self.workspace_root(user_id, session_id, create=True)
-        path = _safe_workspace_child(root / "artifacts" / safe_category, safe_name)
-        path.parent.mkdir(parents=True, exist_ok=True)
         user = self.get_user_by_id(user_id)
         if not user:
             raise WorkspaceNotFound("Account is unavailable")
+        # Same per-account atomicity contract as write_upload. The category
+        # lock also prevents a direct-export rollback from erasing this file.
+        with self._workspace_output_lock(user_id, session_id, safe_category):
+            with self._quota_commit_lock(user_id):
+                return self._write_artifact_locked(user, session_id, safe_category, safe_name, stream, expected_bytes)
+
+    def _write_artifact_locked(self, user: Mapping[str, Any], session_id: str, safe_category: str, safe_name: str, stream: Any, expected_bytes: int = 0) -> Path:
+        user_id = str(user["id"])
+        root = self.workspace_root(user_id, session_id, create=True)
+        path = _safe_workspace_child(root / "artifacts" / safe_category, safe_name)
+        path.parent.mkdir(parents=True, exist_ok=True)
         try:
             previous_size = path.stat().st_size if path.exists() else 0
         except OSError:
             previous_size = 0
-        quota_remaining = int(user["storage_quota_bytes"]) - self.user_storage_bytes(user_id) + int(previous_size)
+        quota_remaining = (
+            int(user["storage_quota_bytes"])
+            - self.user_storage_bytes(user_id)
+            - self._reserved_storage_bytes(user_id)
+            + int(previous_size)
+        )
         expected = max(0, int(expected_bytes or 0))
         if expected and expected > quota_remaining:
             raise WorkspaceQuotaExceeded("Account storage quota would be exceeded")
@@ -3007,7 +3425,11 @@ class WorkspaceStore:
     def list_audit_events(self, user_id: str, session_id: str, limit: int = 200) -> List[Dict[str, Any]]:
         """Return case-scoped audit events without exposing another case's log."""
         self.get_session(user_id, session_id)
-        bounded = max(1, min(int(limit or 200), 1000))
+        try:
+            requested_limit = int(limit or 200)
+        except (TypeError, ValueError):
+            requested_limit = 200
+        bounded = max(1, min(requested_limit, 1000))
         with self._connection() as connection:
             rows = connection.execute(
                 "SELECT id, action, detail_json, created_at FROM audit_events "

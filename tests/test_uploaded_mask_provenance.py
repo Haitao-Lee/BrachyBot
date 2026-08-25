@@ -84,6 +84,57 @@ def test_uploaded_ctv_uses_selected_tumor_type(tmp_path):
     assert result.metadata["label_map"][1] == "pancreatic tumor"
 
 
+def test_uploaded_multilabel_ctv_selects_only_requested_target(tmp_path):
+    ct_path, _, _ = _write_case(tmp_path)
+    reference = sitk.ReadImage(ct_path)
+    labels = np.zeros((6, 8, 10), dtype=np.uint8)
+    labels[:, 1:7, 1:9] = 1  # large body/organ contour
+    labels[2:4, 3:6, 4:7] = 2  # actual target selected in the UI
+    label_image = sitk.GetImageFromArray(labels)
+    label_image.CopyInformation(reference)
+    label_path = tmp_path / "multilabel_ctv.nii.gz"
+    sitk.WriteImage(label_image, str(label_path))
+
+    result = CTVSegmentationTool()._execute(
+        image_path=ct_path,
+        label_path=str(label_path),
+        tumor_type="nnunet_pancreatic",
+        target_value=2,
+    )
+
+    assert result.success
+    assert set(np.unique(result.metadata["ctv_array"]).tolist()) == {0, 1}
+    assert int(np.count_nonzero(result.metadata["ctv_array"])) == 2 * 3 * 3
+    assert result.metadata["ctv_target_value"] == 2
+    assert result.metadata["ctv_requested_target_value"] == 2
+    assert result.metadata["ctv_source_labels"] == [1, 2]
+    assert result.metadata["ctv_source_label_counts"][2] == 2 * 3 * 3
+    assert result.metadata["ctv_normalized_binary"] is True
+    assert result.metadata["label_map"] == {1: "pancreatic tumor"}
+
+
+def test_uploaded_multilabel_ctv_rejects_absent_requested_target(tmp_path):
+    ct_path, _, _ = _write_case(tmp_path)
+    reference = sitk.ReadImage(ct_path)
+    labels = np.zeros((6, 8, 10), dtype=np.uint8)
+    labels[1:3, 1:3, 1:3] = 1
+    labels[3:5, 5:7, 6:8] = 2
+    label_image = sitk.GetImageFromArray(labels)
+    label_image.CopyInformation(reference)
+    label_path = tmp_path / "missing_target_ctv.nii.gz"
+    sitk.WriteImage(label_image, str(label_path))
+
+    result = CTVSegmentationTool()._execute(
+        image_path=ct_path,
+        label_path=str(label_path),
+        target_value=3,
+    )
+
+    assert not result.success
+    assert result.metadata["code"] == "invalid_ctv_target_label"
+    assert "available positive labels are 1, 2" in result.error
+
+
 def test_unknown_oar_source_never_falls_back_to_anatomy_mapping(tmp_path):
     _, _, oar_path = _write_case(tmp_path)
     result = OARSegmentationTool()._execute(label_path=oar_path)

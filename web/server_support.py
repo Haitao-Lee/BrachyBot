@@ -1657,9 +1657,13 @@ def _validate_manual_needle_safety(agent, needles, ct_image, ctv_mask, oar_mask)
     from tool_factory.seed_plan.planning_pipeline import (
         _resolve_data_tree_obstacle_labels,
         _world_segment_hits_obstacle,
+        build_needle_safety_context,
     )
 
     obstacle_labels, _ = _resolve_data_tree_obstacle_labels(agent)
+    # One precomputed obstacle volume serves every submitted needle; building
+    # it per needle rescaled validation cost with plan size.
+    safety_context = build_needle_safety_context(ct_image, ctv_mask, oar_mask, obstacle_labels)
     rejected = []
     for index, needle in enumerate(needles or []):
         if not isinstance(needle, dict):
@@ -1677,12 +1681,74 @@ def _validate_manual_needle_safety(agent, needles, ct_image, ctv_mask, oar_mask)
         except Exception:
             rejected.append(needle_id)
             continue
+
         if _world_segment_hits_obstacle(
-            [start, end], ct_image, ctv_mask, oar_mask, obstacle_labels
+            [start, end], ct_image, ctv_mask, oar_mask, obstacle_labels,
+            context=safety_context,
         ):
             rejected.append(needle_id)
     if rejected:
         raise ManualNeedleSafetyError(rejected)
+
+
+def _changed_manual_needles(
+    previous_needles,
+    submitted_needles,
+    *,
+    atol: float = 1e-5,
+) -> list:
+    """Return only new or geometrically changed submitted needle segments.
+
+    The browser commits the complete visible plan after every edit.  Historical
+    algorithm needles were already accepted by the planning pipeline and may
+    not satisfy a later, stricter Data Tree obstacle configuration. Rechecking
+    all of them turns an Add Needle transaction into an unrelated whole-plan
+    rejection after restart. Match stable id first and trajectory id second,
+    then gate only the segment introduced or changed by this transaction.
+    """
+
+    import numpy as np
+
+    by_id = {}
+    by_trajectory = {}
+    for needle in previous_needles or []:
+        if not isinstance(needle, dict):
+            continue
+        needle_id = str(needle.get("id") or "").strip()
+        trajectory_id = str(needle.get("trajectory_id") or "").strip()
+        if needle_id:
+            by_id.setdefault(needle_id, needle)
+        if trajectory_id:
+            by_trajectory.setdefault(trajectory_id, needle)
+
+    changed = []
+    for needle in submitted_needles or []:
+        if not isinstance(needle, dict):
+            continue
+        needle_id = str(needle.get("id") or "").strip()
+        trajectory_id = str(needle.get("trajectory_id") or "").strip()
+        previous = by_id.get(needle_id) if needle_id else None
+        if previous is None and trajectory_id:
+            previous = by_trajectory.get(trajectory_id)
+        if previous is None:
+            changed.append(needle)
+            continue
+        try:
+            old_points = np.asarray(previous.get("points"), dtype=np.float64)
+            new_points = np.asarray(needle.get("points"), dtype=np.float64)
+            old_segment = np.vstack((old_points[0, :3], old_points[-1, :3]))
+            new_segment = np.vstack((new_points[0, :3], new_points[-1, :3]))
+            same_segment = np.allclose(
+                old_segment,
+                new_segment,
+                rtol=0.0,
+                atol=float(atol),
+            )
+        except Exception:
+            same_segment = False
+        if not same_segment:
+            changed.append(needle)
+    return changed
 
 
 def _reproject_seeds_onto_needles(
@@ -2803,6 +2869,30 @@ def _allowed_read_roots() -> list:
         "/tmp",
         "/data",
         *_env_paths("BRACHYBOT_DATA_ROOTS"),
+        # The typed modality roots are documented deployment settings (see
+        # docs/BRACHYBOT_CODE_IMPLEMENTATION). They were consumed by the
+        # filesystem browser but not by this allowlist, so an operator who
+        # configured only these variables could never serve those images
+        # through the viewer.
+        *_env_paths("BRACHYBOT_CT_DATA_ROOTS"),
+        *_env_paths("BRACHYBOT_MR_DATA_ROOTS"),
+        *_env_paths("BRACHYBOT_US_DATA_ROOTS"),
+    ])
+
+
+def configured_external_read_roots() -> list:
+    """Operator-configured external imaging roots.
+
+    Paths under these roots are trusted server configuration rather than
+    case artifacts, so the viewer may serve them without a per-case
+    ownership check. Runtime/upload/tmp trees are deliberately excluded —
+    anything there still requires ``owns_path``.
+    """
+    return _real_roots([
+        *_env_paths("BRACHYBOT_DATA_ROOTS"),
+        *_env_paths("BRACHYBOT_CT_DATA_ROOTS"),
+        *_env_paths("BRACHYBOT_MR_DATA_ROOTS"),
+        *_env_paths("BRACHYBOT_US_DATA_ROOTS"),
     ])
 
 
@@ -2907,6 +2997,41 @@ def _make_screenshot_url(filename: str, ttl_seconds: int = 3600) -> str:
     expires = int(time.time()) + int(ttl_seconds)
     sig = _screenshot_signature(filename, expires)
     return f"/api/screenshots/{filename}?expires={expires}&sig={sig}"
+
+
+def _session_screenshot_signature(session_id: str, filename: str) -> str:
+    """Sign a durable case-owned screenshot URL without exposing the key."""
+    if not API_KEY:
+        raise RuntimeError("BRACHYBOT_API_KEY is required for signed screenshot URLs")
+    payload = f"session:{session_id}:{filename}".encode("utf-8")
+    return hmac.new(API_KEY.encode("utf-8"), payload, hashlib.sha256).hexdigest()
+
+
+def _make_session_screenshot_url(session_id: str, filename: str) -> str:
+    """Return a durable browser URL inside the configured API-key boundary.
+
+    Unlike the legacy shared screenshot directory, this route also requires
+    an authenticated owner cookie and checks case ownership.  A stable HMAC
+    therefore remains safe to persist with the chat attachment and avoids
+    breaking restored images after a short URL expiry. Rotating the API key
+    invalidates every previously issued signature.
+    """
+    base = f"/api/sessions/{session_id}/screenshots/{filename}"
+    if not _API_KEY_REQUIRED or not API_KEY:
+        return base
+    sig = _session_screenshot_signature(session_id, filename)
+    return f"{base}?sig={sig}"
+
+
+def _valid_session_screenshot_request(session_id: str, filename: str) -> bool:
+    """Allow an API-key header or a durable case-bound URL signature."""
+    if _valid_api_key_from_request():
+        return True
+    sig = request.args.get("sig", "")
+    if not sig or not API_KEY:
+        return False
+    expected = _session_screenshot_signature(session_id, filename)
+    return secrets.compare_digest(sig, expected)
 
 
 def _valid_screenshot_request(filename: str) -> bool:

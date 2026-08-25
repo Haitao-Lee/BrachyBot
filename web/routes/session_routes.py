@@ -7,6 +7,7 @@ from typing import Any, Callable, Dict, Optional
 from flask import jsonify, request, send_file, session
 
 from web.auth import current_user
+from web.server_support import require_api_key
 from web.workspace_store import (
     WorkspaceError,
     WorkspaceLeaseConflict,
@@ -73,6 +74,7 @@ def register_session_routes(
         )
 
     @app.route("/api/sessions", methods=["GET"])
+    @require_api_key
     def list_case_sessions():
         user, error = user_or_error()
         if error:
@@ -103,6 +105,7 @@ def register_session_routes(
             )
 
     @app.route("/api/sessions", methods=["POST"])
+    @require_api_key
     def create_case_session():
         user, error = user_or_error()
         if error:
@@ -147,6 +150,7 @@ def register_session_routes(
         }), 201
 
     @app.route("/api/sessions/<session_id>", methods=["PATCH"])
+    @require_api_key
     def rename_case_session(session_id: str):
         user, error = user_or_error()
         if error:
@@ -162,6 +166,7 @@ def register_session_routes(
         return jsonify({"success": True, "session": session_payload(entry)})
 
     @app.route("/api/sessions/<session_id>/select", methods=["POST"])
+    @require_api_key
     def select_case_session(session_id: str):
         user, error = user_or_error()
         if error:
@@ -179,6 +184,7 @@ def register_session_routes(
         return jsonify({"success": True, "active_session_id": entry.id, "workspace": snapshot})
 
     @app.route("/api/sessions/<session_id>", methods=["DELETE"])
+    @require_api_key
     def trash_case_session(session_id: str):
         user, error = user_or_error()
         if error:
@@ -205,6 +211,7 @@ def register_session_routes(
         })
 
     @app.route("/api/sessions/trash", methods=["GET"])
+    @require_api_key
     def list_trashed_sessions():
         user, error = user_or_error()
         if error:
@@ -213,6 +220,7 @@ def register_session_routes(
         return jsonify({"success": True, "sessions": [session_payload(item) for item in entries]})
 
     @app.route("/api/sessions/<session_id>/restore", methods=["POST"])
+    @require_api_key
     def restore_case_session(session_id: str):
         user, error = user_or_error()
         if error:
@@ -224,6 +232,7 @@ def register_session_routes(
         return jsonify({"success": True, "session": session_payload(entry)})
 
     @app.route("/api/sessions/<session_id>/purge", methods=["DELETE"])
+    @require_api_key
     def purge_case_session(session_id: str):
         user, error = user_or_error()
         if error:
@@ -240,6 +249,7 @@ def register_session_routes(
         return jsonify({"success": True})
 
     @app.route("/api/sessions/<session_id>/artifacts/<path:artifact_path>", methods=["GET"])
+    @require_api_key
     def download_case_artifact(session_id: str, artifact_path: str):
         """Download an exported artifact after an ownership and path check."""
         user, error = user_or_error()
@@ -256,6 +266,7 @@ def register_session_routes(
         return send_file(path, as_attachment=True, download_name=path.name)
 
     @app.route("/api/workspace/artifacts", methods=["POST"])
+    @require_api_key
     def upload_generated_case_artifact():
         """Persist a browser-generated report/export file in the active case."""
         user, error = user_or_error()
@@ -285,6 +296,7 @@ def register_session_routes(
         }), 201
 
     @app.route("/api/workspace/snapshot", methods=["GET"])
+    @require_api_key
     def workspace_snapshot():
         user, error = user_or_error()
         if error:
@@ -303,6 +315,7 @@ def register_session_routes(
         return jsonify({"success": True, "workspace": snapshot})
 
     @app.route("/api/workspace/state", methods=["POST"])
+    @require_api_key
     def save_workspace_state():
         user, error = user_or_error()
         if error:
@@ -375,6 +388,7 @@ def register_session_routes(
         return jsonify({"success": True, "revision": snapshot["session"]["revision"], "workspace": snapshot})
 
     @app.route("/api/workspace/checkpoint", methods=["POST"])
+    @require_api_key
     def checkpoint_workspace():
         user, error = user_or_error()
         if error:
@@ -402,6 +416,7 @@ def register_session_routes(
         }), 202
 
     @app.route("/api/workspace/lease", methods=["POST", "DELETE"])
+    @require_api_key
     def workspace_lease():
         user, error = user_or_error()
         if error:
@@ -428,6 +443,7 @@ def register_session_routes(
         return jsonify({"success": True, **lease})
 
     @app.route("/api/workspace/audit", methods=["GET"])
+    @require_api_key
     def workspace_audit_events():
         """Return the selected case's server audit trail for review UI."""
         user, error = user_or_error()
@@ -441,6 +457,7 @@ def register_session_routes(
         return jsonify({"success": True, "events": events})
 
     @app.route("/api/workspace/review/comments", methods=["GET", "POST"])
+    @require_api_key
     def workspace_review_comments():
         """Persist case-scoped review comments without changing clinical results."""
         user, error = user_or_error()
@@ -460,6 +477,7 @@ def register_session_routes(
         return jsonify({"success": True, "comment": comment}), 201
 
     @app.route("/api/workspace/review/comments/<int:comment_id>", methods=["PATCH"])
+    @require_api_key
     def update_workspace_review_comment(comment_id: int):
         user, error = user_or_error()
         if error:
@@ -479,6 +497,7 @@ def register_session_routes(
         return jsonify({"success": True, "comment": comment})
 
     @app.route("/api/workspace/import-client", methods=["POST"])
+    @require_api_key
     def import_legacy_client_workspace():
         """One-time migration for old localStorage chat/report data.
 

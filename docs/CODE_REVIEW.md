@@ -1,3 +1,691 @@
+# 2026-08-26 Incident Review and Root-Cause Repair — Current Authoritative Status
+
+> **This is the current section and is intentionally located at the beginning of the file.**
+> It supersedes older status statements below wherever they discuss deployment,
+> restored manual CTV semantics, manual Needle validation, 2D dose scrubbing, or
+> live-chat scrolling. Historical sections remain unchanged for auditability.
+
+## 1. Executive verdict
+
+Four user-visible incidents were reproduced or traced to concrete current-code
+paths. All four have root-cause repairs in the remote working tree. A second
+inspection of every repair found and fixed one additional dose-volume ownership
+race and one incorrect regression-test assertion before closure.
+
+| Incident | Current source status | Deployed status | Evidence summary |
+|---|---|---|---|
+| Add Needle rejected every restored automatic Needle | **FIXED** | **LIVE** | The transaction now validates only new or geometrically changed submitted Needles; the full-plan optimistic-version commit remains authoritative. |
+| Uploaded CTV was rejected as 12,970 cm3 / 105% of body | **FIXED** | **LIVE** | The selected source label is captured, validated, aligned, and normalized to an active binary CTV before plausibility checks and planning. Legacy restored snapshots are migrated before publication. |
+| 2D label/dose appearance changed during slice scrubbing and recovered after about 0.5 s | **FIXED** | **LIVE** | A compact original-grid dose volume is loaded once and sampled synchronously for all three axes; the broken slice-cache key contract is also corrected. |
+| Initial streaming assistant response was clipped until manual scroll or the next tool call | **FIXED** | **LIVE** | Bottom-follow is now layout-aware across streaming Markdown, Thinking rows, the workflow dock, footer insertion, and flex reflow. The workflow dock is no longer reparented into the answer row. |
+
+No collision rule, obstacle label, CTV plausibility threshold, trajectory safety
+threshold, dose calculation, DVH calculation, prescription conversion, or plan
+quality criterion was weakened to make these incidents disappear.
+
+## 2. Exact failure analysis and repairs
+
+### 2.1 Restored plan rejected by Add Needle
+
+#### Confirmed failure mechanism
+
+`/api/manual_planning/update_geometry` receives the complete visible Needle list
+after every edit. Before this repair, the route passed that complete list to
+`_validate_manual_needle_safety()`. After restart there was no transaction-local
+baseline in the browser, so adding one Needle caused all seven previously accepted
+automatic Needles plus the new Needle to be revalidated against the current
+obstacle representation. The error therefore listed the historical Needles even
+though the operator changed only one object.
+
+This was a transaction-boundary defect, not evidence that collision validation
+should be removed. Whole-plan optimistic version checks and whole-plan storage were
+already correct; the safety gate had the wrong input set.
+
+#### Implemented repair
+
+- `web/server_support.py::_changed_manual_needles()` matches the previous and
+  submitted plans by stable Needle ID first and `trajectory_id` second.
+- It compares the physical first/last world-coordinate endpoints with a strict
+  absolute tolerance and returns only new or geometrically changed segments.
+- `web/routes/planning_routes.py::api_manual_planning_update_geometry()` passes
+  only that changed set to `_validate_manual_needle_safety()`.
+- The complete submitted plan is still normalized, version checked, persisted,
+  and used for Seed reprojection. Deleted Needles and explicit empty lists retain
+  their existing transaction semantics.
+- The existing fail-closed collision routine, CT/body checks, and hard-obstacle
+  labels are unchanged.
+
+#### Acceptance contract
+
+Completed automatic plan -> restart -> restore -> Add Needle must validate the
+new Needle, retain the seven historical Needles, preserve the plan version
+contract, and either commit the full resulting geometry or reject only the
+changed Needle with the previous geometry retained.
+
+### 2.2 Multi-label CTV upload selected the entire foreground
+
+#### Measured source evidence
+
+The reported file was inspected on the remote host rather than inferred from the
+error message:
+
+- array shape: `512 x 512 x 48`;
+- spacing: `0.6836 x 0.6836 x 5.0 mm`;
+- label 1: `5,534,753` voxels, approximately `12,932 cm3`;
+- label 2: `16,065` voxels, approximately `37.5366 cm3`;
+- union of every positive label: `5,550,818` voxels, approximately
+  `12,969.735 cm3`.
+
+The union exactly reproduced the displayed 12,970 cm3 failure. The persisted UI
+control selected target label `2`, but the old upload request did not transmit
+that value and the tool interpreted every positive voxel as CTV. More seriously,
+downstream planning reserves active CTV value `1` for target and values `2/3` for
+embedded obstacles, so forwarding the raw source labels could turn the actual
+source target label into a hard obstacle.
+
+#### Implemented repair
+
+- `tool_factory/segmentation_alignment.py` now provides strict positive discrete
+  label parsing and `select_label_as_binary()`.
+- A requested target must be a finite positive integer. Booleans, fractions,
+  non-finite values, and absent labels in a genuine multi-label file are rejected.
+- A single-positive-label mask remains compatible with exports encoded as a
+  nonstandard foreground value such as 255.
+- `tool_factory/CTV_seg/__init__.py` aligns the source label image to the CT LPI
+  physical grid, selects exactly one source label, and emits an active `uint8`
+  `{0,1}` CTV. Source label IDs/counts remain in provenance metadata only.
+- `web/app/static/js/brachybot-ui-api.js` captures the target label together with
+  the upload's owning Session, CT path, and tumor type; it does not reread a live
+  control after a case switch.
+- `/api/segmentation` validates and forwards `target_value`, atomically replaces
+  stale model-derived CTV label maps/statistics, and persists normalization
+  metadata.
+- `web/workspace_store.py::_repair_restored_manual_ctv()` migrates legacy restored
+  manual CTV arrays before the hydrated Agent is published. It uses the persisted
+  `targetValue`, rebuilds the active mask as binary, clears stale embedded/model
+  sidecars, recomputes voxel count and physical volume, and records provenance.
+
+#### Direct rechecks
+
+- Real uploaded file with target label 2: success, `16,065` target voxels,
+  `37,536.593 mm3`, source labels `[1,2]`, active labels `[0,1]`.
+- Real legacy snapshot migration: changed `true`, selected source label `2`,
+  `16,065` target voxels, `37,536.593 mm3`, active labels `[0,1]`.
+- Manual CTV and OAR LPI orientation regression: passed. OAR remains multi-label;
+  only the active CTV transport contract is normalized to binary.
+
+### 2.3 Slice scrubbing changed apparent label opacity/brightness
+
+#### Confirmed failure mechanism
+
+The CTV/OAR label raster is composited synchronously with the CT slice. The dose
+heatmap is a separate canvas layer. On a slice cache miss, the dose layer was
+cleared/hidden while an asynchronous `/dose_overlay_slice` request ran. Removing
+the colored dose contribution made the underlying labels appear to change
+opacity/brightness; when the request returned, the intended appearance came back.
+
+The old cache also had an independent contract bug: the writer used a
+generation-prefixed key while the reader looked up `axis_index`, so valid fetched
+slices were effectively never cache hits in the reader.
+
+#### Implemented repair
+
+- `web/routes/planning_routes.py::_dose_overlay_volume_array()` centralizes a
+  finite original-CT-grid `(Z,Y,X)` dose representation for display endpoints.
+- `/api/planning/dose_overlay_volume` returns a display-only linear little-endian
+  `uint16` volume with shape, minimum, quantization scale, Planning ID, and dose
+  generation headers. The float planning/DVH arrays are not replaced.
+- The browser downloads that compact volume once and synchronously samples axial,
+  sagittal, and coronal slices while the slider moves.
+- Axial display reversal and sagittal/coronal row/column orientation exactly match
+  the existing CT renderer and slice endpoint.
+- A 2,048-entry color lookup table removes repeated palette/config work from the
+  per-pixel scrub loop.
+- `doseOverlaySliceCacheKey()` is now shared by the fallback writer and reader,
+  including the dose generation.
+- The existing per-slice endpoint remains a bounded fallback while the volume is
+  downloading or if the compact request fails.
+- Data Tree opacity remains a canvas-layer property and is applied immediately;
+  quantized pixels remain fully opaque internally.
+
+#### Second-pass defect found and fixed
+
+The first implementation used one global in-flight Promise. If Planning changed
+while the old volume was downloading, the new overlay could receive that old
+Promise; identity checks would correctly discard the old bytes, but the new
+overlay would never start its own download. The final implementation tracks
+`_doseOverlayVolumeOwner`, aborts an old owner's request, and creates a distinct
+request for the new owner. Regression coverage asserts this ownership fence.
+
+### 2.4 Streaming response initially clipped above the composer
+
+#### Confirmed failure mechanism
+
+The chat column is a flex layout containing `chatMessages`, `chatTodoDock`, and the
+composer. The previous `scrollToBottom()` made one synchronous assignment:
+`scrollTop = scrollHeight`. That assignment could run before Markdown rendering,
+Thinking expansion/collapse, workflow-dock display, footer insertion, or flex
+layout had established the final `scrollHeight/clientHeight`.
+
+Two concrete paths amplified the race:
+
+- `createLiveThinkingChain()` appended the initial Thinking row without requesting
+  a bottom scroll;
+- when the first final text arrived, `chat-todo.js` moved `todo.root` out of the
+  fixed dock into the response wrapper. That resized both the message viewport and
+  the message contents in one event. The next tool event happened to scroll again,
+  which explains why the answer then became fully visible.
+
+#### Implemented repair
+
+- `requestChatScrollToBottom()` owns chat follow state and performs an immediate
+  anchor plus two `requestAnimationFrame` settlement passes.
+- A `ResizeObserver` on `chatMessages` handles sibling workflow-dock changes that
+  alter the message viewport without mutating the message DOM.
+- Streaming Markdown updates, live Thinking creation, step append/update,
+  Thinking collapse/cancel, response creation/finalization, and footer insertion
+  all request the same bottom anchor.
+- The old `scrollIntoView({behavior:'smooth'})` step path was removed; it could
+  scroll an outer ancestor and competed with the chat container.
+- Sending a new user turn force-enables follow. If the user deliberately scrolls
+  more than 64 px away from the bottom, subsequent stream updates do not pull the
+  viewport away from history.
+- `todo.root` remains in `chatTodoDock` for its complete lifetime and is never
+  reparented into an answer row.
+- Cache revisions were advanced to `brachybot-chat-core.js?v=14` and
+  `brachybot-chat-todo.js?v=20`.
+
+## 3. Files changed for this incident pass
+
+Production code and assets:
+
+- `tool_factory/segmentation_alignment.py`
+- `tool_factory/CTV_seg/__init__.py`
+- `web/routes/planning_routes.py`
+- `web/server_support.py`
+- `web/workspace_store.py`
+- `web/app/static/js/brachybot-ui-api.js`
+- `web/app/static/js/brachybot-3d-manual.js`
+- `web/app/static/js/brachybot-manual-annotation.js`
+- `web/app/static/js/brachybot-chat-core.js`
+- `web/app/static/js/brachybot-chat-todo.js`
+- `web/app/index.html`
+
+Regression coverage:
+
+- `tests/test_uploaded_mask_provenance.py`
+- `tests/test_workspace_store.py`
+- `tests/test_round7_regressions.py`
+- `tests/test_workspace_frontend.py`
+- `tests/test_review_round6_regressions.py`
+
+## 4. Verification record
+
+### Source and artifact integrity
+
+- Remote SHA-256 values for all 16 changed production/test files exactly matched
+  the reviewed local staging copies before testing and restart.
+- Python compilation passed for every modified Python source file.
+- JavaScript syntax checks passed for all five affected frontend scripts.
+- `git diff --check` passed for the complete incident patch.
+
+### Automated tests
+
+- Focused and related suite: `303 passed, 3 warnings`.
+- Full repository suite in an environment with deployment/API-provider variables
+  intentionally removed: `742 passed, 6 skipped, 4 warnings in 89.29 s`.
+- The skipped tests are the repository's existing conditional skips.
+- Warnings are three existing SWIG type deprecations and one existing
+  `datetime.utcnow()` deprecation in training-monitor code.
+- An initial non-isolated full run produced two failures in
+  `tests/test_brain_system.py` because the shell exposed Anthropic deployment
+  variables, violating those tests' explicit `brain unavailable` premise. Both
+  tests passed when those variables were removed, and the complete isolated run
+  then passed with no failures.
+
+### Live deployment
+
+- Branch: `codex/session-task-recovery`.
+- HEAD remains `2234c2dda2c022ff9fc3c30941033e22b3f774b6`; this pass is an
+  uncommitted working-tree repair and preserves unrelated existing changes.
+- Old process: PID `1781244`, started `2026-08-26 00:07:30`, stopped gracefully.
+- New process: PID `2051260`, started `2026-08-26 03:37:12`, executable
+  `/home/lht/.conda/envs/brachytherapy/bin/python3.12`, command
+  `web/server.py --host 0.0.0.0`, parent PID 1.
+- Listener: `0.0.0.0:8080`.
+- Live root request: HTTP 200.
+- Live HTML served the repaired asset revisions: chat core 14, chat todo 20,
+  3D manual 64, and manual annotation 16.
+- Runtime log: `.runtime/server.log`.
+
+### Live browser acceptance attempt
+
+On 2026-08-26 the deployed page was opened in the Codex in-app browser through
+an SSH loopback tunnel, using both `127.0.0.1:18080` and `localhost:18080`. The
+operator explicitly authorized one non-clinical `你好` message in the separate
+`web` test account. Before any retry, the browser state was inspected to prevent
+a duplicate send.
+
+No message was actually submitted. On both loopback origins the full-page
+`authOverlay` remained visibly active (`display: grid`, full viewport, pointer
+events enabled), because those origins did not have an authenticated BrachyBot
+session cookie after the server restart. The background application shell still
+rendered the session label and composer, but the overlay correctly intercepted
+the send-button interaction. The textarea retained `你好`; the chat DOM retained
+zero matching user turns, no Thinking node, and no assistant response; its
+measured bottom gap remained zero. Browser logging contained no JavaScript error,
+only the expected `Authentication required` warnings from unauthenticated CTV
+availability and Data Tree hydration probes.
+
+No application password was guessed, no account was created or modified, and no
+authentication/session boundary was bypassed. Consequently this browser pass
+confirms that the restarted server and repaired assets load in a real browser,
+but it is **not** evidence that the authenticated live-chat scroll workflow has
+passed. That behavioral acceptance remains in the operator checklist below; the
+automated DOM contracts and full test suite are the current executable evidence
+for the chat repair.
+
+### Deployment security boundary
+
+The restart deliberately preserved the pre-existing
+`BRACHYBOT_ALLOW_INSECURE_REMOTE` / trusted-network development posture and the
+existing model-provider configuration without printing secret values. Startup
+continues to emit the explicit unsafe-development warning. This incident pass did
+not silently convert the deployment to TLS, add/remove an API key, or change cookie
+policy. Production exposure still requires the separate TLS/reverse-proxy decision
+documented in the older CR-11 section below.
+
+## 5. Remaining interactive acceptance boundary
+
+The repaired page has been loaded through an SSH tunnel in a real browser and the
+new assets are active. Automated source, DOM-contract, backend, workspace, and full
+repository tests are complete. Because the isolated browser origin did not possess
+an authenticated BrachyBot cookie, no chat turn was submitted during the live
+browser attempt. The final operator acceptance should therefore still exercise
+the original patient case in its authenticated browser context:
+
+1. reopen the restored case and confirm the active CTV reports approximately
+   `37.5366 cm3`, not `12,970 cm3`;
+2. Add Needle and Add Seed, save, reload, and confirm only changed geometry is
+   safety-gated and retained;
+3. scrub all three 2D axes after the compact dose volume reaches `ready`, checking
+   that dose/label appearance and Data Tree opacity stay invariant;
+4. send a chat turn and confirm the first Thinking/answer content remains fully
+   visible above the composer while the workflow dock appears and folds;
+5. deliberately scroll upward during a long answer and confirm auto-follow does not
+   pull the viewport back until a new user turn is sent.
+
+---
+
+# Current Code Review Resolution — 2026-08-25 (Implemented and Re-Verified)
+
+> **Authoritative current-source verdict.** All 18 confirmed review findings are now fixed in the current remote working tree and have been re-checked after implementation. The six findings that were still open in the preceding review—CR-01, CR-02, CR-03, CR-09, CR-11, and CR-12—now have dedicated regression coverage. The older pre-repair status section is preserved below for traceability and is explicitly marked superseded.
+>
+> **Deployment boundary.** The active PID 1297468 was started before these source changes and has no reload mode. It has not loaded this repair. Its current configuration still deliberately enables BRACHYBOT_ALLOW_INSECURE_REMOTE while secure cookies and an API key are absent. Therefore the source review is closed, but production deployment/security verification remains pending until the operator selects a safe TLS/reverse-proxy configuration and restarts the service.
+
+## 1. Final disposition
+
+| Scope | Status | Count / evidence |
+|---|---|---|
+| Current source findings | **FIXED** | 18 of 18 |
+| Remaining source-code findings from this review | **NONE** | 0 |
+| Newly repaired in this pass | **FIXED AND REGRESSION-TESTED** | CR-01, CR-02, CR-03, CR-09, CR-11, CR-12 |
+| Related-module test run | **PASS** | 165 passed, 3 warnings |
+| Full repository test run | **PASS** | 736 passed, 6 skipped, 4 warnings in 69.61 seconds |
+| Patch hygiene | **PASS** | Python compilation and git diff --check |
+| Active service deployment | **PENDING / OLD PROCESS** | PID 1297468, started 2026-08-24 06:25:50, no reload |
+| Active service transport posture | **EXPLICITLY UNSAFE** | 0.0.0.0:8080; secure cookie false; API key absent; insecure override true |
+
+## 2. Repairs completed in this pass
+
+### CR-01 — Final deletion now invalidates quota accounting
+
+The CT deletion and grouped-report deletion paths now invalidate the account storage total after their last direct PDF unlink:
+
+- web/routes/data_routes.py:715 covers CT plus dependent report cleanup.
+- web/routes/data_routes.py:915 covers grouped report cleanup.
+- Existing screenshot and single-report deletion invalidations remain in place.
+
+Regression: tests/test_data_tree_export_system.py:634 deliberately repopulates the quota cache between snapshot replacement and the final unlink, then verifies that both group:report and image:ct return the true on-disk total. This reproduces the exact residual race from the second review.
+
+### CR-02 — One quota protocol now covers cross-type and direct outputs
+
+Workspace quota control now includes:
+
+- account-wide pending-byte reservations at web/workspace_store.py:1277 and :3097;
+- category ownership locks at web/workspace_store.py:1281 and :1310;
+- a direct-output transaction with backup, final on-disk validation, and rollback at web/workspace_store.py:1323;
+- snapshot writes under the account commit lock at web/workspace_store.py:3117;
+- screenshot writes under the same account commit lock at web/workspace_store.py:3210;
+- artifact writes under both category and account locks at web/workspace_store.py:3223;
+- pre-operative, intra-operative, DICOM-RT, and STL generation routed through the direct-output transaction at web/routes/planning_routes.py:4833, :4912, :5150, and :5287.
+
+Long scientific generation does not hold the account lock. Instead, expected bytes are reserved atomically, ordinary writers include outstanding reservations in their capacity decisions, generation owns only its artifact category, and final commit validation either accepts the real disk total or restores the previous category. This avoids both quota overshoot and a long account-lock/deadlock window.
+
+Regressions:
+
+- tests/test_workspace_store.py:1125 proves an upload and screenshot cannot approve the same remaining bytes.
+- tests/test_workspace_store.py:1197 proves direct-output overage restores the prior category, pending reservations block competing writers, and reservation bytes are released after commit.
+
+### CR-03 — Session screenshots now use an API-key or signed-download boundary
+
+The session screenshot route no longer accepts an API-key-configured request merely because the user has a cookie:
+
+- web/server_support.py:2950 generates a durable HMAC URL bound to session ID and filename.
+- web/server_support.py:2966 accepts either a valid X-API-Key header or that case-bound signature.
+- web/routes/planning_routes.py:6083 persists the signed URL when API-key authentication is active.
+- web/routes/planning_routes.py:6190 enforces the key/signature check before serving the file.
+
+This design preserves browser image loading—HTML image elements cannot attach X-API-Key—without leaving the route outside the configured API-key boundary. The signature is safe to persist because the route independently requires an authenticated owner cookie and verifies case ownership; rotating the API key invalidates previously issued signatures.
+
+Second-pass implementation audit: the first repair draft used a one-hour signed URL. That was rejected before closure because chat attachments are persisted and restored after that window; an expiring URL would have broken otherwise-authorized historical images. The final implementation uses the durable, owner-checked case-bound signature described above.
+
+Regression: tests/test_workspace_auth.py:363 proves a plain URL returns 401, a valid API key returns 200, a valid signed URL returns 200, a tampered signature returns 401, and a different authenticated user cannot use the otherwise-valid signed URL to read the owner's case (403).
+
+### CR-09 — Every invalid DICOM batch follows rollback
+
+The invalid-extension branch in web/server.py:995 now raises WorkspaceError instead of returning from inside the commit loop. It therefore enters the same rollback handler as quota, stream, and filesystem failures. The rollback also invalidates quota accounting after its final direct unlink at web/server.py:1032.
+
+Regression: tests/test_workspace_auth.py:329 uploads valid.dcm followed by invalid.txt, verifies the request returns 400, and verifies no dicom_* directory or earlier committed file survives.
+
+### CR-11 — Remote binding now fails closed unless unsafe mode is explicit
+
+web/server.py:1862 now enforces two independent remote-bind requirements:
+
+1. a remote listener needs an API key unless BRACHYBOT_ALLOW_INSECURE_REMOTE explicitly selects development mode;
+2. an API key alone no longer bypasses transport safety—a remote listener also needs BRACHYBOT_COOKIE_SECURE=1 unless the same explicit unsafe-development override is set.
+
+When the override is used, startup emits an unmistakable UNSAFE DEVELOPMENT OVERRIDE warning. This implements a safe default while retaining the explicitly requested trusted-development capability boundary.
+
+Regressions:
+
+- tests/test_review_round6_regressions.py:980 proves a configured API key does not bypass the Secure-cookie requirement.
+- tests/test_review_round6_regressions.py:993 proves the explicit unsafe override remains available and visibly warns.
+
+Important deployment note: the currently running process predates this code and is still configured in the unsafe mode. CR-11 is fixed in source, not yet remediated in the active deployment.
+
+### CR-12 — Both event and step histories remain bounded
+
+web/chat_tasks.py now enforces:
+
+- MAX_TASK_JOURNAL_EVENTS = 2000 at line 28;
+- MAX_TASK_STEPS = 2000 at line 32;
+- one shared bounded append path at line 134;
+- step trimming inside publish() at lines 162-163;
+- the same bounded append path for cancel() at line 208.
+
+The absolute event sequence still advances when old events are trimmed, so reconnect/replay semantics are preserved.
+
+Regression: tests/test_chat_tasks.py:680 publishes beyond both limits, cancels exactly after overflow, verifies both retained collections stay at their caps, verifies the absolute sequence count, and confirms the terminal cancellation event remains replayable.
+
+## 3. Second-pass verification of all 18 findings
+
+| ID | Final current-source status | Verification basis |
+|---|---|---|
+| CR-01 | **FIXED** | Final-unlink invalidation plus cache-repopulation regression |
+| CR-02 | **FIXED** | Reservations, category transaction, cross-type concurrency, rollback regression |
+| CR-03 | **FIXED** | API-key/header or case-bound HMAC signature regression |
+| CR-04 | **FIXED** | Auth epoch and two-client password-change invalidation remain passing |
+| CR-05 | **FIXED** | Startup/export retention cleanup remains passing |
+| CR-06 | **FIXED** | Automatic replan manual-overlay deactivation remains passing |
+| CR-07 | **FIXED** | Request-targeted lease enforcement remains passing |
+| CR-08 | **FIXED** | Collision-safe upload allocation remains passing |
+| CR-09 | **FIXED** | Invalid-extension partial-commit integration regression |
+| CR-10 | **FIXED** | External imaging-root ownership/allowlist remains passing |
+| CR-11 | **FIXED IN SOURCE** | Remote bind now requires Secure cookie or explicit unsafe mode; deployment still unsafe |
+| CR-12 | **FIXED** | Event, step, cancel-cap, and replay regression |
+| CR-13 | **FIXED** | CT-first series selection remains passing |
+| CR-14 | **FIXED** | Seed geometry interference threshold remains passing |
+| CR-15 | **FIXED** | Authoritative manual/automatic export selection remains passing |
+| CR-16 | **FIXED** | Collision-safe export filenames remain passing |
+| CR-17 | **FIXED** | Malformed numeric inputs remain safely handled |
+| CR-18 | **FIXED** | Missing CT/mask early-return behavior remains passing |
+
+No other confirmed source defect was found during the second inspection of the repaired paths.
+
+## 4. Validation record
+
+The following validations were run against the current remote working tree:
+
+- Python compilation of all modified source and test files: passed.
+- Eight newly added focused regressions: passed.
+- Related modules—WorkspaceStore, Data Tree/export, workspace authentication, ChatTask, and round-6 review regressions: 165 passed, 3 warnings.
+- Full test suite: 736 passed, 6 skipped, 4 warnings in 69.61 seconds.
+- git diff --check: passed.
+
+The four full-suite warnings are pre-existing dependency/deprecation warnings: three SWIG type warnings and one datetime.utcnow() deprecation warning in training-monitor code. They are not failures of these repairs.
+
+## 5. Deployment gate still required
+
+The source repair must not be described as deployed yet:
+
+- active PID: 1297468;
+- process start: 2026-08-24 06:25:50;
+- command: /home/lht/.conda/envs/brachytherapy/bin/python3.12 web/server.py --host 0.0.0.0;
+- listener: 0.0.0.0:8080;
+- source files were updated on 2026-08-25 after process start;
+- no --reload option is present;
+- BRACHYBOT_COOKIE_SECURE is false;
+- BRACHYBOT_API_KEY is absent;
+- BRACHYBOT_ALLOW_INSECURE_REMOTE is true.
+
+Before production use, configure TLS termination, set BRACHYBOT_COOKIE_SECURE=1, configure the intended API-key policy, remove the insecure override, restart the service, record the new PID/start time, and repeat live authentication/cookie/screenshot/quota smoke tests. Restarting the current plain-HTTP configuration without making that deployment choice would load the correctness fixes but would intentionally retain an unsafe transport posture.
+
+---
+
+# Superseded Source Review — 2026-08-25 (Before Final Repair)
+
+> **Historical pre-repair status only.** This section records the second-pass verification before the final implementation above. Its partial/open dispositions are preserved as evidence of what the repair needed to address; they are not the current disposition of the findings.
+>
+> **Original scope.** At the time this section was written, only the report had been updated. The subsequent authoritative section above records the implemented source changes and final verification.
+
+## 1. Review boundary and evidence basis
+
+- Repository: /home/lht/snap/brachyplan/BrachyBot
+- Source checkout observed: branch codex/session-task-recovery, HEAD 2234c2dda2c0 (working tree dirty; the review was performed against the current files, not only the committed revision).
+- The review re-checked each original finding against the current source, followed critical paths into their callers, and used focused runtime/manual reproductions where a source-only conclusion would be insufficient.
+- Current line numbers refer to the source tree observed on 2026-08-25. A later patch may shift them; the route/function names and the reproductions are the primary identification of each defect.
+- The result is intentionally split into source status and live-service status. Passing tests against the current files does not prove that the already-running process has loaded the current files.
+
+## 2. Executive summary
+
+| Disposition in the current source | Count | Meaning |
+|---|---:|---|
+| FIXED | 12 | The original defect was re-checked and no remaining defect was found in the reviewed path. |
+| PARTIAL — residual defect | 5 | The remediation is real and improves the path, but a reachable residual path still reproduces the original class of failure. |
+| NOT FIXED — security/deployment blocker | 1 | The original defect remains materially present; a warning or partial mitigation is not sufficient. |
+| **Total** | **18** | All original findings have a current disposition. |
+
+The five residual defects are CR-01, CR-02, CR-03, CR-09, and CR-12. CR-11 remains unresolved. These six items are the required repair scope for the next implementation pass.
+
+The current source test status is strong but not sufficient to close the review:
+
+- Targeted regression set: 150 passed, 3 warnings.
+- Full current suite: 728 passed, 6 skipped, 4 warnings.
+- git diff --check: passed.
+- The successful suite does not cover every concurrent writer, every direct artifact deletion route, the unguarded session screenshot endpoint, the invalid-extension rollback branch, the remote-cookie deployment posture, or the separately unbounded ChatTask.steps list. Those gaps are why the residual findings below remain open.
+
+## 3. Current disposition of all findings
+
+| ID | Current status | Current-source conclusion | Evidence / repair focus |
+|---|---|---|---|
+| CR-01 | **PARTIAL — residual defect** | Quota-cache invalidation was added to several deletion paths, but CT cleanup and grouped report cleanup still unlink files directly after snapshot replacement without a final invalidation. | web/routes/data_routes.py:683-711 and :894-907; see §4.1. |
+| CR-02 | **PARTIAL — residual defect** | Upload-vs-upload serialization is fixed, but screenshots and direct generated DICOM output are not covered by one reservation/commit protocol. Cross-type writes can still exceed the quota. | web/workspace_store.py:3002-3067; web/routes/planning_routes.py:5121-5129; see §4.2. |
+| CR-03 | **PARTIAL — residual defect** | Most session/workspace APIs require an API key, but the session-scoped screenshot route remains callable without one. | web/routes/planning_routes.py:6207-6208; see §4.3. |
+| CR-04 | **FIXED** | Password changes now advance the account auth epoch and invalidate other sessions. | web/auth.py:92-113,219-240; two-client recheck passed. |
+| CR-05 | **FIXED** | Startup cleanup and export-job retention remove stale scene exports, staging files, and terminal export-job artifacts. | web/workspace_store.py:1276-1341; web/export_service.py:1246-1280; lifecycle recheck passed. |
+| CR-06 | **FIXED** | Automatic replanning deactivates stale manual overlays when new automatic geometry becomes authoritative, while the in-flight baseline remains safe. | tool_factory/seed_plan/planning_pipeline.py:1303-1333,2215-2219,2344-2347,2727-2731; state-machine recheck passed. |
+| CR-07 | **FIXED** | The global editability hook now validates the request-targeted case, including JSON session_id, instead of relying only on the selected case. | web/server.py:863-891; locked-target runtime recheck returned 409. |
+| CR-08 | **FIXED** | Upload allocation probes a free filename while holding the account lock and returns the actual allocated path to the caller. | web/workspace_store.py:3012-3058; web/server.py:957-963; collision recheck passed. |
+| CR-09 | **PARTIAL — residual defect** | Exception rollback removes committed files for quota/stream/filesystem failures, but an invalid-extension return inside the try block bypasses rollback after earlier files have already been committed. | web/server.py:980-1024, especially :990-991; see §4.4. |
+| CR-10 | **FIXED** | Configured external roots are allowlisted for the supported CT/MR/US types and remain subject to the workspace ownership check. | web/server_support.py:2805-2836; web/server.py:1112-1136; external CT viewer recheck returned 200. |
+| CR-11 | **NOT FIXED — security/deployment blocker** | Remote binding still permits a non-secure session-cookie posture by default when BRACHYBOT_COOKIE_SECURE is absent; startup only warns and does not force secure cookies or reject unsafe remote HTTP. | web/auth.py:70-75; web/server.py:1853-1875; live process is bound to 0.0.0.0:8080; see §4.5. |
+| CR-12 | **PARTIAL — residual defect** | The event journal is capped at 2,000 retained events, but ChatTask.steps remains unbounded and cancel() can leave the event list at cap+1. | web/chat_tasks.py:22-29,97-101,148-168,191-200,217-242; see §4.6. |
+| CR-13 | **FIXED** | DICOM series selection ranks CT ahead of other modalities and selects the largest series within the modality tier. | web/server.py:1177-1219; CT-vs-MR recheck selected CT. |
+| CR-14 | **FIXED** | Seed interference uses seed length, two seed radii, and a safety margin rather than only a center-to-center distance. | web/app/static/js/brachybot-3d-manual.js:233-249; backend threshold recheck passed. |
+| CR-15 | **FIXED** | Seed-plan export prefers the authoritative manual serialized plan, then automatic serialized output, then controlled fallbacks. | web/routes/planning_routes.py:516-557; manual-plan and fallback rechecks passed. |
+| CR-16 | **FIXED** | Export artifact names are collision-safe after the normalized/truncated base name. | web/export_service.py:686-696; long-name collision recheck produced distinct files. |
+| CR-17 | **FIXED** | Malformed numeric TTL/limit input falls back safely instead of raising a request-level 500. | web/workspace_store.py:2813-2819 and current audit-limit handling; endpoint recheck returned 200. |
+| CR-18 | **FIXED** | Seed planning returns before CT/mask-dependent work when the required context is absent. | tool_factory/seed_plan/planning_pipeline.py:1370-1375; targeted and full-suite checks passed. |
+
+## 4. Confirmed residual defects requiring repair
+
+The following are not speculative concerns. Each item has a reachable code path and a reproduction against the current source. They should remain open until the stated acceptance conditions are met.
+
+### 4.1 CR-01 — Quota cache remains stale after some direct artifact deletions
+
+Current partial remediation. WorkspaceStore.permanently_delete() now invalidates the per-account quota cache (web/workspace_store.py:2904-2917). The screenshot deletion path (web/routes/data_routes.py:534-546) and the single-report PDF path (:878-892) also invalidate after deletion.
+
+Remaining reachable paths.
+
+- CT deletion at web/routes/data_routes.py:683-711 replaces the snapshot section and then directly unlinks report PDFs at :706-711 without a final quota-cache invalidation.
+- Group report deletion at web/routes/data_routes.py:894-907 replaces the snapshot section and then directly unlinks report PDFs without invalidating after those unlinks.
+
+Direct recheck. A temporary WorkspaceStore account was populated with a report artifact. The observed quota values were:
+
+- after artifact creation: before=590 bytes;
+- after snapshot replacement: after_snapshot_write=1041 bytes;
+- after direct unlink without the deletion hook: after_direct_unlink_without_hook=1041 bytes;
+- after an explicit invalidation: after_explicit_hook=1024 bytes.
+
+The stale value was therefore 17 bytes, equal to the deleted artifact in this reproduction. This is a real accounting defect, not merely a cache-efficiency issue: a subsequent quota decision can reject a write using bytes that no longer exist on disk.
+
+Required repair and acceptance. Route every account-owned artifact deletion through one helper that performs the unlink and invalidation, or add an invalidation immediately after every direct unlink in both residual routes. Add route-level regressions for CT deletion and grouped report deletion that assert the reported usage decreases to the post-delete disk total.
+
+### 4.2 CR-02 — Quota enforcement is still non-atomic across writer types
+
+Current partial remediation. web/workspace_store.py:3002-3058 adds a per-account _quota_commit_lock around the upload check-through-commit path. A concurrent upload-only reproduction correctly produced one success and one WorkspaceQuotaExceeded, with final usage within the quota.
+
+Remaining reachable paths.
+
+- write_screenshot() at web/workspace_store.py:3060-3067 does not take the same _quota_commit_lock; it only performs replacement-capacity checking and writes the file.
+- Direct DICOM output at web/routes/planning_routes.py:5121-5129 calls ensure_capacity(user, dose_reserve_bytes) before generation, but that is a check, not a reservation held until the output is committed. workspace_output_dir() at :960-969 checks zero additional bytes, and the later validation at :971-983 occurs after output has already been written.
+
+Cross-type concurrency recheck. With a synchronized baseline of 561 bytes and a quota of 661 bytes, a screenshot write and an upload were started together. Both succeeded:
+
+- outcomes: ['screenshot_ok', 'upload_ok'];
+- actual final usage: 721 bytes;
+- quota: 661 bytes;
+- overshoot: 60 bytes, with 160 bytes of new data admitted against a 100-byte allowance.
+
+This proves that serializing only uploads does not enforce the account quota globally.
+
+Required repair and acceptance. Put every quota-consuming writer—including uploads, screenshots, generated DICOM/other workspace outputs, and replacement writes—behind one account-scoped reservation/commit/release protocol. A preflight check followed by an unprotected generation step is insufficient. The protocol must release reservations on generation failure and remove or roll back files that were committed before a later failure. Add a deterministic concurrent cross-type regression and an output-generation failure regression; both must prove that final on-disk usage never exceeds the configured quota and that failed output leaves no unaccounted files.
+
+### 4.3 CR-03 — Session-scoped screenshot access still bypasses the API-key boundary
+
+Current partial remediation. Session/workspace API routes in web/routes/session_routes.py now carry @require_api_key (for example at :76-77, :107-108, :298-299, :317-318, :418-419, and :445-446).
+
+Remaining route. In web/routes/planning_routes.py, the route
+
+/api/sessions/<session_id>/screenshots/<filename>
+
+is declared at :6207 and has only @rate_limit at :6208; it does not require the configured API key.
+
+Fresh configured-key recheck. In an app process configured with an API key:
+
+- GET /api/sessions without a key: 401;
+- GET /api/sessions with a key: 200;
+- session-scoped screenshot without a key: 200;
+- the same screenshot with a key: 200;
+- the legacy screenshot route without a key: 401.
+
+The session screenshot route therefore remains an inconsistent, unauthenticated access path. Rate limiting is not an authentication boundary.
+
+Required repair and acceptance. Add the same API-key protection used by the sibling session/workspace routes, unless the route is deliberately documented as a public/signed-download endpoint with an independently verified authorization design. Add a regression asserting that a missing or invalid key is rejected and that a valid key still serves the authorized session screenshot.
+
+### 4.4 CR-09 — Invalid file extension can bypass batch rollback after partial commit
+
+Current partial remediation. The batch DICOM upload logic in web/server.py:980-1024 now attempts rollback for quota, stream, and filesystem exceptions and removes already committed paths and empty directories.
+
+Remaining branch. The invalid-extension check at web/server.py:990-991 returns a 400 response directly from inside the try block. A return does not execute the except rollback handler. If an earlier file in the same batch has already been committed, the request can report failure while leaving that earlier file on disk.
+
+Direct recheck. A batch containing a valid valid.dcm followed by an invalid invalid.txt returned 400, but left a file under a path like:
+
+dicom_20260825_143626/valid.dcm
+
+This is a real partial-commit defect: the client sees a failed batch while storage and quota retain part of the rejected upload.
+
+Required repair and acceptance. Either pre-validate the complete batch before committing any file, or route invalid-extension failures through the same rollback path as all other failures. Add tests for invalid extension in the first, middle, and last batch positions; after every failed request, assert no file from that batch and no empty batch directory remains.
+
+### 4.5 CR-11 — Remote HTTP can still run without secure session cookies
+
+Current state. web/auth.py:70-75 sets SESSION_COOKIE_SECURE to false unless BRACHYBOT_COOKIE_SECURE is explicitly enabled. web/server.py:1853-1875 emits a warning for non-loopback binding but does not force secure cookies and does not reject remote HTTP when the API key is absent or when the unsafe override is present.
+
+Live deployment evidence at this review. The active process was:
+
+/home/lht/.conda/envs/brachytherapy/bin/python3.12 web/server.py --host 0.0.0.0
+
+It was PID 1297468, started on 2026-08-24 at 06:25:50, and listening on 0.0.0.0:8080. The observed environment posture was:
+
+- BRACHYBOT_COOKIE_SECURE: unset/false;
+- BRACHYBOT_API_KEY: unset;
+- BRACHYBOT_ALLOW_INSECURE_REMOTE: truthy.
+
+The exact secret value was not inspected or recorded. This is a deployment/security blocker because a browser session cookie can be sent over plain HTTP to a remotely reachable listener. A startup warning is not a repair.
+
+Required repair and acceptance. Choose and enforce a safe deployment contract: for example, require TLS/reverse-proxy termination and force SESSION_COOKIE_SECURE=True for any non-loopback deployment, or refuse to start a remote HTTP listener unless an explicit, visibly unsafe development mode is selected. Add a startup test for non-loopback binding and a live smoke test that verifies cookie attributes and the intended refusal/override behavior. Do not mark CR-11 fixed merely because a warning is logged.
+
+### 4.6 CR-12 — Event journal is bounded, but task steps and terminal trim are not
+
+Current partial remediation. web/chat_tasks.py:22-29 defines MAX_TASK_JOURNAL_EVENTS=2000; publish() trims _events at :148-168; and iter_events() at :217-242 understands the resulting absolute sequence base. A 10,000-event replay retained 2,000 events with base=8000 and returned the retained replay correctly.
+
+Remaining defects.
+
+1. ChatTask.steps is separately unbounded. publish() appends every step at web/chat_tasks.py:148-150. A 10,000-step reproduction retained _events=2000 but steps=10000.
+2. cancel() at web/chat_tasks.py:191-200 appends the terminal done event without applying the cap. Starting with exactly 2,000 retained events therefore leaves 2,001 events.
+
+Required repair and acceptance. Bound steps as well as _events, with a documented retention policy that does not break the task API. Apply the same trim/increment logic after terminal cancellation (and any other terminal publisher) so the invariant is always len(_events) <= MAX_TASK_JOURNAL_EVENTS. Add tests for normal overflow, step overflow, cancellation at exactly the cap, and replay from both retained and trimmed sequence numbers.
+
+## 5. Verified fixes (re-checked and currently closed in source)
+
+These items were not left open based only on a code glance; each was checked against its changed implementation and an associated targeted reproduction or regression.
+
+- **CR-04 — Password-change session revocation.** web/auth.py compares the session bb_auth_epoch with the database user epoch, bumps the epoch on password change, and rebinds only the current session. In the two-client recheck, the other client’s old session received 401, the old password was rejected, and the new password succeeded.
+- **CR-05 — Orphan/stale workspace and export cleanup.** Startup cleanup in web/workspace_store.py:1276-1341 removes stale scene exports and .part staging files; web/export_service.py:1246-1280 applies one-hour retention to terminal export jobs and their artifacts. The stale-directory and crashed-staging reproductions were cleaned up.
+- **CR-06 — Stale manual overlay after automatic replanning.** _deactivate_manual_overlay() is invoked at trajectory initialization/refinement and seed-planning transitions. The in-flight stepwise replan retains a safe baseline, then the fresh automatic geometry is published without the old manual overlay.
+- **CR-07 — Request-targeted lock enforcement.** The global lease hook in web/server.py:863-891 uses the same target precedence as the request payload—header, JSON session_id, query, selected case—before calling assert_editable. A request targeting a case locked by another browser returned 409 even when a different case was selected in the UI.
+- **CR-08 — Upload name collision.** The upload path probes a free name under the account lock and returns the actual path. Two same-name uploads became same-name.nii and same-name_1.nii with distinct contents.
+- **CR-10 — External imaging-root allowlist.** web/server_support.py:2805-2836 includes the configured generic and typed CT/MR/US roots, while web/server.py:1112-1136 still checks ownership. An external CT image served successfully through the viewer.
+- **CR-13 — CT series preference.** DICOM candidate ranking in web/server.py:1177-1219 puts CT ahead of other modalities and chooses the largest series within the tier. A mixed MR/CT fixture selected the CT series.
+- **CR-14 — Seed interference threshold.** The manual-planning JavaScript uses seedLengthMm + 2 * seedRadiusMm + 0.5 as the minimum gap, with a safe default. The backend threshold agrees with the frontend safety rule.
+- **CR-15 — Authoritative seed-plan export.** _export_seed_plan() in web/routes/planning_routes.py:516-557 prioritizes the manual serialized plan, then automatic serialized output, then controlled reconstruction fallbacks. Manual and raw-tuple fallback fixtures produced the expected exported seed records.
+- **CR-16 — Export filename collision.** web/export_service.py:686-696 probes suffixed names after normalization/truncation. Two names that shared the first 64 characters produced separate JSON files with separate contents.
+- **CR-17 — Malformed numeric request parameters.** Malformed lease TTL and audit-limit inputs now fall back safely; the endpoint recheck returned 200 rather than a request-level error.
+- **CR-18 — Missing CT/mask planning context.** The pipeline returns before CT/mask-dependent work when the required context is absent (tool_factory/seed_plan/planning_pipeline.py:1370-1375). The targeted regression and full suite passed.
+
+## 6. Source validation versus live-service validation
+
+### 6.1 Source validation completed
+
+The results in §§3–5 were obtained against the current checkout. The full suite result was 728 passed, 6 skipped, 4 warnings in 46.44s; the focused regression set was 150 passed, 3 warnings; and git diff --check passed. These results support the twelve FIXED dispositions but do not close the six open items without the additional tests listed above.
+
+### 6.2 The active service has not loaded the current worktree
+
+The active service was started before the current source modifications and was running without --reload. Source files in the working tree were modified after that process started. Therefore:
+
+- the current source review is not a claim that the live service contains the current fixes;
+- the active process must be restarted after the repair pass;
+- endpoint smoke tests must be run against the new PID, not inferred from source tests alone;
+- the live security posture must be rechecked after restart, especially CR-03 and CR-11.
+
+## 7. Required fixer handoff checklist
+
+The next implementation pass should not be considered complete until all of the following are true:
+
+1. **CR-01:** CT deletion and grouped report deletion invalidate quota accounting after every direct unlink, with route-level post-delete byte assertions.
+2. **CR-02:** All quota-consuming writers use one account-scoped reservation/commit/release protocol; deterministic cross-type concurrency and failed-output cleanup tests pass.
+3. **CR-03:** The session-scoped screenshot route has an intentional, tested authentication boundary; missing/invalid API keys are rejected if it is an authenticated route.
+4. **CR-09:** Every failed batch, including invalid extensions at any position, rolls back all files and directories created by that batch.
+5. **CR-11:** Non-loopback deployment cannot silently use non-secure session cookies. TLS/secure-cookie behavior or an explicit refusal/unsafe-development contract is implemented and tested.
+6. **CR-12:** Both _events and steps are bounded, terminal cancellation preserves the cap, and replay semantics remain correct across trimming.
+7. **Deployment gate:** restart the service, record the new PID/start time, verify the new process command and environment, and run live smoke tests for authenticated session access, screenshot access, lock targeting, quota behavior, and cookie attributes.
+8. **Regression gate:** rerun the focused tests and the full suite, then append the commands/results to the change record. Do not remove the historical review section or rewrite an open item as fixed without a reproduction or test demonstrating the acceptance condition.
+
+## 8. Final current-source conclusion
+
+The remediation pass is substantive: twelve original findings are currently fixed in the source tree and the full suite passes. It is not yet complete. Six real issues remain actionable—five residual correctness/resource-control defects and one unresolved remote-cookie security defect. The most important operational constraint is that the running service is older than the current worktree, so no fix should be reported as deployed until the service has been restarted and the live smoke checks have passed.
+
 # Code Review Report
 
 _This file consolidates all code review reports. Sections are organized by date._

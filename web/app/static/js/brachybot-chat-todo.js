@@ -2644,10 +2644,10 @@ async function sendChat(prefill, options) {
                             if (todo) {
                                 _todoUpdateFromStep(todo, data);
                                 // Fold the todo when the final assistant
-                                // step arrives. The response bubble will
-                                // be rendered just above the todo (in the
-                                // same wrapper), so the user sees the
-                                // fold → "11/17 steps" header.
+                                // step arrives. The todo remains in its
+                                // dedicated dock; moving it into a message
+                                // row would resize both flex regions during
+                                // streaming and invalidate the bottom anchor.
                                 if (data.type === 'assistant' && data.status === 'done') {
                                     todo.fold();
                                     // Also fold the thinking chain RIGHT
@@ -3030,7 +3030,6 @@ async function sendChat(prefill, options) {
                                 && !responseEl && typeof createStreamingResponse === 'function') {
                                 if (thinkingEl && typeof removeThinkingIndicator === 'function') removeThinkingIndicator(thinkingEl);
                                 responseEl = createStreamingResponse(turnRequestId, turnAssistantMessageId);
-                                if (todo && responseEl.parentElement) responseEl.parentElement.appendChild(todo.root);
                             }
                         }
                         responseText += String(data.text);
@@ -3056,7 +3055,6 @@ async function sendChat(prefill, options) {
                             && !responseEl && typeof createStreamingResponse === 'function') {
                             if (thinkingEl && typeof removeThinkingIndicator === 'function') removeThinkingIndicator(thinkingEl);
                             responseEl = createStreamingResponse(turnRequestId, turnAssistantMessageId);
-                            if (todo && responseEl.parentElement) responseEl.parentElement.appendChild(todo.root);
                         }
                         if (!isInternalFollowup && !deferUntilUIActionsFinish
                             && responseEl && typeof updateStreamingResponse === 'function') {
@@ -3426,7 +3424,10 @@ async function sendChat(prefill, options) {
                 const wrapper = responseEl.parentElement;
                 if (wrapper) {
                     const footer = _buildResponseFooter(window._lastLLMMeta);
-                    if (footer) wrapper.appendChild(footer);
+                    if (footer) {
+                        wrapper.appendChild(footer);
+                        if (typeof requestChatScrollToBottom === 'function') requestChatScrollToBottom();
+                    }
                 }
             } catch (_) { /* footer is best-effort */ }
         }
