@@ -238,7 +238,14 @@ def register_session_routes(
         if error:
             return error
         try:
-            assert_target_editable(user, session_id)
+            # Lease protection applies to live, co-edited cases. A case that
+            # is already in trash cannot be co-edited; requiring editability
+            # here called get_session() without include_trashed and made
+            # purging a trashed case fail with 404 forever. Ownership is
+            # still enforced inside permanently_delete().
+            entry = store.get_session(user["id"], session_id, include_trashed=True)
+            if entry.status == "active":
+                assert_target_editable(user, session_id)
             stop_deleted_case_task(user["id"], session_id)
             (drop_agent_fast or drop_agent)(session_id)
             store.permanently_delete(user["id"], session_id)
