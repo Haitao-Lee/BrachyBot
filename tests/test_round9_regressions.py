@@ -1,6 +1,7 @@
 """Regression checks for the viewer/report/review fixes in round 9."""
 
 from pathlib import Path
+import re
 import unittest
 
 
@@ -98,7 +99,11 @@ class Round9RegressionTests(unittest.TestCase):
         chat = self.read("web/app/static/js/brachybot-chat-todo.js")
         workflow = self.read("agent_runtime/chat_workflows.py")
         runtime = self.read("agent_runtime/llm_runtime.py")
-        self.assertIn("[Screenshot captured: ${url}]", chat)
+        # Visual evidence is queued as a hidden multimodal follow-up at the
+        # transport boundary; the server-side runtime resolves the captured
+        # URLs into image blocks (the old "[Screenshot captured: ...]" context
+        # literal was removed when follow-up isolation landed).
+        self.assertIn("_queueVisualAnalysisFollowUp", chat)
         self.assertIn("_isVisualAnalysisRequest", chat)
         self.assertIn("visual_screenshot_analysis", workflow)
         self.assertIn("_screenshot_called_this_turn = set()", runtime)
@@ -281,9 +286,15 @@ class Round9RegressionTests(unittest.TestCase):
         self.assertIn("direction: reportReferenceDirection", report)
         self.assertIn("zoom: 1", report)
         self.assertIn("function _captureReportCanvasCrop", report)
-        self.assertIn("_captureReportCanvasCrop(canvas, REPORT_DOSE_SURFACE_ASPECT)", report)
+        # The dose-surface capture passes the shared aspect plus an explicit
+        # long-edge bound; whitespace-tolerant so formatting stays free.
+        normalized = re.sub(r"\s+", " ", report)
+        self.assertIn(
+            "_captureReportCanvasCrop( canvas, REPORT_DOSE_SURFACE_ASPECT, REPORT_FIGURE_LONG_EDGE, )",
+            normalized,
+        )
         self.assertIn("candidate.clone().intersect(context)", report)
-        self.assertIn("brachybot-report-editor.js?v=22", index)
+        self.assertIn("brachybot-report-editor.js?v=24", index)
 
 
 if __name__ == "__main__":

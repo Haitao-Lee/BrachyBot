@@ -211,6 +211,73 @@ function _dedupeManualTrajectories(trajectories) {
     return [...byId.values()];
 }
 
+/**
+ * Find the freest position along a needle for a newly added seed.
+ *
+ * The previous fixed midpoint-spread formula ignored seeds already placed by
+ * the optimizer, so on any needle that carried planned seeds (the normal case
+ * after a completed plan) the new seed frequently landed within the unsafe
+ * spacing threshold and the server rejected the whole edit. Scanning the
+ * valid span for the largest gap keeps the button working on loaded needles
+ * while the server stays the authoritative safety validator.
+ */
+function _findFreeSeedSlotOnNeedle(needle) {
+    const p0 = new THREE.Vector3(..._vec3Array(needle.points[0]));
+    const p1 = new THREE.Vector3(..._vec3Array(needle.points[1]));
+    const length = p0.distanceTo(p1);
+    if (!(length > 1e-6)) return null;
+    const dir = new THREE.Vector3().subVectors(p0, p1).divideScalar(length);
+    // Keep the same usable span as before: away from both endpoint handles.
+    const lo = 0.18;
+    const hi = 0.82;
+    // Mirror the backend interference contract (web/server_support.py
+    // _seed_interference_report): each seed is a finite cylinder of the
+    // configured length, and two collinear axes interfere when
+    // centreDistance - length < 2*radius + clearance. The required collinear
+    // centre gap is therefore length + 2*radius + clearance. Clearance has no
+    // frontend control; the backend default (minimum_clearance_mm = 0.5)
+    // applies. Using one bare seed length here let the UI propose placements
+    // in the 4.5-5.7 mm band that the edit route then rejected.
+    const seedLengthMm = Math.max(
+        0.1,
+        Number(document.getElementById('seedLength')?.value || needle.seed_length || 4.5),
+    );
+    const seedRadiusMm = Math.max(
+        0.05,
+        Number(document.getElementById('seedRadius')?.value || 0.4),
+    );
+    const minGapMm = seedLengthMm + 2 * seedRadiusMm + 0.5;
+    const existingFracs = (dataTreeState.planning.seeds || [])
+        .filter(seed => seed.trajectory_id === needle.trajectory_id && Array.isArray(seed.position))
+        .map(seed => {
+            const pos = new THREE.Vector3(..._vec3Array(seed.position));
+            return pos.sub(p1).dot(dir) / length;
+        })
+        .sort((a, b) => a - b);
+    let bestFrac = null;
+    let bestGapMm = -Infinity;
+    for (let step = 0; step <= 64; step += 1) {
+        const frac = lo + (hi - lo) * (step / 64);
+        let nearestMm = Infinity;
+        for (const other of existingFracs) {
+            const gapMm = Math.abs(frac - other) * length;
+            if (gapMm < nearestMm) nearestMm = gapMm;
+        }
+        if (!Number.isFinite(nearestMm)) nearestMm = Infinity;
+        if (nearestMm > bestGapMm) {
+            bestGapMm = nearestMm;
+            bestFrac = frac;
+        }
+    }
+    if (bestFrac === null) return null;
+    return {
+        frac: bestFrac,
+        ok: Number.isFinite(bestGapMm) ? bestGapMm >= minGapMm : true,
+        gap_mm: Number.isFinite(bestGapMm) ? Number(bestGapMm.toFixed(2)) : null,
+        length_mm: length,
+    };
+}
+
 function _cloneManualSeeds(seeds = dataTreeState?.planning?.seeds || []) {
     return seeds.map(seed => ({
         ...seed,
@@ -539,6 +606,56 @@ async function _persistNeedleGeometryOnly(options = {}) {
     return data;
 }
 
+/**
+ * Find a free insertion centre for a newly added needle.
+ *
+ * The previous implementation placed every manually added needle on the same
+ * centre line, so repeated clicks produced perfectly coincident needles that
+ * could not be selected or used individually. This helper walks a golden-
+ * angle spiral in the plane perpendicular to the insertion direction and
+ * returns the first centre whose line keeps at least ``minSepMm`` clearance
+ * from every existing needle; if the whole spiral is crowded it returns the
+ * freest candidate found instead of silently stacking duplicates.
+ */
+function _findFreeNeedleSlot(baseCenter, dir) {
+    const helper = Math.abs(dir.z) < 0.9 ? new THREE.Vector3(0, 0, 1) : new THREE.Vector3(1, 0, 0);
+    const u = new THREE.Vector3().crossVectors(dir, helper).normalize();
+    const v = new THREE.Vector3().crossVectors(dir, u).normalize();
+    const minSepMm = 5.0;
+    const maxRadiusMm = 60.0;
+    const existingLines = (dataTreeState.planning.needles || [])
+        .filter(n => Array.isArray(n.points) && n.points.length >= 2);
+    const distanceToNearest = candidate => {
+        let nearest = Infinity;
+        for (const line of existingLines) {
+            const a = new THREE.Vector3(..._vec3Array(line.points[1]));
+            const ab = new THREE.Vector3(..._vec3Array(line.points[0])).sub(a);
+            const denom = Math.max(1e-9, ab.lengthSq());
+            const t = THREE.MathUtils.clamp(candidate.clone().sub(a).dot(ab) / denom, 0, 1);
+            const closest = a.clone().add(ab.multiplyScalar(t));
+            nearest = Math.min(nearest, closest.distanceTo(candidate));
+        }
+        return nearest;
+    };
+    const golden = Math.PI * (3 - Math.sqrt(5));
+    let freest = null;
+    for (let k = 0; ; k += 1) {
+        const radiusMm = k === 0 ? 0 : minSepMm * Math.sqrt(k);
+        if (radiusMm > maxRadiusMm && freest) return freest;
+        const theta = k * golden;
+        const candidate = baseCenter.clone()
+            .add(u.clone().multiplyScalar(radiusMm * Math.cos(theta)))
+            .add(v.clone().multiplyScalar(radiusMm * Math.sin(theta)));
+        const gapMm = existingLines.length ? distanceToNearest(candidate) : Infinity;
+        if (!Number.isFinite(gapMm) || gapMm >= minSepMm) {
+            return { center: candidate, gap_mm: Number.isFinite(gapMm) ? Number(gapMm.toFixed(1)) : null, offset_mm: radiusMm };
+        }
+        if (!freest || gapMm > freest.gap_mm) {
+            freest = { center: candidate, gap_mm: Number(gapMm.toFixed(1)), offset_mm: radiusMm };
+        }
+    }
+}
+
 async function addManualNeedle() {
     if (manualPlanningState.needleMutationRunning) return null;
     manualPlanningState.needleMutationRunning = true;
@@ -569,12 +686,16 @@ async function addManualNeedle() {
     dir.normalize();
     const id = _allocateManualObjectId('needle');
     const trajId = `manual_traj_${manualPlanningState.needleCounter}`;
+    // Adaptive placement: keep the CTV-centred default for the first needle,
+    // then spiral outwards so repeated clicks never stack coincident lines on
+    // top of existing (planned or manual) needles.
+    const slot = _findFreeNeedleSlot(center, dir);
     // Keep the same [deep, external] point convention as the automatic
     // planner (points[0] = intrabody/deep target, points[1] = shallow skin
     // entry). The previous code emitted [shallow, deep], so the manually
     // added needle rendered with its direction opposite to the planned ones.
-    const deep = center.clone().sub(dir.clone().multiplyScalar(80));
-    const shallow = center.clone().add(dir.clone().multiplyScalar(25));
+    const deep = slot.center.clone().sub(dir.clone().multiplyScalar(80));
+    const shallow = slot.center.clone().add(dir.clone().multiplyScalar(25));
     const needle = {
         id,
         points: [[deep.x, deep.y, deep.z], [shallow.x, shallow.y, shallow.z]],
@@ -613,10 +734,16 @@ async function addManualNeedle() {
             `已添加针道 ${id}。Dose、DVH、报告和手术导板已标记为需要更新。`,
             `Needle ${id} added. Dose, DVH, report, and Surgical Guide are now stale.`,
         ));
+        const placementNote = slot.offset_mm > 0.5
+            ? _manualText(
+                `为避开已有针道，插入中心自动外移 ${slot.offset_mm.toFixed(1)} mm（最近针道间距 ${slot.gap_mm ?? '?'} mm）。`,
+                `To clear existing needles the insertion centre was offset by ${slot.offset_mm.toFixed(1)} mm (nearest needle gap ${slot.gap_mm ?? '?'} mm).`,
+            )
+            : '';
         addChat('system', _manualText(
             `已添加针道 ${id}。可拖动两个端点调整位置，然后添加粒子或重新计算剂量。`,
             `Needle ${id} added. Drag its endpoints, add seeds, or recompute dose.`,
-        ));
+        ) + (placementNote ? ' ' + placementNote : ''));
         reportUIEvent('manual.needle.add', id, {
             points: needle.points,
             planning_version: manualPlanningState.planningVersion,
@@ -660,18 +787,33 @@ async function addManualSeed() {
     const p0 = new THREE.Vector3(..._vec3Array(needle.points[0]));
     const p1 = new THREE.Vector3(..._vec3Array(needle.points[1]));
     const dir = new THREE.Vector3().subVectors(p0, p1).normalize();
-    const existing = dataTreeState.planning.seeds.filter(s => s.trajectory_id === needle.trajectory_id).length;
-    // Add each new seed around the needle MIDDLE, never at an endpoint. The
-    // first seed lands at the midpoint so it stays clearly inside the needle
-    // and cannot merge with the endpoint handles; subsequent seeds spread out
-    // symmetrically around the middle. This keeps every seed individually
-    // selectable in the 3D viewer (a seed coincident with an endpoint sphere
-    // was effectively ungrabbable).
-    const spread = Math.min(0.34, 0.10 + existing * 0.04);
-    const frac = existing % 2 === 0
-        ? 0.5 - spread * Math.ceil(existing / 2)
-        : 0.5 + spread * Math.ceil(existing / 2);
-    const clampedFrac = Math.max(0.18, Math.min(0.82, frac));
+    // Pick the freest position along the needle instead of a fixed midpoint
+    // spread. A completed plan usually fills its needles, so the previous
+    // blind placement regularly collided with planned seeds and forced the
+    // server to reject the edit. If no safe slot exists, fail before any
+    // state mutation with an actionable message instead of a rollback.
+    const slot = _findFreeSeedSlotOnNeedle(needle);
+    if (!slot) {
+        manualPlanningState.seedMutationRunning = false;
+        _setManualDoseProgress('error', _manualText(
+            '无法添加粒子：针道几何无效。',
+            'Seed cannot be added: the needle geometry is invalid.',
+        ));
+        return null;
+    }
+    if (!slot.ok) {
+        manualPlanningState.seedMutationRunning = false;
+        _setManualDoseProgress('error', _manualText(
+            `无法添加粒子：针道 ${needle.id} 上的粒子已达到安全间距上限（最大可用间隙 ${slot.gap_mm ?? 0} mm）。请选择其他针道或先移除一枚粒子。`,
+            `Seed cannot be added: needle ${needle.id} has no free slot left (largest gap ${slot.gap_mm ?? 0} mm). Use another needle or remove a seed first.`,
+        ));
+        addChat('system', _manualText(
+            `针道 ${needle.id} 已满：粒子间距不足，未添加新粒子。`,
+            `Needle ${needle.id} is full: seed spacing would be unsafe, no seed was added.`,
+        ));
+        return null;
+    }
+    const clampedFrac = slot.frac;
     const pos = new THREE.Vector3().lerpVectors(p1, p0, clampedFrac);
     const seedId = _allocateManualObjectId('seed');
     const seed = {
@@ -5017,6 +5159,9 @@ let _doseOverlayOpacity = 0.5;
 // its own generation so a late response from an old case cannot overwrite the
 // dose state of the newly selected workspace.
 let _doseOverlayLoadGeneration = 0;
+let _doseOverlayVolumeAbortController = null;
+let _doseOverlayVolumePromise = null;
+let _doseOverlayVolumeOwner = null;
 
 function _clampDoseOverlayOpacity(value, fallback = 0.4) {
     const numeric = Number(value);
@@ -5080,6 +5225,12 @@ function clearDoseOverlayRuntime() {
     });
     _doseOverlayAbortControllers.clear();
     _doseOverlayInflight.clear();
+    if (_doseOverlayVolumeAbortController) {
+        try { _doseOverlayVolumeAbortController.abort(); } catch (_) {}
+    }
+    _doseOverlayVolumeAbortController = null;
+    _doseOverlayVolumePromise = null;
+    _doseOverlayVolumeOwner = null;
     _doseOverlayLoadPromise = null;
     // Invalidate a metadata bootstrap started by a slice event. The promise
     // may finish later, but its identity guard prevents it from repainting
@@ -5754,6 +5905,11 @@ async function _loadDoseOverlayImpl(retryAttempt = 0) {
         applyDoseOverlayLayerOpacity();
         if (typeof invalidateDoseOverlayRenderCache === 'function') invalidateDoseOverlayRenderCache();
 
+        // Bootstrap one compact original-grid dose volume. Once available,
+        // every requested 2D slice is sampled synchronously in the browser;
+        // the per-slice endpoint remains a safe fallback during download.
+        void loadDoseOverlayVolume(state.doseOverlay);
+
         renderDataTree();
 
         // Show colorbars in ALL 3 2D viewers (axial, sagittal, coronal).
@@ -5771,6 +5927,124 @@ async function _loadDoseOverlayImpl(retryAttempt = 0) {
         return { error: e.message };
     }
 }
+
+async function loadDoseOverlayVolume(ownerOverlay = state.doseOverlay) {
+    if (!ownerOverlay || ownerOverlay !== state.doseOverlay) return null;
+    if (ownerOverlay.volumeData instanceof Uint16Array) return ownerOverlay.volumeData;
+    if (_doseOverlayVolumePromise && _doseOverlayVolumeOwner === ownerOverlay) {
+        return _doseOverlayVolumePromise;
+    }
+    // A new Planning can replace state.doseOverlay while the previous compact
+    // volume is still downloading. Never hand that old Promise to the new
+    // owner: its identity guard will correctly discard the bytes, but without
+    // this reset the new overlay would never start its own volume request.
+    if (_doseOverlayVolumePromise) {
+        try { _doseOverlayVolumeAbortController?.abort(); } catch (_) {}
+        _doseOverlayVolumeAbortController = null;
+        _doseOverlayVolumePromise = null;
+        _doseOverlayVolumeOwner = null;
+    }
+
+    const ownerSessionId = _doseOverlaySessionId();
+    const ownerGeneration = _doseOverlayLoadGeneration;
+    const ownerPlanningId = String(ownerOverlay.planningId || '');
+    const ownerDoseGeneration = Number(ownerOverlay.doseGeneration || 0);
+    const controller = new AbortController();
+    _doseOverlayVolumeAbortController = controller;
+    ownerOverlay.volumeStatus = 'loading';
+
+    const request = (async () => {
+        try {
+            const params = new URLSearchParams();
+            if (ownerPlanningId) params.set('planning_id', ownerPlanningId);
+            if (ownerDoseGeneration > 0) params.set('dose_generation', String(ownerDoseGeneration));
+            let res;
+            for (let attempt = 0; attempt <= 60; attempt += 1) {
+                res = await fetch(`${API}/planning/dose_overlay_volume?${params.toString()}`, {
+                    headers: { 'X-BrachyBot-Session': ownerSessionId },
+                    signal: controller.signal,
+                });
+                if (res.status !== 202 || attempt >= 60) break;
+                await new Promise(resolve => setTimeout(resolve, Math.min(1000, 150 + attempt * 25)));
+            }
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            const encoding = String(res.headers.get('X-Dose-Encoding') || '');
+            const responseShape = String(res.headers.get('X-Dose-Shape') || '')
+                .split(',').map(value => Number(value));
+            const responsePlanningId = String(res.headers.get('X-Planning-Id') || '');
+            const responseDoseGeneration = Number(res.headers.get('X-Dose-Generation') || 0);
+            const volumeMin = Number(res.headers.get('X-Dose-Min'));
+            const quantizationScale = Number(res.headers.get('X-Dose-Quantization-Scale'));
+            if (encoding !== 'uint16-linear-le'
+                || responseShape.length !== 3
+                || responseShape.some(value => !Number.isInteger(value) || value <= 0)
+                || !Number.isFinite(volumeMin)
+                || !Number.isFinite(quantizationScale)
+                || quantizationScale < 0) {
+                throw new Error('Invalid dose volume metadata');
+            }
+            const expectedShape = (ownerOverlay.shape || []).map(value => Number(value));
+            if (expectedShape.length !== 3
+                || responseShape.some((value, index) => value !== expectedShape[index])) {
+                throw new Error('Dose volume shape changed during download');
+            }
+            if ((ownerPlanningId && responsePlanningId !== ownerPlanningId)
+                || (ownerDoseGeneration > 0 && responseDoseGeneration !== ownerDoseGeneration)) {
+                throw new Error('Dose volume generation changed during download');
+            }
+            const buffer = await res.arrayBuffer();
+            const expectedValues = responseShape.reduce((total, value) => total * value, 1);
+            if (buffer.byteLength !== expectedValues * Uint16Array.BYTES_PER_ELEMENT) {
+                throw new Error('Dose volume payload length does not match its shape');
+            }
+            if (ownerGeneration !== _doseOverlayLoadGeneration
+                || ownerSessionId !== _doseOverlaySessionId()
+                || ownerOverlay !== state.doseOverlay) {
+                return null;
+            }
+            ownerOverlay.volumeData = new Uint16Array(buffer);
+            ownerOverlay.volumeMin = volumeMin;
+            ownerOverlay.volumeQuantizationScale = quantizationScale;
+            ownerOverlay.volumeEncoding = encoding;
+            ownerOverlay.volumeStatus = 'ready';
+            if (typeof invalidateDoseOverlayRenderCache === 'function') {
+                invalidateDoseOverlayRenderCache();
+            }
+            if (typeof renderDoseForCurrentSlice === 'function') {
+                ['axial', 'coronal', 'sagittal'].forEach(axis => {
+                    renderDoseForCurrentSlice(axis, Number(state.slices?.[axis] || 0));
+                });
+            }
+            return ownerOverlay.volumeData;
+        } catch (error) {
+            if (error?.name !== 'AbortError'
+                && ownerOverlay === state.doseOverlay
+                && ownerGeneration === _doseOverlayLoadGeneration) {
+                ownerOverlay.volumeStatus = 'fallback';
+                console.warn('[dose] local volume unavailable; using slice endpoint:', error);
+            }
+            return null;
+        } finally {
+            if (_doseOverlayVolumeAbortController === controller) {
+                _doseOverlayVolumeAbortController = null;
+            }
+            if (_doseOverlayVolumePromise === request) {
+                _doseOverlayVolumePromise = null;
+            }
+            if (_doseOverlayVolumeOwner === ownerOverlay) {
+                _doseOverlayVolumeOwner = null;
+            }
+        }
+    })();
+    _doseOverlayVolumeOwner = ownerOverlay;
+    _doseOverlayVolumePromise = request;
+    return request;
+}
+
+function doseOverlaySliceCacheKey(axis, sliceIndex, overlay = state.doseOverlay) {
+    return `${Number(overlay?.doseGeneration || 0)}:${axis}_${Number(sliceIndex)}`;
+}
+window.doseOverlaySliceCacheKey = doseOverlaySliceCacheKey;
 
 // Fetch a dose overlay slice (cached)
 // Request-version counter for dose overlay fetches. When the user slides
@@ -5795,7 +6069,7 @@ async function fetchDoseOverlaySlice(axis, sliceIndex) {
     const ownerOverlay = state.doseOverlay;
     const ownerPlanningId = String(ownerOverlay.planningId || _doseContourPlanningId() || '');
     const ownerDoseGeneration = Number(ownerOverlay.doseGeneration || 0);
-    const cacheKey = `${ownerDoseGeneration}:${axis}_${sliceIndex}`;
+    const cacheKey = doseOverlaySliceCacheKey(axis, sliceIndex, ownerOverlay);
     const inflightKey = `${ownerSessionId}:${ownerPlanningId}:${cacheKey}`;
     if (ownerOverlay.slices[cacheKey]) return ownerOverlay.slices[cacheKey];
     if (_doseOverlayInflight.has(inflightKey)) return _doseOverlayInflight.get(inflightKey);
@@ -5916,12 +6190,47 @@ function renderDoseOverlayOnLayer(doseCanvas, axis, sliceIndex, sliceData) {
     // guard caused a race condition where async fetch callbacks were
     // silently skipped when the user scrolled rapidly.
 
-    const ctx = doseCanvas.getContext('2d');
-    const w = doseCanvas.width;
-    const h = doseCanvas.height;
     const rows = sliceData.length;
     const cols = sliceData[0]?.length || 0;
     if (rows === 0 || cols === 0) return;
+    return _paintDoseOverlayValues(
+        doseCanvas,
+        axis,
+        sliceIndex,
+        rows,
+        cols,
+        (row, col) => Number(sliceData[row][col]),
+    );
+}
+
+let _dose2DColorLutCache = null;
+function _dose2DColorLut() {
+    const cfg = getDoseColorbarConfig('twoD');
+    const key = `${cfg.minGy}:${cfg.maxGy}:${cfg.palette}`;
+    if (_dose2DColorLutCache?.key === key) return _dose2DColorLutCache;
+    const size = 2048;
+    const rgb = new Uint8ClampedArray(size * 3);
+    for (let index = 0; index < size; index += 1) {
+        const color = _doseColorFromScope('twoD', index / (size - 1));
+        rgb[index * 3] = color[0];
+        rgb[index * 3 + 1] = color[1];
+        rgb[index * 3 + 2] = color[2];
+    }
+    _dose2DColorLutCache = {
+        key,
+        rgb,
+        size,
+        minGy: Number(cfg.minGy),
+        inverseRange: 1 / Math.max(1e-9, Number(cfg.maxGy) - Number(cfg.minGy)),
+    };
+    return _dose2DColorLutCache;
+}
+
+function _paintDoseOverlayValues(doseCanvas, axis, sliceIndex, rows, cols, valueAt) {
+    const ctx = doseCanvas.getContext('2d');
+    const w = doseCanvas.width;
+    const h = doseCanvas.height;
+    if (!(w > 0) || !(h > 0) || !(rows > 0) || !(cols > 0)) return false;
 
     applyDoseOverlayLayerOpacity(doseCanvas);
     const tmpCanvas = document.createElement('canvas');
@@ -5931,19 +6240,24 @@ function renderDoseOverlayOnLayer(doseCanvas, axis, sliceIndex, sliceData) {
     const imageData = tmpCtx.createImageData(w, h);
     const scaleX = w / cols;
     const scaleY = h / rows;
-    const colormap = (valGy) => _doseGyToRgb(valGy, 'twoD');
+    const colorLut = _dose2DColorLut();
+    const doseScaleGy = _getDoseScaleGy();
 
     for (let py = 0; py < h; py++) {
         for (let px = 0; px < w; px++) {
             const sx = Math.min(Math.floor(px / scaleX), cols - 1);
             const sy = Math.min(Math.floor(py / scaleY), rows - 1);
-            const val = sliceData[sy][sx];
-            const valGy = val * _getDoseScaleGy();
-            const [r, g, b] = colormap(valGy);
+            const val = valueAt(sy, sx);
+            const valGy = val * doseScaleGy;
+            const normalized = Math.max(
+                0,
+                Math.min(1, (valGy - colorLut.minGy) * colorLut.inverseRange),
+            );
+            const colorIndex = Math.round(normalized * (colorLut.size - 1)) * 3;
             const idx = (py * w + px) * 4;
-            imageData.data[idx] = r;
-            imageData.data[idx + 1] = g;
-            imageData.data[idx + 2] = b;
+            imageData.data[idx] = colorLut.rgb[colorIndex];
+            imageData.data[idx + 1] = colorLut.rgb[colorIndex + 1];
+            imageData.data[idx + 2] = colorLut.rgb[colorIndex + 2];
             // The canvas owns opacity. Pixels remain fully opaque so changing
             // a Data Tree slider never requires regenerating every dose slice.
             imageData.data[idx + 3] = 255;
@@ -5963,6 +6277,61 @@ function renderDoseOverlayOnLayer(doseCanvas, axis, sliceIndex, sliceData) {
     if (typeof window.syncDoseOverlayFrameVisibility === 'function') {
         window.syncDoseOverlayFrameVisibility(axis, sliceIndex, doseCanvas);
     }
+    return true;
+}
+
+function renderDoseOverlayVolumeOnLayer(doseCanvas, axis, sliceIndex, overlay = state.doseOverlay) {
+    const volume = overlay?.volumeData;
+    const shape = (overlay?.shape || []).map(value => Number(value));
+    if (!(volume instanceof Uint16Array)
+        || shape.length !== 3
+        || shape.some(value => !Number.isInteger(value) || value <= 0)
+        || volume.length !== shape[0] * shape[1] * shape[2]) {
+        return false;
+    }
+    const [sizeZ, sizeY, sizeX] = shape;
+    const minValue = Number(overlay.volumeMin);
+    const scale = Number(overlay.volumeQuantizationScale);
+    if (!Number.isFinite(minValue) || !Number.isFinite(scale) || scale < 0) return false;
+    const decode = index => minValue + Number(volume[index]) * scale;
+    const clampIndex = (value, maximum) => Math.max(
+        0,
+        Math.min(maximum, Math.trunc(Number(value) || 0)),
+    );
+    const normalizedAxis = String(axis || '').toLowerCase();
+    if (normalizedAxis === 'axial' || normalizedAxis === 'z') {
+        // The CT axial slider is display-reversed; this mirrors the existing
+        // dose_overlay_slice request transform exactly.
+        const z = (sizeZ - 1) - clampIndex(sliceIndex, sizeZ - 1);
+        return _paintDoseOverlayValues(
+            doseCanvas,
+            axis,
+            sliceIndex,
+            sizeY,
+            sizeX,
+            (row, col) => decode((z * sizeY + row) * sizeX + col),
+        );
+    }
+    if (normalizedAxis === 'coronal' || normalizedAxis === 'y') {
+        const y = clampIndex(sliceIndex, sizeY - 1);
+        return _paintDoseOverlayValues(
+            doseCanvas,
+            axis,
+            sliceIndex,
+            sizeZ,
+            sizeX,
+            (row, col) => decode((row * sizeY + y) * sizeX + col),
+        );
+    }
+    const x = clampIndex(sliceIndex, sizeX - 1);
+    return _paintDoseOverlayValues(
+        doseCanvas,
+        axis,
+        sliceIndex,
+        sizeZ,
+        sizeY,
+        (row, col) => decode((row * sizeY + col) * sizeX + x),
+    );
 }
 
 function toggleDoseOverlayVisibility() {

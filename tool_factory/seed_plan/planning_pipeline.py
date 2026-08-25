@@ -1074,13 +1074,134 @@ def _seed_plan_entry_needle_points(entry, extension_mm=None):
         return None
 
 
+class _NeedleSafetyContext:
+    """Precomputed world-to-index state for batch needle obstacle checks.
+
+    Building the combined obstacle volume and the physical-to-index affine
+    once per validation batch removes the two dominant costs of the previous
+    per-candidate implementation: rebuilding mask views for every needle and
+    calling SimpleITK's Python transform once per sample point. A completed
+    plan re-running ``trajectory_init`` on a large target used to spend
+    minutes in that loop; the vectorized sampler reduces it to seconds while
+    producing byte-identical accept/reject decisions.
+    """
+
+    __slots__ = (
+        "reference_shape",
+        "obstacle_volume",
+        "origin",
+        "direction_inv",
+        "spacing",
+        "max_index_xyz",
+        "effective_step",
+    )
+
+    def __init__(self, ct_image, ctv_mask, oar_mask, obstacle_labels):
+        self.reference_shape = tuple(int(value) for value in reversed(ct_image.GetSize()))
+        ctv = self._canonical_mask(ctv_mask, "CTV")
+        oar = self._canonical_mask(oar_mask, "OAR")
+        if ctv_mask is not None and ctv is None:
+            raise ValueError("CTV mask does not match the CT grid")
+        if oar_mask is not None and oar is None:
+            raise ValueError("OAR mask does not match the CT grid")
+        if ctv is None and oar is None:
+            logger.error("[needle_safety] No original-grid masks available for final needle validation")
+            raise ValueError("no original-grid masks available")
+
+        obstacle = np.zeros(self.reference_shape, dtype=bool)
+        if ctv is not None:
+            # CTV label 1 is the planning target; embedded labels 2/3 are the
+            # model's hard artery/vein structures (see pancreatic_tumor_nnunet).
+            obstacle |= (ctv == 2) | (ctv == 3)
+        if oar is not None:
+            label_ids = sorted({int(label) for label in (obstacle_labels or ())})
+            if label_ids:
+                obstacle |= np.isin(oar, label_ids)
+        self.obstacle_volume = obstacle
+
+        self.origin = np.asarray(ct_image.GetOrigin(), dtype=np.float64)
+        direction = np.asarray(ct_image.GetDirection(), dtype=np.float64).reshape(3, 3)
+        self.direction_inv = np.linalg.inv(direction)
+        self.spacing = np.asarray(ct_image.GetSpacing(), dtype=np.float64)
+        # Indices stay in XYZ order; GetSize() already reports XYZ.
+        self.max_index_xyz = np.asarray(
+            [float(size - 1) for size in ct_image.GetSize()], dtype=np.float64
+        )
+        min_spacing = float(np.min(np.abs(self.spacing)))
+        # Use at most half of the smallest original voxel spacing. A fixed
+        # 0.75 mm step could skip a thin oblique intersection in sub-mm CT.
+        # The 0.25 mm floor caps work for unusually high-resolution scans.
+        self.effective_step = min(
+            max(0.75, 0.25),
+            max(min_spacing * 0.5, 0.25),
+        )
+
+    def _canonical_mask(self, mask, label):
+        if mask is None:
+            return None
+        array = np.asarray(mask)
+        if tuple(array.shape) == self.reference_shape:
+            return array
+        expected_size = int(np.prod(self.reference_shape, dtype=np.int64))
+        if int(array.size) == expected_size:
+            logger.debug(
+                "[needle_safety] reshaping flat %s mask %s to CT grid %s",
+                label, tuple(array.shape), self.reference_shape,
+            )
+            return array.reshape(self.reference_shape)
+        logger.error(
+            "[needle_safety] %s shape %s does not match CT grid %s; refusing unsafe mask",
+            label, tuple(array.shape), self.reference_shape,
+        )
+        return None
+
+    def segment_hits_obstacle(self, points) -> bool:
+        """Vectorized equivalent of the historical per-point SITK sampler."""
+        try:
+            start = np.asarray(points[0], dtype=np.float64).reshape(-1)[:3]
+            end = np.asarray(points[-1], dtype=np.float64).reshape(-1)[:3]
+            if start.size != 3 or end.size != 3 or not np.all(np.isfinite(start + end)):
+                return True
+            distance = float(np.linalg.norm(end - start))
+            count = max(2, int(np.ceil(distance / self.effective_step)) + 1)
+            fractions = np.linspace(0.0, 1.0, count, dtype=np.float64)
+            # p = origin + D @ (index * spacing)  =>  index = D^-1 @ (p-origin) / spacing
+            world = start[None, :] + fractions[:, None] * (end - start)[None, :]
+            indices = (world - self.origin[None, :]) @ self.direction_inv.T / self.spacing[None, :]
+            inside = np.all(indices >= 0.0, axis=1) & np.all(indices <= self.max_index_xyz[None, :], axis=1)
+            if not np.any(inside):
+                return False
+            xyz = np.rint(indices[inside]).astype(np.int64)
+            z, y, x = xyz[:, 2], xyz[:, 1], xyz[:, 0]
+            return bool(self.obstacle_volume[z, y, x].any())
+        except Exception:
+            logger.exception("[needle_safety] Original-grid obstacle validation failed")
+            return True
+
+
+def build_needle_safety_context(ct_image, ctv_mask, oar_mask, obstacle_labels):
+    """Build a reusable safety context, or ``None`` when inputs fail closed.
+
+    Callers that validate many segments against the same masks must reuse one
+    context; building it per segment would rescale the cost with the candidate
+    count again. ``None`` means every segment check will fall back to the
+    historical fail-closed behaviour.
+    """
+    if ct_image is None:
+        return None
+    try:
+        return _NeedleSafetyContext(ct_image, ctv_mask, oar_mask, obstacle_labels)
+    except ValueError:
+        return None
+
+
 def _world_segment_hits_obstacle(
     points,
     ct_image,
     ctv_mask,
     oar_mask,
     obstacle_labels,
-    sample_spacing_mm=0.75,
+    context=None,
 ):
     """Check the complete physical needle segment against original-grid hard masks.
 
@@ -1092,71 +1213,16 @@ def _world_segment_hits_obstacle(
     """
     if ct_image is None or points is None or len(points) != 2:
         return True
-    try:
-        start = np.asarray(points[0], dtype=np.float64).reshape(-1)[:3]
-        end = np.asarray(points[1], dtype=np.float64).reshape(-1)[:3]
-        if start.size != 3 or end.size != 3 or not np.all(np.isfinite(start + end)):
+    if context is None:
+        context = build_needle_safety_context(ct_image, ctv_mask, oar_mask, obstacle_labels)
+    if context is None:
+        # Fail closed exactly like the historical implementation: a mask/CT
+        # geometry mismatch must reject every segment rather than wave it through.
+        if ctv_mask is not None or oar_mask is not None:
             return True
-        reference_shape = tuple(int(value) for value in reversed(ct_image.GetSize()))
-        def _canonical_mask(mask, label):
-            if mask is None:
-                return None
-            array = np.asarray(mask)
-            if tuple(array.shape) == reference_shape:
-                return array
-            expected_size = int(np.prod(reference_shape, dtype=np.int64))
-            if int(array.size) == expected_size:
-                logger.debug(
-                    "[needle_safety] reshaping flat %s mask %s to CT grid %s",
-                    label, tuple(array.shape), reference_shape,
-                )
-                return array.reshape(reference_shape)
-            logger.error(
-                "[needle_safety] %s shape %s does not match CT grid %s; refusing unsafe mask",
-                label, tuple(array.shape), reference_shape,
-            )
-            return None
-
-        ctv = _canonical_mask(ctv_mask, "CTV")
-        oar = _canonical_mask(oar_mask, "OAR")
-        if ctv_mask is not None and ctv is None:
-            return True
-        if oar_mask is not None and oar is None:
-            return True
-        if ctv is None and oar is None:
-            logger.error("[needle_safety] No original-grid masks available for final needle validation")
-            return True
-
-        distance = float(np.linalg.norm(end - start))
-        # Use at most half of the smallest original voxel spacing. A fixed
-        # 0.75 mm step could skip a thin oblique intersection in sub-mm CT.
-        # The 0.25 mm floor caps work for unusually high-resolution scans.
-        min_spacing = float(np.min(np.abs(np.asarray(ct_image.GetSpacing(), dtype=np.float64))))
-        effective_step = min(
-            max(float(sample_spacing_mm), 0.25),
-            max(min_spacing * 0.5, 0.25),
-        )
-        count = max(2, int(np.ceil(distance / effective_step)) + 1)
-        label_ids = set(int(label) for label in (obstacle_labels or ()))
-        size_xyz = np.asarray(ct_image.GetSize(), dtype=np.float64)
-        for fraction in np.linspace(0.0, 1.0, count, dtype=np.float64):
-            world = start + fraction * (end - start)
-            index_xyz = np.asarray(
-                ct_image.TransformPhysicalPointToContinuousIndex(tuple(float(value) for value in world)),
-                dtype=np.float64,
-            )
-            # The external portion is allowed to be outside the CT field of view.
-            if np.any(index_xyz < 0.0) or np.any(index_xyz > (size_xyz - 1.0)):
-                continue
-            x, y, z = np.rint(index_xyz).astype(np.int64)
-            if ctv is not None and int(ctv[z, y, x]) in (2, 3):
-                return True
-            if oar is not None and int(oar[z, y, x]) in label_ids:
-                return True
-        return False
-    except Exception:
-        logger.exception("[needle_safety] Original-grid obstacle validation failed")
+        logger.error("[needle_safety] No original-grid masks available for final needle validation")
         return True
+    return context.segment_hits_obstacle(points)
 
 
 def _needle_enters_through_truncated_boundary(points, ct_image, body_mask=None, margin_mm=8.0):
@@ -1234,6 +1300,39 @@ def _is_flat_slice(a, b):
     return ratio >= 0.5
 
 
+def _deactivate_manual_overlay(agent) -> None:
+    """Drop any manual-edit overlay superseded by a fresh automatic result.
+
+    Manual seeds/needles were tuned against a previous plan. When an automatic
+    step stores new geometry, keeping the overlay active would make
+    ``_current_planning_snapshot`` present stale manual geometry while dose,
+    metrics, and run status describe the NEW automatic plan — a mixed state
+    that is clinically misleading. Deactivation is intentional here; during
+    the run itself ``begin_planning_run`` still carries the last safe baseline
+    so in-flight replans keep their previous geometry visible.
+    """
+    if agent is None or not hasattr(agent, "memory"):
+        return
+    memory = agent.memory
+    if not (
+        memory.retrieve("manual_plan_active")
+        or memory.retrieve("manual_seeds")
+        or memory.retrieve("manual_needles")
+    ):
+        return
+    for key in (
+        "manual_plan_active",
+        "manual_seeds",
+        "manual_needles",
+        "manual_plan_serialized",
+        "manual_planning_preview",
+        "manual_ai_dose",
+        "manual_geometry_only",
+    ):
+        memory.store(key, None)
+    logger.info("[planning] Automatic result stored; deactivated the previous manual-edit overlay")
+
+
 def _body_mask_from_ct(ct_image, threshold=-300):
     """Build a z,y,x body mask from the CT array with boundary fill guard."""
     import numpy as np
@@ -1268,6 +1367,11 @@ def _filter_world_safe_trajectories(
     safe = []
     rejected = 0
     truncation_rejected = 0
+    if not trajectories:
+        # An empty batch can never produce a safe trajectory. Return before
+        # touching CT/mask geometry so placeholder-free callers (tests,
+        # dry-run hooks) do not pay for context construction.
+        return safe
     extension = _needle_extension_mm()
     # Build the body envelope once to detect truncated CT scan boundaries. A
     # needle entering through a flat truncation plane (not real skin) is
@@ -1277,12 +1381,19 @@ def _filter_world_safe_trajectories(
             body_mask = _body_mask_from_ct(ct_image)
         except Exception:
             logger.warning("[needle_safety] Body mask unavailable; truncation check skipped", exc_info=True)
+    # One combined obstacle volume + affine for the whole candidate batch.
+    safety_context = build_needle_safety_context(ct_image, ctv_mask, oar_mask, obstacle_labels)
     for trajectory in trajectories or []:
         points = _candidate_world_needle_points(trajectory, planning_image, extension)
         if _needle_enters_through_truncated_boundary(points, ct_image, body_mask=body_mask):
             truncation_rejected += 1
             continue
-        if _world_segment_hits_obstacle(points, ct_image, ctv_mask, oar_mask, obstacle_labels):
+        if safety_context is None:
+            # A missing/mismatched mask context must reject every candidate,
+            # matching the fail-closed single-segment validator contract.
+            rejected += 1
+            continue
+        if safety_context.segment_hits_obstacle(points):
             rejected += 1
         else:
             safe.append(trajectory)
@@ -1311,6 +1422,8 @@ def _validated_needle_geometry(plan_res, ct_image, planning_image, ctv_mask, oar
     """
     geometry = {}
     unsafe_indices = []
+    extension = _needle_extension_mm()
+    safety_context = build_needle_safety_context(ct_image, ctv_mask, oar_mask, obstacle_labels)
     for index, entry in enumerate(plan_res or []):
         trajectory = None
         if isinstance(entry, dict):
@@ -1318,12 +1431,12 @@ def _validated_needle_geometry(plan_res, ct_image, planning_image, ctv_mask, oar
         elif isinstance(entry, (list, tuple)) and entry:
             trajectory = entry[0]
         points = _candidate_world_needle_points(
-            trajectory, planning_image, _needle_extension_mm()
+            trajectory, planning_image, extension
         )
-        if _world_segment_hits_obstacle(points, ct_image, ctv_mask, oar_mask, obstacle_labels):
+        if safety_context is not None and safety_context.segment_hits_obstacle(points):
             unsafe_indices.append(index)
             continue
-        if points is None:
+        if safety_context is None or points is None:
             unsafe_indices.append(index)
             continue
         geometry[str(index)] = [np.asarray(point, dtype=float).tolist() for point in points]
@@ -2102,6 +2215,7 @@ class PlanningPipelineTool(BaseTool):
         # Store results
         if agent:
             agent.memory.store("trajectories", trajectories)
+            _deactivate_manual_overlay(agent)
             agent.memory.store("resampled_ct", resampled_ct)
             agent.memory.store("resampled_ctv", resampled_ctv)
             agent.memory.store("resampled_oar", resampled_oar)
@@ -2229,6 +2343,7 @@ class PlanningPipelineTool(BaseTool):
 
         if agent:
             agent.memory.store("refined_trajectories", refined)
+            _deactivate_manual_overlay(agent)
 
         return ToolResult(
             success=True,
@@ -2612,6 +2727,7 @@ class PlanningPipelineTool(BaseTool):
         # Store results
         if agent:
             agent.memory.store("seed_plan", plan_res)
+            _deactivate_manual_overlay(agent)
             agent.memory.store("seed_plan_serialized", seed_plan)
             # The viewer consumes these already validated world-coordinate
             # endpoints instead of reconstructing an unchecked 150 mm line.

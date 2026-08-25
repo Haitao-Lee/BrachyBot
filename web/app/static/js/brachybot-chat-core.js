@@ -948,7 +948,7 @@ function loadSessionChat(id) {
     }
     const title = session.messages.length > 0 ? session.title : 'New conversation';
     document.getElementById('chatSessionTitle').textContent = title;
-    container.scrollTop = container.scrollHeight;
+    scrollToBottom(true);
 }
 
 function saveSessionMessage(type, content, steps, timestamp, sessionId = activeSessionId, meta = null) {
@@ -1486,7 +1486,7 @@ function addChat(type, content, scroll, timestamp, fromSession, sessionId = acti
                         safeMeta.attachments || [],
                         safeMeta.layout || safeMeta.screenshotLayout || 'auto',
                     );
-                    if (scroll !== false) container.scrollTop = container.scrollHeight;
+                    if (scroll !== false) scrollToBottom(safeType === 'user');
                     if (fromSession !== true && typeof saveSessionMessage === 'function') {
                         saveSessionMessage(type, c, null, timestamp || Date.now(), ownerSessionId, safeMeta);
                     }
@@ -1615,9 +1615,7 @@ function addChat(type, content, scroll, timestamp, fromSession, sessionId = acti
             container.appendChild(row);
         }
 
-        if (scroll !== false) {
-            container.scrollTop = container.scrollHeight;
-        }
+        if (scroll !== false) scrollToBottom(safeType === 'user');
         // Also persist into the active session so a refresh keeps it.
         // SKIP when re-rendering from a saved session (the message
         // is already in the session, saving it again causes the
@@ -2365,9 +2363,74 @@ function renderMarkdown(text) {
     };
 })();
 
-function scrollToBottom() {
+// Keep a live turn pinned to the newest content without fighting a user who
+// deliberately scrolled up to inspect history.  Chat layout is split across
+// three flex children (messages, the workflow dock, and the composer), so a
+// single synchronous scrollTop assignment is not sufficient: showing/folding
+// the dock changes chatMessages.clientHeight on the following layout pass.
+let _chatAutoFollow = true;
+let _chatScrollRequestSerial = 0;
+let _chatScrollBoundContainer = null;
+let _chatScrollResizeObserver = null;
+
+function _chatIsNearBottom(container, threshold = 64) {
+    if (!container) return true;
+    return container.scrollHeight - container.scrollTop - container.clientHeight <= threshold;
+}
+
+function _bindChatAutoFollow(container) {
+    if (!container || _chatScrollBoundContainer === container) return;
+    if (_chatScrollResizeObserver) {
+        try { _chatScrollResizeObserver.disconnect(); } catch (_) {}
+        _chatScrollResizeObserver = null;
+    }
+    _chatScrollBoundContainer = container;
+    _chatAutoFollow = true;
+    container.addEventListener('scroll', () => {
+        _chatAutoFollow = _chatIsNearBottom(container);
+    }, { passive: true });
+
+    // The workflow dock is a sibling, so its appearance changes this
+    // container's viewport without mutating the message DOM.  Observe that
+    // size change and keep the same bottom anchor when auto-follow is active.
+    if (typeof ResizeObserver === 'function') {
+        _chatScrollResizeObserver = new ResizeObserver(() => {
+            if (_chatAutoFollow) requestChatScrollToBottom();
+        });
+        _chatScrollResizeObserver.observe(container);
+    }
+}
+
+function requestChatScrollToBottom(options = {}) {
     const container = document.getElementById('chatMessages');
-    if (container) container.scrollTop = container.scrollHeight;
+    if (!container) return;
+    _bindChatAutoFollow(container);
+    const force = options === true || options?.force === true;
+    if (force) _chatAutoFollow = true;
+    if (!force && !_chatAutoFollow) return;
+
+    const requestSerial = ++_chatScrollRequestSerial;
+    const apply = () => {
+        if (requestSerial !== _chatScrollRequestSerial) return false;
+        if (!force && !_chatAutoFollow) return false;
+        container.scrollTop = container.scrollHeight;
+        return true;
+    };
+    const schedule = typeof window.requestAnimationFrame === 'function'
+        ? callback => window.requestAnimationFrame(callback)
+        : callback => window.setTimeout(callback, 0);
+
+    // Apply now for responsiveness, then on two rendered frames so markdown,
+    // Thinking expansion/collapse, and flex-dock reflow share one final anchor.
+    apply();
+    schedule(() => {
+        if (!apply()) return;
+        schedule(apply);
+    });
+}
+
+function scrollToBottom(force = false) {
+    requestChatScrollToBottom({ force });
 }
 
 function setStreamingState(streaming) {
@@ -2431,11 +2494,15 @@ function toggleThinkingChain(wrapper, _steps) {
     stepsDiv.querySelectorAll('.step-body').forEach(b => {
         b.classList.toggle('expanded', !isExpanded);
     });
+    requestChatScrollToBottom();
 }
 
 function toggleStep(bodyId) {
     const body = document.getElementById(bodyId);
-    if (body) body.classList.toggle('expanded');
+    if (body) {
+        body.classList.toggle('expanded');
+        requestChatScrollToBottom();
+    }
 }
 
 // Static renderer used by loadSessionChat() to redraw a saved chain.
@@ -2619,6 +2686,7 @@ function createLiveThinkingChain(resumeStartTime, requestId = '', traceLanguage 
     row.appendChild(avatar);
     row.appendChild(wrapper);
     container.appendChild(row);
+    requestChatScrollToBottom();
 
     return { chainEl: wrapper, stepsDiv, headerEl: header };
 }
@@ -2732,7 +2800,7 @@ function appendStepToChain(stepsDiv, step, idx) {
         existingBlock.dataset.stepTool = step.tool || '';
         existingBlock.dataset.stepParent = step.parent_tool || '';
         existingBlock.dataset.stepType = step.type || '';
-        try { existingBlock.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); } catch (_) {}
+        requestChatScrollToBottom();
         return;
     }
 
@@ -2745,6 +2813,7 @@ function appendStepToChain(stepsDiv, step, idx) {
     block.dataset.stepType = step.type || '';
     block.innerHTML = bodyHtml;
     stepsDiv.appendChild(block);
+    requestChatScrollToBottom();
 }
 
 function updateChainHeader(headerEl, steps) {
@@ -2807,6 +2876,7 @@ function finalizeThinkingChain(chainEl, headerEl, steps) {
             stepsDiv.querySelectorAll('.step-body').forEach(b => b.classList.remove('expanded'));
         }
         if (timeEl) timeEl.style.display = 'none';
+        requestChatScrollToBottom();
     };
     // Push the collapse to the next frame so the response text is
     // definitely visible before the trace folds.  A synchronous
@@ -2850,6 +2920,7 @@ function cancelThinkingChain(chainEl, headerEl) {
         stepsDiv.querySelectorAll('.step-body').forEach(body => body.classList.remove('expanded'));
     }
     if (timeEl) timeEl.style.display = 'none';
+    requestChatScrollToBottom();
 }
 
 function createStreamingResponse(requestId = '', messageId = '') {
@@ -2864,6 +2935,7 @@ function createStreamingResponse(requestId = '', messageId = '') {
     div.dataset.messageId = stableMessageId;
     div.classList.add('is-streaming');
     div.setAttribute('aria-busy', 'true');
+    requestChatScrollToBottom();
     return div;
 }
 
@@ -2874,6 +2946,7 @@ function updateStreamingResponse(el, text) {
     try { el.innerHTML = renderMarkdown(text); } catch (_) {
         el.innerHTML = escHtml(text).replace(/\n/g, '<br>');
     }
+    requestChatScrollToBottom();
 }
 
 function finalizeStreamingResponse(el, text, sessionId = activeSessionId, meta = null) {
@@ -2882,6 +2955,7 @@ function finalizeStreamingResponse(el, text, sessionId = activeSessionId, meta =
     el.classList.remove('is-streaming');
     el.removeAttribute('aria-busy');
     el.innerHTML = renderMarkdown(text);
+    requestChatScrollToBottom();
     try {
         const ownerSessionId = String(sessionId || '');
         const stableMeta = Object.assign({}, meta || {}, {

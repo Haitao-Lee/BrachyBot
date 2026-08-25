@@ -97,7 +97,20 @@ def current_user(store: WorkspaceStore) -> Optional[Dict[str, Any]]:
     if not user or not bool(user.get("is_active")):
         session.clear()
         return None
+    # A password change bumps the account's auth epoch. Sessions issued
+    # before the rotation carry the previous epoch and are refused here, so
+    # a cookie stolen before the rotation cannot outlive it.
+    issued_epoch = int(session.get("bb_auth_epoch") or 0)
+    if issued_epoch != int(user.get("auth_epoch") or 0):
+        session.clear()
+        return None
     return user
+
+
+def _bind_session_identity(session_obj, user: Dict[str, Any]) -> None:
+    """Record the authenticated identity and its current auth epoch."""
+    session_obj["bb_user_id"] = user["id"]
+    session_obj["bb_auth_epoch"] = int(user.get("auth_epoch") or 0)
 
 
 def csrf_token() -> str:
@@ -149,7 +162,7 @@ def register_auth_routes(app: Flask, store: WorkspaceStore) -> None:
         except WorkspaceError as exc:
             return _json_error(str(exc), 409)
         session.clear()
-        session["bb_user_id"] = user["id"]
+        _bind_session_identity(session, user)
         session["bb_session_id"] = case.id
         token = csrf_token()
         return jsonify({"success": True, "user": public_user(user), "active_session_id": case.id, "csrf_token": token}), 201
@@ -169,10 +182,11 @@ def register_auth_routes(app: Flask, store: WorkspaceStore) -> None:
         if not any(item.id == active for item in sessions):
             active = sessions[0].id if sessions else store.create_session(user["id"], "New case").id
         session.clear()
-        session["bb_user_id"] = user["id"]
+        _bind_session_identity(session, user)
         session["bb_session_id"] = active
         token = csrf_token()
         return jsonify({"success": True, "user": public_user(user), "active_session_id": active, "csrf_token": token})
+
 
     @app.route("/api/auth/logout", methods=["POST"])
     @require_api_key
@@ -218,7 +232,11 @@ def register_auth_routes(app: Flask, store: WorkspaceStore) -> None:
             return _json_error("Current password is incorrect", 403)
         if len(new_password) < MIN_PASSWORD_LENGTH:
             return _json_error(f"Password must contain at least {MIN_PASSWORD_LENGTH} characters", 400)
-        store.update_password_hash(user["id"], generate_password_hash(new_password))
+        new_epoch = store.update_password_hash(user["id"], generate_password_hash(new_password))
+        # Re-bind this browser to the new epoch so the session that performed
+        # the rotation stays signed in; every other session for the account
+        # now fails the epoch check in current_user and is revoked lazily.
+        session["bb_auth_epoch"] = int(new_epoch)
         return jsonify({"success": True})
 
 

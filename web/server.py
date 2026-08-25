@@ -10,7 +10,7 @@ import sys
 import threading
 import time
 from datetime import datetime
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Mapping, Optional
 
 WEB_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(WEB_DIR, ".."))
@@ -857,9 +857,37 @@ def create_app(config: Optional[Dict] = None):
         if not request.path.startswith("/api/"):
             return None
         try:
-            user, session_id = _request_session_context()
+            user = current_user(workspace_store)
+            if not user:
+                return None
+            # Resolve the SAME target the route itself will mutate. Routes
+            # accept an explicit case through the header, a JSON body field,
+            # or a query parameter; checking only the selected/header case
+            # here let a request silently write a different case that another
+            # browser holds an editor lease on.
+            try:
+                body = request.get_json(silent=True) if request.is_json else None
+            except Exception:
+                body = None
+            body_target = ""
+            if isinstance(body, Mapping):
+                body_target = str(body.get("session_id") or "").strip()
+            explicit_target = (
+                str(request.headers.get("X-BrachyBot-Session") or "").strip()
+                or body_target
+                or str(request.args.get("session_id") or "").strip()
+            )
+            if explicit_target:
+                try:
+                    target_id = _normalize_session_id(explicit_target)
+                except ValueError as exc:
+                    raise WorkspaceError("Invalid case session") from exc
+                workspace_store.get_session(user["id"], target_id)
+                target_session_id = target_id
+            else:
+                _, target_session_id = _request_session_context()
             workspace_store.assert_editable(
-                user["id"], session_id, request.headers.get("X-BrachyBot-Editor", ""),
+                user["id"], target_session_id, request.headers.get("X-BrachyBot-Editor", ""),
             )
         except WorkspaceLeaseConflict as exc:
             return jsonify({"error": str(exc), "code": "workspace_locked", "editable": False}), 409
@@ -930,6 +958,9 @@ def create_app(config: Optional[Dict] = None):
                     user["id"], session_id, save_name, f.stream,
                     expected_bytes=f.content_length,
                 )
+                # A same-second collision is renamed by the store under its
+                # commit lock; report the committed name, not the request.
+                save_name = abs_path.name
                 return jsonify({
                     "success": True,
                     "path": str(abs_path),
@@ -945,33 +976,61 @@ def create_app(config: Optional[Dict] = None):
             saved = 0
             first_relative = None
             saved_names = set()
-            for f in files:
-                if not f.filename:
-                    continue
-                # For webkitdirectory uploads, filename includes the relative
-                # path (e.g. "Series1/IMG0001.dcm"). Preserve the leaf name.
-                rel = f.filename.replace("\\", "/").rstrip("/")
-                leaf = _sanitize_upload_filename(rel.split("/")[-1])
-                if not leaf:
-                    continue
-                if not _validate_upload_name(leaf, dicom_series=True):
-                    return jsonify({"error": f"Unsupported DICOM series file type: {leaf}"}), 400
-                save_name = leaf
-                # Avoid collision without probing a shared directory.
-                if save_name in saved_names:
-                    stem, ext2 = os.path.splitext(leaf)
-                    i = 1
-                    while f"{stem}_{i}{ext2}" in saved_names:
-                        i += 1
-                    save_name = f"{stem}_{i}{ext2}"
-                workspace_store.write_upload(
-                    user["id"], session_id, f"{sub_dir_name}/{save_name}", f.stream,
-                    expected_bytes=f.content_length,
-                )
-                saved_names.add(save_name)
-                saved += 1
-                if first_relative is None:
-                    first_relative = rel
+            committed_relatives = []
+            try:
+                for f in files:
+                    if not f.filename:
+                        continue
+                    # For webkitdirectory uploads, filename includes the relative
+                    # path (e.g. "Series1/IMG0001.dcm"). Preserve the leaf name.
+                    rel = f.filename.replace("\\", "/").rstrip("/")
+                    leaf = _sanitize_upload_filename(rel.split("/")[-1])
+                    if not leaf:
+                        continue
+                    if not _validate_upload_name(leaf, dicom_series=True):
+                        # Raising routes this request through the batch
+                        # rollback below.  Returning here used to bypass that
+                        # handler and leave every earlier file committed.
+                        raise WorkspaceError(
+                            f"Unsupported DICOM series file type: {leaf}"
+                        )
+                    save_name = leaf
+                    # Avoid collision without probing a shared directory.
+                    if save_name in saved_names:
+                        stem, ext2 = os.path.splitext(leaf)
+                        i = 1
+                        while f"{stem}_{i}{ext2}" in saved_names:
+                            i += 1
+                        save_name = f"{stem}_{i}{ext2}"
+                    committed_path = workspace_store.write_upload(
+                        user["id"], session_id, f"{sub_dir_name}/{save_name}", f.stream,
+                        expected_bytes=f.content_length,
+                    )
+                    committed_relatives.append(committed_path.relative_to(workspace_store.workspace_root(user["id"], session_id) / "inputs").as_posix())
+                    saved_names.add(save_name)
+                    saved += 1
+                    if first_relative is None:
+                        first_relative = rel
+            except Exception:
+                # A failed batch must not leave a partial DICOM series behind:
+                # quota or stream errors mid-loop would otherwise persist a
+                # truncated series that later flows could mistake for valid
+                # input data. Roll back every file this request committed.
+                inputs_root = workspace_store.workspace_root(user["id"], session_id) / "inputs"
+                for rel_path in committed_relatives:
+                    try:
+                        (inputs_root / rel_path).unlink(missing_ok=True)
+                    except OSError:
+                        pass
+                try:
+                    (inputs_root / sub_dir_name).rmdir()
+                except OSError:
+                    pass
+                # write_upload() may have repopulated the process-local quota
+                # total before a later file failed.  Direct rollback unlinks
+                # must invalidate that value after the final deletion.
+                workspace_store.invalidate_storage_usage(user["id"])
+                raise
             if saved == 0:
                 return jsonify({"error": "No files saved"}), 400
             abs_dir = workspace_store.workspace_root(user["id"], session_id) / "inputs" / sub_dir_name
@@ -1060,16 +1119,29 @@ def create_app(config: Optional[Dict] = None):
             return jsonify({"error": "Image not found"}), 404
 
         # Security check: delegate to the centralized allowlist that respects
-        # BRACHYBOT_{CT,MR,US}_DATA_ROOTS and resolves symlinks.  The old
-        # startswith(upload_dir) check was narrower and bypassed env-var
-        # data-roots expansion, so users who configured custom data directories
-        # could not view images via this endpoint.
+        # BRACHYBOT_DATA_ROOTS and the typed BRACHYBOT_{CT,MR,US}_DATA_ROOTS,
+        # and resolves symlinks.  The old startswith(upload_dir) check was
+        # narrower and bypassed env-var data-roots expansion, so users who
+        # configured custom data directories could not view images via this
+        # endpoint.
         if not _validate_path(image_path, purpose="read"):
             return jsonify({"error": "Access denied"}), 403
         real_image_path = os.path.realpath(image_path)
         try:
             user, session_id = _request_session_context()
-            if not workspace_store.owns_path(user["id"], session_id, real_image_path):
+            owned = workspace_store.owns_path(user["id"], session_id, real_image_path)
+            if not owned:
+                # Operator-configured external imaging roots are trusted
+                # deployment settings; an image under one of them is served
+                # even though it is not a case artifact. Everything else
+                # (runtime workspaces, uploads, tmp) still requires case
+                # ownership.
+                external_roots = _server_support.configured_external_read_roots()
+                owned = any(
+                    real_image_path.startswith(root.rstrip(os.sep) + os.sep)
+                    for root in external_roots
+                )
+            if not owned:
                 return jsonify({"error": "Case artifact access denied"}), 403
         except WorkspaceError:
             return jsonify({"error": "Case artifact access denied"}), 403
@@ -1111,10 +1183,14 @@ def create_app(config: Optional[Dict] = None):
                     "Make sure the folder contains .dcm files with valid DICOM headers."
                 )
 
-            # Pick the largest series (slice count). Walk the first file of
-            # each series to read Modality and skip non-image series (SR/SEG
-            # etc.) if a CT series is present.
+            # Prefer the CT series when one is present. Selection used to be
+            # purely slice-count based, so an MR/RTDOSE/SEG series with more
+            # files than the CT silently became the planning image — a
+            # clinical-integrity defect. Ties within the same preference tier
+            # still go to the largest series, and a directory without any
+            # CT-tagged series keeps the historical largest-series behaviour.
             best_id, best_files, best_meta = None, [], {}
+            best_rank = None
             for sid in series_ids:
                 try:
                     files = reader.GetGDCMSeriesFileNames(path, sid)
@@ -1132,13 +1208,21 @@ def create_app(config: Optional[Dict] = None):
                         pass
                 except Exception:
                     modality = ""
-                if not best_id or len(files) > len(best_files):
+                is_ct = modality.strip().upper() == "CT"
+                rank = (0 if is_ct else 1, -len(files))
+                if best_rank is None or rank < best_rank:
+                    best_rank = rank
                     best_id, best_files, best_meta = sid, files, {
                         "modality": modality,
                         "series_id": sid,
                     }
             if not best_files:
                 raise RuntimeError(f"Found {len(series_ids)} series IDs in {path} but none readable")
+            if best_meta.get("modality", "").strip().upper() != "CT":
+                logger.warning(
+                    "[dicom_import] No CT-tagged series in %s; selected %d-file series with modality %r",
+                    path, len(best_files), best_meta.get("modality", ""),
+                )
 
             reader.SetFileNames(best_files)
             img = reader.Execute()
@@ -1775,8 +1859,8 @@ def create_app(config: Optional[Dict] = None):
     return app
 
 
-def run_server(port: int = 8080, host: str = "127.0.0.1", config: Optional[Dict] = None):
-    """Run the web server."""
+def _validate_remote_bind_security(host: str) -> None:
+    """Fail closed for remote binds unless transport security is explicit."""
     if not _is_loopback_host(host):
         allow_insecure = os.environ.get("BRACHYBOT_ALLOW_INSECURE_REMOTE", "").lower() in TRUE_VALUES
         if not os.environ.get("BRACHYBOT_API_KEY") and not allow_insecure:
@@ -1789,6 +1873,34 @@ def run_server(port: int = 8080, host: str = "127.0.0.1", config: Optional[Dict]
             logger.error(rendered_message)
             # Service managers must observe startup refusal as a failed process.
             raise RuntimeError(rendered_message)
+
+        cookie_secure = (
+            os.environ.get("BRACHYBOT_COOKIE_SECURE", "").lower() in TRUE_VALUES
+        )
+        if not cookie_secure and not allow_insecure:
+            message = (
+                "Refusing to bind BrachyBot to non-loopback host %s without "
+                "BRACHYBOT_COOKIE_SECURE=1. Terminate TLS at a reverse proxy "
+                "and enable secure cookies, bind to 127.0.0.1, or explicitly "
+                "set BRACHYBOT_ALLOW_INSECURE_REMOTE=1 only for an isolated "
+                "development network."
+            )
+            rendered_message = message % host
+            logger.error(rendered_message)
+            raise RuntimeError(rendered_message)
+
+        if allow_insecure:
+            logger.warning(
+                "UNSAFE DEVELOPMENT OVERRIDE: BRACHYBOT_ALLOW_INSECURE_REMOTE is enabled for host %s. "
+                "Session cookies may travel over unencrypted HTTP unless TLS is terminated upstream; "
+                "never use this mode on an untrusted network.",
+                host,
+            )
+
+
+def run_server(port: int = 8080, host: str = "127.0.0.1", config: Optional[Dict] = None):
+    """Run the web server."""
+    _validate_remote_bind_security(host)
 
     app = create_app(config)
 

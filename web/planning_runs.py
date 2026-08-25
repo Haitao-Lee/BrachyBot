@@ -326,6 +326,36 @@ def _find_run(memory: Any, planning_id: str) -> Optional[Dict[str, Any]]:
     return next((run for run in ensure_planning_history(memory) if str(run.get("planning_id")) == target), None)
 
 
+# Geometry/config baseline carried into a new run when the outgoing plan is
+# replaced by a stepwise replan.  Derived artifacts (dose, DVH, guide) are
+# deliberately excluded: they must never silently survive into a run whose
+# geometry is about to change.  Keeping the needle/seed baseline alive is what
+# makes "the previous safe geometry was retained" true for manual-edit
+# validation while a stepwise replan (e.g. trajectory_init) is in flight.
+GEOMETRY_BASELINE_KEYS = (
+    "trajectories",
+    "refined_trajectories",
+    "seed_plan",
+    "seed_plan_serialized",
+    "seed_positions",
+    "verified_needle_geometry",
+    "algorithm_plan_snapshot",
+    "manual_seeds",
+    "manual_needles",
+    "manual_plan_active",
+    "manual_plan_version",
+    "manual_geometry_only",
+    "manual_planning_id",
+    "total_seeds",
+    "num_trajectories",
+    "plan_config",
+    "radiation_volume",
+    "obstacle_label_ids",
+    "obstacle_label_source",
+    "ref_direc_voxel",
+)
+
+
 def begin_planning_run(
     agent: Any,
     *,
@@ -346,7 +376,32 @@ def begin_planning_run(
     ):
         return str(active_run["planning_id"])
 
+    # A stepwise replan replaces the outgoing plan's geometry, but manual-edit
+    # endpoints and the viewer must still see the last safe geometry while the
+    # new step runs. Capture the small geometry baseline before clearing;
+    # derived artifacts stay cleared so nothing stale presents as current.
+    carry_baseline: Dict[str, Any] = {}
+    if not force_new and _has_current_plan(memory):
+        for key in GEOMETRY_BASELINE_KEYS:
+            value = memory.retrieve(key)
+            if value is not None:
+                cloned = _clone(value)
+                if cloned is not None:
+                    carry_baseline[key] = cloned
     _clear_active_plan(memory)
+    if carry_baseline:
+        for key, value in carry_baseline.items():
+            _memory_put(memory, key, value)
+        status = {
+            "dose": "stale",
+            "dvh": "stale",
+            "report": "stale",
+            "quality_check": "stale",
+            "surgical_guide": "stale",
+            "reason": f"stepwise replan '{step}' started from previous plan",
+            "updated_at": _now(),
+        }
+        _memory_put(memory, "manual_artifact_status", status)
     sequence = max((int(run.get("sequence") or 0) for run in runs), default=-1) + 1
     planning_id = f"planning-{uuid4().hex}"
     now = _now()

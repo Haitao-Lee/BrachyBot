@@ -1144,6 +1144,7 @@ async function handleFileSelect(input, targetId) {
     let ownerSessionId = '';
     let ownerCtPath = '';
     let ownerTumorType = null;
+    let ownerTargetValue = 1;
     const isCurrentOwner = () => !!ownerSessionId
         && ownerSessionId === String(_activeApiSessionId());
 
@@ -1191,6 +1192,7 @@ async function handleFileSelect(input, targetId) {
         }
         ownerCtPath = (document.getElementById('ctPath')?.value || '').trim();
         ownerTumorType = document.getElementById('ctvModelSelect')?.value || null;
+        ownerTargetValue = Number(document.getElementById('targetValue')?.value || 1);
 
         const formData = new FormData();
         // Append every file with the same form key — the server's
@@ -1239,6 +1241,7 @@ async function handleFileSelect(input, targetId) {
                 sessionId: ownerSessionId,
                 ctPath: ownerCtPath,
                 tumorType: ownerTumorType,
+                targetValue: ownerTargetValue,
             });
         }
 
@@ -1284,6 +1287,12 @@ async function importUploadedMask(kind, labelPath, options = {}) {
             body.tumor_type = options.tumorType
                 || (isCurrentOwner() ? document.getElementById('ctvModelSelect')?.value : null)
                 || null;
+            // A multi-label clinical export can contain body/organ contours
+            // in addition to the actual target. Capture the operator's label
+            // selection with the upload's Session ownership; reading the live
+            // control after a case switch could import the wrong contour.
+            body.target_value = options.targetValue
+                ?? (isCurrentOwner() ? Number(document.getElementById('targetValue')?.value || 1) : 1);
         }
         // A session may still be decoding its durable arrays after the shell
         // has switched.  Retry the server's explicit 202 response instead of

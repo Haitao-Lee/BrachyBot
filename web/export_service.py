@@ -683,8 +683,16 @@ class ExportService:
         format_spec = next((fmt for fmt in item.formats if fmt.key == format_key), None)
         if format_spec is None:
             raise ExportError(f"{item.name} does not support {format_key}")
-        filename = _safe_name(item.name) + format_spec.extension
-        path = destination_root / item.relative_dir / filename
+        # Sanitization plus the 64-character cap is lossy, so two distinct
+        # catalog objects in one directory can map to the same filename.
+        # Without a collision probe the second write silently overwrote the
+        # first while the manifest still listed both objects.
+        base_name = _safe_name(item.name)
+        path = destination_root / item.relative_dir / (base_name + format_spec.extension)
+        probe = 0
+        while path.exists():
+            probe += 1
+            path = destination_root / item.relative_dir / f"{base_name}_{probe}{format_spec.extension}"
         path.parent.mkdir(parents=True, exist_ok=True)
         memory = agent.memory
 
@@ -1235,11 +1243,40 @@ class ExportJob:
 class ExportJobManager:
     """Runs case-bound exports without blocking the selected Session UI."""
 
+    # Terminal jobs stay listed for one hour so the browser can fetch the
+    # archive; after that both the in-memory record and its staged bytes
+    # (job directory + zip) are removed. Without this sweep, failed,
+    # cancelled, downloaded, and abandoned exports accumulated outside the
+    # account quota walk until they exhausted the staging filesystem.
+    RETENTION_SECONDS = 3600
+
     def __init__(self, store: Any, get_agent_for_owner: Callable[..., Any]):
         self.store = store
         self.get_agent_for_owner = get_agent_for_owner
         self._jobs: Dict[str, ExportJob] = {}
         self._lock = threading.RLock()
+
+    def _purge_locked(self) -> None:
+        """Drop terminal jobs past retention and delete their staging bytes."""
+        now = time.time()
+        stale = [
+            job_id for job_id, job in self._jobs.items()
+            if job.status not in {"queued", "preparing", "running"}
+            and (job.created_at + self.RETENTION_SECONDS) < now
+        ]
+        for job_id in stale:
+            job = self._jobs.pop(job_id, None)
+            if job is None:
+                continue
+            # The job directory (scene_exports/<job_id>) contains both the
+            # staged folder and the sibling zip.
+            if job.export_root:
+                shutil.rmtree(Path(job.export_root).parent, ignore_errors=True)
+            elif job.zip_path:
+                try:
+                    Path(job.zip_path).unlink(missing_ok=True)
+                except OSError:
+                    pass
 
     def create(
         self,
@@ -1248,6 +1285,8 @@ class ExportJobManager:
         selections: list[Mapping[str, Any]],
         session_name: str,
     ) -> ExportJob:
+        with self._lock:
+            self._purge_locked()
         job = ExportJob(
             job_id=uuid.uuid4().hex,
             user_id=str(user["id"]),
@@ -1268,6 +1307,7 @@ class ExportJobManager:
 
     def get(self, user_id: str, job_id: str) -> ExportJob:
         with self._lock:
+            self._purge_locked()
             job = self._jobs.get(str(job_id))
         if job is None or job.user_id != str(user_id):
             raise ExportError("Export job was not found")

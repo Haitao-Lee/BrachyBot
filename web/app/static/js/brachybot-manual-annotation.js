@@ -1334,7 +1334,31 @@ function renderDoseForCurrentSlice(axis, sliceIndex) {
     }
     syncDoseOverlayFrameVisibility(axis, sliceIndex, doseCanvas);
 
-    const cacheKey = axis + '_' + sliceIndex;
+    if (state.doseOverlay.volumeData instanceof Uint16Array
+        && typeof renderDoseOverlayVolumeOnLayer === 'function') {
+        try {
+            const painted = renderDoseOverlayVolumeOnLayer(
+                doseCanvas,
+                axis,
+                sliceIndex,
+                state.doseOverlay,
+            );
+            if (painted) {
+                _doseLastRendered[axis] = sliceIndex;
+                doseCanvas._doseRenderEpoch = _doseOverlayRenderEpoch;
+                doseCanvas.dataset.dosePending = 'false';
+                syncDoseOverlayFrameVisibility(axis, sliceIndex, doseCanvas);
+                _clearDoseSliceRetry(axis, sliceIndex);
+                return;
+            }
+        } catch (error) {
+            console.warn(`[dose] local volume render error for ${axis}_${sliceIndex}:`, error);
+        }
+    }
+
+    const cacheKey = typeof doseOverlaySliceCacheKey === 'function'
+        ? doseOverlaySliceCacheKey(axis, sliceIndex, state.doseOverlay)
+        : `${Number(state.doseOverlay.doseGeneration || 0)}:${axis}_${sliceIndex}`;
     if (state.doseOverlay.slices[cacheKey]) {
         // Cache hit — render, but skip if this exact slice was already
         // painted on this canvas (prevents redundant work on rapid

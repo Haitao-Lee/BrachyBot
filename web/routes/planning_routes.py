@@ -9,7 +9,7 @@ import re
 import threading
 import time
 from datetime import datetime
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Mapping, Optional
 from uuid import uuid4
 
 import numpy as np
@@ -229,6 +229,59 @@ def _dose_data_generation(agent) -> int:
         except (TypeError, ValueError):
             continue
     return max(generations, default=0)
+
+
+def _dose_overlay_volume_array(agent) -> np.ndarray:
+    """Return finite float32 dose on the original CT Z/Y/X grid."""
+
+    dose_np = agent.memory.retrieve("dose_distribution_gy")
+    if dose_np is not None:
+        result = np.asarray(dose_np, dtype=np.float32)
+    else:
+        dose_array = agent.memory.retrieve("dose_distribution")
+        if dose_array is None:
+            raise ValueError("No dose distribution available")
+        result = np.asarray(dose_array, dtype=np.float32)
+        resampled_ct = agent.memory.retrieve("resampled_ct")
+        ct_image = agent.memory.retrieve("ct_image")
+        if resampled_ct is not None and ct_image is not None:
+            dose_sitk = sitk.GetImageFromArray(result)
+            dose_sitk.SetSpacing(resampled_ct.GetSpacing())
+            dose_sitk.SetOrigin(resampled_ct.GetOrigin())
+            dose_sitk.SetDirection(resampled_ct.GetDirection())
+            result = sitk.GetArrayFromImage(sitk.Resample(
+                dose_sitk,
+                ct_image,
+                sitk.Transform(),
+                sitk.sitkLinear,
+                0.0,
+                sitk.sitkFloat32,
+            ))
+    if result.ndim != 3 or result.size == 0:
+        raise ValueError(f"Dose overlay must be a non-empty 3D volume; received {result.shape}.")
+    if not np.all(np.isfinite(result)):
+        raise ValueError("Dose overlay contains non-finite values.")
+    return np.ascontiguousarray(result, dtype=np.float32)
+
+
+def _quantize_dose_overlay_volume(dose_array) -> tuple[np.ndarray, float, float]:
+    """Quantize display-only dose to little-endian uint16 without clipping.
+
+    Planning, DVH, and export continue to use the float dose in AgentMemory.
+    This representation exists only to keep a browser-local 2D rendering
+    volume small enough for synchronous slice scrubbing.
+    """
+
+    dose_np = np.asarray(dose_array, dtype=np.float32)
+    if dose_np.ndim != 3 or dose_np.size == 0 or not np.all(np.isfinite(dose_np)):
+        raise ValueError("Dose overlay quantization requires a finite 3D volume.")
+    data_min = float(dose_np.min())
+    data_max = float(dose_np.max())
+    if data_max <= data_min:
+        return np.zeros(dose_np.shape, dtype="<u2"), data_min, 0.0
+    scale = (data_max - data_min) / 65535.0
+    quantized = np.rint((dose_np - data_min) / scale).astype("<u2")
+    return np.ascontiguousarray(quantized), data_min, float(scale)
 
 
 def _submitted_manual_needles(data: Dict[str, Any], current_needles: Any) -> list:
@@ -451,6 +504,110 @@ def _repair_serialized_manual_seed_plan(memory, seeds):
     memory.store("manual_plan_serialized", repaired)
     memory.store("seed_plan_serialized", repaired)
     memory.store("total_seeds", len(seeds or []))
+
+
+def _serialized_plan_from_manual_records(manual_seeds):
+    """Group manual seed records into serialized per-trajectory entries.
+
+    Manual records carry ``position``/``direction`` plus a ``trajectory_id``.
+    Exporters consume the same dict form the automatic pipeline serializes,
+    grouped so that all seeds on one needle stay one channel.
+    """
+    grouped: Dict[str, list] = {}
+    for index, seed in enumerate(manual_seeds or []):
+        if not isinstance(seed, Mapping):
+            continue
+        position = seed.get("position") or seed.get("pos")
+        direction = seed.get("direction") or seed.get("dir")
+        if not isinstance(position, (list, tuple)) or len(position) < 3:
+            continue
+        if not isinstance(direction, (list, tuple)) or len(direction) < 3:
+            continue
+        trajectory_id = str(seed.get("trajectory_id") or seed.get("needle_id") or f"traj_{index + 1}")
+        grouped.setdefault(trajectory_id, []).append({
+            "position": [float(v) for v in list(position)[:3]],
+            "direction": [float(v) for v in list(direction)[:3]],
+        })
+    return [
+        {"trajectory": {"id": trajectory_id}, "seeds": seeds}
+        for trajectory_id, seeds in grouped.items()
+    ]
+
+
+def _serialized_plan_from_raw(raw_plan):
+    """Convert a legacy raw pipeline plan to the serialized dict form.
+
+    Raw automatic plans store ``(trajectory, seeds, dose_maps)`` tuples whose
+    dict-only consumers normalize to zero channels. Only geometry is carried
+    over; per-seed dose maps are irrelevant to exporters.
+    """
+    converted = []
+    for entry in raw_plan or []:
+        if isinstance(entry, Mapping):
+            converted.append(entry)
+            continue
+        if isinstance(entry, (list, tuple)) and len(entry) >= 2:
+            seeds = entry[1]
+            normalized = []
+            for seed in seeds or []:
+                if isinstance(seed, (list, tuple)) and len(seed) >= 2:
+                    pos, direc = seed[0], seed[1]
+                    try:
+                        normalized.append({
+                            "position": [float(v) for v in list(pos)[:3]],
+                            "direction": [float(v) for v in list(direc)[:3]],
+                        })
+                    except (TypeError, ValueError):
+                        continue
+                elif isinstance(seed, Mapping) and seed.get("position"):
+                    normalized.append(seed)
+            if normalized:
+                converted.append({"trajectory": {"index": len(converted)}, "seeds": normalized})
+    return converted
+
+
+def _export_seed_plan(agent):
+    """Return the CURRENT plan in exporter-friendly serialized form.
+
+    Selection order reflects what is authoritative right now:
+    1. ``manual_plan_serialized`` — an active manual-edit overlay is the plan
+       the viewer displays, so exports must match it instead of the stale
+       automatic baseline kept immutable under ``seed_plan``.
+    2. ``seed_plan_serialized`` — the serialized mirror of the latest
+       automatic plan (manual edit commits keep it synchronized).
+    3. Rebuilt from ``manual_seeds`` records when no mirror exists yet.
+    4. A legacy raw automatic plan, converted from tuple form.
+
+    The historical behaviour selected the raw ``seed_plan`` first, which both
+    failed DICOM export with "At least one seed trajectory is required" (raw
+    entries are tuples, not dicts) and exported outdated geometry after a
+    manual edit.
+    """
+    memory = agent.memory
+
+    def _valid_serialized(value):
+        return (
+            isinstance(value, list)
+            and value
+            and any(
+                isinstance(entry, Mapping) and entry.get("seeds")
+                for entry in value
+            )
+        )
+
+    manual_mirror = memory.retrieve("manual_plan_serialized")
+    if _valid_serialized(manual_mirror):
+        return manual_mirror
+    serialized = memory.retrieve("seed_plan_serialized")
+    if _valid_serialized(serialized):
+        return serialized
+    rebuilt = _serialized_plan_from_manual_records(memory.retrieve("manual_seeds"))
+    if rebuilt:
+        return rebuilt
+    converted = _serialized_plan_from_raw(memory.retrieve("seed_plan"))
+    if converted:
+        return converted
+    return []
 
 
 def _current_planning_snapshot(agent):
@@ -853,30 +1010,15 @@ def register_planning_routes(
             # signature. Do not fall back to a potentially blocking cold load.
             return None
 
-    def workspace_output_dir(category: str) -> str:
-        """Return an owned artifact directory; client paths are never trusted."""
+    def workspace_output_transaction(category: str, *, additional_bytes: int = 0):
+        """Return the account-wide transaction for a direct exporter."""
         store, user, session_id = request_case_context()
-        # Direct exporters write into tool-owned directories, unlike browser
-        # artifacts which pass through ``write_artifact``. Refuse a new export
-        # when the account is already at its quota.
-        store.ensure_capacity(user["id"], 0)
-        root = store.workspace_root(user["id"], session_id, create=True) / "artifacts" / category
-        root.mkdir(parents=True, exist_ok=True)
-        return str(root)
-
-    def validate_workspace_output(category: str) -> None:
-        """Verify a direct exporter did not exceed the selected user's quota.
-
-        Scientific exporters often require a filesystem directory instead of a
-        stream. They remain constrained to the selected workspace and are
-        checked before the result is exposed as a downloadable artifact.
-        """
-        _ = category
-        store = current_app.extensions.get("brachybot_workspace_store")
-        user = current_user(store) if store is not None else None
-        if not store or not user:
-            raise WorkspaceError("Authentication required")
-        store.ensure_capacity(user["id"], 0)
+        return store.workspace_output_transaction(
+            user["id"],
+            session_id,
+            category,
+            additional_bytes=additional_bytes,
+        )
 
     def artifact_download_url(relative_path: str) -> str:
         """Return the authenticated download route for an active-case artifact."""
@@ -2140,7 +2282,7 @@ def register_planning_routes(
         panel. The user wanted a "manual UI" that doesn't require
         chatting with the LLM at all.
 
-        Request: { kind: 'ctv' | 'oar', image_path: '...', tumor_type?: 'nnunet_pancreatic' | ..., label_path?: '...' }
+        Request: { kind: 'ctv' | 'oar', image_path: '...', tumor_type?: 'nnunet_pancreatic' | ..., label_path?: '...', target_value?: 1 }
         Returns: { success, kind, label_counts, total_labels, ... }
         """
         agent = get_agent(_lightweight=True)
@@ -2159,6 +2301,14 @@ def register_planning_routes(
         image_path = data.get("image_path", "")
         tumor_type = data.get("tumor_type")
         label_path = data.get("label_path")
+        target_value = data.get("target_value", 1)
+        if kind == "ctv":
+            try:
+                from tool_factory.segmentation_alignment import normalize_positive_label_value
+
+                target_value = normalize_positive_label_value(target_value)
+            except ValueError as exc:
+                return jsonify({"success": False, "kind": kind, "error": str(exc)}), 400
         if not image_path:
             return jsonify({"error": "image_path is required"}), 400
         if not _validate_path(image_path, purpose="read") or not owned_case_path(image_path):
@@ -2191,6 +2341,7 @@ def register_planning_routes(
                     kwargs["tumor_type"] = tumor_type
                 if label_path:
                     kwargs["label_path"] = label_path
+                    kwargs["target_value"] = target_value
                 result = tool.execute(**kwargs)
             elif kind == "oar":
                 from tool_factory.OAR_seg import OARSegmentationTool
@@ -2243,6 +2394,12 @@ def register_planning_routes(
                         # A new uploaded CTV must not inherit full labels or
                         # tumor metadata from the previous case/mask.
                         agent.memory.store("ctv_source", meta.get("ctv_source"))
+                        agent.memory.store("ctv_target_value", meta.get("ctv_target_value"))
+                        agent.memory.store("ctv_requested_target_value", meta.get("ctv_requested_target_value"))
+                        agent.memory.store("ctv_source_labels", meta.get("ctv_source_labels") or [])
+                        agent.memory.store("ctv_source_label_counts", meta.get("ctv_source_label_counts") or {})
+                        agent.memory.store("ctv_normalized_binary", bool(meta.get("ctv_normalized_binary")))
+                        agent.memory.store("ctv_normalization_version", int(meta.get("ctv_normalization_version") or 0))
                         agent.memory.store("label_grid_orientation", meta.get("label_grid_orientation") or "LPI")
                         agent.memory.store("ctv_full_labels", meta.get("full_label_array"))
                         agent.memory.store("ctv_embedded_oar_array", meta.get("oar_array"))
@@ -2252,10 +2409,12 @@ def register_planning_routes(
                             # UI uploads resolve the same case-owned mask.
                             agent.memory.store("ctv_path", label_path)
                             agent.memory.store("ctv_mask_path", label_path)
-                        if meta.get("label_map"):
-                            agent.memory.store("ctv_label_map", meta["label_map"])
-                        if meta.get("label_stats"):
-                            agent.memory.store("ctv_label_stats", meta["label_stats"])
+                        # Replacement semantics are authoritative even for an
+                        # empty metadata mapping.  Otherwise an uploaded CTV
+                        # inherits stale model labels/statistics from the
+                        # previous mask and looks semantically multi-label.
+                        agent.memory.store("ctv_label_map", meta.get("label_map") or {})
+                        agent.memory.store("ctv_label_stats", meta.get("label_stats") or {})
                         if meta.get("ctv_volume_mm3") is not None:
                             agent.memory.store("ctv_volume_mm3", meta["ctv_volume_mm3"])
                         if meta.get("ctv_voxel_count") is not None:
@@ -2354,6 +2513,9 @@ def register_planning_routes(
                 "success": True,
                 "kind": kind,
                 "tumor_type": tumor_type,
+                "target_value": meta.get("ctv_target_value") if kind == "ctv" else None,
+                "requested_target_value": meta.get("ctv_requested_target_value") if kind == "ctv" else None,
+                "ctv_normalized_binary": bool(meta.get("ctv_normalized_binary")) if kind == "ctv" else False,
                 "label_counts": label_counts,
                 "total_labels": len(label_counts),
                 # The browser can populate the Data Tree immediately from the
@@ -2831,40 +2993,8 @@ def register_planning_routes(
             return pending
 
         try:
-            import numpy as np
-            import SimpleITK as sitk
-
-            # Try dose_distribution_gy first (already resampled to original CT space).
-            # Values are normalized model output, not physical Gy.
-            dose_np = agent.memory.retrieve("dose_distribution_gy")
-            if dose_np is not None:
-                dose_np = np.array(dose_np, dtype=np.float32)
-                logger.info(f"[dose_overlay] Using dose_distribution_gy, shape={dose_np.shape}")
-            else:
-                # Fall back to dose_distribution (planning grid) and resample
-                dose_array = agent.memory.retrieve("dose_distribution")
-                if dose_array is None:
-                    return jsonify({"success": False, "error": "No dose distribution available"})
-                dose_np = np.array(dose_array, dtype=np.float32)
-                logger.info(f"[dose_overlay] Using dose_distribution (planning grid), shape={dose_np.shape}")
-
-                # Get resampled CT (planning grid) and original CT
-                resampled_ct = agent.memory.retrieve("resampled_ct")
-                ct_image = agent.memory.retrieve("ct_image")
-
-                if resampled_ct is not None and ct_image is not None:
-                    # Resample dose from planning grid to original CT space
-                    dose_sitk = sitk.GetImageFromArray(dose_np)
-                    dose_sitk.SetSpacing(resampled_ct.GetSpacing())
-                    dose_sitk.SetOrigin(resampled_ct.GetOrigin())
-                    dose_sitk.SetDirection(resampled_ct.GetDirection())
-
-                    resampler = sitk.ResampleImageFilter()
-                    resampler.SetReferenceImage(ct_image)
-                    resampler.SetInterpolator(sitk.sitkLinear)
-                    dose_original = resampler.Execute(dose_sitk)
-                    dose_np = sitk.GetArrayFromImage(dose_original)
-                    logger.info(f"[dose_overlay] Resampled to original CT space, shape={dose_np.shape}")
+            dose_np = _dose_overlay_volume_array(agent)
+            logger.info("[dose_overlay] Original-grid dose shape=%s", dose_np.shape)
 
             # Get CT metadata
             ct_image = agent.memory.retrieve("ct_image")
@@ -2903,6 +3033,64 @@ def register_planning_routes(
             logger.error(f"Dose overlay data failed: {e}")
             return jsonify({"error": str(e)}), 500
 
+    @app.route("/api/planning/dose_overlay_volume", methods=["GET"])
+    @require_api_key
+    @rate_limit
+    def api_planning_dose_overlay_volume():
+        """Return one compact display-only dose volume for smooth 2D scrub."""
+
+        agent = get_agent()
+        if agent is None:
+            return jsonify({"error": "Agent not available"}), 500
+        pending = dose_workspace_data_pending(agent)
+        if pending is not None:
+            return pending
+
+        planning_id = str(active_planning_id(agent.memory) or "")
+        generation = _dose_data_generation(agent)
+        expected_planning_id = str(request.args.get("planning_id") or "")
+        if expected_planning_id and expected_planning_id != planning_id:
+            return jsonify({
+                "success": False,
+                "code": "stale_dose_overlay",
+                "error": "The active Planning changed before the dose volume was read.",
+                "planning_id": planning_id,
+                "dose_generation": generation,
+            }), 409
+        expected_generation = request.args.get("dose_generation")
+        if expected_generation not in (None, ""):
+            try:
+                expected_generation = int(expected_generation)
+            except (TypeError, ValueError):
+                return jsonify({"error": "dose_generation must be an integer"}), 400
+            if expected_generation != generation:
+                return jsonify({
+                    "success": False,
+                    "code": "stale_dose_overlay",
+                    "error": "The dose volume changed before it was read.",
+                    "planning_id": planning_id,
+                    "dose_generation": generation,
+                }), 409
+
+        try:
+            dose_np = _dose_overlay_volume_array(agent)
+            quantized, data_min, quantization_scale = _quantize_dose_overlay_volume(dose_np)
+            response = Response(
+                quantized.tobytes(order="C"),
+                mimetype="application/octet-stream",
+            )
+            response.headers["Cache-Control"] = "private, no-store"
+            response.headers["X-Dose-Encoding"] = "uint16-linear-le"
+            response.headers["X-Dose-Shape"] = ",".join(str(int(item)) for item in dose_np.shape)
+            response.headers["X-Dose-Min"] = repr(data_min)
+            response.headers["X-Dose-Quantization-Scale"] = repr(quantization_scale)
+            response.headers["X-Planning-Id"] = planning_id
+            response.headers["X-Dose-Generation"] = str(generation)
+            return response
+        except Exception as exc:
+            logger.error("Dose overlay volume failed: %s", exc)
+            return jsonify({"error": str(exc)}), 500
+
     @app.route("/api/planning/dose_overlay_slice", methods=["POST"])
     @require_api_key
     @rate_limit
@@ -2923,36 +3111,7 @@ def register_planning_routes(
         slice_index = data.get("slice_index", 0)
 
         try:
-            import numpy as np
-            import SimpleITK as sitk
-
-            # Try dose_distribution_gy first (already resampled). Values are
-            # normalized model output, not physical Gy.
-            dose_np = agent.memory.retrieve("dose_distribution_gy")
-            if dose_np is not None:
-                dose_np = np.array(dose_np, dtype=np.float32)
-            else:
-                # Fall back to dose_distribution and resample
-                dose_array = agent.memory.retrieve("dose_distribution")
-                if dose_array is None:
-                    return jsonify({"success": False, "error": "No dose distribution available"})
-                dose_np = np.array(dose_array, dtype=np.float32)
-
-                # Resample to original CT space
-                resampled_ct = agent.memory.retrieve("resampled_ct")
-                ct_image = agent.memory.retrieve("ct_image")
-
-                if resampled_ct is not None and ct_image is not None:
-                    dose_sitk = sitk.GetImageFromArray(dose_np)
-                    dose_sitk.SetSpacing(resampled_ct.GetSpacing())
-                    dose_sitk.SetOrigin(resampled_ct.GetOrigin())
-                    dose_sitk.SetDirection(resampled_ct.GetDirection())
-                    resampler = sitk.ResampleImageFilter()
-                    resampler.SetReferenceImage(ct_image)
-                    resampler.SetInterpolator(sitk.sitkLinear)
-                    resampler.SetInput(dose_sitk)
-                    dose_original = resampler.Execute()
-                    dose_np = sitk.GetArrayFromImage(dose_original)
+            dose_np = _dose_overlay_volume_array(agent)
 
             # Extract 2D slice (dose_np is in z,y,x order).
             # The 2D CT renderer (brachybot-viewer-volume.js) draws the
@@ -3954,9 +4113,23 @@ def register_planning_routes(
                 if tuple(arr.shape) == expected_shape:
                     oar_mask = arr
                     break
-            if normalized_needles:
+            needles_requiring_validation = _server_support._changed_manual_needles(
+                current.get("needles") or [],
+                normalized_needles,
+            )
+            if needles_requiring_validation:
+                logger.info(
+                    "Manual geometry safety validation changed=%s total=%s ids=%s",
+                    len(needles_requiring_validation),
+                    len(normalized_needles),
+                    [item.get("id") for item in needles_requiring_validation],
+                )
                 _server_support._validate_manual_needle_safety(
-                    agent, normalized_needles, ct_image, ctv_mask, oar_mask
+                    agent,
+                    needles_requiring_validation,
+                    ct_image,
+                    ctv_mask,
+                    oar_mask,
                 )
 
             current_seeds = list(current.get("seeds") or [])
@@ -4711,12 +4884,6 @@ def register_planning_routes(
             return jsonify({"error": "Invalid ctv_path"}), 400
         if oar_path and (not _validate_path(oar_path) or not owned_case_path(oar_path)):
             return jsonify({"error": "Invalid oar_path"}), 400
-        try:
-            safe_output_dir = workspace_output_dir("preoperative")
-        except WorkspaceQuotaExceeded as exc:
-            return jsonify({"error": str(exc)}), 413
-        except WorkspaceError as exc:
-            return jsonify({"error": str(exc)}), 403
         if mode not in ("rule_based", "rl", "auto"):
             return jsonify({"error": "Invalid mode. Use 'rule_based', 'rl', or 'auto'"}), 400
 
@@ -4747,23 +4914,23 @@ def register_planning_routes(
             max_iter = planning_state.get("max_iter") if planning_state.get("max_iter") is not None else config.get('max_iter')
             rf_params = config.get('rf_params')
 
-            result = agent.run_preoperative_plan(
-                ct_path=ct_path,
-                ctv_path=ctv_path,
-                oar_path=oar_path,
-                mode=plan_mode,
-                seed_info=seed_info,
-                radiation_array_params=radiation_array_params,
-                reference_direc=reference_direc,
-                in_lowest_energy=in_lowest_energy,
-                out_highest_energy=out_highest_energy,
-                dose_value_unit=dose_value_unit,
-                DVH_rate=DVH_rate,
-                max_iter=max_iter,
-                rf_params=rf_params,
-                output_dir=safe_output_dir,
-            )
-            validate_workspace_output("preoperative")
+            with workspace_output_transaction("preoperative") as output_dir:
+                result = agent.run_preoperative_plan(
+                    ct_path=ct_path,
+                    ctv_path=ctv_path,
+                    oar_path=oar_path,
+                    mode=plan_mode,
+                    seed_info=seed_info,
+                    radiation_array_params=radiation_array_params,
+                    reference_direc=reference_direc,
+                    in_lowest_energy=in_lowest_energy,
+                    out_highest_energy=out_highest_energy,
+                    dose_value_unit=dose_value_unit,
+                    DVH_rate=DVH_rate,
+                    max_iter=max_iter,
+                    rf_params=rf_params,
+                    output_dir=str(output_dir),
+                )
             checkpoint_operation(
                 agent,
                 "ready",
@@ -4779,6 +4946,8 @@ def register_planning_routes(
                 checkpoint={"kind": "preoperative_plan", "error": str(exc)},
             )
             return jsonify({"error": str(exc)}), 413
+        except WorkspaceError as exc:
+            return jsonify({"error": str(exc)}), 403
         except Exception as e:
             logger.error(f"Preoperative planning failed: {e}")
             checkpoint_operation(
@@ -4811,12 +4980,6 @@ def register_planning_routes(
         if not _validate_path(ct_path) or not owned_case_path(ct_path):
             return jsonify({"error": "Invalid ct_path"}), 400
         try:
-            safe_output_dir = workspace_output_dir("intraoperative")
-        except WorkspaceQuotaExceeded as exc:
-            return jsonify({"error": str(exc)}), 413
-        except WorkspaceError as exc:
-            return jsonify({"error": str(exc)}), 403
-        try:
             threshold = float(threshold)
             if threshold <= 0:
                 return jsonify({"error": "threshold must be positive"}), 400
@@ -4830,13 +4993,13 @@ def register_planning_routes(
             checkpoint={"kind": "intraoperative_replan", "deviation_threshold_mm": threshold},
         )
         try:
-            result = agent.run_intraoperative_replan(
-                intra_op_ct_path=ct_path,
-                original_plan=original_plan,
-                deviation_threshold_mm=threshold,
-                output_dir=safe_output_dir,
-            )
-            validate_workspace_output("intraoperative")
+            with workspace_output_transaction("intraoperative") as output_dir:
+                result = agent.run_intraoperative_replan(
+                    intra_op_ct_path=ct_path,
+                    original_plan=original_plan,
+                    deviation_threshold_mm=threshold,
+                    output_dir=str(output_dir),
+                )
             checkpoint_operation(
                 agent,
                 "ready",
@@ -4852,6 +5015,8 @@ def register_planning_routes(
                 checkpoint={"kind": "intraoperative_replan", "error": str(exc)},
             )
             return jsonify({"error": str(exc)}), 413
+        except WorkspaceError as exc:
+            return jsonify({"error": str(exc)}), 403
         except Exception as e:
             logger.error(f"Intraoperative replanning failed: {e}")
             checkpoint_operation(
@@ -4988,19 +5153,9 @@ def register_planning_routes(
             return jsonify({"error": "Agent not available"}), 500
 
         try:
-            safe_output_dir = workspace_output_dir("dicom_rt")
-        except WorkspaceQuotaExceeded as exc:
-            return jsonify({"error": str(exc)}), 413
-        except WorkspaceError as exc:
-            return jsonify({"error": str(exc)}), 403
-
-        try:
-            os.makedirs(safe_output_dir, exist_ok=True)
-            seed_plan = (
-                agent.memory.retrieve("seed_plan")
-                or agent.memory.retrieve("seed_plan_serialized")
-                or agent.memory.retrieve("manual_seeds")
-            )
+            # Export the CURRENT plan (serialized/manual mirror first), not
+            # the immutable raw automatic baseline.
+            seed_plan = _export_seed_plan(agent)
             dose_distribution = agent.memory.retrieve("dose_distribution")
             reference_image = agent.memory.retrieve("resampled_ct")
             if reference_image is None:
@@ -5009,6 +5164,19 @@ def register_planning_routes(
                 return jsonify({"error": "No planning image is available. Load CT data first."}), 400
             if not seed_plan:
                 return jsonify({"error": "No plan available. Run planning first."}), 400
+
+            # Reserve the dominant output size before generation. A zero-byte
+            # pre/post check cannot hold room for the produced files, so an
+            # over-quota account used to receive complete RTSTRUCT/RTPLAN/
+            # RTDOSE sets first and only fail afterwards. RTDOSE pixels are
+            # uint16 (2 bytes per voxel); the structure and plan files are
+            # kilobyte-scale, covered by the fixed margin.
+            dose_reserve_bytes = 0
+            if dose_distribution is not None:
+                dose_reserve_bytes = (
+                    int(np.asarray(dose_distribution).size) * 2
+                    + 1024 * 1024
+                )
 
             reference_shape = tuple(reversed(reference_image.GetSize()))
             resampled_ctv = agent.memory.retrieve("resampled_ctv")
@@ -5063,33 +5231,40 @@ def register_planning_routes(
             from tool_factory.output.dicom_rt_exporter import DicomRTExporterTool
 
             tool = DicomRTExporterTool()
-            result = tool.execute(
-                ct_image=reference_image,
-                structures=structures,
-                seed_plan=seed_plan,
-                dose_array=dose_distribution,
-                output_dir=safe_output_dir,
-                dicom_tags=agent.memory.retrieve("ct_dicom_tags") or {},
-                dose_scale_gy=dose_scale_gy,
-                dose_units=agent.memory.retrieve("dose_units") or DOSE_MODEL_UNITS,
-                prescription_gy=prescription_gy,
-                isotope=data.get("isotope") or "I-125",
-                seed_length_mm=float(seed_info.get("length", 4.5) or 4.5),
-            )
+            with workspace_output_transaction(
+                "dicom_rt", additional_bytes=dose_reserve_bytes
+            ) as output_dir:
+                safe_output_dir = str(output_dir)
+                result = tool.execute(
+                    ct_image=reference_image,
+                    structures=structures,
+                    seed_plan=seed_plan,
+                    dose_array=dose_distribution,
+                    output_dir=safe_output_dir,
+                    dicom_tags=agent.memory.retrieve("ct_dicom_tags") or {},
+                    dose_scale_gy=dose_scale_gy,
+                    dose_units=agent.memory.retrieve("dose_units") or DOSE_MODEL_UNITS,
+                    prescription_gy=prescription_gy,
+                    isotope=data.get("isotope") or "I-125",
+                    seed_length_mm=float(seed_info.get("length", 4.5) or 4.5),
+                )
+                if not result.success:
+                    # Raising keeps partial files inside the transaction's
+                    # rollback path instead of committing a failed export.
+                    raise WorkspaceError(result.error or "DICOM-RT export failed")
 
-            if result.success:
-                validate_workspace_output("dicom_rt")
-                return jsonify({
-                    "success": True,
-                    "files": result.data,
-                    "output_dir": safe_output_dir,
-                    "message": result.message,
-                    "clinical_status": result.metadata.get("clinical_status"),
-                    "manifest": result.metadata.get("manifest"),
-                })
-            return jsonify({"success": False, "error": result.error}), 400
+            return jsonify({
+                "success": True,
+                "files": result.data,
+                "output_dir": safe_output_dir,
+                "message": result.message,
+                "clinical_status": result.metadata.get("clinical_status"),
+                "manifest": result.metadata.get("manifest"),
+            })
         except WorkspaceQuotaExceeded as exc:
             return jsonify({"error": str(exc)}), 413
+        except WorkspaceError as exc:
+            return jsonify({"success": False, "error": str(exc)}), 400
         except Exception as e:
             logger.error(f"DICOM-RT export failed: {e}")
             return jsonify({"error": str(e)}), 500
@@ -5104,20 +5279,13 @@ def register_planning_routes(
             return jsonify({"error": "Agent not available"}), 500
 
         data = request.get_json() or {}
-        try:
-            safe_output_dir = workspace_output_dir("stl")
-        except WorkspaceQuotaExceeded as exc:
-            return jsonify({"error": str(exc)}), 413
-        except WorkspaceError as exc:
-            return jsonify({"error": str(exc)}), 403
 
         try:
             import os
             import numpy as np
-            os.makedirs(safe_output_dir, exist_ok=True)
 
-            seed_plan = agent.memory.retrieve("seed_plan")
-            if seed_plan is None:
+            seed_plan = _export_seed_plan(agent)
+            if not seed_plan:
                 return jsonify({"error": "No plan available. Run planning first."}), 400
 
             seed_info = getattr(agent, 'config', {}).get("seed_info", {"length": 4.5, "radius": 0.4})
@@ -5177,27 +5345,48 @@ def register_planning_routes(
             # belong in a separate debug/export route if ever needed.
             count = 0
             files = []
-            for i, entry in enumerate(seed_plan):
-                if not isinstance(entry, (list, tuple)) or len(entry) < 2:
-                    continue
-                seeds = entry[1]
-                for j, seed in enumerate(seeds):
-                    if not isinstance(seed, (list, tuple)) or len(seed) < 2:
+
+            def _iter_seed_geometry(entry):
+                """Yield (position, direction) pairs from a serialized entry.
+
+                Serialized entries store seeds either as
+                ``{"position": [...], "direction": [...]}`` dicts or as
+                legacy ``(pos, dir)`` pairs.
+                """
+                seeds = entry.get("seeds") if isinstance(entry, Mapping) else None
+                for seed in seeds or []:
+                    if isinstance(seed, Mapping):
+                        pos, direc = seed.get("position"), seed.get("direction")
+                    elif isinstance(seed, (list, tuple)) and len(seed) >= 2:
+                        pos, direc = seed[0], seed[1]
+                    else:
                         continue
-                    pos = np.array(seed[0])
-                    direc = np.array(seed[1])
-                    filename = f"seed_{i}_{j}.stl"
-                    payload = _seed_cylinder_stl(pos, direc).encode("utf-8")
-                    store, user, session_id = request_case_context()
-                    # Use the streaming writer so every generated STL obeys
-                    # the same replacement-aware quota policy as uploads.
-                    import io
-                    store.write_artifact(
-                        user["id"], session_id, "stl", filename,
-                        io.BytesIO(payload), expected_bytes=len(payload),
-                    )
-                    files.append(filename)
-                    count += 1
+                    if not isinstance(pos, (list, tuple, np.ndarray)) or len(pos) < 3:
+                        continue
+                    if not isinstance(direc, (list, tuple, np.ndarray)) or len(direc) < 3:
+                        continue
+                    yield np.asarray(pos[:3], dtype=float), np.asarray(direc[:3], dtype=float)
+
+            store, user, session_id = request_case_context()
+            with store.workspace_output_transaction(
+                user["id"], session_id, "stl"
+            ) as output_dir:
+                safe_output_dir = str(output_dir)
+                for i, entry in enumerate(seed_plan):
+                    for j, (pos, direc) in enumerate(_iter_seed_geometry(entry)):
+                        filename = f"seed_{i}_{j}.stl"
+                        payload = _seed_cylinder_stl(pos, direc).encode("utf-8")
+                        # Use the streaming writer so every generated STL
+                        # obeys the same replacement-aware quota policy.  The
+                        # surrounding transaction rolls the complete set back
+                        # if any later seed fails.
+                        import io
+                        store.write_artifact(
+                            user["id"], session_id, "stl", filename,
+                            io.BytesIO(payload), expected_bytes=len(payload),
+                        )
+                        files.append(filename)
+                        count += 1
 
             return jsonify({
                 "success": True,
@@ -5208,6 +5397,8 @@ def register_planning_routes(
             })
         except WorkspaceQuotaExceeded as exc:
             return jsonify({"error": str(exc)}), 413
+        except WorkspaceError as exc:
+            return jsonify({"error": str(exc)}), 403
         except Exception as e:
             logger.error(f"STL export failed: {e}")
             return jsonify({"error": str(e)}), 500
@@ -5737,12 +5928,6 @@ def register_planning_routes(
         output_format = data.get("format", "json")
         if output_format not in ("json", "html", "pdf"):
             return jsonify({"error": "Invalid format. Use 'json', 'html', or 'pdf'"}), 400
-        try:
-            safe_output_path = os.path.join(workspace_output_dir("reports"), f"report.{output_format}")
-        except WorkspaceQuotaExceeded as exc:
-            return jsonify({"error": str(exc)}), 413
-        except WorkspaceError as exc:
-            return jsonify({"error": str(exc)}), 403
 
         try:
             if output_format == "pdf":
@@ -5976,7 +6161,12 @@ def register_planning_routes(
             except WorkspaceError:
                 return jsonify({"error": "Authentication required"}), 401
             filepath = store.write_screenshot(user["id"], session_id, filename, img_bytes)
-            url = f"/api/sessions/{session_id}/screenshots/{filename}"
+            # Browser image elements cannot attach X-API-Key.  In API-key
+            # deployments, persist a short-lived case-bound signed URL rather
+            # than publishing an unauthenticated session screenshot path.
+            url = _server_support._make_session_screenshot_url(
+                session_id, filename
+            )
             logger.info(f"Screenshot saved: {filepath} ({len(img_bytes)} bytes)")
 
             attachment = {
@@ -6074,13 +6264,17 @@ def register_planning_routes(
     @app.route("/api/sessions/<session_id>/screenshots/<filename>")
     @rate_limit
     def api_serve_screenshot(session_id, filename):
-        """Serve an authenticated screenshot from its owning case workspace."""
+        """Serve a case-owned screenshot through the API-key/signature boundary."""
         if not filename.lower().endswith(".png") or "/" in filename or "\\" in filename:
             return jsonify({"error": "Invalid screenshot filename"}), 400
         store = current_app.extensions.get("brachybot_workspace_store")
         user = current_user(store) if store is not None else None
         if not user:
             return jsonify({"error": "Authentication required"}), 401
+        if not _server_support._valid_session_screenshot_request(
+            session_id, filename
+        ):
+            return jsonify({"error": "Invalid or missing API key"}), 401
         try:
             filepath = store.session_artifact_path(user["id"], session_id, "screenshots", filename)
         except WorkspaceError as exc:

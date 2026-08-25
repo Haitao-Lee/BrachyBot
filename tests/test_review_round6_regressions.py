@@ -977,6 +977,34 @@ def test_run_server_fails_loudly_for_unauthenticated_remote_bind(monkeypatch):
         server.run_server(host="0.0.0.0")
 
 
+def test_remote_api_key_does_not_bypass_secure_cookie_requirement(monkeypatch):
+    """An API key is not a substitute for TLS-protected browser sessions."""
+    from web import server
+
+    monkeypatch.setenv("BRACHYBOT_API_KEY", "configured-test-key")
+    monkeypatch.delenv("BRACHYBOT_COOKIE_SECURE", raising=False)
+    monkeypatch.delenv("BRACHYBOT_ALLOW_INSECURE_REMOTE", raising=False)
+    monkeypatch.setattr(server, "_is_loopback_host", lambda _host: False)
+
+    with pytest.raises(RuntimeError, match="BRACHYBOT_COOKIE_SECURE=1"):
+        server._validate_remote_bind_security("0.0.0.0")
+
+
+def test_explicit_insecure_remote_override_is_visible(monkeypatch, caplog):
+    """Unsafe development mode must be deliberate and unmistakable in logs."""
+    from web import server
+
+    monkeypatch.delenv("BRACHYBOT_API_KEY", raising=False)
+    monkeypatch.delenv("BRACHYBOT_COOKIE_SECURE", raising=False)
+    monkeypatch.setenv("BRACHYBOT_ALLOW_INSECURE_REMOTE", "1")
+    monkeypatch.setattr(server, "_is_loopback_host", lambda _host: False)
+
+    caplog.set_level("WARNING")
+    server._validate_remote_bind_security("0.0.0.0")
+
+    assert "UNSAFE DEVELOPMENT OVERRIDE" in caplog.text
+
+
 def test_run_server_fails_loudly_when_flask_app_is_unavailable(monkeypatch):
     """A missing Flask runtime must not be reported as a successful start."""
     from web import server
@@ -1235,7 +1263,9 @@ def test_manual_ctv_and_oar_labels_use_the_viewer_lpi_orientation(tmp_path):
     assert oar.success is True
     assert ctv.metadata["manual_label_orientation"] == "LPI"
     assert oar.metadata["manual_label_orientation"] == "LPI"
-    assert np.array_equal(ctv.data, expected)
+    assert ctv.metadata["ctv_target_value"] == 1
+    assert ctv.metadata["ctv_normalized_binary"] is True
+    assert np.array_equal(ctv.data, (expected == 1).astype(np.uint8))
     assert np.array_equal(oar.data, expected)
 
 

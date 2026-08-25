@@ -259,6 +259,62 @@ _PREFERRED_TUMOR_TYPES = (
 )
 
 
+# Plausibility bounds for manually imported CTV contours. Brachytherapy
+# targets treated with direct seed implantation stay far below one litre;
+# the absolute cap is deliberately generous, and the relative cap catches
+# masks that cover most of the scanned body even on very large FOV scans.
+_MANUAL_CTV_MAX_VOLUME_MM3 = 1_000_000.0  # 1000 cm3
+_MANUAL_CTV_MAX_BODY_FRACTION = 0.20
+
+
+def _implausible_manual_ctv_error(volume_mm3: float, voxel_count: int, ct_image) -> "str | None":
+    """Return a rejection message when an imported CTV cannot be a real target.
+
+    The imported file is aligned to the CT grid before this check, so a
+    misaligned-but-correct contour is not penalized here; only physically
+    implausible target volumes are rejected.
+    """
+    if volume_mm3 <= _MANUAL_CTV_MAX_VOLUME_MM3:
+        return None
+    measured_cm3 = volume_mm3 / 1000.0
+    body_cm3 = None
+    if ct_image is not None:
+        try:
+            import SimpleITK as sitk
+
+            reference = sitk.DICOMOrient(ct_image, "LPI")
+            ct_array = sitk.GetArrayFromImage(reference)
+            if ct_array.ndim == 3 and np.issubdtype(ct_array.dtype, np.number):
+                spacing = reference.GetSpacing()
+                body_voxels = int(np.count_nonzero(ct_array > -300))
+                body_cm3 = body_voxels * spacing[0] * spacing[1] * spacing[2] / 1000.0
+        except Exception:
+            body_cm3 = None
+    detail = f"measured CTV volume {measured_cm3:.0f} cm3 ({voxel_count} voxels)"
+    if body_cm3:
+        fraction = volume_mm3 / (body_cm3 * 1000.0)
+        detail += f", {fraction * 100:.0f}% of the scanned body ({body_cm3:.0f} cm3)"
+        if fraction <= _MANUAL_CTV_MAX_BODY_FRACTION and volume_mm3 <= (
+            _MANUAL_CTV_MAX_VOLUME_MM3 * 4
+        ):
+            # A very large FOV scan can push an otherwise plausible large
+            # target over the absolute cap while staying small relative to
+            # the body; trust the relative bound in that window.
+            return None
+        if fraction > _MANUAL_CTV_MAX_BODY_FRACTION:
+            limit = f"limit {_MANUAL_CTV_MAX_BODY_FRACTION * 100:.0f}% of body volume"
+        else:
+            limit = f"limit {_MANUAL_CTV_MAX_VOLUME_MM3 / 1000.0:.0f} cm3"
+    else:
+        limit = f"limit {_MANUAL_CTV_MAX_VOLUME_MM3 / 1000.0:.0f} cm3"
+    return (
+        f"The uploaded CTV mask is not a plausible brachytherapy target "
+        f"({detail}; {limit}). It likely contains a whole-organ or body "
+        f"contour rather than a tumour. Export or resample the actual tumour "
+        f"contour and upload it again."
+    )
+
+
 class CTVSegmentationTool(BaseTool):
     """
     Unified CTV segmentation tool that delegates to tumor-specific tools.
@@ -368,6 +424,7 @@ class CTVSegmentationTool(BaseTool):
 
         result = None
         from_label_path = False
+        manual_label_selection = {}
         if label_path and os.path.exists(label_path):
             # Match both orientation and physical grid. Same-shaped NIfTI
             # arrays are not sufficient: origin/spacing/direction differences
@@ -382,8 +439,28 @@ class CTVSegmentationTool(BaseTool):
                 label_img = sitk.DICOMOrient(sitk.ReadImage(str(label_path)), "LPI")
             else:
                 label_img = align_label_to_reference(label_path, image, "LPI")
-            ctv_array = sitk.GetArrayFromImage(label_img)
-            ctv_mask = label_img
+            source_label_array = sitk.GetArrayFromImage(label_img)
+            from tool_factory.segmentation_alignment import select_label_as_binary
+            try:
+                ctv_array, manual_label_selection = select_label_as_binary(
+                    source_label_array,
+                    target_value,
+                )
+            except ValueError as exc:
+                return ToolResult(
+                    success=False,
+                    error=str(exc),
+                    metadata={
+                        "ctv_source": "manual_label",
+                        "code": "invalid_ctv_target_label",
+                    },
+                )
+            # The planning pipeline's semantic contract is binary CTV: value
+            # 1 is target, while 2/3 are reserved for embedded obstacles.
+            # Preserve the selected source id in metadata, never in the active
+            # mask handed to trajectory and dose code.
+            ctv_mask = sitk.GetImageFromArray(ctv_array)
+            ctv_mask.CopyInformation(label_img)
             from_label_path = True
         else:
             if image is None and image_path is not None:
@@ -565,8 +642,34 @@ class CTVSegmentationTool(BaseTool):
         voxel_size = spacing[0] * spacing[1] * spacing[2]
         volume_mm3 = voxel_count * voxel_size
 
+        # An imported manual mask is untrusted clinical input. A contour that
+        # fills most of the body is not a brachytherapy target: accepting it
+        # silently made trajectory planning run for ~20 minutes on a
+        # body-sized "target" and then rejected every needle as intersecting
+        # the mask's embedded vessel labels. Reject implausible volumes up
+        # front so planning never starts from a poisoned target.
+        if from_label_path:
+            plausibility_error = _implausible_manual_ctv_error(
+                volume_mm3, voxel_count, image
+            )
+            if plausibility_error:
+                return ToolResult(
+                    success=False,
+                    error=plausibility_error,
+                    metadata={
+                        "tumor_type_used": tumor_type or "manual_label",
+                        "ctv_source": "manual_label",
+                        "ctv_volume_mm3": float(volume_mm3),
+                        "code": "implausible_ctv_volume",
+                    },
+                )
+
         # Keep CTV display names source-aware.
         label_map = dict(res_meta.get("label_map", {}))
+        if from_label_path:
+            # Source label ids are provenance only.  The active manual CTV is
+            # always a single binary Data Tree object on label 1.
+            label_map = {1: "CTV"}
         positive_labels = [int(v) for v in np.unique(ctv_array) if int(v) > 0]
         if not label_map:
             label_map = {
@@ -606,6 +709,19 @@ class CTVSegmentationTool(BaseTool):
             "label_stats": res_meta.get("label_stats", {}),
             "model_catalog": filter_catalog(),
         }
+        if from_label_path:
+            meta.update({
+                "ctv_target_value": manual_label_selection.get("selected_target_value"),
+                "ctv_requested_target_value": manual_label_selection.get("requested_target_value"),
+                "ctv_source_labels": manual_label_selection.get("source_labels", []),
+                "ctv_source_label_counts": manual_label_selection.get("source_label_counts", {}),
+                "ctv_normalized_binary": True,
+                "ctv_normalization_version": 1,
+                "label_counts": {1: int(voxel_count)},
+                # A manual replacement must not inherit model-derived label
+                # statistics from the previous CTV in this Session.
+                "label_stats": {},
+            })
         for provenance_key in (
             "model_name",
             "repository",

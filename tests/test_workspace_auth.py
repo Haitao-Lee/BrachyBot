@@ -326,6 +326,98 @@ def test_workspace_upload_endpoint_returns_owned_path(tmp_path):
     assert payload["session_id"] == created["active_session_id"]
 
 
+def test_invalid_dicom_batch_extension_rolls_back_earlier_files(tmp_path):
+    from web.server import create_app
+
+    app = create_app({
+        "runtime_dir": str(tmp_path / "server-runtime"),
+        "secret_key": "test-secret",
+        "workspace_maintenance": False,
+    })
+    client = app.test_client()
+    created = _register(client, "dicom_batch_owner")
+    response = client.post(
+        "/api/upload",
+        data={
+            "file": [
+                (BytesIO(b"valid-dicom"), "valid.dcm"),
+                (BytesIO(b"invalid-extension"), "invalid.txt"),
+            ],
+        },
+        content_type="multipart/form-data",
+        headers={"X-CSRF-Token": created["csrf_token"]},
+    )
+
+    assert response.status_code == 400
+    assert "Unsupported DICOM series file type" in response.get_json()["error"]
+    store = app.extensions["brachybot_workspace_store"]
+    inputs_root = (
+        store.workspace_root(
+            created["user"]["id"], created["active_session_id"]
+        )
+        / "inputs"
+    )
+    assert not list(inputs_root.glob("dicom_*"))
+
+
+def test_session_screenshot_requires_api_key_or_case_bound_signature(
+    tmp_path, monkeypatch,
+):
+    from web import server_support
+    from web.server import create_app
+
+    monkeypatch.setattr(server_support, "API_KEY", "screenshot-test-key")
+    monkeypatch.setattr(server_support, "_API_KEY_REQUIRED", True)
+    app = create_app({
+        "runtime_dir": str(tmp_path / "server-runtime"),
+        "secret_key": "test-secret",
+        "workspace_maintenance": False,
+    })
+    client = app.test_client()
+    registered = client.post(
+        "/api/auth/register",
+        json={
+            "username": "screenshot_api_owner",
+            "password": "correct horse battery staple",
+        },
+        headers={"X-API-Key": "screenshot-test-key"},
+    )
+    assert registered.status_code == 201
+    created = registered.get_json()
+    store = app.extensions["brachybot_workspace_store"]
+    session_id = created["active_session_id"]
+    filename = "dose.png"
+    store.write_screenshot(
+        created["user"]["id"], session_id, filename,
+        b"\x89PNG\r\n\x1a\ncase",
+    )
+    plain_url = f"/api/sessions/{session_id}/screenshots/{filename}"
+
+    assert client.get(plain_url).status_code == 401
+    keyed = client.get(
+        plain_url, headers={"X-API-Key": "screenshot-test-key"}
+    )
+    assert keyed.status_code == 200
+
+    signed_url = server_support._make_session_screenshot_url(
+        session_id, filename,
+    )
+    assert client.get(signed_url).status_code == 200
+    assert client.get(signed_url.replace("sig=", "sig=0", 1)).status_code == 401
+
+    other_client = app.test_client()
+    other_registered = other_client.post(
+        "/api/auth/register",
+        json={
+            "username": "screenshot_api_other",
+            "password": "correct horse battery staple",
+        },
+        headers={"X-API-Key": "screenshot-test-key"},
+    )
+    assert other_registered.status_code == 201
+    assert other_client.get(signed_url).status_code == 403
+
+
 def test_workspace_upload_honors_owned_request_session_header(tmp_path):
     from web.server import create_app
 

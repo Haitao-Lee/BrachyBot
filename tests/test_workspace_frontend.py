@@ -382,7 +382,7 @@ def test_workspace_transitions_publish_measurable_first_paint_and_restore_stages
     # Versioned URLs are intentional cache invalidation points. Keep this
     # assertion aligned with the workspace/report artifact restore contract.
     assert "brachybot-workspace.js?v=35" in index
-    assert "brachybot-ui-api.js?v=43" in index
+    assert "brachybot-ui-api.js?v=44" in index
 
 
 def test_case_owned_api_requests_never_use_presentation_placeholders():
@@ -1031,6 +1031,8 @@ def test_dose_colorbar_and_slice_cache_force_immediate_2d_repaint():
     assert "_doseOverlayRenderEpoch" in manual_annotation
     assert "doseCanvas._doseRenderEpoch !== _doseOverlayRenderEpoch" in manual_annotation
     assert "renderEpoch === _doseOverlayRenderEpoch" in manual_annotation
+    assert "_doseOverlayVolumeOwner === ownerOverlay" in manual_3d
+    assert "_doseOverlayVolumeAbortController?.abort()" in manual_3d
     assert "invalidateDoseOverlayRenderCache();" in manual_3d
     assert '[id^="doseOverlayCanvas"]' in ui_api
 

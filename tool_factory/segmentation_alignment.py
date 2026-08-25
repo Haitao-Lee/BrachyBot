@@ -13,6 +13,84 @@ import numpy as np
 import SimpleITK as sitk
 
 
+def normalize_positive_label_value(value, *, name: str = "target_value") -> int:
+    """Return a positive, discrete label id from an API or UI value.
+
+    Medical label maps are categorical.  Silently truncating ``2.7`` to
+    label 2 (or accepting a boolean as label 1) can select the wrong contour,
+    so callers share this strict conversion at the mask-ingestion boundary.
+    """
+
+    if isinstance(value, (bool, np.bool_)):
+        raise ValueError(f"{name} must be a positive integer label value.")
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{name} must be a positive integer label value.") from exc
+    if not np.isfinite(numeric) or not numeric.is_integer() or numeric <= 0:
+        raise ValueError(f"{name} must be a positive integer label value.")
+    return int(numeric)
+
+
+def select_label_as_binary(
+    label_array: np.ndarray,
+    target_value=1,
+) -> tuple[np.ndarray, dict]:
+    """Select one categorical label and normalize it to the CTV 0/1 contract.
+
+    A manual CTV file may be a multi-label export containing a body/organ
+    contour alongside the actual tumour.  Downstream planning deliberately
+    reserves CTV value 1 for target and values 2/3 for embedded obstacles, so
+    forwarding the source labels unchanged is unsafe.  This helper records
+    the source label id for provenance while returning only a binary target.
+
+    If a mask has exactly one positive source label, that sole label is used
+    even when a conventional default of 1 was requested (common examples are
+    binary masks encoded as 255).  A missing label in a genuinely multi-label
+    file is rejected rather than merging foreground classes.
+    """
+
+    values = np.asarray(label_array)
+    if values.ndim != 3:
+        raise ValueError(
+            f"CTV label array must be three-dimensional; received shape {values.shape}."
+        )
+    if not np.issubdtype(values.dtype, np.number):
+        raise ValueError("CTV label array must contain numeric discrete labels.")
+    if np.issubdtype(values.dtype, np.floating):
+        if not np.all(np.isfinite(values)) or not np.all(values == np.rint(values)):
+            raise ValueError("CTV label array contains non-finite or non-integer labels.")
+
+    requested = normalize_positive_label_value(target_value)
+    source_values, source_counts = np.unique(values, return_counts=True)
+    integer_values = [int(item) for item in source_values]
+    positive_labels = [item for item in integer_values if item > 0]
+    selected = requested
+    if requested not in positive_labels:
+        if len(positive_labels) == 1:
+            selected = positive_labels[0]
+        elif positive_labels:
+            available = ", ".join(str(item) for item in positive_labels)
+            raise ValueError(
+                f"Requested CTV target label {requested} is absent; "
+                f"available positive labels are {available}."
+            )
+
+    binary = np.equal(values, selected).astype(np.uint8, copy=False)
+    positive_counts = {
+        int(label): int(count)
+        for label, count in zip(integer_values, source_counts.tolist())
+        if int(label) > 0
+    }
+    return binary, {
+        "requested_target_value": requested,
+        "selected_target_value": int(selected),
+        "source_labels": positive_labels,
+        "source_label_counts": positive_counts,
+        "selected_voxel_count": int(np.count_nonzero(binary)),
+    }
+
+
 def align_label_image_to_reference(
     label_image: sitk.Image,
     reference_image: sitk.Image,

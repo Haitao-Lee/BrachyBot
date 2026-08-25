@@ -9,6 +9,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
+import pytest
 
 from web.workspace_store import (
     EAGER_ARRAY_LOAD_MAX_BYTES,
@@ -17,6 +18,7 @@ from web.workspace_store import (
     WorkspaceQuotaExceeded,
     WorkspaceStore,
     _decode_artifacts,
+    _repair_restored_manual_ctv,
 )
 
 
@@ -74,6 +76,35 @@ class _Agent:
     def __init__(self):
         self.config = {"mode": "rule_based"}
         self.memory = _Memory()
+
+
+def test_hydration_migrates_legacy_multilabel_manual_ctv_to_binary_target():
+    labels = np.zeros((3, 4, 5), dtype=np.uint8)
+    labels[:, :, :] = 1
+    labels[1, 1:3, 2:4] = 2
+    results = {
+        "ctv_source": "manual_label",
+        "ctv_array": labels,
+        "ctv_label_data": labels.copy(),
+        "ctv_label_map": {1: "pancreatic tumor", 2: "CTV label 2"},
+        "ctv_label_stats": {"pancreatic tumor": {"voxel_count": 999}},
+        "ct_spacing": (0.7, 0.8, 1.5),
+    }
+    ui_state = {"controls": {"targetValue": {"value": "2"}}}
+
+    assert _repair_restored_manual_ctv(results, ui_state) is True
+    assert set(np.unique(results["ctv_array"]).tolist()) == {0, 1}
+    assert int(np.count_nonzero(results["ctv_array"])) == 4
+    assert np.array_equal(results["ctv_array"], results["ctv_label_data"])
+    assert results["ctv_target_value"] == 2
+    assert results["ctv_source_labels"] == [1, 2]
+    assert results["ctv_full_labels"] is None
+    assert results["ctv_embedded_oar_array"] is None
+    assert results["ctv_label_map"] == {1: "pancreatic tumor"}
+    assert results["ctv_label_stats"] == {}
+    assert results["ctv_voxels"] == 4
+    assert results["ctv_volume_mm3"] == pytest.approx(4 * 0.7 * 0.8 * 1.5)
+    assert _repair_restored_manual_ctv(results, ui_state) is False
 
 
 def test_hydration_eager_loads_tiny_arrays_but_keeps_large_volumes_mapped(
@@ -1119,6 +1150,130 @@ def test_generated_artifacts_apply_replacement_aware_account_quota(tmp_path):
     except WorkspaceQuotaExceeded:
         pass
     assert not (store.workspace_root(user["id"], case.id) / "artifacts" / "reports" / "large.txt").exists()
+
+
+def test_screenshot_and_upload_share_the_account_quota_commit_lock(
+    tmp_path, monkeypatch,
+):
+    """Cross-type writers must not approve the same remaining bytes."""
+    store = WorkspaceStore(tmp_path / "runtime")
+    user = store.create_user("cross_type_quota_owner", "hash")
+    case = store.create_session(user["id"], "Cross-type quota case")
+    baseline = store.user_storage_bytes(user["id"])
+    quota = baseline + 100
+    with store._connection() as connection:
+        connection.execute(
+            "UPDATE users SET storage_quota_bytes = ? WHERE id = ?",
+            (quota, user["id"]),
+        )
+
+    upload_entered = threading.Event()
+    release_upload = threading.Event()
+    screenshot_started = threading.Event()
+    screenshot_done = threading.Event()
+    outcomes = []
+    errors = []
+    original = store._write_upload_locked
+
+    def blocked_upload(*args, **kwargs):
+        upload_entered.set()
+        assert release_upload.wait(timeout=2)
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(store, "_write_upload_locked", blocked_upload)
+
+    def upload_writer():
+        try:
+            store.write_upload(
+                user["id"], case.id, "ct.dcm", BytesIO(b"u" * 80),
+                expected_bytes=80,
+            )
+            outcomes.append("upload_ok")
+        except BaseException as exc:  # pragma: no cover - surfaced below
+            errors.append(exc)
+
+    def screenshot_writer():
+        screenshot_started.set()
+        try:
+            store.write_screenshot(
+                user["id"], case.id, "dose.png", b"s" * 80,
+            )
+            outcomes.append("screenshot_ok")
+        except WorkspaceQuotaExceeded:
+            outcomes.append("screenshot_quota")
+        except BaseException as exc:  # pragma: no cover - surfaced below
+            errors.append(exc)
+        finally:
+            screenshot_done.set()
+
+    upload_thread = threading.Thread(target=upload_writer)
+    screenshot_thread = threading.Thread(target=screenshot_writer)
+    upload_thread.start()
+    assert upload_entered.wait(timeout=2)
+    screenshot_thread.start()
+    assert screenshot_started.wait(timeout=2)
+    assert screenshot_done.wait(timeout=0.1) is False
+    release_upload.set()
+    upload_thread.join(timeout=2)
+    screenshot_thread.join(timeout=2)
+
+    assert not upload_thread.is_alive()
+    assert not screenshot_thread.is_alive()
+    assert errors == []
+    assert sorted(outcomes) == ["screenshot_quota", "upload_ok"]
+    assert store.user_storage_bytes(user["id"]) <= quota
+
+
+def test_direct_output_transaction_restores_previous_category_on_quota_failure(
+    tmp_path,
+):
+    """A rejected direct exporter must not leave a partial output set."""
+    store = WorkspaceStore(tmp_path / "runtime")
+    user = store.create_user("direct_output_owner", "hash")
+    case = store.create_session(user["id"], "Direct output case")
+    old_path = store.write_artifact(
+        user["id"], case.id, "dicom_rt", "previous.dcm",
+        BytesIO(b"previous"), expected_bytes=8,
+    )
+    baseline = store.user_storage_bytes(user["id"])
+    quota = baseline + 32
+    with store._connection() as connection:
+        connection.execute(
+            "UPDATE users SET storage_quota_bytes = ? WHERE id = ?",
+            (quota, user["id"]),
+        )
+
+    with pytest.raises(WorkspaceQuotaExceeded):
+        with store.workspace_output_transaction(
+            user["id"], case.id, "dicom_rt"
+        ) as output_dir:
+            (output_dir / "partial.dcm").write_bytes(b"x" * 64)
+
+    assert old_path.read_bytes() == b"previous"
+    assert not (old_path.parent / "partial.dcm").exists()
+    assert store.user_storage_bytes(user["id"]) == baseline
+
+    with pytest.raises(WorkspaceQuotaExceeded):
+        with store.workspace_output_transaction(
+            user["id"], case.id, "dicom_rt", additional_bytes=33
+        ):
+            pass
+
+    with store.workspace_output_transaction(
+        user["id"], case.id, "dicom_rt", additional_bytes=24
+    ) as output_dir:
+        with pytest.raises(WorkspaceQuotaExceeded):
+            store.write_screenshot(
+                user["id"], case.id, "during-export.png", b"s" * 16,
+            )
+        (output_dir / "committed.dcm").write_bytes(b"c" * 24)
+
+    # The reservation is released after commit, so the final eight available
+    # bytes can be used by another writer.
+    store.write_screenshot(
+        user["id"], case.id, "after-export.png", b"a" * 8,
+    )
+    assert store.user_storage_bytes(user["id"]) == quota
 
 
 def test_case_audit_and_review_comments_are_owned_and_persistent(tmp_path):
