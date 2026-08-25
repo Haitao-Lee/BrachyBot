@@ -97,6 +97,29 @@ def test_session_trash_restore_and_cookie_logout(tmp_path):
     assert client.get("/api/sessions").status_code == 401
 
 
+def test_trashed_case_can_be_purged(tmp_path):
+    app = _app(tmp_path)
+    client = app.test_client()
+    created = _register(client, "purge_user")
+    token = created["csrf_token"]
+
+    for index in range(2):
+        session_id = client.post("/api/sessions", json={"title": f"case-{index}"},
+                                 headers={"X-CSRF-Token": token}).get_json()["session"]["id"]
+        assert client.delete(f"/api/sessions/{session_id}", headers={"X-CSRF-Token": token}).status_code == 200
+        # Purging a trashed case previously hit assert_target_editable,
+        # which looked the case up without include_trashed and returned 404
+        # forever, so trash could only be reclaimed on restart.
+        purged = client.delete(f"/api/sessions/{session_id}/purge", headers={"X-CSRF-Token": token})
+        assert purged.status_code == 200
+
+    trash = client.get("/api/sessions/trash").get_json()["sessions"]
+    assert all(item["id"] != created["active_session_id"] for item in trash)
+    # The active case still exists and is unaffected.
+    active_ids = [item["id"] for item in client.get("/api/sessions").get_json()["sessions"]]
+    assert created["active_session_id"] in active_ids
+
+
 def test_authenticated_editor_can_explicitly_take_over_a_locked_case(tmp_path):
     app = _app(tmp_path)
     client = app.test_client()
