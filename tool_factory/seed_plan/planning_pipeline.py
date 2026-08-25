@@ -19,6 +19,7 @@ import sys
 import os
 import json
 import copy
+import hashlib
 import logging
 import re
 import numpy as np
@@ -117,6 +118,102 @@ def _memory_value(memory, key, default=None):
         if isinstance(values, dict) and key in values:
             return values[key]
     return default
+
+
+def _needle_safety_array_fingerprint(value):
+    # Return a stable, JSON-safe identity for one original-grid mask.
+    if value is None:
+        return None
+    try:
+        if hasattr(value, "GetSize"):
+            import SimpleITK as sitk
+
+            value = sitk.GetArrayFromImage(value)
+        array = np.asarray(value)
+        if array.ndim != 3:
+            return None
+        contiguous = np.ascontiguousarray(array)
+        digest = hashlib.sha256()
+        digest.update(str(contiguous.dtype).encode("ascii", "replace"))
+        digest.update(json.dumps(list(contiguous.shape), separators=(",", ":")).encode("ascii"))
+        digest.update(contiguous.tobytes(order="C"))
+        return {
+            "shape": [int(item) for item in contiguous.shape],
+            "dtype": str(contiguous.dtype),
+            "sha256": digest.hexdigest(),
+        }
+    except Exception:
+        logger.warning("[needle_safety] Unable to fingerprint validation mask", exc_info=True)
+        return None
+
+
+def build_needle_safety_provenance(
+    ct_image,
+    ctv_mask,
+    oar_mask,
+    obstacle_labels,
+    *,
+    obstacle_source=None,
+    agent=None,
+):
+    # Build the immutable input contract for verified needle geometry.
+    if ct_image is None:
+        return None
+    try:
+        ct_geometry = {
+            "size_xyz": [int(value) for value in ct_image.GetSize()],
+            "spacing_xyz": [float(value) for value in ct_image.GetSpacing()],
+            "origin_xyz": [float(value) for value in ct_image.GetOrigin()],
+            "direction": [float(value) for value in ct_image.GetDirection()],
+        }
+    except Exception:
+        logger.warning("[needle_safety] Unable to fingerprint CT physical geometry", exc_info=True)
+        return None
+
+    ctv_fingerprint = _needle_safety_array_fingerprint(ctv_mask)
+    oar_fingerprint = _needle_safety_array_fingerprint(oar_mask)
+    if ctv_fingerprint is None and oar_fingerprint is None:
+        return None
+
+    normalized_labels = []
+    for raw_label in obstacle_labels or ():
+        try:
+            normalized_labels.append(int(raw_label))
+        except (TypeError, ValueError):
+            continue
+    memory = getattr(agent, "memory", None) if agent is not None else None
+    return {
+        "schema_version": 1,
+        "ct_geometry": ct_geometry,
+        "ctv_mask": ctv_fingerprint,
+        "oar_mask": oar_fingerprint,
+        "obstacle_label_ids": sorted(set(normalized_labels)),
+        "obstacle_label_source": str(
+            obstacle_source
+            or _memory_value(memory, "obstacle_label_source", "")
+            or ""
+        ),
+        "ctv_source": str(_memory_value(memory, "ctv_source", "") or ""),
+        "oar_source": str(_memory_value(memory, "oar_source", "") or ""),
+    }
+
+
+def needle_safety_provenance_matches(expected, current):
+    # Return whether current masks, CT frame, and policy are exactly the
+    # verified inputs.  Source labels are retained for audit but are not
+    # themselves safety inputs when the effective masks and policy match.
+    if not isinstance(expected, dict) or not isinstance(current, dict):
+        return False
+    if int(expected.get("schema_version") or 0) != 1:
+        return False
+    if int(current.get("schema_version") or 0) != 1:
+        return False
+    return all(expected.get(key) == current.get(key) for key in (
+        "ct_geometry",
+        "ctv_mask",
+        "oar_mask",
+        "obstacle_label_ids",
+    ))
 
 
 def _ui_reference_direction_input(agent):
@@ -2732,6 +2829,21 @@ class PlanningPipelineTool(BaseTool):
             # The viewer consumes these already validated world-coordinate
             # endpoints instead of reconstructing an unchecked 150 mm line.
             agent.memory.store("verified_needle_geometry", verified_needle_geometry)
+            # Keep the exact CT/mask/obstacle policy identity alongside the
+            # validated geometry.  A restart may later hydrate a newer CTV or
+            # OAR into the shared session aliases; the Viewer must distinguish
+            # that stale-input state from a normal restart of this plan.
+            agent.memory.store(
+                "needle_safety_context",
+                build_needle_safety_provenance(
+                    ct_image,
+                    ctv_mask,
+                    oar_mask,
+                    obstacle_labels,
+                    obstacle_source=_memory_value(agent.memory, "obstacle_label_source", ""),
+                    agent=agent,
+                ),
+            )
             # Keep a compact algorithm baseline. Manual edits intentionally
             # update seed_plan later, but this snapshot remains the reference
             # used by the per-needle "Restore algorithm result" action.

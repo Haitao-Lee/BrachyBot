@@ -16,6 +16,7 @@ except ImportError as exc:  # pragma: no cover - controlled by deployment image.
     raise unittest.SkipTest("SimpleITK is required for needle safety tests") from exc
 
 from tool_factory.seed_plan.planning_pipeline import (
+    build_needle_safety_provenance,
     _merge_embedded_hard_obstacles,
     _resample_for_planning,
     _build_radiation_volume,
@@ -25,6 +26,7 @@ from tool_factory.seed_plan.planning_pipeline import (
     _world_segment_hits_obstacle,
     _resolve_data_tree_obstacle_labels,
     _normalize_mask_to_ct_grid,
+    needle_safety_provenance_matches,
 )
 from web.server_support import ManualNeedleSafetyError, _validate_manual_needle_safety
 from AgenticSys import BrachyAgent
@@ -52,6 +54,39 @@ def test_legacy_flattened_mask_is_restored_to_current_ct_grid():
 def test_mask_from_another_grid_is_rejected_before_needle_validation():
     image, _, _ = _image_and_masks()
     assert _normalize_mask_to_ct_grid(np.zeros((8, 8, 8), dtype=np.uint8), image, "CTV") is None
+
+
+def test_needle_safety_provenance_distinguishes_restored_input_versions():
+    image, ctv, oar = _image_and_masks()
+    original = build_needle_safety_provenance(
+        image,
+        ctv,
+        oar,
+        {77},
+        obstacle_source="data_tree_plus_default",
+    )
+    assert original["schema_version"] == 1
+    assert needle_safety_provenance_matches(original, dict(original))
+
+    changed_oar = oar.copy()
+    changed_oar[0, 0, 0] = 77
+    changed = build_needle_safety_provenance(
+        image,
+        ctv,
+        changed_oar,
+        {77},
+        obstacle_source="data_tree_plus_default",
+    )
+    assert not needle_safety_provenance_matches(original, changed)
+
+    changed_policy = build_needle_safety_provenance(
+        image,
+        ctv,
+        oar,
+        {77, 88},
+        obstacle_source="data_tree_plus_default",
+    )
+    assert not needle_safety_provenance_matches(original, changed_policy)
 
 
 class _Memory:

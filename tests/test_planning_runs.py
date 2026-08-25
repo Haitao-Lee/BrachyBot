@@ -74,6 +74,25 @@ def test_full_runs_are_immutable_and_activation_restores_selected_aliases():
     assert list_planning_runs(agent.memory)[1]["visible"] is False
 
 
+def test_verified_needle_input_provenance_is_persisted_with_the_planning_run():
+    agent = _agent()
+    planning_id = begin_planning_run(agent, step="full", force_new=True)
+    agent.memory.store = lambda key, value: agent.memory.planning_results.__setitem__(key, value)
+    context = {
+        "schema_version": 1,
+        "ct_geometry": {"size_xyz": [20, 20, 20]},
+        "ctv_mask": {"sha256": "ctv"},
+        "oar_mask": {"sha256": "oar"},
+        "obstacle_label_ids": [77],
+    }
+    agent.memory.store("verified_needle_geometry", {"0": [[0, 0, 0], [1, 1, 1]]})
+    agent.memory.store("needle_safety_context", context)
+    publish_planning_run(agent, None, status="completed")
+
+    snapshot = agent.memory.retrieve(PLANNING_RUN_PREFIX + planning_id)
+    assert snapshot["needle_safety_context"] == context
+
+
 def test_current_planning_context_never_mixes_active_run_with_foreign_aliases():
     agent = _agent()
     memory = agent.memory

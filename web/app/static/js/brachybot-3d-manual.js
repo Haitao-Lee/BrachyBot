@@ -4249,6 +4249,16 @@ async function loadSeeds3D() {
             return { stale: true, seeds: 0, needles: 0 };
         }
 
+        if (data.plan_needs_replan && data.safety_warning) {
+            const noticeKey = `${data.planning_id || 'active'}:${data.safety_check || 'stale'}`;
+            if (window.__brachybotNeedleSafetyNoticeKey !== noticeKey) {
+                window.__brachybotNeedleSafetyNoticeKey = noticeKey;
+                if (typeof window.showBrachyBotNotice === 'function') {
+                    window.showBrachyBotNotice(data.safety_warning, 'warning', 10000);
+                }
+            }
+        }
+
         // Store seed/needle data in state for 2D overlay rendering
         state.seedsOverlay = {
             seeds: data.seeds || [],
@@ -4320,6 +4330,9 @@ async function loadSeeds3D() {
         dataTreeState.planning.id = manualPlanningState.planningId;
         dataTreeState.planning.version = manualPlanningState.planningVersion;
         dataTreeState.planning.artifactStatus = { ...manualPlanningState.artifactStatus };
+        dataTreeState.planning.safetyCheck = data.safety_check || 'verified';
+        dataTreeState.planning.safetyWarning = data.safety_warning || null;
+        dataTreeState.planning.needsReplan = data.plan_needs_replan === true;
 
         // Capture the accepted automatic geometry before endpoint dragging
         // mutates the live Data Tree. This is the reference used for seed
