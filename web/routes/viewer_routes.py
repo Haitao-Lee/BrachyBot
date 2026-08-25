@@ -928,8 +928,16 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
                         has_nnunet_oar = False  # Disable the merge below
 
                     if has_nnunet_oar:
-                        if oar_array.dtype.itemsize < 2:
-                            oar_array = oar_array.astype(np.uint16, copy=False)
+                        # Restored NPY sidecars are often read-only memmaps.
+                        # The embedded-label merge is a real in-memory
+                        # mutation, so always detach a private writable buffer
+                        # instead of relying on astype(copy=False).
+                        oar_array = np.array(
+                            oar_array,
+                            dtype=np.uint16,
+                            copy=True,
+                            order="C",
+                        )
                         for src_label, dst_label in nnunet_oar_labels.items():
                             mask = ctv_full == src_label
                             if np.any(mask):
@@ -2240,23 +2248,26 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
 
             ct_image = agent.memory.retrieve("ct_image")
 
-            # Revalidate the exact world-coordinate line before exposing it to
-            # the renderer. This is intentionally independent of the cached
-            # ``verified_needle_geometry`` snapshot: a Data Tree category can
-            # change after planning, and a stale snapshot must never make an
-            # unsafe needle visible. The planning pipeline uses the same
-            # physical-coordinate validator, so this is a display-time
-            # defense in depth rather than a second coordinate convention.
+            # Revalidate the exact world-coordinate line when the current
+            # inputs are the same ones that produced the persisted plan. If
+            # the inputs changed, preserve the immutable geometry as a
+            # clearly stale, review-only artifact instead of silently making
+            # the Planning appear empty. Manual edits remain fail-closed
+            # against the current original-grid masks.
             safety_ctv = None
             safety_oar = None
             obstacle_labels = set()
             world_validator = None
-            safety_deferred = True
+            safety_state = "deferred"
+            safety_warning = None
+            stored_safety_context = agent.memory.retrieve("needle_safety_context")
             try:
                 from tool_factory.seed_plan.planning_pipeline import (
+                    build_needle_safety_provenance,
                     _merge_embedded_hard_obstacles,
                     _resolve_data_tree_obstacle_labels,
                     _world_segment_hits_obstacle,
+                    needle_safety_provenance_matches,
                 )
 
                 # Safety revalidation is meaningful only on the original CT
@@ -2275,18 +2286,54 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
                         return None
                     return candidate
 
-                candidate_ctv = agent._get_label_array("ctv_full_labels")
+                # Planning validates the normalized binary CTV and merges
+                # model-emitted hard anatomy into the OAR mask.  Reusing the
+                # full multi-label CTV here made a restart validate against a
+                # different representation than the one that produced the
+                # persisted geometry.
+                candidate_ctv = agent._get_label_array("ctv_array")
                 if candidate_ctv is None:
-                    candidate_ctv = agent._get_label_array("ctv_array")
+                    candidate_ctv = agent._get_label_array("ctv_label_data")
+                if candidate_ctv is None:
+                    candidate_ctv = agent._get_label_array("ctv_full_labels")
                 candidate_oar = agent._get_label_array("oar_array")
                 safety_ctv = _original_grid_mask(candidate_ctv)
                 safety_oar = _original_grid_mask(candidate_oar)
                 if safety_ctv is not None and safety_oar is not None:
                     safety_oar, embedded_labels = _merge_embedded_hard_obstacles(safety_oar, agent)
-                    obstacle_labels, _ = _resolve_data_tree_obstacle_labels(agent)
+                    obstacle_labels, obstacle_source = _resolve_data_tree_obstacle_labels(agent)
                     obstacle_labels.update(embedded_labels)
                     world_validator = _world_segment_hits_obstacle
-                    safety_deferred = False
+                    current_safety_context = build_needle_safety_provenance(
+                        ct_image,
+                        safety_ctv,
+                        safety_oar,
+                        obstacle_labels,
+                        obstacle_source=obstacle_source,
+                        agent=agent,
+                    )
+                    if isinstance(stored_safety_context, dict):
+                        if current_safety_context is None:
+                            safety_state = "deferred"
+                        elif needle_safety_provenance_matches(
+                            stored_safety_context,
+                            current_safety_context,
+                        ):
+                            safety_state = "verified"
+                        else:
+                            # The active Planning was accepted against a
+                            # different segmentation or obstacle policy.
+                            # Keep the immutable geometry visible for review,
+                            # but never present it as current-safe.
+                            safety_state = "stale"
+                            safety_warning = (
+                                "Needle geometry was validated against an earlier "
+                                "CT/CTV/OAR/obstacle state. It is shown for review "
+                                "only; re-plan before clinical use."
+                            )
+                            logger.warning(
+                                "[seeds_3d] Persisted needle geometry is stale relative to current planning inputs"
+                            )
                 else:
                     logger.info(
                         "[seeds_3d] Deferring display-time safety recheck until original-grid CTV/OAR masks are hydrated"
@@ -2297,18 +2344,37 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
                 # masks instead of deleting its Data Tree representation.
                 logger.warning("[seeds_3d] Display-time safety recheck deferred", exc_info=True)
 
-            def _needle_is_safe(points):
-                # Automatic planning already performed original-grid safety
-                # validation. If the restored masks are unavailable, retain
-                # that verified geometry for display and report the deferred
-                # recheck instead of deleting it from the viewer.
-                if safety_deferred:
-                    return True
+            if not isinstance(stored_safety_context, dict) and verified_needle_geometry:
+                # Older workspaces persisted the geometry but not the input
+                # provenance. It was already accepted by the planning
+                # pipeline, so keep it visible after restart while making the
+                # missing provenance explicit. Manual edits still use the
+                # current validator below and therefore remain fail-closed.
+                safety_state = "legacy_verified"
+                safety_warning = (
+                    "Needle geometry comes from a legacy plan without persisted "
+                    "input provenance. It is shown for review only; re-plan "
+                    "before clinical use."
+                )
+
+            def _current_needle_is_safe(points):
+                # Manual geometry must always be checked against the current
+                # original-grid masks. Missing masks are not evidence of
+                # safety for an edit.
                 if world_validator is None:
                     return False
                 return not world_validator(
                     points, ct_image, safety_ctv, safety_oar, obstacle_labels
                 )
+
+            def _automatic_needle_is_safe(points):
+                # A persisted automatic geometry is already validated. A
+                # changed-input or legacy state is review-only, so preserve
+                # the geometry for the Viewer while exposing the stale state
+                # to the UI and keeping clinical edit paths fail-closed.
+                if safety_state in {"deferred", "stale", "legacy_verified"}:
+                    return True
+                return _current_needle_is_safe(points)
 
             def _world_to_ct_voxel_index(world_pos):
                 """Return CT voxel index in numpy order [z, y, x]."""
@@ -2427,7 +2493,7 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
                         np.asarray(point, dtype=np.float64).reshape(-1)[:3]
                         for point in explicit_needle_points
                     ]
-                    if len(explicit_points) != 2 or not _needle_is_safe(explicit_points):
+                    if len(explicit_points) != 2 or not _current_needle_is_safe(explicit_points):
                         logger.error(
                             "[seeds_3d] Withholding manual needle_%s because current Data Tree obstacles reject its geometry",
                             i,
@@ -2453,7 +2519,7 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
                     points = [np.asarray(point, dtype=np.float64).reshape(-1)[:3] for point in validated_points]
                     if len(points) != 2 or not all(point.size == 3 and np.all(np.isfinite(point)) for point in points):
                         raise ValueError("invalid validated needle points")
-                    if not _needle_is_safe(points):
+                    if not _automatic_needle_is_safe(points):
                         logger.error(
                             "[seeds_3d] Withholding needle_%s because current Data Tree obstacles reject its geometry",
                             i,
@@ -2471,6 +2537,17 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
                     )
 
             logger.info(f"[seeds_3d] returning {len(seeds)} seeds, {len(needles)} needles")
+            artifact_status = {}
+            for status_source in (
+                agent.memory.retrieve("structure_artifact_status"),
+                agent.memory.retrieve("manual_artifact_status"),
+            ):
+                if isinstance(status_source, dict):
+                    artifact_status.update(status_source)
+            if safety_state in {"stale", "legacy_verified"}:
+                artifact_status["planning"] = "stale"
+                if safety_warning:
+                    artifact_status["reason"] = safety_warning
             return jsonify({
                 "success": True,
                 "seeds": seeds,
@@ -2478,10 +2555,16 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
                 "seed_geometry": seed_geometry,
                 "total_seeds": len(seeds),
                 "total_needles": len(needles),
-                "planning_id": agent.memory.retrieve("manual_planning_id"),
+                "planning_id": (
+                    agent.memory.retrieve("manual_planning_id")
+                    or agent.memory.retrieve("active_planning_id")
+                    or agent.memory.retrieve("planning_run_id")
+                ),
                 "planning_version": int(agent.memory.retrieve("manual_plan_version") or 0),
-                "artifact_status": agent.memory.retrieve("manual_artifact_status") or {},
-                "safety_check": "deferred" if safety_deferred else "verified",
+                "artifact_status": artifact_status,
+                "safety_check": safety_state,
+                "safety_warning": safety_warning,
+                "plan_needs_replan": safety_state in {"stale", "legacy_verified"},
             })
         except Exception as e:
             logger.error(f"Seed 3D data failed: {e}")
