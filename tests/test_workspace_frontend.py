@@ -1562,10 +1562,10 @@ def test_report_restore_preserves_quality_cells_and_keeps_section_order():
     block = report.split("function _updateReportPreview()", 1)[1].split(
         "function _hpMetricRow", 1
     )[0]
-    assert "const reportTotalPages = 5 + figure1PageCount + figure2PageCount + supplementalPageCount;" in block
+    assert "const reportTotalPages = 4 + oarPageCount" in block
     assert "const figure1Rows = _reportFiguresForGroup(f, 'figure1');" in block
     assert "const figure2Rows = _reportFiguresForGroup(f, 'figure2');" in block
-    assert "p1 + figure1Pages + p2 + figure2Pages + supplementalPages + p3 + p4 + p5" in block
+    assert "p1 + figure1Pages + p2 + figure2Pages + supplementalPages + p3Pages + p4 + p5" in block
     assert block.index("secondaryTitle('Target & Prescription')") < block.index("secondaryTitle('Plan Quality Assessment')")
     assert block.index("secondaryTitle('Plan Quality Assessment')") < block.index("secondaryTitle('OAR Dose')")
     assert block.index("secondaryTitle('OAR Dose')") < block.index("secondaryTitle('Clinical Interpretation')")

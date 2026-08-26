@@ -755,12 +755,17 @@
    as a vertical stack of A4 pages instead of one long scroll — this is
    what a PDF reader shows and what the user expects from a formal report. */
 .report-pages { display: flex; flex-direction: column; align-items: center; gap: 0; }
+/* Report paper contract: every sheet is portrait A4. Source screenshots
+   retain their own aspect ratio and are contained inside the fixed evidence
+   slot; an image can never change the physical page dimensions. */
 .report-page {
     width: 210mm;
     min-width: 210mm;
     max-width: 210mm;
+    height: 297mm;
     min-height: 297mm;
-    padding: 18mm 16mm 18mm 16mm;
+    max-height: 297mm;
+    padding: 18mm 16mm;
     background: #fff;
     color: #000;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(0, 0, 0, 0.04);
@@ -768,17 +773,9 @@
     position: relative;
     page-break-after: always;
     break-after: page;
-    /* Formal hospital typography:
-       - SimSun for Chinese text
-       - All digits and Latin text use Times New Roman
-       - Font size: 12pt
-       - Line height: 1.5 (formal medical document standard)
-       - All text black (#000), no grey tints, for clinical tone
-    */
     font-family: 'Times New Roman', 'SimSun', 'Liberation Serif', serif;
     font-size: 12pt;
     line-height: 1.5;
-    color: #000;
     overflow: hidden;
     contain: layout paint;
     font-feature-settings: "tnum" 1, "lnum" 1;
@@ -787,24 +784,22 @@
 .report-figure-page {
     display: flex;
     flex-direction: column;
+}
+.report-page--landscape {
+    /* Compatibility for previously exported HTML. Historical markup may
+       still carry this class, but it must resolve to the same portrait A4
+       sheet instead of reintroducing 297mm-wide pages. */
+    width: 210mm;
+    min-width: 210mm;
+    max-width: 210mm;
     height: 297mm;
     min-height: 297mm;
     max-height: 297mm;
-}
-.report-page--landscape {
-    width: 297mm;
-    min-width: 297mm;
-    max-width: 297mm;
-    min-height: 210mm;
-    height: 210mm;
-    max-height: 210mm;
-    padding: 14mm 16mm;
+    padding: 18mm 16mm;
 }
 
-/* Keep evidence captures inside the A4 content box in the live preview too.
-   The print stylesheet repeats these constraints for PDF/HTML export, but
-   the preview has its own stylesheet and must not fall back to an image's
-   intrinsic pixel width. */
+/* Keep evidence captures inside the fixed A4 content box in the live preview.
+   The preview must not fall back to an image's intrinsic pixel width. */
 .report-figure-page .hp-subfigure-list,
 .report-figure-page .hp-subfigure,
 .report-figure-page .hp-subfigure-media {
@@ -826,7 +821,7 @@
     display: flex;
     flex-direction: column;
     justify-content: center;
-    flex: 1 1 auto;
+    flex: 0 0 auto;
     min-height: 0;
     margin: 0;
     text-align: center;
@@ -837,8 +832,9 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    flex: 1 1 0;
-    min-height: 0;
+    flex: 0 0 176mm;
+    height: 176mm;
+    min-height: 176mm;
     max-height: 176mm;
 }
 .report-figure-page .hp-subfigure img {
@@ -850,11 +846,12 @@
     height: auto !important;
     max-height: 100% !important;
     object-fit: contain;
+    object-position: center;
     margin: 0 auto;
     box-sizing: border-box;
 }
 .report-page--landscape .hp-subfigure-media {
-    max-height: 132mm;
+    max-height: 176mm;
 }
 .report-page::before {
     /* A4 page boundary indicator (top-right page number) */

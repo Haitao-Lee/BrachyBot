@@ -874,47 +874,15 @@ function _reportFigureDisplayText(figure) {
     };
 }
 
-function _reportFigureAspectRatio(figure) {
-    const storedRatio = Number(figure?.aspectRatio);
-    if (Number.isFinite(storedRatio) && storedRatio > 0) return storedRatio;
-    const width = Number(figure?.pixelWidth);
-    const height = Number(figure?.pixelHeight);
-    if (Number.isFinite(width) && Number.isFinite(height) && width > 0 && height > 0) {
-        return width / height;
-    }
-    const dataUrl = String(figure?.dataUrl || '');
-    if (dataUrl.startsWith('data:image/png;base64,')) {
-        try {
-            // Restored legacy captures may predate persisted dimensions. Read
-            // the PNG IHDR so page orientation still follows the real image.
-            const comma = dataUrl.indexOf(',');
-            const header = atob(dataUrl.slice(comma + 1, comma + 65));
-            const uint32 = offset => (
-                (header.charCodeAt(offset) << 24)
-                | (header.charCodeAt(offset + 1) << 16)
-                | (header.charCodeAt(offset + 2) << 8)
-                | header.charCodeAt(offset + 3)
-            ) >>> 0;
-            const pngWidth = uint32(16);
-            const pngHeight = uint32(20);
-            if (pngWidth > 0 && pngHeight > 0) return pngWidth / pngHeight;
-        } catch (_) {}
-    }
-    return null;
-}
+const REPORT_PAGE_ORIENTATION = 'portrait';
 
-function _reportFigurePageOrientation(figure) {
-    const explicit = String(figure?.pageOrientation || '').toLowerCase();
-    if (explicit === 'landscape' || explicit === 'portrait') return explicit;
-    const ratio = _reportFigureAspectRatio(figure);
-    if (Number.isFinite(ratio)) return ratio >= 1.2 ? 'landscape' : 'portrait';
-    // Server-backed captures from older Sessions may have no inline PNG header.
-    // Use semantic capture roles only as a compatibility fallback.
-    const role = String(figure?.captureRole || figure?.capture_role || '').toLowerCase();
-    if (['planning_overview', 'planning_closeup', 'dose_surface_3d', 'dvh'].includes(role)) {
-        return 'landscape';
-    }
-    return 'portrait';
+/**
+ * The report paper contract is deliberately independent from the source
+ * image aspect ratio. A wide screenshot is scaled into the portrait A4
+ * content box; it must never turn the paper into a landscape sheet.
+ */
+function _reportFigurePageOrientation() {
+    return REPORT_PAGE_ORIENTATION;
 }
 
 function _reportFiguresForGroup(form, group) {
@@ -978,7 +946,14 @@ function _updateReportPreview() {
     const figure1PageCount = figure1Rows.length;
     const figure2PageCount = figure2Rows.length;
     const supplementalPageCount = supplementalRows.length;
-    const reportTotalPages = 5 + figure1PageCount + figure2PageCount + supplementalPageCount;
+    const reportOarRows = Array.isArray(f.oarDose) ? f.oarDose : [];
+    // A fixed A4 page cannot safely contain an unbounded OAR table. Keep the
+    // table header on every continuation sheet instead of allowing row count
+    // to expand the page beyond the physical paper boundary.
+    const reportOarRowsPerPage = 24;
+    const oarPageCount = Math.max(1, Math.ceil(reportOarRows.length / reportOarRowsPerPage));
+    const reportTotalPages = 4 + oarPageCount
+        + figure1PageCount + figure2PageCount + supplementalPageCount;
     const pageFooter = (pageNo) =>
         `<div class="hp-page-footer"><span class="pageno">— ${escHtml(s.page)} ${pageNo} ${escHtml(s.pageOf)} ${reportTotalPages} —</span></div>`;
     // A report has one language at a time. English secondary headings used to
@@ -995,8 +970,8 @@ function _updateReportPreview() {
             const headingSubfigure = String(
                 headingFigure.subfigure || String.fromCharCode(97 + offset)
             ).toLowerCase();
-            const orientation = _reportFigurePageOrientation(headingFigure);
-            html += `<div class="report-page report-figure-page report-page--${orientation}" data-page-orientation="${orientation}">
+            const orientation = _reportFigurePageOrientation();
+            html += `<div class="report-page report-figure-page" data-page-orientation="${orientation}">
                 <div class="hp-running-header"><span>${escHtml(s.confidentiality)}</span><span class="right">${escHtml(groupTitle)}</span></div>
                 <h2 class="hp-section-title">${escHtml(s.figCaption)} ${figureNumber}(${escHtml(headingSubfigure)}) - ${escHtml(groupTitle)}</h2>
                 <div class="hp-subfigure-list">${pageRows.map((figure, pageIndex) => {
@@ -1161,41 +1136,61 @@ function _updateReportPreview() {
     );
     nextPageNo += supplementalPageCount;
 
-    // ============== PAGE 3: OAR Dose ==============
-    let p3 = `<div class="report-page">
-        <div class="hp-running-header"><span>${escHtml(s.confidentiality)}</span><span class="right">${escHtml(oarSection)}</span></div>`;
-    if (f.oarDose && f.oarDose.length > 0) {
-        p3 += `<h2 class="hp-section-title">${escHtml(oarSection)}${secondaryTitle('OAR Dose')}</h2>
-        <div class="hp-section-body">
-            <p class="no-indent">${escHtml(f.language === 'zh'
-                ? '以下 OAR 数值为观测结果；请依据当前部位适用指南或已确认的病例方案进行临床判读，软件不依据默认值自动给出通过或超限结论。'
-                : 'The OAR values below are observed metrics. Interpret them against applicable site-specific guidance or a confirmed case protocol; the software does not infer pass/fail from defaults.')}</p>
-            <table class="hp-grid-table">
-                <thead><tr><th>${escHtml(s.organ)}</th><th>${d2ccLabel} (${U.Gy})</th><th>${d1ccLabel} (${U.Gy})</th><th>${d01ccLabel} (${U.Gy})</th><th>${v100Label} (${U.percent})</th></tr></thead>
-                <tbody>
-                ${f.oarDose.map(o => {
-                    const organName = _resolveOARDisplayName(o.organ, o);
-                    const oarV100 = _oarVolumePercent(o.v100, 'percent');
-                    return `<tr>
-                        <td>${escHtml(organName)}</td>
-                        <td>${o.d2cc !== null ? o.d2cc.toFixed(1) : ND}</td>
-                        <td>${o.d1cc !== null ? o.d1cc.toFixed(1) : ND}</td>
-                        <td>${o.d0_1cc !== null ? o.d0_1cc.toFixed(1) : ND}</td>
-                        <td>${oarV100 !== null ? oarV100.toFixed(1) : ND}</td>
-                    </tr>`;
-                }).join('')}
-                </tbody>
-            </table>
-        </div>`;
-    } else {
+    // ============== PAGE 3+: OAR Dose ==============
+    // Render a bounded sequence of portrait A4 pages. This is intentionally
+    // performed before page 4/page 5 are numbered so every footer remains
+    // correct when a case has many OAR rows.
+    const renderOarPages = (startPageNo) => {
+        let html = '';
         const noOarDose = f.language === 'zh'
             ? '当前病例尚无可用的危及器官剂量结果。完成剂量计算后，此处将自动显示器官剂量指标与来源支持的限值评估。'
             : 'No organ-at-risk dose results are available for this case. After dose calculation, this section will show organ dose metrics and source-backed limit assessments.';
-        p3 += `<h2 class="hp-section-title">${escHtml(oarSection)}${secondaryTitle('OAR Dose')}</h2>
-        <div class="hp-section-body"><p class="no-indent">${escHtml(noOarDose)}</p></div>`;
-    }
-    p3 += `${pageFooter(nextPageNo)}</div>`;
-    nextPageNo += 1;
+        const continuationText = f.language === 'zh'
+            ? '以下为 OAR 剂量表续页。'
+            : 'Continuation of the OAR dose table.';
+        for (let pageIndex = 0; pageIndex < oarPageCount; pageIndex += 1) {
+            const pageRows = reportOarRows.slice(
+                pageIndex * reportOarRowsPerPage,
+                (pageIndex + 1) * reportOarRowsPerPage,
+            );
+            const headingSuffix = pageIndex > 0 ? ` (${pageIndex + 1})` : '';
+            const table = reportOarRows.length > 0
+                ? `<table class="hp-grid-table">
+                    <thead><tr><th>${escHtml(s.organ)}</th><th>${d2ccLabel} (${U.Gy})</th><th>${d1ccLabel} (${U.Gy})</th><th>${d01ccLabel} (${U.Gy})</th><th>${v100Label} (${U.percent})</th></tr></thead>
+                    <tbody>
+                    ${pageRows.map(o => {
+                        const organName = _resolveOARDisplayName(o.organ, o);
+                        const oarV100 = _oarVolumePercent(o.v100, 'percent');
+                        return `<tr>
+                            <td>${escHtml(organName)}</td>
+                            <td>${o.d2cc !== null ? o.d2cc.toFixed(1) : ND}</td>
+                            <td>${o.d1cc !== null ? o.d1cc.toFixed(1) : ND}</td>
+                            <td>${o.d0_1cc !== null ? o.d0_1cc.toFixed(1) : ND}</td>
+                            <td>${oarV100 !== null ? oarV100.toFixed(1) : ND}</td>
+                        </tr>`;
+                    }).join('')}
+                    </tbody>
+                </table>`
+                : `<p class="no-indent">${escHtml(noOarDose)}</p>`;
+            html += `<div class="report-page report-text-page">
+                <div class="hp-running-header"><span>${escHtml(s.confidentiality)}</span><span class="right">${escHtml(oarSection)}${escHtml(headingSuffix)}</span></div>
+                <h2 class="hp-section-title">${escHtml(oarSection)}${escHtml(headingSuffix)}${secondaryTitle('OAR Dose')}</h2>
+                <div class="hp-section-body">
+                    ${pageIndex === 0 && reportOarRows.length > 0
+                        ? `<p class="no-indent">${escHtml(f.language === 'zh'
+                            ? '以下 OAR 数值为观测结果；请依据当前部位适用指南或已确认的病例方案进行临床判读，软件不依据默认值自动给出通过或超限结论。'
+                            : 'The OAR values below are observed metrics. Interpret them against applicable site-specific guidance or a confirmed case protocol; the software does not infer pass/fail from defaults.')}</p>`
+                        : ''}
+                    ${pageIndex > 0 ? `<p class="no-indent hp-continuation-note">${escHtml(continuationText)}</p>` : ''}
+                    ${table}
+                </div>
+                ${pageFooter(startPageNo + pageIndex)}
+            </div>`;
+        }
+        return html;
+    };
+    const p3Pages = renderOarPages(nextPageNo);
+    nextPageNo += oarPageCount;
 
     // ============== PAGE 4: Clinical Interpretation ==============
     let p4 = `<div class="report-page">
@@ -1262,9 +1257,9 @@ function _updateReportPreview() {
         </div>`;
     p5 += `${pageFooter(nextPageNo)}</div>`;
 
-    pagesEl.innerHTML = p1 + figure1Pages + p2 + figure2Pages + supplementalPages + p3 + p4 + p5;
-    // Mixed portrait/landscape A4 pages can change the widest preview page.
-    // Recalculate fit after the DOM commit instead of retaining the old scale.
+    pagesEl.innerHTML = p1 + figure1Pages + p2 + figure2Pages + supplementalPages + p3Pages + p4 + p5;
+    // Every page is portrait A4. Recalculate fit after the DOM commit so the
+    // fixed paper boxes and image intrinsic sizes have been measured together.
     window.requestAnimationFrame(() => window.Report?.preview?.refresh?.());
 }
 
@@ -1506,31 +1501,32 @@ function _printableCss() {
             size: A4 portrait;
             margin: 0;
         }
-        @page reportLandscape {
-            size: A4 landscape;
-            margin: 0;
-        }
         html, body { margin: 0; padding: 0; background: #fff; color: #000; }
         body.report-print { background: #fff; padding: 0; color: #000; }
+        /* Every printed sheet is one fixed portrait A4 page. Source images are
+           scaled by the evidence slot below and cannot expand this box. */
         .report-page {
             width: 210mm; min-width: 210mm; max-width: 210mm;
-            min-height: 297mm;
+            height: 297mm; min-height: 297mm; max-height: 297mm;
             padding: 18mm 16mm 18mm 16mm;
             background: #fff; color: #000;
             box-sizing: border-box; page-break-after: always; break-after: page;
-            position: relative;
+            position: relative; overflow: hidden; contain: layout paint;
             font-family: 'Times New Roman', 'SimSun', 'Liberation Serif', serif;
             font-size: 12pt; line-height: 1.5;
             font-feature-settings: "tnum" 1, "lnum" 1;
             page: reportPortrait;
         }
-        .report-figure-page { height: 297mm; min-height: 297mm; max-height: 297mm; overflow: hidden; contain: layout paint; }
-        .report-page--landscape {
-            width: 297mm; min-width: 297mm; max-width: 297mm;
-            min-height: 210mm; height: 210mm; max-height: 210mm;
-            padding: 14mm 16mm 14mm 16mm; page: reportLandscape;
-        }
         .report-page:last-child { page-break-after: auto; }
+        .report-figure-page { display: flex; flex-direction: column; }
+        /* Compatibility for HTML exported by older builds: this historical
+           class is now an alias for portrait A4, never a landscape sheet. */
+        .report-page--landscape {
+            width: 210mm; min-width: 210mm; max-width: 210mm;
+            height: 297mm; min-height: 297mm; max-height: 297mm;
+            padding: 18mm 16mm 18mm 16mm;
+            page: reportPortrait;
+        }
         /* BUG FIX 2026-06-17 (print letterhead): match the screen
            design — small unified logos on the left, 2-line
            right-aligned credit block on the right. */
@@ -1574,15 +1570,36 @@ function _printableCss() {
         .hp-figure { margin: 4mm 0; text-align: center; page-break-inside: avoid; }
         .hp-figure img { max-width: 100%; max-height: 110mm; border: 1px solid #cbd5e1; }
         .hp-figure-cap { font-size: 8.5pt; color: #475569; margin-top: 1.5mm; font-style: italic; }
-        /* One native report capture per evidence page. The page box, figure
-           box, and image share the same width constraint so browser preview
-           scaling cannot let a wide canvas escape or crop the PDF page. */
-        .report-figure-page { display: flex; flex-direction: column; max-width: none; min-width: 0; overflow: hidden; box-sizing: border-box; }
-        .hp-subfigure-list { display: flex; flex-direction: column; justify-content: center; flex: 1 1 0; width: 100%; min-width: 0; min-height: 0; max-width: 100%; overflow: hidden; }
-        .hp-subfigure { display: flex; flex-direction: column; justify-content: center; flex: 1 1 auto; width: 100%; max-width: 100%; min-width: 0; margin: 0; text-align: center; page-break-inside: avoid; break-inside: avoid; min-height: 0; overflow: hidden; box-sizing: border-box; }
-        .hp-subfigure-media { display: flex; align-items: center; justify-content: center; flex: 1 1 0; width: 100%; max-width: 100%; min-width: 0; min-height: 0; max-height: 176mm; overflow: hidden; box-sizing: border-box; }
-        .hp-subfigure img { display: block; flex: 0 1 auto; width: auto !important; max-width: 100% !important; min-width: 0; height: auto !important; max-height: 100% !important; object-fit: contain; margin: 0 auto; border: 1px solid #cbd5e1; background: #020617; box-sizing: border-box; }
-        .report-page--landscape .hp-subfigure-media { max-height: 132mm; }
+        /* One native report capture per evidence page. Keep the image
+           complete and contain it in a fixed portrait-A4 content slot. */
+        .report-figure-page .hp-subfigure-list,
+        .report-figure-page .hp-subfigure,
+        .report-figure-page .hp-subfigure-media {
+            width: 100%; max-width: 100%; min-width: 0;
+            box-sizing: border-box; overflow: hidden;
+        }
+        .report-figure-page .hp-subfigure-list {
+            display: flex; flex-direction: column; justify-content: center;
+            flex: 1 1 0; min-height: 0;
+        }
+        .report-figure-page .hp-subfigure {
+            display: flex; flex-direction: column; justify-content: center;
+            flex: 0 0 auto; min-height: 0; margin: 0;
+            text-align: center; page-break-inside: avoid; break-inside: avoid;
+        }
+        .report-figure-page .hp-subfigure-media {
+            display: flex; align-items: center; justify-content: center;
+            flex: 0 0 176mm; height: 176mm;
+            min-height: 176mm; max-height: 176mm;
+        }
+        .report-figure-page .hp-subfigure img {
+            display: block; flex: 0 1 auto;
+            width: auto !important; max-width: 100% !important; min-width: 0;
+            height: auto !important; max-height: 100% !important;
+            object-fit: contain; object-position: center;
+            margin: 0 auto; border: 1px solid #cbd5e1;
+            background: #020617; box-sizing: border-box;
+        }
         .hp-subfigure figcaption { font-size: 9pt; line-height: 1.35; color: #334155; margin-top: 1.5mm; font-style: italic; }
         .hp-references { font-size: 9pt; line-height: 1.55; padding-left: 6mm; }
         .hp-references li { margin-bottom: 1.5mm; text-indent: -5mm; padding-left: 5mm; }

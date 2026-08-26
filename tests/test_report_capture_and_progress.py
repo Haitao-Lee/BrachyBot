@@ -23,7 +23,7 @@ def test_figure_one_detail_view_keeps_the_complete_ctv_in_frame():
     assert "guide_skin_surface" in source
     assert "includeOars: true, includeNeedles: true" in source
     assert "REPORT_FIGURE_LONG_EDGE = 2400" in source
-    assert "_captureReportCanvasCrop(c, targetAspect, maxOutputEdge)" in source
+    assert "_captureReportCanvasFit(c, maxOutputEdge)" in source
 
 
 def test_report_figures_are_native_subfigures_and_peak_dose_capture_is_ready():
@@ -103,40 +103,48 @@ def test_report_preview_groups_figures_by_stable_metadata_not_array_position():
     assert "f.figures[1]" not in source
 
 
-def test_native_report_images_use_one_bounded_evidence_page_each():
+def test_native_report_images_use_one_bounded_portrait_a4_page_each():
     source = _read("web/app/static/js/brachybot-report-export.js")
     shell = _read("web/app/static/js/brachybot-report-shell.js")
+    editor = _read("web/app/static/js/brachybot-report-editor.js")
     screen_css = _read("web/app/static/css/brachybot-panels-viewers.css")
 
     assert "const figure1PageCount = figure1Rows.length;" in source
     assert "const figure2PageCount = figure2Rows.length;" in source
     assert "const supplementalPageCount = supplementalRows.length;" in source
+    assert "const reportOarRowsPerPage = 24;" in source
+    assert "const oarPageCount = Math.max(1" in source
     assert "for (let offset = 0; offset < rows.length; offset += 1)" in source
     assert "const pageRows = rows.slice(offset, offset + 1);" in source
     assert "max-width: 100%" in source
-    assert "function _reportFigurePageOrientation" in source
-    assert "data-page-orientation=\"${orientation}\"" in source
+    assert "const REPORT_PAGE_ORIENTATION = 'portrait';" in source
+    assert "function _reportFigurePageOrientation()" in source
+    assert 'class="report-page report-figure-page"' in source
+    assert "report-page report-figure-page report-page--" not in source
+    assert "data-page-orientation=" in source
     assert "size: A4 portrait" in source
-    assert "size: A4 landscape" in source
+    assert "size: A4 landscape" not in source
     assert "width: auto" in source
     assert "min-width: 0" in source
+    assert "height: 297mm; min-height: 297mm; max-height: 297mm" in source
+    assert "width: 297mm" not in source
     assert "max-height: 176mm" in source
-    assert "max-height: 132mm" in source
+    assert "max-height: 132mm" not in source
     assert "overflow: hidden" in source
-    assert "class=\"hp-subfigure-media\"" in source
-    assert ".report-figure-page { height: 297mm; min-height: 297mm; max-height: 297mm" in source
-    assert "width: 297mm; min-width: 297mm; max-width: 297mm" in source
+    assert 'class="hp-subfigure-media"' in source
     assert "async function _waitForReportPrintAssets" in source
     assert "await _waitForReportPrintAssets(printWindow);" in source
     assert "documentRef.fonts?.ready" in source
     assert "image.decode()" in source
-    assert "REPORT_FIGURE_LONG_EDGE = 2400" in _read("web/app/static/js/brachybot-report-editor.js")
+    assert "REPORT_FIGURE_LONG_EDGE = 2400" in editor
+    assert ".report-page {" in screen_css
+    assert "width: 210mm;" in screen_css
+    assert "height: 297mm;" in screen_css
     assert ".report-figure-page .hp-subfigure img" in screen_css
     assert ".report-figure-page .hp-subfigure-media" in screen_css
-    assert ".report-page--landscape" in screen_css
-    assert "width: 297mm" in screen_css
-    assert "max-height: 176mm" in screen_css
-    assert "max-height: 132mm" in screen_css
+    assert "flex: 0 0 176mm" in screen_css
+    assert "width: 297mm" not in screen_css
+    assert "max-height: 132mm" not in screen_css
     assert "Math.max(...pages.map(page => page.offsetWidth || 0))" in shell
     assert "wrap.style.transformOrigin = 'top center';" in shell
 
