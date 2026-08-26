@@ -1071,6 +1071,21 @@ function _maskStateKey(nodeId) {
     return candidates.find(candidate => Object.prototype.hasOwnProperty.call(labels, candidate)) || value;
 }
 
+// A Data Tree mask ID is not required to use the historical mask_* spelling.
+// Uploaded label children deliberately use the durable ID emitted by
+// uploaded_mask_service.py (upload_mask_<digest>_label_<label>). Use the live
+// mask registry as the identity source and keep the two old spellings only for
+// snapshots that predate the registry metadata.
+function _isDataTreeMaskId(nodeId) {
+    const value = String(nodeId || '');
+    return value.startsWith('mask_')
+        || value.startsWith('mask:')
+        || !!_maskStateEntry(value);
+}
+
+window.isDataTreeMaskId = _isDataTreeMaskId;
+window.getDataTreeMaskState = _maskStateEntry;
+
 function _maskSceneMeshId(nodeId) {
     const mask = _maskStateEntry(nodeId);
     return String(mask?.id || mask?.mask_id || _maskStateKey(nodeId));
@@ -3064,6 +3079,8 @@ function getDataTreeAppearanceForMesh(id, mesh) {
     } else if (id.startsWith('dose_iso_')) {
         const threshold = Number(id.replace('dose_iso_', ''));
         item = dataTreeState.planning.doseLevels.find(level => Math.abs(Number(level.threshold) - threshold) < 1e-6);
+    } else if (_isDataTreeMaskId(id)) {
+        item = _maskStateEntry(id);
     } else {
         item = dataTreeState.planning.meshes.find(entry => entry.id === id);
     }
@@ -4447,7 +4464,7 @@ function renderTreeItem(id, itemState, info) {
     const loadedClass = itemState.loaded ? '' : 'style="opacity:0.4;"';
     const disabledAttr = itemState.loaded ? '' : 'disabled';
     // Indent for sub-items: organs, CTV labels, planning items, masks
-    const isMaskId = id.startsWith('mask_') || id.startsWith('mask:');
+    const isMaskId = _isDataTreeMaskId(id);
     const isSubItem = id.startsWith('organ_') || id.startsWith('ctv_') || id.startsWith('seed_') || id.startsWith('needle_') || id.startsWith('dose_iso_') || isMaskId;
     const indent = isSubItem ? 'style="padding-left:1.6rem;"' : '';
     // 3D button for organs, CTV, CTV sub-labels, planning items, and masks
@@ -4540,7 +4557,7 @@ function openColorPicker(id, swatchEl) {
     } else if (id.startsWith('dose_iso_')) {
         const threshold = parseFloat(id.replace('dose_iso_', ''));
         itemState = dataTreeState.planning.doseLevels.find(d => d.threshold === threshold);
-    } else if (id.startsWith('mask_') || id.startsWith('mask:')) {
+    } else if (_isDataTreeMaskId(id)) {
         itemState = _maskStateEntry(id);
     } else {
         const organ = dataTreeState.organs.find(o => o.id === id);
@@ -4696,7 +4713,7 @@ function openColorPicker(id, swatchEl) {
             if (doseLevel) doseLevel.color = pendingColor;
         }
         // Update 3D mesh color if mesh exists
-        const mesh3d = id.startsWith('mask_') || id.startsWith('mask:')
+        const mesh3d = _isDataTreeMaskId(id)
             ? scene3D.meshes[_maskSceneMeshId(id)]
             : scene3D.meshes[id];
         if (mesh3d) {
@@ -4758,7 +4775,7 @@ function setDataTreeItemColor(id, color) {
     else if (id.startsWith('dose_iso_')) {
         const threshold = parseFloat(id.replace('dose_iso_', ''));
         itemState = dataTreeState.planning.doseLevels.find(d => d.threshold === threshold);
-    } else if (id.startsWith('mask_') || id.startsWith('mask:')) itemState = _maskStateEntry(id);
+    } else if (_isDataTreeMaskId(id)) itemState = _maskStateEntry(id);
     else itemState = dataTreeState.organs.find(o => o.id === id);
     if (!itemState) return false;
     itemState.color = color;
@@ -4776,7 +4793,7 @@ function setDataTreeItemColor(id, color) {
             }
         }
     }
-    const mesh3d = id.startsWith('mask_') || id.startsWith('mask:')
+    const mesh3d = _isDataTreeMaskId(id)
         ? scene3D.meshes[_maskSceneMeshId(id)]
         : scene3D.meshes[id];
     if (mesh3d) {
@@ -4807,7 +4824,7 @@ function getItemGroup(id) {
         const organ = dataTreeState.organs.find(item => item.id === value);
         return organ?.category || 'oar';
     }
-    if (value.startsWith('mask_') || value.startsWith('mask:')) {
+    if (_isDataTreeMaskId(value)) {
         const mask = _maskStateEntry(value);
         const classification = _genericMaskClassification(mask);
         // A promoted generic mask is now represented by the effective CTV or
@@ -5084,7 +5101,7 @@ function showGroupContextMenu(x, y, category) {
             const d = dataTreeState.planning.doseLevels.find(d => d.threshold === threshold);
             applyMeshVisibility(mesh, d?.visible ?? false, d?.opacity ?? 0.3);
         }
-        else if (id.startsWith('mask_')) {
+        else if (_isDataTreeMaskId(id)) {
             const m = _maskStateEntry(id);
             const groupVisible = _maskBelongsToGroup(category, m);
             applyMeshVisibility(mesh, m?.visible !== false && groupVisible, m?.opacity ?? 0.6);
@@ -5190,7 +5207,7 @@ function _findDataTreeNode(id) {
     if (id === 'ctv') return dataTreeState.ctv;
     if (id.startsWith('ctv_')) return dataTreeState.ctvLabels?.[id] || null;
     if (id.startsWith('organ_')) return dataTreeState.organs.find(item => item.id === id) || null;
-    if (id.startsWith('mask_') || id.startsWith('mask:')) {
+    if (_isDataTreeMaskId(id)) {
         return _maskStateEntry(id);
     }
     for (const key of ['trajectories', 'seeds', 'needles', 'doseLevels', 'meshes']) {
@@ -5217,7 +5234,7 @@ function _dataTreeObjectId(id, purpose = 'export') {
     if (id.startsWith('ctv_') || id.startsWith('organ_')) {
         return String(node?.objectId || id);
     }
-    if (id.startsWith('mask_') || id.startsWith('mask:')) {
+    if (_isDataTreeMaskId(id)) {
         const rawMaskId = String(id).replace(/^mask:/, '');
         return String(node?.objectId || `mask:${rawMaskId}`);
     }
@@ -5408,7 +5425,7 @@ async function _refreshAfterDataMutation(
     const structureMutation = Boolean(payload?.structures)
         || objectIds.some(id => id.startsWith('structure:'));
     const genericMaskMutation = invalidated.includes('generic_mask')
-        || objectIds.some(id => id.startsWith('mask:') || id.startsWith('mask_'));
+        || objectIds.some(id => _isDataTreeMaskId(id));
     const planningMutation = invalidated.includes('planning')
         || objectIds.some(id => (
             id === 'planning'
@@ -5806,7 +5823,7 @@ function showContextMenu(x, y) {
     // the same presentation controls as OAR/CTV plus rename.
     const isMaskSelection = selIds.every(id => {
         const value = String(id);
-        return value.startsWith('mask_') || value.startsWith('mask:');
+        return _isDataTreeMaskId(value);
     });
     if (isMaskSelection) {
         if (isSingle) {
@@ -5831,7 +5848,7 @@ function showContextMenu(x, y) {
     }
 
     // Change Color (for single item: organs, CTV labels, or planning items)
-    if (isSingle && (firstId === 'skin_surface' || firstId.startsWith('organ_') || firstId.startsWith('ctv_') || isPlanningItem || firstId.startsWith('mask_') || firstId.startsWith('mask:'))) {
+    if (isSingle && (firstId === 'skin_surface' || firstId.startsWith('organ_') || firstId.startsWith('ctv_') || isPlanningItem || _isDataTreeMaskId(firstId))) {
         items += `<div class="ctx-menu-item" onclick="hideContextMenu();openColorPicker('${firstId}')">
             <span class="ctx-icon">&#127912;</span> Change Color</div>`;
         items += `<div class="ctx-menu-sep"></div>`;
@@ -5840,7 +5857,7 @@ function showContextMenu(x, y) {
     // Universal rename for any single leaf node (CTV label, OAR, seed, needle,
     // trajectory, dose iso-surface, planning mesh, annotation, mask). Masks
     // already offer Rename above; this adds it for every other node type.
-    if (isSingle && !firstId.startsWith('mask_') && !['ctv', 'oar'].includes(firstId)
+    if (isSingle && !_isDataTreeMaskId(firstId) && !['ctv', 'oar'].includes(firstId)
         && (firstId.startsWith('organ_') || firstId.startsWith('ctv_') || firstId.startsWith('seed_')
             || firstId.startsWith('needle_') || firstId.startsWith('traj_') || firstId.startsWith('trajectory_')
             || firstId.startsWith('dose_iso_') || firstId.startsWith('planning_mesh_')
@@ -6040,7 +6057,7 @@ function batchToggleVisibility(visible) {
             }
         }
         // Manual/threshold masks
-        else if (id.startsWith('mask_') || id.startsWith('mask:')) {
+        else if (_isDataTreeMaskId(id)) {
             const rawId = _maskSceneMeshId(id);
             const m = _maskStateEntry(id);
             if (m && (!_isGenericSegmentationMask(m) || _isOpenGenericMask(m))) {
@@ -6265,14 +6282,7 @@ function batchSetOpacity(opacity) {
                 d.opacity = opacity;
                 applyMeshOpacity(scene3D.meshes[id], opacity, d.visible !== false);
             }
-        } else if (id.startsWith('mask_')) {
-            const m = _maskStateEntry(id);
-            if (m && (!_isGenericSegmentationMask(m) || _isOpenGenericMask(m))) {
-                m.opacity = opacity;
-                applyMeshOpacity(scene3D.meshes[_maskSceneMeshId(id)], opacity, m.visible !== false);
-                reloadOverlays();
-            }
-        } else if (id.startsWith('mask:')) {
+        } else if (_isDataTreeMaskId(id)) {
             const rawId = _maskSceneMeshId(id);
             const m = _maskStateEntry(id);
             if (m && (!_isGenericSegmentationMask(m) || _isOpenGenericMask(m))) {
@@ -6362,7 +6372,7 @@ function showAllOrgans() {
         }
         else if (id.startsWith('organ_')) opacity = dataTreeState.organs.find(o => o.id === id)?.opacity ?? 0.5;
         else if (id.startsWith('ctv_')) opacity = dataTreeState.ctvLabels?.[id]?.opacity ?? dataTreeState.ctv.opacity ?? 0.7;
-        else if (id.startsWith('mask_')) {
+        else if (_isDataTreeMaskId(id)) {
             const mask = _maskStateEntry(id);
             const isStandalone = mask && (!_isGenericSegmentationMask(mask) || _isOpenGenericMask(mask));
             if (!isStandalone) {
@@ -6552,7 +6562,7 @@ function setGroupOpacity(category, value) {
                 .map(([id]) => id),
             'skin_surface',
         ].forEach(id => {
-            const meshId = String(id).startsWith('mask_') || String(id).startsWith('mask:')
+            const meshId = _isDataTreeMaskId(id)
                 ? _maskSceneMeshId(id)
                 : id;
             applyMeshOpacity(scene3D.meshes[meshId], opacity, _findDataTreeNode(id)?.visible !== false);
@@ -6959,7 +6969,7 @@ function toggleDataVisibility(id) {
     }
 
     // Handle manual/threshold mask toggles
-    if (id.startsWith('mask_') || id.startsWith('mask:')) {
+    if (_isDataTreeMaskId(id)) {
         const rawId = _maskSceneMeshId(id);
         const mask = _maskStateEntry(id);
         // Promoted generic masks are now rendered through the effective CTV/
@@ -7050,6 +7060,7 @@ function setDataItemVisibility(id, visible) {
     let current = null;
     if (id.startsWith('organ_')) current = dataTreeState.organs.find(o => o.id === id)?.visible;
     else if (id.startsWith('ctv_')) current = dataTreeState.ctvLabels?.[id]?.visible;
+    else if (_isDataTreeMaskId(id)) current = _maskStateEntry(id)?.visible;
     // Guide skin is a segmentation sibling with its own stable node ID, not
     // a dynamically keyed property on dataTreeState.  Keep this explicit so
     // bridge commands and restore-time UI actions use the same master switch
@@ -7182,7 +7193,7 @@ function setDataOpacity(id, value) {
     }
 
     // Handle manual/threshold mask opacity
-    if (id.startsWith('mask_') || id.startsWith('mask:')) {
+    if (_isDataTreeMaskId(id)) {
         const rawId = _maskSceneMeshId(id);
         const mask = _maskStateEntry(id);
         if (mask && (!_isGenericSegmentationMask(mask) || _isOpenGenericMask(mask))) {
@@ -7287,7 +7298,7 @@ function renameDataTreeNode(id, providedName) {
     let current = '';
     let setLabel = null;
 
-    if (id.startsWith('mask_') || id.startsWith('mask:')) {
+    if (_isDataTreeMaskId(id)) {
         return renameDataTreeMask(id.replace(/^mask:/, ''), providedName);
     }
     if (id === 'ctv') {
@@ -7360,7 +7371,7 @@ async function moveSelectedMasks(classification, objectIds = null) {
         : Array.from(objectIds)
     ).filter(id => {
         const value = String(id);
-        return value.startsWith('mask_') || value.startsWith('mask:');
+        return _isDataTreeMaskId(value);
     }))];
     if (!ids.length) return false;
     const expectedSessionId = _viewerDataSessionId();

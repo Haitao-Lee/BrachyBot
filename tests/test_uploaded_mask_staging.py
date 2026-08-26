@@ -205,3 +205,27 @@ def test_rate_limit_aware_upload_retry_does_not_poll_faster_than_the_limiter():
     assert "Math.max(1000" in ui_api
     assert '"code": "rate_limit_exceeded"' in server_support
     assert '"Retry-After-Ms"' in server_support
+
+
+def test_uploaded_mask_label_ids_use_registry_for_all_tree_controls():
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    viewer = (root / "web/app/static/js/brachybot-viewer-volume.js").read_text(encoding="utf-8")
+    layout = (root / "web/app/static/js/brachybot-viewer-layout.js").read_text(encoding="utf-8")
+    manual_3d = (root / "web/app/static/js/brachybot-3d-manual.js").read_text(encoding="utf-8")
+    index = (root / "web/app/index.html").read_text(encoding="utf-8")
+
+    # Uploaded children use upload_mask_<digest>_label_<label>, which is not
+    # covered by the pre-existing mask_ / mask: prefix convention.
+    assert "function _isDataTreeMaskId(nodeId)" in viewer
+    assert "|| !!_maskStateEntry(value);" in viewer
+    assert "const isMaskId = _isDataTreeMaskId(id);" in viewer
+    assert "else if (_isDataTreeMaskId(id))" in viewer
+    assert "if (_isDataTreeMaskId(id))" in viewer
+    assert "window.isDataTreeMaskId = _isDataTreeMaskId;" in viewer
+    assert "mask.kind === 'uploaded_mask_label'" in layout
+    assert "window.isDataTreeMaskId" in manual_3d
+    assert "brachybot-viewer-volume.js?v=41" in index
+    assert "brachybot-viewer-layout.js?v=32" in index
+    assert "brachybot-3d-manual.js?v=65" in index
