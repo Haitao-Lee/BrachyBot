@@ -912,37 +912,37 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
         return true;
     }
 
-    function _captureReportCanvasCrop(canvas, targetAspect = 1, maxOutputEdge = 1200) {
+    /**
+     * Preserve the complete source canvas for the report. The report page
+     * performs the final contain-style scaling; this helper only downsamples
+     * an unusually large capture to the configured long-edge limit. It never
+     * crops or stretches the screenshot to force a page aspect ratio.
+     */
+    function _captureReportCanvasFit(canvas, maxOutputEdge = 1200) {
         if (!canvas || canvas.width < 1 || canvas.height < 1) return null;
-        const aspect = Math.max(0.2, Number(targetAspect) || 1);
-        const sourceAspect = canvas.width / canvas.height;
-        let sx = 0;
-        let sy = 0;
-        let sw = canvas.width;
-        let sh = canvas.height;
-        if (sourceAspect > aspect) {
-            sw = sh * aspect;
-            sx = (canvas.width - sw) / 2;
-        } else if (sourceAspect < aspect) {
-            sh = sw / aspect;
-            sy = (canvas.height - sh) / 2;
-        }
+        const sourceLongEdge = Math.max(canvas.width, canvas.height);
+        const requestedLongEdge = Number(maxOutputEdge);
+        const scale = Number.isFinite(requestedLongEdge) && requestedLongEdge > 0
+            ? Math.min(1, requestedLongEdge / sourceLongEdge)
+            : 1;
         const output = document.createElement('canvas');
-        if (aspect >= 1) {
-            output.width = maxOutputEdge;
-            output.height = Math.max(1, Math.round(maxOutputEdge / aspect));
-        } else {
-            output.height = maxOutputEdge;
-            output.width = Math.max(1, Math.round(maxOutputEdge * aspect));
-        }
-        output.getContext('2d').drawImage(canvas, sx, sy, sw, sh, 0, 0, output.width, output.height);
+        output.width = Math.max(1, Math.round(canvas.width * scale));
+        output.height = Math.max(1, Math.round(canvas.height * scale));
+        const ctx = output.getContext('2d');
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
+        ctx.drawImage(
+            canvas,
+            0, 0, canvas.width, canvas.height,
+            0, 0, output.width, output.height,
+        );
         return output.toDataURL('image/png');
     }
 
     const reportReferenceDirection = _reportReferenceViewDirection();
-    // Report subfigures are captured independently at a page-friendly aspect.
-    // Keeping native images separate preserves far more clinical detail than
-    // drawing several small panels into one irreversible composite bitmap.
+    // Camera framing uses a stable wide composition, while the capture keeps
+    // the complete source canvas. The page layout performs contain scaling
+    // later, so the image itself is never cropped to this camera aspect.
     const REPORT_FIGURE_ASPECT = 16 / 9;
     const REPORT_DOSE_SURFACE_ASPECT = REPORT_FIGURE_ASPECT;
     // Native subfigures are placed one per A4 evidence page. Retain enough
@@ -1192,7 +1192,7 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
             }
 
             // Helper: render and capture 3D canvas
-            async function _capture3D(label, targetAspect = 1, maxOutputEdge = REPORT_FIGURE_LONG_EDGE) {
+            async function _capture3D(label, maxOutputEdge = REPORT_FIGURE_LONG_EDGE) {
                 if (!isCurrentCapture()) return null;
                 await _waitFrames(3);
                 if (!isCurrentCapture()) return null;
@@ -1236,7 +1236,7 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
                             return null;
                         }
                     }
-                    const url = _captureReportCanvasCrop(c, targetAspect, maxOutputEdge);
+                    const url = _captureReportCanvasFit(c, maxOutputEdge);
                     if (!url || url.length < 5000) {
                         console.warn('[Report] 3D capture appears blank for', label);
                         return null;
@@ -1320,12 +1320,12 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
             _frameCameraToBox(_computeFocusedPlanBox({ includeOars: true, includeNeedles: true }), 'overview');
             await _waitFrames(2);
             if (!isCurrentCapture()) return { stale: true };
-            let imgA = await _capture3D('View A (front+OARs)', REPORT_FIGURE_ASPECT);
+            let imgA = await _capture3D('View A (front+OARs)');
             if (!imgA) {
                 forceRender3DViewer();
                 await _waitFrames(4);
                 if (!isCurrentCapture()) return { stale: true };
-                imgA = await _capture3D('View A (front+OARs retry)', REPORT_FIGURE_ASPECT);
+                imgA = await _capture3D('View A (front+OARs retry)');
             }
 
             // ── View B: Translucent tumor, seeds visible inside ──
@@ -1383,12 +1383,12 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
             _frameCameraToBox(_computeFocusedPlanBox({ includeOars: false, includeNeedles: false }), 'detail');
             await _waitFrames(2);
             if (!isCurrentCapture()) return { stale: true };
-            let imgB = await _capture3D('View B (translucent tumor)', REPORT_FIGURE_ASPECT);
+            let imgB = await _capture3D('View B (translucent tumor)');
             if (!imgB) {
                 forceRender3DViewer();
                 await _waitFrames(4);
                 if (!isCurrentCapture()) return { stale: true };
-                imgB = await _capture3D('View B (translucent tumor retry)', REPORT_FIGURE_ASPECT);
+                imgB = await _capture3D('View B (translucent tumor retry)');
             }
 
             // Figure 1 is a semantic group, not a pre-composed bitmap. The
@@ -1659,11 +1659,7 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
                                     return null;
                                 }
                             }
-                            const url = _captureReportCanvasCrop(
-                                canvas,
-                                REPORT_DOSE_SURFACE_ASPECT,
-                                REPORT_FIGURE_LONG_EDGE,
-                            );
+                            const url = _captureReportCanvasFit(canvas, REPORT_FIGURE_LONG_EDGE);
                             if (!url || url.length < 5000) return null;
                             uiDebugLog('[Report] 3D dose-surface capture', label, ':', Math.round(url.length / 1024), 'KB');
                             return url;

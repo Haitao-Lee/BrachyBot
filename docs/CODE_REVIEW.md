@@ -13503,3 +13503,123 @@ diagnostic indication that the clicked control had been ignored.
   Upload Mask collection plus binary label children; no official CTV is
   selected automatically; explicit Move to CTV/OAR remains the only promotion
   path.
+
+## 2026-08-26 - Report evidence screenshots changed the report paper size
+
+### Confirmed issue
+
+The report preview and the generated print window did not keep a single physical
+paper size when a case contained multiple screenshots. Wide 3D captures caused
+some evidence sheets to become landscape A4, while portrait captures remained
+portrait. The result was a report whose page dimensions changed after more
+figures were added. This is a real layout defect because a formal clinical
+report must have predictable A4 sheets independent of source-image geometry.
+
+The original report also placed an unbounded OAR table on one page. A large
+table could extend beyond the page footer or force the browser's print layout to
+create an unintended extra-height page. During the first visual validation,
+the initial 30-row continuation limit was measured and rejected because the
+second OAR page still overflowed the fixed A4 content box.
+
+### Root cause
+
+The defect had four interacting causes:
+
+1. _reportFigurePageOrientation() in
+   web/app/static/js/brachybot-report-export.js inferred the page orientation
+   from the screenshot aspect ratio. A screenshot with an aspect ratio of at
+   least 1.2 was emitted with report-page--landscape, and the print stylesheet
+   mapped that class to size: A4 landscape with a 297 mm page width. The
+   source image was therefore allowed to change the paper contract.
+
+2. _captureReportCanvasCrop() in
+   web/app/static/js/brachybot-report-editor.js cropped captures to a fixed
+   16:9 target aspect. That made the capture itself conform to the camera
+   composition instead of preserving the complete screenshot and delegating
+   fitting to the report layout. It could remove clinically relevant content
+   at the top or bottom of a non-16:9 source canvas.
+
+3. .report-page previously had only a minimum height in the live preview, and
+   the print rules mixed a minimum-height portrait page with an independent
+   landscape rule. Intrinsic image dimensions and normal-flow table height could
+   therefore participate in page sizing before the print window finished loading
+   fonts and images.
+
+4. The OAR renderer appended every OAR row into one .report-page. The table
+   header was not repeated on continuation pages because continuation pages did
+   not exist. The page footer was consequently not a reliable boundary for
+   large real-world OAR sets.
+
+### Resolution
+
+- web/app/static/js/brachybot-report-export.js:877-886 now defines one
+  explicit REPORT_PAGE_ORIENTATION = 'portrait' contract. Every newly rendered
+  evidence sheet is emitted without a generated landscape class and carries
+  data-page-orientation="portrait".
+- web/app/static/js/brachybot-report-export.js:949-956 calculates the total
+  page count from the actual evidence count and the actual OAR continuation
+  count. The fixed OAR capacity is now 24 rows per page, which leaves room for
+  the heading, explanatory text, repeated header, and footer inside A4.
+- web/app/static/js/brachybot-report-export.js:1139-1193 renders the OAR
+  table as a bounded sequence of pages. Each continuation page repeats the
+  table header, receives a clear (2), (3), etc. heading, and keeps the correct
+  global page number. An empty OAR result still occupies exactly one bounded
+  page.
+- web/app/static/js/brachybot-report-export.js:1500-1603 now uses only
+  @page reportPortrait { size: A4 portrait; margin: 0; }. Each page has
+  width, min-width, and max-width of 210 mm plus height, min-height, and
+  max-height of 297 mm, box-sizing: border-box, overflow: hidden,
+  contain: layout paint, and the portrait page name. The historical
+  report-page--landscape selector remains only as a compatibility alias for
+  old exported HTML and resolves to the same portrait A4 dimensions; it cannot
+  reintroduce a landscape sheet.
+- web/app/static/js/brachybot-report-editor.js:915-951 replaces the crop
+  helper with _captureReportCanvasFit(). It preserves the complete source
+  canvas and aspect ratio. It only downsamples when the source long edge is
+  larger than the configured limit, and it never crops or stretches the
+  capture. The 16:9 value remains a camera-framing preference, not an image
+  destruction or paper-orientation rule.
+- web/app/static/css/brachybot-panels-viewers.css:761-855 applies the same
+  fixed A4 contract to the live preview. Each evidence page uses one bounded
+  176 mm media slot, width: auto and height: auto constraints, and
+  object-fit: contain with centered positioning. Wide and portrait source
+  images are thus scaled into the same paper box while retaining their full
+  content.
+- web/app/index.html:1516-1521 bumps the relevant classic-script and
+  stylesheet cache versions (dvh-planning?v=25, report-editor?v=25,
+  report-export?v=26, and panels-viewers.css?v=14) so a browser restart cannot
+  silently reuse the old orientation/crop implementation.
+- The report contract tests were updated to reject active landscape print rules,
+  reject 297 mm-wide pages, require the full-canvas fit helper, verify the
+  24-row OAR pagination contract, and verify the fixed A4 evidence media slot.
+
+### Verification
+
+- Focused report/frontend regression group: 149 passed, 3 warnings.
+- Full remote suite after the final 24-row correction: 756 passed, 6
+  skipped, 4 warnings.
+- Remote Python compilation and git diff --check passed.
+- The exact remote JavaScript files were streamed to the local Node validation
+  executable for syntax checking because the remote runtime has no node
+  command. Both brachybot-report-editor.js and brachybot-report-export.js
+  passed.
+- A browser layout harness rendered the current remote CSS and the current
+  report editor/export renderer with a synthetic report containing seven
+  evidence images (wide, portrait, axial, sagittal, coronal, dose-surface,
+  and DVH) plus 59 OAR rows. The renderer produced 14 pages: four fixed
+  report pages, two Figure 1 pages, five Figure 2 pages, and three OAR pages.
+- Automated measurements reported one page size only:
+  793.69 x 1122.52 CSS px, which is 210 x 297 mm at 96 CSS dpi. All 14 pages
+  reported that same size, no page carried report-page--landscape, and all
+  14 pages reported no content overflow.
+- The seven image aspect ratios were preserved while being contained in the
+  same 176 mm slot. Representative rendered sizes included 2000x900 to
+  672.75x303.83 px, 900x1400 to 428.33x665.17 px, 1600x1000 to
+  672.75x421.22 px, and 1000x1600 to 416.48x665.17 px. The measured image
+  boxes stayed within their media boxes.
+- Visual inspection of the generated wide Figure 1 page, portrait Figure 1
+  page, wide Figure 2 page, and all three OAR continuation pages confirmed
+  that the image content remained complete, pages stayed portrait A4, OAR
+  rows were split as 24/24/11, repeated headers remained readable, and
+  footers stayed inside the paper boundary. The initial 30-row overflow was
+  not retained.

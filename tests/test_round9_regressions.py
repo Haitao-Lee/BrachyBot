@@ -285,16 +285,16 @@ class Round9RegressionTests(unittest.TestCase):
         self.assertIn("targetAspect: REPORT_FIGURE_ASPECT", report)
         self.assertIn("direction: reportReferenceDirection", report)
         self.assertIn("zoom: 1", report)
-        self.assertIn("function _captureReportCanvasCrop", report)
-        # The dose-surface capture passes the shared aspect plus an explicit
-        # long-edge bound; whitespace-tolerant so formatting stays free.
+        self.assertIn("function _captureReportCanvasFit", report)
+        # The dose-surface capture preserves the complete canvas and
+        # applies only the shared long-edge bound.
         normalized = re.sub(r"\s+", " ", report)
         self.assertIn(
-            "_captureReportCanvasCrop( canvas, REPORT_DOSE_SURFACE_ASPECT, REPORT_FIGURE_LONG_EDGE, )",
+            "_captureReportCanvasFit(canvas, REPORT_FIGURE_LONG_EDGE);",
             normalized,
         )
         self.assertIn("candidate.clone().intersect(context)", report)
-        self.assertIn("brachybot-report-editor.js?v=24", index)
+        self.assertIn("brachybot-report-editor.js?v=25", index)
 
 
 if __name__ == "__main__":
