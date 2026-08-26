@@ -1,3 +1,152 @@
+# 2026-08-27 Incident Review — 3D Reconstruction Loading Ends Before Completion
+
+> **This is the newest authoritative review entry and is intentionally located at the beginning of the file.**
+> It records the separate reconstruction-lifecycle defect reported after the
+> restart/rate-limit repair. The previous rate-limit and planning-restore
+> review is preserved immediately below as historical-but-still-authoritative
+> audit material for that earlier incident.
+
+## 1. Executive verdict
+
+The reported behavior was a real frontend lifecycle bug: the 3D canvas could
+continue receiving and adding meshes after the `loading3D` overlay had already
+been hidden. The server was not necessarily stopping the reconstruction. The
+browser was declaring completion at an intermediate boundary and therefore
+made a partially reconstructed scene look finished.
+
+The defect had two independent completion-contract violations:
+
+| Confirmed problem | Root cause | Status |
+|---|---|---|
+| `loading3D` disappeared while the scene still contained only a subset of the expected structures | `loadCTVAndObstacleMeshes()` awaited the initial CTV/non-traversable-OAR prewarm, then called `startSegmentationMeshPrewarm()` for the remaining OARs through `setTimeout()` without returning or awaiting that promise. The caller therefore received a resolved promise before full structural reconstruction ended. | **FIXED** |
+| Automatic planning restore treated a still-running reconstruction as completed after a deadline | `brachybot-dvh-planning.js::_withTimeout()` used `Promise.race()`. When the watchdog won, its catch handler converted the timeout into a resolved promise while the original mesh promise continued in the background. | **FIXED** |
+| One concurrent reconstruction could hide the overlay owned by another | 3D code directly toggled one global DOM boolean. A child CTV/OAR/threshold/seed/dose operation could remove the class while a sibling operation was still active. | **FIXED** |
+| Workspace switching could leave an old async finalizer able to resurrect the overlay | Clearing the DOM class did not clear ownership held by in-flight reconstruction tasks. | **FIXED** |
+
+The user-visible symptom in the attached screenshot is therefore consistent
+with the source-level behavior: early structures are visible, the spinner has
+ended, and additional geometry may still arrive later. This was not corrected
+by merely increasing a timeout; the repair changes the promise and UI ownership
+contracts so “complete” has one unambiguous meaning.
+
+## 2. Direct source evidence
+
+The relevant implementation was inspected in the current remote checkout,
+not inferred from the screenshot:
+
+- `web/app/static/js/brachybot-3d-manual.js::loadCTVAndObstacleMeshes()` first
+  awaited `prewarmSegmentationMeshes('all', { showStatus: false, batchSize: 3 })`.
+- When `oarLabelData` existed, it then invoked
+  `startSegmentationMeshPrewarm('all', { allOAR: true, ... })` without
+  `await` or a returned promise. `startSegmentationMeshPrewarm()` itself used
+  `setTimeout()` and discarded the task promise.
+- `web/app/static/js/brachybot-viewer-layout.js::reconstruct3D()` and
+  `::reconstructOrgan3D()` each directly added and removed the same
+  `#loading3D.active` class. This made completion of any one caller look like
+  completion of the whole scene.
+- `web/app/static/js/brachybot-dvh-planning.js` started dose, structural, and
+  seed reconstruction concurrently. Its old `Promise.race()` watchdog allowed
+  `Promise.all(_meshPromises)` to resolve at the watchdog deadline rather than
+  at the underlying mesh completion boundary.
+- The automatic restore intentionally returned its cheap data-plane result
+  before all meshes were done. That remains a valid responsiveness policy, but
+  it requires the actual background mesh promises to retain the 3D loading
+  ownership until they settle. The old code had no such ownership contract.
+
+## 3. Root-cause repairs
+
+### 3.1 Full structural reconstruction now has a real completion boundary
+
+`loadCTVAndObstacleMeshes()` now:
+
+1. begins a case-owned 3D loading token;
+2. awaits the initial CTV and safety-critical/non-traversable mesh pass;
+3. awaits the complete `allOAR: true` pass when OAR labels are available;
+4. performs the final camera/reconciliation work inside that promise; and
+5. releases the token only in `finally` after the complete structural promise
+   has settled.
+
+The remaining OAR pass is still batched at three requests so the server and
+browser are not flooded, but it is no longer an unobserved fire-and-forget
+side effect. A caller that awaits this function now receives a promise whose
+resolution means that the full requested structural reconstruction has ended.
+
+### 3.2 Loading state is reference-counted by task ownership
+
+`brachybot-viewer-layout.js` now owns a token registry for `#loading3D`:
+
+- `beginViewer3DLoading(message)` registers one actual task owner;
+- `updateViewer3DLoading(token, message)` changes only that owner’s progress
+  text;
+- `endViewer3DLoading(token)` releases only that owner; and
+- `resetViewer3DLoading()` invalidates all owners during a workspace switch.
+
+The CTV/OAR structural pass, seed/needle loader, dose-isosurface loader,
+individual organ reconstruction, threshold-mask reconstruction, and standalone
+segmentation prewarm paths all use these tokens. The overlay remains visible
+while any real 3D task is active and is hidden only after the last owner has
+settled. Progress text distinguishes target/obstacle surfaces, remaining OAR
+surfaces, dose surfaces, seed/needle geometry, and final scene reconciliation.
+
+This is deliberately a reference-counted lifecycle rather than a second ad hoc
+spinner. It handles legitimate concurrent products without allowing one
+completion callback to hide another task’s loading state.
+
+### 3.3 Watchdogs no longer redefine completion
+
+The planning restore watchdog is now a soft watchdog. It logs when a 3D task
+has exceeded its expected duration, but it continues to await the original
+promise. A warning is not a successful completion and cannot trigger report
+capture or release the loading state against a partially built scene.
+
+The underlying loader still returns its actual error when it fails. A network,
+HTTP, parsing, or backend failure is not converted into a successful-looking
+reconstruction; it is handled by the existing case-scoped error path.
+
+### 3.4 Workspace transitions clear lifecycle ownership
+
+`clearClientWorkspace()` now clears both the visible DOM state and the token
+registry. A late promise finalizer from the previous session can safely run,
+but it cannot make the new case’s loading overlay reappear or mutate the new
+case’s scene. The existing generation/session guards continue to prevent stale
+geometry from being attached to the new workspace.
+
+## 4. Regression and deployment verification
+
+The focused remote regression set passed **163 tests** with 3 warnings. It
+covers the revised full-OAR completion boundary, token-based loading ownership,
+workspace reset behavior, planning restore, rate-limit retries, uploaded-mask
+staging, and existing viewer contracts.
+
+The complete remote repository suite passed **762 tests**, with 6 skipped and 4
+non-failing warnings. Python compilation and `git diff --check` passed. The
+modified browser files passed Node syntax checks locally with the bundled Node
+runtime.
+
+The cache-busted resources for this repair are:
+
+- `brachybot-ui-api.js?v=48`;
+- `brachybot-viewer-layout.js?v=35`;
+- `brachybot-3d-manual.js?v=68`; and
+- `brachybot-dvh-planning.js?v=28`.
+
+The repaired source was committed as `6850b5078` on
+`codex/session-task-recovery` and pushed to GitHub. The server was restarted
+from `/home/lht/snap/brachyplan/BrachyBot` after that commit; the new process
+was verified as PID `3101120`, listening on `0.0.0.0:8080`. The acceptance check
+is not merely that the first CTV mesh appears: the `loading3D` overlay must
+remain active until the full structural, seed/needle, and dose tasks settle,
+and only then disappear.
+
+## 5. Scope boundary
+
+This repair changes the 3D reconstruction completion contract, loading
+presentation ownership, watchdog semantics, and workspace cleanup. It does not
+alter CTV/OAR label interpretation, needle geometry, seed positions, dose
+calculation, DVH mathematics, collision rules, or clinical validation.
+
+---
+
 # 2026-08-27 Incident Review — Restart Planning Restore, Rate-Limit Failures, and 3D Visual Delivery
 
 > **This is the newest authoritative review entry and is intentionally located at the beginning of the file.**
