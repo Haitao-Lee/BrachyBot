@@ -1121,7 +1121,13 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
         pending = workspace_data_pending(agent)
         if pending is not None:
             return pending
-        return jsonify({"success": True, "masks": _generic_mask_entries(agent)})
+        from web.uploaded_mask_service import public_uploaded_mask_collections
+
+        return jsonify({
+            "success": True,
+            "masks": _generic_mask_entries(agent),
+            "uploads": public_uploaded_mask_collections(agent.memory),
+        })
 
     @app.route("/api/viewer/generic_mask_volume", methods=["GET"])
     @require_api_key

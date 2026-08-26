@@ -26,6 +26,7 @@ from plans.dose_pre.model_loader import (
 from web.auth import current_user
 from web.chat_tasks import ChatTask, ChatTaskManager
 from web.workspace_store import WorkspaceError, WorkspaceQuotaExceeded, WorkspaceNotFound
+from web.uploaded_mask_service import UploadedMaskError, stage_uploaded_ctv_mask
 from agent_runtime.core import resolve_reference_direction_input
 from agent_runtime.visual_evidence import (
     build_visual_evidence_prompt,
@@ -2332,6 +2333,58 @@ def register_planning_routes(
             checkpoint={"kind": "segmentation", "segmentation_kind": kind, "tumor_type": tumor_type},
         )
         try:
+            # A user-uploaded CTV is source data, not an already selected
+            # clinical target. Stage the raw multi-label file as an Upload
+            # Mask parent with one binary candidate per positive label. The
+            # explicit Data Tree Move-to-CTV transaction is the only operation
+            # that may replace/build the effective CTV structure.
+            if kind == "ctv" and label_path:
+                try:
+                    staged = stage_uploaded_ctv_mask(
+                        agent.memory,
+                        image_path,
+                        label_path,
+                    )
+                except UploadedMaskError as exc:
+                    checkpoint_operation(
+                        agent,
+                        "interrupted",
+                        "Manual CTV mask staging failed",
+                        checkpoint={
+                            "kind": "segmentation",
+                            "segmentation_kind": kind,
+                            "error": str(exc),
+                        },
+                    )
+                    return jsonify({
+                        "success": False,
+                        "kind": kind,
+                        "error": str(exc),
+                    }), 422
+                checkpoint_operation(
+                    agent,
+                    "ready",
+                    "Upload Mask staged; select a label and move it to CTV",
+                    checkpoint={
+                        "kind": "segmentation",
+                        "segmentation_kind": kind,
+                        "staged_only": True,
+                        "upload_mask_id": (staged.get("upload_mask") or {}).get("upload_id"),
+                    },
+                )
+                return jsonify({
+                    "success": True,
+                    "kind": kind,
+                    "staged_only": True,
+                    "ctv_staged_only": True,
+                    "requires_ctv_selection": True,
+                    "message": "Upload Mask staged; select a label and Move to CTV.",
+                    "upload_mask": staged.get("upload_mask") or {},
+                    "mask_children": staged.get("children") or [],
+                    "labels": staged.get("labels") or [],
+                    "label_counts": staged.get("label_counts") or {},
+                    "total_labels": int(staged.get("total_labels") or 0),
+                })
             # Dispatch to the appropriate tool.
             if kind == "ctv":
                 from tool_factory.CTV_seg import CTVSegmentationTool

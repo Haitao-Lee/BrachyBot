@@ -837,11 +837,12 @@ async function hydrateGenericMasksFromServer(scope, retryAttempt = 0) {
         const payload = await response.json();
         if (!_viewerDataScopeIsCurrent(scope)) return false;
         const entries = Array.isArray(payload.masks) ? payload.masks : [];
+        if (Array.isArray(payload.uploads)) dataTreeState.uploadMasks = payload.uploads;
         const ids = new Set(entries.map(entry => String(entry?.mask_id || '')).filter(Boolean));
         state.maskLabels = state.maskLabels || {};
         Object.keys(state.maskLabels).forEach(id => {
             const mask = state.maskLabels[id];
-            if (mask?.kind === 'generic_segmentation' && !ids.has(id)) {
+            if (_isGenericSegmentationMask(mask) && !ids.has(id)) {
                 _disposeSceneMesh(id);
                 delete state.maskLabels[id];
                 delete genericMaskVolumeData[id];
@@ -862,8 +863,8 @@ async function hydrateGenericMasksFromServer(scope, retryAttempt = 0) {
                 nodeId: metadata.data_tree_node_id || existing.nodeId || id,
                 movedTo: existing.movedTo || metadata.moved_to || null,
                 classification: metadata.classification || existing.classification || 'unclassified',
-                source: 'biomedparse_v2',
-                kind: 'generic_segmentation',
+                source: metadata.source || existing.source || 'biomedparse_v2',
+                kind: metadata.kind || existing.kind || 'generic_segmentation',
                 name: metadata.name || metadata.label || metadata.target || id,
                 label: metadata.label || metadata.target || id,
                 loaded: false,
@@ -873,7 +874,9 @@ async function hydrateGenericMasksFromServer(scope, retryAttempt = 0) {
                 visible: existing.visible !== false,
                 visible2D: existing.visible2D !== false,
                 visible3D: existing.visible3D !== false,
-                opacity: typeof existing.opacity === 'number' ? existing.opacity : 0.42,
+                opacity: typeof existing.opacity === 'number'
+                    ? existing.opacity
+                    : (metadata.kind === 'uploaded_mask_label' ? 0.6 : 0.42),
                 color: existing.color || '#f08a5d',
             };
             try {
@@ -969,7 +972,10 @@ window.hydrateGenericMasksFromServer = hydrateGenericMasksFromServer;
 function _isGenericSegmentationMask(mask) {
     return Boolean(mask && (
         mask.kind === 'generic_segmentation'
+        || mask.kind === 'uploaded_mask_label'
         || mask.source === 'biomedparse_v2'
+        || mask.source === 'uploaded_mask'
+        || mask.upload_mask_id
     ));
 }
 
@@ -1017,7 +1023,15 @@ function _maskSceneMeshId(nodeId) {
 // to CTV/OAR. Promoted masks are intentionally in neither standalone group.
 function _maskBelongsToGroup(category, mask) {
     if (!mask || typeof mask !== 'object') return false;
-    if (category === 'generic_masks') return _isOpenGenericMask(mask);
+    if (category === 'upload_masks') {
+        return _isOpenGenericMask(mask)
+            && (mask.kind === 'uploaded_mask_label'
+                || mask.source === 'uploaded_mask'
+                || mask.upload_mask_id);
+    }
+    if (category === 'generic_masks') {
+        return _isOpenGenericMask(mask) && !_maskBelongsToGroup('upload_masks', mask);
+    }
     if (category === 'masks') return !_isGenericSegmentationMask(mask);
     return false;
 }
@@ -1563,7 +1577,7 @@ function renderSliceFromVolume(axis, sliceIndex) {
                         // use their explicit voxel Set.
                         const thresholdMask = mask.kind === 'threshold'
                             && Number.isFinite(Number(mask.threshold));
-                        const genericVolume = mask.kind === 'generic_segmentation'
+                        const genericVolume = _isGenericSegmentationMask(mask)
                             ? genericMaskVolumeData[mask.id]
                             : null;
                         const maskHit = thresholdMask
@@ -3808,7 +3822,9 @@ function renderDataTree() {
     // the same row controls as manual masks until an explicit Move action
     // promotes them into the authoritative CTV/OAR Structure Set.
     const masks = Object.entries(state.maskLabels || {});
-    const genericMasks = masks.filter(([, mask]) => _isOpenGenericMask(mask));
+    const openGenericMasks = masks.filter(([, mask]) => _isOpenGenericMask(mask));
+    const uploadedMasks = openGenericMasks.filter(([, mask]) => _maskBelongsToGroup('upload_masks', mask));
+    const genericMasks = openGenericMasks.filter(([, mask]) => _maskBelongsToGroup('generic_masks', mask));
     const localMasks = masks.filter(([, mask]) => !_isGenericSegmentationMask(mask));
     const renderMaskGroup = (entries, groupId, label) => {
         if (!entries.length) return '';
@@ -3849,6 +3865,7 @@ function renderDataTree() {
         });
         return groupHtml + `</div></div>`;
     };
+    html += renderMaskGroup(uploadedMasks, 'upload_masks', _dtText('上传掩膜', 'Upload Mask'));
     html += renderMaskGroup(genericMasks, 'generic_masks', _dtText('其他分割掩膜', 'Additional masks'));
     html += renderMaskGroup(localMasks, 'masks', _dtText('手动/阈值掩膜', 'Manual / threshold masks'));
 
@@ -4736,7 +4753,9 @@ function getItemGroup(id) {
         // and group commands; only an unclassified generic mask remains in
         // the standalone mask group.
         if (classification === 'ctv' || classification === 'oar') return classification;
-        return _isGenericSegmentationMask(mask) ? 'generic_masks' : 'masks';
+        return _maskBelongsToGroup('upload_masks', mask)
+            ? 'upload_masks'
+            : (_isGenericSegmentationMask(mask) ? 'generic_masks' : 'masks');
     }
     if (value.startsWith('seed_')) return 'planning_seeds';
     if (value.startsWith('needle_')) return 'planning_needles';
@@ -4794,7 +4813,7 @@ function handleTreeItemRightClick(id, event) {
         'ctv', 'oar', 'non_traversable', 'traversable',
         'planning', 'planning_trajectories', 'planning_seeds',
         'planning_needles', 'dose_isosurfaces', 'planning_meshes',
-        'masks', 'generic_masks',
+        'masks', 'generic_masks', 'upload_masks',
     ]);
     if (groupIds.has(id)) {
         selectedItems.clear();
@@ -4850,12 +4869,18 @@ function showGroupContextMenu(x, y, category) {
     } else if (category === 'artifacts') {
         catInfo = { label: _dtText('工件与标注', 'Artifacts & Annotations'), icon: 'A' };
         count = _dataTreeGroupObjectIds('artifacts').length;
-    } else if (category === 'masks' || category === 'generic_masks') {
-        catInfo = { label: _dtText('手动/阈值掩膜', 'Masks'), icon: '🎨' };
-        count = Object.values(state.maskLabels || {}).filter(mask => {
-            const isGeneric = _isOpenGenericMask(mask);
-            return category === 'generic_masks' ? isGeneric : !isGenericSegmentationMask(mask);
-        }).length;
+    } else if (category === 'masks' || category === 'generic_masks' || category === 'upload_masks') {
+        catInfo = {
+            label: category === 'upload_masks'
+                ? _dtText('上传掩膜', 'Upload Mask')
+                : _dtText('手动/阈值掩膜', 'Masks'),
+            icon: '🎨',
+        };
+        count = Object.values(state.maskLabels || {})
+            .filter(mask => category === 'masks'
+                ? !_isGenericSegmentationMask(mask)
+                : _maskBelongsToGroup(category, mask))
+            .length;
     } else {
         catInfo = ORGAN_CATEGORIES[category] || { label: category, icon: '📁' };
         count = dataTreeState.organs.filter(o => o.category === category).length;
@@ -5160,6 +5185,7 @@ function _dataTreeGroupObjectIds(category) {
             ..._dataTreeGroupObjectIds('ctv'),
             ..._dataTreeGroupObjectIds('oar'),
             ...(dataTreeState.skin.loaded ? [_dataTreeObjectId('skin_surface')] : []),
+            ..._dataTreeGroupObjectIds('upload_masks'),
             ..._dataTreeGroupObjectIds('generic_masks'),
             ..._dataTreeGroupObjectIds('masks'),
         ];
@@ -5178,11 +5204,11 @@ function _dataTreeGroupObjectIds(category) {
     if (category === 'oar') {
         return dataTreeState.organs.map(item => String(item.objectId || item.id));
     }
-    if (category === 'generic_masks' || category === 'masks') {
+    if (category === 'generic_masks' || category === 'upload_masks' || category === 'masks') {
         return Object.entries(state.maskLabels || {})
             .filter(([, item]) => category === 'masks'
                 ? !_isGenericSegmentationMask(item)
-                : _isOpenGenericMask(item))
+                : _maskBelongsToGroup(category, item))
             .map(([id, item]) => String(item?.objectId || `mask:${id}`));
     }
     if (category === 'non_traversable' || category === 'traversable') {
@@ -5217,6 +5243,7 @@ function _dataTreeExportGroups(category) {
         oar: 'group:structures:oar',
         masks: 'group:structures:masks',
         generic_masks: 'group:structures:masks',
+        upload_masks: 'group:structures:masks',
         planning: 'group:planning',
         planning_trajectories: 'group:planning:trajectories',
         planning_seeds: 'group:planning:seeds',
@@ -6059,17 +6086,20 @@ function _groupViewNodes(category) {
         if (!mask.id) mask.id = maskId;
         return mask;
     }).filter(Boolean);
-    const genericMaskNodes = maskNodes.filter(mask => _isOpenGenericMask(mask));
+    const genericMaskNodes = maskNodes.filter(mask => _maskBelongsToGroup('generic_masks', mask));
+    const uploadedMaskNodes = maskNodes.filter(mask => _maskBelongsToGroup('upload_masks', mask));
     const localMaskNodes = maskNodes.filter(mask => !_isGenericSegmentationMask(mask));
     if (category === 'segmentation') return [
         dataTreeState.ctv, ...Object.values(dataTreeState.ctvLabels || {}),
         dataTreeState.oar, ...(dataTreeState.organs || []),
         dataTreeState.skin,
+        ...uploadedMaskNodes,
         ...genericMaskNodes,
         ...localMaskNodes,
     ];
     if (category === 'masks') return localMaskNodes;
     if (category === 'generic_masks') return genericMaskNodes;
+    if (category === 'upload_masks') return uploadedMaskNodes;
     if (category === 'ctv') return [dataTreeState.ctv, ...Object.values(dataTreeState.ctvLabels || {})];
     if (category === 'oar') return [dataTreeState.oar, ...(dataTreeState.organs || [])];
     if (category === 'non_traversable' || category === 'traversable') {
@@ -6374,7 +6404,7 @@ function setGroupVisibility(category, visible) {
             const mesh = scene3D.meshes[o.id];
             if (mesh) applyMeshVisibility(mesh, visible, o.opacity ?? 0.5);
         });
-    } else if (category === 'masks' || category === 'generic_masks') {
+    } else if (category === 'masks' || category === 'generic_masks' || category === 'upload_masks') {
         Object.entries(state.maskLabels || {}).forEach(([id, mask]) => {
             if (!_maskBelongsToGroup(category, mask)) return;
             mask.visible = !!visible;
@@ -6515,7 +6545,7 @@ function setGroupOpacity(category, value) {
             // Update 3D mesh
             applyMeshOpacity(scene3D.meshes[o.id], opacity, o.visible !== false);
         });
-    } else if (category === 'masks' || category === 'generic_masks') {
+    } else if (category === 'masks' || category === 'generic_masks' || category === 'upload_masks') {
         Object.entries(state.maskLabels || {}).forEach(([id, mask]) => {
             if (!_maskBelongsToGroup(category, mask)) return;
             mask.opacity = opacity;
@@ -6577,7 +6607,7 @@ function getGroupDisplayColor(category) {
     if (category === 'segmentation') return dataTreeState.skin.color || '#f2a088';
     if (category === 'ctv') return dataTreeState.ctv.color || DEFAULT_CTV_STRUCTURE_COLOR;
     if (category === 'oar') return dataTreeState.oar.color || DEFAULT_OAR_STRUCTURE_COLOR;
-    if (category === 'masks' || category === 'generic_masks') {
+    if (category === 'masks' || category === 'generic_masks' || category === 'upload_masks') {
         const entries = Object.values(state.maskLabels || {}).filter(mask => {
             return _maskBelongsToGroup(category, mask);
         });
@@ -6616,7 +6646,7 @@ function setGroupColor(category, color) {
     } else if (category === 'oar') {
         dataTreeState.oar.color = normalized;
         entries = dataTreeState.organs.map(value => ({ id: value.id, value }));
-    } else if (category === 'masks' || category === 'generic_masks') {
+    } else if (category === 'masks' || category === 'generic_masks' || category === 'upload_masks') {
         entries = Object.entries(state.maskLabels || {}).filter(([, value]) => {
             return _maskBelongsToGroup(category, value);
         }).map(([id, value]) => ({ id, value }));
@@ -7362,4 +7392,3 @@ function _maskVisibleInTarget(mask) {
     }
     return true;
 }
-

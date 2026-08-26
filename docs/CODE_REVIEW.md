@@ -13242,3 +13242,106 @@ duplicate global-declaration comment in `brachybot-3d-manual.js` documents why
   `case_dose_query`, and explicit re-planning remains `semantic_action`.
 - A regression test verifies that a provider-emitted `planning_pipeline` call
   is normalized to `dose_recompute` for the affected request.
+
+## 2026-08-26 - CTV Uploads Were Misreported During Restart and Collapsed Multi-Label Masks
+
+### Confirmed issue
+
+- The visible `CTV mask import failed: HTTP 202` message was not a mask-format
+  failure. During server restart, the case agent is constructed before the
+  workspace sidecar arrays have finished decoding. The segmentation endpoint
+  intentionally returns a control-plane `202` response with
+  `code=workspace_hydration_pending`, `pending=true`, and `retry_after_ms`
+  while that restore is in progress. The current case log measured more than
+  22 seconds for the large planning-result array phase.
+- The browser's former import retry budget was only about 15 seconds. It
+  therefore exhausted its retries while the server was still correctly
+  restoring the case, then converted the still-pending response into a false
+  import error. This explains why restarting the server reproduced the same
+  error even when the uploaded file itself was valid.
+- The old CTV upload path treated a multi-label file as if it were already a
+  single selected clinical target. It selected one value and immediately
+  wrote `ctv_array`, `ctv_mask`, `ctv_source`, and related official CTV state.
+  The source labels were consequently no longer represented as independent
+  Data Tree candidates, and a wrong default label could contaminate the active
+  CTV before the operator had reviewed it.
+- The old path had no durable Upload Mask collection contract. Generic mask
+  children existed in some flows, but the original uploaded source, its label
+  membership, and the parent/child relationship were not represented as one
+  restart-safe object. This made it impossible for the UI to present a reliable
+  source-level `Upload Mask` group and explicit label choices.
+- A legacy workspace could already restore an old direct CTV as `ctv.loaded`.
+  Checking only that flag would cause the new candidate staging flow to be
+  skipped forever after restart, leaving the old unsafe representation in
+  place.
+
+### Resolution
+
+- Added `web/uploaded_mask_service.py` as the source-of-truth staging boundary.
+  A user-uploaded CTV file is aligned to the CT grid, validated as a
+  three-dimensional discrete label volume, and persisted as:
+  - one durable `Upload Mask` parent collection with source path, CT path,
+    source signature, labels, voxel counts, geometry, and child IDs; and
+  - one binary `uploaded_mask_label` generic child per positive source label.
+  The children retain source-label and geometry provenance, start as
+  `unclassified`, and do not write `ctv_array` or replace the official CTV.
+  Source signatures make repeated requests and restart recovery idempotent.
+- Changed the CTV branch of `/api/segmentation` in
+  `web/routes/planning_routes.py` to stage the upload and return
+  `staged_only=true` with the parent and child catalogue. It no longer silently
+  selects a label or launches the clinical CTV-consuming workflow. The same
+  source-first boundary is applied to tool-driven manual-label results in
+  `AgenticSys.py`; a staging failure cannot fall through to the previous direct
+  CTV write path.
+- Added a body-aware hydration retry helper in
+  `web/app/static/js/brachybot-ui-api.js`, and the equivalent bounded fallback
+  in `web/app/static/js/brachybot-manual-annotation.js`. They honor the
+  server's retry interval and wait up to 240 pending attempts, while reporting
+  a hydration-specific terminal message instead of labeling a pending restore
+  as an import failure. Non-202 responses still follow the normal error path.
+- Changed `web/app/static/js/brachybot-viewer-volume.js` to hydrate and render
+  an `Upload Mask` group with one visible Data Tree row per label child. The
+  children retain independent visibility, opacity, color, export, volume, and
+  context-menu behavior. The parent collection and generic children are
+  rehydrated from the backend catalog rather than invented only in the DOM.
+- Kept the existing explicit Data Tree classification transaction as the only
+  promotion path. Right-clicking a selected uploaded label and choosing Move to
+  CTV calls the generic-mask classification endpoint; the backend validates
+  the selected binary child against the current CT, rejects whole-body or
+  otherwise implausible candidates, records `ctv_promoted_from_upload`
+  provenance, and invalidates dependent planning/dose/DVH artifacts so stale
+  results cannot be presented as current.
+- Updated delete reconciliation in `web/routes/data_routes.py` so deleting a
+  child also updates or removes its Upload Mask parent. The viewer catalogue
+  endpoint now returns both generic children and durable Upload Mask parents.
+- Added restart compatibility in the CT hydration path. If a legacy direct CTV
+  is restored but no Upload Mask collection with the same source path exists,
+  the browser re-submits the source upload. The staging operation is
+  idempotent, so an already staged/promoted source is not duplicated and a
+  promoted CTV is preserved when its source collection is present.
+
+### Why this matches the requested UI behavior
+
+The proposed interaction is the correct semantic boundary: importing a file
+creates an `Upload Mask` source group and exposes its labels; the user then
+reviews the candidates and explicitly moves the chosen label to CTV. This
+separates file ingestion from clinical structure selection. It fixes the
+multi-label ambiguity rather than merely hiding the error message. It must be
+combined with the hydration-aware `202` handling above, because the restart
+error and the unsafe automatic label selection are two independent defects.
+
+### Verification
+
+- Remote Python compilation passed for all modified Python modules and the new
+  staging test module.
+- `git diff --check` passed.
+- Focused regression suite: `137 passed, 3 warnings`.
+- Full remote regression suite: `753 passed, 6 skipped, 4 warnings`.
+- A remote smoke test staged a two-label NIfTI with one parent and two binary
+  children, confirmed a second stage reused the same collection, and confirmed
+  that no official CTV array was written. A separate smoke test explicitly
+  promoted one child, confirmed CTV equals that selected child, and confirmed
+  that an implausible body-sized child was rejected at promotion.
+- The remote environment has no Node executable, so JavaScript validation was
+  performed through the existing frontend contract/static regression tests;
+  `node --check` was not available on that host.

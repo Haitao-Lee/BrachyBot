@@ -1264,6 +1264,47 @@ async function handleFileSelect(input, targetId) {
     if (!ownerSessionId || isCurrentOwner()) input.value = '';
 }
 
+/**
+ * POST a segmentation request while the selected workspace is hydrating.
+ * A 202 here is a control-plane retry state, not an import failure. The
+ * server's JSON retry_after_ms is authoritative when available; the generous
+ * bounded budget covers the large NPY sidecars decoded after a restart.
+ */
+async function _postSegmentationWithHydrationRetry(body, sessionId) {
+    const maxPendingAttempts = 240;
+    let response = null;
+    let payload = {};
+    for (let attempt = 0; attempt <= maxPendingAttempts; attempt += 1) {
+        response = await fetch(API + '/segmentation', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-BrachyBot-Session': sessionId,
+            },
+            body: JSON.stringify(body),
+        });
+        payload = await response.clone().json().catch(() => ({}));
+        if (response.status !== 202) return { response, payload };
+        if (attempt >= maxPendingAttempts) {
+            throw new Error(
+                payload.message
+                || 'The case is still restoring after the retry window. Please wait for the workspace to finish loading and try again.',
+            );
+        }
+        const retryAfter = Number(
+            payload.retry_after_ms
+            || response.headers.get('Retry-After-Ms')
+            || 250,
+        );
+        await new Promise(resolve => setTimeout(
+            resolve,
+            Math.max(100, Math.min(1000, Number.isFinite(retryAfter) ? retryAfter : 250)),
+        ));
+    }
+    throw new Error('The segmentation request did not reach a terminal server response.');
+}
+window._postSegmentationWithHydrationRetry = _postSegmentationWithHydrationRetry;
+
 /** Import a user-provided label into the session-scoped agent memory. */
 async function importUploadedMask(kind, labelPath, options = {}) {
     const ownerSessionId = String(options.sessionId || _activeApiSessionId());
@@ -1294,29 +1335,20 @@ async function importUploadedMask(kind, labelPath, options = {}) {
             body.target_value = options.targetValue
                 ?? (isCurrentOwner() ? Number(document.getElementById('targetValue')?.value || 1) : 1);
         }
-        // A session may still be decoding its durable arrays after the shell
-        // has switched.  Retry the server's explicit 202 response instead of
-        // treating it as a failed upload; this keeps the Browse workflow
-        // non-blocking while preserving the authoritative mask write.
-        let res;
-        for (let attempt = 0; attempt <= 60; attempt += 1) {
-            res = await fetch(API + '/segmentation', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-BrachyBot-Session': ownerSessionId,
-                },
-                body: JSON.stringify(body),
-            });
-            if (res.status !== 202 || attempt >= 60) break;
-            const retryAfter = Number(res.headers.get('Retry-After-Ms') || 250);
-            await new Promise(resolve => setTimeout(resolve, Math.max(100, Math.min(1000, retryAfter))));
-        }
-        const payload = await res.json().catch(() => ({}));
+        const { response: res, payload } = await _postSegmentationWithHydrationRetry(
+            body,
+            ownerSessionId,
+        );
         if (!res.ok || !payload.success) throw new Error(payload.error || `HTTP ${res.status}`);
         if (!isCurrentOwner()) return payload;
-        if (typeof addChat === 'function') addChat('system', `${kind.toUpperCase()} mask imported for the current CT.`);
-        if (typeof _saveManualState === 'function') {
+        const stagedCtv = kind === 'ctv' && payload.staged_only === true;
+        if (typeof addChat === 'function') addChat(
+            'system',
+            stagedCtv
+                ? 'Upload Mask staged. Select a label in the Data Tree and choose Move to CTV.'
+                : `${kind.toUpperCase()} mask imported for the current CT.`,
+        );
+        if (!stagedCtv && typeof _saveManualState === 'function') {
             _saveManualState({ [kind === 'ctv' ? 'ctv_segmentation' : 'oar_segmentation']: true });
         }
         if (kind === 'oar' && typeof window.hydrateOarDataTreeFromPayload === 'function') {
@@ -1344,12 +1376,23 @@ async function importUploadedMask(kind, labelPath, options = {}) {
         if (kind === 'oar' && typeof hydrateOarDataTreeFromServer === 'function') {
             await hydrateOarDataTreeFromServer(undefined, ownerSessionId);
         }
+        if (stagedCtv && typeof window.hydrateGenericMasksFromServer === 'function') {
+            const scope = typeof window._captureViewerDataScope === 'function'
+                ? window._captureViewerDataScope(ownerSessionId)
+                : null;
+            if (scope) await window.hydrateGenericMasksFromServer(scope);
+        }
         if (!isCurrentOwner()) return payload;
         if (typeof renderDataTree === 'function') renderDataTree();
         if (typeof startSegmentationMeshPrewarm === 'function') startSegmentationMeshPrewarm(kind);
         if (typeof _refreshManualStepUI === 'function') _refreshManualStepUI();
         if (typeof scheduleWorkspaceSave === 'function') scheduleWorkspaceSave();
-        showBrachyBotNotice(`${kind.toUpperCase()} mask imported.`, 'success');
+        showBrachyBotNotice(
+            stagedCtv
+                ? 'Upload Mask staged. Choose a label and Move to CTV from the Data Tree.'
+                : `${kind.toUpperCase()} mask imported.`,
+            'success',
+        );
         return payload;
     } catch (error) {
         const message = error.message || String(error);
@@ -2442,11 +2485,21 @@ async function loadCTToViewers(ctPath, options = {}) {
                 ctPathInput.dispatchEvent(new Event('input', { bubbles: true }));
                 ctPathInput.dispatchEvent(new Event('change', { bubbles: true }));
             }
-            // A mask may have been selected before its CT. Import it only
-            // when the current session has not already restored that mask.
+            // A mask may have been selected before its CT. A legacy workspace
+            // can already have a direct CTV loaded without the new Upload Mask
+            // collection, so use the source path—not only ctv.loaded—as the
+            // idempotency boundary. This migrates old direct imports into the
+            // candidate tree after restart while preserving a promoted CTV
+            // when its source collection is already present.
             setTimeout(() => {
                 if (!isCurrentOwner() || renderGeneration !== window.__viewerRenderGeneration) return;
-                if (state.ctvPath && !dataTreeState.ctv.loaded) {
+                const normalizedPath = value => String(value || '').trim().split(String.fromCharCode(92)).join('/');
+                const ctvSourcePath = normalizedPath(state.ctvPath);
+                const hasStagedCtvSource = Array.isArray(dataTreeState.uploadMasks)
+                    && dataTreeState.uploadMasks.some(upload => (
+                        normalizedPath(upload?.source_path) === ctvSourcePath
+                    ));
+                if (state.ctvPath && (!dataTreeState.ctv.loaded || !hasStagedCtvSource)) {
                     importUploadedMask('ctv', state.ctvPath, {
                         sessionId: ownerSessionId,
                         ctPath,

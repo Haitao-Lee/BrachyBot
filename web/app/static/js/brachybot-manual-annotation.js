@@ -683,26 +683,41 @@ async function runSegmentationStep(kind) {
         const sessionHeaders = { 'Content-Type': 'application/json' };
         if (ownerSessionId) sessionHeaders['X-BrachyBot-Session'] = ownerSessionId;
         let res;
-        for (let attempt = 0; attempt <= 60; attempt += 1) {
-            res = await fetch(API + '/segmentation', {
-                method: 'POST',
-                headers: sessionHeaders,
-                body: JSON.stringify(body),
-            });
-            if (res.status !== 202 || attempt >= 60) break;
-            const retryAfter = Number(res.headers.get('Retry-After-Ms') || 250);
-            await new Promise(resolve => setTimeout(
-                resolve,
-                Math.max(100, Math.min(1000, Number.isFinite(retryAfter) ? retryAfter : 250)),
-            ));
+        let data;
+        if (typeof window._postSegmentationWithHydrationRetry === 'function') {
+            const result = await window._postSegmentationWithHydrationRetry(body, ownerSessionId);
+            res = result.response;
+            data = result.payload;
+        } else {
+            // Keep this file safe when it is loaded without the main API
+            // bundle. The same body-aware, long bounded retry contract is
+            // required for restart hydration in that case.
+            for (let attempt = 0; attempt <= 240; attempt += 1) {
+                res = await fetch(API + '/segmentation', {
+                    method: 'POST',
+                    headers: sessionHeaders,
+                    body: JSON.stringify(body),
+                });
+                data = await res.clone().json().catch(() => ({}));
+                if (res.status !== 202) break;
+                if (attempt >= 240) {
+                    throw new Error(data.message || 'The case is still restoring. Please wait and try again.');
+                }
+                const retryAfter = Number(
+                    data.retry_after_ms || res.headers.get('Retry-After-Ms') || 250,
+                );
+                await new Promise(resolve => setTimeout(
+                    resolve,
+                    Math.max(100, Math.min(1000, Number.isFinite(retryAfter) ? retryAfter : 250)),
+                ));
+            }
         }
         if (!res.ok) {
-            const t = await res.text();
-            throw new Error(`HTTP ${res.status}: ${t.slice(0, 200)}`);
+            throw new Error(data?.error || `HTTP ${res.status}`);
         }
-        const data = await res.json();
         if (!data.success) throw new Error(data.error || 'Segmentation failed');
         const n = data.total_labels || Object.keys(data.label_counts || {}).length || 0;
+        const stagedCtv = apiKind === 'ctv' && data.staged_only === true;
         // The segmentation response already contains authoritative organ
         // names/counts. Paint those nodes before the binary volume fetch so a
         // successful tool call can never leave an empty OAR branch.
@@ -710,6 +725,36 @@ async function runSegmentationStep(kind) {
             window.hydrateOarDataTreeFromPayload(data, ownerSessionId);
         }
         if (!isCurrentOwner()) return { success: true, kind, labels: n, detached: true };
+        if (stagedCtv) {
+            const scope = typeof window._captureViewerDataScope === 'function'
+                ? window._captureViewerDataScope(ownerSessionId)
+                : null;
+            if (scope && typeof window.hydrateGenericMasksFromServer === 'function') {
+                await window.hydrateGenericMasksFromServer(scope);
+            }
+            if (!isCurrentOwner()) return { success: true, kind, labels: n, staged_only: true, detached: true };
+            _saveManualState({ active_step: null, active_step_started_at: null });
+            _manualWorkflowProgress(
+                kind,
+                'staged',
+                label,
+                label,
+                _manualWorkflowLabel('上传掩膜已暂存，请在 Data Tree 中选择标签并移动到 CTV', 'Upload Mask staged; choose a label and Move to CTV'),
+            );
+            reportUIEvent('segmentation.step', `${label} upload staged`, {
+                kind,
+                labels: n,
+                status: 'staged_only',
+            });
+            if (typeof renderDataTree === 'function') renderDataTree();
+            if (typeof addChat === 'function') {
+                addChat('system', _manualWorkflowLabel(
+                    'Upload Mask 已暂存。请在 Data Tree 中选择目标标签并右键 Move to CTV。',
+                    'Upload Mask staged. Select the target label in the Data Tree and choose Move to CTV.',
+                ));
+            }
+            return { success: true, kind, labels: n, staged_only: true };
+        }
         // Treat manual and chat segmentation identically: use the authoritative
         // server labels, update the 2D scene/Data Tree first, then reconstruct
         // 3D meshes as a detached current-session job. Waiting for 50+ OAR
