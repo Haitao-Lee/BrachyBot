@@ -186,8 +186,29 @@ def test_iso_surface_refresh_keeps_data_tree_appearance_and_view_flags():
     assert "const priorLevels = new Map" in manual
     assert "existing.visible2D = existing.visible2D !== false" in manual
     assert "existing.visible3D = existing.visible3D !== false" in manual
-    assert "dataTreeState.planning.doseLevels.push(existing)" in manual
+    assert "rebuiltLevels.push(existing)" in manual
     assert "let loadedLevels = 0" in manual
     assert "const failedLevels = []" in manual
     assert "loaded: level.loaded === true" in viewer
     assert "return { stale: false, levels: relValues.length, loadedLevels, failedLevels }" in manual
+
+
+def test_planning_visual_loads_are_retryable_and_case_scoped():
+    """A transient limiter response must not abort restored visual products."""
+    manual = read("web/app/static/js/brachybot-3d-manual.js")
+    layout = read("web/app/static/js/brachybot-viewer-layout.js")
+    viewer = read("web/app/static/js/brachybot-viewer-volume.js")
+    planning = read("web/app/static/js/brachybot-dvh-planning.js")
+
+    assert "_seeds3DLoadInFlight" in manual
+    assert "_organ3DReconstructionInFlight" in layout
+    assert "payload.code === 'rate_limit_exceeded'" in manual
+    assert "_isoSurfaceLoadInFlight" in manual
+    assert "const rebuiltLevels = [];" in manual
+    assert "Keep the currently displayed surfaces until each replacement" in manual
+    assert "if (_viewer3DRequestScopeIsCurrent(requestScope) && !silent)" in layout
+    assert "silent && [202, 404, 409, 429].includes(res.status)" in layout
+    assert "res.status === 429 && pending.code === 'rate_limit_exceeded'" in viewer
+    assert "loadAllIsoSurfaces({ reconstruct3d: true })," in planning
+    assert "'Isosurface reconstruction',\n                180000" in planning
+    assert "_withTimeout(loadSeeds3D(), 'Seeds', 120000)" in planning

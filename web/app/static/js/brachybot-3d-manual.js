@@ -4241,14 +4241,62 @@ function invalidatePlanningSceneLoads() {
 }
 window.invalidatePlanningSceneLoads = invalidatePlanningSceneLoads;
 
-async function loadSeeds3D() {
-    const requestScope = _capturePlanningSceneScope();
-    try {
-        const res = await fetch(API + '/planning/seeds_3d', {
+// A planning refresh and an explicit 3D reconstruction can start at the same
+// time during a cold restart. Both callers need the same authoritative seed /
+// needle response; rebuilding the scene twice makes the later caller able to
+// erase the first caller's meshes. Keep one case-scoped request in flight.
+let _seeds3DLoadInFlight = null;
+
+async function _fetchPlanningSeeds3D(requestScope) {
+    let res;
+    let payload = {};
+    for (let attempt = 0; attempt <= 60; attempt += 1) {
+        res = await fetch(API + '/planning/seeds_3d', {
             headers: { 'X-BrachyBot-Session': requestScope.sessionId },
         });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const data = await res.json();
+        payload = (res.status === 202 || res.status === 429)
+            ? await res.clone().json().catch(() => ({}))
+            : {};
+        const retryable = res.status === 202
+            || (res.status === 429 && payload.code === 'rate_limit_exceeded');
+        if (!retryable || attempt >= 60) break;
+        const retryAfter = Number(
+            payload.retry_after_ms
+            || res.headers.get('Retry-After-Ms')
+            || 1000,
+        );
+        await new Promise(resolve => setTimeout(
+            resolve,
+            Math.max(1000, Math.min(
+                res.status === 429 ? 60000 : 5000,
+                Number.isFinite(retryAfter) ? retryAfter : 1000,
+            )),
+        ));
+    }
+    if (!res.ok) {
+        throw new Error(payload.error || payload.message || `HTTP ${res.status}`);
+    }
+    return res.json();
+}
+
+async function loadSeeds3D() {
+    const requestScope = _capturePlanningSceneScope();
+    if (_seeds3DLoadInFlight
+        && _planningSceneScopeIsCurrent(_seeds3DLoadInFlight.scope)) {
+        return _seeds3DLoadInFlight.promise;
+    }
+    const promise = _loadSeeds3D(requestScope);
+    _seeds3DLoadInFlight = { scope: requestScope, promise };
+    try {
+        return await promise;
+    } finally {
+        if (_seeds3DLoadInFlight?.promise === promise) _seeds3DLoadInFlight = null;
+    }
+}
+
+async function _loadSeeds3D(requestScope) {
+    try {
+        const data = await _fetchPlanningSeeds3D(requestScope);
         if (!data.success) throw new Error(data.error || 'Failed to load seeds');
         if (!_planningSceneScopeIsCurrent(requestScope)) {
             return { stale: true, seeds: 0, needles: 0 };
@@ -4568,18 +4616,45 @@ function applyDoseCoverageAudit(level, audit) {
 async function loadDoseIsosurface(threshold = 1.0, color = 0x00ff88, requestScope = null) {
     const scope = requestScope || _capturePlanningSceneScope();
     try {
-        const res = await fetch(API + '/planning/dose_isosurface', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-BrachyBot-Session': scope.sessionId,
-            },
-            body: JSON.stringify({ threshold }),
-        });
+        let res;
+        let payload = {};
+        for (let attempt = 0; attempt <= 60; attempt += 1) {
+            res = await fetch(API + '/planning/dose_isosurface', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-BrachyBot-Session': scope.sessionId,
+                },
+                body: JSON.stringify({ threshold }),
+            });
+            payload = (res.status === 202 || res.status === 429)
+                ? await res.clone().json().catch(() => ({}))
+                : {};
+            const retryable = res.status === 202
+                || (res.status === 429 && payload.code === 'rate_limit_exceeded');
+            if (!retryable || attempt >= 60) break;
+            const retryAfter = Number(
+                payload.retry_after_ms
+                || res.headers.get('Retry-After-Ms')
+                || 1000,
+            );
+            await new Promise(resolve => setTimeout(
+                resolve,
+                Math.max(1000, Math.min(
+                    res.status === 429 ? 60000 : 5000,
+                    Number.isFinite(retryAfter) ? retryAfter : 1000,
+                )),
+            ));
+        }
         if (!res.ok) {
-            const error = `HTTP ${res.status}`;
+            const error = payload.error || payload.message || `HTTP ${res.status}`;
             console.warn(`[loadDoseIsosurface] ${threshold} Gy: ${error}`);
-            return { error };
+            return {
+                error,
+                retryable: res.status === 202
+                    || (res.status === 429 && payload.code === 'rate_limit_exceeded')
+                    || res.status >= 500,
+            };
         }
         const data = await res.json();
         if (!data.success) {
@@ -4695,7 +4770,14 @@ async function loadDoseIsosurface(threshold = 1.0, color = 0x00ff88, requestScop
         };
     } catch (e) {
         if (_planningSceneScopeIsCurrent(scope)) console.error('Dose isosurface failed:', e);
-        return { error: e.message };
+        // Network/abort failures are transient transport failures. The
+        // transactional multi-level loader may therefore retain an existing
+        // valid surface until the replacement request succeeds. Parsing or
+        // scene errors remain terminal and are not hidden by this flag.
+        return {
+            error: e?.message || String(e),
+            retryable: e?.name === 'TypeError' || e?.name === 'AbortError',
+        };
     }
 }
 
@@ -4731,8 +4813,31 @@ function clearDosePlanningMeshes() {
 }
 window.clearDosePlanningMeshes = clearDosePlanningMeshes;
 
+// A restart can trigger both the planning restore and the viewer's explicit
+// 3D path. Serialize them per case so a weaker metadata-only call cannot
+// clear or overwrite a stronger surface reconstruction.
+let _isoSurfaceLoadInFlight = null;
+
 async function loadAllIsoSurfaces(options = {}) {
     const requestScope = _capturePlanningSceneScope();
+    const reconstruct3d = options.reconstruct3d !== false;
+    const inFlight = _isoSurfaceLoadInFlight;
+    if (inFlight && _planningSceneScopeIsCurrent(inFlight.scope)) {
+        if (inFlight.reconstruct3d || !reconstruct3d) return inFlight.promise;
+        await inFlight.promise.catch(() => {});
+        if (!_planningSceneScopeIsCurrent(requestScope)) return { stale: true };
+    }
+    const promise = _loadAllIsoSurfaces(options, requestScope);
+    _isoSurfaceLoadInFlight = { scope: requestScope, reconstruct3d, promise };
+    try {
+        return await promise;
+    } finally {
+        if (_isoSurfaceLoadInFlight?.promise === promise) _isoSurfaceLoadInFlight = null;
+    }
+}
+
+async function _loadAllIsoSurfaces(options = {}, scope = null) {
+    const requestScope = scope || _capturePlanningSceneScope();
     // Dose iso metadata and 2D contours are useful without creating
     // expensive 3D meshes. Reconstruction is therefore opt-in.
     const reconstruct3d = options.reconstruct3d !== false;
@@ -4767,17 +4872,32 @@ async function loadAllIsoSurfaces(options = {}) {
     const opacities = display3d.iso_surface_opacities || [0.15, 0.25, 0.35, 0.45];
     const rxGy = _getCurrentPrescriptionGy();
 
-    // Wipe any prior isosurface meshes while preserving the independent
-    // presentation state of levels that are rebuilt below.
+    // Keep the currently displayed surfaces until each replacement has been
+    // fetched successfully. A transient 202/429/5xx must never turn a
+    // previously valid dose plan into an empty viewer.
     const priorLevels = new Map((dataTreeState?.planning?.doseLevels || [])
         .map(level => [Number(level?.threshold), level]));
-    clearDosePlanningMeshes();
+    if (!reconstruct3d) {
+        // The toolbar's legacy 3D path may ask for metadata-only surfaces.
+        // It must not clear meshes that the case restore has already loaded.
+        if (typeof window.applyDataTreeViewVisibility === 'function') window.applyDataTreeViewVisibility();
+        try { renderDataTree(); } catch (_) {}
+        return {
+            stale: false,
+            levels: relValues.length,
+            loadedLevels: [...priorLevels.values()].filter(level => level?.loaded === true).length,
+            failedLevels: [],
+        };
+    }
+    const rebuiltLevels = [];
+    const requestedThresholds = new Set();
     let loadedLevels = 0;
     const failedLevels = [];
 
     // Convert relative multipliers → Gy (e.g. 1.0×120=120, 1.5×120=180)
     for (let i = 0; i < relValues.length; i++) {
         const v = parseFloat((relValues[i] * rxGy).toFixed(2));
+        requestedThresholds.add(v);
         const absGy = v.toFixed(0);
         // Parse hex color string to RGB int
         const hexStr = hexColors[i] || hexColors[hexColors.length - 1] || '#22c55e';
@@ -4788,6 +4908,7 @@ async function loadAllIsoSurfaces(options = {}) {
         const opacity = (opacities[i] !== undefined) ? opacities[i] : 0.3;
         try {
             let isoResult = null;
+            const existing = priorLevels.get(v);
             if (reconstruct3d) {
                 uiDebugLog(`[IsoSurf] Loading ${v} Gy (color=${hexStr}, opacity=${opacity})...`);
                 // loadDoseIsosurface would push its own data-tree entry;
@@ -4808,18 +4929,36 @@ async function loadAllIsoSurfaces(options = {}) {
                     && isoResult.stale !== true
                     && !isoResult.error
                     && Number(isoResult.vertices) > 0;
+                // A retryable transport failure leaves the previous mesh in
+                // place. Keep it visible and ready until a replacement is
+                // available; otherwise one transient 429 erases a valid
+                // dose surface from both the scene and the Data Tree.
+                const preserveExistingMesh = !levelAvailable
+                    && !!existing
+                    && existing.loaded === true
+                    && !!mesh
+                    && isoResult?.retryable === true;
                 uiDebugLog(`[IsoSurf] ${v} Gy: mesh=${levelAvailable ? 'loaded' : 'FAILED'}`);
-                if (levelAvailable) {
+                if (levelAvailable || preserveExistingMesh) {
                     loadedLevels += 1;
+                    if (preserveExistingMesh) {
+                        failedLevels.push({
+                            threshold: v,
+                            reason: isoResult?.error || 'Transient dose surface request failure',
+                            preserved: true,
+                        });
+                    }
                 } else {
                     failedLevels.push({
                         threshold: v,
                         reason: isoResult?.error || (isoResult?.stale ? 'stale' : 'No isosurface mesh returned'),
+                        preserved: false,
                     });
                 }
                 // Override the just-added mesh's opacity with the per-level
                 // config value (loadDoseIsosurface uses a hard-coded 0.3).
-                if (mesh) applyMeshOpacity(mesh, opacity, levelAvailable
+                if (mesh) applyMeshOpacity(mesh, opacity, (levelAvailable
+                    || preserveExistingMesh)
                     && dataTreeState.planning.visible !== false
                     && dataTreeState.planning.visible3D !== false);
             } else {
@@ -4827,7 +4966,6 @@ async function loadAllIsoSurfaces(options = {}) {
             }
             // Mirror into data tree with the config opacity.
             if (dataTreeState && dataTreeState.planning) {
-                const existing = priorLevels.get(v);
                 const levelAvailable = !reconstruct3d
                     ? false
                     : !!scene3D?.meshes?.[`dose_iso_${v}`]
@@ -4835,9 +4973,15 @@ async function loadAllIsoSurfaces(options = {}) {
                         && isoResult.stale !== true
                         && !isoResult.error
                         && Number(isoResult.vertices) > 0;
-                const levelStatus = levelAvailable ? 'ready'
+                const preserveExistingMesh = !levelAvailable
+                    && !!existing
+                    && existing.loaded === true
+                    && !!scene3D?.meshes?.[`dose_iso_${v}`]
+                    && isoResult?.retryable === true;
+                const effectiveLevelAvailable = levelAvailable || preserveExistingMesh;
+                const levelStatus = effectiveLevelAvailable ? 'ready'
                     : (isoResult?.error ? 'error' : 'not_generated');
-                const levelError = levelAvailable
+                const levelError = effectiveLevelAvailable
                     ? undefined
                     : (isoResult?.error || (!reconstruct3d ? '3D reconstruction disabled' : 'No isosurface mesh returned'));
                 if (!existing) {
@@ -4850,12 +4994,12 @@ async function loadAllIsoSurfaces(options = {}) {
                         opacity,
                         color: '#' + color.toString(16).padStart(6, '0'),
                         pctLabel: `${absGy} Gy`,
-                        loaded: levelAvailable,
+                        loaded: effectiveLevelAvailable,
                         status: levelStatus,
                     };
                     if (levelError) levelEntry.error = levelError;
                     applyDoseCoverageAudit(levelEntry, isoResult?.coverageAudit);
-                    dataTreeState.planning.doseLevels.push(levelEntry);
+                    rebuiltLevels.push(levelEntry);
                 } else {
                     // Keep Data Tree-selected appearance and independent
                     // 2D/3D visibility when a dose refresh replaces mesh
@@ -4867,12 +5011,12 @@ async function loadAllIsoSurfaces(options = {}) {
                     existing.color = existing.color || ('#' + color.toString(16).padStart(6, '0'));
                     existing.thresholdGy = parseFloat(absGy);
                     existing.pctLabel = `${absGy} Gy`;
-                    existing.loaded = levelAvailable;
+                    existing.loaded = effectiveLevelAvailable;
                     existing.status = levelStatus;
                     if (levelError) existing.error = levelError;
                     else delete existing.error;
                     applyDoseCoverageAudit(existing, isoResult?.coverageAudit);
-                    dataTreeState.planning.doseLevels.push(existing);
+                    rebuiltLevels.push(existing);
                 }
             }
         } catch (e) {
@@ -4880,6 +5024,32 @@ async function loadAllIsoSurfaces(options = {}) {
         }
     }
     if (!_planningSceneScopeIsCurrent(requestScope)) return { stale: true };
+    if (dataTreeState?.planning) {
+        dataTreeState.planning.doseLevels = rebuiltLevels;
+        // Older client versions mirrored iso surfaces in planning.meshes.
+        // Remove only obsolete dose rows from that legacy mirror; never
+        // remove seeds, needles, guides, or other planning artifacts.
+        dataTreeState.planning.meshes = (dataTreeState.planning.meshes || [])
+            .filter(mesh => {
+                const id = String(mesh?.id || '');
+                if (!id.startsWith('dose_iso_')) return true;
+                const threshold = Number(id.slice('dose_iso_'.length));
+                return requestedThresholds.has(threshold);
+            });
+        // Remove only levels which are no longer part of the successful
+        // configuration. A failed requested level keeps its previous mesh by
+        // the preservation rule above.
+        Object.keys(scene3D?.meshes || {}).forEach(id => {
+            if (!String(id).startsWith('dose_iso_')) return;
+            const threshold = Number(String(id).replace('dose_iso_', ''));
+            if (requestedThresholds.has(threshold)) return;
+            const mesh = scene3D.meshes[id];
+            scene3D.scene?.remove(mesh);
+            mesh?.geometry?.dispose?.();
+            mesh?.material?.dispose?.();
+            delete scene3D.meshes[id];
+        });
+    }
     if (typeof window.applyDataTreeViewVisibility === 'function') window.applyDataTreeViewVisibility();
     try { renderDataTree(); } catch (_) {}
     return { stale: false, levels: relValues.length, loadedLevels, failedLevels };
@@ -5040,7 +5210,7 @@ async function _fetchAndAddOrganMesh({ labelId, source, organId, label, color, o
                 // its binary labels.  ``202`` means exactly that; it is not an
                 // empty mesh. Retry locally so the segmentation event always
                 // leads to a real 3D object once the data becomes available.
-                for (let attempt = 0; attempt < 12; attempt += 1) {
+                for (let attempt = 0; attempt <= 60; attempt += 1) {
                     const res = await fetch(API + '/viewer/3d_mask', {
                         method: 'POST',
                         headers: {
@@ -5049,15 +5219,32 @@ async function _fetchAndAddOrganMesh({ labelId, source, organId, label, color, o
                         },
                         body: JSON.stringify({ label_id: labelId, source, smoothing }),
                     });
-                    if (res.status === 202) {
-                        const retryAfter = Number(res.headers.get('Retry-After-Ms') || 300);
+                    const payload = (res.status === 202 || res.status === 429)
+                        ? await res.clone().json().catch(() => ({}))
+                        : {};
+                    const retryable = res.status === 202
+                        || (res.status === 429 && payload.code === 'rate_limit_exceeded');
+                    if (retryable && attempt < 60) {
+                        const retryAfter = Number(
+                            payload.retry_after_ms
+                            || res.headers.get('Retry-After-Ms')
+                            || 1000,
+                        );
                         await new Promise(resolve => setTimeout(
                             resolve,
-                            Math.max(100, Math.min(1000, Number.isFinite(retryAfter) ? retryAfter : 300)),
+                            Math.max(1000, Math.min(
+                                res.status === 429 ? 60000 : 5000,
+                                Number.isFinite(retryAfter) ? retryAfter : 1000,
+                            )),
                         ));
                         continue;
                     }
-                    if (!res.ok) return { status: 'http', code: res.status, id: organId };
+                    if (!res.ok) return {
+                        status: 'http',
+                        code: res.status,
+                        error: payload.error || payload.message,
+                        id: organId,
+                    };
                     data = await res.json();
                     break;
                 }
@@ -5919,14 +6106,30 @@ async function _loadDoseOverlayImpl(retryAttempt = 0) {
         const res = await fetch(API + '/planning/dose_overlay', {
             headers: { 'X-BrachyBot-Session': requestSessionId },
         });
-        if (res.status === 202 && retryAttempt < 60) {
+        const pending = (res.status === 202 || res.status === 429)
+            ? await res.clone().json().catch(() => ({}))
+            : {};
+        const retryable = res.status === 202
+            || (res.status === 429 && pending.code === 'rate_limit_exceeded');
+        if (retryable && retryAttempt < 60) {
             // Cold-case hydration is deliberately non-blocking. Keep the
             // dose request alive with a bounded retry instead of showing a
             // false "no dose" error while the background restore finishes.
-            await new Promise(resolve => setTimeout(resolve, Math.min(1000, 150 + retryAttempt * 25)));
+            const retryAfter = Number(
+                pending.retry_after_ms
+                || res.headers.get('Retry-After-Ms')
+                || 1000,
+            );
+            await new Promise(resolve => setTimeout(
+                resolve,
+                Math.max(1000, Math.min(
+                    res.status === 429 ? 60000 : 5000,
+                    Number.isFinite(retryAfter) ? retryAfter : 1000,
+                )),
+            ));
             return _loadDoseOverlayImpl(retryAttempt + 1);
         }
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        if (!res.ok) throw new Error(pending.error || pending.message || `HTTP ${res.status}`);
         const data = await res.json();
         if (!data.success) throw new Error(data.error || 'Failed to load dose overlay');
         // A workspace transition intentionally does not cancel its server
@@ -6063,8 +6266,24 @@ async function loadDoseOverlayVolume(ownerOverlay = state.doseOverlay) {
                     headers: { 'X-BrachyBot-Session': ownerSessionId },
                     signal: controller.signal,
                 });
-                if (res.status !== 202 || attempt >= 60) break;
-                await new Promise(resolve => setTimeout(resolve, Math.min(1000, 150 + attempt * 25)));
+                const payload = (res.status === 202 || res.status === 429)
+                    ? await res.clone().json().catch(() => ({}))
+                    : {};
+                const retryable = res.status === 202
+                    || (res.status === 429 && payload.code === 'rate_limit_exceeded');
+                if (!retryable || attempt >= 60) break;
+                const retryAfter = Number(
+                    payload.retry_after_ms
+                    || res.headers.get('Retry-After-Ms')
+                    || 1000,
+                );
+                await new Promise(resolve => setTimeout(
+                    resolve,
+                    Math.max(1000, Math.min(
+                        res.status === 429 ? 60000 : 5000,
+                        Number.isFinite(retryAfter) ? retryAfter : 1000,
+                    )),
+                ));
             }
             if (!res.ok) throw new Error(`HTTP ${res.status}`);
             const encoding = String(res.headers.get('X-Dose-Encoding') || '');
@@ -6201,8 +6420,24 @@ async function fetchDoseOverlaySlice(axis, sliceIndex) {
                 }),
                 signal: controller.signal,
             });
-            if (res.status !== 202 || attempt >= 60) break;
-            await new Promise(resolve => setTimeout(resolve, Math.min(1000, 150 + attempt * 25)));
+            const payload = (res.status === 202 || res.status === 429)
+                ? await res.clone().json().catch(() => ({}))
+                : {};
+            const retryable = res.status === 202
+                || (res.status === 429 && payload.code === 'rate_limit_exceeded');
+            if (!retryable || attempt >= 60) break;
+            const retryAfter = Number(
+                payload.retry_after_ms
+                || res.headers.get('Retry-After-Ms')
+                || 1000,
+            );
+            await new Promise(resolve => setTimeout(
+                resolve,
+                Math.max(1000, Math.min(
+                    res.status === 429 ? 60000 : 5000,
+                    Number.isFinite(retryAfter) ? retryAfter : 1000,
+                )),
+            ));
         }
         // A concurrent request for the same axis may abort this one (abort is
         // used to drop redundant in-flight fetches). If the fetch already

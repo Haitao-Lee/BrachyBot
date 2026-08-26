@@ -191,7 +191,26 @@ if not API_KEY and not _TRUST_NETWORK:
 # Trusted network: no rate limiting. Local dev: generous limit.
 RATE_LIMIT_REQUESTS = 9999 if _TRUST_NETWORK else 120
 RATE_LIMIT_WINDOW = 60
+
+
+def _positive_int_env(name: str, default: int) -> int:
+    try:
+        value = int(os.environ.get(name, str(default)))
+    except (TypeError, ValueError):
+        value = default
+    return max(1, value)
+
+
+# Viewer hydration is a read/reconstruction data-plane workload. A single
+# restored case can legitimately request one mesh per OAR plus the dose and
+# label volumes, so charging those requests against the mutation bucket makes
+# a normal restart consume the budget before the user can import a mask or
+# edit a plan. Keep a separate budget instead of disabling protection globally.
+RATE_LIMIT_DATA_REQUESTS = 9999 if _TRUST_NETWORK else _positive_int_env(
+    "BRACHYBOT_DATA_RATE_LIMIT_REQUESTS", 1200
+)
 _rate_limit_store: Dict[str, list] = {}
+_rate_limit_data_store: Dict[str, list] = {}
 _rate_limit_lock = threading.Lock()
 
 _MESH_CACHE_LOCK = threading.Lock()
@@ -2793,9 +2812,54 @@ def _ctv_label_color(label_id: int) -> tuple:
 _rate_limit_cleanup_counter = 0
 
 
-def _check_rate_limit(client_ip: str) -> bool:
+_RATE_LIMIT_DATA_PATH_PREFIXES = (
+    "/api/viewer/",
+    "/api/surgical-guides/mesh",
+)
+_RATE_LIMIT_DATA_PATHS = {
+    "/api/planning/results",
+    "/api/planning/seeds_3d",
+    "/api/planning/dose_isosurface",
+    "/api/planning/dose_overlay",
+    "/api/planning/dose_overlay_volume",
+    "/api/planning/dose_overlay_slice",
+    "/api/planning/dose_contour_slice",
+}
+
+
+def _rate_limit_bucket_for_request() -> str:
+    """Select a limiter bucket without weakening mutation protection.
+
+    The default bucket is intentionally retained for uploads, segmentation,
+    planning mutations, chat, and other state-changing or expensive actions.
+    Viewer reconstruction/data endpoints are idempotent reads from the
+    session-owned server state even when they use POST, so they need a larger
+    independent budget during hydration. All GET endpoints use the data
+    bucket because they do not mutate the clinical case.
+    """
+    path = str(request.path or "/").rstrip("/") or "/"
+    if request.method.upper() == "GET":
+        return "data"
+    if path in _RATE_LIMIT_DATA_PATHS:
+        return "data"
+    if any(path.startswith(prefix) for prefix in _RATE_LIMIT_DATA_PATH_PREFIXES):
+        return "data"
+    return "default"
+
+
+def _rate_limit_store_for_bucket(bucket: str) -> Dict[str, list]:
+    return _rate_limit_data_store if bucket == "data" else _rate_limit_store
+
+
+def _rate_limit_budget_for_bucket(bucket: str) -> int:
+    return RATE_LIMIT_DATA_REQUESTS if bucket == "data" else RATE_LIMIT_REQUESTS
+
+
+def _check_rate_limit(client_ip: str, bucket: str = "default") -> bool:
     global _rate_limit_cleanup_counter
     now = datetime.now().timestamp()
+    store = _rate_limit_store_for_bucket(bucket)
+    request_budget = _rate_limit_budget_for_bucket(bucket)
 
     with _rate_limit_lock:
         # The limiter is shared by Flask worker threads. Keep cleanup and
@@ -2804,26 +2868,27 @@ def _check_rate_limit(client_ip: str) -> bool:
         _rate_limit_cleanup_counter += 1
         if _rate_limit_cleanup_counter >= 100:
             _rate_limit_cleanup_counter = 0
-            expired_ips = [
-                ip for ip, timestamps in _rate_limit_store.items()
-                if all(now - t >= RATE_LIMIT_WINDOW for t in timestamps)
-            ]
-            for ip in expired_ips:
-                _rate_limit_store.pop(ip, None)
+            for candidate_store in (_rate_limit_store, _rate_limit_data_store):
+                expired_ips = [
+                    ip for ip, timestamps in candidate_store.items()
+                    if all(now - t >= RATE_LIMIT_WINDOW for t in timestamps)
+                ]
+                for ip in expired_ips:
+                    candidate_store.pop(ip, None)
 
         timestamps = [
-            t for t in _rate_limit_store.get(client_ip, [])
+            t for t in store.get(client_ip, [])
             if now - t < RATE_LIMIT_WINDOW
         ]
-        if len(timestamps) >= RATE_LIMIT_REQUESTS:
-            _rate_limit_store[client_ip] = timestamps
+        if len(timestamps) >= request_budget:
+            store[client_ip] = timestamps
             return False
         timestamps.append(now)
-        _rate_limit_store[client_ip] = timestamps
+        store[client_ip] = timestamps
         return True
 
 
-def _rate_limit_retry_after_ms(client_ip: str) -> int:
+def _rate_limit_retry_after_ms(client_ip: str, bucket: str = "default") -> int:
     """Return the server-side wait needed before the next request is safe.
 
     The browser uses this value when a hydration poller temporarily trips the
@@ -2832,12 +2897,14 @@ def _rate_limit_retry_after_ms(client_ip: str) -> int:
     turning a recoverable control-plane response into a permanent 429 loop.
     """
     now = datetime.now().timestamp()
+    store = _rate_limit_store_for_bucket(bucket)
+    request_budget = _rate_limit_budget_for_bucket(bucket)
     with _rate_limit_lock:
         timestamps = [
-            timestamp for timestamp in _rate_limit_store.get(client_ip, [])
+            timestamp for timestamp in store.get(client_ip, [])
             if now - timestamp < RATE_LIMIT_WINDOW
         ]
-        if len(timestamps) < RATE_LIMIT_REQUESTS or not timestamps:
+        if len(timestamps) < request_budget or not timestamps:
             return 1000
         wait_seconds = max(1.0, RATE_LIMIT_WINDOW - (now - min(timestamps)))
         return int(math.ceil(wait_seconds * 1000.0))
@@ -3096,8 +3163,17 @@ def rate_limit(f):
     def decorated(*args, **kwargs):
         if not _TRUST_NETWORK:
             client_ip = _client_ip_for_rate_limit()
-            if not _check_rate_limit(client_ip):
-                retry_after_ms = _rate_limit_retry_after_ms(client_ip)
+            bucket = _rate_limit_bucket_for_request()
+            if not _check_rate_limit(client_ip, bucket):
+                retry_after_ms = _rate_limit_retry_after_ms(client_ip, bucket)
+                logger.warning(
+                    "Rate limit exceeded path=%s method=%s bucket=%s client=%s retry_after_ms=%s",
+                    request.path,
+                    request.method,
+                    bucket,
+                    client_ip,
+                    retry_after_ms,
+                )
                 response = jsonify({
                     "success": False,
                     "error": "Rate limit exceeded",
@@ -4084,6 +4160,7 @@ __all__ = [
     "MAX_UPLOAD_FILES",
     "OUTPUT_DIRS",
     "PROJECT_ROOT",
+    "RATE_LIMIT_DATA_REQUESTS",
     "RATE_LIMIT_REQUESTS",
     "RATE_LIMIT_WINDOW",
     "RUNTIME_DIR",
