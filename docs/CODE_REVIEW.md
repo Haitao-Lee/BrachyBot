@@ -151,6 +151,17 @@ viewer visibility, and frontend cache-version contracts. Python compilation of
 `web/server_support.py`, JavaScript syntax checks for the modified browser
 modules, and `git diff --check` also passed.
 
+The complete remote repository suite subsequently passed **761 tests**, with 6
+tests skipped and 4 non-failing warnings. The first complete run exposed only
+two stale assertions that still expected the previous frontend cache versions;
+those assertions were updated and the complete suite was rerun successfully.
+
+The repaired source was committed as `b40d1fce0` on
+`codex/session-task-recovery` and pushed to GitHub. The remote server was then
+restarted from that checkout. The new process was verified as PID `3092181`,
+listening on `0.0.0.0:8080`, with the cache-busted layout/volume/manual/DVH
+assets returning HTTP 200 for versions `v34`, `v43`, `v67`, and `v27`.
+
 The acceptance flow for this incident is:
 
 1. restart the server while a completed plan is persisted;
