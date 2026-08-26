@@ -381,8 +381,8 @@ def test_workspace_transitions_publish_measurable_first_paint_and_restore_stages
     assert "restore.fully_interactive" in ui_api
     # Versioned URLs are intentional cache invalidation points. Keep this
     # assertion aligned with the workspace/report artifact restore contract.
-    assert "brachybot-workspace.js?v=35" in index
-    assert "brachybot-ui-api.js?v=46" in index
+    assert "brachybot-workspace.js?v=36" in index
+    assert "brachybot-ui-api.js?v=47" in index
     assert "brachybot-viewer-volume.js?v=41" in index
     assert "brachybot-manual-annotation.js?v=18" in index
 
@@ -516,7 +516,31 @@ def test_clinical_restore_requires_decoded_ct_and_rebinds_viewer_interactions():
     assert restore.count("setupViewerInteractions();") >= 2
     assert "segmentationMeshTask" in restore
     assert "loadCTVAndObstacleMeshes()" in restore
-    assert "Segmentation restore did not produce label volumes" in restore
+    assert "planningResult.value?.success !== true" in restore
+    assert "continuing with planning restore" in restore
+
+
+def test_planning_restore_waits_for_seed_needle_and_dose_data():
+    """A background restore is not successful until essential plan products exist."""
+    planning = read("web/app/static/js/brachybot-dvh-planning.js")
+    routes = read("web/routes/planning_routes.py")
+    assert "let refreshOutcome = { success: false" in planning
+    assert "let doseOverlayPromise = Promise.resolve(null)" in planning
+    assert "let seedGeometryPromise = Promise.resolve(null)" in planning
+    assert "validateEssentialPlanningRestore" in planning
+    assert "essentialReady: true" in planning
+    assert "Planning seed/needle restore incomplete" in planning
+    assert '"has_guide":' in routes
+
+
+def test_startup_clear_cannot_race_the_scheduled_clinical_restore():
+    """init() must not erase planning arrays after loadSessions schedules hydration."""
+    ui_api = read("web/app/static/js/brachybot-ui-api.js")
+    workspace = read("web/app/static/js/brachybot-workspace.js")
+    assert "startupClinicalRestoreScheduled" in ui_api
+    assert "if (!startupClinicalRestoreScheduled)" in ui_api
+    assert "backgroundRestoreRetryCounts" in workspace
+    assert "restore.retry_scheduled" in workspace
 
 
 def test_2d_hydration_reconciles_ct_dose_contours_and_planning_projections():

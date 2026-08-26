@@ -18,6 +18,8 @@
     const workspaceRestoreTimers = new Set();
     let backgroundRestoreGeneration = 0;
     let backgroundRestoreTimer = null;
+    let backgroundRestoreRetryTimer = null;
+    const backgroundRestoreRetryCounts = Object.create(null);
     let backgroundRestoreNoticeTimer = null;
     let hydrationHideTimer = null;
     // Dose controls are persisted in physical Gy. Legacy snapshots that
@@ -107,6 +109,11 @@
             clearTimeout(backgroundRestoreTimer);
             backgroundRestoreTimer = null;
         }
+        if (backgroundRestoreRetryTimer) {
+            clearTimeout(backgroundRestoreRetryTimer);
+            backgroundRestoreRetryTimer = null;
+        }
+        Object.keys(backgroundRestoreRetryCounts).forEach(key => delete backgroundRestoreRetryCounts[key]);
         if (backgroundRestoreNoticeTimer) {
             clearTimeout(backgroundRestoreNoticeTimer);
             backgroundRestoreNoticeTimer = null;
@@ -268,6 +275,7 @@
             backgroundRestoreTimer = null;
             if (generation !== backgroundRestoreGeneration || sessionId !== activeSessionId) return;
             let restoreSucceeded = false;
+            let retryScheduled = false;
             try {
                 // The snapshot returned by the fast select endpoint can be
                 // one revision behind a task that finished while the case
@@ -325,7 +333,31 @@
                     startedAt: restoreStartedAt,
                     details: { error: error?.message || String(error) },
                 });
+                const retryKey = String(sessionId || '');
+                const retryCount = Number(backgroundRestoreRetryCounts[retryKey] || 0);
+                if (generation === backgroundRestoreGeneration
+                    && sessionId === activeSessionId
+                    && retryCount < 2) {
+                    backgroundRestoreRetryCounts[retryKey] = retryCount + 1;
+                    retryScheduled = true;
+                    const retryDelay = Math.min(5000, 1000 * (retryCount + 1));
+                    backgroundRestoreRetryTimer = setTimeout(() => {
+                        backgroundRestoreRetryTimer = null;
+                        if (generation !== backgroundRestoreGeneration
+                            || sessionId !== activeSessionId) return;
+                        scheduleBackgroundWorkspaceRestore(
+                            window._activeWorkspaceSnapshot || workspace,
+                            sessionId,
+                        );
+                    }, retryDelay);
+                    recordWorkspacePerformance('restore.retry_scheduled', {
+                        sessionId,
+                        startedAt: restoreStartedAt,
+                        details: { attempt: retryCount + 1, delay_ms: retryDelay },
+                    });
+                }
             } finally {
+                if (retryScheduled) return;
                 if (backgroundRestoreNoticeTimer) {
                     clearTimeout(backgroundRestoreNoticeTimer);
                     backgroundRestoreNoticeTimer = null;
@@ -334,6 +366,7 @@
                 // the fallback here so a failed snapshot refresh or a missing
                 // loader cannot leave a permanent spinner in the corner.
                 if (generation === backgroundRestoreGeneration && sessionId === activeSessionId) {
+                    if (restoreSucceeded) delete backgroundRestoreRetryCounts[String(sessionId || '')];
                     window.__workspaceRestoreScheduledSessionId = null;
                     window.__workspaceRestoreCompletedSessionId = restoreSucceeded ? String(sessionId) : null;
                     window.setWorkspaceHydrationState?.(

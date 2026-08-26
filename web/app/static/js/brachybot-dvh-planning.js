@@ -969,6 +969,7 @@ async function refreshPlanningUI(options = {}) {
         || ((typeof activeSessionId !== 'undefined' && activeSessionId) ? activeSessionId : state.sessionId)
         || '',
     );
+    let refreshOutcome = { success: false, stage: 'not_started' };
     // The registry is deliberately cheap and must be available even when a
     // draft Planning has no dose yet.  Do this independently of the clinical
     // result request so the Data Tree can expose Planning_1/Planning_2 during
@@ -1033,12 +1034,43 @@ async function refreshPlanningUI(options = {}) {
                 if (!res.ok || res.status === 202) {
                     console.warn('[refreshPlanningUI] /planning/results failed:', res.status);
                     _refreshInflight = null;
-                    return resolve();
+                    refreshOutcome = {
+                        success: false,
+                        stage: 'planning_results_http',
+                        status: Number(res?.status || 0),
+                        error: 'Planning results request failed',
+                    };
+                    return resolve(refreshOutcome);
                 }
                 const data = await res.json();
                 _refreshInflight = null;
                 if (!isCurrentCase()) return resolve();
-                if (!data || !data.success) { console.warn('[refreshPlanningUI] data not success:', data); return resolve(); }
+                if (!data || !data.success) {
+                    console.warn('[refreshPlanningUI] data not success:', data);
+                    refreshOutcome = {
+                        success: false,
+                        stage: 'planning_results_payload',
+                        error: data?.error || 'Planning results payload was not successful',
+                    };
+                    return resolve(refreshOutcome);
+                }
+                const responseSeedCount = Array.isArray(data.seeds)
+                    ? data.seeds.length : Number(data.total_seeds || 0);
+                const responseNeedleCount = Array.isArray(data.needles)
+                    ? data.needles.length : 0;
+                const responseTrajectoryCount = Array.isArray(data.trajectories)
+                    ? data.trajectories.length : Number(data.num_trajectories || 0);
+                refreshOutcome = {
+                    success: true,
+                    stage: 'core',
+                    planningId: data.planning_id || null,
+                    seedCount: responseSeedCount,
+                    needleCount: responseNeedleCount,
+                    trajectoryCount: responseTrajectoryCount,
+                    hasDose: data.has_dose === true,
+                    hasDvh: !!(data.dvh && Object.keys(data.dvh).length > 0),
+                    hasGuide: data.has_guide === true,
+                };
                 if (typeof dataTreeState !== 'undefined' && dataTreeState.planning) {
                     dataTreeState.planning.id = data.planning_id || null;
                     dataTreeState.planning.activePlanningId = data.planning_id || null;
@@ -1230,8 +1262,11 @@ async function refreshPlanningUI(options = {}) {
         // data loads asynchronously; the user can start dragging
         // slices immediately — the overlay appears once loaded.
         // ═══════════════════════════════════════════════════════════
+        let doseOverlayPromise = Promise.resolve(null);
         if (data.has_dose) {
-            loadDoseOverlay().then(ov => {
+            doseOverlayPromise = Promise.resolve()
+            .then(() => loadDoseOverlay())
+            .then(ov => {
                 if (!isCurrentCase() || !ov || ov.stale) return;
                 if (ov && ov.shape && options.preserveViewerState !== true) {
                     if (state.viewerSettings) {
@@ -1258,7 +1293,12 @@ async function refreshPlanningUI(options = {}) {
                 // CT-first shell phase.
                 try { if (typeof loadAllSlices === 'function') loadAllSlices(); } catch (_) {}
                 try { if (typeof renderDataTree === 'function') renderDataTree(); } catch (_) {}
-            }).catch(e => console.warn('Dose overlay auto-load failed:', e));
+                return ov;
+            })
+            .catch(e => {
+                console.warn('Dose overlay auto-load failed:', e);
+                return { error: e?.message || String(e) };
+            });
         }
 
         // ═══════════════════════════════════════════════════════════
@@ -1301,12 +1341,56 @@ async function refreshPlanningUI(options = {}) {
             || ((data.total_seeds || 0) > 0)
             || ((data.num_trajectories || 0) > 0)
             || ((data.trajectories || []).length > 0);
+        let seedGeometryPromise = Promise.resolve(null);
         if (shouldLoadSeedGeometry) {
-            _meshPromises.push(
-                _withTimeout(loadSeeds3D(), 'Seeds')
-                    .then(() => uiDebugLog('[3D auto-load] Seeds done. Meshes:', Object.keys(scene3D.meshes).length))
-            );
+            seedGeometryPromise = _withTimeout(loadSeeds3D(), 'Seeds')
+                .then(result => {
+                    uiDebugLog('[3D auto-load] Seeds done. Meshes:', Object.keys(scene3D.meshes).length);
+                    return result;
+                });
+            _meshPromises.push(seedGeometryPromise);
         }
+
+        // The background restore may defer expensive CTV/OAR and isodose
+        // meshes, but it must not resolve before the actual planning data
+        // products that make the Data Tree and 2D viewer useful. Previously
+        // loadSeeds3D() and loadDoseOverlay() were fire-and-forget here, so a
+        // restore could be reported as complete with only the history shell.
+        const expectedSeedCount = Array.isArray(data.seeds)
+            ? data.seeds.length : Number(data.total_seeds || 0);
+        const expectedNeedleCount = Array.isArray(data.needles)
+            ? data.needles.length : 0;
+        const validateEssentialPlanningRestore = async () => {
+            const [doseResult, seedResult] = await Promise.all([
+                doseOverlayPromise,
+                seedGeometryPromise,
+            ]);
+            if (shouldLoadSeedGeometry) {
+                const loadedSeeds = Number(seedResult?.seeds || 0);
+                const loadedNeedles = Number(seedResult?.needles || 0);
+                if (seedResult?.error || seedResult?.stale
+                    || loadedSeeds < expectedSeedCount
+                    || loadedNeedles < expectedNeedleCount) {
+                    return {
+                        stage: 'planning_geometry',
+                        error: 'Planning seed/needle restore incomplete (expected '
+                            + expectedSeedCount + ' seeds, ' + expectedNeedleCount
+                            + ' needles; received ' + loadedSeeds + ' seeds, '
+                            + loadedNeedles + ' needles)',
+                    };
+                }
+            }
+            if (data.has_dose === true
+                && (!doseResult || doseResult.error || doseResult.stale
+                    || !Array.isArray(state.doseOverlay?.shape)
+                    || state.doseOverlay.shape.length !== 3)) {
+                return {
+                    stage: 'planning_dose',
+                    error: 'Planning dose overlay restore incomplete',
+                };
+            }
+            return null;
+        };
 
         // During case restoration meshes are intentionally background work.
         // Metrics, labels, dose metadata, and the durable report snapshot are
@@ -1346,7 +1430,26 @@ async function refreshPlanningUI(options = {}) {
                 try { loadAllSlices(); } catch (_) {}
             }
 
-            Promise.all(_meshPromises).then(async () => {
+            const backgroundMeshesPromise = Promise.all(_meshPromises);
+            const essentialError = await validateEssentialPlanningRestore();
+            if (essentialError) {
+                refreshOutcome = {
+                    ...refreshOutcome,
+                    success: false,
+                    stage: essentialError.stage,
+                    error: essentialError.error,
+                };
+                backgroundMeshesPromise.catch(error =>
+                    console.warn('[3D auto-load] background mesh drain:', error));
+                return resolve(refreshOutcome);
+            }
+            refreshOutcome = {
+                ...refreshOutcome,
+                stage: 'ready',
+                essentialReady: true,
+                doseReady: data.has_dose === true,
+            };
+            backgroundMeshesPromise.then(async () => {
                 if (!isCurrentCase()) return;
                 // Mesh completion only refreshes the figures; it never gates
                 // the already interactive workspace.
@@ -1396,13 +1499,29 @@ async function refreshPlanningUI(options = {}) {
                 try { if (typeof renderReportEditor === 'function') renderReportEditor(); } catch (_) {}
                 try { if (typeof _updateReportPreview === 'function') _updateReportPreview(); } catch (_) {}
             }).catch(error => console.warn('[3D auto-load] background restore:', error));
-            return resolve();
+            return resolve(refreshOutcome);
         }
 
         // Wait for all 3D mesh loads to complete. Report state is filled only
         // after the selected case has passed the same generation check; an
         // older case must never overwrite the newly selected report.
         await Promise.all(_meshPromises);
+        const essentialError = await validateEssentialPlanningRestore();
+        if (essentialError) {
+            refreshOutcome = {
+                ...refreshOutcome,
+                success: false,
+                stage: essentialError.stage,
+                error: essentialError.error,
+            };
+            return resolve(refreshOutcome);
+        }
+        refreshOutcome = {
+            ...refreshOutcome,
+            stage: 'ready',
+            essentialReady: true,
+            doseReady: data.has_dose === true,
+        };
         if (!isCurrentCase()) return resolve();
         // Guide generation/restoration is part of the same planning refresh,
         // rather than an unobserved side effect. Awaiting it here does not
@@ -1797,9 +1916,15 @@ async function refreshPlanningUI(options = {}) {
         } catch (_) {}
 
             } catch (e) {
+                refreshOutcome = {
+                    ...refreshOutcome,
+                    success: false,
+                    stage: 'refresh_failed',
+                    error: e?.message || String(e),
+                };
                 if (e && e.name !== 'AbortError') console.warn('refreshPlanningUI failed:', e);
             } finally {
-                resolve();
+                resolve(refreshOutcome);
             }
         }, 80);  // 80ms debounce: enough to coalesce 5-10 SSE step events into one fetch
     });
