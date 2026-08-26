@@ -181,8 +181,13 @@ def test_guide_skin_uses_the_same_data_tree_control_paths_as_other_visual_nodes(
 def test_iso_surface_refresh_keeps_data_tree_appearance_and_view_flags():
     """Refreshing dose geometry must not reset a user's visibility choices."""
     manual = read("web/app/static/js/brachybot-3d-manual.js")
+    viewer = read("web/app/static/js/brachybot-viewer-volume.js")
 
     assert "const priorLevels = new Map" in manual
     assert "existing.visible2D = existing.visible2D !== false" in manual
     assert "existing.visible3D = existing.visible3D !== false" in manual
     assert "dataTreeState.planning.doseLevels.push(existing)" in manual
+    assert "let loadedLevels = 0" in manual
+    assert "const failedLevels = []" in manual
+    assert "loaded: level.loaded === true" in viewer
+    assert "return { stale: false, levels: relValues.length, loadedLevels, failedLevels }" in manual

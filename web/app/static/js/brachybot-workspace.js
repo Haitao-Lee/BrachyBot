@@ -1324,6 +1324,30 @@
         }
     }
 
+    function hasPlanningClinicalRows(planning) {
+        if (!planning || typeof planning !== 'object') return false;
+        const hasRows = [
+            planning.trajectories,
+            planning.seeds,
+            planning.needles,
+            planning.doseLevels,
+            planning.meshes,
+        ].some(value => Array.isArray(value) && value.length > 0);
+        return hasRows || !!planning.doseOverlay || !!planning.dvh;
+    }
+
+    function isCompactPlanningShell(savedTree) {
+        const planning = savedTree?.planning;
+        if (!planning || typeof planning !== 'object') return false;
+        const activePlanningId = String(planning.activePlanningId || '').trim();
+        if (!activePlanningId || hasPlanningClinicalRows(planning)
+            || (Array.isArray(planning.runs) && planning.runs.length > 0)) {
+            return false;
+        }
+        const planningId = String(planning.id || '').trim();
+        return !planningId || planningId === 'planning';
+    }
+
     function applyDataTreePresentation(savedTree) {
         if (!savedTree || typeof savedTree !== 'object' || typeof dataTreeState === 'undefined') return;
         // Expansion belongs to the current session's UI presentation. Restore
@@ -1342,11 +1366,37 @@
             copyDisplayProperties(dataTreeState[key], savedTree[key]);
         });
         if (savedTree.planning && dataTreeState.planning) {
-            ['visible', 'visible2D', 'visible3D', 'opacity', 'color', 'material', 'locked'].forEach(key => {
+            const compactPlanningShell = isCompactPlanningShell(savedTree);
+            const hasVisibilityMarker = Object.prototype.hasOwnProperty.call(
+                savedTree.planning, 'visibilityConfigured',
+            );
+            const visibilityConfigured = savedTree.planning.visibilityConfigured === true;
+            // A compact snapshot is a control-plane shell, not the
+            // authoritative Planning clinical state.  In particular, its
+            // placeholder `visible:false` must not hide dose/seed/needle
+            // children that are about to be restored from the server.  A
+            // real user hide is marked explicitly by the viewer and remains
+            // authoritative even while hydration is in flight.
+            ['visible2D', 'visible3D', 'opacity', 'color', 'material', 'locked'].forEach(key => {
                 if (Object.prototype.hasOwnProperty.call(savedTree.planning, key)) {
                     dataTreeState.planning[key] = savedTree.planning[key];
                 }
             });
+            // Legacy full snapshots have no marker, so retain their visible
+            // value for backward compatibility.  New snapshots always carry
+            // the marker; only `true` means that `visible:false` was an
+            // intentional operator action.
+            if (visibilityConfigured || (!hasVisibilityMarker && !compactPlanningShell)) {
+                if (Object.prototype.hasOwnProperty.call(savedTree.planning, 'visible')) {
+                    dataTreeState.planning.visible = savedTree.planning.visible;
+                }
+            }
+            if (hasVisibilityMarker) {
+                dataTreeState.planning.visibilityConfigured = visibilityConfigured;
+            }
+            if ((compactPlanningShell || hasVisibilityMarker) && !visibilityConfigured) {
+                dataTreeState.planning.visible = true;
+            }
             // Planning-side meshes, including the patient-specific puncture
             // guide, are reconstructed asynchronously. Restore only their
             // presentation by stable ID so late mesh hydration cannot discard

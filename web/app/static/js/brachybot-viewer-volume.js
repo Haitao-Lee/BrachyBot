@@ -104,6 +104,44 @@ function _planningVisualEntries() {
     return entries;
 }
 
+// Planning has one persisted all-view master switch plus independent 2D/3D
+// switches.  Keep the parent constraint in the visibility helpers themselves,
+// rather than relying on each loader or renderer to remember it.  A planning
+// mesh can be created long after the compact workspace snapshot was applied;
+// centralising this rule prevents a late dose/seed/guide callback from making a
+// hidden Planning partially visible again.
+function _isPlanningDescendantNode(node) {
+    if (!node || typeof node !== 'object') return false;
+    const id = String(node.id || node.nodeId || '');
+    if (!id || id === 'planning') return false;
+    if (String(node.parentId || '') === 'planning') return true;
+    if (id === 'dose_overlay'
+        || id.startsWith('traj_')
+        || id.startsWith('seed_')
+        || id.startsWith('needle_')
+        || id.startsWith('dose_iso_')) return true;
+    const planning = dataTreeState?.planning;
+    return !!planning && (
+        (planning.trajectories || []).some(item => item === node || String(item?.id || '') === id)
+        || (planning.seeds || []).some(item => item === node || String(item?.id || '') === id)
+        || (planning.needles || []).some(item => item === node || String(item?.id || '') === id)
+        || (planning.doseLevels || []).some(item => item === node || String(item?.id || '') === id)
+        || (planning.meshes || []).some(item => item === node || String(item?.id || '') === id)
+        || planning.doseOverlay === node
+    );
+}
+
+function _planningViewVisible(view) {
+    const planning = dataTreeState?.planning;
+    if (!planning) return false;
+    const viewKey = view === '2d' ? 'visible2D' : 'visible3D';
+    return planning.visible !== false && planning[viewKey] !== false;
+}
+
+function _planningMasterVisible() {
+    return dataTreeState?.planning?.visible !== false;
+}
+
 function _deduplicatePlanningRows() {
     const planning = dataTreeState?.planning;
     if (!planning) return;
@@ -2705,6 +2743,11 @@ const dataTreeState = {
         dataVersion: 0,
         version: 0,
         visible: true,
+        // `visible` is also the Planning master switch.  Keep an explicit
+        // marker so a compact restart snapshot (which has the placeholder
+        // Planning node but none of the restored clinical children) cannot
+        // be mistaken for an operator's deliberate hide action.
+        visibilityConfigured: false,
         opacity: 1.0,
         color: '#60a5fa',
         artifactStatus: {},
@@ -2852,11 +2895,17 @@ function ensureDataTreeNodeMetadata(node, type, parentId = null) {
 }
 
 function isDataTreeNodeVisible2D(node) {
-    return !!node && node.visible !== false && node.visible2D !== false;
+    return !!node
+        && node.visible !== false
+        && node.visible2D !== false
+        && (!_isPlanningDescendantNode(node) || _planningViewVisible('2d'));
 }
 
 function isDataTreeNodeVisible3D(node) {
-    return !!node && node.visible !== false && node.visible3D !== false;
+    return !!node
+        && node.visible !== false
+        && node.visible3D !== false
+        && (!_isPlanningDescendantNode(node) || _planningViewVisible('3d'));
 }
 
 window.isDataTreeNodeVisible2D = isDataTreeNodeVisible2D;
@@ -3096,7 +3145,7 @@ function getDataTreeAppearanceForMesh(id, mesh) {
             ? dataTreeState.ctv?.visible !== false
             : (id.startsWith('seed_') || id.startsWith('needle_') || id.startsWith('dose_iso_')
                 || dataTreeState.planning?.meshes?.some(entry => entry.id === id))
-                ? dataTreeState.planning?.visible !== false
+                ? _planningViewVisible('3d')
                 : true;
     return {
         // This helper is consumed by the 3D scene synchronizer.  Keep the
@@ -4115,7 +4164,14 @@ function renderDataTree() {
     const historicalPlanningRuns = planningRuns.filter(
         run => String(run?.planning_id || '') !== activePlanningId,
     );
-    const planningVis = planningEntries.length === 0 || planningEntries.some(item => item.visible !== false);
+    // The parent Planning node is an effective visibility constraint.  The
+    // compact restart snapshot can contain the parent without its clinical
+    // children, so deriving this eye icon from children alone makes a hidden
+    // parent look enabled and leaves the operator no reliable way to reveal
+    // the dose layers again.
+    const planningMasterVisible = _planningMasterVisible();
+    const planningVis = planningMasterVisible
+        && (planningEntries.length === 0 || planningEntries.some(item => item.visible !== false));
     const planningOp = planningEntries.length
         ? planningEntries.reduce((sum, item) => sum + Number(item.opacity ?? 0.7), 0) / planningEntries.length
         : 0.7;
@@ -4244,7 +4300,7 @@ function renderDataTree() {
     // server returned the new "trajectories" array. Without it, fall
     // back to the flat seeds list below.
     if (planningTrajectories.length > 0) {
-        const trajVis = planningTrajectories.some(t => t.visible);
+        const trajVis = planningMasterVisible && planningTrajectories.some(t => t.visible);
         const trajOp = planningTrajectories[0]?.opacity ?? 0.8;
         html += `<div class="tree-group" data-group="planning_trajectories">
             <div class="tree-group-header" onclick="toggleTreeGroup(this)" oncontextmenu="event.preventDefault();handleTreeItemRightClick('planning_trajectories', event)">
@@ -4259,20 +4315,20 @@ function renderDataTree() {
         planningTrajectories.forEach(traj => {
             const trajId = traj.id;
             const trajLabel = traj.label || `Trajectory ${traj.index + 1}`;
-            const trajState = ensureDataTreeNodeMetadata({ ...traj, visible: traj.visible, opacity: traj.opacity, color: traj.color, loaded: true, label: trajLabel }, 'trajectory', 'planning');
+            const trajState = ensureDataTreeNodeMetadata({ ...traj, visible: planningMasterVisible && traj.visible !== false, opacity: traj.opacity, color: traj.color, loaded: true, label: trajLabel }, 'trajectory', 'planning');
             const childSeeds = traj.seeds || [];
             const childHeader = childSeeds.length > 0 ? ` (${childSeeds.length} seeds)` : '';
             html += `<div class="tree-group" data-group="${trajId}">
                 <div class="tree-group-header" onclick="toggleTreeGroup(this)" oncontextmenu="event.preventDefault();handleTreeItemRightClick('${trajId}', event)" style="padding-left:1.2rem;">
                     <span class="arrow">&#9660;</span>
-                    <button class="eye-btn ${traj.visible ? '' : 'hidden'}" onclick="event.stopPropagation();toggleDataVisibility('${trajId}')">${traj.visible ? '&#128065;' : '&#128064;'}</button>
+                    <button class="eye-btn ${planningMasterVisible && traj.visible !== false ? '' : 'hidden'}" onclick="event.stopPropagation();toggleDataVisibility('${trajId}')">${planningMasterVisible && traj.visible !== false ? '&#128065;' : '&#128064;'}</button>
                     <span style="color:#88ccff;">➤</span>
                     <span>${escHtml(trajLabel)}${childHeader}</span>
                 </div>
                 <div class="tree-group-items">`;
             childSeeds.forEach(seed => {
                 const seedLabel = seed.label || `Seed ${seed.id.split('_').slice(-1)[0]}`;
-                const seedState = ensureDataTreeNodeMetadata({ ...seed, visible: seed.visible !== false, opacity: seed.opacity ?? 1.0, color: seed.color || '#ffcc00', loaded: true, label: seedLabel }, 'seed', trajId);
+                const seedState = ensureDataTreeNodeMetadata({ ...seed, visible: planningMasterVisible && seed.visible !== false, opacity: seed.opacity ?? 1.0, color: seed.color || '#ffcc00', loaded: true, label: seedLabel }, 'seed', trajId);
                 html += renderTreeItem(seed.id, seedState, '');
             });
             html += `</div></div>`; // close trajectory sub-group
@@ -4280,7 +4336,7 @@ function renderDataTree() {
         html += `</div></div>`; // close trajectories group
     } else if (planningSeeds.length > 0) {
         // Fallback: flat seeds list (server didn't return trajectories)
-        const seedsVis = planningSeeds.some(s => s.visible);
+        const seedsVis = planningMasterVisible && planningSeeds.some(s => s.visible !== false);
         const seedsOp = planningSeeds[0]?.opacity ?? 1.0;
         html += `<div class="tree-group" data-group="planning_seeds">
             <div class="tree-group-header" onclick="toggleTreeGroup(this)" oncontextmenu="event.preventDefault();handleTreeItemRightClick('planning_seeds', event)">
@@ -4293,7 +4349,7 @@ function renderDataTree() {
             </div>
             <div class="tree-group-items">`;
         planningSeeds.forEach(seed => {
-            const seedState = ensureDataTreeNodeMetadata({ ...seed, visible: seed.visible, opacity: seed.opacity, color: seed.color, loaded: true, label: seed.label || `Seed ${seed.id}` }, 'seed', 'planning');
+            const seedState = ensureDataTreeNodeMetadata({ ...seed, visible: planningMasterVisible && seed.visible !== false, opacity: seed.opacity, color: seed.color, loaded: true, label: seed.label || `Seed ${seed.id}` }, 'seed', 'planning');
             html += renderTreeItem(seed.id, seedState, `Traj ${seed.trajectory_id}`);
         });
         html += `</div></div>`;
@@ -4301,7 +4357,7 @@ function renderDataTree() {
 
     // Needles group
     if (planningNeedles.length > 0) {
-        const needlesVis = planningNeedles.some(n => n.visible);
+        const needlesVis = planningMasterVisible && planningNeedles.some(n => n.visible !== false);
         const needlesOp = planningNeedles[0]?.opacity ?? 0.8;
         html += `<div class="tree-group" data-group="planning_needles">
             <div class="tree-group-header" onclick="toggleTreeGroup(this)" oncontextmenu="event.preventDefault();handleTreeItemRightClick('planning_needles', event)">
@@ -4314,7 +4370,7 @@ function renderDataTree() {
             </div>
             <div class="tree-group-items">`;
         planningNeedles.forEach(needle => {
-            const needleState = ensureDataTreeNodeMetadata({ ...needle, visible: needle.visible, opacity: needle.opacity, color: needle.color, loaded: true, label: needle.label || `Needle ${needle.id}` }, 'needle', 'planning');
+            const needleState = ensureDataTreeNodeMetadata({ ...needle, visible: planningMasterVisible && needle.visible !== false, opacity: needle.opacity, color: needle.color, loaded: true, label: needle.label || `Needle ${needle.id}` }, 'needle', 'planning');
             html += renderTreeItem(needle.id, needleState, `${needle.points.length} pts`);
         });
         html += `</div></div>`;
@@ -4322,7 +4378,9 @@ function renderDataTree() {
 
     // Dose isosurfaces group
     if (doseLevels.length > 0) {
-        const doseVis = doseLevels.some(d => d.visible);
+        const doseVis = planningMasterVisible && doseLevels.some(
+            d => d.loaded === true && d.visible !== false,
+        );
         const doseOp = doseLevels[0]?.opacity ?? 0.3;
         html += `<div class="tree-group" data-group="dose_isosurfaces">
             <div class="tree-group-header" onclick="toggleTreeGroup(this)" oncontextmenu="event.preventDefault();handleTreeItemRightClick('dose_isosurfaces', event)">
@@ -4344,7 +4402,17 @@ function renderDataTree() {
                 : Math.round(level.threshold);
             // Preserve a user-renamed iso-surface label; default remains "N Gy".
             const doseLabel = level.label || `${absGy} Gy`;
-            const levelState = ensureDataTreeNodeMetadata({ ...level, visible: level.visible, opacity: level.opacity, color: level.color, loaded: true, label: doseLabel }, 'dose_iso_surface', 'planning');
+            const levelState = ensureDataTreeNodeMetadata({
+                ...level,
+                visible: planningMasterVisible && level.visible !== false,
+                opacity: level.opacity,
+                color: level.color,
+                // The row is only "ready" when the current refresh actually
+                // produced the corresponding mesh.  Do not advertise a
+                // surface merely because its threshold is configured.
+                loaded: level.loaded === true,
+                label: doseLabel,
+            }, 'dose_iso_surface', 'planning');
             const coveragePct = Number(level.coveragePct ?? level.coverageAudit?.coverage_percent);
             const pctLabel = Number.isFinite(coveragePct) && level.coverageAudit?.reported_metric === 'v100'
                 ? `${absGy} Gy · V100 ${coveragePct.toFixed(1)}%`
@@ -4356,7 +4424,7 @@ function renderDataTree() {
 
     // Dose overlay toggle (2D overlay on CT slices)
     if (dataTreeState.planning.doseOverlay) {
-        const ovVis = isDataTreeNodeVisible2D(dataTreeState.planning.doseOverlay);
+        const ovVis = planningMasterVisible && isDataTreeNodeVisible2D(dataTreeState.planning.doseOverlay);
         const ovOp = typeof getDoseOverlayOpacity === 'function'
             ? getDoseOverlayOpacity()
             : Number(state.doseOverlay?.opacity ?? dataTreeState.planning.doseOverlay.opacity ?? 0.4);
@@ -4392,7 +4460,7 @@ function renderDataTree() {
         ['surgical_guide', 'manual_annotation', 'planning_artifact'].includes(String(mesh.source || ''))
     );
     if (independentPlanningMeshes.length > 0) {
-        const artifactsVisible = independentPlanningMeshes.some(mesh => mesh.visible !== false);
+        const artifactsVisible = planningMasterVisible && independentPlanningMeshes.some(mesh => mesh.visible !== false);
         const artifactsOpacity = independentPlanningMeshes.reduce(
             (sum, mesh) => sum + Number(mesh.opacity ?? 0.75), 0,
         ) / independentPlanningMeshes.length;
@@ -4411,6 +4479,7 @@ function renderDataTree() {
             const status = mesh.status && mesh.status !== 'ready' ? String(mesh.status) : '';
             html += renderTreeItem(mesh.id, {
                 ...mesh,
+                visible: planningMasterVisible && mesh.visible !== false,
                 loaded: true,
                 label: mesh.label || mesh.id,
             }, status);
@@ -6034,7 +6103,7 @@ function batchToggleVisibility(visible) {
             if (s) {
                 s.visible = visible;
                 const mesh = scene3D.meshes[id];
-                if (mesh) applyMeshVisibility(mesh, visible, s.opacity ?? 1.0);
+                if (mesh) applyMeshVisibility(mesh, isDataTreeNodeVisible3D(s), s.opacity ?? 1.0);
             }
         }
         // Planning needles
@@ -6043,7 +6112,7 @@ function batchToggleVisibility(visible) {
             if (n) {
                 n.visible = visible;
                 const mesh = scene3D.meshes[id];
-                if (mesh) applyMeshVisibility(mesh, visible, n.opacity ?? 0.8);
+                if (mesh) applyMeshVisibility(mesh, isDataTreeNodeVisible3D(n), n.opacity ?? 0.8);
             }
         }
         // Dose isosurfaces
@@ -6053,7 +6122,7 @@ function batchToggleVisibility(visible) {
             if (d) {
                 d.visible = visible;
                 const mesh = scene3D.meshes[id];
-                if (mesh) applyMeshVisibility(mesh, visible, d.opacity ?? 0.3);
+                if (mesh) applyMeshVisibility(mesh, isDataTreeNodeVisible3D(d), d.opacity ?? 0.3);
             }
         }
         // Manual/threshold masks
@@ -6357,6 +6426,11 @@ function showAllOrgans() {
         // overlay or mesh.
         if (mask && typeof mask === 'object' && _isOpenGenericMask(mask)) mask.visible = true;
     });
+    // "Show all" is an explicit operator action.  Record it as a real
+    // Planning master-visibility choice so a later compact restore cannot
+    // reinterpret the state as an unset/default value.
+    dataTreeState.planning.visible = true;
+    dataTreeState.planning.visibilityConfigured = true;
     _planningItems('seeds').forEach(s => { s.visible = true; });
     _planningItems('needles').forEach(n => { n.visible = true; });
     _planningItems('doseLevels').forEach(d => { d.visible = true; });
@@ -6381,7 +6455,18 @@ function showAllOrgans() {
             }
             opacity = mask.opacity ?? 0.6;
         }
-        applyMeshVisibility(mesh, true, opacity);
+        const planningMesh = id.startsWith('seed_')
+            ? _planningItems('seeds').find(item => item.id === id)
+            : id.startsWith('needle_')
+                ? _planningItems('needles').find(item => item.id === id)
+                : id.startsWith('dose_iso_')
+                    ? _planningItems('doseLevels').find(item => item.threshold === parseFloat(id.replace('dose_iso_', '')))
+                    : (dataTreeState.planning.meshes || []).find(item => item.id === id);
+        applyMeshVisibility(
+            mesh,
+            planningMesh ? isDataTreeNodeVisible3D(planningMesh) : true,
+            opacity,
+        );
     });
     applyDataTreeViewVisibility();
     renderDataTree();
@@ -6421,24 +6506,26 @@ function setGroupVisibility(category, visible) {
         });
     } else if (category === 'planning') {
         dataTreeState.planning.visible = !!visible;
+        dataTreeState.planning.visibilityConfigured = true;
         _planningVisualEntries().forEach(item => { item.visible = visible; });
         _planningItems('seeds').forEach(seed => {
             const mesh = scene3D.meshes[seed.id];
-            if (mesh) applyMeshVisibility(mesh, visible, seed.opacity ?? 1.0);
+            if (mesh) applyMeshVisibility(mesh, isDataTreeNodeVisible3D(seed), seed.opacity ?? 1.0);
         });
         _planningItems('needles').forEach(needle => {
             const mesh = scene3D.meshes[needle.id];
-            if (mesh) applyMeshVisibility(mesh, visible, needle.opacity ?? 0.8);
-            if (typeof _setNeedleHandlesVisibility === 'function') _setNeedleHandlesVisibility(needle.id, visible, needle.opacity ?? 0.8);
+            const effectiveVisible = isDataTreeNodeVisible3D(needle);
+            if (mesh) applyMeshVisibility(mesh, effectiveVisible, needle.opacity ?? 0.8);
+            if (typeof _setNeedleHandlesVisibility === 'function') _setNeedleHandlesVisibility(needle.id, effectiveVisible, needle.opacity ?? 0.8);
         });
         _planningItems('doseLevels').forEach(level => {
             const mesh = scene3D.meshes[`dose_iso_${level.threshold}`];
-            if (mesh) applyMeshVisibility(mesh, visible, level.opacity ?? 0.3);
+            if (mesh) applyMeshVisibility(mesh, isDataTreeNodeVisible3D(level), level.opacity ?? 0.3);
         });
-        _setPlanningDoseProjectionVisibility(visible);
+        _setPlanningDoseProjectionVisibility(_planningViewVisible('2d'));
         (dataTreeState.planning.meshes || []).forEach(item => {
             const mesh = scene3D.meshes[item.id];
-            if (mesh) applyMeshVisibility(mesh, visible, item.opacity ?? 0.7);
+            if (mesh) applyMeshVisibility(mesh, isDataTreeNodeVisible3D(item), item.opacity ?? 0.7);
         });
     } else if (category === 'planning_trajectories') {
         _planningItems('trajectories').forEach(trajectory => { trajectory.visible = visible; });
@@ -6450,13 +6537,14 @@ function setGroupVisibility(category, visible) {
         _planningItems('seeds').filter(ownsTrajectory).forEach(seed => {
             seed.visible = visible;
             const mesh = scene3D.meshes[seed.id];
-            if (mesh) applyMeshVisibility(mesh, visible, seed.opacity ?? 1.0);
+            if (mesh) applyMeshVisibility(mesh, isDataTreeNodeVisible3D(seed), seed.opacity ?? 1.0);
         });
         _planningItems('needles').filter(ownsTrajectory).forEach(needle => {
             needle.visible = visible;
             const mesh = scene3D.meshes[needle.id];
-            if (mesh) applyMeshVisibility(mesh, visible, needle.opacity ?? 0.8);
-            if (typeof _setNeedleHandlesVisibility === 'function') _setNeedleHandlesVisibility(needle.id, visible, needle.opacity ?? 0.8);
+            const effectiveVisible = isDataTreeNodeVisible3D(needle);
+            if (mesh) applyMeshVisibility(mesh, effectiveVisible, needle.opacity ?? 0.8);
+            if (typeof _setNeedleHandlesVisibility === 'function') _setNeedleHandlesVisibility(needle.id, effectiveVisible, needle.opacity ?? 0.8);
         });
     } else if (category === 'ctv') {
         dataTreeState.ctv.visible = visible;
@@ -6488,28 +6576,29 @@ function setGroupVisibility(category, visible) {
         _planningItems('seeds').forEach(seed => {
             seed.visible = visible;
             const mesh = scene3D.meshes[seed.id];
-            if (mesh) applyMeshVisibility(mesh, visible, seed.opacity ?? 1.0);
+            if (mesh) applyMeshVisibility(mesh, isDataTreeNodeVisible3D(seed), seed.opacity ?? 1.0);
         });
     } else if (category === 'planning_needles') {
         _planningItems('needles').forEach(needle => {
             needle.visible = visible;
             const mesh = scene3D.meshes[needle.id];
-            if (mesh) applyMeshVisibility(mesh, visible, needle.opacity ?? 0.8);
+            const effectiveVisible = isDataTreeNodeVisible3D(needle);
+            if (mesh) applyMeshVisibility(mesh, effectiveVisible, needle.opacity ?? 0.8);
             if (typeof _setNeedleHandlesVisibility === 'function') {
-                _setNeedleHandlesVisibility(needle.id, visible, needle.opacity ?? 0.8);
+                _setNeedleHandlesVisibility(needle.id, effectiveVisible, needle.opacity ?? 0.8);
             }
         });
     } else if (category === 'dose_isosurfaces') {
         _planningItems('doseLevels').forEach(level => {
             level.visible = visible;
             const mesh = scene3D.meshes[`dose_iso_${level.threshold}`];
-            if (mesh) applyMeshVisibility(mesh, visible, level.opacity ?? 0.3);
+            if (mesh) applyMeshVisibility(mesh, isDataTreeNodeVisible3D(level), level.opacity ?? 0.3);
         });
     } else if (category === 'planning_meshes') {
         (dataTreeState.planning.meshes || []).forEach(m => {
             m.visible = visible;
             const mesh = scene3D.meshes[m.id];
-            if (mesh) applyMeshVisibility(mesh, visible, m.opacity ?? 0.7);
+            if (mesh) applyMeshVisibility(mesh, isDataTreeNodeVisible3D(m), m.opacity ?? 0.7);
         });
     } else {
         dataTreeState.organs.filter(o => o.category === category).forEach(o => {
@@ -6579,16 +6668,17 @@ function setGroupOpacity(category, value) {
         entries.forEach(item => { item.opacity = opacity; });
         _planningItems('seeds').forEach(seed => {
             if (category === 'planning_trajectories' && !_planningItems('trajectories').some(t => _trajectoryContains(seed, t))) return;
-            applyMeshOpacity(scene3D.meshes[seed.id], opacity, seed.visible !== false);
+            applyMeshOpacity(scene3D.meshes[seed.id], opacity, isDataTreeNodeVisible3D(seed));
         });
         _planningItems('needles').forEach(needle => {
             if (category === 'planning_trajectories' && !_planningItems('trajectories').some(t => _trajectoryContains(needle, t))) return;
-            applyMeshOpacity(scene3D.meshes[needle.id], opacity, needle.visible !== false);
-            if (typeof _setNeedleHandlesVisibility === 'function') _setNeedleHandlesVisibility(needle.id, needle.visible !== false, opacity);
+            const effectiveVisible = isDataTreeNodeVisible3D(needle);
+            applyMeshOpacity(scene3D.meshes[needle.id], opacity, effectiveVisible);
+            if (typeof _setNeedleHandlesVisibility === 'function') _setNeedleHandlesVisibility(needle.id, effectiveVisible, opacity);
         });
         if (category === 'planning') {
             _planningItems('doseLevels').forEach(level => {
-                applyMeshOpacity(scene3D.meshes[`dose_iso_${level.threshold}`], opacity, level.visible !== false);
+                applyMeshOpacity(scene3D.meshes[`dose_iso_${level.threshold}`], opacity, isDataTreeNodeVisible3D(level));
             });
             if (state.doseOverlay) state.doseOverlay.opacity = opacity;
             if (dataTreeState.planning.doseOverlay) {
@@ -6598,7 +6688,7 @@ function setGroupOpacity(category, value) {
                 applyDoseOverlayLayerOpacity();
             }
             (dataTreeState.planning.meshes || []).forEach(item => {
-                applyMeshOpacity(scene3D.meshes[item.id], opacity, item.visible !== false);
+                applyMeshOpacity(scene3D.meshes[item.id], opacity, isDataTreeNodeVisible3D(item));
             });
         }
     } else if (category === 'ctv') {
@@ -6627,25 +6717,26 @@ function setGroupOpacity(category, value) {
     } else if (category === 'planning_seeds') {
         _planningItems('seeds').forEach(seed => {
             seed.opacity = opacity;
-            applyMeshOpacity(scene3D.meshes[seed.id], opacity, seed.visible !== false);
+            applyMeshOpacity(scene3D.meshes[seed.id], opacity, isDataTreeNodeVisible3D(seed));
         });
     } else if (category === 'planning_needles') {
         _planningItems('needles').forEach(needle => {
             needle.opacity = opacity;
-            applyMeshOpacity(scene3D.meshes[needle.id], opacity, needle.visible !== false);
+            const effectiveVisible = isDataTreeNodeVisible3D(needle);
+            applyMeshOpacity(scene3D.meshes[needle.id], opacity, effectiveVisible);
             if (typeof _setNeedleHandlesVisibility === 'function') {
-                _setNeedleHandlesVisibility(needle.id, needle.visible !== false, opacity);
+                _setNeedleHandlesVisibility(needle.id, effectiveVisible, opacity);
             }
         });
     } else if (category === 'dose_isosurfaces') {
         _planningItems('doseLevels').forEach(level => {
             level.opacity = opacity;
-            applyMeshOpacity(scene3D.meshes[`dose_iso_${level.threshold}`], opacity, level.visible !== false);
+            applyMeshOpacity(scene3D.meshes[`dose_iso_${level.threshold}`], opacity, isDataTreeNodeVisible3D(level));
         });
     } else if (category === 'planning_meshes') {
         (dataTreeState.planning.meshes || []).forEach(m => {
             m.opacity = opacity;
-            applyMeshOpacity(scene3D.meshes[m.id], opacity, m.visible !== false);
+            applyMeshOpacity(scene3D.meshes[m.id], opacity, isDataTreeNodeVisible3D(m));
         });
     } else {
         dataTreeState.organs.filter(o => o.category === category).forEach(o => {
@@ -6909,13 +7000,14 @@ function toggleDataVisibility(id) {
         _planningItems('seeds').filter(seed => _trajectoryContains(seed, trajectory)).forEach(seed => {
             seed.visible = trajectory.visible;
             const mesh = scene3D.meshes[seed.id];
-            if (mesh) applyMeshVisibility(mesh, seed.visible, seed.opacity ?? 1.0);
+            if (mesh) applyMeshVisibility(mesh, isDataTreeNodeVisible3D(seed), seed.opacity ?? 1.0);
         });
         _planningItems('needles').filter(needle => _trajectoryContains(needle, trajectory)).forEach(needle => {
             needle.visible = trajectory.visible;
             const mesh = scene3D.meshes[needle.id];
-            if (mesh) applyMeshVisibility(mesh, needle.visible, needle.opacity ?? 0.8);
-            if (typeof _setNeedleHandlesVisibility === 'function') _setNeedleHandlesVisibility(needle.id, needle.visible, needle.opacity ?? 0.8);
+            const effectiveVisible = isDataTreeNodeVisible3D(needle);
+            if (mesh) applyMeshVisibility(mesh, effectiveVisible, needle.opacity ?? 0.8);
+            if (typeof _setNeedleHandlesVisibility === 'function') _setNeedleHandlesVisibility(needle.id, effectiveVisible, needle.opacity ?? 0.8);
         });
         renderDataTree();
         redrawSeedNeedleOverlays();
@@ -6929,7 +7021,7 @@ function toggleDataVisibility(id) {
         if (seed) {
             seed.visible = !seed.visible;
             const mesh = scene3D.meshes[id];
-            if (mesh) applyMeshVisibility(mesh, seed.visible, seed.opacity ?? 1.0);
+            if (mesh) applyMeshVisibility(mesh, isDataTreeNodeVisible3D(seed), seed.opacity ?? 1.0);
             renderDataTree();
             redrawSeedNeedleOverlays();
             _scheduleDataTreeSave(`viewer.visibility:${id}`);
@@ -6943,9 +7035,10 @@ function toggleDataVisibility(id) {
         if (needle) {
             needle.visible = !needle.visible;
             const mesh = scene3D.meshes[id];
-            if (mesh) applyMeshVisibility(mesh, needle.visible, needle.opacity ?? 0.8);
+            const effectiveVisible = isDataTreeNodeVisible3D(needle);
+            if (mesh) applyMeshVisibility(mesh, effectiveVisible, needle.opacity ?? 0.8);
             if (typeof _setNeedleHandlesVisibility === 'function') {
-                _setNeedleHandlesVisibility(needle.id, needle.visible, needle.opacity ?? 0.8);
+                _setNeedleHandlesVisibility(needle.id, effectiveVisible, needle.opacity ?? 0.8);
             }
             renderDataTree();
             redrawSeedNeedleOverlays();
@@ -6961,7 +7054,7 @@ function toggleDataVisibility(id) {
         if (level) {
             level.visible = !level.visible;
             const mesh = scene3D.meshes[id];
-            if (mesh) applyMeshVisibility(mesh, level.visible, level.opacity ?? 0.3);
+            if (mesh) applyMeshVisibility(mesh, isDataTreeNodeVisible3D(level), level.opacity ?? 0.3);
             renderDataTree();
             _scheduleDataTreeSave(`viewer.visibility:${id}`);
         }
@@ -6992,7 +7085,7 @@ function toggleDataVisibility(id) {
     if (meshEntry) {
         meshEntry.visible = !meshEntry.visible;
         const mesh = scene3D.meshes[id];
-        if (mesh) applyMeshVisibility(mesh, meshEntry.visible, meshEntry.opacity ?? 0.7);
+        if (mesh) applyMeshVisibility(mesh, isDataTreeNodeVisible3D(meshEntry), meshEntry.opacity ?? 0.7);
         renderDataTree();
         _scheduleDataTreeSave(`viewer.visibility:${id}`);
         return;
@@ -7013,29 +7106,30 @@ function toggleDataVisibility(id) {
             });
         }
     } else if (id === 'planning') {
+        dataTreeState.planning.visibilityConfigured = true;
         // Propagate to all planning sub-items
         _planningItems('trajectories').forEach(t => t.visible = dataTreeState.planning.visible);
         _planningItems('seeds').forEach(s => {
             s.visible = dataTreeState.planning.visible;
             const m = scene3D.meshes[s.id];
-            if (m) applyMeshVisibility(m, s.visible, s.opacity ?? 1.0);
+            if (m) applyMeshVisibility(m, isDataTreeNodeVisible3D(s), s.opacity ?? 1.0);
         });
         _planningItems('needles').forEach(n => {
             n.visible = dataTreeState.planning.visible;
             const m = scene3D.meshes[n.id];
-            if (m) applyMeshVisibility(m, n.visible, n.opacity ?? 0.8);
+            if (m) applyMeshVisibility(m, isDataTreeNodeVisible3D(n), n.opacity ?? 0.8);
         });
         _planningItems('doseLevels').forEach(d => {
             d.visible = dataTreeState.planning.visible;
             const m = scene3D.meshes[`dose_iso_${d.threshold}`];
-            if (m) applyMeshVisibility(m, d.visible, d.opacity ?? 0.3);
+            if (m) applyMeshVisibility(m, isDataTreeNodeVisible3D(d), d.opacity ?? 0.3);
         });
         (dataTreeState.planning.meshes || []).forEach(item => {
             item.visible = dataTreeState.planning.visible;
             const m = scene3D.meshes[item.id];
-            if (m) applyMeshVisibility(m, item.visible, item.opacity ?? 0.7);
+            if (m) applyMeshVisibility(m, isDataTreeNodeVisible3D(item), item.opacity ?? 0.7);
         });
-        _setPlanningDoseProjectionVisibility(dataTreeState.planning.visible);
+        _setPlanningDoseProjectionVisibility(_planningViewVisible('2d'));
     }
 
     // Sync with existing overlay system
@@ -7137,12 +7231,13 @@ function setDataOpacity(id, value) {
         trajectory.opacity = opacity;
         _planningItems('seeds').filter(seed => _trajectoryContains(seed, trajectory)).forEach(seed => {
             seed.opacity = opacity;
-            applyMeshOpacity(scene3D.meshes[seed.id], opacity, seed.visible !== false);
+            applyMeshOpacity(scene3D.meshes[seed.id], opacity, isDataTreeNodeVisible3D(seed));
         });
         _planningItems('needles').filter(needle => _trajectoryContains(needle, trajectory)).forEach(needle => {
             needle.opacity = opacity;
-            applyMeshOpacity(scene3D.meshes[needle.id], opacity, needle.visible !== false);
-            if (typeof _setNeedleHandlesVisibility === 'function') _setNeedleHandlesVisibility(needle.id, needle.visible !== false, opacity);
+            const effectiveVisible = isDataTreeNodeVisible3D(needle);
+            applyMeshOpacity(scene3D.meshes[needle.id], opacity, effectiveVisible);
+            if (typeof _setNeedleHandlesVisibility === 'function') _setNeedleHandlesVisibility(needle.id, effectiveVisible, opacity);
         });
         renderDataTreeDebounced();
         redrawSeedNeedleOverlays();
@@ -7155,7 +7250,7 @@ function setDataOpacity(id, value) {
         const seed = dataTreeState.planning.seeds.find(s => s.id === id);
         if (seed) {
             seed.opacity = opacity;
-            applyMeshOpacity(scene3D.meshes[id], opacity, seed.visible !== false);
+            applyMeshOpacity(scene3D.meshes[id], opacity, isDataTreeNodeVisible3D(seed));
             redrawSeedNeedleOverlays();
             requestViewerVisualRefresh('seed-opacity');
             _scheduleDataTreeSave(`viewer.opacity:${id}`);
@@ -7168,9 +7263,10 @@ function setDataOpacity(id, value) {
         const needle = dataTreeState.planning.needles.find(n => n.id === id);
         if (needle) {
             needle.opacity = opacity;
-            applyMeshOpacity(scene3D.meshes[id], opacity, needle.visible !== false);
+            const effectiveVisible = isDataTreeNodeVisible3D(needle);
+            applyMeshOpacity(scene3D.meshes[id], opacity, effectiveVisible);
             if (typeof _setNeedleHandlesVisibility === 'function') {
-                _setNeedleHandlesVisibility(needle.id, needle.visible !== false, opacity);
+                _setNeedleHandlesVisibility(needle.id, effectiveVisible, opacity);
             }
             redrawSeedNeedleOverlays();
             requestViewerVisualRefresh('needle-opacity');
@@ -7185,7 +7281,7 @@ function setDataOpacity(id, value) {
         const level = dataTreeState.planning.doseLevels.find(d => d.threshold === threshold);
         if (level) {
             level.opacity = opacity;
-            applyMeshOpacity(scene3D.meshes[id], opacity, level.visible !== false);
+            applyMeshOpacity(scene3D.meshes[id], opacity, isDataTreeNodeVisible3D(level));
             requestViewerVisualRefresh('dose-isosurface-opacity');
             _scheduleDataTreeSave(`viewer.opacity:${id}`);
         }
