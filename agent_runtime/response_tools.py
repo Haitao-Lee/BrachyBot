@@ -12,6 +12,7 @@ from typing import Dict, List, Optional
 
 from agent_runtime.core import ToolResultPipeline
 from agent_runtime.turn_policy import (
+    is_current_case_dose_recompute_request,
     is_planning_reexecution_request,
     is_surgical_guide_generation_request,
     requires_planning_before_guide,
@@ -264,6 +265,18 @@ print(json.dumps(result))
         LLM handles everything else — this function is a deterministic shortcut
         for unambiguous action commands.
         """
+        # This is the only direct clinical call for a current Dose/DVH
+        # refresh. Do it before the legacy action-pattern scan so wording such
+        # as "重新计算DVH相关指标" cannot be mistaken for a full plan, and so
+        # the route also works for older callers that did not install a local
+        # policy first.
+        if is_current_case_dose_recompute_request(message):
+            return [{
+                "id": "tool_direct_dose",
+                "tool": "dose_recompute",
+                "params": {},
+            }]
+
         msg = message.strip().lower()
         generic_target = self._open_segmentation_target(message)
         ct_path = self.memory.retrieve("ct_path") or ""
@@ -744,7 +757,20 @@ print(json.dumps(result))
                 user_msg = msg.get("content", "")
                 break
         query_type = self._classify_query_type(user_msg)
-        response = self._synthesize_with_llm(raw_results, steps, _lang, user_msg, query_type)
+        direct_tool_names = {
+            str(step.get("tool") or "")
+            for step in steps
+            if step.get("type") == "tool"
+        }
+        # dose_recompute already has a complete, localized formatter and a
+        # deterministic comparison summary. A second LLM synthesis adds cost
+        # and can obscure the authoritative result, so return that contract
+        # directly. Other direct operations keep their established synthesis
+        # path because they may contain richer multi-tool context.
+        if direct_tool_names == {"dose_recompute"}:
+            response = raw_results
+        else:
+            response = self._synthesize_with_llm(raw_results, steps, _lang, user_msg, query_type)
 
         # Quality review DISABLED (2026-06-22).
         # if self.multi_agent_wrapper and self.multi_agent_wrapper.enabled:

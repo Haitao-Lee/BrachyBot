@@ -7,10 +7,12 @@
 
 ## 1. Executive verdict
 
-Four user-visible incidents were reproduced or traced to concrete current-code
-paths. All four have root-cause repairs in the remote working tree. A second
-inspection of every repair found and fixed one additional dose-volume ownership
-race and one incorrect regression-test assertion before closure.
+Six user-visible or reachable incidents were reproduced or traced to concrete
+current-code paths. The original four incidents, the restored-Needle failure,
+and the concurrent read-only label-export failure now have root-cause repairs
+in the remote working tree. A second inspection of every repair found and fixed
+one additional dose-volume ownership race and one incorrect regression-test
+assertion before closure.
 
 | Incident | Current source status | Deployed status | Evidence summary |
 |---|---|---|---|
@@ -18,6 +20,8 @@ race and one incorrect regression-test assertion before closure.
 | Uploaded CTV was rejected as 12,970 cm3 / 105% of body | **FIXED** | **LIVE** | The selected source label is captured, validated, aligned, and normalized to an active binary CTV before plausibility checks and planning. Legacy restored snapshots are migrated before publication. |
 | 2D label/dose appearance changed during slice scrubbing and recovered after about 0.5 s | **FIXED** | **LIVE** | A compact original-grid dose volume is loaded once and sampled synchronously for all three axes; the broken slice-cache key contract is also corrected. |
 | Initial streaming assistant response was clipped until manual scroll or the next tool call | **FIXED** | **LIVE** | Bottom-follow is now layout-aware across streaming Markdown, Thinking rows, the workflow dock, footer insertion, and flex reflow. The workflow dock is no longer reparented into the answer row. |
+| Restored automatic Needles were silently withheld after server restart | **FIXED** | **LIVE** | The persisted seven Needle geometries were present; display-time safety revalidation was incorrectly applied against changed/shared current masks. The repair persists safety-input provenance and exposes changed-input geometry as review-only instead of deleting it. |
+| Restored label-volume export failed while merging model OAR labels | **FIXED** | **LIVE** | Restored NPY arrays can be read-only memmaps; the merge now detaches a writable `uint16` buffer before assignment. |
 
 No collision rule, obstacle label, CTV plausibility threshold, trajectory safety
 threshold, dose calculation, DVH calculation, prescription conversion, or plan
@@ -195,6 +199,94 @@ Two concrete paths amplified the race:
 - Cache revisions were advanced to `brachybot-chat-core.js?v=14` and
   `brachybot-chat-todo.js?v=20`.
 
+### 2.5 Restored automatic Needles were hidden after server restart
+
+#### Confirmed failure mechanism
+
+The persisted workspace was inspected on the remote host. The active planning
+snapshot still contained seven `verified_needle_geometry` entries and seven
+serialized trajectories; the Needle data was not lost during checkpointing or
+hydration. The failure happened later in
+`/api/planning/seeds_3d`: the route rechecked every saved automatic Needle
+against the currently hydrated CTV/OAR/Data Tree obstacle state and discarded
+each one when that state rejected the geometry. Seeds remained visible because
+their rendering path does not apply that segment-level safety filter.
+
+The active plan and shared segmentation aliases are not one transaction. A
+restart can hydrate an older plan and then publish a newer CTV/OAR or Data Tree
+selection (the reported session was explicitly marked with stale downstream
+artifacts). The old route treated that legitimate version mismatch as proof
+that the saved geometry itself was unsafe, so the Viewer appeared to have no
+Needles and the log misleadingly reported `returning 35 seeds, 0 needles`.
+
+A second representation mismatch made false rejection more likely: planning
+validates the normalized `ctv_array` plus embedded hard structures merged into
+the OAR mask, while the Viewer preferred the full multi-label CTV array when it
+performed its recheck. That is not the same safety input contract.
+
+#### Implemented repair
+
+- `tool_factory/seed_plan/planning_pipeline.py` records a versioned
+  `needle_safety_context` next to `verified_needle_geometry`. It fingerprints
+  the CT physical frame, original-grid CTV/OAR masks, and effective mandatory
+  plus Data Tree obstacle IDs. The fingerprint is persisted with the immutable
+  planning run through `web/planning_runs.py` and therefore survives restart,
+  run activation, and workspace checkpointing.
+- `web/routes/viewer_routes.py` now uses the same normalized CTV/OAR contract
+  as planning. When the current safety inputs match the stored context, the
+  exact persisted world-coordinate endpoints are revalidated as defense in
+  depth. When inputs differ, the already-validated automatic geometry remains
+  visible for review and the response marks `safety_check=stale`,
+  `plan_needs_replan=true`, and Planning as stale. It is never presented as
+  current-safe.
+- Legacy plans that predate the provenance field are shown as
+  `safety_check=legacy_verified` with the same explicit re-plan warning rather
+  than being silently emptied. This is necessary to recover the user's
+  existing plan while making the missing historical input identity visible.
+- Manual or newly edited Needle endpoints still use the current original-grid
+  fail-closed validator. A stale automatic result is review-only; it does not
+  weaken Add Needle, edit, dose, or clinical safety checks.
+- `web/app/static/js/brachybot-3d-manual.js` preserves the restored geometry,
+  exposes the stale/legacy warning once, and keeps the safety state in the
+  Planning Data Tree. The API also returns the active planning ID rather than
+  relying only on a manual-edit ID.
+
+#### Acceptance contract
+
+Completed automatic plan -> server restart -> workspace hydration -> Viewer
+reload must retain the persisted Needles. If the exact CT/CTV/OAR/obstacle
+inputs are restored, the route reports `verified` and rechecks them. If shared
+inputs have changed, the route reports `stale` and retains the geometry only as
+review material, requiring a re-plan before clinical use. Missing restore-time
+arrays are treated as pending, not as evidence that all Needles are unsafe.
+
+### 2.6 Restored label-volume export mutated a read-only array
+
+#### Confirmed failure mechanism
+
+The same restart log contained `Label volume export failed: assignment
+destination is read-only` at `web/routes/viewer_routes.py` while the endpoint
+merged embedded nnUNet labels into the OAR array. Workspace hydration restores
+large NPY sidecars as read-only memory maps. The old `astype(np.uint16,
+copy=False)` conversion was allowed to return that read-only array when its
+dtype already had sufficient width, after which `oar_array[mask] = dst_label`
+raised `ValueError`.
+
+#### Implemented repair
+
+The merge path now always creates a private C-contiguous writable `uint16`
+buffer with `np.array(..., dtype=np.uint16, copy=True, order="C")` before any
+label assignment. This changes only the temporary export buffer; it does not
+mutate the restored sidecar, alter the clinical OAR source, or change label
+IDs. Shape validation and the existing embedded-label safety policy remain in
+place.
+
+#### Acceptance contract
+
+After restart, label-volume export must complete for a restored read-only OAR
+sidecar and preserve the expected merged label values. A shape mismatch must
+still skip the merge safely rather than indexing an incompatible array.
+
 ## 3. Files changed for this incident pass
 
 Production code and assets:
@@ -210,6 +302,9 @@ Production code and assets:
 - `web/app/static/js/brachybot-chat-core.js`
 - `web/app/static/js/brachybot-chat-todo.js`
 - `web/app/index.html`
+- `tool_factory/seed_plan/planning_pipeline.py`
+- `web/planning_runs.py`
+- `web/routes/viewer_routes.py`
 
 Regression coverage:
 
@@ -218,6 +313,8 @@ Regression coverage:
 - `tests/test_round7_regressions.py`
 - `tests/test_workspace_frontend.py`
 - `tests/test_review_round6_regressions.py`
+- `tests/test_needle_obstacle_safety.py`
+- `tests/test_planning_runs.py`
 
 ## 4. Verification record
 
@@ -228,6 +325,35 @@ Regression coverage:
 - Python compilation passed for every modified Python source file.
 - JavaScript syntax checks passed for all five affected frontend scripts.
 - `git diff --check` passed for the complete incident patch.
+
+### Additional verification — restored Needle and read-only export repair
+
+- Remote commit `56ba9615fbdd847128a48cf36ffca1a73c6be479` contains the repair
+  and was pushed to `origin/codex/session-task-recovery`.
+- The focused Needle/Planning run suite passed: `23 passed`; the workspace
+  hydration and uploaded-mask suite passed: `42 passed`.
+- The complete remote repository suite passed: `745 passed, 6 skipped, 4
+  warnings in 69.02 seconds`.
+- Python compilation passed for the modified planning, Viewer, Planning run,
+  and regression-test files. Node v24 syntax checking passed for the modified
+  3D manual bundle.
+- An isolated Flask route regression with a legacy snapshot containing seven
+  saved geometries and no provenance returned the saved Needle instead of
+  dropping it, and reported `safety_check=legacy_verified` plus
+  `plan_needs_replan=true`.
+- The deployed server was restarted after the commit: old PID `2208988` was
+  terminated; new PID `2284728` started at `2026-08-26 05:29:01 +0800`, uses
+  `/home/lht/.conda/envs/brachytherapy/bin/python3.12 web/server.py
+  --host 0.0.0.0`, listens on `0.0.0.0:8080`, and serves the root page with
+  HTTP 200. The target case's background hydration completed successfully.
+- The target pre-repair snapshot was rechecked before deployment: it contained
+  seven `verified_needle_geometry` entries and seven serialized seed-plan
+  trajectories, while its legacy active run had no `needle_safety_context`.
+  This proves the incident was display-time withholding, not lost persistence.
+- The authenticated browser acceptance of the target case's `/seeds_3d`
+  response remains an operator-level check because this maintenance session did
+  not possess the user's authenticated browser cookie. No authentication
+  boundary was bypassed to manufacture that evidence.
 
 ### Automated tests
 
@@ -313,7 +439,12 @@ the original patient case in its authenticated browser context:
 4. send a chat turn and confirm the first Thinking/answer content remains fully
    visible above the composer while the workflow dock appears and folds;
 5. deliberately scroll upward during a long answer and confirm auto-follow does not
-   pull the viewport back until a new user turn is sent.
+   pull the viewport back until a new user turn is sent;
+6. reopen the target restored case and confirm all seven persisted Needles are
+   rendered; if the old legacy plan is still active, confirm the UI displays a
+   review-only re-plan warning rather than silently hiding them;
+7. trigger label-volume export on the restored case and confirm the read-only
+   sidecar merge completes without `assignment destination is read-only`.
 
 ---
 
@@ -470,6 +601,43 @@ The source repair must not be described as deployed yet:
 - BRACHYBOT_ALLOW_INSECURE_REMOTE is true.
 
 Before production use, configure TLS termination, set BRACHYBOT_COOKIE_SECURE=1, configure the intended API-key policy, remove the insecure override, restart the service, record the new PID/start time, and repeat live authentication/cookie/screenshot/quota smoke tests. Restarting the current plain-HTTP configuration without making that deployment choice would load the correctness fixes but would intentionally retain an unsafe transport posture.
+
+---
+
+## 6. Addendum — forgotten CR-19 found during live deployment smoke test
+
+When the repaired service was restarted and smoke-tested with the real HTTP
+API on 2026-08-26, an additional reachable defect surfaced that neither review
+pass had covered.
+
+### CR-19 — Terminally purging a trashed case always returned 404
+
+Confirmed issue. `DELETE /api/sessions/<session_id>/purge` always returned
+404 "Case session was not found" for a case already in trash, which is the
+exact case the endpoint exists for. Because trash retention is enforced only
+at `WorkspaceStore.__init__`, and the long-running server never reaches that
+path again, trashed cases could not be reclaimed except by restarting the
+service.
+
+Root cause. `purge_case_session` began its work with
+`assert_target_editable(user, session_id)`, whose `get_session()` call omits
+`include_trashed=True` and therefore raises `WorkspaceNotFound` for a trashed
+session — the lease guard raised the generic 404 before `permanently_delete`
+was ever reached. This regression was inherited from a pre-existing
+lease-protection addition and remained unnoticed because the review tests only
+covered active-case deletion and restore.
+
+Resolution. `web/routes/session_routes.py` — the lease assertion now runs only
+when the resolved session is still active; trashed sessions purge directly
+(ownership is still enforced inside `permanently_delete`). Regression added at
+`tests/test_workspace_auth.py:test_trashed_case_can_be_purged`, which trashes
+two cases, purges both, and verifies the active case is untouched.
+
+Verification. Focused and full suite with a clean environment: 741 passed,
+6 skipped, 2 pre-existing environment-dependent `test_brain_system` failures
+on the untouched tree (live LLM credentials present). Live check against the
+restarted service: `DELETE /api/sessions/<id>/purge` for the smoke-test case
+returned 200 and `trashed_count` dropped to 0.
 
 ---
 
@@ -13019,3 +13187,58 @@ duplicate global-declaration comment in `brachybot-3d-manual.js` documents why
 - The focused tests cover watertight STL output, realized hole metadata,
   disabled auxiliary holes, primary-sleeve wall validation, and legacy custom
   parameter compatibility.
+
+## 2026-08-26 - Current Dose/DVH Recalculation Was Misrouted to Full Planning
+
+### Confirmed issue
+
+- A request such as `可以重新计算DVH相关指标，验证和当前的结果是否一致`
+  was classified as `knowledge_query` because the interrogative marker in
+  `是否一致` took precedence over the state-changing verb. Other variants
+  could fall through to generic semantic action routing.
+- The application already had a stateful `dose_recompute` capability, but the
+  direct-execution allowlist did not include its local intent. Consequently,
+  the provider remained able to select `planning_pipeline` for a request that
+  only required refreshing Dose/DVH from the active plan.
+- The old re-plan detector used a loose character gap between `重新` and
+  `规划`. It therefore treated `重新计算当前规划方案的 DVH` as a re-plan,
+  even though `规划方案` was only the object being evaluated.
+- The existing high-level dose tool correctly reused the active
+  Needle/Seed snapshot, but it did not expose a before/after metric
+  consistency result. A live metrics dictionary could also be mutated in
+  place during inference, so the comparison snapshot must be materialized
+  before computation.
+
+### Resolution
+
+- Added an explicit `dose_recompute` local intent for unambiguous current
+  Dose/DVH refresh requests in Chinese and English. It is a direct,
+  single-tool grant for `dose_recompute`, with no router, completeness pass,
+  segmentation, trajectory generation, or planning-pipeline dependency.
+- Added the same boundary to the streaming and non-streaming direct paths and
+  to clinical tool normalization. If a provider emits `planning_pipeline` for
+  this request, the runtime reduces the call to the registered high-level
+  `dose_recompute` tool rather than executing the wrong workflow.
+- Tightened re-plan recognition so the re-plan action is adjacent to the
+  planning verb (`重新规划`, `再规划`, `rerun the plan`, etc.). Explicit
+  re-planning still retains the full planning contract.
+- `dose_recompute` now snapshots the numeric Dose/DVH metrics before the
+  authoritative manual dose calculation, compares overlapping values using
+  documented numeric tolerances, returns the comparison in structured data,
+  and renders a localized consistency/changed/unavailable summary.
+- Focused Dose/DVH results bypass a second LLM synthesis because the tool
+  formatter is already complete and authoritative. This removes an avoidable
+  model call and prevents a synthesis response from obscuring the actual
+  recomputation result.
+
+### Verification
+
+- Focused dose/recompute, current-result, authorization, and runtime contract
+  tests: `66 passed` before the final in-place-mutation regression adjustment;
+  the final dose-recompute suite: `10 passed`.
+- Full remote regression suite: `749 passed, 6 skipped, 4 warnings`.
+- Classification checks confirm that current Dose/DVH refresh phrases route to
+  `dose_recompute`, read-only current-dose questions remain
+  `case_dose_query`, and explicit re-planning remains `semantic_action`.
+- A regression test verifies that a provider-emitted `planning_pipeline` call
+  is normalized to `dose_recompute` for the affected request.
