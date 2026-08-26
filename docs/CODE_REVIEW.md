@@ -13319,6 +13319,11 @@ duplicate global-declaration comment in `brachybot-3d-manual.js` documents why
   the browser re-submits the source upload. The staging operation is
   idempotent, so an already staged/promoted source is not duplicated and a
   promoted CTV is preserved when its source collection is present.
+- Bumped the cache-busting query versions for the three changed classic
+  scripts in `web/app/index.html` (`ui-api` 44 to 45, `viewer-volume` 38 to 39,
+  and `manual-annotation` 16 to 17). A browser or reverse proxy can therefore
+  receive the hydration-aware client instead of serving a cached pre-fix
+  bundle after the server restart.
 
 ### Why this matches the requested UI behavior
 
