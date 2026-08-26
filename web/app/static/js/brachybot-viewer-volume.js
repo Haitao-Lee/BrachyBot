@@ -343,10 +343,28 @@ async function loadVolumeData(options = {}) {
                 signal: ctrl.signal,
             });
         } finally { clearTimeout(timer); }
-        if (res.status === 202) {
+        const volumePayload = (res.status === 202 || res.status === 429)
+            ? await res.clone().json().catch(() => ({}))
+            : {};
+        const volumeRetryable = res.status === 202
+            || (res.status === 429 && volumePayload.code === 'rate_limit_exceeded');
+        if (volumeRetryable) {
             if (volumeRetryAttempt >= 60) throw new Error('Case resources are still loading');
-            const retryAfter = Number(res.headers.get('Retry-After-Ms') || 250);
-            await new Promise(resolve => setTimeout(resolve, Math.max(100, Math.min(1000, retryAfter))));
+            const retryAfter = Number(
+                volumePayload.retry_after_ms
+                || res.headers.get('Retry-After-Ms')
+                || 1000,
+            );
+            await new Promise(resolve => setTimeout(
+                resolve,
+                Math.max(
+                    1000,
+                    Math.min(
+                        res.status === 429 ? 60000 : 5000,
+                        Number.isFinite(retryAfter) ? retryAfter : 1000,
+                    ),
+                ),
+            ));
             return loadVolumeData({ ...options, _volumeRetryAttempt: volumeRetryAttempt + 1 });
         }
         if (!res.ok) throw new Error('Failed to load volume');
@@ -424,8 +442,27 @@ async function hydrateOarDataTreeFromServer(expectedGeneration, expectedSessionI
             response = await fetch(API + '/viewer/organs', {
                 headers: _viewerDataHeaders(sessionId),
             });
-            if (response.status !== 202 || attempt >= 60) break;
-            await new Promise(resolve => setTimeout(resolve, Math.min(1000, 150 + attempt * 25)));
+            const organsPayload = (response.status === 202 || response.status === 429)
+                ? await response.clone().json().catch(() => ({}))
+                : {};
+            const organsRetryable = response.status === 202
+                || (response.status === 429 && organsPayload.code === 'rate_limit_exceeded');
+            if (!organsRetryable || attempt >= 60) break;
+            const retryAfter = Number(
+                organsPayload.retry_after_ms
+                || response.headers.get('Retry-After-Ms')
+                || 1000,
+            );
+            await new Promise(resolve => setTimeout(
+                resolve,
+                Math.max(
+                    1000,
+                    Math.min(
+                        response.status === 429 ? 60000 : 5000,
+                        Number.isFinite(retryAfter) ? retryAfter : 1000,
+                    ),
+                ),
+            ));
         }
         if (!response.ok) return false;
         const payload = await response.json();
@@ -820,16 +857,27 @@ async function hydrateGenericMasksFromServer(scope, retryAttempt = 0) {
         const response = await fetch(API + '/viewer/generic_masks', {
             headers: _viewerDataHeaders(scope.sessionId),
         });
-        if (response.status === 202) {
+        const catalogPayload = (response.status === 202 || response.status === 429)
+            ? await response.clone().json().catch(() => ({}))
+            : {};
+        const catalogRetryable = response.status === 202
+            || (response.status === 429 && catalogPayload.code === 'rate_limit_exceeded');
+        if (catalogRetryable) {
             // A tool-completion event can arrive just before the workspace
             // checkpoint exposes the binary mask. Keep the same session and
             // data-generation scope while the server finishes that small
             // commit; otherwise a valid mask would be absent from the tree
             // until the user changes session or slice.
             if (retryAttempt >= 80) return false;
+            const retryAfter = Number(
+                catalogPayload.retry_after_ms
+                || response.headers.get('Retry-After-Ms')
+                || 1000,
+            );
+            const maxDelay = response.status === 429 ? 60000 : 5000;
             await new Promise(resolve => setTimeout(
                 resolve,
-                Math.min(1000, 150 + retryAttempt * 20),
+                Math.max(1000, Math.min(maxDelay, Number.isFinite(retryAfter) ? retryAfter : 1000)),
             ));
             return hydrateGenericMasksFromServer(scope, retryAttempt + 1);
         }
@@ -886,10 +934,21 @@ async function hydrateGenericMasksFromServer(scope, retryAttempt = 0) {
                         API + '/viewer/generic_mask_volume?mask_id=' + encodeURIComponent(id),
                         { headers: _viewerDataHeaders(scope.sessionId) },
                     );
-                    if (volumeResponse.status !== 202 || attempt >= 80) break;
+                    const volumePayload = (volumeResponse.status === 202 || volumeResponse.status === 429)
+                        ? await volumeResponse.clone().json().catch(() => ({}))
+                        : {};
+                    const volumeRetryable = volumeResponse.status === 202
+                        || (volumeResponse.status === 429 && volumePayload.code === 'rate_limit_exceeded');
+                    if (!volumeRetryable || attempt >= 80) break;
+                    const retryAfter = Number(
+                        volumePayload.retry_after_ms
+                        || volumeResponse.headers.get('Retry-After-Ms')
+                        || 1000,
+                    );
+                    const maxDelay = volumeResponse.status === 429 ? 60000 : 5000;
                     await new Promise(resolve => setTimeout(
                         resolve,
-                        Math.min(1000, 150 + attempt * 20),
+                        Math.max(1000, Math.min(maxDelay, Number.isFinite(retryAfter) ? retryAfter : 1000)),
                     ));
                 }
                 if (!volumeResponse.ok) throw new Error(`HTTP ${volumeResponse.status}`);
@@ -1392,7 +1451,10 @@ async function _retryLabelVolumeLoad(options, attempt) {
         uiDebugLog('Label volume restore timed out; keeping the current viewer state');
         return false;
     }
-    await new Promise(resolve => setTimeout(resolve, Math.min(1000, 150 + attempt * 25)));
+    await new Promise(resolve => setTimeout(
+        resolve,
+        Math.max(1000, Math.min(5000, 1000 + attempt * 50)),
+    ));
     return loadLabelVolumes({ ...options, _labelVolumeRetryAttempt: attempt });
 }
 

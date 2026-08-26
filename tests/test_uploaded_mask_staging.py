@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import threading
+import time
 
 import numpy as np
 import SimpleITK as sitk
@@ -167,3 +168,40 @@ def test_uploaded_mask_frontend_keeps_hydration_and_staging_contract():
     assert "metadata.kind || existing.kind" in viewer
     assert "stage_uploaded_ctv_mask" in routes
 
+
+def test_rate_limit_retry_contract_waits_for_the_oldest_request_to_expire():
+    from web import server_support
+
+    client_ip = "uploaded-mask-rate-limit-test"
+    now = time.time()
+    with server_support._rate_limit_lock:
+        previous_store = dict(server_support._rate_limit_store)
+        server_support._rate_limit_store[client_ip] = [now - 1.0, now - 0.5]
+    try:
+        old_requests = server_support.RATE_LIMIT_REQUESTS
+        old_window = server_support.RATE_LIMIT_WINDOW
+        server_support.RATE_LIMIT_REQUESTS = 2
+        server_support.RATE_LIMIT_WINDOW = 60
+        retry_after_ms = server_support._rate_limit_retry_after_ms(client_ip)
+    finally:
+        server_support.RATE_LIMIT_REQUESTS = old_requests
+        server_support.RATE_LIMIT_WINDOW = old_window
+        with server_support._rate_limit_lock:
+            server_support._rate_limit_store.clear()
+            server_support._rate_limit_store.update(previous_store)
+
+    assert 58_000 <= retry_after_ms <= 60_000
+
+
+def test_rate_limit_aware_upload_retry_does_not_poll_faster_than_the_limiter():
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    ui_api = (root / "web/app/static/js/brachybot-ui-api.js").read_text(encoding="utf-8")
+    server_support = (root / "web/server_support.py").read_text(encoding="utf-8")
+
+    assert "_segmentationHydrationInFlight" in ui_api
+    assert "payload.code === 'rate_limit_exceeded'" in ui_api
+    assert "Math.max(1000" in ui_api
+    assert '"code": "rate_limit_exceeded"' in server_support
+    assert '"Retry-After-Ms"' in server_support

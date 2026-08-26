@@ -2823,6 +2823,26 @@ def _check_rate_limit(client_ip: str) -> bool:
         return True
 
 
+def _rate_limit_retry_after_ms(client_ip: str) -> int:
+    """Return the server-side wait needed before the next request is safe.
+
+    The browser uses this value when a hydration poller temporarily trips the
+    per-IP limiter.  Returning the time until the oldest retained timestamp
+    expires prevents a client from retrying at a fixed high frequency and
+    turning a recoverable control-plane response into a permanent 429 loop.
+    """
+    now = datetime.now().timestamp()
+    with _rate_limit_lock:
+        timestamps = [
+            timestamp for timestamp in _rate_limit_store.get(client_ip, [])
+            if now - timestamp < RATE_LIMIT_WINDOW
+        ]
+        if len(timestamps) < RATE_LIMIT_REQUESTS or not timestamps:
+            return 1000
+        wait_seconds = max(1.0, RATE_LIMIT_WINDOW - (now - min(timestamps)))
+        return int(math.ceil(wait_seconds * 1000.0))
+
+
 def _client_ip_for_rate_limit() -> str:
     """Honor proxy headers only when the deployment explicitly trusts them."""
     if os.environ.get("BRACHYBOT_TRUST_PROXY", "").lower() in TRUE_VALUES:
@@ -3077,7 +3097,17 @@ def rate_limit(f):
         if not _TRUST_NETWORK:
             client_ip = _client_ip_for_rate_limit()
             if not _check_rate_limit(client_ip):
-                return jsonify({"error": "Rate limit exceeded"}), 429
+                retry_after_ms = _rate_limit_retry_after_ms(client_ip)
+                response = jsonify({
+                    "success": False,
+                    "error": "Rate limit exceeded",
+                    "message": "Too many requests; retry after the indicated interval.",
+                    "code": "rate_limit_exceeded",
+                    "retry_after_ms": retry_after_ms,
+                })
+                response.headers["Retry-After-Ms"] = str(retry_after_ms)
+                response.headers["Retry-After"] = str(max(1, math.ceil(retry_after_ms / 1000.0)))
+                return response, 429
         return f(*args, **kwargs)
     return decorated
 

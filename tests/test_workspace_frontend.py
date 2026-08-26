@@ -382,9 +382,9 @@ def test_workspace_transitions_publish_measurable_first_paint_and_restore_stages
     # Versioned URLs are intentional cache invalidation points. Keep this
     # assertion aligned with the workspace/report artifact restore contract.
     assert "brachybot-workspace.js?v=35" in index
-    assert "brachybot-ui-api.js?v=45" in index
-    assert "brachybot-viewer-volume.js?v=39" in index
-    assert "brachybot-manual-annotation.js?v=17" in index
+    assert "brachybot-ui-api.js?v=46" in index
+    assert "brachybot-viewer-volume.js?v=40" in index
+    assert "brachybot-manual-annotation.js?v=18" in index
 
 
 def test_case_owned_api_requests_never_use_presentation_placeholders():
@@ -661,7 +661,9 @@ def test_uploaded_oar_mask_is_a_numbered_traversable_data_tree_source():
     assert "const uploadedUnknownSource = new Set" in viewer
     assert "`OAR ${i + 1}`" in viewer
     assert "'X-BrachyBot-Session': ownerSessionId" in manual or "sessionHeaders['X-BrachyBot-Session']" in manual
-    assert "res.status !== 202" in manual
+    assert "const hydrationPending = res.status === 202" in manual
+    assert "const rateLimited = res.status === 429" in manual
+    assert "!hydrationPending && !rateLimited" in manual
     assert "const ownerSessionId" in manual
     assert "const isCurrentOwner = () => ownerSessionId" in manual
     assert "sessionId: ownerSessionId" in manual
