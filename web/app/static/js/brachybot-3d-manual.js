@@ -3330,7 +3330,10 @@ function addMeshToScene(meshData) {
     // Threshold/manual masks are owned by state.maskLabels, not by the
     // Planning result. Keep the 3D object and the mask Data Tree node in
     // sync, but never leak it into Planning -> 3D meshes.
-    const isMaskMesh = String(meshData.source || '') === 'mask' || String(id).startsWith('mask_');
+    const isMaskMesh = String(meshData.source || '') === 'mask'
+        || (typeof window.isDataTreeMaskId === 'function'
+            ? window.isDataTreeMaskId(id)
+            : String(id).startsWith('mask_') || String(id).startsWith('mask:'));
     const isSkinSurfaceMesh = String(meshData.source || '') === 'skin_surface'
         || String(id) === 'skin_surface';
     if (isSkinSurfaceMesh) {
@@ -3351,7 +3354,9 @@ function addMeshToScene(meshData) {
         renderDataTree?.();
         window.applyDataTreeViewVisibility?.();
     } else if (isMaskMesh) {
-        const mask = typeof state !== 'undefined' ? state.maskLabels?.[id] : null;
+        const mask = typeof window.getDataTreeMaskState === 'function'
+            ? window.getDataTreeMaskState(id)
+            : (typeof state !== 'undefined' ? state.maskLabels?.[id] : null);
         if (mask) {
             mask.objectId = meshData.object_id || mask.objectId || `mask:${id}`;
             mask.meshLoaded = true;

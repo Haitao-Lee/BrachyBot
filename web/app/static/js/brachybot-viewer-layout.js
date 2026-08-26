@@ -1155,12 +1155,24 @@ async function reconstructOrgan3D(id, silent = false) {
                 if (c.startsWith('#')) { color = parseInt(c.slice(1), 16); }
                 else { const m = c.match(/(\d+)/g); color = m ? (parseInt(m[0]) << 16 | parseInt(m[1]) << 8 | parseInt(m[2])) : 0x0ea5e9; }
             } else { color = 0x0ea5e9; }
-        } else if (id.startsWith('mask_')) {
-            const mask = state.maskLabels?.[id];
+        } else if (
+            (typeof window.isDataTreeMaskId === 'function'
+                ? window.isDataTreeMaskId(id)
+                : id.startsWith('mask_') || id.startsWith('mask:'))
+        ) {
+            const mask = typeof window.getDataTreeMaskState === 'function'
+                ? window.getDataTreeMaskState(id)
+                : state.maskLabels?.[id];
             if (mask?.kind === 'threshold' && Number.isFinite(Number(mask.threshold))) {
                 return _reconstructThresholdMask3D(id, silent);
             }
-            if (mask?.kind === 'generic_segmentation') {
+            const isGenericMask = !!mask && (
+                mask.kind === 'generic_segmentation'
+                || mask.kind === 'uploaded_mask_label'
+                || mask.source === 'uploaded_mask'
+                || mask.upload_mask_id
+            );
+            if (isGenericMask) {
                 // Generic BiomedParse masks are persisted server-side. Use
                 // the stable mask ID instead of the display name and keep the
                 // exact binary boundary so 3D matches the 2D overlay.

@@ -614,8 +614,8 @@ def test_needle_render_scheduler_survives_mixed_static_asset_revisions():
     # Keep this contract aligned with the actual cache-busting revisions in
     # index.html. A stale assertion here falsely reports a deployment bug and
     # hides whether the endpoint interaction bundle is really versioned.
-    assert "brachybot-viewer-layout.js?v=31" in index
-    assert "brachybot-3d-manual.js?v=64" in index
+    assert "brachybot-viewer-layout.js?v=32" in index
+    assert "brachybot-3d-manual.js?v=65" in index
     assert "scene3D.requestRender(1)" in layout
     assert "scene3D.requestRender(2)" in layout
     assert "window.requestRender = requestRender;" in manual
@@ -704,8 +704,8 @@ def test_dose_overlay_opacity_is_invariant_during_slice_scrubbing():
     assert "_composite2DViewerCanvas(cfg.ax, { doseOpacity: 0.75 })" in report_editor
     assert "_composite2DViewerCanvas(cfg.ax, { doseOpacity: 0.75 })" in dvh_planning
     assert "_composite2DViewerCanvas(a.ax, { doseOpacity: 0.7 })" in ui_api
-    assert "brachybot-viewer-volume.js?v=40" in index
-    assert "brachybot-3d-manual.js?v=64" in index
+    assert "brachybot-viewer-volume.js?v=41" in index
+    assert "brachybot-3d-manual.js?v=65" in index
     assert "brachybot-manual-annotation.js?v=18" in index
 
 

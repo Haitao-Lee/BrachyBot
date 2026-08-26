@@ -13414,3 +13414,92 @@ error and the unsafe automatic label selection are two independent defects.
   oldest request's expiration rather than a fixed short delay. Static frontend
   tests confirm the 429 code branch, one-second minimum, and single-flight
   guard are present.
+
+## 2026-08-26 - Upload Mask label controls were disconnected by the new durable IDs
+
+### Confirmed issue
+
+The Upload Mask group could be rendered in the Data Tree, but the controls on
+its individual label rows did not change the underlying display state. The
+failure was silent: clicking a label eye did not hide its 2D overlay or 3D
+mesh, and the row opacity/color controls, per-label context menu, UI command
+bridge, and some batch actions could also appear to do nothing.
+
+This was not caused by the uploaded voxel data, the multi-label staging
+contract, or a loss of presentation state during restart. The group-level
+Upload Mask actions already used _maskBelongsToGroup() and therefore could
+find the children. The defect was specifically in the individual-node
+identity routing.
+
+### Root cause
+
+web/uploaded_mask_service.py intentionally assigns each uploaded positive
+label a durable ID of the form
+upload_mask_<digest>_label_<label>. This ID is the correct source-child
+identity and is different from the historical manual-mask spellings
+mask_<id> and mask:<id>.
+
+Several independent viewer paths still used only those old prefixes as a
+type test:
+
+- renderTreeItem() did not classify an uploaded child as a mask
+  sub-item/3D-capable row.
+- toggleDataVisibility() and setDataOpacity() never entered their mask
+  branches. They fell through to dataTreeState[id], where no top-level
+  property exists, and returned without a state mutation.
+- Color lookup, mesh appearance synchronization, selection grouping, and
+  the UI-controller setDataItemVisibility() path could not resolve the
+  uploaded child to state.maskLabels.
+- Right-click classification therefore did not expose the mask-specific
+  Rename, 3D Reconstruct, Move to CTV/OAR, Delete, and color actions for the
+  new IDs. Batch opacity/visibility and object-id mutation reconciliation had
+  the same prefix assumption.
+- The individual 3D reconstruction path accepted only mask_*, so an
+  uploaded child could be hydrated as a ready generic mask but still fail to
+  produce its standalone 3D mesh when explicitly reconstructed.
+
+Because these paths returned normally instead of throwing, the UI gave no
+diagnostic indication that the clicked control had been ignored.
+
+### Resolution
+
+- Added _isDataTreeMaskId() to
+  web/app/static/js/brachybot-viewer-volume.js. It recognizes the two legacy
+  spellings for backward compatibility and, importantly, resolves any ID
+  present in the live state.maskLabels registry. The helper is exposed as
+  the cross-script window.isDataTreeMaskId contract together with the
+  canonical window.getDataTreeMaskState resolver.
+- Routed every individual mask operation through that identity contract:
+  rendering/indentation, visibility, opacity, color, 3D mesh appearance,
+  selection grouping, context-menu classification, rename, delete/move
+  object-ID conversion, batch actions, group opacity mesh lookup, and the
+  UI-controller visibility setter.
+- Updated web/app/static/js/brachybot-viewer-layout.js so an uploaded label
+  is treated as a persisted generic mask when the user requests 3D
+  reconstruction. Updated web/app/static/js/brachybot-3d-manual.js so the
+  resulting mesh remains associated with the same Data Tree mask node rather
+  than being incorrectly mirrored as a Planning mesh.
+- The 2D path continues to use the mask's own visible and visible2D values,
+  while the 3D path uses visible and visible3D. The parent
+  Segmentation/Upload Mask group constraint remains enforced, so hiding a
+  parent still hides descendants and changing a child does not mutate
+  sibling labels.
+- Bumped the classic-script cache versions in web/app/index.html to
+  viewer-volume.js?v=41, viewer-layout.js?v=32, and
+  3d-manual.js?v=65. The unchanged UI API and manual annotation bundles
+  remain at v46 and v18.
+
+### Verification
+
+- Focused Upload Mask, Data Tree, viewer frontend, round-6, and round-7
+  regression tests: 227 passed, 3 warnings.
+- Python compilation and git diff --check passed.
+- JavaScript syntax checks passed for the exact remote versions of
+  brachybot-viewer-volume.js, brachybot-viewer-layout.js, and
+  brachybot-3d-manual.js using the local Node validation executable.
+- Static assertions verify the new registry-based resolver, uploaded-label
+  handling, cross-script 3D routing, and cache-busting versions.
+- Existing source-first behavior remains covered: upload creates a parent
+  Upload Mask collection plus binary label children; no official CTV is
+  selected automatically; explicit Move to CTV/OAR remains the only promotion
+  path.
