@@ -2926,17 +2926,21 @@ async function _restoreActiveSessionWorkspace(options = {}) {
         : Promise.resolve();
 
     const planningStartedAt = typeof performance !== 'undefined' ? performance.now() : Date.now();
-    const planningTask = (hasPlanning && typeof refreshPlanningUI === 'function')
-        ? Promise.resolve(refreshPlanningUI({
-            switchToViewers: false,
-            sessionId: sessionAtStart,
-            preserveViewerState: true,
-            skipLabelLoad: true,
-            backgroundRestore: options.background === true,
-            retryPending: true,
-            autoGenerateGuide: true,
-        })).finally(() => recordStage('restore.planning_dvh', planningStartedAt))
-        : Promise.resolve();
+    const planningTask = (
+        hasPlanning
+            ? (typeof refreshPlanningUI === 'function'
+                ? Promise.resolve(refreshPlanningUI({
+                    switchToViewers: false,
+                    sessionId: sessionAtStart,
+                    preserveViewerState: true,
+                    skipLabelLoad: true,
+                    backgroundRestore: options.background === true,
+                    retryPending: true,
+                    autoGenerateGuide: true,
+                }))
+                : Promise.reject(new Error('Planning restore loader is unavailable')))
+            : Promise.resolve({ success: true, skipped: true })
+    ).finally(() => recordStage('restore.planning_dvh', planningStartedAt));
 
     // A segmentation-only case still needs real 3D objects. Planning refresh
     // also starts this loader, so only launch the independent path when no
@@ -2954,6 +2958,12 @@ async function _restoreActiveSessionWorkspace(options = {}) {
     const [labelResult, planningResult] = restoreResults;
     if (labelResult.status === 'rejected') throw labelResult.reason;
     if (planningResult.status === 'rejected') throw planningResult.reason;
+    if (hasPlanning && planningResult.value?.success !== true) {
+        throw new Error(
+            planningResult.value?.error
+            || 'Planning restore did not produce the required planning data',
+        );
+    }
     // The planning result request and the compact registry hydrate on
     // separate server paths. Wait for the registry's own retry loop before
     // painting the final Data Tree; otherwise a late 202/empty response can
@@ -2968,7 +2978,13 @@ async function _restoreActiveSessionWorkspace(options = {}) {
     }
     const expectsLabels = ['ctv_array', 'ctv_mask', 'oar_array'].some(key => storedKeys.has(key));
     if (expectsLabels && labelResult.value !== true) {
-        throw new Error(`Segmentation restore did not produce label volumes for session ${sessionAtStart}`);
+        // Labels and planning are independent products. A transient label
+        // failure must not erase a valid plan or prevent seeds/dose/guide from
+        // becoming interactive; the next session restore can retry labels.
+        console.warn(
+            '[session restore] label volumes unavailable; continuing with planning restore',
+            sessionAtStart,
+        );
     }
     await _yield();
 
@@ -3171,14 +3187,24 @@ async function init() {
     // Wait for /status (needed by UI below); config defaults are background-only.
     await _statusPromise;
 
+    // loadSessions() may already have scheduled the authoritative clinical
+    // restore before this init pass reaches the legacy startup reset. Never
+    // clear planning arrays, dose state, or meshes after that hand-off: doing
+    // so races the restore and leaves only the compact Planning history shell.
+    const startupClinicalRestoreScheduled =
+        String(window.__workspaceRestoreScheduledSessionId || '') === String(activeSessionId || '')
+        || String(window.__workspaceRestoreCompletedSessionId || '') === String(activeSessionId || '');
+
     // Clear frontend state (runs once per page load)
     if (!window._stateCleared) {
         window._stateCleared = true;
-        state.seeds = [];
-        state.dvhData = null;
-        state.metrics = {};
-        state.plan3D = null;
-        state.mesh3D = null;
+        if (!startupClinicalRestoreScheduled) {
+            state.seeds = [];
+            state.dvhData = null;
+            state.metrics = {};
+            state.plan3D = null;
+            state.mesh3D = null;
+        }
         window._pipelineShown = false;
         window._pipelineBlock = null;
     }
@@ -3196,6 +3222,7 @@ async function init() {
     imageAnalysisData.ct = null;
     imageAnalysisData.ctv = null;
     imageAnalysisData.oar = null;
+    if (!startupClinicalRestoreScheduled) {
     // Clear data tree planning state
     dataTreeState.planning.seeds = [];
     dataTreeState.planning.needles = [];
@@ -3266,6 +3293,7 @@ async function init() {
     renderDataTree();
     // Hide colorbars (all 3 viewers)
     document.querySelectorAll('.dose-colorbar').forEach(el => { el.style.display = 'none'; });
+    }
     // Clinical state is restored from the authenticated workspace below.
     // New cases remain empty; existing cases rehydrate their own CT, masks,
     // planning arrays, Data Tree, viewer state, DVH, and report.

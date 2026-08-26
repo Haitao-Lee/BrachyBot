@@ -2020,6 +2020,10 @@ def register_planning_routes(
                 {},
             )
             artifact_status = agent.memory.retrieve("manual_artifact_status") or {}
+            guide_payload = agent.memory.retrieve("surgical_guide")
+            skin_payload = agent.memory.retrieve("skin_surface")
+            has_dvh = bool(isinstance(dvh_data, dict) and dvh_data)
+            has_metrics = bool(isinstance(dose_metrics, dict) and dose_metrics)
             return jsonify({
                 "success": True,
                 "planning_id": current_planning_id,
@@ -2035,7 +2039,11 @@ def register_planning_routes(
                 "num_trajectories": num_trajectories,
                 "has_trajectories": bool(trajectories) or len(trajectories_data) > 0,
                 "dvh": dvh_data,
+                "has_dvh": has_dvh,
+                "has_metrics": has_metrics,
                 "has_dose": dose_for_stats is not None,
+                "has_guide": bool(active_run.get("has_guide") or isinstance(guide_payload, dict)),
+                "has_skin": bool(active_run.get("has_skin") or skin_payload is not None),
                 "dose_shape": dose_shape,
                 "dose_min": dose_min,
                 "dose_max": dose_max,
