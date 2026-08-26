@@ -12,12 +12,70 @@ Dose/DVH state under that Planning.
 from __future__ import annotations
 
 import logging
+import math
 from typing import Any, Dict, Optional
 
 from tool_factory import BaseTool, ToolResult
 
 
 logger = logging.getLogger(__name__)
+
+
+def _numeric_metric_map(value: Any, prefix: str = "") -> Dict[str, float]:
+    """Flatten numeric Dose/DVH metric values for a stable comparison."""
+    if not isinstance(value, dict):
+        return {}
+    result: Dict[str, float] = {}
+    for key, item in value.items():
+        name = f"{prefix}.{key}" if prefix else str(key)
+        if isinstance(item, dict):
+            result.update(_numeric_metric_map(item, name))
+            continue
+        if isinstance(item, bool):
+            continue
+        try:
+            number = float(item)
+        except (TypeError, ValueError):
+            continue
+        if math.isfinite(number):
+            result[name] = number
+    return result
+
+
+def _compare_metrics(previous: Any, current: Any) -> Dict[str, Any]:
+    """Compare overlapping numeric metrics without comparing geometry or masks."""
+    before = _numeric_metric_map(previous)
+    after = _numeric_metric_map(current)
+    shared = sorted(set(before).intersection(after))
+    if not shared:
+        return {
+            "status": "unavailable",
+            "compared_count": 0,
+            "changed_metrics": [],
+            "message": "No overlapping numeric Dose/DVH metrics were available before recomputation.",
+        }
+
+    changed = []
+    for name in shared:
+        old = before[name]
+        new = after[name]
+        if not math.isclose(old, new, rel_tol=1e-4, abs_tol=1e-3):
+            changed.append({
+                "name": name,
+                "previous": old,
+                "current": new,
+                "delta": new - old,
+            })
+    return {
+        "status": "consistent" if not changed else "changed",
+        "compared_count": len(shared),
+        # Keep the durable trace compact even if a provider adds many OAR
+        # metrics. The status/count still account for every overlapping key.
+        "changed_metrics": changed[:32],
+        "changed_count": len(changed),
+        "relative_tolerance": 1e-4,
+        "absolute_tolerance": 1e-3,
+    }
 
 
 def _ensure_ct_runtime(agent: Any) -> None:
@@ -116,6 +174,10 @@ class CurrentPlanDoseRecomputeTool(BaseTool):
                     "type": "string",
                     "description": "Optional internal-facing reason summary for the persisted operation.",
                 },
+                "compare_with_previous": {
+                    "type": "boolean",
+                    "description": "Compare new Dose/DVH metrics with those already stored for this Planning.",
+                },
             },
             "additionalProperties": False,
         }
@@ -131,6 +193,7 @@ class CurrentPlanDoseRecomputeTool(BaseTool):
                 "metrics": {"type": "object"},
                 "dvh_data": {"type": "object"},
                 "artifact_status": {"type": "object"},
+                "comparison": {"type": "object"},
             },
         }
 
@@ -197,6 +260,11 @@ class CurrentPlanDoseRecomputeTool(BaseTool):
             planning_label = str(
                 current_summary.get("label") or current_id
             )
+            # Materialize the numeric snapshot before inference. The shared
+            # manual dose path may update the existing metrics dict in place;
+            # retaining the live object here would make every before/after
+            # comparison appear falsely consistent.
+            previous_metrics = _numeric_metric_map(memory.retrieve("dose_metrics"))
             snapshot = _current_planning_snapshot(agent)
             seeds = list(snapshot.get("seeds") or [])
             needles = list(snapshot.get("needles") or [])
@@ -229,6 +297,12 @@ class CurrentPlanDoseRecomputeTool(BaseTool):
             payload = dict(payload or {})
             payload["planning_id"] = str(current_id)
             payload["reason"] = str(kwargs.get("reason") or "chat dose recomputation")
+            current_metrics = payload.get("metrics") or memory.retrieve("dose_metrics") or {}
+            comparison = (
+                _compare_metrics(previous_metrics, current_metrics)
+                if kwargs.get("compare_with_previous", True)
+                else {"status": "not_requested", "compared_count": 0, "changed_metrics": []}
+            )
 
             # Publish only after all Dose/DVH/metric aliases have been written
             # by the shared computation path.  A failed inference therefore
@@ -241,6 +315,7 @@ class CurrentPlanDoseRecomputeTool(BaseTool):
                     "metrics": payload.get("metrics") or memory.retrieve("dose_metrics") or {},
                     "dvh_data": memory.retrieve("dvh_data") or {},
                     "artifact_status": payload.get("artifact_status") or memory.retrieve("manual_artifact_status") or {},
+                    "comparison": comparison,
                 },
                 message=(
                     "已根据当前 Planning 重新计算剂量和 DVH。"
@@ -257,6 +332,7 @@ class CurrentPlanDoseRecomputeTool(BaseTool):
                     "dose_units": payload.get("dose_units") or memory.retrieve("dose_units"),
                     "dose_scale_gy": payload.get("dose_scale_gy") or memory.retrieve("dose_scale_gy"),
                     "dose_range_gy": payload.get("dose_range_gy"),
+                    "comparison": comparison,
                 },
             )
             publish_planning_run(agent, result, status="completed")

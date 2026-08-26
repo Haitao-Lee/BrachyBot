@@ -156,7 +156,11 @@ def is_planning_reexecution_request(message: str) -> bool:
     if not text:
         return False
     explicit = bool(re.search(
-        r"(?:\u91cd\u65b0|\u518d\u6b21|\u518d|\u91cd\u505a|\u91cd\u8dd1|\u91cd\u65b0\u6267\u884c).{0,12}(?:\u89c4\u5212|\u8ba1\u5212)|"
+        # Keep the planning verb adjacent to the re-execution verb. A loose
+        # gap here misclassified "重新计算当前规划方案的 DVH" as re-planning
+        # simply because the noun "规划方案" appeared later in the sentence.
+        r"(?:\u91cd\u65b0|\u518d\u6b21|\u518d|\u91cd\u505a|\u91cd\u8dd1)"
+        r"(?:\u6267\u884c|\u8fdb\u884c|\u5f00\u59cb|\u505a)?\s*(?:\u89c4\u5212|\u8ba1\u5212)|"
         r"\b(?:replan|re-plan|rerun(?: the)? plan|rerun planning)\b",
         text,
         flags=re.IGNORECASE,
@@ -412,6 +416,74 @@ def _is_current_case_dose_query(message: str) -> bool:
         and not any(term in text for term in standards_terms)
         and not (mutation_request and not calculated_result_noun)
     )
+
+
+def is_current_case_dose_recompute_request(message: str) -> bool:
+    """Identify an explicit request to refresh the active plan's Dose/DVH.
+
+    This is intentionally separate from ``_is_current_case_dose_query``. The
+    latter is a read-only Session query, while this predicate authorizes one
+    focused stateful operation: recomputing Dose/DVH from the already
+    persisted Needle/Seed geometry. It must not classify a request to
+    re-plan, segment, or generate a guide as a dose refresh.
+
+    The predicate is used before provider routing and again at the clinical
+    tool-normalization boundary. The second use prevents a provider from
+    turning an unambiguous current-dose request into a full
+    ``planning_pipeline`` call when an earlier wording variant was missed.
+    """
+    text = re.sub(r"\s+", " ", str(message or "").strip().lower())
+    if not text:
+        return False
+
+    # An explicit geometry/planning replacement remains a full planning
+    # workflow, even when Dose/DVH is mentioned as the expected output.
+    if is_planning_reexecution_request(text):
+        return False
+    if _contains_any(text, (
+        "segment", "segmentation", "ctv", "oar", "needle", "seed", "guide",
+        "分割", "靶区", "危及器官", "针道", "粒子", "导板",
+    )) and _contains_any(text, (
+        "规划", "计划", "replan", "plan", "planning",
+    )):
+        return False
+
+    # A second mutating operation belongs to semantic planning. Verification
+    # wording in the same clause ("重算并核对") is allowed because the dose
+    # tool reports a before/after consistency result itself.
+    if _looks_like_compound_action(text) and not _contains_any(text, (
+        "验证", "校验", "核对", "核验", "一致", "compare", "verify", "consistent",
+    )):
+        return False
+
+    has_dose_object = bool(re.search(
+        r"(?:dvh|dose(?:[-\s]volume)?(?:\s+metrics?)?|dose\s+metrics?|"
+        r"剂量|剂量分布|剂量结果|剂量指标|剂量相关指标)",
+        text,
+        flags=re.IGNORECASE,
+    ))
+    if not has_dose_object or _contains_any(text, (
+        "guideline", "standard", "constraint", "limit", "tolerance",
+        "recommendation", "prescription", "指南", "标准", "限值", "耐受",
+        "参考", "处方",
+    )):
+        return False
+
+    # A computed-result noun is a read, not a recalculation. This protects
+    # "现在计算的剂量结果是多少" from becoming a mutation merely because
+    # it contains the verb "计算".
+    if _is_current_case_dose_query(text):
+        return False
+
+    return bool(re.search(
+        r"(?:重新|再次|再|重算|更新|刷新|复核|核验|校验|验证|计算|评估)"
+        r".{0,32}(?:dvh|dose|剂量|剂量指标|剂量结果|剂量分布|剂量相关指标)"
+        r"|\b(?:please\s+)?(?:recalculate|recompute|calculate|compute|update|"
+        r"refresh|evaluate|verify|check|run)\b.{0,40}\b(?:dvh|dose|"
+        r"dose[-\s]volume|dose\s+metrics?|metrics?)\b",
+        text,
+        flags=re.IGNORECASE,
+    ))
 
 
 def _is_current_image_metadata_query(message: str) -> bool:
@@ -782,6 +854,22 @@ def classify_local_turn(message: str, pending_tumor_site: bool = False) -> Local
                 if requires_planning_before_guide(text)
                 else (_planning_only_plan() if is_planning_reexecution_request(text) else None)
             ),
+        )
+
+    # Recomputing current Dose/DVH is a focused stateful operation. Resolve
+    # it before the interrogative branch because users often append a
+    # consistency check ("...是否一致"), which otherwise looks like a
+    # knowledge question. The grant is scoped to the high-level tool only.
+    if is_current_case_dose_recompute_request(text):
+        return LocalTurnPolicy(
+            "dose_recompute",
+            "medium",
+            False,
+            False,
+            False,
+            frozenset({"dose_recompute"}),
+            direct_execution=True,
+            execution_grants=frozenset({"dose_recompute"}),
         )
 
     # Technical image metadata is a local read-only workspace query. Do this

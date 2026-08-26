@@ -12,13 +12,58 @@ from tool_factory import ToolResult
 from tool_factory.dose_recompute import CurrentPlanDoseRecomputeTool
 
 
-def test_recompute_request_keeps_the_stateful_capability_available_to_the_llm():
-    """A dose refresh is a registered clinical capability, not a keyword reply."""
+def test_recompute_request_uses_the_stateful_capability_directly():
+    """A focused dose refresh must not enter generic semantic planning."""
     policy = classify_local_turn("请重新计算剂量")
 
-    assert policy.intent == "semantic_action"
-    assert policy.direct_execution is False
-    assert "dose_recompute" in policy.allow_tools
+    assert policy.intent == "dose_recompute"
+    assert policy.direct_execution is True
+    assert policy.use_router is False
+    assert policy.use_completeness is False
+    assert policy.allow_tools == frozenset({"dose_recompute"})
+    assert policy.execution_grants == frozenset({"dose_recompute"})
+
+
+def test_dvh_consistency_request_is_direct_and_does_not_start_planning():
+    from agent_runtime.turn_policy import is_current_case_dose_recompute_request
+
+    messages = (
+        "可以重新计算DVH相关指标，验证和当前的结果是否一致",
+        "重新计算当前规划方案的DVH相关指标",
+        "Please recalculate the current plan's dose and DVH metrics",
+    )
+    for message in messages:
+        assert is_current_case_dose_recompute_request(message) is True
+        policy = classify_local_turn(message)
+        assert policy.intent == "dose_recompute"
+        assert policy.direct_execution is True
+
+
+def test_current_dose_query_and_explicit_replan_keep_their_original_routes():
+    assert classify_local_turn("现在的剂量结果如何").intent == "case_dose_query"
+    assert classify_local_turn("请重新规划并重新计算剂量").intent == "semantic_action"
+
+
+def test_direct_detector_maps_consistency_request_to_only_dose_recompute():
+    calls = ResponseToolMixin()._detect_tool_request(
+        "可以重新计算DVH相关指标，验证和当前的结果是否一致"
+    )
+    assert calls == [{"id": "tool_direct_dose", "tool": "dose_recompute", "params": {}}]
+
+
+def test_planning_provider_call_cannot_upgrade_a_current_dose_request():
+    from AgenticSys import BrachyAgent
+
+    normalized = BrachyAgent._normalize_clinical_tool_calls(
+        object(),
+        [{"id": "provider_plan", "tool": "planning_pipeline", "params": {"step": "full"}}],
+        "可以重新计算DVH相关指标，验证和当前的结果是否一致",
+    )
+    assert normalized == [{
+        "id": "provider_plan",
+        "tool": "dose_recompute",
+        "params": {},
+    }]
 
 
 def test_raw_provider_dose_call_without_runtime_payload_is_upgraded_to_stateful_tool():
@@ -58,6 +103,11 @@ def test_dose_recompute_has_a_user_facing_result_without_full_plan_synthesis():
                 "report": "stale",
                 "surgical_guide": "stale",
             },
+            "comparison": {
+                "status": "consistent",
+                "compared_count": 4,
+                "changed_count": 0,
+            },
         },
     )
 
@@ -67,6 +117,7 @@ def test_dose_recompute_has_a_user_facing_result_without_full_plan_synthesis():
     assert "Planning_2" in response
     assert "90.6%" in response
     assert "Dose / DVH" in response
+    assert "数值容差内一致" in response
     assert "报告" in response and "手术导板" in response
     assert "相关检索或处理步骤已结束" not in response
 
@@ -109,11 +160,14 @@ def test_recompute_executes_against_the_active_planning_snapshot():
     seeds = [{"id": "seed_1", "position": [1.0, 2.0, 3.0]}]
     needles = [{"id": "needle_1", "start": [0.0, 0.0, 0.0], "end": [1.0, 1.0, 1.0]}]
     calls = {}
+    memory.store("dose_metrics", {"v100": 0.91})
 
     def fake_compute(current_agent, current_seeds, current_needles, **kwargs):
         calls["geometry"] = (current_seeds, current_needles)
         calls["previous"] = kwargs
-        current_agent.memory.store("dose_metrics", {"v100": 0.91})
+        # Exercise the real mutation hazard: the computation path is allowed
+        # to update a previously stored metrics dict in place.
+        current_agent.memory.retrieve("dose_metrics")["v100"] = 0.91
         current_agent.memory.store("dvh_data", {"CTV": [[0.0, 100.0]]})
         current_agent.memory.store(
             "manual_artifact_status",
@@ -157,3 +211,4 @@ def test_recompute_executes_against_the_active_planning_snapshot():
     assert calls["published"][0]["planning_id"] == "planning-p2"
     assert calls["published"][0]["planning_label"] == "Planning_2"
     assert calls["published"][1] == "completed"
+    assert calls["published"][0]["comparison"]["status"] == "consistent"

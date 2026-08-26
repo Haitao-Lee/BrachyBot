@@ -45,7 +45,10 @@ from agent_runtime.contracts import ContextPackBuilder, RunLedger, ToolCallGatew
 from agent_runtime.response_tools import ResponseToolMixin
 from agent_runtime.llm_runtime import LLMRuntimeMixin
 from agent_runtime.chat_workflows import ChatWorkflowMixin
-from agent_runtime.turn_policy import is_planning_reexecution_request
+from agent_runtime.turn_policy import (
+    is_current_case_dose_recompute_request,
+    is_planning_reexecution_request,
+)
 
 class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
     """
@@ -1013,6 +1016,35 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
         must not infer permission to generate a Surgical Guide merely because
         the user mentioned planning.
         """
+        # Provider selection is not allowed to broaden a focused current-dose
+        # request into a full planning workflow. This guard is intentionally
+        # before _planning_requested(): the presence of a provider-emitted
+        # planning_pipeline call must not manufacture planning authorization.
+        if is_current_case_dose_recompute_request(message):
+            provider_call = next(
+                (
+                    call for call in (tool_calls or [])
+                    if isinstance(call, dict)
+                    and str(call.get("tool") or "") in {
+                        "dose_recompute", "dose_engine", "dose_calc",
+                        "recalculate_dose", "recompute_dose", "update_dose",
+                        "planning_pipeline",
+                    }
+                ),
+                {},
+            )
+            provider_params = dict(provider_call.get("params") or {})
+            allowed_params = {
+                key: provider_params[key]
+                for key in ("planning_id", "reason", "compare_with_previous")
+                if key in provider_params
+            }
+            return [{
+                "id": provider_call.get("id") or "tool_current_dose_recompute",
+                "tool": "dose_recompute",
+                "params": allowed_params,
+            }]
+
         if not tool_calls or not self._planning_requested(message, tool_calls):
             return tool_calls
 

@@ -1851,6 +1851,10 @@ class ToolResultPipeline:
             total_seeds = meta.get("total_seeds", _metric("total_seeds", default="—"))
             trajectories = meta.get("num_trajectories", _metric("num_trajectories", default="—"))
             dose_dvh_status = "已更新" if lang == "zh" else "updated"
+            comparison = meta.get("comparison") or {}
+            comparison_status = str(comparison.get("status") or "").lower()
+            comparison_count = comparison.get("compared_count", 0)
+            comparison_changed = comparison.get("changed_count", 0)
             if lang == "zh":
                 lines = [
                     "## 💊 当前 Planning 剂量重算",
@@ -1868,6 +1872,18 @@ class ToolResultPipeline:
                     f"| D90 | {_dose(_metric('d90', 'D90'))} |",
                     f"| Dose / DVH | {dose_dvh_status} |",
                 ]
+                if comparison_status == "consistent":
+                    lines.extend([
+                        "",
+                        f"🔎 重算前后对比：在数值容差内一致（已比较 {comparison_count} 项 Dose/DVH 指标）。",
+                    ])
+                elif comparison_status == "changed":
+                    lines.extend([
+                        "",
+                        f"🔎 重算前后对比：发现 {comparison_changed} 项指标发生变化（共比较 {comparison_count} 项）；请以本次重算结果为准。",
+                    ])
+                elif comparison_status == "unavailable":
+                    lines.extend(["", "🔎 暂无可用的重算前历史指标，未执行一致性对比。"])
                 if stale_labels:
                     lines.extend([
                         "",
@@ -1891,6 +1907,18 @@ class ToolResultPipeline:
                     f"| D90 | {_dose(_metric('d90', 'D90'))} |",
                     f"| Dose / DVH | {dose_dvh_status} |",
                 ]
+                if comparison_status == "consistent":
+                    lines.extend([
+                        "",
+                        f"🔎 Before/after check: consistent within numeric tolerance ({comparison_count} Dose/DVH metrics compared).",
+                    ])
+                elif comparison_status == "changed":
+                    lines.extend([
+                        "",
+                        f"🔎 Before/after check: {comparison_changed} of {comparison_count} compared metrics changed; use the new recomputation as the current result.",
+                    ])
+                elif comparison_status == "unavailable":
+                    lines.extend(["", "🔎 No previous numeric metrics were available for a consistency check."])
                 if stale_labels:
                     lines.extend([
                         "",

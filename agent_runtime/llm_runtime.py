@@ -754,6 +754,7 @@ class LLMRuntimeMixin:
                         "treatment_plan",
                         "clinical_planning",
                         "surgical_guide_generation",
+                        "dose_recompute",
                     )
                 )
                 or _has_explicit_planning_action_plan

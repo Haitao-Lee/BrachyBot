@@ -2404,6 +2404,7 @@ class ChatWorkflowMixin:
                     "treatment_plan",
                     "clinical_planning",
                     "surgical_guide_generation",
+                    "dose_recompute",
                 )
             )
             or _has_explicit_planning_action_plan
@@ -2554,7 +2555,17 @@ class ChatWorkflowMixin:
             # metrics. This guarantees the user always sees the
             # complete clinical report.
             has_planning = self._has_completed_planning_in_steps(steps)
-            if has_planning:
+            _direct_tool_names = {
+                str(step.get("tool") or "")
+                for step in steps
+                if step.get("type") == "tool"
+            }
+            if _direct_tool_names == {"dose_recompute"}:
+                # The tool formatter is the authoritative localized response
+                # and contains the before/after consistency result. Avoid a
+                # second synthesis call for this focused operation.
+                response = raw_response
+            elif has_planning:
                 response = self._build_planning_report(_lang, steps)
             else:
                 query_type = self._classify_query_type(user_msg)
