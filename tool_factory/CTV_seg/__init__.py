@@ -425,6 +425,10 @@ class CTVSegmentationTool(BaseTool):
         result = None
         from_label_path = False
         manual_label_selection = {}
+        uploaded_label_array = None
+        uploaded_label_path = None
+        uploaded_label_geometry = None
+        plausibility_warning = None
         if label_path and os.path.exists(label_path):
             # Match both orientation and physical grid. Same-shaped NIfTI
             # arrays are not sufficient: origin/spacing/direction differences
@@ -440,6 +444,14 @@ class CTVSegmentationTool(BaseTool):
             else:
                 label_img = align_label_to_reference(label_path, image, "LPI")
             source_label_array = sitk.GetArrayFromImage(label_img)
+            uploaded_label_array = np.ascontiguousarray(source_label_array)
+            uploaded_label_path = str(label_path)
+            uploaded_label_geometry = {
+                "shape": [int(value) for value in uploaded_label_array.shape],
+                "spacing": [float(value) for value in label_img.GetSpacing()],
+                "origin": [float(value) for value in label_img.GetOrigin()],
+                "direction": [float(value) for value in label_img.GetDirection()],
+            }
             from tool_factory.segmentation_alignment import select_label_as_binary
             try:
                 ctv_array, manual_label_selection = select_label_as_binary(
@@ -646,23 +658,20 @@ class CTVSegmentationTool(BaseTool):
         # fills most of the body is not a brachytherapy target: accepting it
         # silently made trajectory planning run for ~20 minutes on a
         # body-sized "target" and then rejected every needle as intersecting
-        # the mask's embedded vessel labels. Reject implausible volumes up
-        # front so planning never starts from a poisoned target.
+        # the mask's embedded vessel labels. The raw upload is staged before
+        # the operator chooses a clinical label; explicit Move to CTV applies
+        # the same check to the selected candidate before planning can consume it.
         if from_label_path:
-            plausibility_error = _implausible_manual_ctv_error(
+            plausibility_warning = _implausible_manual_ctv_error(
                 volume_mm3, voxel_count, image
             )
-            if plausibility_error:
-                return ToolResult(
-                    success=False,
-                    error=plausibility_error,
-                    metadata={
-                        "tumor_type_used": tumor_type or "manual_label",
-                        "ctv_source": "manual_label",
-                        "ctv_volume_mm3": float(volume_mm3),
-                        "code": "implausible_ctv_volume",
-                    },
-                )
+            if plausibility_warning:
+                # A multi-label upload is staged before the operator chooses
+                # the clinical target. Rejecting the selected default here
+                # would discard valid candidate labels and recreate the old
+                # whole-file-import failure. Promotion performs the same
+                # plausibility check on the explicitly selected child.
+                logger.warning("Manual CTV upload requires label selection: %s", plausibility_warning)
 
         # Keep CTV display names source-aware.
         label_map = dict(res_meta.get("label_map", {}))
@@ -717,6 +726,11 @@ class CTVSegmentationTool(BaseTool):
                 "ctv_source_label_counts": manual_label_selection.get("source_label_counts", {}),
                 "ctv_normalized_binary": True,
                 "ctv_normalization_version": 1,
+                "uploaded_label_array": uploaded_label_array,
+                "uploaded_label_path": uploaded_label_path,
+                "uploaded_label_geometry": uploaded_label_geometry,
+                "ctv_staged_only": True,
+                "ctv_plausibility_warning": plausibility_warning,
                 "label_counts": {1: int(voxel_count)},
                 # A manual replacement must not inherit model-derived label
                 # statistics from the previous CTV in this Session.

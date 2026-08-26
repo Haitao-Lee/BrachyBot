@@ -639,6 +639,14 @@ def _delete_object(
         ]
         if len(remaining) == len(existing):
             raise ExportError("Generic segmentation mask was not found")
+        target_entry = next(
+            (
+                item for item in existing
+                if isinstance(item, Mapping)
+                and _generic_mask_object_id(item.get("object_id") or item.get("mask_id")) == stable_id
+            ),
+            None,
+        )
         promoted = any(
             isinstance(item, Mapping)
             and _generic_mask_object_id(item.get("object_id") or item.get("mask_id")) == stable_id
@@ -646,12 +654,17 @@ def _delete_object(
             for item in existing
         )
         effective = delete_structure(memory, stable_id) if promoted else None
-        memory.store("generic_segmentation_masks", remaining)
-        if str(memory.retrieve("generic_segmentation_latest") or "") == mask_id:
-            memory.store(
-                "generic_segmentation_latest",
-                str(remaining[-1].get("mask_id") or "") if remaining else None,
-            )
+        if isinstance(target_entry, Mapping) and target_entry.get("upload_mask_id"):
+            from web.uploaded_mask_service import remove_uploaded_mask_child
+
+            remove_uploaded_mask_child(memory, stable_id)
+        else:
+            memory.store("generic_segmentation_masks", remaining)
+            if str(memory.retrieve("generic_segmentation_latest") or "") == mask_id:
+                memory.store(
+                    "generic_segmentation_latest",
+                    str(remaining[-1].get("mask_id") or "") if remaining else None,
+                )
         invalidated = ["generic_mask"]
         if promoted:
             invalidated.extend(["dose", "dvh", "evaluation", "report", "surgical_guide"])

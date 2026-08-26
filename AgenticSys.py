@@ -2290,6 +2290,44 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
         meta = result.metadata or {}
         logger.debug("[STORE] %s: metadata keys=%s", tool_name, list(meta.keys()))
         ct_image = self.memory.retrieve("ct_image")
+        if (
+            tool_name == "ctv_segmentation"
+            and str(meta.get("ctv_source") or "").strip().lower() == "manual_label"
+            and meta.get("uploaded_label_array") is not None
+        ):
+            # Tool-driven uploads use the same source-first contract as the
+            # manual HTTP endpoint. Never let a selected/default binary result
+            # bypass the Upload Mask candidate collection and become official
+            # CTV before the user chooses a label in the Data Tree.
+            try:
+                from web.uploaded_mask_service import stage_uploaded_ctv_array
+
+                staged = stage_uploaded_ctv_array(
+                    self.memory,
+                    meta["uploaded_label_array"],
+                    source_path=str(meta.get("uploaded_label_path") or ""),
+                    ct_path=str(self.memory.retrieve("ct_path") or ""),
+                    geometry=meta.get("uploaded_label_geometry"),
+                )
+                self.memory.store("last_segmentation_target", "generic")
+                self.memory.store("generic_segmentation_completed", True)
+                self.memory.store("ctv_upload_staged", True)
+                self.memory.store(
+                    "ctv_upload_latest",
+                    (staged.get("upload_mask") or {}).get("upload_id"),
+                )
+                self.memory.store("pending_clarification", None)
+                logger.info(
+                    "[STORE] staged uploaded CTV labels as Upload Mask: upload_id=%s labels=%s",
+                    (staged.get("upload_mask") or {}).get("upload_id"),
+                    staged.get("labels") or [],
+                )
+            except Exception:
+                # A failed staging transaction must not fall through to the
+                # old direct CTV write path. That would silently reintroduce
+                # the very multi-label corruption this boundary prevents.
+                logger.exception("[STORE] uploaded CTV mask staging failed")
+            return
         if tool_name == "ctv_segmentation" and "ctv_array" in meta:
             logger.debug(
                 "[STORE] Storing ctv_array, shape=%s, ct_image=%s",

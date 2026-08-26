@@ -1,0 +1,169 @@
+"""Regression tests for source-first uploaded CTV mask staging."""
+
+from __future__ import annotations
+
+import threading
+
+import numpy as np
+import SimpleITK as sitk
+import pytest
+
+from web.structure_service import StructureError, reclassify_generic_segmentation_masks
+from web.uploaded_mask_service import stage_uploaded_ctv_mask
+
+
+class _Memory:
+    def __init__(self):
+        self._lock = threading.RLock()
+        self._planning_versions = {}
+        self.planning_results = {}
+        self.conversation_state = {"data_available": []}
+        self.session_id = "uploaded-mask-test"
+
+    def retrieve(self, key, default=None):
+        return self.planning_results.get(key, default)
+
+    def store(self, key, value):
+        self.planning_results[key] = value
+        self._planning_versions[key] = self._planning_versions.get(key, 0) + 1
+
+    def _notify_persistence(self, reason):
+        return None
+
+
+def _write_case(tmp_path):
+    shape = (5, 6, 7)
+    ct = sitk.GetImageFromArray(np.zeros(shape, dtype=np.int16))
+    ct.SetSpacing((0.7, 0.8, 2.5))
+    labels = np.zeros(shape, dtype=np.uint8)
+    labels[0, 0, 0] = 1
+    labels[1:4, 2:4, 3:6] = 2
+    label = sitk.GetImageFromArray(labels)
+    label.CopyInformation(ct)
+    ct_path = tmp_path / "ct.nii.gz"
+    label_path = tmp_path / "uploaded_labels.nii.gz"
+    sitk.WriteImage(ct, str(ct_path))
+    sitk.WriteImage(label, str(label_path))
+    return ct_path, label_path, labels
+
+
+def test_multilabel_upload_creates_parent_and_binary_children_without_ctv(tmp_path):
+    ct_path, label_path, labels = _write_case(tmp_path)
+    memory = _Memory()
+
+    staged = stage_uploaded_ctv_mask(memory, str(ct_path), str(label_path))
+    repeated = stage_uploaded_ctv_mask(memory, str(ct_path), str(label_path))
+
+    assert staged["total_labels"] == 2
+    assert staged["labels"] == [1, 2]
+    assert repeated["reused"] is True
+    assert len(memory.retrieve("uploaded_mask_collections")) == 1
+    children = memory.retrieve("generic_segmentation_masks")
+    assert len(children) == 2
+    assert {int(item["source_label"]) for item in children} == {1, 2}
+    assert all(item["parent_group"] == "upload_masks" for item in children)
+    assert all(set(np.unique(item["mask_array"]).tolist()) <= {0, 1} for item in children)
+    assert all(
+        int(np.count_nonzero(item["mask_array"])) == int(np.count_nonzero(labels == item["source_label"]))
+        for item in children
+    )
+    assert memory.retrieve("ctv_array") is None
+    assert memory.retrieve("ctv_mask") is None
+
+
+def test_only_explicit_ctv_move_promotes_selected_uploaded_child():
+    memory = _Memory()
+    shape = (5, 6, 7)
+    ct = sitk.GetImageFromArray(np.zeros(shape, dtype=np.int16))
+    ct.SetSpacing((1.0, 1.0, 1.0))
+    memory.store("ct_image", ct)
+    memory.store("ct_data", np.zeros(shape, dtype=np.int16))
+    selected = np.zeros(shape, dtype=np.uint8)
+    selected[1:3, 2:4, 3:5] = 1
+    other = np.zeros(shape, dtype=np.uint8)
+    other[3:5, 0:2, 0:2] = 1
+    memory.store("generic_segmentation_masks", [
+        {
+            "mask_id": "upload_mask_demo_label_1",
+            "object_id": "mask:upload_mask_demo_label_1",
+            "kind": "uploaded_mask_label",
+            "source": "uploaded_mask",
+            "upload_mask_id": "upload_mask_demo",
+            "source_label": 1,
+            "classification": "unclassified",
+            "moved_to": None,
+            "mask_array": selected,
+            "spacing": [1.0, 1.0, 1.0],
+            "volume_mm3": float(np.count_nonzero(selected)),
+        },
+        {
+            "mask_id": "upload_mask_demo_label_2",
+            "object_id": "mask:upload_mask_demo_label_2",
+            "kind": "uploaded_mask_label",
+            "source": "uploaded_mask",
+            "upload_mask_id": "upload_mask_demo",
+            "source_label": 2,
+            "classification": "unclassified",
+            "moved_to": None,
+            "mask_array": other,
+            "spacing": [1.0, 1.0, 1.0],
+            "volume_mm3": float(np.count_nonzero(other)),
+        },
+    ])
+
+    effective = reclassify_generic_segmentation_masks(
+        memory, ["mask:upload_mask_demo_label_1"], "ctv",
+    )
+
+    assert np.array_equal(effective.ctv_array, selected)
+    entries = memory.retrieve("generic_segmentation_masks")
+    assert entries[0]["classification"] == "ctv"
+    assert entries[0]["ctv_promoted_from_upload"]["source_label"] == 1
+    assert entries[1]["classification"] == "unclassified"
+
+
+def test_implausible_uploaded_child_is_rejected_at_ctv_promotion():
+    memory = _Memory()
+    shape = (3, 3, 3)
+    ct = sitk.GetImageFromArray(np.zeros(shape, dtype=np.int16))
+    memory.store("ct_image", ct)
+    memory.store("ct_data", np.zeros(shape, dtype=np.int16))
+    candidate = np.zeros(shape, dtype=np.uint8)
+    candidate[1, 1, 1] = 1
+    memory.store("generic_segmentation_masks", [{
+        "mask_id": "upload_mask_large_label_1",
+        "object_id": "mask:upload_mask_large_label_1",
+        "kind": "uploaded_mask_label",
+        "source": "uploaded_mask",
+        "upload_mask_id": "upload_mask_large",
+        "source_label": 1,
+        "classification": "unclassified",
+        "mask_array": candidate,
+        "spacing": [1.0, 1.0, 1.0],
+        "volume_mm3": 1_500_000.0,
+    }])
+
+    with pytest.raises(StructureError, match="not a plausible brachytherapy target"):
+        reclassify_generic_segmentation_masks(
+            memory, ["mask:upload_mask_large_label_1"], "ctv",
+        )
+
+
+def test_uploaded_mask_frontend_keeps_hydration_and_staging_contract():
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    ui_api = (root / "web/app/static/js/brachybot-ui-api.js").read_text(encoding="utf-8")
+    manual = (root / "web/app/static/js/brachybot-manual-annotation.js").read_text(encoding="utf-8")
+    viewer = (root / "web/app/static/js/brachybot-viewer-volume.js").read_text(encoding="utf-8")
+    routes = (root / "web/routes/planning_routes.py").read_text(encoding="utf-8")
+
+    assert "maxPendingAttempts = 240" in ui_api
+    assert "payload.retry_after_ms" in ui_api
+    assert "staged_only" in ui_api
+    assert "maxPendingAttempts" not in manual or "attempt <= 240" in manual
+    assert "Upload Mask" in manual
+    assert "upload_masks" in viewer
+    assert "metadata.kind || existing.kind" in viewer
+    assert "stage_uploaded_ctv_mask" in routes
+

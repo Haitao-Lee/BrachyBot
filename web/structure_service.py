@@ -597,6 +597,42 @@ def reclassify_generic_segmentation_masks(
                 raise StructureError(
                     f"Generic segmentation mask grid does not match the current CT: {stable_id}"
                 )
+            if destination == "ctv":
+                from web.uploaded_mask_service import is_uploaded_mask_label
+
+                if is_uploaded_mask_label(entry):
+                    # Whole-body/whole-organ labels are allowed to exist as
+                    # upload candidates, but they must not become an official
+                    # CTV merely because the user clicked Move. Reuse the
+                    # same physical plausibility rule as manual CTV import at
+                    # this explicit clinical promotion boundary.
+                    volume_mm3 = entry.get("volume_mm3")
+                    try:
+                        volume_mm3 = float(volume_mm3)
+                    except (TypeError, ValueError):
+                        spacing = entry.get("spacing") or memory.retrieve("ct_spacing") or (1, 1, 1)
+                        volume_mm3 = float(np.count_nonzero(mask) * np.prod(np.asarray(spacing, dtype=np.float64)[:3]))
+                    try:
+                        from tool_factory.CTV_seg import _implausible_manual_ctv_error
+
+                        plausibility_error = _implausible_manual_ctv_error(
+                            volume_mm3,
+                            int(np.count_nonzero(mask)),
+                            memory.retrieve("ct_image"),
+                        )
+                    except Exception as exc:
+                        raise StructureError(
+                            f"Could not validate uploaded CTV candidate {stable_id}: {exc}"
+                        ) from exc
+                    if plausibility_error:
+                        raise StructureError(plausibility_error)
+                    entry["ctv_promoted_from_upload"] = {
+                        "upload_mask_id": str(entry.get("upload_mask_id") or ""),
+                        "object_id": stable_id,
+                        "source_label": int(entry.get("source_label") or 0),
+                        "source_path": str(entry.get("source_path") or ""),
+                    }
+                    entry["ctv_promoted_at"] = _utc_now()
             entry["object_id"] = stable_id
             entry["classification"] = destination
             entry["parent_group"] = destination
