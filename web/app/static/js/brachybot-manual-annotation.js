@@ -699,16 +699,20 @@ async function runSegmentationStep(kind) {
                     body: JSON.stringify(body),
                 });
                 data = await res.clone().json().catch(() => ({}));
-                if (res.status !== 202) break;
+                const hydrationPending = res.status === 202;
+                const rateLimited = res.status === 429
+                    && data.code === 'rate_limit_exceeded';
+                if (!hydrationPending && !rateLimited) break;
                 if (attempt >= 240) {
                     throw new Error(data.message || 'The case is still restoring. Please wait and try again.');
                 }
                 const retryAfter = Number(
                     data.retry_after_ms || res.headers.get('Retry-After-Ms') || 250,
                 );
+                const maxDelay = rateLimited ? 60000 : 5000;
                 await new Promise(resolve => setTimeout(
                     resolve,
-                    Math.max(100, Math.min(1000, Number.isFinite(retryAfter) ? retryAfter : 250)),
+                    Math.max(1000, Math.min(maxDelay, Number.isFinite(retryAfter) ? retryAfter : 1000)),
                 ));
             }
         }

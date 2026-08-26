@@ -1267,10 +1267,32 @@ async function handleFileSelect(input, targetId) {
 /**
  * POST a segmentation request while the selected workspace is hydrating.
  * A 202 here is a control-plane retry state, not an import failure. The
- * server's JSON retry_after_ms is authoritative when available; the generous
- * bounded budget covers the large NPY sidecars decoded after a restart.
+ * server's JSON retry_after_ms is authoritative when available, but never
+ * below one second: a 250 ms poll interval can itself exhaust the server's
+ * per-IP request budget during a long cold restore. A server-generated 429
+ * from that same budget is also retryable because the POST has not reached
+ * the segmentation handler and staging is idempotent.
  */
+const _segmentationHydrationInFlight = new Map();
+
+function _segmentationHydrationRequestKey(body, sessionId) {
+    return `${String(sessionId || '')}\u0000${JSON.stringify(body || {})}`;
+}
+
 async function _postSegmentationWithHydrationRetry(body, sessionId) {
+    const key = _segmentationHydrationRequestKey(body, sessionId);
+    const existing = _segmentationHydrationInFlight.get(key);
+    if (existing) return existing;
+    const promise = _postSegmentationWithHydrationRetryCore(body, sessionId);
+    _segmentationHydrationInFlight.set(key, promise);
+    return promise.finally(() => {
+        if (_segmentationHydrationInFlight.get(key) === promise) {
+            _segmentationHydrationInFlight.delete(key);
+        }
+    });
+}
+
+async function _postSegmentationWithHydrationRetryCore(body, sessionId) {
     const maxPendingAttempts = 240;
     let response = null;
     let payload = {};
@@ -1284,7 +1306,10 @@ async function _postSegmentationWithHydrationRetry(body, sessionId) {
             body: JSON.stringify(body),
         });
         payload = await response.clone().json().catch(() => ({}));
-        if (response.status !== 202) return { response, payload };
+        const hydrationPending = response.status === 202;
+        const rateLimited = response.status === 429
+            && payload.code === 'rate_limit_exceeded';
+        if (!hydrationPending && !rateLimited) return { response, payload };
         if (attempt >= maxPendingAttempts) {
             throw new Error(
                 payload.message
@@ -1296,9 +1321,10 @@ async function _postSegmentationWithHydrationRetry(body, sessionId) {
             || response.headers.get('Retry-After-Ms')
             || 250,
         );
+        const maxDelay = rateLimited ? 60000 : 5000;
         await new Promise(resolve => setTimeout(
             resolve,
-            Math.max(100, Math.min(1000, Number.isFinite(retryAfter) ? retryAfter : 250)),
+            Math.max(1000, Math.min(maxDelay, Number.isFinite(retryAfter) ? retryAfter : 1000)),
         ));
     }
     throw new Error('The segmentation request did not reach a terminal server response.');
@@ -2393,11 +2419,16 @@ async function loadCTToViewers(ctPath, options = {}) {
                 }),
                 signal: loadCtrl.signal,
             });
-            if (res.status === 202) {
-                const pending = await res.json().catch(() => ({}));
-                const waitMs = Math.max(100, Math.min(1000, Number(
-                    pending.retry_after_ms || res.headers.get('Retry-After-Ms') || 250,
-                )));
+            const pending = (res.status === 202 || res.status === 429)
+                ? await res.clone().json().catch(() => ({}))
+                : {};
+            const retryableRestore = res.status === 202
+                || (res.status === 429 && pending.code === 'rate_limit_exceeded');
+            if (retryableRestore) {
+                const waitMs = Math.max(1000, Math.min(
+                    res.status === 429 ? 60000 : 5000,
+                    Number(pending.retry_after_ms || res.headers.get('Retry-After-Ms') || 1000),
+                ));
                 await new Promise(resolve => setTimeout(resolve, waitMs));
                 continue;
             }

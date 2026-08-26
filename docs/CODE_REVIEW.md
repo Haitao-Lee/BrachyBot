@@ -13320,8 +13320,8 @@ duplicate global-declaration comment in `brachybot-3d-manual.js` documents why
   idempotent, so an already staged/promoted source is not duplicated and a
   promoted CTV is preserved when its source collection is present.
 - Bumped the cache-busting query versions for the three changed classic
-  scripts in `web/app/index.html` (`ui-api` 44 to 45, `viewer-volume` 38 to 39,
-  and `manual-annotation` 16 to 17). A browser or reverse proxy can therefore
+  scripts in `web/app/index.html` (final versions: `ui-api` 46,
+  `viewer-volume` 40, and `manual-annotation` 18). A browser or reverse proxy can therefore
   receive the hydration-aware client instead of serving a cached pre-fix
   bundle after the server restart.
 
@@ -13350,3 +13350,67 @@ error and the unsafe automatic label selection are two independent defects.
 - The remote environment has no Node executable, so JavaScript validation was
   performed through the existing frontend contract/static regression tests;
   `node --check` was not available on that host.
+
+## 2026-08-26 - Hydration Polling Exhausted the Request Rate Limit and Reappeared as a Mask Import Failure
+
+### Confirmed issue
+
+- The second restart failure, `CTV mask import failed: Rate limit exceeded`,
+  was a distinct follow-on defect from the earlier `HTTP 202` repair. The
+  latest remote log measured the planning-result hydration phase at
+  `45687.0 ms`.
+- The new segmentation retry loop still accepted the server's historical
+  `retry_after_ms=250`. During a 45.7-second restore this generated roughly
+  183 POST requests. The server's local-development limiter allows 120
+  requests per IP in 60 seconds, so the retry loop itself caused the 429.
+- The rate limiter returned only a generic `Rate limit exceeded` JSON body.
+  The upload client treated every non-202 response as terminal, so it exposed
+  the limiter's recovery state as a CTV mask failure. The response did not tell
+  the client when the oldest retained request would expire.
+- The same request budget can be consumed by parallel viewer hydration calls.
+  Fixed sub-second polling in label-volume and generic-mask restore paths made
+  the global per-IP limit an unsuitable coordination mechanism for a cold
+  workspace restore. Two equivalent Upload Mask requests could also run in
+  parallel because there was no single-flight guard around the segmentation
+  POST.
+
+### Resolution
+
+- `web/server_support.py` now returns a structured rate-limit response with
+  `code=rate_limit_exceeded`, `retry_after_ms`, `Retry-After-Ms`, and the
+  standard `Retry-After` header. The retry interval is calculated from the
+  oldest retained timestamp, so the client waits until the request window can
+  actually admit another request instead of blindly retrying.
+- `web/app/static/js/brachybot-ui-api.js` now enforces a minimum one-second
+  hydration poll interval and a five-second cap for ordinary 202 restoration.
+  A server-generated rate-limit 429 is retried only when it carries the
+  explicit `rate_limit_exceeded` code, using the server-provided wait interval
+  up to 60 seconds. Other 429 responses remain terminal errors.
+- The same behavior was added to the standalone fallback in
+  `web/app/static/js/brachybot-manual-annotation.js`. The main segmentation
+  helper also uses a session/body keyed single-flight map, so an automatic
+  source-path restore and a manual click cannot create duplicate polling
+  loops for the same case and upload.
+- Viewer CT, organ metadata, label-volume, and generic Upload Mask hydration
+  retries in `web/app/static/js/brachybot-viewer-volume.js` now use at least
+  one-second intervals and understand the structured rate-limit response.
+  This prevents the viewer's parallel cold-restore work from recreating the
+  same request storm outside the CTV upload button.
+- The cache-busting versions in `web/app/index.html` were advanced again to
+  `ui-api?v=46`, `viewer-volume?v=40`, and `manual-annotation?v=18`, ensuring
+  that browsers receive the rate-limit-aware client bundle after restart.
+
+### Verification
+
+- Focused Upload Mask, frontend contract, and rate-limit tests: `117 passed,
+  3 warnings` before the final version-only regression assertion update; the
+  final combined focused/regression group passed `145 tests`.
+- Full remote regression suite after the final changes: `755 passed, 6
+  skipped, 4 warnings`.
+- Python compilation and `git diff --check` passed.
+- `node --check` passed for the three changed JavaScript deployment files on
+  the local validation host. The remote runtime itself has no Node executable.
+- The rate-limit unit test confirms that the returned wait is based on the
+  oldest request's expiration rather than a fixed short delay. Static frontend
+  tests confirm the 429 code branch, one-second minimum, and single-flight
+  guard are present.
