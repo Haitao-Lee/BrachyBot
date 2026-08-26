@@ -1021,6 +1021,12 @@ async function reconstruct3D() {
 }
 
 // 3D reconstruction for individual organs from data tree
+//
+// Restore, segmentation prewarm, and a user clicking the same tree action can
+// all reach this function during a cold restart. Coalesce identical
+// case/generation requests so they cannot issue duplicate mesh requests or
+// publish duplicate rate-limit errors.
+const _organ3DReconstructionInFlight = new Map();
 
 // Tolerant wrapper for render3DMesh. brachybot-3d-manual.js is loaded
 // AFTER this file in index.html, so during version-skew (e.g. a stale
@@ -1058,6 +1064,24 @@ function getCtvMeshLabelIds() {
 
 async function reconstructOrgan3D(id, silent = false) {
     const requestScope = _captureViewer3DRequestScope();
+    const key = `${requestScope.sessionId}:${String(id)}`;
+    const existing = _organ3DReconstructionInFlight.get(key);
+    if (existing && _viewer3DRequestScopeIsCurrent(existing.scope)) {
+        return existing.promise;
+    }
+    const promise = _reconstructOrgan3D(id, silent, requestScope);
+    _organ3DReconstructionInFlight.set(key, { scope: requestScope, promise });
+    try {
+        return await promise;
+    } finally {
+        if (_organ3DReconstructionInFlight.get(key)?.promise === promise) {
+            _organ3DReconstructionInFlight.delete(key);
+        }
+    }
+}
+
+async function _reconstructOrgan3D(id, silent = false, scope = null) {
+    const requestScope = scope || _captureViewer3DRequestScope();
     if (!state.ctPath || !state.ctLoaded) {
         try {
             const resp = await fetch(API + '/status', {
@@ -1099,18 +1123,49 @@ async function reconstructOrgan3D(id, silent = false) {
         if (id === 'ctv') {
             const labelIds = getCtvMeshLabelIds();
             let successCount = 0;
+            const retryAttempts = new Map();
             for (let i = 0; i < labelIds.length; i++) {
+                const labelId = labelIds[i];
+                const retryAttempt = retryAttempts.get(labelId) || 0;
                 try {
                     const res = await fetch(API + '/viewer/3d_mask', {
                         method: 'POST',
                         headers: _viewer3DRequestHeaders(requestScope, { 'Content-Type': 'application/json' }),
                         body: JSON.stringify({
-                            label_id: labelIds[i],
+                            label_id: labelId,
                             source: 'ctv',
                             smoothing: 1,
                             allow_missing: silent,
                         }),
                     });
+                    const errData = (res.status === 202 || res.status === 429)
+                        ? await res.clone().json().catch(() => ({}))
+                        : {};
+                    const retryable = res.status === 202
+                        || (res.status === 429 && errData.code === 'rate_limit_exceeded');
+                    if (retryable && retryAttempt < 60) {
+                        // This path is user-triggered but can overlap a cold
+                        // case restore. Do not convert a temporary data-plane
+                        // limit into a false "no CTV" result.
+                        const retryAfter = Number(
+                            errData.retry_after_ms
+                            || res.headers.get('Retry-After-Ms')
+                            || 1000,
+                        );
+                        await new Promise(resolve => setTimeout(
+                            resolve,
+                            Math.max(1000, Math.min(
+                                res.status === 429 ? 60000 : 5000,
+                                Number.isFinite(retryAfter) ? retryAfter : 1000,
+                            )),
+                        ));
+                        retryAttempts.set(labelId, retryAttempt + 1);
+                        i -= 1;
+                        continue;
+                    }
+                    if (retryable && !silent) {
+                        throw new Error(errData.error || errData.message || `HTTP ${res.status}`);
+                    }
                     if (res.ok) {
                         const data = await res.json();
                         if (!_viewer3DRequestScopeIsCurrent(requestScope)) return { stale: true };
@@ -1118,7 +1173,7 @@ async function reconstructOrgan3D(id, silent = false) {
                             // CTV has a dedicated namespace because OAR masks
                             // commonly reuse label 1. The primary target must
                             // therefore remain the same vivid red in 2D/3D.
-                            const c = ctvLabelColorLUT[labelIds[i]];
+                            const c = ctvLabelColorLUT[labelId];
                             data.color = c ? (c[0] << 16 | c[1] << 8 | c[2]) : 0xff304c;
                             data.organ_id = `ctv_${labelIds[i]}`;  // Use same ID as data tree
                             _safeRender3DMesh(data);
@@ -1126,7 +1181,15 @@ async function reconstructOrgan3D(id, silent = false) {
                         }
                     }
                     // Skip 400 errors (label not found in mask)
-                } catch (e) { /* skip failed labels */ }
+                } catch (e) {
+                    // A user-triggered CTV reconstruction must report a real
+                    // terminal transport/backend failure. The previous
+                    // catch swallowed it even when `silent` was false, so a
+                    // 429/500 was misreported later as "No CTV labels".
+                    if (!silent) throw e;
+                    // Background hydration is best-effort; the next
+                    // session-scoped refresh will retry the label.
+                }
             }
             if (successCount === 0 && !silent) {
                 addChat('error', 'No CTV labels found for 3D reconstruction');
@@ -1193,7 +1256,7 @@ async function reconstructOrgan3D(id, silent = false) {
                 });
                 if (!res.ok) {
                     const errData = await res.json().catch(() => ({}));
-                    const deferred = silent && [202, 404, 409].includes(res.status);
+                    const deferred = silent && [202, 404, 409, 429].includes(res.status);
                     if (deferred) {
                         return {
                             pending: res.status === 202,
@@ -1241,7 +1304,7 @@ async function reconstructOrgan3D(id, silent = false) {
             // Background reconstruction is expected to race CT/mask
             // hydration.  A missing or mismatched mask is not a user-facing
             // reconstruction failure until the data is actually ready.
-            if (silent && [202, 404, 409].includes(res.status)) {
+            if (silent && [202, 404, 409, 429].includes(res.status)) {
                 return {
                     pending: res.status === 202,
                     code: errData.code || `viewer_mask_http_${res.status}`,
@@ -1260,7 +1323,7 @@ async function reconstructOrgan3D(id, silent = false) {
             switchPanel('viewers', document.querySelectorAll('.panel-tab')[2]);
         }
     } catch (e) {
-        if (_viewer3DRequestScopeIsCurrent(requestScope)) {
+        if (_viewer3DRequestScopeIsCurrent(requestScope) && !silent) {
             addChat('error', '3D reconstruction failed: ' + e.message);
         }
     } finally {

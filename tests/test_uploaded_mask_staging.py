@@ -207,6 +207,53 @@ def test_rate_limit_aware_upload_retry_does_not_poll_faster_than_the_limiter():
     assert '"Retry-After-Ms"' in server_support
 
 
+def test_viewer_hydration_uses_an_independent_rate_limit_bucket():
+    from flask import Flask
+    from web import server_support
+
+    app = Flask(__name__)
+
+    @server_support.rate_limit
+    def endpoint():
+        return "ok"
+
+    old_trust = server_support._TRUST_NETWORK
+    old_default_budget = server_support.RATE_LIMIT_REQUESTS
+    old_data_budget = server_support.RATE_LIMIT_DATA_REQUESTS
+    old_window = server_support.RATE_LIMIT_WINDOW
+    with server_support._rate_limit_lock:
+        old_default_store = dict(server_support._rate_limit_store)
+        old_data_store = dict(server_support._rate_limit_data_store)
+        server_support._rate_limit_store.clear()
+        server_support._rate_limit_data_store.clear()
+    try:
+        server_support._TRUST_NETWORK = False
+        server_support.RATE_LIMIT_REQUESTS = 1
+        server_support.RATE_LIMIT_DATA_REQUESTS = 2
+        server_support.RATE_LIMIT_WINDOW = 60
+
+        with app.test_request_context('/api/segmentation', method='POST'):
+            assert endpoint() == "ok"
+            blocked = endpoint()
+            assert blocked[1] == 429
+
+        with app.test_request_context('/api/viewer/3d_mask', method='POST'):
+            assert endpoint() == "ok"
+            assert endpoint() == "ok"
+            blocked = endpoint()
+            assert blocked[1] == 429
+    finally:
+        server_support._TRUST_NETWORK = old_trust
+        server_support.RATE_LIMIT_REQUESTS = old_default_budget
+        server_support.RATE_LIMIT_DATA_REQUESTS = old_data_budget
+        server_support.RATE_LIMIT_WINDOW = old_window
+        with server_support._rate_limit_lock:
+            server_support._rate_limit_store.clear()
+            server_support._rate_limit_store.update(old_default_store)
+            server_support._rate_limit_data_store.clear()
+            server_support._rate_limit_data_store.update(old_data_store)
+
+
 def test_uploaded_mask_label_ids_use_registry_for_all_tree_controls():
     from pathlib import Path
 
@@ -226,6 +273,6 @@ def test_uploaded_mask_label_ids_use_registry_for_all_tree_controls():
     assert "window.isDataTreeMaskId = _isDataTreeMaskId;" in viewer
     assert "mask.kind === 'uploaded_mask_label'" in layout
     assert "window.isDataTreeMaskId" in manual_3d
-    assert "brachybot-viewer-volume.js?v=42" in index
-    assert "brachybot-viewer-layout.js?v=32" in index
-    assert "brachybot-3d-manual.js?v=66" in index
+    assert "brachybot-viewer-volume.js?v=43" in index
+    assert "brachybot-viewer-layout.js?v=34" in index
+    assert "brachybot-3d-manual.js?v=67" in index

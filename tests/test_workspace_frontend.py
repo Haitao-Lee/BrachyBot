@@ -383,7 +383,7 @@ def test_workspace_transitions_publish_measurable_first_paint_and_restore_stages
     # assertion aligned with the workspace/report artifact restore contract.
     assert "brachybot-workspace.js?v=37" in index
     assert "brachybot-ui-api.js?v=47" in index
-    assert "brachybot-viewer-volume.js?v=42" in index
+    assert "brachybot-viewer-volume.js?v=43" in index
     assert "brachybot-manual-annotation.js?v=18" in index
 
 

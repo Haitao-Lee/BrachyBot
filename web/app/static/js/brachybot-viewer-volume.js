@@ -622,12 +622,29 @@ async function loadLabelVolumes(options = {}) {
                     signal: ctrl.signal,
                 });
             } finally { clearTimeout(timer); }
-            if (res.status === 202) {
+            const pending = (res.status === 202 || res.status === 429)
+                ? await res.clone().json().catch(() => ({}))
+                : {};
+            const retryable = res.status === 202
+                || (res.status === 429 && pending.code === 'rate_limit_exceeded');
+            if (retryable) {
                 uiDebugLog('Label volumes are still restoring; retrying shortly');
                 if (retryAttempt >= 60) {
                     uiDebugLog('Label volume restore timed out; keeping the current viewer state');
                     return false;
                 }
+                const retryAfter = Number(
+                    pending.retry_after_ms
+                    || res.headers.get('Retry-After-Ms')
+                    || 1000,
+                );
+                await new Promise(resolve => setTimeout(
+                    resolve,
+                    Math.max(1000, Math.min(
+                        res.status === 429 ? 60000 : 5000,
+                        Number.isFinite(retryAfter) ? retryAfter : 1000,
+                    )),
+                ));
                 return _retryLabelVolumeLoad(
                     { ...options, _labelVolumeRetryAttempt: retryAttempt + 1 },
                     retryAttempt + 1,
@@ -1161,11 +1178,24 @@ async function loadGuideSkinSurface(options = {}) {
         const response = await fetch(API + '/viewer/skin_surface_volume', {
             headers: _viewerDataHeaders(scope.sessionId),
         });
-        if (response.status === 202) {
+        const pending = (response.status === 202 || response.status === 429)
+            ? await response.clone().json().catch(() => ({}))
+            : {};
+        const retryable = response.status === 202
+            || (response.status === 429 && pending.code === 'rate_limit_exceeded');
+        if (retryable) {
             if (retryAttempt >= 80 || !_viewerDataScopeIsCurrent(scope)) return false;
-            const payload = await response.json().catch(() => ({}));
+            const retryAfter = Number(
+                pending.retry_after_ms
+                || response.headers.get('Retry-After-Ms')
+                || 1000,
+            );
             await new Promise(resolve => setTimeout(
-                resolve, Math.max(100, Math.min(1000, Number(payload.retry_after_ms) || 250)),
+                resolve,
+                Math.max(1000, Math.min(
+                    response.status === 429 ? 60000 : 5000,
+                    Number.isFinite(retryAfter) ? retryAfter : 1000,
+                )),
             ));
             return loadGuideSkinSurface({ ...options, _retryAttempt: retryAttempt + 1 });
         }

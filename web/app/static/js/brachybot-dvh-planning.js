@@ -1325,7 +1325,8 @@ async function refreshPlanningUI(options = {}) {
                 // tree never advertises a planning result that only exists
                 // in one viewer.
                 loadAllIsoSurfaces({ reconstruct3d: true }),
-                'Isosurface reconstruction'
+                'Isosurface reconstruction',
+                180000,
             ));
         }
         // CTV + OAR meshes
@@ -1343,7 +1344,7 @@ async function refreshPlanningUI(options = {}) {
             || ((data.trajectories || []).length > 0);
         let seedGeometryPromise = Promise.resolve(null);
         if (shouldLoadSeedGeometry) {
-            seedGeometryPromise = _withTimeout(loadSeeds3D(), 'Seeds')
+            seedGeometryPromise = _withTimeout(loadSeeds3D(), 'Seeds', 120000)
                 .then(result => {
                     uiDebugLog('[3D auto-load] Seeds done. Meshes:', Object.keys(scene3D.meshes).length);
                     return result;

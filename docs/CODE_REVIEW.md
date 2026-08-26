@@ -1,9 +1,193 @@
-# 2026-08-26 Incident Review and Root-Cause Repair — Current Authoritative Status
+# 2026-08-27 Incident Review — Restart Planning Restore, Rate-Limit Failures, and 3D Visual Delivery
+
+> **This is the newest authoritative review entry and is intentionally located at the beginning of the file.**
+> It records the restart failure and the `Rate limit exceeded` messages shown by
+> the browser. The earlier 2026-08-26 review remains below as historical audit
+> material; it is not a substitute for this entry.
+
+## 1. Executive verdict
+
+The reported post-restart failure was real. It was not caused by the planning
+arrays being absent from durable storage, and it was not safe to hide the error
+messages or merely increase a single global request limit. The remote snapshot
+and server logs showed that the active planning result contained 54 Seeds, 8
+Needles, 4 dose levels, 15 planning meshes, dose-overlay metadata, and DVH
+data. The server also successfully served `seeds_3d`, the dose overlay, and
+all four dose-isosurface thresholds after hydration. The missing objects and
+the red browser messages were therefore caused by the delivery path between
+the restored workspace and the browser.
+
+| Confirmed problem | Root cause | Status |
+|---|---|---|
+| `CTV mask import failed: Rate limit exceeded` | A single per-IP 120-request/60-second bucket was shared by chat, uploads, planning mutations, CT/label reads, mesh reconstruction, and dose visualization. Hydration/retry traffic could consume the same budget before a legitimate mask request reached the handler. | **FIXED** |
+| Repeated `3D reconstruction failed: Rate limit exceeded` | POST-based but idempotent viewer reconstruction endpoints were charged to the same mutation bucket as unrelated operations; concurrent restore/prewarm/reconstruction calls multiplied the request burst. | **FIXED** |
+| Restored Seeds/Needles/Dose were absent or incomplete in the viewer | Frontend restore had no complete 429 retry contract for every planning visual endpoint, and `loadSeeds3D()`/iso loading could be entered concurrently. One failed request was allowed to make the essential restore look incomplete. | **FIXED** |
+| Existing dose isosurfaces disappeared after a transient failure | `loadAllIsoSurfaces()` cleared the existing scene and Data Tree entries before replacement requests succeeded. A 429/202/5xx therefore converted a temporary transport problem into permanent local data loss. | **FIXED** |
+| Old valid geometry could be overwritten by a weaker restore caller | Metadata-only and full 3D loads had no single-flight/serialization contract; a later caller could clear or replace work from the earlier caller. | **FIXED** |
+| Background reconstruction emitted user-facing failure spam | Silent background reconstruction still published errors on some paths, and the multi-label CTV loop swallowed terminal errors before converting them to a misleading “No CTV labels” message. | **FIXED** |
+
+## 2. Evidence collected before changing code
+
+The authoritative remote workspace was inspected directly. The persisted
+snapshot was not inferred from the screenshot:
+
+- active planning identity: `planning-06daf66fdd7144938f90ed750d299733`;
+- `runs`: 4;
+- `trajectories`: 8;
+- `seeds`: 54;
+- `needles`: 8;
+- `doseLevels`: 4;
+- planning `meshes`: 15;
+- `doseOverlay`: present;
+- `dvh`: present.
+
+The post-restart hydration log showed the same case passing through its CT,
+planning-result, and background phases. The final planning-result hydration
+decoded 96 result keys and restored the planning aliases. Subsequent server
+requests logged `seeds_3d returning 54 seeds, 8 needles`, a successful original-
+grid dose overlay request, and successful 120, 180, 240, and 480 Gy
+isosurface requests. This establishes that the durable plan and backend
+calculation products survived the restart.
+
+The browser errors were nevertheless valid symptoms of a real transport
+failure. Before the repair, `web/server_support.py::rate_limit()` used one
+sliding-window bucket of 120 requests per client IP for every decorated route.
+The viewer's reconstruction requests use POST even though they are reads from
+session-owned state, so they were indistinguishable from a mutation. A normal
+case restore can request CT/labels, dozens of structure meshes, Seeds,
+Needles, dose overlay data, dose slices, isosurfaces, guide data, screenshots,
+and retries in the same time window. When the bucket filled, the route handler
+was never reached; the browser received a genuine 429 response with
+`code=rate_limit_exceeded`.
+
+There was a second, independent state bug. The restore path called the same
+visual loaders as explicit reconstruction and segmentation prewarm. `loadSeeds3D()`
+and `loadAllIsoSurfaces()` did not serialize all callers. More importantly,
+`loadAllIsoSurfaces()` cleared the previous dose surfaces before it knew whether
+the replacement requests would succeed. Thus a transient 429 could erase an
+otherwise valid dose display, which explains why the Data Tree could contain
+the plan while the 3D/2D visual products were blank or stale.
+
+## 3. Root-cause repairs
+
+### 3.1 Separate data-plane and mutation rate limits
+
+`web/server_support.py` now selects an explicit bucket per request:
+
+- the original 120 requests per 60 seconds remains the default bucket for
+  chat, uploads, segmentation, plan edits, and other state-changing work;
+- GET requests and the idempotent viewer/planning visual endpoints use a
+  separate data-plane bucket, configurable through
+  `BRACHYBOT_DATA_RATE_LIMIT_REQUESTS`, with a safe default of 1,200 per 60
+  seconds;
+- the response includes `code=rate_limit_exceeded`, `retry_after_ms`, and
+  standard `Retry-After` headers, and the server logs the path, method, bucket,
+  client, and computed wait time;
+- API-key and remote-start security behavior was not disabled. The repair does
+  not turn the server into an unlimited endpoint and does not weaken any
+  clinical validation.
+
+The data bucket includes `/api/viewer/*`, `/api/surgical-guides/mesh`, and the
+case-owned planning visual products (`results`, `seeds_3d`, `dose_isosurface`,
+`dose_overlay`, `dose_overlay_volume`, `dose_overlay_slice`, and
+`dose_contour_slice`). This classification is based on the operation's state
+semantics, not on whether the HTTP method happens to be GET or POST.
+
+### 3.2 Make every restore request retry-aware and case-scoped
+
+The following frontend paths now recognize both hydration `202` and limiter
+`429` responses, honor the server wait value with bounded backoff, and stop
+mutating state after a Session/case transition:
+
+- `brachybot-3d-manual.js`: Seeds/Needles, dose isosurfaces, and segmentation
+  mesh prewarm;
+- `brachybot-viewer-volume.js`: label volume, guide skin, dose-overlay volume,
+  and dose-overlay slice delivery;
+- `brachybot-viewer-layout.js`: CTV multi-label and generic/individual 3D
+  reconstruction;
+- `brachybot-ui-api.js`: segmentation import polling, with in-flight
+  coalescing for the same Session and request body.
+
+The retry is deliberately bounded and case-scoped. A stale response cannot
+paint geometry into a newly selected case, and a background retry cannot create
+an error chat message for a request the user did not initiate. A user-triggered
+terminal backend error remains visible with its actual cause.
+
+### 3.3 Serialize and transactionally replace visual products
+
+`loadSeeds3D()` now has a case-scoped single-flight promise, so restore,
+planning refresh, and explicit reconstruction share one authoritative fetch and
+one scene update. `loadAllIsoSurfaces()` now serializes metadata-only versus
+full 3D callers and no longer clears existing surfaces at the beginning.
+
+For each requested threshold, the loader now:
+
+1. retains the previous valid mesh while fetching;
+2. replaces it only after a successful response with a non-empty mesh;
+3. preserves the previous Data Tree presentation flags and opacity;
+4. records a transient failure without marking a still-visible old mesh as
+   absent; and
+5. removes only obsolete thresholds after the requested set has been
+   reconciled.
+
+Legacy `planning.meshes` dose mirrors are cleaned only for obsolete dose rows;
+Seeds, Needles, guides, and other planning artifacts are not removed by this
+cleanup.
+
+### 3.4 Correct error publication
+
+Silent background calls now remain silent for deferred/missing/rate-limited
+viewer responses. The CTV multi-label loop no longer converts a terminal
+request failure into the unrelated “No CTV labels” message when the call was
+user initiated. This preserves useful diagnostics while preventing four or
+more identical red messages from concurrent background work.
+
+## 4. Verification and acceptance criteria
+
+The focused remote regression group passed **134 tests** with 3 warnings after
+the repair. It covers uploaded-mask staging, the independent rate-limit bucket,
+planning visual retries, single-flight loading, transactional iso replacement,
+viewer visibility, and frontend cache-version contracts. Python compilation of
+`web/server_support.py`, JavaScript syntax checks for the modified browser
+modules, and `git diff --check` also passed.
+
+The acceptance flow for this incident is:
+
+1. restart the server while a completed plan is persisted;
+2. reconnect the same Session and wait for hydration to reach its ready state;
+3. verify the Data Tree and `/api/planning/results` expose the active planning
+   identity, 54 Seeds, 8 Needles, dose metadata, and DVH;
+4. verify `/api/planning/seeds_3d`, `/api/planning/dose_overlay`, and all
+   configured dose-isosurface thresholds return without a 429 caused by the
+   restore burst;
+5. verify the 3D scene and all three 2D canvases receive the restored
+   geometry/overlay; and
+6. submit a legitimate CTV mask import after restore without it being rejected
+   merely because visual hydration traffic used the same client IP.
+
+The old red bubbles may remain in a persisted chat/history view because they
+are historical events. That does not mean the new server still generated them;
+the decisive check is a fresh hard reload after the cache-busted scripts are
+served and the absence of new rate-limit/reconstruction errors in the current
+server log.
+
+## 5. Scope boundary
+
+This repair changes request classification, retry behavior, concurrency, and
+visual-state transaction boundaries only. It does not alter needle collision
+rules, obstacle labels, CTV plausibility thresholds, dose calculation,
+DVH mathematics, prescription conversion, or plan-quality criteria. A genuine
+backend validation failure remains a failure and is not converted into a
+successful-looking plan.
+
+---
+
+# 2026-08-26 Incident Review and Root-Cause Repair — Historical Status
 
 > **This is the current section and is intentionally located at the beginning of the file.**
-> It supersedes older status statements below wherever they discuss deployment,
-> restored manual CTV semantics, manual Needle validation, 2D dose scrubbing, or
-> live-chat scrolling. Historical sections remain unchanged for auditability.
+> This section is historical and is retained unchanged for auditability. The
+> 2026-08-27 entry above is now the authoritative status for restart restore,
+> rate limiting, and planning visual delivery.
 
 ## 1. Executive verdict
 
