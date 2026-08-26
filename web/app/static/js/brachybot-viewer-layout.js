@@ -889,6 +889,60 @@ function _viewer3DRequestHeaders(scope, headers = {}) {
     };
 }
 
+// 3D reconstruction has several independent producers (manual requests,
+// planning restore, segmentation prewarm, and dose surfaces).  A single
+// boolean loading flag is incorrect when one producer finishes while another
+// is still decoding meshes: the first completion hides the overlay for the
+// whole scene.  Track ownership tokens instead, so loading ends only after the
+// last real 3D task settles.  Workspace switches can reset the token set; late
+// task finalizers are deliberately harmless when their token was invalidated.
+const _viewer3DLoadingState = {
+    nextToken: 0,
+    tokens: new Map(),
+};
+
+function _renderViewer3DLoading() {
+    const loading = document.getElementById('loading3D');
+    if (!loading) return;
+    const active = _viewer3DLoadingState.tokens.size > 0;
+    loading.classList.toggle('active', active);
+    loading.setAttribute('aria-hidden', active ? 'false' : 'true');
+    const text = loading.querySelector('.loading-text');
+    if (text) {
+        const messages = [..._viewer3DLoadingState.tokens.values()]
+            .filter(Boolean);
+        text.textContent = messages.length ? messages[messages.length - 1] : 'Rendering...';
+    }
+}
+
+function beginViewer3DLoading(message = 'Rendering...') {
+    const token = ++_viewer3DLoadingState.nextToken;
+    _viewer3DLoadingState.tokens.set(token, String(message || 'Rendering...'));
+    _renderViewer3DLoading();
+    return token;
+}
+
+function updateViewer3DLoading(token, message) {
+    if (token == null || !_viewer3DLoadingState.tokens.has(token)) return;
+    _viewer3DLoadingState.tokens.set(token, String(message || 'Rendering...'));
+    _renderViewer3DLoading();
+}
+
+function endViewer3DLoading(token) {
+    if (token != null) _viewer3DLoadingState.tokens.delete(token);
+    _renderViewer3DLoading();
+}
+
+function resetViewer3DLoading() {
+    _viewer3DLoadingState.tokens.clear();
+    _renderViewer3DLoading();
+}
+
+window.beginViewer3DLoading = beginViewer3DLoading;
+window.updateViewer3DLoading = updateViewer3DLoading;
+window.endViewer3DLoading = endViewer3DLoading;
+window.resetViewer3DLoading = resetViewer3DLoading;
+
 function invalidateViewer3DRequests() {
     _viewer3DRequestGeneration += 1;
     return _viewer3DRequestGeneration;
@@ -952,13 +1006,7 @@ async function reconstruct3D() {
         return;
     }
 
-    const loading = document.getElementById('loading3D');
-    const external3dStatus = document.getElementById('meshPrewarmStatus')
-        || document.getElementById('auto3DStatusBar');
-    if (loading && !external3dStatus) {
-        loading.classList.add('active');
-        loading.setAttribute('aria-hidden', 'false');
-    }
+    const loadingToken = beginViewer3DLoading('Rendering 3D scene...');
 
     try {
         // 1) CTV + non-traversable OARs (the structures the planning
@@ -1013,10 +1061,7 @@ async function reconstruct3D() {
             addChat('error', '3D reconstruction failed: ' + e.message);
         }
     } finally {
-        if (_viewer3DRequestScopeIsCurrent(requestScope) && loading && !external3dStatus) {
-            loading.classList.remove('active');
-            loading.setAttribute('aria-hidden', 'true');
-        }
+        endViewer3DLoading(loadingToken);
     }
 }
 
@@ -1107,13 +1152,9 @@ async function _reconstructOrgan3D(id, silent = false, scope = null) {
         return;
     }
 
-    const loading = document.getElementById('loading3D');
-    const external3dStatus = document.getElementById('meshPrewarmStatus')
-        || document.getElementById('auto3DStatusBar');
-    if (loading && !external3dStatus) {
-        loading.classList.add('active');
-        loading.setAttribute('aria-hidden', 'false');
-    }
+    const loadingToken = beginViewer3DLoading(
+        id === 'ctv' ? 'Rendering CTV surfaces...' : 'Rendering 3D surface...',
+    );
 
     try {
         if (id === 'skin_surface') {
@@ -1327,10 +1368,7 @@ async function _reconstructOrgan3D(id, silent = false, scope = null) {
             addChat('error', '3D reconstruction failed: ' + e.message);
         }
     } finally {
-        if (_viewer3DRequestScopeIsCurrent(requestScope) && loading && !external3dStatus) {
-            loading.classList.remove('active');
-            loading.setAttribute('aria-hidden', 'true');
-        }
+        endViewer3DLoading(loadingToken);
     }
 }
 
@@ -1846,11 +1884,7 @@ async function _reconstructThresholdMask3D(id, silent = false) {
             : 'The threshold mask is not available for 3D reconstruction.');
         return { success: false };
     }
-    const loading = document.getElementById('loading3D');
-    if (loading) {
-        loading.classList.add('active');
-        loading.setAttribute('aria-hidden', 'false');
-    }
+    const loadingToken = beginViewer3DLoading('Rendering threshold surface...');
     mask.loading = true;
     mask.status = 'loading';
     renderDataTree?.();
@@ -1903,10 +1937,7 @@ async function _reconstructThresholdMask3D(id, silent = false) {
         }
         return { success: false, error: error?.message || String(error) };
     } finally {
-        if (loading && _viewer3DRequestScopeIsCurrent(scope)) {
-            loading.classList.remove('active');
-            loading.setAttribute('aria-hidden', 'true');
-        }
+        endViewer3DLoading(loadingToken);
     }
 }
 

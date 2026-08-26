@@ -2001,6 +2001,12 @@ function clearClientWorkspace(options = {}) {
         loading3D.classList.remove('active');
         loading3D.setAttribute('aria-hidden', 'true');
     }
+    // Clear the ownership tokens as well as the DOM class.  Otherwise a late
+    // finalizer from the previous case could make the new case's 3D overlay
+    // reappear after the workspace has already been reset.
+    if (typeof window.resetViewer3DLoading === 'function') {
+        window.resetViewer3DLoading();
+    }
     resetAllState({ deferDisposal: options.deferDisposal === true });
     state.ctLoaded = false;
     state.ctPath = null;

@@ -1302,18 +1302,30 @@ async function refreshPlanningUI(options = {}) {
         }
 
         // ═══════════════════════════════════════════════════════════
-        // 3D MESHES: run ALL in parallel. Progress is represented by the
-        // execution trace/todo list; do not add a second floating spinner.
+        // 3D MESHES: start independent products in parallel, but keep every
+        // returned promise attached to the real mesh work. The loading overlay
+        // is owned by the individual loaders and remains active until their
+        // underlying requests actually settle.
         // ═══════════════════════════════════════════════════════════
         const _3dStatusBar = document.getElementById('meshPrewarmStatus')
             || document.getElementById('auto3DStatusBar');
         if (_3dStatusBar) _3dStatusBar.remove();
 
         function _withTimeout(promise, name, ms = 60000) {
-            return Promise.race([
-                promise,
-                new Promise((_, reject) => setTimeout(() => reject(new Error(`${name} timeout after ${ms/1000}s`)), ms))
-            ]).catch(e => console.warn(`[3D auto-load] ${name}:`, e.message));
+            // This is a soft watchdog, not a completion boundary. The former
+            // Promise.race rejected at the deadline and the catch converted
+            // that rejection into a resolved promise while the underlying
+            // mesh request kept running. That made the UI hide loading and
+            // start report capture against a partially reconstructed scene.
+            const watchdog = setTimeout(() => {
+                console.warn(`[3D auto-load] ${name} still running after ${ms/1000}s; waiting for completion`);
+            }, ms);
+            return Promise.resolve(promise)
+                .catch(e => {
+                    console.warn(`[3D auto-load] ${name}:`, e?.message || e);
+                    return { error: e?.message || String(e) };
+                })
+                .finally(() => clearTimeout(watchdog));
         }
 
         const _meshPromises = [];
