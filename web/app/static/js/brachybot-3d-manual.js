@@ -4576,10 +4576,22 @@ async function loadDoseIsosurface(threshold = 1.0, color = 0x00ff88, requestScop
             },
             body: JSON.stringify({ threshold }),
         });
-        if (!res.ok) { console.warn(`[loadDoseIsosurface] ${threshold} Gy: HTTP ${res.status}`); return; }
+        if (!res.ok) {
+            const error = `HTTP ${res.status}`;
+            console.warn(`[loadDoseIsosurface] ${threshold} Gy: ${error}`);
+            return { error };
+        }
         const data = await res.json();
-        if (!data.success) { console.warn(`[loadDoseIsosurface] ${threshold} Gy: ${data.error}`); return; }
-        if (!data.vertex_count || data.vertex_count === 0) { uiDebugLog(`[loadDoseIsosurface] ${threshold} Gy: 0 vertices, skipping`); return; }
+        if (!data.success) {
+            const error = data.error || 'Backend did not return an isosurface';
+            console.warn(`[loadDoseIsosurface] ${threshold} Gy: ${error}`);
+            return { error };
+        }
+        if (!data.vertex_count || data.vertex_count === 0) {
+            const message = 'No isosurface at this threshold';
+            uiDebugLog(`[loadDoseIsosurface] ${threshold} Gy: 0 vertices, skipping`);
+            return { vertices: 0, message, error: message };
+        }
         if (!_planningSceneScopeIsCurrent(scope)) return { stale: true };
 
         init3DScene();
@@ -4637,8 +4649,12 @@ async function loadDoseIsosurface(threshold = 1.0, color = 0x00ff88, requestScop
         const pct = dMaxGy > 0 ? Math.round((threshold / dMaxGy) * 100) : 0;
         const existingLevel = dataTreeState.planning.doseLevels.find(d => Math.abs(d.threshold - threshold) < 1e-6);
         mesh.visible = existingLevel
-            ? existingLevel.visible !== false && existingLevel.visible3D !== false
-            : true;
+            ? existingLevel.visible !== false
+                && existingLevel.visible3D !== false
+                && dataTreeState.planning.visible !== false
+                && dataTreeState.planning.visible3D !== false
+            : dataTreeState.planning.visible !== false
+                && dataTreeState.planning.visible3D !== false;
         // BUG FIX 2026-06-16: detect whether `threshold` is already
         // in absolute Gy (called from loadAllIsoSurfaces with v in Gy)
         // or a relative multiplier (called directly with 1.0, 1.5, etc.).
@@ -4648,6 +4664,9 @@ async function loadDoseIsosurface(threshold = 1.0, color = 0x00ff88, requestScop
         const isAlreadyGy = threshold > 5;  // 1.0×/1.5×/2.0×/4.0× are all < 5; real Gy is 50+
         const absGy = isAlreadyGy ? threshold.toFixed(0) : (threshold * rxGy).toFixed(0);
         if (existingLevel) {
+            existingLevel.loaded = true;
+            existingLevel.status = 'ready';
+            delete existingLevel.error;
             applyDoseCoverageAudit(existingLevel, data.coverage_audit);
         } else if (!window._suppressSingleIsoEntry) {
             const levelEntry = {
@@ -4659,6 +4678,8 @@ async function loadDoseIsosurface(threshold = 1.0, color = 0x00ff88, requestScop
                 opacity: 0.3,
                 color: '#' + color.toString(16).padStart(6, '0'),
                 pctLabel: `${absGy} Gy`,
+                loaded: true,
+                status: 'ready',
             };
             applyDoseCoverageAudit(levelEntry, data.coverage_audit);
             dataTreeState.planning.doseLevels.push(levelEntry);
@@ -4751,6 +4772,8 @@ async function loadAllIsoSurfaces(options = {}) {
     const priorLevels = new Map((dataTreeState?.planning?.doseLevels || [])
         .map(level => [Number(level?.threshold), level]));
     clearDosePlanningMeshes();
+    let loadedLevels = 0;
+    const failedLevels = [];
 
     // Convert relative multipliers → Gy (e.g. 1.0×120=120, 1.5×120=180)
     for (let i = 0; i < relValues.length; i++) {
@@ -4779,15 +4802,44 @@ async function loadAllIsoSurfaces(options = {}) {
                     window._suppressSingleIsoEntry = _prevSuppress;
                 }
                 if (!_planningSceneScopeIsCurrent(requestScope)) return { stale: true };
-                uiDebugLog(`[IsoSurf] ${v} Gy: mesh=${scene3D.meshes['dose_iso_'+v] ? 'loaded' : 'FAILED'}`);
+                const mesh = scene3D.meshes[`dose_iso_${v}`];
+                const levelAvailable = !!mesh
+                    && !!isoResult
+                    && isoResult.stale !== true
+                    && !isoResult.error
+                    && Number(isoResult.vertices) > 0;
+                uiDebugLog(`[IsoSurf] ${v} Gy: mesh=${levelAvailable ? 'loaded' : 'FAILED'}`);
+                if (levelAvailable) {
+                    loadedLevels += 1;
+                } else {
+                    failedLevels.push({
+                        threshold: v,
+                        reason: isoResult?.error || (isoResult?.stale ? 'stale' : 'No isosurface mesh returned'),
+                    });
+                }
                 // Override the just-added mesh's opacity with the per-level
                 // config value (loadDoseIsosurface uses a hard-coded 0.3).
-                const mesh = scene3D.meshes[`dose_iso_${v}`];
-                if (mesh) applyMeshOpacity(mesh, opacity, true);
+                if (mesh) applyMeshOpacity(mesh, opacity, levelAvailable
+                    && dataTreeState.planning.visible !== false
+                    && dataTreeState.planning.visible3D !== false);
+            } else {
+                failedLevels.push({ threshold: v, reason: '3D reconstruction disabled' });
             }
             // Mirror into data tree with the config opacity.
             if (dataTreeState && dataTreeState.planning) {
                 const existing = priorLevels.get(v);
+                const levelAvailable = !reconstruct3d
+                    ? false
+                    : !!scene3D?.meshes?.[`dose_iso_${v}`]
+                        && !!isoResult
+                        && isoResult.stale !== true
+                        && !isoResult.error
+                        && Number(isoResult.vertices) > 0;
+                const levelStatus = levelAvailable ? 'ready'
+                    : (isoResult?.error ? 'error' : 'not_generated');
+                const levelError = levelAvailable
+                    ? undefined
+                    : (isoResult?.error || (!reconstruct3d ? '3D reconstruction disabled' : 'No isosurface mesh returned'));
                 if (!existing) {
                     const levelEntry = {
                         threshold: v,
@@ -4798,7 +4850,10 @@ async function loadAllIsoSurfaces(options = {}) {
                         opacity,
                         color: '#' + color.toString(16).padStart(6, '0'),
                         pctLabel: `${absGy} Gy`,
+                        loaded: levelAvailable,
+                        status: levelStatus,
                     };
+                    if (levelError) levelEntry.error = levelError;
                     applyDoseCoverageAudit(levelEntry, isoResult?.coverageAudit);
                     dataTreeState.planning.doseLevels.push(levelEntry);
                 } else {
@@ -4812,6 +4867,10 @@ async function loadAllIsoSurfaces(options = {}) {
                     existing.color = existing.color || ('#' + color.toString(16).padStart(6, '0'));
                     existing.thresholdGy = parseFloat(absGy);
                     existing.pctLabel = `${absGy} Gy`;
+                    existing.loaded = levelAvailable;
+                    existing.status = levelStatus;
+                    if (levelError) existing.error = levelError;
+                    else delete existing.error;
                     applyDoseCoverageAudit(existing, isoResult?.coverageAudit);
                     dataTreeState.planning.doseLevels.push(existing);
                 }
@@ -4823,7 +4882,7 @@ async function loadAllIsoSurfaces(options = {}) {
     if (!_planningSceneScopeIsCurrent(requestScope)) return { stale: true };
     if (typeof window.applyDataTreeViewVisibility === 'function') window.applyDataTreeViewVisibility();
     try { renderDataTree(); } catch (_) {}
-    return { stale: false, levels: relValues.length };
+    return { stale: false, levels: relValues.length, loadedLevels, failedLevels };
 }
 
 async function reconstructDoseIsosurface3D(idOrThreshold) {
@@ -4835,7 +4894,11 @@ async function reconstructDoseIsosurface3D(idOrThreshold) {
     const color = Number.parseInt(colorText, 16) || 0x22c55e;
     await loadDoseIsosurface(Number(level.threshold), color);
     const mesh = scene3D.meshes[`dose_iso_${level.threshold}`];
-    if (mesh) applyMeshOpacity(mesh, level.opacity ?? 0.3, level.visible !== false && level.visible3D !== false);
+    if (mesh) applyMeshOpacity(
+        mesh,
+        level.opacity ?? 0.3,
+        isDataTreeNodeVisible3D(level),
+    );
     renderDataTree();
     forceRender3DViewer();
     return { threshold: Number(level.threshold), reconstructed: !!mesh };
@@ -5884,6 +5947,13 @@ async function _loadDoseOverlayImpl(retryAttempt = 0) {
         // Preserve user-set opacity when reloading (e.g. after manual
         // recompute or when Dose Surface triggers a reload). Default to
         // 0.4 only on the very first load.
+        const priorDoseNode = dataTreeState?.planning?.doseOverlay;
+        const priorOverlayVisible = state.doseOverlay
+            && Object.prototype.hasOwnProperty.call(state.doseOverlay, 'visible')
+            ? state.doseOverlay.visible !== false
+            : priorDoseNode?.visible !== false;
+        const priorOverlayVisible2D = state.doseOverlay?.visible2D
+            ?? priorDoseNode?.visible2D;
         const prevOpacity = Number.isFinite(Number(state.doseOverlay?.opacity))
             ? state.doseOverlay.opacity
             : dataTreeState?.planning?.doseOverlay?.opacity;
@@ -5901,7 +5971,11 @@ async function _loadDoseOverlayImpl(retryAttempt = 0) {
             doseMax: data.dose_max,
             doseUnits: data.dose_units || 'normalized_model_output',
             doseScaleGy: data.dose_scale_gy || _getDoseScaleGy(),
-            visible: true,
+            // Rebuilding the dose metadata must not reset a Data Tree hide.
+            // The parent Planning/view gates are applied immediately below;
+            // this is the node-local preference that survives a refresh.
+            visible: priorOverlayVisible,
+            visible2D: priorOverlayVisible2D !== false,
             opacity: _clampDoseOverlayOpacity(prevOpacity),
             slices: {},  // Cache: {axis_index: sliceData}
             maxSlice: {
@@ -5929,6 +6003,13 @@ async function _loadDoseOverlayImpl(retryAttempt = 0) {
         void loadDoseOverlayVolume(state.doseOverlay);
 
         renderDataTree();
+        // Metadata arrival and compact-volume arrival are asynchronous. Apply
+        // the complete parent/2D visibility contract now so a newly-created
+        // overlay cannot remain painted or hidden according to stale canvas
+        // state until the next unrelated tool call.
+        if (typeof window.applyDataTreeViewVisibility === 'function') {
+            window.applyDataTreeViewVisibility();
+        }
 
         // Show colorbars in ALL 3 2D viewers (axial, sagittal, coronal).
         // Values are converted with the backend-provided checkpoint scale so labels are

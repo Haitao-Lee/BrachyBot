@@ -381,9 +381,9 @@ def test_workspace_transitions_publish_measurable_first_paint_and_restore_stages
     assert "restore.fully_interactive" in ui_api
     # Versioned URLs are intentional cache invalidation points. Keep this
     # assertion aligned with the workspace/report artifact restore contract.
-    assert "brachybot-workspace.js?v=36" in index
+    assert "brachybot-workspace.js?v=37" in index
     assert "brachybot-ui-api.js?v=47" in index
-    assert "brachybot-viewer-volume.js?v=41" in index
+    assert "brachybot-viewer-volume.js?v=42" in index
     assert "brachybot-manual-annotation.js?v=18" in index
 
 
@@ -1480,7 +1480,23 @@ def test_planning_parent_visibility_clears_independent_dose_projection_layers():
     assert "function _setPlanningDoseProjectionVisibility(visible, options = {})" in viewer
     assert "dataTreeState.planning.visible = !!visible" in viewer
     assert "doseOverlayCanvas" in viewer
-    assert "_setPlanningDoseProjectionVisibility(dataTreeState.planning.visible)" in viewer
+    assert "_setPlanningDoseProjectionVisibility(_planningViewVisible('2d'))" in viewer
+
+
+def test_compact_restart_planning_shell_cannot_hide_restored_dose_layers():
+    """A placeholder restart snapshot must not override hydrated Planning visuals."""
+    workspace = read("web/app/static/js/brachybot-workspace.js")
+    viewer = read("web/app/static/js/brachybot-viewer-volume.js")
+
+    assert "function hasPlanningClinicalRows(planning)" in workspace
+    assert "function isCompactPlanningShell(savedTree)" in workspace
+    assert "savedTree.planning.visibilityConfigured === true" in workspace
+    assert "dataTreeState.planning.visible = true" in workspace
+    assert "visibilityConfigured: false" in viewer
+    assert "function _planningViewVisible(view)" in viewer
+    assert "&& (!_isPlanningDescendantNode(node) || _planningViewVisible('2d'))" in viewer
+    assert "&& (!_isPlanningDescendantNode(node) || _planningViewVisible('3d'))" in viewer
+    assert "const planningMasterVisible = _planningMasterVisible();" in viewer
 
 
 def test_finalized_detached_chat_keeps_start_timestamp_and_trace_for_restore():
