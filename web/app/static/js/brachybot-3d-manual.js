@@ -4285,12 +4285,18 @@ async function loadSeeds3D() {
         && _planningSceneScopeIsCurrent(_seeds3DLoadInFlight.scope)) {
         return _seeds3DLoadInFlight.promise;
     }
+    const loadingToken = typeof window.beginViewer3DLoading === 'function'
+        ? window.beginViewer3DLoading('Rendering seeds and needles...')
+        : null;
     const promise = _loadSeeds3D(requestScope);
     _seeds3DLoadInFlight = { scope: requestScope, promise };
     try {
         return await promise;
     } finally {
         if (_seeds3DLoadInFlight?.promise === promise) _seeds3DLoadInFlight = null;
+        if (loadingToken != null && typeof window.endViewer3DLoading === 'function') {
+            window.endViewer3DLoading(loadingToken);
+        }
     }
 }
 
@@ -4827,12 +4833,19 @@ async function loadAllIsoSurfaces(options = {}) {
         await inFlight.promise.catch(() => {});
         if (!_planningSceneScopeIsCurrent(requestScope)) return { stale: true };
     }
+    const loadingToken = reconstruct3d
+        && typeof window.beginViewer3DLoading === 'function'
+        ? window.beginViewer3DLoading('Rendering dose surfaces...')
+        : null;
     const promise = _loadAllIsoSurfaces(options, requestScope);
     _isoSurfaceLoadInFlight = { scope: requestScope, reconstruct3d, promise };
     try {
         return await promise;
     } finally {
         if (_isoSurfaceLoadInFlight?.promise === promise) _isoSurfaceLoadInFlight = null;
+        if (loadingToken != null && typeof window.endViewer3DLoading === 'function') {
+            window.endViewer3DLoading(loadingToken);
+        }
     }
 }
 
@@ -5294,6 +5307,12 @@ async function prewarmSegmentationMeshes(kind = 'all', opts = {}) {
 
     const generation = _segmentationMeshPrewarm.generation;
     const sessionId = String(opts.sessionId || state.sessionId || '') || null;
+    const loadingToken = opts.loadingToken ?? null;
+    const updateLoading = message => {
+        if (loadingToken != null && typeof window.updateViewer3DLoading === 'function') {
+            window.updateViewer3DLoading(loadingToken, message);
+        }
+    };
 
     const includeCTV = kind === 'ctv' || kind === 'oar' || kind === 'all';
     const includeOAR = kind === 'oar' || kind === 'all';
@@ -5304,6 +5323,9 @@ async function prewarmSegmentationMeshes(kind = 'all', opts = {}) {
 
     _segmentationMeshPrewarm.activeRuns += 1;
     if (showStatus) _setMeshPrewarmStatus(kind === 'ctv' ? '3D CTV reconstruction started...' : '3D OAR reconstruction running...');
+    updateLoading(kind === 'ctv'
+        ? 'Rendering CTV surfaces...'
+        : 'Rendering OAR surfaces...');
 
     try {
         if (includeCTV && ctvLabelData) {
@@ -5353,11 +5375,14 @@ async function prewarmSegmentationMeshes(kind = 'all', opts = {}) {
                 });
                 promises.push(Promise.all(batch));
                 await Promise.all(batch);
-                if (showStatus) _setMeshPrewarmStatus(`3D OAR reconstruction ${Math.min(i + batchSize, oarIds.length)}/${oarIds.length}`);
+                const completed = Math.min(i + batchSize, oarIds.length);
+                if (showStatus) _setMeshPrewarmStatus(`3D OAR reconstruction ${completed}/${oarIds.length}`);
+                updateLoading(`Rendering OAR surfaces ${completed}/${oarIds.length}...`);
             }
         }
 
         await Promise.all(promises);
+        updateLoading('Finalizing 3D scene...');
         // The all-OAR restore is deliberately progressive. Reframe once the
         // last batch has arrived, but only while this restore still owns the
         // camera. A pointer interaction cancels the ownership immediately.
@@ -5388,35 +5413,81 @@ async function prewarmSegmentationMeshes(kind = 'all', opts = {}) {
 }
 
 function startSegmentationMeshPrewarm(kind = 'all', opts = {}) {
-    if (!state.ctLoaded && !state.ctPath) return;
-    setTimeout(() => {
-        prewarmSegmentationMeshes(kind, { ...opts, showStatus: opts.showStatus !== false }).catch(e => {
+    if (!state.ctLoaded && !state.ctPath) return Promise.resolve({ status: 'skipped' });
+    const scheduledGeneration = _segmentationMeshPrewarm.generation;
+    const scheduledSessionId = String(opts.sessionId || state.sessionId || '') || null;
+    const loadingToken = typeof window.beginViewer3DLoading === 'function'
+        ? window.beginViewer3DLoading(kind === 'ctv'
+            ? 'Rendering CTV surfaces...'
+            : 'Rendering OAR surfaces...')
+        : null;
+    return new Promise(resolve => setTimeout(() => {
+        if (scheduledGeneration !== _segmentationMeshPrewarm.generation
+            || (scheduledSessionId && scheduledSessionId !== String(state.sessionId || ''))) {
+            if (loadingToken != null && typeof window.endViewer3DLoading === 'function') {
+                window.endViewer3DLoading(loadingToken);
+            }
+            resolve({ status: 'stale' });
+            return;
+        }
+        prewarmSegmentationMeshes(kind, {
+            ...opts,
+            loadingToken,
+            showStatus: opts.showStatus !== false,
+        }).then(resolve).catch(e => {
             console.warn('[3D prewarm] failed:', e);
             _setMeshPrewarmStatus('', false);
+            resolve({ status: 'error', error: e });
+        }).finally(() => {
+            if (loadingToken != null && typeof window.endViewer3DLoading === 'function') {
+                window.endViewer3DLoading(loadingToken);
+            }
         });
-    }, 0);
+    }, 0));
 }
 
 async function loadCTVAndObstacleMeshes() {
-    // Keep the first planning refresh responsive: CTV and safety-critical
-    // OARs are ready before the report/viewer pass continues.  The remaining
-    // OAR meshes are then constructed in the background, so every structure
-    // ultimately has a real 3D scene object without making an already-finished
-    // plan appear to hang for the duration of fifty mesh requests.
-    init3DScene();
-    scene3D._cameraHydrationActive = scene3D._cameraUserInteracted !== true;
-    await prewarmSegmentationMeshes('all', { showStatus: false, batchSize: 3 });
-    if (oarLabelData) {
-        startSegmentationMeshPrewarm('all', {
-            allOAR: true,
+    // This function is the completion boundary for the full structural 3D
+    // rebuild.  It used to await only the first non-traversable OAR batch and
+    // then schedule all remaining OAR meshes with setTimeout.  Callers
+    // consequently hid loading while the scene was still being populated.
+    // Keep the requests batched, but await the complete all-OAR drain so the
+    // returned promise means what its name says.
+    const loadingToken = typeof window.beginViewer3DLoading === 'function'
+        ? window.beginViewer3DLoading('Rendering CTV and OAR surfaces...')
+        : null;
+    try {
+        init3DScene();
+        scene3D._cameraHydrationActive = scene3D._cameraUserInteracted !== true;
+        if (loadingToken != null && typeof window.updateViewer3DLoading === 'function') {
+            window.updateViewer3DLoading(loadingToken, 'Rendering target and obstacle surfaces...');
+        }
+        await prewarmSegmentationMeshes('all', {
             showStatus: false,
             batchSize: 3,
-            reframeCamera: true,
+            loadingToken,
         });
-    } else {
-        scene3D._cameraHydrationActive = false;
+        if (oarLabelData) {
+            if (loadingToken != null && typeof window.updateViewer3DLoading === 'function') {
+                window.updateViewer3DLoading(loadingToken, 'Rendering remaining OAR surfaces...');
+            }
+            await prewarmSegmentationMeshes('all', {
+                allOAR: true,
+                showStatus: false,
+                batchSize: 3,
+                reframeCamera: true,
+                loadingToken,
+            });
+        } else {
+            scene3D._cameraHydrationActive = false;
+        }
+        uiDebugLog(`[loadCTVAndObstacle] Full structural mesh rebuild complete. Total scene meshes: ${Object.keys(scene3D.meshes).length}`);
+        return { success: true, complete: true, meshCount: Object.keys(scene3D.meshes).length };
+    } finally {
+        if (loadingToken != null && typeof window.endViewer3DLoading === 'function') {
+            window.endViewer3DLoading(loadingToken);
+        }
     }
-    uiDebugLog(`[loadCTVAndObstacle] Meshes ready. Total scene meshes: ${Object.keys(scene3D.meshes).length}`);
 }
 
 // Load dose distribution as 2D overlay on CT slices

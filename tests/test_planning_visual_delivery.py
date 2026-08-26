@@ -2,7 +2,9 @@
 
 The clinical pipeline may finish on a background worker, but its results must
 still travel through the same case-bound UI path: labels first, then planning
-objects, dose/DVH/report products, and finally non-blocking full OAR meshes.
+objects, dose/DVH/report products, and finally the complete tracked 3D mesh
+reconstruction. The data plane may become usable earlier, but loading must
+remain active until the actual mesh promises settle.
 """
 
 from pathlib import Path
@@ -28,15 +30,16 @@ def test_chat_segmentation_completion_loads_labels_before_background_meshes():
     assert "normalizedKind" in viewer
 
 
-def test_full_oar_reconstruction_is_non_blocking_after_the_essential_meshes():
+def test_full_oar_reconstruction_is_tracked_until_all_meshes_settle():
     manual = read("web/app/static/js/brachybot-3d-manual.js")
     block = manual.split("async function loadCTVAndObstacleMeshes()", 1)[1].split(
         "// Load dose distribution", 1
     )[0]
 
-    assert "await prewarmSegmentationMeshes('all', { showStatus: false, batchSize: 3 });" in block
-    assert "startSegmentationMeshPrewarm('all', {" in block
+    assert "await prewarmSegmentationMeshes('all', {" in block
     assert "allOAR: true" in block
+    assert "loadingToken" in block
+    assert "startSegmentationMeshPrewarm('all', {" not in block
     assert "function startSegmentationMeshPrewarm(kind = 'all', opts = {})" in manual
 
 
@@ -212,3 +215,24 @@ def test_planning_visual_loads_are_retryable_and_case_scoped():
     assert "loadAllIsoSurfaces({ reconstruct3d: true })," in planning
     assert "'Isosurface reconstruction',\n                180000" in planning
     assert "_withTimeout(loadSeeds3D(), 'Seeds', 120000)" in planning
+
+
+def test_3d_loading_has_reference_counted_ownership_and_soft_watchdog():
+    layout = read("web/app/static/js/brachybot-viewer-layout.js")
+    manual = read("web/app/static/js/brachybot-3d-manual.js")
+    planning = read("web/app/static/js/brachybot-dvh-planning.js")
+    ui_api = read("web/app/static/js/brachybot-ui-api.js")
+
+    for required in (
+        "const _viewer3DLoadingState =",
+        "function beginViewer3DLoading",
+        "function endViewer3DLoading",
+        "function resetViewer3DLoading",
+        "tokens.size > 0",
+    ):
+        assert required in layout
+    assert "window.resetViewer3DLoading" in ui_api
+    assert "window.beginViewer3DLoading('Rendering seeds and needles...')" in manual
+    assert "window.beginViewer3DLoading('Rendering dose surfaces...')" in manual
+    assert "still running after ${ms/1000}s; waiting for completion" in planning
+    assert "Promise.race([" not in planning
