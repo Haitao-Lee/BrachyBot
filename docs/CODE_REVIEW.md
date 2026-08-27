@@ -86,12 +86,23 @@ The second-pass checks on the remote checkout are:
 - The direct runtime probe classified the exact user message as
   `viewer_display` and emitted only the typed `ui_controller` action.
 
-The remaining deployment check is to restart the live server from the commit
-containing this repair and verify its startup log and port. A browser-level
-acceptance should then send the exact request while the LLM provider is
-unavailable: the trace must contain the local UI action, the Viewer/Data Tree
-must refresh from the active Session, and no `planning_pipeline` or dose
-recomputation call may appear.
+The deployment check is complete on the remote checkout. Commit
+`a0a954d95` was pushed to `origin/codex/session-task-recovery`. The live
+server was restarted from that commit as PID `3217041`, using the existing
+`web/server.py --host 0.0.0.0` command and the same configured runtime
+environment. Port 8080 is listening, and
+`/tmp/brachybot_server_a0a954d95.log` contains the normal Flask startup banner
+with no traceback, error, critical, exception, or address-in-use lines. An
+unauthenticated `/api/status` probe returned HTTP 401, confirming that the
+server is reachable while its authentication boundary remains active.
+
+An authenticated browser replay of the exact user request was not performed
+from this shell because no browser Session credentials were available. The
+provider-independent policy, typed backend action, frontend hydration call,
+and stream integration are covered by the tests above. In the browser, the
+acceptance condition is: the trace contains the local UI action, the
+Viewer/Data Tree refreshes from the active Session, and no
+`planning_pipeline` or dose-recomputation call appears.
 
 # 2026-08-27 Incident Review — Completed replan produced empty Planning nodes after restart
 
