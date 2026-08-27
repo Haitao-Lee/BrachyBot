@@ -271,6 +271,104 @@ class ChatWorkflowMixin:
         lang = getattr(getattr(self, "memory", None), "user_lang", "zh")
         return self._llm_unavailable_message(lang)
 
+    def _response_language(self, lang: Optional[str] = None) -> str:
+        """Return the normalized language for the current user-visible turn."""
+        value = lang or getattr(getattr(self, "memory", None), "user_lang", "en")
+        return "zh" if str(value or "").lower().startswith("zh") else "en"
+
+    @staticmethod
+    def _is_explicit_capability_request(message: str) -> bool:
+        """Recognize a request for help/capabilities, not an arbitrary action."""
+        text = re.sub(r"\s+", " ", str(message or "").strip().lower())
+        if not text:
+            return False
+        return bool(
+            re.search(
+                r"(?:你能做什么|你可以做什么|有哪些(?:工具|功能)|工具列表|功能列表|使用说明|能力说明)[?？.!！ ]*$",
+                text,
+            )
+            or re.search(
+                r"^(?:help|capabilities|available tools|list tools|what can you do|"
+                r"what are your capabilities|how do i use you)[?.! ]*$",
+                text,
+                flags=re.IGNORECASE,
+            )
+        )
+
+    @staticmethod
+    def _is_generic_capability_menu(response: Any) -> bool:
+        """Detect the legacy hard-coded menu that answered unrelated turns."""
+        text = str(response or "").strip().lower()
+        if not text or "i can help with brachytherapy planning" not in text:
+            return False
+        if "try:" not in text:
+            return False
+        markers = (
+            "segment ctv", "generate plan", "evaluate dose",
+            "optimize plan", "self-evolve", "create tool",
+        )
+        return sum(marker in text for marker in markers) >= 2
+
+    @staticmethod
+    def _capability_response(lang: str = "en") -> str:
+        """Describe capabilities in the language used by the current turn."""
+        if str(lang or "").lower().startswith("zh"):
+            return (
+                "我可以协助当前病例的 CT 与分割、Planning、Dose/DVH、针道与粒子、"
+                "手术导板和报告。请直接说明要查询的对象或要执行的操作；"
+                "查询类问题不会自动启动临床流程。"
+            )
+        return (
+            "Available tools and capabilities: I can help with the current case's CT and segmentation, Planning, "
+            "Dose/DVH, needle and seed geometry, Surgical Guide, and report. "
+            "State the object you want to inspect or the operation you want to "
+            "run; read-only questions do not start a clinical workflow."
+        )
+
+    def _unmatched_turn_response(self, message: str = "", lang: Optional[str] = None) -> str:
+        """Return a safe, same-language response when no reliable route exists."""
+        response_lang = self._response_language(lang)
+        if self._is_explicit_capability_request(message):
+            return self._capability_response(response_lang)
+        if response_lang == "zh":
+            return (
+                "我没有可靠识别出这条请求的具体目标。为避免误执行，本次没有启动任何临床操作，"
+                "也没有根据关键词擅自执行规划。请明确说明要查询或执行的对象；"
+                "如果是当前 Session 查询，请说明要查看 Planning、Dose/DVH、针道、粒子或手术导板。"
+            )
+        return (
+            "I could not reliably identify the target of this request. To avoid an unintended action, "
+            "no clinical operation was started and no planning was inferred from keywords. "
+            "Please specify the object or operation; for a current-Session query, mention Planning, "
+            "Dose/DVH, needles, seeds, or the Surgical Guide."
+        )
+
+    def _no_provider_fallback_response(self, message: str = "", lang: Optional[str] = None) -> str:
+        """Explain an unavailable provider without returning an unrelated menu."""
+        response_lang = self._response_language(lang)
+        if self._is_explicit_capability_request(message):
+            return self._capability_response(response_lang)
+        if response_lang == "zh":
+            return (
+                "AI 语言服务当前不可用，我无法可靠理解或回答这条请求。为避免误执行，"
+                "本次没有启动任何临床操作。请检查 LLM provider 配置后重试；"
+                "如果是当前 Session 查询，请明确说明要查看 Planning、Dose/DVH、针道、粒子或手术导板。"
+            )
+        return (
+            "The AI language service is currently unavailable, so I cannot reliably interpret or answer "
+            "this request. To avoid an unintended action, no clinical operation was started. "
+            "Check the LLM provider configuration and retry; for a current-Session query, specify "
+            "Planning, Dose/DVH, needles, seeds, or the Surgical Guide."
+        )
+
+    def _normalize_user_facing_response(self, message: str, response: Any) -> Any:
+        """Block the legacy unrelated menu and keep its explicit-help form localized."""
+        if self._is_generic_capability_menu(response):
+            if self._is_explicit_capability_request(message):
+                return self._capability_response(self._response_language())
+            return self._unmatched_turn_response(message)
+        return response
+
     @staticmethod
     def _is_llm_provider_error(response: Any) -> bool:
         """Identify provider/runtime failures that must not leak into chat output.
@@ -819,6 +917,105 @@ class ChatWorkflowMixin:
         lines.append("- Ask separately for site-specific dose standards or OAR limits when an evidence lookup is intended.")
         return "\n".join(lines)
 
+    def _build_current_planning_provenance_response(self, lang: str = "en") -> str:
+        """Explain which persisted Planning supplied the current calculation.
+
+        This is deliberately a local read. It does not ask the LLM to infer a
+        Planning label from conversation text and it never starts planning,
+        dose, segmentation, or review work.
+        """
+        response_lang = self._response_language(lang)
+        try:
+            from web.planning_runs import current_planning_context
+
+            context = current_planning_context(self.memory)
+        except Exception as exc:
+            logger.exception("Failed to read current Planning provenance")
+            if response_lang == "zh":
+                return f"当前 Session 的 Planning 来源暂时无法读取，因此我不能可靠确认本次计算依据哪次规划（{exc}）。"
+            return f"The current Session's Planning provenance could not be read, so I cannot reliably identify the source Planning ({exc})."
+
+        planning_id = str(context.get("planning_id") or "").strip()
+        if not planning_id:
+            if response_lang == "zh":
+                return "当前 Session 没有可识别的激活 Planning，也没有足够的持久化信息确认本次计算依据哪次规划。"
+            return "The current Session has no identifiable active Planning and not enough persisted information to confirm which Planning was used."
+
+        provenance = context.get("dose_recompute_provenance")
+        provenance = provenance if isinstance(provenance, dict) else {}
+        label = str(
+            provenance.get("planning_label")
+            or context.get("label")
+            or planning_id
+        )
+        status = str(
+            provenance.get("planning_status")
+            or context.get("status")
+            or "unknown"
+        )
+        seed_count = provenance.get("total_seeds") or context.get("total_seeds") or 0
+        needle_count = provenance.get("num_trajectories") or context.get("num_trajectories") or 0
+        try:
+            seed_count = int(seed_count)
+        except (TypeError, ValueError):
+            seed_count = 0
+        try:
+            needle_count = int(needle_count)
+        except (TypeError, ValueError):
+            needle_count = 0
+        source = str(provenance.get("source") or context.get("source") or "unknown")
+        source_text = {
+            "active_planning_run": "active Planning run snapshot",
+            "legacy_active_aliases": "legacy active Session aliases",
+        }.get(source, source)
+        status_text_zh = {
+            "completed": "已完成",
+            "running": "执行中",
+            "draft": "草稿",
+            "failed": "失败",
+            "cancelled": "已取消",
+        }.get(status, status)
+
+        if response_lang == "zh":
+            lines = [
+                "## 本次剂量/DVH计算的依据",
+                "",
+                f"本次计算依据的是 **{label}**（Planning ID：`{planning_id}`）。",
+                f"- Planning 状态：{status_text_zh}",
+                f"- 规划几何：{needle_count} 个针道、{seed_count} 个粒子。",
+                f"- 持久化来源：{source_text}。",
+            ]
+            if provenance:
+                lines.extend([
+                    "- 计算边界：读取该 Planning 已保存的针道和粒子位置，仅重新计算 Dose/DVH；"
+                    "没有重新进行分割、重新选择针道，也没有重新运行完整 Planning pipeline。",
+                ])
+            else:
+                lines.extend([
+                    "- 当前 Session 没有保存这次重算的独立审计记录；上面的 Planning 身份和数量是当前可核验的持久化状态。",
+                    "- 因此不能仅凭当前快照额外断言当时是否重新分割或重新选择针道。",
+                ])
+            return "\n".join(lines)
+
+        lines = [
+            "## Planning used for this Dose/DVH calculation",
+            "",
+            f"This calculation used **{label}** (Planning ID: `{planning_id}`).",
+            f"- Planning status: {status}",
+            f"- Planning geometry: {needle_count} needles and {seed_count} seeds.",
+            f"- Persisted source: {source_text}.",
+        ]
+        if provenance:
+            lines.append(
+                "- Calculation boundary: the saved Needle/Seed geometry from this Planning was used to recompute Dose/DVH; segmentation, needle selection, and the full Planning pipeline were not rerun."
+            )
+        else:
+            lines.extend([
+                "- The Session does not contain a separate audit record for that recomputation; the Planning identity and counts above are the currently verifiable persisted state.",
+                "- The current snapshot alone cannot establish whether segmentation or needle selection was rerun at that time.",
+            ])
+        return "\n".join(lines)
+
     @staticmethod
     def _session_content_response(target: str, lang: str = "en") -> str:
         """Return a localized acknowledgement for a browser content bridge.
@@ -1295,6 +1492,13 @@ class ChatWorkflowMixin:
             )
         )
         self._activate_turn_policy(local_policy)
+        if local_policy.intent == "planning_provenance_query":
+            response = self._build_current_planning_provenance_response(self.memory.user_lang)
+            self.memory.add_message("assistant", response)
+            self._record_experience(message, response)
+            self._finish_turn(response)
+            return response
+
         if local_policy.intent == "case_dose_query":
             response = self._build_current_dose_response(self.memory.user_lang)
             self.memory.add_message("assistant", response)
@@ -1348,8 +1552,15 @@ class ChatWorkflowMixin:
             # merely because the configured provider is unavailable.
             if local_policy.intent == "small_talk":
                 response = self._current_llm_unavailable_message()
-            else:
+            elif local_policy.direct_execution:
                 response = self._rule_based_chat(message)
+            else:
+                # A semantic/knowledge turn is not authorized for keyword
+                # execution. In particular, a question mentioning "Planning"
+                # must not start a new plan when the provider is unavailable.
+                response = self._no_provider_fallback_response(message)
+
+        response = self._normalize_user_facing_response(message, response)
 
         if not internal_followup:
             self._record_experience(message, response)
@@ -1423,6 +1634,25 @@ class ChatWorkflowMixin:
             )
         )
         self._activate_turn_policy(local_policy)
+
+        if local_policy.intent == "planning_provenance_query":
+            add_step(
+                "ui",
+                "\u672c\u6b21\u89c4\u5212\u6765\u6e90" if self.memory.user_lang == "zh" else "Current Planning Provenance",
+                "\u6b63\u5728\u8bfb\u53d6\u5f53\u524d\u6fc0\u6d3b Planning \u53ca\u672c\u6b21\u91cd\u7b97\u7684\u6765\u6e90..."
+                if self.memory.user_lang == "zh"
+                else "Reading the active Planning and the source recorded for this recomputation...",
+                status="done",
+            )
+            response = self._build_current_planning_provenance_response(self.memory.user_lang)
+            self.memory.add_message("assistant", response)
+            self._record_experience(message, response, steps)
+            self._finish_turn(response)
+            return {
+                "response": response,
+                "steps": steps,
+                "llm_meta": {"usage": {}, "latency_ms": 0, "llm_calls": 0, "route": "local_planning_provenance"},
+            }
 
         if local_policy.intent == "case_dose_query":
             title = "当前病例剂量" if self.memory.user_lang == "zh" else "Current Case Dose"
@@ -1610,10 +1840,22 @@ class ChatWorkflowMixin:
             if local_policy.intent == "small_talk":
                 add_step("error", "LLM Unavailable", "No configured model; no canned answer was generated.", status="error")
                 response = self._current_llm_unavailable_message()
-            else:
+            elif local_policy.direct_execution:
                 add_step("thinking", "Rule Matcher", "Brain unavailable — using rule-based parsing")
                 response = self._rule_based_chat_with_steps(message, steps, step_id)
+            else:
+                add_step(
+                    "error",
+                    "AI 服务不可用" if self.memory.user_lang == "zh" else "AI Service Unavailable",
+                    "无法可靠解析该请求；未启动临床操作。"
+                    if self.memory.user_lang == "zh"
+                    else "The request could not be interpreted reliably; no clinical action was started.",
+                    status="error",
+                )
+                response = self._no_provider_fallback_response(message)
             llm_meta = {"usage": {}, "latency_ms": 0, "llm_calls": 0}
+
+        response = self._normalize_user_facing_response(message, response)
 
         if not internal_followup:
             self._record_experience(message, response, steps)
@@ -2173,6 +2415,33 @@ class ChatWorkflowMixin:
             yield yield_event("step", local_route_step)
         self._turn_timings["router_ms"] = round((time.perf_counter() - _route_started) * 1000, 1)
 
+        # Planning provenance is a local, read-only Session query. It must be
+        # answered before provider routing/tool execution so a follow-up about
+        # the previous dose calculation cannot restart Planning or fall into a
+        # generic semantic-action response when the provider is unavailable.
+        if local_policy.intent == "planning_provenance_query":
+            state_step = add_step(
+                "ui",
+                _trace_text("本次规划来源", "Current Planning Provenance"),
+                _trace_text(
+                    "正在读取当前激活 Planning 及本次重算的来源...",
+                    "Reading the active Planning and the source recorded for this recomputation...",
+                ),
+                status="pending",
+            )
+            yield yield_event("step", state_step)
+            response = self._build_current_planning_provenance_response(self.memory.user_lang)
+            state_step["status"] = "done"
+            state_step["content"] = _trace_text("已读取 Planning 来源", "Planning provenance loaded")
+            yield yield_event("step", state_step)
+            self.memory.add_message("assistant", response)
+            self._finish_turn(response)
+            llm_meta["route"] = "local_planning_provenance"
+            llm_meta["phase_timings_ms"] = dict(getattr(self, "_turn_timings", {}) or {})
+            yield from final_response_events({"response": response, "llm_meta": llm_meta})
+            yield yield_event("done", {"context": {"message_count": len(self.memory.conversation)}})
+            return
+
         # Technical image metadata is a local read-only query. Resolve it
         # before any tool-calling loop so the chat answer uses the active
         # Session's canonical CT object and never exposes raw tool logs.
@@ -2724,8 +2993,20 @@ class ChatWorkflowMixin:
                 step = add_step("error", "LLM Unavailable", "No configured model; no canned answer was generated.", status="error")
                 yield yield_event("step", step)
                 response = self._current_llm_unavailable_message()
-            else:
+            elif local_policy.direct_execution:
                 response = self._rule_based_chat_with_steps_stream(message, steps, step_id, yield_event)
+            else:
+                step = add_step(
+                    "error",
+                    _trace_text("AI 服务不可用", "AI Service Unavailable"),
+                    _trace_text(
+                        "无法可靠解析该请求；未启动临床操作。",
+                        "The request could not be interpreted reliably; no clinical action was started.",
+                    ),
+                    status="error",
+                )
+                yield yield_event("step", step)
+                response = self._no_provider_fallback_response(message)
             llm_meta = {"usage": {}, "latency_ms": 0, "llm_calls": 0}
 
         # A low-level status question must still receive a concrete answer if
@@ -2740,6 +3021,8 @@ class ChatWorkflowMixin:
             or _response_text.startswith("需求覆盖检查")
         ):
             response = self._build_3d_status_response(self.memory.user_lang)
+
+        response = self._normalize_user_facing_response(message, response)
 
         # A hidden visual child is not an independent user interaction. Its
         # temporary analysis must not enter episodic/skill memory either.
@@ -3429,6 +3712,8 @@ class ChatWorkflowMixin:
 
     def _rule_based_chat_with_steps_stream(self, message: str, steps: List[Dict], step_id: List[int], yield_event) -> str:
         """Streaming version of rule-based chat that yields steps as they happen."""
+        if not bool(getattr(getattr(self, "_active_turn_policy", None), "direct_execution", False)):
+            return self._unmatched_turn_response(message)
         msg_lower = message.lower()
 
         def yield_step(step):
@@ -3528,18 +3813,11 @@ class ChatWorkflowMixin:
             return result
 
         else:
-            result = (
-                "I can help with brachytherapy planning. Try:\n"
-                "  - 'Segment CTV' - Segment CTV\n"
-                "  - 'Generate plan' - Generate treatment plan\n"
-                "  - 'Evaluate dose' - Evaluate dose distribution\n"
-                "  - 'Optimize plan' - Optimize treatment plan\n"
-                "  - 'Self-evolve' - Trigger self-evolution\n"
-                "  - 'Create tool' - Create new tool"
-            )
-            return result
+            return self._unmatched_turn_response(message)
 
     def _rule_based_chat_with_steps(self, message: str, steps: List[Dict], step_id: List[int]) -> str:
+        if not bool(getattr(getattr(self, "_active_turn_policy", None), "direct_execution", False)):
+            return self._unmatched_turn_response(message)
         msg_lower = message.lower()
         if "分割" in msg_lower or "segment" in msg_lower:
             target = "CTV"
@@ -3598,16 +3876,7 @@ class ChatWorkflowMixin:
             result = self._handle_code_writing({})
             return result
         else:
-            result = (
-                "I can help with brachytherapy planning. Try:\n"
-                "  - 'Segment CTV' - Segment CTV\n"
-                "  - 'Generate plan' - Generate treatment plan\n"
-                "  - 'Evaluate dose' - Evaluate dose distribution\n"
-                "  - 'Optimize plan' - Optimize treatment plan\n"
-                "  - 'Self-evolve' - Trigger self-evolution\n"
-                "  - 'Create tool' - Create new tool"
-            )
-            return result
+            return self._unmatched_turn_response(message)
 
     def _record_experience(self, message: str, response: str, steps: List[Dict] = None):
         """Record the interaction as an experience for self-evolution."""
@@ -3631,6 +3900,8 @@ class ChatWorkflowMixin:
         )
 
     def _rule_based_chat(self, message: str) -> str:
+        if not bool(getattr(getattr(self, "_active_turn_policy", None), "direct_execution", False)):
+            return self._unmatched_turn_response(message)
         msg_lower = message.lower()
         if "分割" in msg_lower or "segment" in msg_lower:
             if "ctv" in msg_lower or "target" in msg_lower or "肿瘤" in msg_lower:
@@ -3660,15 +3931,7 @@ class ChatWorkflowMixin:
             )
             response = f"Available tools:\n{tools_info}"
         else:
-            response = (
-                "I can help with brachytherapy planning. Try:\n"
-                "  - 'Segment CTV' - Segment CTV\n"
-                "  - 'Generate plan' - Generate treatment plan\n"
-                "  - 'Evaluate dose' - Evaluate dose distribution\n"
-                "  - 'Optimize plan' - Optimize treatment plan\n"
-                "  - 'Self-evolve' - Trigger self-evolution\n"
-                "  - 'Create tool' - Create new tool"
-            )
+            response = self._unmatched_turn_response(message)
         return response
 
     def _handle_ctv_segmentation_request(self, message: str) -> str:

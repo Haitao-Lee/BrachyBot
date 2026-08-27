@@ -87,6 +87,7 @@ PLANNING_VALUE_KEYS = (
     "manual_artifact_status",
     "dose_distribution_physical_gy",
     "dose_engine",
+    "dose_recompute_provenance",
     "metrics",
     "surgical_guide",
     "surgical_guide_versions",
@@ -167,6 +168,7 @@ def _write_runs(memory: Any, runs: Iterable[Mapping[str, Any]], *, reason: str) 
 def _has_current_plan(memory: Any) -> bool:
     return any(memory.retrieve(key) is not None for key in PLANNING_VALUE_KEYS if key not in {
         "manual_plan_active", "manual_geometry_only", "artifact_status",
+        "dose_recompute_provenance",
     })
 
 
@@ -1066,8 +1068,46 @@ def current_planning_context(memory: Any) -> Dict[str, Any]:
         or memory.retrieve("tumor_type")
         or ""
     )
+
+    # Run lifecycle metadata lives in the compact registry rather than in the
+    # large namespaced snapshot. Read it without calling ``ensure_planning_history``
+    # so a read-only query cannot migrate or rewrite the Session. The snapshot
+    # still remains authoritative for the actual plan-owned values above.
+    registry_runs = _raw_runs(memory)
+    active_run = next(
+        (
+            item for item in registry_runs
+            if str(item.get("planning_id") or "") == str(planning_id or alias_id)
+        ),
+        {},
+    )
+    sequence = active_run.get("sequence")
+    try:
+        sequence = int(sequence) if sequence is not None else None
+    except (TypeError, ValueError):
+        sequence = None
+    label = str(
+        active_run.get("label")
+        or (f"Planning_{sequence + 1}" if sequence is not None else "")
+        or planning_id
+        or alias_id
+    )
+    status = str(active_run.get("status") or "unknown")
+    try:
+        data_version = int(active_run.get("data_version") or read("manual_plan_version", default=0) or 0)
+    except (TypeError, ValueError):
+        data_version = 0
+    provenance = read("dose_recompute_provenance", default={})
+    if not isinstance(provenance, Mapping):
+        provenance = {}
     return {
         "planning_id": planning_id or alias_id or None,
+        "label": label,
+        "sequence": sequence,
+        "status": status,
+        "visible": bool(active_run.get("visible", True if planning_id else False)),
+        "parent_planning_id": active_run.get("parent_planning_id"),
+        "data_version": data_version,
         "metrics": dict(metrics) if isinstance(metrics, Mapping) else {},
         "plan_config": dict(plan_config) if isinstance(plan_config, Mapping) else {},
         "tumor_type": str(tumor_type or ""),
@@ -1075,4 +1115,5 @@ def current_planning_context(memory: Any) -> Dict[str, Any]:
         "num_trajectories": num_trajectories,
         "geometry_available": bool(total_seeds and num_trajectories),
         "source": "active_planning_run" if planning_id else "legacy_active_aliases",
+        "dose_recompute_provenance": dict(provenance),
     }
