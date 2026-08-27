@@ -4279,13 +4279,14 @@ async function _fetchPlanningSeeds3D(requestScope) {
     return res.json();
 }
 
-async function loadSeeds3D() {
+async function loadSeeds3D(options = {}) {
     const requestScope = _capturePlanningSceneScope();
     if (_seeds3DLoadInFlight
         && _planningSceneScopeIsCurrent(_seeds3DLoadInFlight.scope)) {
         return _seeds3DLoadInFlight.promise;
     }
-    const loadingToken = typeof window.beginViewer3DLoading === 'function'
+    const loadingToken = options.showLoading !== false
+        && typeof window.beginViewer3DLoading === 'function'
         ? window.beginViewer3DLoading('Rendering seeds and needles...')
         : null;
     const promise = _loadSeeds3D(requestScope);
@@ -4834,6 +4835,7 @@ async function loadAllIsoSurfaces(options = {}) {
         if (!_planningSceneScopeIsCurrent(requestScope)) return { stale: true };
     }
     const loadingToken = reconstruct3d
+        && options.showLoading !== false
         && typeof window.beginViewer3DLoading === 'function'
         ? window.beginViewer3DLoading('Rendering dose surfaces...')
         : null;
@@ -5324,6 +5326,10 @@ async function prewarmSegmentationMeshes(kind = 'all', opts = {}) {
             window.updateViewer3DLoading(loadingToken, message);
         }
     };
+    const reportProgress = detail => {
+        if (typeof opts.onProgress !== 'function') return;
+        try { opts.onProgress(detail); } catch (_) {}
+    };
 
     const includeCTV = kind === 'ctv' || kind === 'oar' || kind === 'all';
     const includeOAR = kind === 'oar' || kind === 'all';
@@ -5337,6 +5343,7 @@ async function prewarmSegmentationMeshes(kind = 'all', opts = {}) {
     updateLoading(kind === 'ctv'
         ? 'Rendering CTV surfaces...'
         : 'Rendering OAR surfaces...');
+    reportProgress({ phase: kind === 'ctv' ? 'ctv' : 'oar', current: 0, total: null });
 
     try {
         if (includeCTV && ctvLabelData) {
@@ -5379,7 +5386,11 @@ async function prewarmSegmentationMeshes(kind = 'all', opts = {}) {
             const oarIds = requestedOarIds !== null
                 ? requestedOarIds
                 : (allOarIds.length ? allOarIds : _getNonTraversableOarMeshIds(ctvLabelIds));
-            const batchSize = opts.batchSize || 3;
+            // Full cold restores use six independent read-only mesh requests
+            // per batch. CTV/OAR, planning geometry, and dose surfaces remain
+            // separate top-level promises, so this shortens wall-clock time
+            // without serializing unrelated viewer products.
+            const batchSize = Math.max(1, Number(opts.batchSize) || 6);
             for (let i = 0; i < oarIds.length; i += batchSize) {
                 if (generation !== _segmentationMeshPrewarm.generation
                     || (sessionId && sessionId !== String(state.sessionId || ''))) {
@@ -5406,11 +5417,13 @@ async function prewarmSegmentationMeshes(kind = 'all', opts = {}) {
                 const completed = Math.min(i + batchSize, oarIds.length);
                 if (showStatus) _setMeshPrewarmStatus(`3D OAR reconstruction ${completed}/${oarIds.length}`);
                 updateLoading(`Rendering OAR surfaces ${completed}/${oarIds.length}...`);
+                reportProgress({ phase: 'oar', current: completed, total: oarIds.length });
             }
         }
 
         await Promise.all(promises);
         updateLoading('Finalizing 3D scene...');
+        reportProgress({ phase: 'finalizing', current: 1, total: 1 });
         // The all-OAR restore is deliberately progressive. Reframe once the
         // last batch has arrived, but only while this restore still owns the
         // camera. A pointer interaction cancels the ownership immediately.
@@ -5444,7 +5457,8 @@ function startSegmentationMeshPrewarm(kind = 'all', opts = {}) {
     if (!state.ctLoaded && !state.ctPath) return Promise.resolve({ status: 'skipped' });
     const scheduledGeneration = _segmentationMeshPrewarm.generation;
     const scheduledSessionId = String(opts.sessionId || state.sessionId || '') || null;
-    const loadingToken = typeof window.beginViewer3DLoading === 'function'
+    const loadingToken = opts.showLoading !== false
+        && typeof window.beginViewer3DLoading === 'function'
         ? window.beginViewer3DLoading(kind === 'ctv'
             ? 'Rendering CTV surfaces...'
             : 'Rendering OAR surfaces...')
@@ -5487,7 +5501,8 @@ async function _loadCTVAndObstacleMeshes(options, scope) {
     // only the non-traversable subset, then a second pass saw all OARs after
     // asynchronous hydration completed; that made the UI look as if the
     // first 30-odd surfaces were thrown away.
-    const loadingToken = typeof window.beginViewer3DLoading === 'function'
+    const loadingToken = options?.showLoading !== false
+        && typeof window.beginViewer3DLoading === 'function'
         ? window.beginViewer3DLoading('Rendering CTV and OAR surfaces...')
         : null;
     try {
@@ -5532,9 +5547,10 @@ async function _loadCTVAndObstacleMeshes(options, scope) {
             allOAR: Array.isArray(allOarIds),
             oarIds: allOarIds,
             showStatus: false,
-            batchSize: 3,
+            batchSize: options?.batchSize || 6,
             reframeCamera: Array.isArray(allOarIds),
             loadingToken,
+            onProgress: options?.onProgress,
         });
         if (!_structuralMeshScopeIsCurrent(scope)) return { stale: true };
         if (!Array.isArray(allOarIds)) {

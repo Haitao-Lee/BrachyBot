@@ -381,8 +381,8 @@ def test_workspace_transitions_publish_measurable_first_paint_and_restore_stages
     assert "restore.fully_interactive" in ui_api
     # Versioned URLs are intentional cache invalidation points. Keep this
     # assertion aligned with the workspace/report artifact restore contract.
-    assert "brachybot-workspace.js?v=37" in index
-    assert "brachybot-ui-api.js?v=49" in index
+    assert "brachybot-workspace.js?v=38" in index
+    assert "brachybot-ui-api.js?v=50" in index
     assert "brachybot-viewer-volume.js?v=43" in index
     assert "brachybot-manual-annotation.js?v=18" in index
 
@@ -515,7 +515,8 @@ def test_clinical_restore_requires_decoded_ct_and_rebinds_viewer_interactions():
     assert "CT restore incomplete for session" in restore
     assert restore.count("setupViewerInteractions();") >= 2
     assert "segmentationMeshTask" in restore
-    assert "loadCTVAndObstacleMeshes()" in restore
+    assert "loadCTVAndObstacleMeshes({" in restore
+    assert "showLoading: !options.hydrationScope" in restore
     assert "planningResult.value?.success !== true" in restore
     assert "continuing with planning restore" in restore
 
@@ -692,6 +693,26 @@ def test_workspace_hydration_has_visible_nonblocking_progress_state():
     assert "setWorkspaceHydrationState" in workspace
     assert "_restoreActiveSessionWorkspace" in ui_api
     assert "workspaceHydrationNotice" in index
+
+
+def test_workspace_hydration_notice_follows_real_background_completion():
+    """The corner spinner must not disappear on a fixed timer or essential-only return."""
+    workspace = read("web/app/static/js/brachybot-workspace.js")
+    ui_api = read("web/app/static/js/brachybot-ui-api.js")
+    schedule = workspace.split("function scheduleBackgroundWorkspaceRestore", 1)[1].split(
+        "function clearScheduledWorkspaceSave", 1
+    )[0]
+    restore = ui_api.split(
+        "async function restoreActiveSessionWorkspace(options = {})", 1
+    )[1].split("window.restoreActiveSessionWorkspace =", 1)[0]
+
+    assert "clinicalRestoreOwnsNotice = true" in schedule
+    assert "if (!clinicalRestoreOwnsNotice)" in schedule
+    assert "Case resources are still loading in the background" in schedule
+    assert "registerBackgroundTask" in restore
+    assert "backgroundNoticeTransferred = true" in restore
+    assert "Promise.allSettled(backgroundTasks).finally" in restore
+    assert "window.setWorkspaceHydrationState?.(false, '', hydrationScope)" in restore
 
 
 def test_uploaded_oar_mask_is_a_numbered_traversable_data_tree_source():

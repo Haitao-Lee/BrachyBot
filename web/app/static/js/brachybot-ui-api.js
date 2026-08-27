@@ -2976,7 +2976,12 @@ async function _restoreActiveSessionWorkspace(options = {}) {
     // does not block CT/2D interaction readiness.
     const segmentationMeshTask = labelTask.then(labelsLoaded => {
         if (!labelsLoaded || hasPlanning || typeof loadCTVAndObstacleMeshes !== 'function') return null;
-        return loadCTVAndObstacleMeshes();
+        return loadCTVAndObstacleMeshes({
+            sessionId: sessionAtStart,
+            showLoading: !options.hydrationScope,
+            batchSize: options.hydrationScope ? 6 : undefined,
+            onProgress: options.onHydrationProgress,
+        });
     });
     segmentationMeshTask.catch(error =>
         console.warn('[session restore] segmentation mesh reconstruction failed:', error));
@@ -2986,6 +2991,14 @@ async function _restoreActiveSessionWorkspace(options = {}) {
     const [labelResult, planningResult] = restoreResults;
     if (labelResult.status === 'rejected') throw labelResult.reason;
     if (planningResult.status === 'rejected') throw planningResult.reason;
+    if (typeof options.registerBackgroundTask === 'function') {
+        const completion = hasPlanning
+            ? planningResult.value?.backgroundCompletion
+            : segmentationMeshTask;
+        if (completion && typeof completion.then === 'function') {
+            options.registerBackgroundTask(completion, { kind: 'viewer_3d' });
+        }
+    }
     if (hasPlanning && planningResult.value?.success !== true) {
         throw new Error(
             planningResult.value?.error
@@ -3117,6 +3130,33 @@ async function restoreActiveSessionWorkspace(options = {}) {
     window.__workspaceHydrationRunId = (window.__workspaceHydrationRunId || 0) + 1;
     const hydrationRunId = window.__workspaceHydrationRunId;
     const hydrationScope = { sessionId: sessionAtStart, runId: hydrationRunId };
+    const backgroundTasks = [];
+    let backgroundNoticeTransferred = false;
+    const registerBackgroundTask = (task) => {
+        if (task && typeof task.then === 'function') backgroundTasks.push(Promise.resolve(task));
+        return task;
+    };
+    const updateHydrationProgress = detail => {
+        if (String(_activeApiSessionId() || '') !== sessionAtStart
+            || window.__workspaceHydrationRunId !== hydrationRunId) return;
+        const phase = String(detail?.phase || 'viewer');
+        const current = Number(detail?.current);
+        const total = Number(detail?.total);
+        let zh = '正在加载三维 Viewer 资源…';
+        let en = 'Loading 3D Viewer resources...';
+        if (phase === 'oar' && Number.isFinite(current) && Number.isFinite(total) && total > 0) {
+            zh = `正在渲染 OAR 表面 ${current}/${total}…`;
+            en = `Rendering OAR surfaces ${current}/${total}...`;
+        } else if (phase === 'finalizing') {
+            zh = '正在完成三维场景…';
+            en = 'Finalizing the 3D scene...';
+        }
+        window.setWorkspaceHydrationState?.(
+            true,
+            typeof _t === 'function' ? _t(zh, en) : en,
+            hydrationScope,
+        );
+    };
     const authoritativeWorkspace = options.workspace || window._activeWorkspaceSnapshot || null;
     if (authoritativeWorkspace && !_workspaceNeedsClinicalRestore(authoritativeWorkspace, options.status)) {
         console.debug('[session restore] skipped empty case', authoritativeWorkspace.session_id || authoritativeWorkspace.session?.id);
@@ -3152,10 +3192,33 @@ async function restoreActiveSessionWorkspace(options = {}) {
         }
     }, 30000);
     try {
-        return await _restoreActiveSessionWorkspace(options);
+        const result = await _restoreActiveSessionWorkspace({
+            ...options,
+            hydrationScope,
+            registerBackgroundTask,
+            onHydrationProgress: updateHydrationProgress,
+        });
+        if (backgroundTasks.length > 0
+            && String(_activeApiSessionId() || '') === sessionAtStart
+            && window.__workspaceHydrationRunId === hydrationRunId) {
+            backgroundNoticeTransferred = true;
+            updateHydrationProgress({ phase: 'viewer' });
+            // Return essential CT/2D/planning readiness immediately while the
+            // same scoped notice remains owned by the real 3D completion
+            // boundary. Promise.allSettled guarantees a failed surface cannot
+            // leave the progress notice stuck forever.
+            Promise.allSettled(backgroundTasks).finally(() => {
+                if (String(_activeApiSessionId() || '') !== sessionAtStart
+                    || window.__workspaceHydrationRunId !== hydrationRunId) return;
+                window.setWorkspaceHydrationState?.(false, '', hydrationScope);
+            });
+        }
+        return result;
     } finally {
         clearTimeout(slowNoticeTimer);
-        window.setWorkspaceHydrationState?.(false, '', hydrationScope);
+        if (!backgroundNoticeTransferred) {
+            window.setWorkspaceHydrationState?.(false, '', hydrationScope);
+        }
     }
 }
 window.restoreActiveSessionWorkspace = restoreActiveSessionWorkspace;
