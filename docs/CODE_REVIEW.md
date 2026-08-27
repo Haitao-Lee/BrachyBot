@@ -1,3 +1,98 @@
+# 2026-08-28 Incident Review — Provider failure blocked the deterministic “show results in Viewer” request
+
+> **This is the newest authoritative review entry and is intentionally located at the absolute beginning of the file.**
+> It records the failure in which the user asked `将结果在viewer中显示出来啊`, the
+> local classifier reported `ui_control`, but the turn still attempted an LLM
+> call and ended with `AI 语言服务暂时不可用`. The diagnosis was rechecked
+> against the remote source, the action registry, the frontend refresh path,
+> and a provider-independent stream test.
+
+## 1. Executive verdict
+
+This was a real routing and execution-contract defect. The request was a
+deterministic, read-only request to re-display planning data that was already
+owned by the active Session. It should have refreshed the Viewer/Data Tree
+from the canonical saved planning result. Instead, the local policy classified
+it only as generic `ui_control`, did not authorize direct execution, and the
+streaming workflow's direct-tool allow-list did not include that intent. The
+request consequently fell through to the generic LLM function-calling path.
+When the language provider was unavailable, a browser refresh failed before
+any UI action was sent. No planning or dose computation was required for this
+request, so making the provider more reliable would not fix the contract
+defect.
+
+| Confirmed problem | Root cause | Status |
+|---|---|---|
+| An unambiguous request to show existing planning results failed when the LLM provider was unavailable | `ui_control` was classified with `direct_execution=False`; the stream direct-intent tuple omitted this operation, so the request entered the generic LLM path | **FIXED** |
+| The backend had no typed action for “reload the active planning result into the Viewer” | `ui_controller` exposed panel/viewer controls but no action connected to the canonical planning hydration routine | **FIXED** |
+| Even after adding a direct action, the stream could enter planning-report finalization and depend on planning-only helper methods | The generic direct-tool tail unconditionally built clinical response state before checking this new browser-only intent | **FIXED** |
+| A successful response could claim that the Viewer was refreshed without specifying the no-recompute boundary | The request had no localized, operation-specific result contract | **FIXED** |
+
+## 2. Direct source evidence and failure path
+
+The remote `agent_runtime/turn_policy.py` classifier recognized the screenshot
+request as `ui_control`, but returned no direct execution grant. In
+`agent_runtime/chat_workflows.py`, the streaming direct-tool condition allowed
+segmentation, planning, guide generation, and dose recomputation, but not
+`ui_control`. The request therefore proceeded to
+`_run_llm_function_calling_stream()`. The trace's `LLM 调用 1` failure is the
+expected observable result of that path when the configured provider is
+unavailable; it is not evidence that Viewer rendering itself failed.
+
+The frontend already had the canonical `refreshPlanningUI()` implementation.
+That routine reads `/planning/results` and `/planning/runs` for the active
+Session, retries an in-progress hydration response, restores seeds, needles,
+dose/DVH and mesh data, and updates the Data Tree. Before this repair, no
+typed `viewer.refresh_planning` action invoked it from the chat UI. A panel
+switch alone could not restore the saved result.
+
+## 3. Root-cause repair
+
+The repair establishes an end-to-end contract for this operation:
+
+1. `is_viewer_result_display_request()` recognizes only an unambiguous
+   Viewer display/load/refresh request that also names an existing result
+   family. Compound requests remain outside this fast path so a mixed request
+   is not silently truncated.
+2. `classify_local_turn()` returns a low-risk `viewer_display` policy with
+   `direct_execution=True`, no router/completeness review, and an explicit
+   `ui_controller` execution grant.
+3. `_detect_tool_request()` emits the typed action
+   `viewer.refresh_planning: run`; the `UIControllerTool` registry validates
+   that target before it can reach the browser.
+4. The frontend action handler calls the existing canonical
+   `refreshPlanningUI()` using the owner/active Session, `retryPending=true`,
+   `backgroundRestore=true`, `preserveReport=true`,
+   `preserveViewerState=false`, `autoGenerateGuide=false`, and
+   `switchToViewers=true`. This refreshes the current presentation without
+   rerunning planning, recomputing dose, regenerating a guide, or rewriting a
+   report.
+5. Both regular and streaming chat paths execute this action without an LLM
+   call and return a language-matched acknowledgement. The streaming path
+   terminates before the clinical planning-report tail, so it has no accidental
+   dependency on planning-only helpers.
+6. UI result formatting also recognizes the action and keeps the server trace
+   and user response consistent in Chinese and English.
+
+## 4. Verification
+
+The second-pass checks on the remote checkout are:
+
+- Python compilation passed for every changed Python module and the new test
+  module.
+- The focused runtime contract test passed: `5 passed`.
+- The broader routing/UI regression set passed: `353 passed`.
+- `git diff --check` passed with no whitespace errors.
+- The direct runtime probe classified the exact user message as
+  `viewer_display` and emitted only the typed `ui_controller` action.
+
+The remaining deployment check is to restart the live server from the commit
+containing this repair and verify its startup log and port. A browser-level
+acceptance should then send the exact request while the LLM provider is
+unavailable: the trace must contain the local UI action, the Viewer/Data Tree
+must refresh from the active Session, and no `planning_pipeline` or dose
+recomputation call may appear.
+
 # 2026-08-27 Incident Review — Completed replan produced empty Planning nodes after restart
 
 > **This is the newest authoritative review entry and is intentionally located at the absolute beginning of the file.**

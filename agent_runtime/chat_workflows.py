@@ -1094,6 +1094,31 @@ class ChatWorkflowMixin:
             else "Report generation could not be started for the current Session. Confirm that the Session is fully loaded and has an available planning result, then retry."
         )
 
+    @staticmethod
+    def _viewer_display_params() -> Dict[str, Any]:
+        """Build the typed, display-only command for the active planning run."""
+        return {
+            "actions": [{
+                "target": "viewer.refresh_planning",
+                "command": "run",
+            }],
+        }
+
+    @staticmethod
+    def _viewer_display_response(lang: str = "en", success: bool = True) -> str:
+        """Acknowledge Viewer refresh without claiming a new clinical run."""
+        if success:
+            return (
+                "已从当前 Session 发起规划结果刷新，并将在 Viewer 中显示可用的粒子、针道、剂量/等剂量面、DVH 和手术导板等结果；不会重新运行规划或重新计算剂量。"
+                if lang == "zh"
+                else "A refresh of the saved planning result was started for the current Session. The Viewer will present available seeds, needles, dose/isodose surfaces, DVH, and surgical-guide results; planning and dose computation will not be rerun."
+            )
+        return (
+            "当前 Session 的规划结果未能发起 Viewer 刷新。请先确认病例已经完成加载并存在可用的规划结果。"
+            if lang == "zh"
+            else "The Viewer refresh could not be started for the current Session. Confirm that the case has finished loading and contains an available planning result."
+        )
+
     def _build_3d_status_response(self, lang: str = "en") -> str:
         """Explain the current 3D state without inventing a rendering cause."""
         ui_state = self.memory.get_ui_state() or {}
@@ -1528,6 +1553,20 @@ class ChatWorkflowMixin:
             self._finish_turn(response)
             return response
 
+        if local_policy.intent == "viewer_display" and local_policy.direct_execution:
+            params = self._viewer_display_params()
+            try:
+                result = self._execute_tool_with_memory("ui_controller", params)
+                success = bool(result.success)
+            except Exception:
+                logger.exception("Viewer planning refresh action failed")
+                success = False
+            response = self._viewer_display_response(self.memory.user_lang, success)
+            self.memory.add_message("assistant", response)
+            self._record_experience(message, response)
+            self._finish_turn(response)
+            return response
+
         if not internal_followup and local_policy.intent == "session_content_query":
             target = resolve_session_content_target(message) or "session_summary"
             response = self._session_content_response(target, self.memory.user_lang)
@@ -1723,6 +1762,46 @@ class ChatWorkflowMixin:
                 "response": response,
                 "steps": steps,
                 "llm_meta": {"usage": {}, "latency_ms": 0, "llm_calls": 0, "route": "local_report_generation"},
+            }
+
+        if local_policy.intent == "viewer_display" and local_policy.direct_execution:
+            params = self._viewer_display_params()
+            add_step(
+                "tool",
+                "刷新 Viewer 中的规划结果" if self.memory.user_lang == "zh" else "Refresh Planning Results in Viewer",
+                "正在从当前 Session 读取已保存的规划结果..."
+                if self.memory.user_lang == "zh"
+                else "Reading the saved planning result from the current Session...",
+                status="pending",
+                tool="ui_controller",
+                params=params,
+            )
+            try:
+                result = self._execute_tool_with_memory("ui_controller", params)
+                steps[-1]["status"] = "done" if result.success else "error"
+                steps[-1]["content"] = ""
+                steps[-1]["result"] = ToolResultPipeline.format(
+                    "ui_controller", result, self.memory.user_lang,
+                )
+                steps[-1]["metadata"] = ToolResultPipeline.trace_metadata(
+                    "ui_controller", dict(getattr(result, "metadata", {}) or {}),
+                ) if result.success else {}
+                success = bool(result.success)
+            except Exception:
+                logger.exception("Viewer planning refresh action failed")
+                steps[-1]["status"] = "error"
+                steps[-1]["content"] = ""
+                steps[-1]["result"] = ""
+                steps[-1]["metadata"] = {}
+                success = False
+            response = self._viewer_display_response(self.memory.user_lang, success)
+            self.memory.add_message("assistant", response)
+            self._record_experience(message, response, steps)
+            self._finish_turn(response)
+            return {
+                "response": response,
+                "steps": steps,
+                "llm_meta": {"usage": {}, "latency_ms": 0, "llm_calls": 0, "route": "local_viewer_display"},
             }
 
         if not internal_followup and local_policy.intent == "session_content_query":
@@ -2173,6 +2252,7 @@ class ChatWorkflowMixin:
                         "oar_segmentation": "OAR 分割",
                         "planning_pipeline": "粒子植入规划",
                         "surgical_guide": "手术导板生成",
+                        "ui_controller": "界面控制",
                     }.get(tool_name, tool_name)
                 content = {
                     "Preparing the reviewed response...": "正在整理回复...",
@@ -2674,6 +2754,7 @@ class ChatWorkflowMixin:
                     "clinical_planning",
                     "surgical_guide_generation",
                     "dose_recompute",
+                    "viewer_display",
                 )
             )
             or _has_explicit_planning_action_plan
@@ -2798,6 +2879,41 @@ class ChatWorkflowMixin:
                     }:
                         break
 
+            # Viewer result refresh is a display-only action. Finish it here
+            # before the clinical/report synthesis path: calling
+            # _build_direct_response or _has_completed_planning_in_steps would
+            # add unnecessary coupling to planning-only helpers and make this
+            # provider-independent browser operation fragile.
+            if local_policy.intent == "viewer_display":
+                _viewer_synthesis_step = add_step(
+                    "assistant",
+                    "生成回复",
+                    "正在整理回复...",
+                    status="pending",
+                )
+                yield yield_event("step", _viewer_synthesis_step)
+                response = self._viewer_display_response(
+                    _lang,
+                    any(
+                        step.get("tool") == "ui_controller"
+                        and step.get("status") == "done"
+                        for step in steps
+                    ),
+                )
+                _viewer_synthesis_step["status"] = "done"
+                _viewer_synthesis_step["content"] = "Response prepared"
+                yield yield_event("step", _viewer_synthesis_step)
+                self.memory.add_message("assistant", response)
+                self._finish_turn(response)
+                llm_meta["phase_timings_ms"] = dict(getattr(self, "_turn_timings", {}) or {})
+                llm_meta["route"] = "direct_tool"
+                yield from final_response_events({
+                    "response": response,
+                    "llm_meta": llm_meta,
+                })
+                yield yield_event("done", {"context": {"message_count": len(self.memory.conversation)}})
+                return
+
             # Direct tool requests used to have a silent interval here:
             # tools were already marked done while report construction or a
             # synthesis LLM call was still running.  Expose that work as a
@@ -2834,6 +2950,18 @@ class ChatWorkflowMixin:
                 # and contains the before/after consistency result. Avoid a
                 # second synthesis call for this focused operation.
                 response = raw_response
+            elif local_policy.intent == "viewer_display" and _direct_tool_names == {"ui_controller"}:
+                # Viewer refresh is a deterministic browser operation. A
+                # synthesis call here would reintroduce the exact provider
+                # dependency that this fast path is designed to remove.
+                response = self._viewer_display_response(
+                    _lang,
+                    any(
+                        step.get("tool") == "ui_controller"
+                        and step.get("status") == "done"
+                        for step in steps
+                    ),
+                )
             elif has_planning:
                 response = self._build_planning_report(_lang, steps)
             else:

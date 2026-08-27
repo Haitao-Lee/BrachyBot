@@ -1477,6 +1477,21 @@ class ToolResultPipeline:
             if lang == "zh":
                 return "界面操作未执行：当前请求与可用控件能力不匹配。请说明是展开查看器、适配相机，还是调整图像缩放。"
             return "The UI action was not applied: the request did not match an available control capability. Specify whether to maximize the viewer, fit the camera, or change image magnification."
+        if tool_name == "ui_controller":
+            actions = meta.get("actions") if isinstance(meta, dict) else None
+            if isinstance(actions, list) and any(
+                isinstance(action, dict)
+                and str(action.get("target") or "") == "viewer.refresh_planning"
+                and str(action.get("command") or "") == "run"
+                for action in actions
+            ):
+                return (
+                    "已从当前 Session 发起规划结果刷新，并将在 Viewer 中显示可用的粒子、针道、剂量/等剂量面、DVH 和手术导板等结果；不会重新运行规划或重新计算剂量。"
+                    if lang == "zh"
+                    else
+                    "A refresh of the saved planning result was started for the current Session. The Viewer will present available seeds, needles, dose/isodose surfaces, DVH, and surgical-guide results; planning and dose computation will not be rerun."
+                )
+
         if tool_name in {"ui_screenshot", "ui_content"}:
             if not result.success:
                 user_errors = meta.get("user_error_i18n") or {}

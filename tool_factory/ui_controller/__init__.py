@@ -85,6 +85,15 @@ CONTROL_REGISTRY = {
         "commands": ["run"],
         "description": "Fit all 2D viewers to show the full image"
     },
+    "viewer.refresh_planning": {
+        "commands": ["run"],
+        "description": (
+            "Reload the active Session's saved planning result into the Viewer "
+            "and Data Tree, including available seeds, needles, dose overlay, "
+            "isodose surfaces, DVH, and surgical guide. This is a display-only "
+            "refresh; it does not rerun planning or recompute dose."
+        )
+    },
     "viewer.preset": {
         "commands": ["set"],
         "values": ["soft", "bone", "lung", "brain", "custom"],
@@ -847,6 +856,7 @@ class UIControllerTool(BaseTool):
         if target == "viewer.fullscreen": return f"{value} viewer fullscreen toggled"
         if target == "viewer.reset": return "Viewer settings reset to defaults"
         if target == "viewer.fit_all": return "All viewers fitted to image"
+        if target == "viewer.refresh_planning": return "Planning results refresh requested in Viewer"
         if target == "viewer.preset": return f"Applied {value} window preset"
         if target == "viewer.transform": return f"Viewer transform: {command}"
         if target == "viewer.tool": return f"Activated viewer tool: {value}"
