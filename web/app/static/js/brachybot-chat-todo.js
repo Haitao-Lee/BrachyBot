@@ -2303,9 +2303,14 @@ async function sendChat(prefill, options) {
                 {
                     id: optimisticTraceStepIds.router,
                     type: 'thinking',
-                    title: zh ? '\u591a\u667a\u80fd\u4f53\u8def\u7531' : 'Multi-Agent Router',
+                    // This row is a client-side connection placeholder.  It
+                    // must not claim that the multi-agent router ran: local
+                    // policy may execute the request directly, and a delayed
+                    // handshake can otherwise leave a misleading "router
+                    // pending" row in the error trace.
+                    title: zh ? '\u8bf7\u6c42\u5206\u6790' : 'Request analysis',
                     status: 'pending',
-                    content: zh ? '\u6b63\u5728\u5206\u6790\u8bf7\u6c42\u2026' : 'Analyzing request...',
+                    content: zh ? '\u6b63\u5728\u786e\u5b9a\u6267\u884c\u8def\u5f84\u2026' : 'Determining execution path...',
                 },
             );
             steps.forEach((step, index) => appendStepToChain?.(stepsDiv, step, index));

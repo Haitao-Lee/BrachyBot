@@ -5656,40 +5656,50 @@ def register_planning_routes(
                     "code": "chat_task_running",
                 }), 409
 
-            try:
-                checkpoint = {
-                    "kind": "chat",
-                    "task_id": task.task_id,
-                    "request_id": task.request_id,
-                    # Hidden multimodal prompts contain screenshot URLs and
-                    # are execution context, never durable operation text.
-                    "user_message": (
-                        "Visual screenshot analysis follow-up"
-                        if internal_followup
-                        else message[:500]
-                    ),
-                }
-                if agent is not None:
-                    checkpoint_operation(agent, "running", "Chat response is in progress", checkpoint=checkpoint)
-                else:
-                    store.save_snapshot_patch(
-                        owner["id"], session_id,
-                        {"operation": {
-                            "state": "running",
-                            "message": "Case resources are loading; chat is queued.",
-                            "updated_at": time.time(),
-                            "started_at": time.time(),
-                            "checkpoint": checkpoint,
-                        }},
-                        reason="chat.task.queued_during_hydration",
-                    )
-                # Persist the task identity separately from the agent
-                # checkpoint.  This small merge makes the running task
-                # discoverable after a case switch or browser refresh even
-                # when the full agent snapshot is still being written.
+            def persist_chat_task_start():
+                """Persist the task marker without delaying the HTTP handshake.
+
+                ``save_snapshot_patch`` is intentionally kept before
+                ``start_gate.set()``.  The worker must not finish and write a
+                final chat checkpoint before a refresh can discover the
+                initiating user turn and task identity.  The persistence is
+                nevertheless performed in its own daemon thread: case
+                snapshots can be large and SQLite may be busy with a previous
+                checkpoint, so doing this work in the request thread makes the
+                browser's 30-second stream-connection deadline a false error.
+                This function captures only explicit values and never accesses
+                Flask's request context after the route returns.
+                """
+                started = time.perf_counter()
                 try:
+                    checkpoint = {
+                        "kind": "chat",
+                        "task_id": task.task_id,
+                        "request_id": task.request_id,
+                        # Hidden multimodal prompts contain screenshot URLs and
+                        # are execution context, never durable operation text.
+                        "user_message": (
+                            "Visual screenshot analysis follow-up"
+                            if internal_followup
+                            else message[:500]
+                        ),
+                    }
+                    now = time.time()
+                    operation = {
+                        "state": "running",
+                        "message": (
+                            "Chat response is in progress"
+                            if agent is not None
+                            else "Case resources are loading; chat is queued."
+                        ),
+                        "updated_at": now,
+                        "started_at": now,
+                        "checkpoint": checkpoint,
+                    }
+
                     # A detached task can outlive its browser stream. Persist
-                    # the user turn before releasing the worker gate so a
+                    # the user turn, operation marker, and task identity in one
+                    # control-plane patch before releasing the worker gate so a
                     # refresh restores the request, Thinking state, and task
                     # identity together rather than showing an orphaned
                     # progress animation with no initiating command.
@@ -5709,7 +5719,7 @@ def register_planning_routes(
                         messages.append({
                             "type": "user",
                             "content": display_message,
-                            "timestamp": int(time.time() * 1000),
+                            "timestamp": int(now * 1000),
                             "id": task.user_message_id,
                             "request_id": task.request_id,
                             "message_kind": "user_message",
@@ -5725,27 +5735,55 @@ def register_planning_routes(
                                 "messages": messages,
                                 "task_id": task.task_id,
                                 "task_status": "running",
-                            }
+                            },
+                            "operation": operation,
                         },
                         expected_revision=None,
                         reason="chat.task.started",
                     )
+                    logger.info(
+                        "Chat task start persistence completed session=%s task=%s duration_ms=%.1f",
+                        session_id,
+                        task.task_id,
+                        (time.perf_counter() - started) * 1000.0,
+                    )
                 except WorkspaceNotFound:
                     # Frontend may retry a persistence for a recently deleted case.
-                    # Silently drop the write — the session no longer exists.
-                    pass
+                    # The session no longer exists, but the in-process task must
+                    # still be released so its stream can finish truthfully.
+                    logger.info(
+                        "Chat task start persistence skipped for deleted session=%s task=%s",
+                        session_id,
+                        task.task_id,
+                    )
                 except WorkspaceError:
-                    logger.warning("Unable to persist chat task identity %s", task.task_id, exc_info=True)
+                    logger.warning(
+                        "Unable to persist chat task identity %s",
+                        task.task_id,
+                        exc_info=True,
+                    )
+                except Exception:
+                    logger.exception(
+                        "Unexpected chat task start persistence failure session=%s task=%s",
+                        session_id,
+                        task.task_id,
+                    )
                 finally:
-                    # Release the worker only after the running checkpoint has
-                    # been written, preventing a fast Q&A turn from overwriting
-                    # its final ready checkpoint with a late running state.
+                    # Release the worker only after the control-plane marker
+                    # has been attempted, preventing a fast turn from writing
+                    # its final checkpoint before the running state.
                     start_gate.set()
 
+            try:
+                threading.Thread(
+                    target=persist_chat_task_start,
+                    name=f"brachy-chat-start-{task.task_id[:12]}",
+                    daemon=True,
+                ).start()
             except Exception:
-                # checkpoint_operation may fail if the workspace was deleted
-                # between task creation and persistence. Release the gate
-                # anyway so the SSE stream can still start.
+                # Thread creation is exceptionally unlikely, but a failed
+                # hand-off must not leave the task permanently gated.
+                logger.exception("Unable to defer chat task start persistence task=%s", task.task_id)
                 start_gate.set()
 
             def generate_task(task_to_stream: ChatTask, after_seq: int = 0):
