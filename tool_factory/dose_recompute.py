@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import logging
 import math
+import time
 from typing import Any, Dict, Optional
 
 from tool_factory import BaseTool, ToolResult
@@ -194,6 +195,7 @@ class CurrentPlanDoseRecomputeTool(BaseTool):
                 "dvh_data": {"type": "object"},
                 "artifact_status": {"type": "object"},
                 "comparison": {"type": "object"},
+                "recompute_provenance": {"type": "object"},
             },
         }
 
@@ -304,6 +306,27 @@ class CurrentPlanDoseRecomputeTool(BaseTool):
                 else {"status": "not_requested", "compared_count": 0, "changed_metrics": []}
             )
 
+            # Persist the exact Planning identity and geometry source used by
+            # this successful operation. A later conversational follow-up
+            # must be able to answer "which Planning was this based on?"
+            # without inferring provenance from the latest mutable aliases.
+            recompute_provenance = {
+                "operation": "dose_recompute",
+                "planning_id": str(current_id),
+                "planning_label": planning_label,
+                "planning_status": str(current_summary.get("status") or "unknown"),
+                "source": "active_planning_run",
+                "geometry_source": "persisted Planning Needle/Seed geometry",
+                "used_saved_geometry": True,
+                "reran_segmentation": False,
+                "reran_trajectory_selection": False,
+                "reran_planning_pipeline": False,
+                "total_seeds": len(seeds),
+                "num_trajectories": len(needles),
+                "recorded_at": time.time(),
+            }
+            memory.store("dose_recompute_provenance", recompute_provenance)
+
             # Publish only after all Dose/DVH/metric aliases have been written
             # by the shared computation path.  A failed inference therefore
             # cannot replace the last valid persisted Planning snapshot.
@@ -316,6 +339,7 @@ class CurrentPlanDoseRecomputeTool(BaseTool):
                     "dvh_data": memory.retrieve("dvh_data") or {},
                     "artifact_status": payload.get("artifact_status") or memory.retrieve("manual_artifact_status") or {},
                     "comparison": comparison,
+                    "recompute_provenance": recompute_provenance,
                 },
                 message=(
                     "已根据当前 Planning 重新计算剂量和 DVH。"
@@ -333,6 +357,7 @@ class CurrentPlanDoseRecomputeTool(BaseTool):
                     "dose_scale_gy": payload.get("dose_scale_gy") or memory.retrieve("dose_scale_gy"),
                     "dose_range_gy": payload.get("dose_range_gy"),
                     "comparison": comparison,
+                    "recompute_provenance": recompute_provenance,
                 },
             )
             publish_planning_run(agent, result, status="completed")

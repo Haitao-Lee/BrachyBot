@@ -1,3 +1,137 @@
+# 2026-08-27 Incident Review — Contextual follow-up returned an unrelated capability menu
+
+> **This is the newest authoritative review entry and is intentionally located at the absolute beginning of the file.**
+> It records the follow-up failure after a successful current-dose recomputation:
+> the user asked which Planning supplied that calculation, but the UI returned
+> a generic English capability menu. The earlier reconstruction, restore, and
+> other incident entries remain below as historical-but-still-authoritative
+> audit material.
+
+## 1. Executive verdict
+
+This was a real conversation-routing and response-contract defect. The
+question was a read-only request for the provenance of an already completed
+Dose/DVH operation, but it was classified as `semantic_action`. The live server
+log also showed `provider=None`, so the request could not reach the configured
+language model. The no-provider branch then fell through to an old hard-coded
+English keyword menu. The result was both semantically unrelated and in the
+wrong language.
+
+The defect was not caused by the dose recomputation selecting the wrong
+Planning. The recomputation tool already resolved the active Planning and used
+its saved Needle/Seed geometry. The missing piece was an auditable, local
+provenance read path for the natural follow-up question, plus a safe fallback
+when the language provider is unavailable.
+
+| Confirmed problem | Root cause | Status |
+|---|---|---|
+| “本次计算是以哪次规划结果为依据的呢” was routed as `semantic_action` | The local classifier recognized the word “规划” but had no Planning-provenance intent. | **FIXED** |
+| The streaming UI returned `I can help with brachytherapy planning...` for that question | `provider=None` sent the unmatched semantic turn to `_rule_based_chat_with_steps_stream()`, whose default branch returned a static English menu. | **FIXED** |
+| The non-streaming compatibility path could execute a new plan for the same question | `_rule_based_chat()` used raw substring checks such as `规划`/`plan` without requiring the current turn’s explicit `direct_execution` grant. | **FIXED** |
+| A successful dose recomputation did not leave a durable, queryable record of its exact source Planning | The tool returned `planning_id` in result metadata but did not persist a dedicated provenance record in the Planning snapshot. | **FIXED** |
+
+## 2. Direct source and runtime evidence
+
+The current remote checkout and live server log were inspected. The relevant
+evidence is:
+
+- `agent_runtime/turn_policy.py::_is_interrogative()` detected the Chinese
+  question marker `呢`, while `classify_local_turn()` matched the word
+  `规划` in the generic semantic-action branch. There was no dedicated
+  provenance predicate.
+- `agent_runtime/chat_workflows.py::_chat_with_stream_impl()` used the local
+  policy for the trace, then, when `self.brain_available` was false, called
+  `_rule_based_chat_with_steps_stream()` for every non-small-talk turn.
+- The default branches of `_rule_based_chat()`,
+  `_rule_based_chat_with_steps()`, and
+  `_rule_based_chat_with_steps_stream()` returned the same hard-coded English
+  capability menu regardless of the input language or the user’s actual
+  intent.
+- The live startup log reported
+  `Brain system initialized: provider=None, tools=20`. Thus a correct repair
+  must not assume the LLM is available and must never fabricate an answer or
+  execute an action when it is not.
+- `tool_factory/dose_recompute.py` resolves `active_planning_id(memory)`,
+  loads the corresponding Planning snapshot, and calls the authoritative
+  manual Dose/DVH computation with the existing `seeds` and `needles`. That is
+  the source contract the follow-up should report.
+
+## 3. Root-cause repairs
+
+### 3.1 Planning provenance is now a first-class read-only intent
+
+`is_current_planning_provenance_query()` recognizes questions asking which
+Planning produced a current calculation, including Chinese forms such as
+“哪次规划”“基于哪个规划”“依据”和 English forms such as “which Planning was
+this recomputation based on”. It is evaluated before re-plan and compound-action
+classification. The policy is:
+
+- intent: `planning_provenance_query`;
+- no router call;
+- no completeness review;
+- no tool execution; and
+- no mutation grant.
+
+The predicate also preserves imperative re-plan requests as actions, so a
+question cannot be used as a new authorization frame merely because it contains
+the word “Planning”.
+
+### 3.2 The answer is read from the active Planning state, not inferred by the LLM
+
+The three public chat paths now use
+`_build_current_planning_provenance_response()` for this intent. It reads
+`web.planning_runs.current_planning_context()` and reports:
+
+- the active Planning label and ID;
+- lifecycle status and persisted source;
+- verified Needle/Seed counts; and
+- the precise Dose/DVH calculation boundary when an audit record exists.
+
+If no active Planning exists, the response explicitly says that the source
+cannot be confirmed. It does not guess from the previous conversation and it
+does not start a planning pipeline.
+
+### 3.3 Dose recomputation now persists its exact source contract
+
+After a successful `dose_recompute`, the tool stores
+`dose_recompute_provenance` in the active Planning namespace. The record
+contains the Planning ID/label, source type, geometry source, Needle/Seed
+counts, timestamp, and explicit flags that segmentation, needle selection, and
+the full Planning pipeline were not rerun. The key is included in
+`PLANNING_VALUE_KEYS`, so it is captured in the immutable Planning snapshot,
+restored with that Planning, and cleared when a genuinely new Planning starts.
+
+`current_planning_context()` now exposes compact Planning lifecycle metadata
+and this provenance record without calling the mutating history migration
+helper. A read-only follow-up therefore remains read-only at the persistence
+boundary as well.
+
+### 3.4 No-provider fallback can no longer execute or fabricate semantic turns
+
+When the language provider is unavailable, only a policy explicitly marked
+`direct_execution` may reach the legacy constrained action fallback. Semantic,
+knowledge, UI, and other unconfirmed turns receive a same-language message
+that says no clinical operation was started. The three old static capability
+menus were removed from their default branches, and those branches are also
+guarded by the active turn’s explicit execution grant.
+
+There is an additional response-boundary guard for the legacy menu. If any
+provider or compatibility branch still emits that exact unrelated menu for a
+non-capability question, it is replaced with a safe, same-language response.
+An explicit capability request is converted to a localized capability summary,
+so Chinese input no longer receives an English menu.
+
+## 4. Verification
+
+The focused remote regression suite passed **41 tests** after the repair,
+including the new provenance classifier, localized response, persisted
+Planning metadata, no-provider safety guard, and the actual streaming entry
+point. Python compilation and `git diff --check` passed for all modified files.
+
+The full remote repository suite passed **766 tests**, with 6 skipped and 4
+non-failing warnings. Python compilation and `git diff --check` also passed.
+The live-process restart verification is recorded below after deployment.
+
 # 2026-08-27 Incident Review — 3D Reconstruction Loading Ends Before Completion
 
 > **This is the newest authoritative review entry and is intentionally located at the beginning of the file.**

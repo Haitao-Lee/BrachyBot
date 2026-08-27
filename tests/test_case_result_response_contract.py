@@ -98,6 +98,167 @@ def test_dose_result_language_is_read_only_but_recalculation_stays_mutating():
         assert _is_current_case_dose_query(mutation) is False
 
 
+def test_planning_provenance_followup_is_localized_read_only_and_never_replans():
+    from agent_runtime.chat_workflows import ChatWorkflowMixin
+    from agent_runtime.turn_policy import classify_local_turn
+
+    message = "本次计算是以哪次规划结果为依据的呢"
+    policy = classify_local_turn(message)
+    assert policy.intent == "planning_provenance_query"
+    assert policy.use_router is False
+    assert policy.use_completeness is False
+    assert policy.direct_execution is False
+
+    class Memory:
+        def __init__(self):
+            self.values = {
+                "active_planning_id": "planning-4",
+                "planning_run_id": "planning-4",
+                "planning_runs": [{
+                    "planning_id": "planning-4",
+                    "sequence": 3,
+                    "label": "Planning_4",
+                    "status": "completed",
+                    "visible": True,
+                    "data_version": 7,
+                }],
+                "planning_run:planning-4": {
+                    "total_seeds": 54,
+                    "num_trajectories": 8,
+                    "dose_recompute_provenance": {
+                        "operation": "dose_recompute",
+                        "planning_id": "planning-4",
+                        "planning_label": "Planning_4",
+                        "planning_status": "completed",
+                        "source": "active_planning_run",
+                        "used_saved_geometry": True,
+                        "reran_segmentation": False,
+                        "reran_trajectory_selection": False,
+                        "reran_planning_pipeline": False,
+                        "total_seeds": 54,
+                        "num_trajectories": 8,
+                    },
+                },
+            }
+
+        def retrieve(self, key, default=None):
+            return self.values.get(key, default)
+
+    workflow = object.__new__(ChatWorkflowMixin)
+    workflow.memory = Memory()
+    response = workflow._build_current_planning_provenance_response("zh")
+
+    assert "Planning_4" in response
+    assert "planning-4" in response
+    assert "8 个针道、54 个粒子" in response
+    assert "没有重新进行分割" in response
+    assert "I can help with brachytherapy planning" not in response
+
+
+def test_unavailable_provider_never_turns_semantic_question_into_keyword_action_or_english_menu():
+    from agent_runtime.chat_workflows import ChatWorkflowMixin
+    from agent_runtime.turn_policy import classify_local_turn
+
+    message = "本次计算是以哪次规划结果为依据的呢"
+
+    class Memory:
+        user_lang = "zh"
+
+    workflow = object.__new__(ChatWorkflowMixin)
+    workflow.memory = Memory()
+    workflow._active_turn_policy = classify_local_turn(message)
+
+    response = workflow._rule_based_chat(message)
+    assert "I can help with brachytherapy planning" not in response
+    assert "没有启动任何临床操作" in response
+
+    legacy_menu = (
+        "I can help with brachytherapy planning. Try:\n"
+        "  - 'Segment CTV' - Segment CTV\n"
+        "  - 'Generate plan' - Generate treatment plan\n"
+        "  - 'Evaluate dose' - Evaluate dose distribution\n"
+        "  - 'Optimize plan' - Optimize treatment plan\n"
+        "  - 'Self-evolve' - Trigger self-evolution\n"
+        "  - 'Create tool' - Create new tool"
+    )
+    normalized = workflow._normalize_user_facing_response(message, legacy_menu)
+    assert "I can help with brachytherapy planning" not in normalized
+    assert "没有可靠识别出" in normalized
+
+
+def test_english_planning_provenance_question_uses_the_same_local_read_route():
+    from agent_runtime.turn_policy import classify_local_turn
+
+    policy = classify_local_turn("Which planning result was this dose recomputation based on?")
+    assert policy.intent == "planning_provenance_query"
+    assert policy.use_router is False
+
+
+def test_streaming_entrypoint_answers_provenance_without_provider_or_tool_calls():
+    import json
+    import threading
+
+    from agent_runtime.chat_workflows import ChatWorkflowMixin
+
+    class Memory:
+        def __init__(self):
+            self._lock = threading.RLock()
+            self.context_summary = ""
+            self.conversation = []
+            self.user_lang = "zh"
+            self.values = {
+                "active_planning_id": "planning-4",
+                "planning_run_id": "planning-4",
+                "planning_runs": [{
+                    "planning_id": "planning-4",
+                    "sequence": 3,
+                    "label": "Planning_4",
+                    "status": "completed",
+                    "visible": True,
+                }],
+                "planning_run:planning-4": {
+                    "total_seeds": 54,
+                    "num_trajectories": 8,
+                    "dose_recompute_provenance": {
+                        "planning_id": "planning-4",
+                        "planning_label": "Planning_4",
+                        "planning_status": "completed",
+                        "source": "active_planning_run",
+                        "total_seeds": 54,
+                        "num_trajectories": 8,
+                    },
+                },
+            }
+
+        def retrieve(self, key, default=None):
+            return self.values.get(key, default)
+
+        def add_message(self, role, content):
+            self.conversation.append({"role": role, "content": content})
+
+    workflow = object.__new__(ChatWorkflowMixin)
+    workflow.memory = Memory()
+    workflow.multi_agent_wrapper = None
+    workflow.enhanced = None
+    workflow.brain_available = False
+    workflow.exp_memory = None
+    workflow._active_turn_context = {}
+    workflow._pending_tumor_site_clarification = lambda: False
+
+    events = list(workflow._chat_with_stream_impl("本次计算是以哪次规划结果为依据的呢"))
+    response_events = [
+        json.loads(event.split("data: ", 1)[1])
+        for event in events
+        if event.startswith("event: response\n")
+    ]
+
+    assert len(response_events) == 1
+    assert response_events[0]["llm_meta"]["route"] == "local_planning_provenance"
+    assert "Planning_4" in response_events[0]["response"]
+    assert "planning_pipeline" not in response_events[0]["response"]
+    assert "I can help with brachytherapy planning" not in response_events[0]["response"]
+
+
 def test_query_metrics_exposes_typed_direct_read_contract_and_localized_table():
     from agent_runtime.core import ToolResultPipeline
     from tool_factory.viewer_command.query_metrics import QueryMetricsTool
