@@ -64,6 +64,25 @@ def test_structural_reconstruction_is_case_scoped_and_waits_for_label_snapshot()
     assert "labelsReady: labelTask" in ui_api
 
 
+def test_cold_restore_keeps_one_loading_owner_until_parallel_viewer_work_finishes():
+    """Essential readiness must not create a silent gap before 3D completion."""
+    manual = read("web/app/static/js/brachybot-3d-manual.js")
+    planning = read("web/app/static/js/brachybot-dvh-planning.js")
+    ui_api = read("web/app/static/js/brachybot-ui-api.js")
+
+    assert "Object.defineProperty(refreshOutcome, 'backgroundCompletion'" in planning
+    assert "const viewerCompletionPromise = backgroundMeshesPromise.then" in planning
+    assert "value: viewerCompletionPromise" in planning
+    assert "showLoading: !options.hydrationScope" in planning
+    assert "loadSeeds3D({" in planning
+    assert "onProgress: options.onHydrationProgress" in planning
+    assert "registerBackgroundTask(completion, { kind: 'viewer_3d' })" in ui_api
+    assert "Promise.allSettled(backgroundTasks).finally" in ui_api
+    assert "if (!backgroundNoticeTransferred)" in ui_api
+    assert "const batchSize = Math.max(1, Number(opts.batchSize) || 6)" in manual
+    assert "reportProgress({ phase: 'oar', current: completed, total: oarIds.length })" in manual
+
+
 def test_terminal_planning_refresh_delivers_all_downstream_products():
     chat = read("web/app/static/js/brachybot-chat-todo.js")
     planning = read("web/app/static/js/brachybot-dvh-planning.js")
@@ -84,7 +103,8 @@ def test_terminal_planning_refresh_delivers_all_downstream_products():
         "updateClinicalEvaluation()",
     ):
         assert required in planning
-    assert "loadAllIsoSurfaces({ reconstruct3d: true })" in planning
+    assert "loadAllIsoSurfaces({" in planning
+    assert "reconstruct3d: true" in planning
 
 
 def test_surgical_guide_uses_real_mesh_for_data_tree_bound_2d_projection():
@@ -233,9 +253,12 @@ def test_planning_visual_loads_are_retryable_and_case_scoped():
     assert "if (_viewer3DRequestScopeIsCurrent(requestScope) && !silent)" in layout
     assert "silent && [202, 404, 409, 429].includes(res.status)" in layout
     assert "res.status === 429 && pending.code === 'rate_limit_exceeded'" in viewer
-    assert "loadAllIsoSurfaces({ reconstruct3d: true })," in planning
+    assert "loadAllIsoSurfaces({" in planning
+    assert "reconstruct3d: true" in planning
     assert "'Isosurface reconstruction',\n                180000" in planning
-    assert "_withTimeout(loadSeeds3D(), 'Seeds', 120000)" in planning
+    assert "_withTimeout(loadSeeds3D({" in planning
+    assert "showLoading: !options.hydrationScope" in planning
+    assert "}), 'Seeds', 120000)" in planning
 
 
 def test_3d_loading_has_reference_counted_ownership_and_soft_watchdog():

@@ -1336,7 +1336,10 @@ async function refreshPlanningUI(options = {}) {
                 // real 3D surfaces as well as their 2D contours so the data
                 // tree never advertises a planning result that only exists
                 // in one viewer.
-                loadAllIsoSurfaces({ reconstruct3d: true }),
+                loadAllIsoSurfaces({
+                    reconstruct3d: true,
+                    showLoading: !options.hydrationScope,
+                }),
                 'Isosurface reconstruction',
                 180000,
             ));
@@ -1351,6 +1354,9 @@ async function refreshPlanningUI(options = {}) {
                 // otherwise it can start with 37 obstacles and then restart
                 // against all 58/59 OAR nodes.
                 labelsReady: options.labelsReady,
+                showLoading: !options.hydrationScope,
+                batchSize: options.hydrationScope ? 6 : undefined,
+                onProgress: options.onHydrationProgress,
             }), 'CTV/OAR meshes', 300000)
                 .then(() => uiDebugLog('[3D auto-load] CTV/obstacle done. Meshes:', Object.keys(scene3D.meshes).length))
         );
@@ -1364,7 +1370,9 @@ async function refreshPlanningUI(options = {}) {
             || ((data.trajectories || []).length > 0);
         let seedGeometryPromise = Promise.resolve(null);
         if (shouldLoadSeedGeometry) {
-            seedGeometryPromise = _withTimeout(loadSeeds3D(), 'Seeds', 120000)
+            seedGeometryPromise = _withTimeout(loadSeeds3D({
+                showLoading: !options.hydrationScope,
+            }), 'Seeds', 120000)
                 .then(result => {
                     uiDebugLog('[3D auto-load] Seeds done. Meshes:', Object.keys(scene3D.meshes).length);
                     return result;
@@ -1470,15 +1478,17 @@ async function refreshPlanningUI(options = {}) {
                 essentialReady: true,
                 doseReady: data.has_dose === true,
             };
-            backgroundMeshesPromise.then(async () => {
-                if (!isCurrentCase()) return;
-                // Mesh completion only refreshes the figures; it never gates
-                // the already interactive workspace.
+            // Expose the true visual completion boundary to the workspace
+            // restore transaction. Essential CT/2D/planning state can return
+            // immediately, but the same non-blocking loading notice remains
+            // owned until all mesh producers and the restored guide settle.
+            const viewerCompletionPromise = backgroundMeshesPromise.then(async () => {
+                if (!isCurrentCase()) return { stale: true };
                 try { if (typeof renderDataTree === 'function') renderDataTree(); } catch (_) {}
                 try { if (typeof forceRender3DViewer === 'function') forceRender3DViewer(); } catch (_) {}
                 if (guideRestorePromise) {
                     await guideRestorePromise.catch(error => console.warn('[guide] background restore:', error));
-                    if (!isCurrentCase()) return;
+                    if (!isCurrentCase()) return { stale: true };
                     try { if (typeof reconcileDataTreeVisualNodes === 'function') reconcileDataTreeVisualNodes(); } catch (_) {}
                     try { if (typeof renderDataTree === 'function') renderDataTree(); } catch (_) {}
                     try { if (typeof forceRender3DViewer === 'function') forceRender3DViewer(); } catch (_) {}
@@ -1495,6 +1505,20 @@ async function refreshPlanningUI(options = {}) {
                 } catch (error) {
                     console.warn('[3D auto-load] camera fit guard:', error);
                 }
+                return { success: true, stage: 'viewer_complete' };
+            });
+            Object.defineProperty(refreshOutcome, 'backgroundCompletion', {
+                value: viewerCompletionPromise,
+                enumerable: false,
+                configurable: true,
+            });
+
+            // Report repair/capture is downstream of the visible Viewer and
+            // must not prolong its loading indicator. It starts only after the
+            // same visual promise, so screenshots still cannot sample a
+            // partially reconstructed scene.
+            viewerCompletionPromise.then(async completion => {
+                if (completion?.stale || !isCurrentCase()) return;
                 await backgroundReportPromise.catch(() => {});
                 if (!isCurrentCase()) return;
                 const requiredReportAxes = new Set([

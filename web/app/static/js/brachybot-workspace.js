@@ -247,9 +247,10 @@
         recordWorkspacePerformance('restore.scheduled', { sessionId });
         if (backgroundRestoreTimer) clearTimeout(backgroundRestoreTimer);
         if (backgroundRestoreNoticeTimer) clearTimeout(backgroundRestoreNoticeTimer);
-        // Hydration is deliberately non-blocking.  Keep a small progress hint
-        // while the first assets arrive, but never leave a permanent spinner
-        // over the chat when a large CT/mesh restore is still running.
+        // Hydration is deliberately non-blocking. Keep one scoped progress
+        // hint alive until the restore wrapper's real completion boundary
+        // settles; a fixed-duration spinner creates a silent gap while the
+        // slower 3D products are still arriving.
         window.setWorkspaceHydrationState?.(
             true,
             typeof window._t === 'function'
@@ -263,10 +264,13 @@
         backgroundRestoreNoticeTimer = setTimeout(() => {
             if (generation !== backgroundRestoreGeneration || sessionId !== activeSessionId) return;
             window.setWorkspaceHydrationState?.(
-                false,
+                true,
                 typeof window._t === 'function'
-                    ? window._t('资源继续在后台加载', 'Resources continue loading in the background')
-                : 'Resources continue loading in the background',
+                    ? window._t(
+                        '病例资源仍在后台加载；当前页面可以继续操作。',
+                        'Case resources are still loading in the background; this page remains usable.',
+                    )
+                : 'Case resources are still loading in the background; this page remains usable.',
                 { sessionId, runId: generation },
             );
             backgroundRestoreNoticeTimer = null;
@@ -275,6 +279,7 @@
             backgroundRestoreTimer = null;
             if (generation !== backgroundRestoreGeneration || sessionId !== activeSessionId) return;
             let restoreSucceeded = false;
+            let clinicalRestoreOwnsNotice = false;
             let retryScheduled = false;
             try {
                 // The snapshot returned by the fast select endpoint can be
@@ -302,6 +307,15 @@
                     console.debug('[workspace] fresh snapshot deferred:', refreshError);
                 }
                 if (typeof restoreActiveSessionWorkspace === 'function') {
+                    // The clinical restore wrapper transfers this notice to
+                    // any remaining 3D viewer promises before returning. The
+                    // scheduler must not close it at the essential-data
+                    // boundary while those promises are still active.
+                    clinicalRestoreOwnsNotice = true;
+                    if (backgroundRestoreNoticeTimer) {
+                        clearTimeout(backgroundRestoreNoticeTimer);
+                        backgroundRestoreNoticeTimer = null;
+                    }
                     await restoreActiveSessionWorkspace({
                         clearReport: false,
                         workspace: authoritativeWorkspace,
@@ -369,11 +383,13 @@
                     if (restoreSucceeded) delete backgroundRestoreRetryCounts[String(sessionId || '')];
                     window.__workspaceRestoreScheduledSessionId = null;
                     window.__workspaceRestoreCompletedSessionId = restoreSucceeded ? String(sessionId) : null;
-                    window.setWorkspaceHydrationState?.(
-                        false,
-                        '',
-                        { sessionId, runId: generation },
-                    );
+                    if (!clinicalRestoreOwnsNotice) {
+                        window.setWorkspaceHydrationState?.(
+                            false,
+                            '',
+                            { sessionId, runId: generation },
+                        );
+                    }
                 }
             }
         }, 0);
