@@ -130,7 +130,15 @@ point. Python compilation and `git diff --check` passed for all modified files.
 
 The full remote repository suite passed **766 tests**, with 6 skipped and 4
 non-failing warnings. Python compilation and `git diff --check` also passed.
-The live-process restart verification is recorded below after deployment.
+
+The repaired source was committed as `b1d3bc427` on
+`codex/session-task-recovery` and pushed to
+`origin/codex/session-task-recovery` on GitHub. The old server was stopped by
+its verified PID and the new process was started from this commit. The active
+Python server is PID `3146480`, listening on `0.0.0.0:8080`; its startup log is
+`/tmp/brachybot_server_b1d3bc427.log`. A loopback request reached the new
+server and returned the expected authentication response (`401`), confirming
+that the process is live rather than that the endpoint was silently skipped.
 
 # 2026-08-27 Incident Review — 3D Reconstruction Loading Ends Before Completion
 
