@@ -1986,7 +1986,74 @@ class PlanningPipelineTool(BaseTool):
             result.metadata.setdefault("planning_id", planning_id)
             result.metadata.setdefault("planning_label", "")
             result.metadata.setdefault("planning_step", str(step))
-            if not result.success:
+            if result.success:
+                # The pipeline mutates the legacy active aliases while it
+                # runs.  Reserving a Planning above is not enough: the
+                # workspace restore path and the viewer/Data Tree registry
+                # consume the immutable ``planning_run:<id>`` snapshot and
+                # its registry row.  If a successful pipeline returns before
+                # this commit, the chat can report a complete plan while a
+                # restart can only restore an empty ``running`` row.
+                #
+                # Intermediate stepwise calls remain ``running`` so the next
+                # step reuses the same run.  ``full`` and the terminal
+                # ``dose_eval`` step are the lifecycle completion points.
+                publish_status = (
+                    "completed"
+                    if str(step) in {"full", "dose_eval"}
+                    else "running"
+                )
+                try:
+                    from web.planning_runs import publish_planning_run
+
+                    published_id = publish_planning_run(
+                        agent,
+                        result,
+                        status=publish_status,
+                    )
+                    if str(published_id or "") != str(planning_id):
+                        raise RuntimeError(
+                            "planning registry commit returned an unexpected planning_id"
+                        )
+                    result.metadata["planning_status"] = publish_status
+                    result.metadata["planning_published"] = True
+                except Exception as exc:
+                    # A computed-but-unpublished result is not a successful
+                    # clinical result.  Restore the previous immutable run
+                    # before returning so the user never sees a false success
+                    # or a half-populated Planning in the viewer.
+                    logger.exception(
+                        "[planning] unable to publish successful run %s",
+                        planning_id,
+                    )
+                    try:
+                        from web.planning_runs import mark_planning_run
+
+                        mark_planning_run(
+                            agent,
+                            planning_id,
+                            "failed",
+                            error=f"Planning registry commit failed: {exc}",
+                        )
+                    except Exception:
+                        logger.warning(
+                            "[planning] unable to roll back unpublished run %s",
+                            planning_id,
+                            exc_info=True,
+                        )
+                    failed_metadata = dict(result.metadata)
+                    failed_metadata["planning_status"] = "failed"
+                    failed_metadata["planning_published"] = False
+                    result = ToolResult(
+                        success=False,
+                        message=(
+                            "Planning calculation completed, but its result "
+                            "could not be committed to the session."
+                        ),
+                        error=f"Planning registry commit failed: {exc}",
+                        metadata=failed_metadata,
+                    )
+            else:
                 try:
                     from web.planning_runs import mark_planning_run
                     mark_planning_run(

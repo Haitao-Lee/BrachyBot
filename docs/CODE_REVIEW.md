@@ -1,3 +1,95 @@
+# 2026-08-27 Incident Review — Completed replan produced empty Planning nodes after restart
+
+> **This is the newest authoritative review entry and is intentionally located at the absolute beginning of the file.**
+> It records the failure in which `重新规划一遍吧` reported a completed planning
+> result, while the viewer and Data Tree showed only empty Planning children.
+> The diagnosis below is based on the live remote session snapshot, the live
+> server log, and direct source inspection; it is separate from the older chat
+> handshake incident immediately below.
+
+## 1. Executive verdict
+
+This was a real persistence/lifecycle defect in the planning pipeline. The
+algorithm did complete and wrote the new seeds, validated needle geometry, dose
+grid, and metrics into the session's mutable planning aliases. However, the
+pipeline reserved a new Planning registry row and never committed the
+successful result into the immutable `planning_run:<planning_id>` snapshot or
+changed the row from `running` to `completed`. The restart hydration code
+therefore had no namespaced run to restore and the UI correctly rendered the
+registry row as an empty/incomplete Planning.
+
+| Confirmed problem | Root cause | Status |
+|---|---|---|
+| A completed replan was announced in chat but the viewer/Data Tree had no new seeds, needles, dose, or planning artifacts | `PlanningPipelineTool._execute()` called `begin_planning_run()` before computation, but had no success-path call to `publish_planning_run()` | **FIXED** |
+| The new Planning row remained `status=running` with null counts and no artifact flags | The registry is updated at `begin_planning_run()`, while status/counts/visibility are updated only by `publish_planning_run()` | **FIXED** |
+| Restart hydration could restore the raw root aliases but not the selected Planning | There was no `planning_run:<new_id>` key in the persisted snapshot, so the Planning registry and viewer projection had no immutable source | **FIXED** |
+| A persistence failure could have been reported as a successful clinical plan | The pipeline returned the algorithm's success result without making registry publication part of the success contract | **FIXED** |
+
+## 2. Direct evidence from the affected remote session
+
+The affected session was inspected on the current remote checkout before the
+repair. The persisted snapshot contained:
+
+- `active_planning_id = planning-96d87716e2374f1abc93a1c7a1b942be`;
+- root aliases containing the newly computed `seed_plan` (8 entries),
+  `seed_positions`, `verified_needle_geometry`, `dose_distribution`,
+  `dose_metrics`, `total_seeds=52`, and `num_trajectories=8`;
+- a `planning_runs` row for `planning-96d877...` labelled `Planning_6`, but
+  with `status=running`, `visible=true`, and null seed/trajectory/dose/guide
+  fields; and
+- no `planning_run:planning-96d877...` namespaced snapshot at all.
+
+The live server log showed the same ordering: `planning_pipeline` completed
+successfully and logged `seed_plan=8 entries, total_seeds=52`, but there was no
+`planning.run.published`, `planning.run.completed.visibility`, or publication
+of the new namespaced run. This proves that the missing display was not caused
+by the viewer's geometry renderer, a browser cache, or a failed dose
+calculation.
+
+The frontend already schedules `refreshPlanningUI()` after the terminal
+planning event and refreshes both `/planning/results` and `/planning/runs`.
+That refresh path was consuming the incomplete backend registry exactly as
+stored; changing only the frontend would have hidden the symptom temporarily
+and would still lose the plan on restart.
+
+## 3. Root-cause repair
+
+`tool_factory/seed_plan/planning_pipeline.py::PlanningPipelineTool._execute()`
+now treats registry publication as part of the planning transaction:
+
+1. A successful `full` pipeline calls `publish_planning_run(...,
+   status="completed")` before returning to the chat/task layer.
+2. A successful terminal `dose_eval` step is also published as
+   `completed`; intermediate stepwise calls publish as `running` so the next
+   step reuses the same draft/run rather than creating a new row for every
+   stage.
+3. The returned planning ID is checked against the reserved ID. A missing or
+   unexpected ID is a commit failure, not a successful plan.
+4. If publication fails, the new run is marked failed and the previous
+   immutable run is restored where available. The tool returns a failure
+   result instead of claiming that the viewer contains a valid plan.
+
+This makes the durable commit happen before the success response. The normal
+frontend terminal refresh can then read a completed registry row and the
+matching immutable snapshot, and the same data remains available to the
+restart hydration path.
+
+## 4. Verification
+
+The repair includes a regression test that executes the pipeline entry point
+with a stubbed successful computation and asserts that the reserved Planning
+ID is published as `completed` before `_execute()` returns. On the current
+remote checkout, Python compilation passed, the focused planning/persistence
+suite passed (`128 passed`), the complete suite passed (`769 passed,
+6 skipped`), and `git diff --check` reported no whitespace errors. The live
+server restart and post-restart hydration check are performed immediately
+after this source validation.
+
+The affected historical row is not silently rewritten: it remains audit
+material showing the pre-repair state. A newly completed replan after this
+repair is the acceptance case and must produce a non-empty
+`planning_run:<planning_id>` snapshot plus populated registry counts/flags.
+
 # 2026-08-27 Incident Review — Chat request rejected after a 30-second handshake stall
 
 > **This is the newest authoritative review entry and is intentionally located at the absolute beginning of the file.**
