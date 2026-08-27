@@ -1,3 +1,106 @@
+# 2026-08-28 Incident Review — 3D bundle parse failure aborted Viewer hydration
+
+> **This is the newest authoritative review entry and is intentionally located at the absolute beginning of the file.**
+> It records the post-repair reproduction in which the backend correctly
+> dispatched `viewer.refresh_planning`, but the browser reported
+> `_normalizeTrajectoryId is not defined`; the 2D viewer then lost its loaded
+> presentation during the incomplete restore and the 3D viewer remained empty.
+> The diagnosis was rechecked against the exact remote JavaScript source, the
+> HTML script order, the browser-facing call sites, and JavaScript parsing.
+
+## 1. Executive verdict
+
+This was a real frontend asset failure, not a planning-data or AI-provider
+failure. The current remote `brachybot-3d-manual.js` could not be parsed by a
+browser because the frozen OAR ID expression in
+`loadCTVAndObstacleMeshes()` ended with a closing square bracket before the
+closing parenthesis:
+
+```javascript
+.sort((a, b) => a - b)]
+```
+
+Because the file is one classic script, a parse error prevents the entire file
+from executing. The browser therefore never installed the 3D module's global
+functions, including `_normalizeTrajectoryId`, `loadSeeds3D`, mesh rendering,
+and structural reconstruction. `refreshPlanningUI()` later reached
+`updateSeeds()`/`updateTrajectories()` and failed at the missing helper. The
+refresh transaction had already started updating the presentation, so the
+error also left the 2D viewer in an incomplete state. This accounts for both
+the reported `ReferenceError` and the empty 3D viewer after loading.
+
+| Confirmed problem | Root cause | Status |
+|---|---|---|
+| `viewer.refresh_planning` was dispatched but failed in the browser | The entire 3D classic script was rejected by a JavaScript syntax error | **FIXED** |
+| `_normalizeTrajectoryId is not defined` appeared during planning refresh | The helper was declared later in the script that never executed | **FIXED** |
+| Existing 2D presentation could disappear while the refresh was incomplete | The hydration path was allowed to continue after a failed dependency bundle and had no earlier shared helper fallback | **FIXED** |
+| 3D viewer remained empty after all data was reported as loaded | 3D scene initialization, mesh loaders, and planning geometry functions were absent after script parse failure | **FIXED** |
+| An old cached classic script could be mixed with a newly changed UI bundle | The changed script URLs retained the old `v48`/`v68` cache keys | **FIXED** |
+
+## 2. Direct source evidence and failure path
+
+The remote HTML loads the classic bundles in this order: `brachybot-ui-api.js`,
+`brachybot-viewer-volume.js`, `brachybot-viewer-layout.js`,
+`brachybot-3d-manual.js`, and then `brachybot-dvh-planning.js`. The latter two
+bundles call `_normalizeTrajectoryId` by its unqualified global name. The
+helper was defined at line 4208 of the 3D bundle, but that bundle contained
+the malformed expression at line 5527. Running the exact remote file through a
+JavaScript parser reproduced:
+
+```text
+SyntaxError: missing ) after argument list
+```
+
+This is why a server-side Python test could pass while the real browser still
+failed: Python never parses or executes the frontend bundle. The backend log
+confirmed that the new action itself succeeded; the error was emitted by the
+browser while executing the returned action.
+
+## 3. Root-cause repair
+
+The repair has four parts:
+
+1. Close the OAR ID expression correctly as
+   `.sort((a, b) => a - b))]`, allowing the whole 3D bundle to parse and
+   execute.
+2. Define a compatible canonical `_normalizeTrajectoryId` in the earlier
+   `brachybot-ui-api.js` bundle. This protects the cross-bundle contract if a
+   later optional 3D bundle is delayed or fails to load; the 3D bundle retains
+   the same normalization semantics.
+3. Bump the cache keys in `web/app/index.html` to `ui-api.js?v=49` and
+   `3d-manual.js?v=69`, preventing an open browser from combining stale and
+   current classic scripts during deployment.
+4. Add a frontend dependency-contract test that verifies the cache versions,
+   the shared helper, the corrected expression, and—when Node is available—
+   runs `node --check` on the UI, 3D, layout, DVH, and volume bundles.
+
+The existing Viewer refresh action remains the canonical state path: it loads
+the active Session's CT/labels/planning data and progressively rebuilds the
+2D layers, seeds/needles, CTV/OAR meshes, dose overlay, isodose surfaces, DVH,
+and guide. No new planning or dose calculation is introduced by this repair.
+
+## 4. Verification
+
+The second-pass checks on the remote checkout are:
+
+- The exact changed 3D bundle, plus the layout, DVH, volume, and UI bundles,
+  pass JavaScript syntax checks with the local Node parser. The remote runtime
+  image does not contain Node, so the repository test also contains a static
+  fallback contract for that environment.
+- The Viewer-specific runtime contract test passed: `4 passed`.
+- The affected regression modules passed: `19 passed`.
+- The complete remote Python suite passed: `772 passed, 6 skipped, 4 warnings`.
+- `git diff --check` passed with no whitespace errors.
+- The remote source contains the corrected `sort` expression and both bumped
+  script versions; no test source still requires the old `v48`/`v68` values
+  (stale bytecode cache matches are not source files).
+
+The code and test changes are ready to be committed and pushed as the next
+remote deployment revision. The final runtime check must use the new script
+versions: after a browser hard refresh, the exact user request must produce no
+`_normalizeTrajectoryId` error, preserve the already-painted 2D CT/label
+layers while 3D meshes load, and finish with non-empty 3D planning objects.
+
 # 2026-08-28 Incident Review — Provider failure blocked the deterministic “show results in Viewer” request
 
 > **This is the newest authoritative review entry and is intentionally located at the absolute beginning of the file.**

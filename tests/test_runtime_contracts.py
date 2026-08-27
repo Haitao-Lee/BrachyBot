@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import shutil
+import subprocess
 from pathlib import Path
 
 from agent_runtime.contracts import ContextPackBuilder, RunLedger, RunStatus, ToolCallGateway
@@ -499,6 +501,42 @@ def test_viewer_result_display_stream_bypasses_llm_and_emits_refresh_action():
     assert response["llm_meta"]["route"] == "direct_tool"
     assert "Viewer" in response["response"]
     assert "不会重新运行规划" in response["response"]
+
+
+def test_viewer_script_dependency_contract_is_cache_busted_and_syntax_safe():
+    root = Path(__file__).resolve().parents[1]
+    index = (root / "web/app/index.html").read_text(encoding="utf-8")
+    ui_api = (root / "web/app/static/js/brachybot-ui-api.js").read_text(encoding="utf-8")
+    manual_3d_path = root / "web/app/static/js/brachybot-3d-manual.js"
+    manual_3d = manual_3d_path.read_text(encoding="utf-8")
+
+    # A browser can retain independent classic-script URLs. Bump the query
+    # versions whenever this cross-bundle contract changes, otherwise an old
+    # 3D bundle can coexist with a new UI action bundle and hide its parse
+    # failure as a missing global helper.
+    assert 'brachybot-ui-api.js?v=49' in index
+    assert 'brachybot-3d-manual.js?v=69' in index
+    assert "window._normalizeTrajectoryId = function _normalizeTrajectoryId" in ui_api
+
+    # This exact malformed expression previously prevented the entire 3D
+    # bundle from executing, which made _normalizeTrajectoryId unavailable to
+    # DVH hydration and left the 3D scene empty.
+    assert ".sort((a, b) => a - b))]" in manual_3d
+    assert ".sort((a, b) => a - b)]" not in manual_3d
+
+    # Use the host's JavaScript parser when available; the remote production
+    # image does not require Node, so the source-contract assertions above are
+    # intentionally the non-Node fallback.
+    node = shutil.which("node") or shutil.which("nodejs")
+    if node:
+        for path in (
+            root / "web/app/static/js/brachybot-ui-api.js",
+            root / "web/app/static/js/brachybot-3d-manual.js",
+            root / "web/app/static/js/brachybot-viewer-layout.js",
+            root / "web/app/static/js/brachybot-dvh-planning.js",
+            root / "web/app/static/js/brachybot-viewer-volume.js",
+        ):
+            subprocess.run([node, "--check", str(path)], check=True)
 
 
 def test_segmentation_intent_and_site_followup_are_not_knowledge_queries():
