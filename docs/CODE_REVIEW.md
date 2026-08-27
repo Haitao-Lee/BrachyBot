@@ -82,8 +82,19 @@ ID is published as `completed` before `_execute()` returns. On the current
 remote checkout, Python compilation passed, the focused planning/persistence
 suite passed (`128 passed`), the complete suite passed (`769 passed,
 6 skipped`), and `git diff --check` reported no whitespace errors. The live
-server restart and post-restart hydration check are performed immediately
-after this source validation.
+server was then restarted from the clean remote checkout: PID `3207829` is
+running `/home/lht/.conda/envs/brachytherapy/bin/python3.12 web/server.py
+--host 0.0.0.0` from `/home/lht/snap/brachyplan/BrachyBot`, commit
+`4ea39295e`, and port 8080 is listening. The new startup log contains no
+traceback, error, critical, or exception lines. An unauthenticated registry
+probe correctly returned HTTP 401, so the authentication boundary remained
+active during the restart check.
+
+The final user-case acceptance still requires running one new full replan from
+the browser: the previously affected `planning-96d877...` row was created by
+the old buggy version and has no immutable snapshot to reconstruct. The
+repair guarantees that a new successful run creates that snapshot before the
+success response is emitted.
 
 The affected historical row is not silently rewritten: it remains audit
 material showing the pre-repair state. A newly completed replan after this
