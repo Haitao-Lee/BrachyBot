@@ -89,7 +89,9 @@ The client-side row is now `请求分析` / `Request analysis` with
 `正在确定执行路径…` / `Determining execution path...`. It is explicitly a
 connection placeholder and does not claim that a multi-agent router executed.
 Persisted historical rows remain localizable through the existing compatibility
-mapping.
+mapping. `web/app/index.html` increments the script cache version for
+`brachybot-chat-todo.js` from `v=20` to `v=21`, so an already-open browser does
+not silently retain the misleading placeholder.
 
 ## 4. Verification contract
 
@@ -117,6 +119,8 @@ diff check, and live-server restart/health check are recorded below.
 - Remote Python 3.12 compilation of the changed Python files passed.
 - JavaScript syntax check of `brachybot-chat-todo.js` passed with Node.js
   `v24.14.0`.
+- The frontend contract test also verifies the `brachybot-chat-todo.js?v=21`
+  cache-busting reference in `web/app/index.html`.
 - Remote `git diff --check` passed before commit.
 - Commit `2fbb79aa8` is present on
   `codex/session-task-recovery` and was pushed to
