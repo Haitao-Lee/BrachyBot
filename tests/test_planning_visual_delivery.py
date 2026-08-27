@@ -32,15 +32,36 @@ def test_chat_segmentation_completion_loads_labels_before_background_meshes():
 
 def test_full_oar_reconstruction_is_tracked_until_all_meshes_settle():
     manual = read("web/app/static/js/brachybot-3d-manual.js")
-    block = manual.split("async function loadCTVAndObstacleMeshes()", 1)[1].split(
+    block = manual.split("async function _loadCTVAndObstacleMeshes", 1)[1].split(
         "// Load dose distribution", 1
     )[0]
 
-    assert "await prewarmSegmentationMeshes('all', {" in block
-    assert "allOAR: true" in block
+    # A cold restore must select the complete OAR target set once.  The old
+    # implementation first ran the non-traversable subset and then ran a
+    # second all-OAR pass after label hydration, which reset the UI from e.g.
+    # 3/37 to 3/58 and made the first work look wasted.
+    assert block.count("await prewarmSegmentationMeshes('all', {") == 1
+    assert "allOAR: Array.isArray(allOarIds)" in block
+    assert "oarIds: allOarIds" in block
+    assert "labelsReady" in block
+    assert "if (oarLabelData)" not in block
     assert "loadingToken" in block
     assert "startSegmentationMeshPrewarm('all', {" not in block
     assert "function startSegmentationMeshPrewarm(kind = 'all', opts = {})" in manual
+
+
+def test_structural_reconstruction_is_case_scoped_and_waits_for_label_snapshot():
+    manual = read("web/app/static/js/brachybot-3d-manual.js")
+    planning = read("web/app/static/js/brachybot-dvh-planning.js")
+    ui_api = read("web/app/static/js/brachybot-ui-api.js")
+
+    assert "let _structuralMeshReconstructionInFlight = null" in manual
+    assert "return existing.promise" in manual
+    assert "_structuralMeshReconstructionInFlight = null" in manual
+    assert "function _structuralMeshScopeIsCurrent(scope)" in manual
+    assert "await Promise.resolve(options.labelsReady)" in manual
+    assert "labelsReady: options.labelsReady" in planning
+    assert "labelsReady: labelTask" in ui_api
 
 
 def test_terminal_planning_refresh_delivers_all_downstream_products():
@@ -58,7 +79,7 @@ def test_terminal_planning_refresh_delivers_all_downstream_products():
         "updateTrajectories(data.trajectories)",
         "loadDoseOverlay()",
         "drawDVH()",
-        "loadCTVAndObstacleMeshes()",
+        "loadCTVAndObstacleMeshes({",
         "reportAutoFill({ sessionId: expectedSessionId })",
         "updateClinicalEvaluation()",
     ):

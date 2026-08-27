@@ -1,3 +1,109 @@
+# 2026-08-27 Incident Review — 3D OAR reconstruction progress restarted with a larger denominator
+
+> **This is the newest authoritative review entry and is intentionally located at the absolute beginning of the file.**
+> It records the viewer report in which 3D reconstruction first displayed a
+> subset-sized progress value (for example, `3/37`) and then unexpectedly
+> restarted at `3/58` or `3/59`. The earlier contextual-routing entry and all
+> historical incident entries remain below as audit material.
+
+## 1. Executive verdict
+
+This was a real frontend reconstruction orchestration defect. The first group
+of OAR meshes was not necessarily discarded: existing meshes were often found
+and skipped by `_sceneHasMesh()`. However, the loader deliberately executed
+two sequential OAR passes with different target sets, and each pass owned the
+same progress surface. The second pass therefore reset the visible progress
+denominator and could repeat network work when another forced prewarm was
+running. The user-visible result looked like the first 30-odd reconstructions
+had been wasted, and cold-start timing could make the target set change while
+the scene was already rendering.
+
+| Confirmed problem | Root cause | Status |
+|---|---|---|
+| Progress changed from a subset count to a larger count during one restore | `loadCTVAndObstacleMeshes()` first called `prewarmSegmentationMeshes('all', ...)`, which fell back to non-traversable OARs, then called it again with `allOAR: true` after `oarLabelData` became available. | **FIXED** |
+| The second pass appeared to restart from `3/N` | `prewarmSegmentationMeshes()` computed and displayed a fresh denominator on every invocation; it did not represent one immutable reconstruction job. | **FIXED** |
+| Cold restart could choose an incomplete OAR set | `refreshPlanningUI()` and the independent session label task ran in parallel, so the structural loader could inspect `dataTreeState.organs` before the binary labels and derived nodes were complete. | **FIXED** |
+| Multiple structural callers could overlap | Planning restore, segmentation restore, and explicit 3D reconstruction had no case-scoped in-flight barrier around the whole structural operation; only individual mesh tasks were coalesced. | **FIXED** |
+
+## 2. Direct source evidence
+
+The relevant current-code chain was verified in the remote checkout:
+
+- `web/app/static/js/brachybot-3d-manual.js::loadCTVAndObstacleMeshes()` had
+  two `await prewarmSegmentationMeshes('all', ...)` calls. The first omitted
+  `allOAR` and used `_getNonTraversableOarMeshIds()`. The second used
+  `allOAR: true` whenever `oarLabelData` was truthy.
+- `prewarmSegmentationMeshes()` reported progress using the current
+  invocation's `oarIds.length`. A change from the first invocation to the
+  second therefore changed the denominator even if the first meshes remained
+  in `scene3D.meshes`.
+- `_fetchAndAddOrganMesh()` returned `exists` only when `force` was false.
+  That protected part of the first pass from duplicate requests, but it did
+  not prevent the second pass's traversal or protect against a concurrent
+  forced prewarm.
+- `web/app/static/js/brachybot-ui-api.js::_restoreActiveSessionWorkspace()`
+  created `labelTask` and `planningTask` in parallel. The planning refresh
+  could reach the mesh phase before the complete OAR label projection was
+  visible in the Data Tree.
+- `web/app/static/js/brachybot-dvh-planning.js::refreshPlanningUI()` was a
+  whole-planning caller of the structural loader, while the segmentation-only
+  restore and explicit 3D toolbar path were separate producers.
+
+## 3. Root-cause repair
+
+### 3.1 One stable label boundary before mesh selection
+
+The cold workspace restore now passes its actual `labelTask` promise to
+`refreshPlanningUI()` as `labelsReady`. The planning mesh phase passes that
+promise to `loadCTVAndObstacleMeshes()`, which waits for label hydration before
+selecting any OAR mesh targets. An explicit reconstruction with no supplied
+label promise also performs one label load if both label arrays are absent,
+instead of beginning a partial mesh pass.
+
+### 3.2 One frozen OAR target list and one structural pass
+
+After the label boundary, `loadCTVAndObstacleMeshes()` snapshots the complete
+current OAR label IDs and passes them as `oarIds` to exactly one
+`prewarmSegmentationMeshes('all', ...)` invocation. An explicitly empty list
+is preserved as empty; it is not silently replaced by a later fallback list.
+Metadata that arrives later may improve names and object metadata, but cannot
+reset the reconstruction denominator.
+
+### 3.3 Whole-operation coalescing and stale fencing
+
+The structural loader now keeps one in-flight promise per session and
+segmentation generation. A concurrent planning restore or explicit viewer
+request receives the same promise rather than starting another top-level
+reconstruction. Session/generation invalidation clears the barrier and late
+old-case requests are rejected as stale before they can mutate the new scene.
+The per-batch loop also checks the same fence.
+
+The intended progress sequence is now one monotonic sequence for one target
+snapshot, such as:
+
+```text
+Rendering target and obstacle surfaces...
+Rendering OAR surfaces 3/58...
+Rendering OAR surfaces 6/58...
+...
+Rendering OAR surfaces 58/58...
+Finalizing 3D scene...
+```
+
+There is no internal `3/37`-then-`3/58` restart for the same structural
+restore. If a new segmentation truly changes the structure generation, it is
+correctly treated as a new reconstruction rather than mixed into the old one.
+
+## 4. Verification requirement
+
+The regression contract now asserts that the structural loader has one
+prewarm call, waits for `labelsReady`, freezes `oarIds`, coalesces concurrent
+calls, and invalidates the whole-operation barrier with the case generation.
+Focused and full-suite results will be recorded below after the remote test
+run and live-server restart.
+
+---
+
 # 2026-08-27 Incident Review — Contextual follow-up returned an unrelated capability menu
 
 > **This is the newest authoritative review entry and is intentionally located at the absolute beginning of the file.**

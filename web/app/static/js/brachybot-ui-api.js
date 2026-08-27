@@ -2943,6 +2943,12 @@ async function _restoreActiveSessionWorkspace(options = {}) {
                     backgroundRestore: options.background === true,
                     retryPending: true,
                     autoGenerateGuide: true,
+                    // Planning and label hydration start in parallel during a
+                    // cold restore.  Pass the label transaction into the
+                    // structural mesh loader so it freezes one complete OAR
+                    // target list instead of reconstructing a partial list
+                    // and then starting over with the full list.
+                    labelsReady: labelTask,
                 }))
                 : Promise.reject(new Error('Planning restore loader is unavailable')))
             : Promise.resolve({ success: true, skipped: true })

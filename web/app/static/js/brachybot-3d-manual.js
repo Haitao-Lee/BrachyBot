@@ -5108,9 +5108,20 @@ const _segmentationMeshPrewarm = {
     generation: 0,
 };
 
+// The structural scene has several callers (planning restore, segmentation
+// restore, and an explicit 3D reconstruction).  Coalescing only individual
+// mesh fetches is not enough: each caller can still reset the progress
+// denominator and walk the same OAR list again.  Keep one case/generation
+// scoped structural rebuild instead.
+let _structuralMeshReconstructionInFlight = null;
+
 function invalidateSegmentationMeshPrewarm() {
     _segmentationMeshPrewarm.generation += 1;
     _segmentationMeshPrewarm.tasks.clear();
+    // A caller for the old case/generation may still be awaiting a fetch.  It
+    // will be fenced by the generation checks below, while a new case is free
+    // to create its own structural rebuild immediately.
+    _structuralMeshReconstructionInFlight = null;
     _setMeshPrewarmStatus('', false);
     return _segmentationMeshPrewarm.generation;
 }
@@ -5349,16 +5360,33 @@ async function prewarmSegmentationMeshes(kind = 'all', opts = {}) {
         }
 
         if (includeOAR && oarLabelData) {
+            // The full structural loader supplies a frozen target list after
+            // label hydration.  Treat an explicitly empty list as meaningful:
+            // it means the authoritative label snapshot has no OAR nodes, not
+            // that this pass should silently fall back to a second target set.
+            const requestedOarIds = Array.isArray(opts.oarIds)
+                ? [...new Set(opts.oarIds
+                    .map(value => Number(value))
+                    .filter(value => Number.isInteger(value) && value > 0)
+                    .filter(value => !ctvLabelIds.includes(value)))]
+                : null;
             const allOarIds = opts.allOAR
                 ? [...new Set((dataTreeState.organs || [])
-                    .filter(o => o.labelId !== undefined && o.labelId !== null && !ctvLabelIds.includes(o.labelId))
-                    .map(o => o.labelId))]
+                    .filter(o => o.labelId !== undefined && o.labelId !== null && !ctvLabelIds.includes(Number(o.labelId)))
+                    .map(o => Number(o.labelId))
+                    .filter(value => Number.isInteger(value) && value > 0))]
                 : [];
-            const oarIds = allOarIds.length ? allOarIds : _getNonTraversableOarMeshIds(ctvLabelIds);
+            const oarIds = requestedOarIds !== null
+                ? requestedOarIds
+                : (allOarIds.length ? allOarIds : _getNonTraversableOarMeshIds(ctvLabelIds));
             const batchSize = opts.batchSize || 3;
             for (let i = 0; i < oarIds.length; i += batchSize) {
+                if (generation !== _segmentationMeshPrewarm.generation
+                    || (sessionId && sessionId !== String(state.sessionId || ''))) {
+                    return { stale: true };
+                }
                 const batch = oarIds.slice(i, i + batchSize).map(lid => {
-                    const organ = (dataTreeState.organs || []).find(o => o.labelId === lid);
+                    const organ = (dataTreeState.organs || []).find(o => Number(o.labelId) === lid);
                     return _fetchAndAddOrganMesh({
                         labelId: lid,
                         source: 'oar',
@@ -5446,39 +5474,70 @@ function startSegmentationMeshPrewarm(kind = 'all', opts = {}) {
     }, 0));
 }
 
-async function loadCTVAndObstacleMeshes() {
-    // This function is the completion boundary for the full structural 3D
-    // rebuild.  It used to await only the first non-traversable OAR batch and
-    // then schedule all remaining OAR meshes with setTimeout.  Callers
-    // consequently hid loading while the scene was still being populated.
-    // Keep the requests batched, but await the complete all-OAR drain so the
-    // returned promise means what its name says.
+function _structuralMeshScopeIsCurrent(scope) {
+    return !!scope
+        && scope.generation === _segmentationMeshPrewarm.generation
+        && scope.sessionId === _activePlanningSceneSessionId();
+}
+
+async function _loadCTVAndObstacleMeshes(options, scope) {
+    // This function is the completion boundary for one full structural 3D
+    // rebuild.  The target set is deliberately selected only after the
+    // current case's label load has settled.  Previously the first pass saw
+    // only the non-traversable subset, then a second pass saw all OARs after
+    // asynchronous hydration completed; that made the UI look as if the
+    // first 30-odd surfaces were thrown away.
     const loadingToken = typeof window.beginViewer3DLoading === 'function'
         ? window.beginViewer3DLoading('Rendering CTV and OAR surfaces...')
         : null;
     try {
+        if (options?.labelsReady && typeof options.labelsReady.then === 'function') {
+            await Promise.resolve(options.labelsReady).catch(error => {
+                console.warn('[3D meshes] label hydration before structural reconstruction:', error);
+            });
+        } else if (!ctvLabelData && !oarLabelData && typeof loadLabelVolumes === 'function') {
+            // Explicit reconstruction can be requested before a cold viewer
+            // has finished decoding labels.  Establish the same stable input
+            // boundary without starting a partial mesh pass first.
+            await loadLabelVolumes({
+                sessionId: scope.sessionId,
+                preserveViewerState: true,
+            });
+        }
+        if (!_structuralMeshScopeIsCurrent(scope)) return { stale: true };
+
         init3DScene();
         scene3D._cameraHydrationActive = scene3D._cameraUserInteracted !== true;
         if (loadingToken != null && typeof window.updateViewer3DLoading === 'function') {
             window.updateViewer3DLoading(loadingToken, 'Rendering target and obstacle surfaces...');
         }
+
+        const ctvLabelIds = getCtvMeshLabelIds();
+        // Freeze the OAR target list once.  Later metadata hydration may add
+        // names or object IDs, but it must not restart this reconstruction
+        // with a different denominator.  The binary label load already
+        // derives one node for each actual label, so this snapshot contains
+        // the complete label set needed by the mesh requests.
+        const allOarIds = oarLabelData
+            ? [...new Set((dataTreeState.organs || [])
+                .filter(o => o.labelId !== undefined && o.labelId !== null)
+                .map(o => Number(o.labelId))
+                .filter(value => Number.isInteger(value) && value > 0)
+                .filter(value => !ctvLabelIds.includes(value))
+                .sort((a, b) => a - b)]
+            : null;
+
+        uiDebugLog(`[loadCTVAndObstacle] Frozen structural target set: CTV=${ctvLabelIds.length}, OAR=${allOarIds ? allOarIds.length : 0}`);
         await prewarmSegmentationMeshes('all', {
+            allOAR: Array.isArray(allOarIds),
+            oarIds: allOarIds,
             showStatus: false,
             batchSize: 3,
+            reframeCamera: Array.isArray(allOarIds),
             loadingToken,
         });
-        if (oarLabelData) {
-            if (loadingToken != null && typeof window.updateViewer3DLoading === 'function') {
-                window.updateViewer3DLoading(loadingToken, 'Rendering remaining OAR surfaces...');
-            }
-            await prewarmSegmentationMeshes('all', {
-                allOAR: true,
-                showStatus: false,
-                batchSize: 3,
-                reframeCamera: true,
-                loadingToken,
-            });
-        } else {
+        if (!_structuralMeshScopeIsCurrent(scope)) return { stale: true };
+        if (!Array.isArray(allOarIds)) {
             scene3D._cameraHydrationActive = false;
         }
         uiDebugLog(`[loadCTVAndObstacle] Full structural mesh rebuild complete. Total scene meshes: ${Object.keys(scene3D.meshes).length}`);
@@ -5488,6 +5547,35 @@ async function loadCTVAndObstacleMeshes() {
             window.endViewer3DLoading(loadingToken);
         }
     }
+}
+
+function loadCTVAndObstacleMeshes(options = {}) {
+    const sessionId = String(
+        options.sessionId
+        || _activePlanningSceneSessionId()
+        || state?.sessionId
+        || '',
+    );
+    const scope = {
+        generation: _segmentationMeshPrewarm.generation,
+        sessionId,
+    };
+    const existing = _structuralMeshReconstructionInFlight;
+    if (existing
+        && existing.scope.generation === scope.generation
+        && existing.scope.sessionId === scope.sessionId) {
+        return existing.promise;
+    }
+
+    const run = _loadCTVAndObstacleMeshes({ ...options, sessionId }, scope);
+    let tracked;
+    tracked = Promise.resolve(run).finally(() => {
+        if (_structuralMeshReconstructionInFlight?.promise === tracked) {
+            _structuralMeshReconstructionInFlight = null;
+        }
+    });
+    _structuralMeshReconstructionInFlight = { scope, promise: tracked };
+    return tracked;
 }
 
 // Load dose distribution as 2D overlay on CT slices

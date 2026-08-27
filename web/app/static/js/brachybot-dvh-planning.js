@@ -1343,7 +1343,15 @@ async function refreshPlanningUI(options = {}) {
         }
         // CTV + OAR meshes
         _meshPromises.push(
-            _withTimeout(loadCTVAndObstacleMeshes(), 'CTV/OAR meshes', 300000)
+            _withTimeout(loadCTVAndObstacleMeshes({
+                sessionId: expectedSessionId,
+                // Cold restore starts CT/labels and planning in parallel for
+                // responsiveness.  The structural mesh loader must wait for
+                // that label transaction before freezing its OAR target set;
+                // otherwise it can start with 37 obstacles and then restart
+                // against all 58/59 OAR nodes.
+                labelsReady: options.labelsReady,
+            }), 'CTV/OAR meshes', 300000)
                 .then(() => uiDebugLog('[3D auto-load] CTV/obstacle done. Meshes:', Object.keys(scene3D.meshes).length))
         );
         // Seeds + needles. The authoritative 3D geometry lives behind
