@@ -1,3 +1,137 @@
+# 2026-08-28 Incident Review — Viewer hydration lost its loading owner before visual completion
+
+> **This is the newest authoritative review entry and is intentionally located
+> at the absolute beginning of the file.**
+> It records the confirmed restart behavior in which the lower-right
+> `Loading case resources` notice disappeared while 3D products were still
+> loading, followed later by a separate `Rendering 3D` overlay. It also
+> records the associated latency review and the deployed root-cause repair.
+
+## 1. Executive verdict
+
+This was a real frontend lifecycle defect, not merely an animation timing
+issue. The case restore transaction returned as soon as CT, 2D layers,
+seed/needle geometry, and the dose overlay were usable. Its slow CTV/OAR,
+isodose, and guide promises remained private inside `refreshPlanningUI()`.
+`restoreActiveSessionWorkspace()` therefore executed its unconditional
+`finally` close and removed the lower-right notice before those visual
+products had settled. Independent 3D loaders then opened their own central
+loading tokens, creating the visible silent gap and the impression that a
+second reconstruction had started.
+
+An additional fixed-duration path in `scheduleBackgroundWorkspaceRestore()`
+could close the same notice after 30 seconds without consulting real task
+completion. That timer made the presentation state even less reliable on a
+cold server restart, where durable array hydration alone can exceed 30
+seconds.
+
+| Confirmed problem | Root cause | Status |
+|---|---|---|
+| Lower-right loading notice disappeared before Viewer resources were complete | The essential-data return boundary was incorrectly treated as the visual completion boundary | **FIXED** |
+| A separate `Rendering 3D` overlay appeared after a gap | Workspace hydration and 3D loaders had independent presentation owners | **FIXED** |
+| Loading could disappear at 30 seconds regardless of actual work | A fixed timer called `setWorkspaceHydrationState(false, ...)` | **FIXED** |
+| Restart felt like two reconstruction passes | The first notice ended, then child 3D tokens became visible; the same case-scoped mesh promises were not exported to the parent transaction | **FIXED** |
+| Full OAR restoration underused the idempotent data-plane budget | The all-OAR pass processed only three independent labels per batch | **FIXED; COLD-RESTORE BATCH CONCURRENCY IS 6** |
+| Report capture could keep visual loading coupled to non-viewer work | Report repair and figure capture shared the background callback after mesh completion | **FIXED; REPORT WORK IS DOWNSTREAM OF VIEWER READINESS** |
+
+## 2. Rechecked failure path
+
+The failure was confirmed in the current implementation, not inferred from an
+old design document:
+
+1. `brachybot-ui-api.js::_restoreActiveSessionWorkspace()` starts label and
+   planning hydration in parallel after CT is decoded.
+2. `brachybot-dvh-planning.js::refreshPlanningUI()` starts isodose,
+   CTV/OAR, and seed/needle work together in `_meshPromises`.
+3. In `backgroundRestore` mode it waits only for the essential dose overlay
+   and seed/needle validation, then resolves. The existing
+   `backgroundMeshesPromise` was not part of the returned contract.
+4. The outer `restoreActiveSessionWorkspace()` unconditionally hid the
+   workspace notice in `finally`.
+5. Each remaining child loader independently owned a
+   `beginViewer3DLoading()` token. Its later visibility was therefore the
+   first indication that work had never actually stopped.
+6. The workspace scheduler also had a 30-second timer that explicitly hid the
+   notice even if the real restore was still active.
+
+The existing resource-level deduplication was rechecked as well:
+`_structuralMeshReconstructionInFlight`, `_seeds3DLoadInFlight`, and
+`_isoSurfaceLoadInFlight` already coalesce same-Session work. The defect in
+this incident was primarily ownership and completion propagation; it was not
+appropriate to add another reconstruction call or an artificial delay.
+
+## 3. Root-cause repair
+
+The deployed repair changes the transaction contract rather than masking the
+gap:
+
+1. `refreshPlanningUI()` now exposes a non-enumerable
+   `backgroundCompletion` promise whose boundary includes all visible mesh
+   producers and restored guide presentation.
+2. The workspace restore registers that promise before returning essential
+   readiness. It transfers the existing lower-right notice to
+   `Promise.allSettled(backgroundTasks)`; only that real completion closes
+   the notice.
+3. Cold workspace hydration passes `showLoading: false` to seed/needle,
+   isodose, and structural child loaders. This removes the competing central
+   overlay during automatic restart recovery while preserving it for an
+   explicit user-triggered 3D reconstruction.
+4. Structural progress is propagated to the workspace notice with localized
+   messages such as `Rendering OAR surfaces 6/58...` and
+   `Finalizing the 3D scene...`.
+5. The scheduler no longer closes loading at 30 seconds. Its long-running
+   message remains active, and once the clinical restore wrapper starts, the
+   scheduler relinquishes notice ownership completely.
+6. CTV/OAR, seed/needle, and isodose tasks remain top-level parallel promises.
+   Full cold-restored OAR extraction now uses six read-only requests per
+   batch instead of three. This applies to the idempotent Viewer data path,
+   which has a separate 1,200-request/minute budget; mutation endpoints for
+   upload, segmentation, chat, and planning are unchanged.
+7. Report source repair and figure capture still wait for the finished Viewer
+   but no longer prolong the Viewer loading indicator.
+8. Cache-busting versions were advanced to
+   `ui-api.js?v=50`, `3d-manual.js?v=70`,
+   `dvh-planning.js?v=29`, and `workspace.js?v=38`.
+
+## 4. Second-pass verification
+
+The repair was rechecked at source, runtime-contract, deployment, and browser
+asset levels:
+
+- The modified UI, workspace, planning, and 3D JavaScript bundles all pass
+  `node --check`.
+- A runtime Promise harness executed the exact deployed
+  `restoreActiveSessionWorkspace()` function with a controlled unresolved
+  visual task. The essential restore returned while loading remained active;
+  resolving the visual promise then closed the same scoped notice.
+- The affected frontend suites passed: **199 passed**.
+- The complete remote test suite passed: **774 passed, 6 skipped, 4 warnings**.
+- `git diff --check` passed.
+- Code commit `8a647848f` was pushed to
+  `origin/codex/session-task-recovery`.
+- The live server was restarted as PID `3244453` from the authoritative
+  checkout. Port 8080 is listening and
+  `/tmp/brachybot_server_8a647848f.log` contains the normal startup banner
+  without a traceback, JavaScript error, reference error, critical error, or
+  address-in-use failure.
+- The deployed root page returns HTTP 200 and advertises all four new bundle
+  versions. The deployed JavaScript responses return HTTP 200 and contain the
+  new background-completion, notice-transfer, and six-way batch contracts.
+- A real Chromium load through a temporary SSH port forward reached the
+  deployed BrachyBot login page and loaded the four new versioned scripts.
+  Browser console inspection found no `SyntaxError`, `ReferenceError`, or
+  bundle-load error. The temporary browser had no authenticated BrachyBot
+  case session, so it could not honestly reproduce the user's private case
+  hydration; no credentials, cookies, or local-storage data were inspected.
+
+The remaining user-side acceptance is therefore narrowly defined: after one
+hard refresh and server restart in an already authenticated browser, the
+lower-right progress notice must remain continuously visible from case
+restore through the final 3D scene, its OAR counter must increase monotonically
+without restarting at a new denominator, the automatic restore must not open
+a second central `Rendering 3D` overlay, and CT/2D content must remain
+interactive while the progressive 3D meshes arrive.
+
 # 2026-08-28 Incident Review — 3D bundle parse failure aborted Viewer hydration
 
 > **This is the newest authoritative review entry and is intentionally located at the absolute beginning of the file.**
