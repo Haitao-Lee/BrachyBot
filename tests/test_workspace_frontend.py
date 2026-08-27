@@ -619,9 +619,11 @@ def test_running_chat_persists_the_user_turn_before_a_browser_refresh():
 def test_chat_connection_placeholder_does_not_claim_a_router_execution():
     """A local/direct turn must not leave a false Multi-Agent Router row."""
     chat_todo = read("web/app/static/js/brachybot-chat-todo.js")
+    index = read("web/app/index.html")
     assert "title: zh ? '\\u8bf7\\u6c42\\u5206\\u6790' : 'Request analysis'" in chat_todo
     assert "Determining execution path..." in chat_todo
     assert "title: zh ? '\\u591a\\u667a\\u80fd\\u4f53\\u8def\\u7531' : 'Multi-Agent Router'" not in chat_todo
+    assert 'static/js/brachybot-chat-todo.js?v=21' in index
 
 
 def test_task_replay_is_deduplicated_and_bound_to_the_original_case():
