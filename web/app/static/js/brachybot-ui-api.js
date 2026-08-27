@@ -4160,6 +4160,35 @@ async function _executeUIActionRaw(a, options = {}) {
             else console.warn('[UIAction] Panel tab not found:', value);
             return;
         }
+        if (target === 'viewer.refresh_planning' && command === 'run') {
+            // This is a display-only recovery action. It deliberately uses
+            // the same case-owned refresh contract as restart hydration, so a
+            // request to show an already saved plan never reruns planning or
+            // depends on the language-model provider.
+            if (typeof refreshPlanningUI !== 'function') {
+                return { success: false, error: 'Planning result refresh is unavailable.' };
+            }
+            const refreshResult = await refreshPlanningUI({
+                sessionId: ownerSessionId || _activeApiSessionId(),
+                retryPending: true,
+                backgroundRestore: true,
+                preserveReport: true,
+                preserveViewerState: false,
+                autoGenerateGuide: false,
+                switchToViewers: true,
+            });
+            if (!refreshResult || refreshResult.success !== true) {
+                return {
+                    success: false,
+                    error: refreshResult?.error || 'The saved planning result could not be loaded into the Viewer.',
+                    stage: refreshResult?.stage,
+                };
+            }
+            const message = typeof window._t === 'function'
+                ? window._t('当前规划结果已刷新并显示在 Viewer 中。', 'The current planning result was refreshed and displayed in the Viewer.')
+                : 'The current planning result was refreshed and displayed in the Viewer.';
+            return { success: true, target, command, message, refresh: refreshResult };
+        }
         // ── Viewer settings ──
         if (target === 'viewer.window') {
             const el = document.getElementById('viewerWindow');

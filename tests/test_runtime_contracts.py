@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from agent_runtime.contracts import ContextPackBuilder, RunLedger, RunStatus, ToolCallGateway
@@ -357,6 +358,147 @@ def test_local_turn_policy_shortcuts_only_low_risk_requests():
         {"function": {"name": "web_search"}},
         {"function": {"name": "filesystem_browser"}},
     ], external) == [{"function": {"name": "web_search"}}]
+
+
+def test_viewer_result_display_is_a_provider_independent_ui_action():
+    from agent_runtime.core import ToolResultPipeline
+    from agent_runtime.response_tools import ResponseToolMixin
+    from agent_runtime.turn_policy import classify_local_turn
+    from tool_factory.ui_controller import UIControllerTool
+
+    message = "将结果在viewer中显示出来啊"
+    policy = classify_local_turn(message)
+    assert policy.intent == "viewer_display"
+    assert policy.direct_execution is True
+    assert policy.use_router is False
+    assert policy.use_completeness is False
+    assert policy.allow_tools == frozenset({"ui_controller"})
+    assert policy.execution_grants == frozenset({"ui_controller"})
+
+    # The detector must be able to materialize the complete action without a
+    # Memory/LLM object: this is the contract used by the direct stream path.
+    calls = ResponseToolMixin()._detect_tool_request(message)
+    assert calls == [{
+        "id": "tool_ui_refresh_planning_viewer",
+        "tool": "ui_controller",
+        "params": {"actions": [{
+            "target": "viewer.refresh_planning",
+            "command": "run",
+        }]},
+    }]
+
+    # Server-side validation is the hard boundary before the browser receives
+    # the action, so a provider outage cannot turn this into an unvalidated UI
+    # command.
+    result = UIControllerTool().execute(**calls[0]["params"])
+    assert result.success is True
+    assert result.metadata["actions"] == calls[0]["params"]["actions"]
+    zh = ToolResultPipeline.format("ui_controller", result, "zh")
+    en = ToolResultPipeline.format("ui_controller", result, "en")
+    assert "Viewer" in zh
+    assert "规划结果" in zh
+    assert "planning result" in en
+
+    frontend = Path(__file__).resolve().parents[1] / "web/app/static/js/brachybot-ui-api.js"
+    frontend_source = frontend.read_text(encoding="utf-8")
+    assert "target === 'viewer.refresh_planning'" in frontend_source
+    assert "backgroundRestore: true" in frontend_source
+    assert "preserveViewerState: false" in frontend_source
+
+
+def test_viewer_result_display_stream_bypasses_llm_and_emits_refresh_action():
+    from agent_runtime.chat_workflows import ChatWorkflowMixin
+    from agent_runtime.response_tools import ResponseToolMixin
+
+    class Memory:
+        def __init__(self):
+            self.user_lang = "zh"
+            self.conversation = []
+
+        def add_message(self, role, content):
+            self.conversation.append({"role": role, "content": content})
+
+    class Registry:
+        @staticmethod
+        def get(name):
+            assert name == "ui_controller"
+            return object()
+
+    class Workflow(ResponseToolMixin, ChatWorkflowMixin):
+        def __init__(self):
+            self.memory = Memory()
+            self.registry = Registry()
+            self.multi_agent_wrapper = None
+            self.brain_available = True
+            self._turn_token = "turn-viewer-display"
+            self.llm_called = False
+
+        def _begin_turn(self, _message):
+            return None
+
+        def _current_turn_token(self):
+            return self._turn_token
+
+        def _is_turn_cancelled(self, _token):
+            return False
+
+        def _pending_tumor_site_clarification(self):
+            return False
+
+        def _detect_tool_request(self, message):
+            assert message == "将结果在viewer中显示出来啊"
+            return [{
+                "id": "tool_ui_refresh_planning_viewer",
+                "tool": "ui_controller",
+                "params": {"actions": [{
+                    "target": "viewer.refresh_planning",
+                    "command": "run",
+                }]},
+            }]
+
+        def _execute_tool_with_memory(self, name, params):
+            assert name == "ui_controller"
+            return ToolResult(
+                success=True,
+                message="viewer.refresh_planning: run",
+                metadata={"actions": params["actions"]},
+            )
+
+        def _current_execution_authorization(self):
+            return None
+
+        def _record_experience(self, *_args, **_kwargs):
+            return None
+
+        def _finish_turn(self, _response):
+            return None
+
+        def _run_llm_function_calling_stream(self, *_args, **_kwargs):
+            self.llm_called = True
+            raise AssertionError("viewer display must not call the LLM")
+
+    workflow = Workflow()
+    events = list(workflow.chat_with_stream("将结果在viewer中显示出来啊"))
+    parsed = []
+    for event in events:
+        lines = event.splitlines()
+        if len(lines) >= 2 and lines[0].startswith("event: "):
+            parsed.append((lines[0].removeprefix("event: "), json.loads(lines[1].removeprefix("data: "))))
+
+    assert workflow.llm_called is False
+    controller_steps = [
+        data for event, data in parsed
+        if event == "step" and data.get("tool") == "ui_controller"
+    ]
+    assert controller_steps[-1]["status"] == "done"
+    assert controller_steps[-1]["metadata"]["actions"] == [{
+        "target": "viewer.refresh_planning",
+        "command": "run",
+    }]
+    response = next(data for event, data in parsed if event == "response")
+    assert response["llm_meta"]["route"] == "direct_tool"
+    assert "Viewer" in response["response"]
+    assert "不会重新运行规划" in response["response"]
 
 
 def test_segmentation_intent_and_site_followup_are_not_knowledge_queries():

@@ -100,6 +100,37 @@ def _contains_any(text: str, phrases: Iterable[str]) -> bool:
     return any(phrase.lower() in lowered for phrase in phrases)
 
 
+def is_viewer_result_display_request(message: str) -> bool:
+    """Recognize an unambiguous request to display saved results in Viewer.
+
+    This is deliberately narrower than the general ``ui_control`` classifier.
+    A request that names a Viewer, a display/load verb, and an existing result
+    family has a deterministic meaning: refresh the active Session's planning
+    presentation.  It must not require the language model to choose a tool,
+    because that turns a read-only browser refresh into an avoidable provider
+    dependency.  Compound requests are filtered by ``classify_local_turn``
+    before this helper is used as a direct fast path.
+    """
+    text = re.sub(r"\s+", " ", str(message or "").strip().lower())
+    if not text:
+        return False
+    has_viewer = _contains_any(text, (
+        "viewer", "查看器", "2d viewer", "3d viewer", "2d查看器", "3d查看器",
+    ))
+    has_display_verb = _contains_any(text, (
+        "显示", "展示", "呈现", "加载", "恢复", "刷新", "挂载", "打开",
+        "show", "display", "present", "load", "restore", "refresh", "render",
+        "open", "visualize",
+    ))
+    has_result_family = _contains_any(text, (
+        "结果", "规划", "计划", "剂量", "数据", "结构", "掩膜", "面具", "粒子",
+        "针道", "导板", "result", "plan", "planning", "dose", "dvh", "seed",
+        "needle", "surgical guide", "guide", "mask", "data", "structure",
+        "mesh", "isosurface",
+    ))
+    return has_viewer and has_display_verb and has_result_family
+
+
 def _looks_like_compound_action(message: str) -> bool:
     """Detect sentence structure that may contain more than one operation.
 
@@ -909,6 +940,23 @@ def classify_local_turn(message: str, pending_tumor_site: bool = False) -> Local
                 if requires_planning_before_guide(text)
                 else (_planning_only_plan() if is_planning_reexecution_request(text) else None)
             ),
+        )
+
+    # Displaying an already persisted planning result is a deterministic,
+    # read-only browser operation. Resolve it before the generic Session
+    # content branch so ``...planning result in Viewer`` does not become a
+    # report/attachment query and before the generic UI branch so it cannot
+    # fall through to an LLM provider call.
+    if is_viewer_result_display_request(text):
+        return LocalTurnPolicy(
+            "viewer_display",
+            "low",
+            False,
+            False,
+            False,
+            frozenset({"ui_controller"}),
+            direct_execution=True,
+            execution_grants=frozenset({"ui_controller"}),
         )
 
     # Recomputing current Dose/DVH is a focused stateful operation. Resolve

@@ -15,6 +15,7 @@ from agent_runtime.turn_policy import (
     is_current_case_dose_recompute_request,
     is_planning_reexecution_request,
     is_surgical_guide_generation_request,
+    is_viewer_result_display_request,
     requires_planning_before_guide,
     resolve_report_request_action,
     resolve_session_content_target,
@@ -260,10 +261,10 @@ print(json.dumps(result))
     def _detect_tool_request(self, message: str) -> Optional[List[Dict]]:
         """Detect explicit tool requests. Returns tool calls in user-specified order, or None.
 
-        Only called when classify_local_turn has already determined the message
-        is an actionable clinical intent (segmentation / planning).  The router
-        LLM handles everything else — this function is a deterministic shortcut
-        for unambiguous action commands.
+        Called after local policy classification for deterministic clinical or
+        browser actions. Semantic requests still go through the provider; this
+        function only materializes commands whose target and parameters are
+        unambiguous from the user's request.
         """
         # This is the only direct clinical call for a current Dose/DVH
         # refresh. Do it before the legacy action-pattern scan so wording such
@@ -275,6 +276,22 @@ print(json.dumps(result))
                 "id": "tool_direct_dose",
                 "tool": "dose_recompute",
                 "params": {},
+            }]
+
+        # Showing a saved planning result is a browser refresh, not a new
+        # planning/dose operation and not a request for LLM prose. Keep the
+        # action typed so the frontend can reload the active Session's
+        # canonical results (seeds, needles, dose, DVH, meshes and guide).
+        if is_viewer_result_display_request(message):
+            return [{
+                "id": "tool_ui_refresh_planning_viewer",
+                "tool": "ui_controller",
+                "params": {
+                    "actions": [{
+                        "target": "viewer.refresh_planning",
+                        "command": "run",
+                    }],
+                },
             }]
 
         msg = message.strip().lower()
