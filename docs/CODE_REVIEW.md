@@ -95,11 +95,27 @@ The second-pass checks on the remote checkout are:
   script versions; no test source still requires the old `v48`/`v68` values
   (stale bytecode cache matches are not source files).
 
-The code and test changes are ready to be committed and pushed as the next
-remote deployment revision. The final runtime check must use the new script
-versions: after a browser hard refresh, the exact user request must produce no
-`_normalizeTrajectoryId` error, preserve the already-painted 2D CT/label
-layers while 3D meshes load, and finish with non-empty 3D planning objects.
+The deployment check is complete. Commit `d24c7e2eb` was pushed to
+`origin/codex/session-task-recovery`, and the live server was restarted from
+that revision as PID `3229883` using
+`/home/lht/.conda/envs/brachytherapy/bin/python3.12 web/server.py --host
+0.0.0.0`. Port 8080 is listening and the startup log
+`/tmp/brachybot_server_d24c7e2eb.log` contains the normal Flask banner with no
+traceback, error, critical, exception, or address-in-use lines.
+
+The deployed `/` response returned HTTP 200 and contains the new
+`brachybot-ui-api.js?v=49` and `brachybot-3d-manual.js?v=69` URLs. The deployed
+3D bundle returned HTTP 200 and contains the corrected expression. An
+unauthenticated `/api/status` probe returned HTTP 401, confirming reachability
+without weakening the authentication boundary.
+
+An authenticated browser replay was not available from the SSH shell, so the
+final visual acceptance still belongs to the user's browser after one hard
+refresh: the exact request must produce no `_normalizeTrajectoryId` error,
+preserve the already-painted 2D CT/label layers while 3D meshes load, and
+finish with non-empty 3D planning objects. The server/action and JavaScript
+contracts are now covered by the tests above and the deployed asset itself has
+been checked.
 
 # 2026-08-28 Incident Review — Provider failure blocked the deterministic “show results in Viewer” request
 
