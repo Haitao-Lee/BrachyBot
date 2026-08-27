@@ -383,7 +383,7 @@ def test_workspace_transitions_publish_measurable_first_paint_and_restore_stages
     # assertion aligned with the workspace/report artifact restore contract.
     assert "brachybot-workspace.js?v=38" in index
     assert "brachybot-ui-api.js?v=50" in index
-    assert "brachybot-viewer-volume.js?v=43" in index
+    assert "brachybot-viewer-volume.js?v=44" in index
     assert "brachybot-manual-annotation.js?v=18" in index
 
 
@@ -713,6 +713,12 @@ def test_workspace_hydration_notice_follows_real_background_completion():
     assert "backgroundNoticeTransferred = true" in restore
     assert "Promise.allSettled(backgroundTasks).finally" in restore
     assert "window.setWorkspaceHydrationState?.(false, '', hydrationScope)" in restore
+    viewer = read("web/app/static/js/brachybot-viewer-volume.js")
+    label_loader = viewer.split("async function loadLabelVolumes(options = {})", 1)[1].split(
+        "/**\n * Hydrate session-owned open BiomedParse masks", 1
+    )[0]
+    assert "const genericMasksTask = Promise.resolve(hydrateGenericMasksFromServer(scope))" in label_loader
+    assert "options.registerBackgroundTask(genericMasksTask, { kind: 'generic_masks' })" in label_loader
 
 
 def test_uploaded_oar_mask_is_a_numbered_traversable_data_tree_source():
@@ -1274,9 +1280,13 @@ def test_generic_masks_hydrate_without_a_shared_label_volume():
     """Open masks must start loading before CTV/OAR early-return branches."""
     volume = read("web/app/static/js/brachybot-viewer-volume.js")
     start = volume.index("async function loadLabelVolumes(options = {})")
-    generic_start = volume.index("void hydrateGenericMasksFromServer(scope);", start)
+    generic_start = volume.index(
+        "const genericMasksTask = Promise.resolve(hydrateGenericMasksFromServer(scope));",
+        start,
+    )
     first_fetch = volume.index("fetch(API + '/viewer/label_volume'", start)
     assert generic_start < first_fetch
+    assert "options.registerBackgroundTask(genericMasksTask, { kind: 'generic_masks' })" in volume
     assert "genericMaskCatalogGeneration" in volume
 
 
