@@ -104,12 +104,34 @@ The regression suite now checks that:
   longer seeds the literal Multi-Agent Router title.
 
 The remote focused tests, Python compilation, JavaScript syntax check, clean
-diff check, and live-server restart/health check must be recorded below before
-this entry is considered fully verified.
+diff check, and live-server restart/health check are recorded below.
 
 ## 5. Deployment status
 
-**Implementation staged; remote verification and deployment pending.**
+**FIXED, verified, committed, pushed, and running on the remote server.**
+
+## 6. Verification evidence
+
+- Remote focused regression group: `135 passed, 3 warnings`.
+- Full remote suite: `768 passed, 6 skipped, 4 warnings in 54.99s`.
+- Remote Python 3.12 compilation of the changed Python files passed.
+- JavaScript syntax check of `brachybot-chat-todo.js` passed with Node.js
+  `v24.14.0`.
+- Remote `git diff --check` passed before commit.
+- Commit `2fbb79aa8` is present on
+  `codex/session-task-recovery` and was pushed to
+  `origin/codex/session-task-recovery`.
+- The live server was restarted from that checkout with PID `3181186`, cwd
+  `/home/lht/snap/brachyplan/BrachyBot`, and listener `0.0.0.0:8080`.
+- The startup log contains no traceback after the server was started with the
+  existing trusted-network development setting. An unauthenticated loopback
+  probe returned HTTP `401 Authentication required`, which is the expected
+  session-auth response rather than a server startup failure.
+
+The first manual restart attempt without the existing remote-bind environment
+setting was rejected by the server's security guard before application startup;
+that refusal was expected and was corrected by restoring the prior launch
+configuration, not by weakening the guard.
 
 ---
 
