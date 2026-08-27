@@ -1,3 +1,118 @@
+# 2026-08-27 Incident Review — Chat request rejected after a 30-second handshake stall
+
+> **This is the newest authoritative review entry and is intentionally located at the absolute beginning of the file.**
+> It records the failure shown after the user sent `重新规划一遍吧`: the UI
+> created its optimistic trace, left the request-analysis row pending, and then
+> reported `本次请求暂时无法完成` at approximately 30 seconds. The entry
+> covers the actual request/worker/persistence ordering and the corrective
+> implementation. Earlier incident entries remain below as audit material.
+
+## 1. Executive verdict
+
+This was a real chat-stream handshake defect, not a planning-pipeline failure
+and not a provider rate-limit response. The browser's connection timer aborted
+the request after 30 seconds because the streaming route performed synchronous
+workspace persistence before returning the `text/event-stream` response. A
+large snapshot or a busy SQLite database could therefore keep the HTTP request
+inside `api_chat()` until the frontend's connection deadline expired. Because
+the optimistic trace is rendered before the fetch resolves, the user saw its
+placeholder row (`多智能体路由`) remain `PENDING` and then received the generic
+failure message.
+
+| Confirmed problem | Root cause | Status |
+|---|---|---|
+| A planning chat request could fail at exactly about 30 seconds before any server task metadata arrived | `api_chat()` created the task, then synchronously called `load_snapshot()` and `save_snapshot_patch()` before returning the SSE `Response`; the browser uses `CHAT_CONNECT_TIMEOUT_MS = 30000`. | **FIXED** |
+| The task was created in memory but the browser could not reconnect to it after the request was aborted | `task_meta` was the first generator event, but the generator was unreachable until the request-thread persistence block completed. | **FIXED** |
+| A fast task could race a late task-start marker if persistence were simply moved after worker start | The worker's `start_gate` was already designed to protect the ordering, but the gate was released only by the request thread. | **FIXED** |
+| A local/direct planning request was displayed as a pending Multi-Agent Router run | The frontend seeded a connection placeholder with the literal router title before server trace metadata was known. | **FIXED** |
+
+## 2. Direct source evidence
+
+The current remote source was checked against the live server before editing:
+
+- `web/app/static/js/brachybot-chat-todo.js` defines
+  `CHAT_CONNECT_TIMEOUT_MS = 30000` and starts that timer before
+  `fetch(API + '/chat')`. The timer is cleared only after `fetch()` receives
+  the response. The optimistic trace was seeded immediately with a thinking
+  step titled `多智能体路由` / `Multi-Agent Router`.
+- `web/routes/planning_routes.py::api_chat()` called
+  `chat_tasks.start(...)` with a closed `start_gate`, but then synchronously
+  performed workspace checkpoint/task-identity persistence before constructing
+  and returning the SSE `Response`.
+- The persistence path called `store.load_snapshot()` and
+  `store.save_snapshot_patch()`. Those operations use the case guard, JSON
+  snapshot I/O, SQLite metadata updates, and audit writes. The workspace store
+  also permits large background checkpoint work, so contention with a previous
+  checkpoint can make this control-plane write exceed 30 seconds.
+- `web/chat_tasks.py` deliberately waits on `start_gate` in the worker. This
+  proves the intended contract is “persist the recoverable start marker, then
+  release the worker,” not “block the HTTP handshake until persistence
+  finishes.”
+- `agent_runtime/turn_policy.py` classifies `重新规划一遍吧` as a planning
+  re-execution action with `use_router=False`. Therefore the literal router
+  placeholder was not evidence that the multi-agent router had actually run.
+
+## 3. Root-cause repair
+
+### 3.1 Return the stream handshake before slow persistence
+
+`api_chat()` now defines `persist_chat_task_start()` and runs it in a daemon
+thread after `chat_tasks.start()` returns. The route immediately returns the
+SSE response, whose first event is `task_meta`. This makes the task ID visible
+to the browser and enables reconnection even while the case snapshot is busy.
+The 30-second frontend timer therefore measures actual response availability,
+not the duration of unrelated persistence work.
+
+The background function captures explicit values (`store`, owner ID, session
+ID, task, and message data) and never accesses Flask's request context after
+the route returns. It logs completion, deleted-session skips, and unexpected
+failures instead of silently hiding them.
+
+### 3.2 Preserve the task-start ordering contract
+
+The worker gate remains closed until the background persistence function has
+attempted its control-plane write. The function atomically writes the user
+message, task identity, running chat status, and operation checkpoint in one
+`chat.task.started` snapshot patch. Only then does its `finally` block release
+`start_gate`. This retains the refresh/replay invariant without holding the
+HTTP request open.
+
+The initial stream path no longer calls `checkpoint_operation()`, because that
+helper depends on request context and its full-agent checkpoint is not needed
+to make a newly accepted task discoverable. Later task progress and finalization
+continue to own their normal agent checkpoint paths, so moving this control
+plane write does not discard the task's clinical results.
+
+### 3.3 Make the optimistic trace semantically accurate
+
+The client-side row is now `请求分析` / `Request analysis` with
+`正在确定执行路径…` / `Determining execution path...`. It is explicitly a
+connection placeholder and does not claim that a multi-agent router executed.
+Persisted historical rows remain localizable through the existing compatibility
+mapping.
+
+## 4. Verification contract
+
+The regression suite now checks that:
+
+- the stream route contains a deferred `persist_chat_task_start()` thread;
+- the deferred function writes the chat marker and operation together;
+- `start_gate.set()` remains in the deferred function's `finally` path;
+- the stream request path itself contains no request-context
+  `checkpoint_operation()` call;
+- the optimistic placeholder uses the neutral request-analysis label and no
+  longer seeds the literal Multi-Agent Router title.
+
+The remote focused tests, Python compilation, JavaScript syntax check, clean
+diff check, and live-server restart/health check must be recorded below before
+this entry is considered fully verified.
+
+## 5. Deployment status
+
+**Implementation staged; remote verification and deployment pending.**
+
+---
+
 # 2026-08-27 Incident Review — 3D OAR reconstruction progress restarted with a larger denominator
 
 > **This is the newest authoritative review entry and is intentionally located at the absolute beginning of the file.**

@@ -600,10 +600,28 @@ def test_delayed_header_metadata_cannot_overwrite_a_new_case():
 def test_running_chat_persists_the_user_turn_before_a_browser_refresh():
     """Refresh must restore the prompt that owns a replayed task trace."""
     routes = read("web/routes/planning_routes.py")
-    started = routes.split('reason="chat.task.started"', 1)[0]
+    stream = routes.split("        if stream:\n            def agent_supplier", 1)[1].split(
+        "            def generate_task", 1
+    )[0]
+    started = stream.split("def persist_chat_task_start", 1)[1]
     assert 'display_message = full_message.split("\\n\\n[Uploaded image path:"' in started
     assert '"messages": messages' in started
     assert '"task_status": "running"' in started
+    assert '"operation": operation' in started
+    assert 'reason="chat.task.started"' in started
+    assert "target=persist_chat_task_start" in stream
+    assert "start_gate.set()" in started
+    # The request must be able to emit task_meta before slow snapshot I/O
+    # completes; the stream path must not call the request-context helper.
+    assert "checkpoint_operation(" not in stream
+
+
+def test_chat_connection_placeholder_does_not_claim_a_router_execution():
+    """A local/direct turn must not leave a false Multi-Agent Router row."""
+    chat_todo = read("web/app/static/js/brachybot-chat-todo.js")
+    assert "title: zh ? '\\u8bf7\\u6c42\\u5206\\u6790' : 'Request analysis'" in chat_todo
+    assert "Determining execution path..." in chat_todo
+    assert "title: zh ? '\\u591a\\u667a\\u80fd\\u4f53\\u8def\\u7531' : 'Multi-Agent Router'" not in chat_todo
 
 
 def test_task_replay_is_deduplicated_and_bound_to_the_original_case():
