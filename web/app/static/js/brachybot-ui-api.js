@@ -2944,6 +2944,7 @@ async function _restoreActiveSessionWorkspace(options = {}) {
         ? Promise.resolve(loadLabelVolumes({
             sessionId: sessionAtStart,
             preserveViewerState: true,
+            registerBackgroundTask: options.registerBackgroundTask,
         })).finally(() => recordStage('restore.labels_data_tree', labelsStartedAt))
         : Promise.resolve();
 
@@ -3131,9 +3132,21 @@ async function restoreActiveSessionWorkspace(options = {}) {
     const hydrationRunId = window.__workspaceHydrationRunId;
     const hydrationScope = { sessionId: sessionAtStart, runId: hydrationRunId };
     const backgroundTasks = [];
+    const pendingBackgroundKinds = new Map();
+    let backgroundTaskSequence = 0;
     let backgroundNoticeTransferred = false;
-    const registerBackgroundTask = (task) => {
-        if (task && typeof task.then === 'function') backgroundTasks.push(Promise.resolve(task));
+    const registerBackgroundTask = (task, metadata = {}) => {
+        if (!task || typeof task.then !== 'function') return task;
+        const token = ++backgroundTaskSequence;
+        const kind = String(metadata?.kind || 'viewer_3d');
+        pendingBackgroundKinds.set(token, kind);
+        const tracked = Promise.resolve(task).finally(() => {
+            pendingBackgroundKinds.delete(token);
+            if (!backgroundNoticeTransferred || pendingBackgroundKinds.size === 0) return;
+            const genericPending = [...pendingBackgroundKinds.values()].includes('generic_masks');
+            updateHydrationProgress({ phase: genericPending ? 'generic_masks' : 'viewer' });
+        });
+        backgroundTasks.push(tracked);
         return task;
     };
     const updateHydrationProgress = detail => {
@@ -3150,6 +3163,9 @@ async function restoreActiveSessionWorkspace(options = {}) {
         } else if (phase === 'finalizing') {
             zh = '正在完成三维场景…';
             en = 'Finalizing the 3D scene...';
+        } else if (phase === 'generic_masks') {
+            zh = '正在加载 Upload Mask 数据…';
+            en = 'Loading Upload Mask data...';
         }
         window.setWorkspaceHydrationState?.(
             true,
@@ -3202,7 +3218,8 @@ async function restoreActiveSessionWorkspace(options = {}) {
             && String(_activeApiSessionId() || '') === sessionAtStart
             && window.__workspaceHydrationRunId === hydrationRunId) {
             backgroundNoticeTransferred = true;
-            updateHydrationProgress({ phase: 'viewer' });
+            const genericPending = [...pendingBackgroundKinds.values()].includes('generic_masks');
+            updateHydrationProgress({ phase: genericPending ? 'generic_masks' : 'viewer' });
             // Return essential CT/2D/planning readiness immediately while the
             // same scoped notice remains owned by the real 3D completion
             // boundary. Promise.allSettled guarantees a failed surface cannot

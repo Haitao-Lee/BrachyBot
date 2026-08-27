@@ -541,8 +541,16 @@ async function loadLabelVolumes(options = {}) {
     const scope = _captureViewerDataScope(options.sessionId);
     const sid = scope.sessionId || (typeof activeSessionId !== 'undefined' ? String(activeSessionId) : '');
     // Generic/open masks are independent from the shared clinical volume.
-    // Start hydration in parallel so standalone masks restore without CTV/OAR.
-    void hydrateGenericMasksFromServer(scope);
+    // Start hydration in parallel so standalone masks restore without CTV/OAR,
+    // but publish the promise to a cold workspace restore when it supplies a
+    // task registrar. The old fire-and-forget call left Upload Mask children
+    // in "Loading" after the case-level progress notice had already closed.
+    const genericMasksTask = Promise.resolve(hydrateGenericMasksFromServer(scope));
+    if (typeof options.registerBackgroundTask === 'function') {
+        options.registerBackgroundTask(genericMasksTask, { kind: 'generic_masks' });
+    } else {
+        void genericMasksTask;
+    }
     const preserveViewerState = options.preserveViewerState === true;
     // A fresh segmentation/import is a new clinical result, not a viewer
     // preference restore.  Older snapshots could persist the initial CT-only
