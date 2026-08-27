@@ -31,6 +31,7 @@ seconds.
 | A separate `Rendering 3D` overlay appeared after a gap | Workspace hydration and 3D loaders had independent presentation owners | **FIXED** |
 | Loading could disappear at 30 seconds regardless of actual work | A fixed timer called `setWorkspaceHydrationState(false, ...)` | **FIXED** |
 | Restart felt like two reconstruction passes | The first notice ended, then child 3D tokens became visible; the same case-scoped mesh promises were not exported to the parent transaction | **FIXED** |
+| Upload Mask children could still show `Loading` after the case notice ended | `loadLabelVolumes()` launched `hydrateGenericMasksFromServer()` with `void`, outside every parent completion contract | **FIXED** |
 | Full OAR restoration underused the idempotent data-plane budget | The all-OAR pass processed only three independent labels per batch | **FIXED; COLD-RESTORE BATCH CONCURRENCY IS 6** |
 | Report capture could keep visual loading coupled to non-viewer work | Report repair and figure capture shared the background callback after mesh completion | **FIXED; REPORT WORK IS DOWNSTREAM OF VIEWER READINESS** |
 
@@ -53,6 +54,11 @@ old design document:
    first indication that work had never actually stopped.
 6. The workspace scheduler also had a 30-second timer that explicitly hid the
    notice even if the real restore was still active.
+7. Upload Mask hydration was a second untracked branch:
+   `loadLabelVolumes()` started `hydrateGenericMasksFromServer(scope)` with
+   `void`. Its catalogue, per-label volumes, Data Tree readiness, 2D layers,
+   and generic 3D meshes could therefore remain in progress after both parent
+   functions had returned.
 
 The existing resource-level deduplication was rechecked as well:
 `_structuralMeshReconstructionInFlight`, `_seeds3DLoadInFlight`, and
@@ -82,16 +88,23 @@ gap:
 5. The scheduler no longer closes loading at 30 seconds. Its long-running
    message remains active, and once the clinical restore wrapper starts, the
    scheduler relinquishes notice ownership completely.
-6. CTV/OAR, seed/needle, and isodose tasks remain top-level parallel promises.
+6. `loadLabelVolumes()` now registers its already-parallel Upload Mask
+   promise as `generic_masks`. If Viewer geometry finishes first, the same
+   notice changes to `Loading Upload Mask data...`; it closes only after the
+   catalogue, label volumes, Data Tree nodes, 2D layers, and eligible generic
+   meshes settle.
+7. CTV/OAR, seed/needle, isodose, and Upload Mask tasks remain top-level
+   parallel promises.
    Full cold-restored OAR extraction now uses six read-only requests per
    batch instead of three. This applies to the idempotent Viewer data path,
    which has a separate 1,200-request/minute budget; mutation endpoints for
    upload, segmentation, chat, and planning are unchanged.
-7. Report source repair and figure capture still wait for the finished Viewer
+8. Report source repair and figure capture still wait for the finished Viewer
    but no longer prolong the Viewer loading indicator.
-8. Cache-busting versions were advanced to
+9. Cache-busting versions were advanced to
    `ui-api.js?v=50`, `3d-manual.js?v=70`,
-   `dvh-planning.js?v=29`, and `workspace.js?v=38`.
+   `dvh-planning.js?v=29`, `workspace.js?v=38`, and
+   `viewer-volume.js?v=44`.
 
 ## 4. Second-pass verification
 
@@ -107,20 +120,23 @@ asset levels:
 - The affected frontend suites passed: **199 passed**.
 - The complete remote test suite passed: **774 passed, 6 skipped, 4 warnings**.
 - `git diff --check` passed.
-- Code commit `8a647848f` was pushed to
+- Code commits `8a647848f` (Viewer lifecycle/concurrency) and
+  `630a69ec9` (Upload Mask completion tracking) were pushed to
   `origin/codex/session-task-recovery`.
-- The live server was restarted as PID `3244453` from the authoritative
+- The live server was restarted as PID `3250049` from the authoritative
   checkout. Port 8080 is listening and
-  `/tmp/brachybot_server_8a647848f.log` contains the normal startup banner
+  `/tmp/brachybot_server_630a69ec9.log` contains the normal startup banner
   without a traceback, JavaScript error, reference error, critical error, or
   address-in-use failure.
-- The deployed root page returns HTTP 200 and advertises all four new bundle
+- The deployed root page returns HTTP 200 and advertises all five new bundle
   versions. The deployed JavaScript responses return HTTP 200 and contain the
-  new background-completion, notice-transfer, and six-way batch contracts.
+  new background-completion, notice-transfer, Upload Mask task registration,
+  and six-way batch contracts.
 - A real Chromium load through a temporary SSH port forward reached the
-  deployed BrachyBot login page and loaded the four new versioned scripts.
+  deployed BrachyBot login page and loaded the five final versioned scripts.
   Browser console inspection found no `SyntaxError`, `ReferenceError`, or
-  bundle-load error. The temporary browser had no authenticated BrachyBot
+  bundle-load error; its only warnings were the expected authentication
+  responses from protected API probes. The temporary browser had no authenticated BrachyBot
   case session, so it could not honestly reproduce the user's private case
   hydration; no credentials, cookies, or local-storage data were inspected.
 
