@@ -5524,7 +5524,7 @@ async function _loadCTVAndObstacleMeshes(options, scope) {
                 .map(o => Number(o.labelId))
                 .filter(value => Number.isInteger(value) && value > 0)
                 .filter(value => !ctvLabelIds.includes(value))
-                .sort((a, b) => a - b)]
+                .sort((a, b) => a - b))]
             : null;
 
         uiDebugLog(`[loadCTVAndObstacle] Frozen structural target set: CTV=${ctvLabelIds.length}, OAR=${allOarIds ? allOarIds.length : 0}`);

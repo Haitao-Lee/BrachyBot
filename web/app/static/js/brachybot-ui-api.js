@@ -59,6 +59,22 @@ function jsonClone(value, fallback = {}) {
 }
 window.jsonClone = jsonClone;
 
+// Shared cross-bundle normalizer for planning trajectory identifiers.  The
+// Viewer layout and DVH/planning bundles are classic scripts loaded after this
+// file and call the helper by its global name.  Keeping the compatibility
+// definition in this foundational bundle prevents one parse/load failure in a
+// later 3D bundle from aborting 2D planning hydration at the first trajectory
+// update.  The 3D bundle provides the same canonical behavior when it loads.
+if (typeof window._normalizeTrajectoryId !== 'function') {
+    window._normalizeTrajectoryId = function _normalizeTrajectoryId(tid) {
+        if (tid === null || tid === undefined || tid === '') return 'unassigned';
+        if (typeof tid === 'number' && Number.isFinite(tid)) return `traj_${tid + 1}`;
+        const value = String(tid);
+        if (/^\d+$/.test(value)) return `traj_${Number(value) + 1}`;
+        return value;
+    };
+}
+
 /**
  * Collect a declarative schema of every editable parameter in the UI.
  *

@@ -382,7 +382,7 @@ def test_workspace_transitions_publish_measurable_first_paint_and_restore_stages
     # Versioned URLs are intentional cache invalidation points. Keep this
     # assertion aligned with the workspace/report artifact restore contract.
     assert "brachybot-workspace.js?v=37" in index
-    assert "brachybot-ui-api.js?v=48" in index
+    assert "brachybot-ui-api.js?v=49" in index
     assert "brachybot-viewer-volume.js?v=43" in index
     assert "brachybot-manual-annotation.js?v=18" in index
 
