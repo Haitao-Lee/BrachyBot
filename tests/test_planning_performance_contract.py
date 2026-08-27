@@ -3,6 +3,9 @@
 from pathlib import Path
 from unittest.mock import patch
 
+import numpy as np
+
+from tool_factory import ToolResult
 from tool_factory.seed_plan.planning_pipeline import (
     PlanningPipelineTool,
     _filter_world_safe_trajectories,
@@ -79,3 +82,61 @@ def test_world_safety_filter_reuses_a_precomputed_body_mask():
 
     assert observed == []
     build_body_mask.assert_not_called()
+
+
+def test_successful_full_pipeline_publishes_reserved_planning_run_before_return():
+    """A successful replan must be restorable, not only present in live memory."""
+
+    class Memory:
+        def __init__(self):
+            self.values = {}
+
+        def retrieve(self, key, default=None):
+            return self.values.get(key, default)
+
+        def store(self, key, value):
+            self.values[key] = value
+
+    agent = type("Agent", (), {"memory": Memory(), "config": {}})()
+    tool = PlanningPipelineTool()
+    published = {}
+
+    def fake_publish(current_agent, result, *, status):
+        published["planning_id"] = result.metadata["planning_id"]
+        published["status"] = status
+        return result.metadata["planning_id"]
+
+    with (
+        patch.object(tool, "_load_ct", return_value=object()),
+        patch.object(tool, "_load_ctv", return_value=np.zeros((2, 2, 2), dtype=np.uint8)),
+        patch.object(tool, "_load_oar", return_value=np.zeros((2, 2, 2), dtype=np.uint8)),
+        patch(
+            "tool_factory.seed_plan.planning_pipeline._merge_embedded_hard_obstacles",
+            return_value=(object(), set()),
+        ),
+        patch(
+            "tool_factory.seed_plan.planning_pipeline._resolve_ref_direc",
+            return_value=[0.0, -1.0, 0.0],
+        ),
+        patch(
+            "web.planning_runs.begin_planning_run",
+            return_value="planning-test",
+        ),
+        patch.object(
+            tool,
+            "_run_full_pipeline",
+            return_value=ToolResult(
+                success=True,
+                metadata={"total_seeds": 52, "num_trajectories": 8},
+            ),
+        ),
+        patch(
+            "web.planning_runs.publish_planning_run",
+            side_effect=fake_publish,
+        ),
+    ):
+        result = tool._execute(step="full", _agent=agent)
+
+    assert result.success is True
+    assert published == {"planning_id": "planning-test", "status": "completed"}
+    assert result.metadata["planning_published"] is True
