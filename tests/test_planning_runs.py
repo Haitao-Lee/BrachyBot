@@ -137,6 +137,27 @@ def test_stepwise_stages_reuse_running_run_but_completed_replan_forks():
     assert second != first
 
 
+def test_legacy_has_dose_rows_remain_current_until_reconciled():
+    """Old registry rows must not disappear merely because new flags are absent."""
+    agent = _agent()
+    agent.memory.planning_results.update({
+        "active_planning_id": "planning-legacy",
+        "planning_runs": [{
+            "planning_id": "planning-legacy",
+            "sequence": 0,
+            "label": "Planning_1",
+            "status": "completed",
+            "visible": True,
+            "has_dose": True,
+        }],
+    })
+
+    run = list_planning_runs(agent.memory)[0]
+    assert run["has_dose"] is True
+    assert run["has_current_dose"] is True
+    assert run["has_display_dose"] is True
+
+
 def test_manual_edit_forks_without_mutating_parent_and_saves_draft_geometry():
     agent = _agent()
     first = begin_planning_run(agent, step="full", force_new=True)

@@ -73,6 +73,36 @@ def _pad_surface_volume(volume, fill_value=0):
     return padded, np.full(3, float(pad), dtype=np.float64)
 
 
+def _signed_surface_field(binary_volume):
+    """Build a validated signed-distance field for level-zero extraction.
+
+    ``skimage.measure.marching_cubes`` raises a generic data-range exception
+    when preprocessing has erased a thin label. Validate that contract here so
+    every mask route either receives a real inside/outside boundary or returns
+    a precise error instead of failing midway through a batch reconstruction.
+    The sign is negative inside and positive outside.
+    """
+    from scipy.ndimage import distance_transform_edt
+
+    binary = (np.asarray(binary_volume) > 0).astype(np.uint8, copy=False)
+    if binary.ndim != 3:
+        raise ValueError("Surface mask must be a 3-D binary volume.")
+    if not np.any(binary):
+        raise ValueError("Surface mask became empty during preprocessing.")
+    padded, surface_padding_zyx = _pad_surface_volume(binary)
+    dist_out = distance_transform_edt(1 - padded)
+    dist_in = distance_transform_edt(padded)
+    signed_field = dist_out - dist_in
+    field_min = float(np.min(signed_field))
+    field_max = float(np.max(signed_field))
+    if not field_min < 0.0 < field_max:
+        raise ValueError(
+            "Surface mask does not contain a valid inside/outside boundary "
+            f"(signed range {field_min:.6g} to {field_max:.6g})."
+        )
+    return signed_field, surface_padding_zyx
+
+
 def _viewer_label_array(agent, array_key, path_key, source, reference_image, target_shape):
     """Return one label volume on the current CT grid for every viewer path.
 
@@ -1686,6 +1716,7 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
 
             if mask.sum() == 0:
                 return jsonify({"error": "Empty mask"}), 400
+            original_mask = mask.copy()
 
             # CTV geometry must remain identical to the mask used by DVH and
             # dose evaluation. Ordinary anatomy can retain presentation
@@ -1708,16 +1739,27 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
                     mask = binary_closing(mask, iterations=2).astype(np.uint8)
                     mask = binary_fill_holes(mask).astype(np.uint8)
 
-            # Add a guard voxel before distance transforms. This closes masks
-            # touching the acquisition boundary without changing the physical
-            # mask used by planning.
-            mask_for_surface, surface_padding_zyx = _pad_surface_volume(mask)
+            # A 3-D closing can erase a one-slice structure on anisotropic CT.
+            # Presentation cleanup must never turn an existing label into a
+            # failed reconstruction; fall back to its exact source geometry.
+            preprocessing_fallback = False
+            if not np.any(mask):
+                logger.warning(
+                    "3D presentation cleanup erased %s label=%s; using source mask",
+                    source,
+                    label_id,
+                )
+                mask = original_mask
+                preprocessing_fallback = True
 
-            # Use distance transform for smooth surface
-            from scipy.ndimage import distance_transform_edt
-            dist_out = distance_transform_edt(1 - mask_for_surface)
-            dist_in = distance_transform_edt(mask_for_surface)
-            smooth_field = dist_out - dist_in
+            try:
+                smooth_field, surface_padding_zyx = _signed_surface_field(mask)
+            except ValueError as exc:
+                return jsonify({
+                    "success": False,
+                    "code": "invalid_surface_geometry",
+                    "error": str(exc),
+                }), 422
 
             spacing = agent.memory.retrieve("ct_spacing") or (0.68, 0.68, 5.0)
             spacing_xyz = tuple(float(s) for s in spacing[:3])
@@ -1747,6 +1789,7 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
                 "source": source,
                 "label_id": label_id,
                 "geometry_mode": "label_faithful" if label_faithful else "presentation_smoothed",
+                "preprocessing_fallback": preprocessing_fallback,
             })
         except Exception as e:
             logger.error(f"Viewer 3D failed: {e}")
@@ -1860,6 +1903,7 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
                 if source == "generic"
                 else (mask_data == label_id).astype(np.uint8)
             )
+            original_binary_mask = binary_mask.copy()
 
             total_voxels = int(binary_mask.sum())
             if total_voxels == 0:
@@ -1918,15 +1962,34 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
                     binary_mask = binary_closing(binary_mask, iterations=2).astype(np.uint8)
                     binary_mask = binary_fill_holes(binary_mask).astype(np.uint8)
 
-            # Gaussian smoothing on distance transform for smoother surface.
-            # Pad only the extraction field so masks that touch the CT
-            # acquisition boundary receive a closed cap instead of an open
-            # rectangular cut face. The original planning mask is untouched.
-            binary_for_surface, surface_padding_zyx = _pad_surface_volume(binary_mask)
-            from scipy.ndimage import distance_transform_edt
-            dist_out = distance_transform_edt(1 - binary_for_surface)
-            dist_in = distance_transform_edt(binary_for_surface)
-            smooth_field = dist_out - dist_in  # Positive inside, negative outside
+            preprocessing_fallback = False
+            if not np.any(binary_mask):
+                logger.warning(
+                    "3D mask cleanup erased source=%s id=%s voxels=%s; using source mask",
+                    source,
+                    mask_id if source == "generic" else label_id,
+                    total_voxels,
+                )
+                binary_mask = original_binary_mask
+                preprocessing_fallback = True
+
+            # Pad and validate centrally. The signed field is negative inside
+            # and positive outside; level zero is therefore a real boundary.
+            try:
+                smooth_field, surface_padding_zyx = _signed_surface_field(binary_mask)
+            except ValueError as exc:
+                if bool(data.get("allow_missing")):
+                    return jsonify({
+                        "success": False,
+                        "skipped": True,
+                        "code": "invalid_surface_geometry",
+                        "message": str(exc),
+                    })
+                return jsonify({
+                    "success": False,
+                    "code": "invalid_surface_geometry",
+                    "error": str(exc),
+                }), 422
 
             # Get spacing, origin, direction from CT data
             spacing = agent.memory.retrieve("ct_spacing") or (1.0, 1.0, 1.0)
@@ -1994,6 +2057,7 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
                 "mask_id": mask_id if source == "generic" else None,
                 "source": source,
                 "geometry_mode": "label_faithful" if label_faithful else "presentation_smoothed",
+                "preprocessing_fallback": preprocessing_fallback,
                 "surface_boundary_padding_voxels": int(_MESH_BOUNDARY_PADDING_VOXELS),
                 "cached": False,
             }

@@ -75,6 +75,28 @@ _is_loopback_host = _server_support._is_loopback_host
 _validate_path = _server_support._validate_path
 _validate_upload_name = _server_support._validate_upload_name
 
+# These endpoints are transport-level POSTs because their inputs are render or
+# query parameters. They do not mutate the durable case. Scheduling a complete
+# workspace checkpoint for them made ordinary slice scrolling, 3D restore, and
+# dose-surface reconstruction serialize every planning artifact again.
+WORKSPACE_READ_ONLY_POST_PATHS = frozenset({
+    "/api/header/info",
+    "/api/ctv/models/validation",
+    "/api/planning/show_step",
+    "/api/planning/dose_isosurface",
+    "/api/planning/dose_overlay_slice",
+    "/api/planning/dose_contour_slice",
+    "/api/training/advice",
+    "/api/readiness",
+    "/api/viewer/slice",
+    "/api/viewer/overlay",
+    "/api/viewer/threshold",
+    "/api/viewer/hu",
+    "/api/viewer/3d",
+    "/api/viewer/3d_mask",
+    "/api/viewer/3d_skin",
+})
+
 
 def _sanitize_upload_filename(name: str) -> str:
     """Return a storage-safe basename while retaining readable file names."""
@@ -805,17 +827,9 @@ def create_app(config: Optional[Dict] = None):
         # CT/label checkpoint for every scroll, overlay refresh, and 3D mesh
         # fetch.  That creates stale checkpoints which contend with a newly
         # selected CT upload and makes the Browse workflow look blocked.
-        viewer_read_posts = {
-            "/api/viewer/slice",
-            "/api/viewer/overlay",
-            "/api/viewer/hu",
-            "/api/viewer/3d",
-            "/api/viewer/3d_mask",
-            "/api/viewer/3d_skin",
-        }
         should_checkpoint = (
             request.method in {"POST", "PUT", "PATCH", "DELETE"}
-            and request.path not in viewer_read_posts
+            and request.path not in WORKSPACE_READ_ONLY_POST_PATHS
             and response.status_code < 400
         )
         if should_checkpoint:

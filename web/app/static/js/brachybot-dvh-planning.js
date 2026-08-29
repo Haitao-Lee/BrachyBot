@@ -1068,6 +1068,9 @@ async function refreshPlanningUI(options = {}) {
                     needleCount: responseNeedleCount,
                     trajectoryCount: responseTrajectoryCount,
                     hasDose: data.has_dose === true,
+                    hasCurrentDose: data.has_current_dose === true,
+                    doseStale: data.dose_stale === true,
+                    doseSource: data.dose_source || null,
                     hasDvh: !!(data.dvh && Object.keys(data.dvh).length > 0),
                     hasGuide: data.has_guide === true,
                 };
@@ -1078,6 +1081,13 @@ async function refreshPlanningUI(options = {}) {
                     dataTreeState.planning.status = data.planning_status || null;
                     dataTreeState.planning.dataVersion = Number(data.planning_data_version || 0);
                     dataTreeState.planning.artifactStatus = data.artifact_status || {};
+                    dataTreeState.planning.doseReference = data.dose_stale === true
+                        ? {
+                            source: data.dose_source || 'algorithm_plan_reference',
+                            sourcePlanningId: data.dose_source_planning_id || null,
+                            status: data.dose_status || 'stale',
+                        }
+                        : null;
                 }
                 if (typeof manualPlanningState !== 'undefined') {
                     manualPlanningState.planningId = data.planning_id || manualPlanningState.planningId || null;
@@ -1433,7 +1443,7 @@ async function refreshPlanningUI(options = {}) {
             const needsSourceBackedReport = typeof window.reportNeedsSourceBackedQualityRefresh === 'function'
                 ? window.reportNeedsSourceBackedQualityRefresh(window.reportForm)
                 : true;
-            const backgroundReportPromise = options.preserveReport === true
+            const backgroundReportPromise = options.preserveReport === true || data.dose_stale === true
                 ? Promise.resolve()
                 : (needsSourceBackedReport && window.Report?.autoFill?.fromAll)
                 ? Promise.resolve().then(() => window.Report.autoFill.fromAll({
@@ -1477,6 +1487,8 @@ async function refreshPlanningUI(options = {}) {
                 stage: 'ready',
                 essentialReady: true,
                 doseReady: data.has_dose === true,
+                currentDoseReady: data.has_current_dose === true,
+                doseStale: data.dose_stale === true,
             };
             // Expose the true visual completion boundary to the workspace
             // restore transaction. Essential CT/2D/planning state can return
@@ -1534,6 +1546,7 @@ async function refreshPlanningUI(options = {}) {
                 const hasCompleteReportFigureSet = [...requiredReportAxes]
                     .every(axis => capturedReportAxes.has(axis));
                 if (options.preserveReport !== true
+                    && data.dose_stale !== true
                     && !hasCompleteReportFigureSet
                     && typeof autoCaptureReportFigures === 'function') {
                     try { await autoCaptureReportFigures({ sessionId: expectedSessionId }); } catch (error) {
@@ -1566,6 +1579,8 @@ async function refreshPlanningUI(options = {}) {
             stage: 'ready',
             essentialReady: true,
             doseReady: data.has_dose === true,
+            currentDoseReady: data.has_current_dose === true,
+            doseStale: data.dose_stale === true,
         };
         if (!isCurrentCase()) return resolve();
         // Guide generation/restoration is part of the same planning refresh,
@@ -1590,7 +1605,9 @@ async function refreshPlanningUI(options = {}) {
             console.warn('[3D auto-load] camera fit guard:', error);
         }
         try {
-            if (options.preserveReport !== true && typeof reportAutoFill === 'function') {
+            if (options.preserveReport !== true
+                && data.dose_stale !== true
+                && typeof reportAutoFill === 'function') {
                 await reportAutoFill({ sessionId: expectedSessionId });
             }
         } catch (_) {}
@@ -1606,6 +1623,7 @@ async function refreshPlanningUI(options = {}) {
         try {
             if (!isCurrentCase()) return resolve();
             if (options.preserveReport !== true
+                && data.dose_stale !== true
                 && typeof autoCaptureReportFigures === 'function') {
                 await autoCaptureReportFigures({ sessionId: expectedSessionId });
             }
