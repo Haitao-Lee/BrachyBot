@@ -1,3 +1,146 @@
+# 2026-08-30 Incident Review — Restart hydration lost or delayed Planning resources
+
+> **This is the newest authoritative review entry and is intentionally located
+> at the absolute beginning of the file.**
+> It supersedes any earlier diagnosis that treated missing dose, isodose,
+> seeds, needles, guide geometry, or delayed 3D completion as independent UI
+> refresh problems. The complete persisted-data-to-Viewer path was rechecked
+> against the current implementation and the real affected workspace.
+
+## 1. Executive verdict
+
+The reported restart/session-switch behavior was real and had several
+interacting root causes. The most important defect was a contract mismatch:
+the compact Planning registry described any retained dose as available, while
+the Viewer endpoints read only the active Planning's current-dose aliases. A
+manual geometry child correctly invalidated those current aliases, but the
+parent algorithm dose still existed under immutable baseline keys. The Data
+Tree could therefore advertise dose while the Viewer returned no overlay or
+isodose surface.
+
+The restore path was also dominated by pathological persistence granularity.
+The affected workspace contained 16,097 NPY sidecars, including 15,764 files
+of exactly 152 bytes. Three-component coordinates and other tiny arrays had
+been serialized as separate files. Every cold hydration opened thousands of
+files, and ordinary read-only Viewer POST requests scheduled full workspace
+checkpoints that recursively revisited them. Superseded checkpoints continued
+encoding until the end, which explains the observed 25–69 second checkpoint
+times, stale-checkpoint discards, rate-limit cascades, and apparent repeated
+loading passes.
+
+| Confirmed problem | Root cause | Status |
+|---|---|---|
+| Dose overlay and isodose disappeared after restart | Registry `has_dose` represented current-or-baseline data, but Viewer endpoints only resolved current aliases | **FIXED** |
+| A manual geometry Planning could show the parent dose as if it were current | Current and reference dose provenance were not explicit in API/Data Tree contracts | **FIXED; BASELINE IS DISPLAY-ONLY AND MARKED STALE/REFERENCE** |
+| Seeds, needles, dose, and guide appeared inconsistently across cold starts | Fragmented sidecars and competing stale checkpoints delayed authoritative hydration and could publish partial shells | **FIXED** |
+| Hydration/checkpoint latency was excessive | 15,764 tiny arrays were individual NPY files | **FIXED; SMALL ARRAYS ARE INLINE, EXACT, AND WRITABLE** |
+| Slice, overlay, and 3D render requests triggered full persistence | Transport-level POST was incorrectly treated as a durable mutation | **FIXED** |
+| An obsolete checkpoint consumed tens of seconds before being discarded | Generation validity was checked only after complete recursive encoding | **FIXED; CANCELLATION IS CHECKED DURING ENCODING** |
+| Thin/single-slice structures failed with `Surface level must be within volume data range` | Presentation morphology could erase the complete binary mask before marching cubes | **FIXED; VALIDATED SOURCE-MASK FALLBACK** |
+| Four isodose levels loaded serially and repainted repeatedly | Multi-level restore awaited each surface and used shared global suppression state | **FIXED; BOUNDED PARALLEL WORKERS AND ONE FINAL RENDER** |
+| Some legacy cases were skipped as apparently empty | The restore gate omitted baseline dose, physical-Gy dose, manual geometry, skin, and Upload Mask durable keys | **FIXED** |
+
+## 2. Dose ownership and clinical-safety repair
+
+The dose contract now resolves one explicit display context for every Planning
+route:
+
+1. A valid dose calculated for the active geometry is returned as
+   `current_planning` and may drive current dose/DVH semantics.
+2. If a manual geometry child intentionally invalidated dose, an immutable
+   algorithm baseline may still be displayed as `algorithm_plan_reference`.
+   Every overlay, contour, isosurface, Planning result, and Data Tree payload
+   carries `dose_stale`, `dose_status`, `dose_source`,
+   `dose_source_planning_id`, `has_current_dose`, and `has_display_dose`.
+3. The reference baseline is never copied back into current clinical aliases,
+   never treated as recomputed DVH, and never used to auto-fill or capture a
+   current report.
+4. A legacy snapshot containing only a physical-Gy current grid is converted
+   to the normalized display contract in memory for rendering only. The
+   original clinical persistence is not silently rewritten.
+5. Dose-grid placement must be supported by original-CT geometry or persisted
+   planning-grid resampling metadata. The server now refuses to guess a
+   plausible-looking but spatially displaced isosurface.
+
+For the real affected case, the active Planning is
+`planning-fcff62378c93418fbfd37650975f4630`. It is a geometry-edited child, so
+the retained parent dose from
+`planning-15a41ed2796a43a488e66debfd0a3937` is now restored explicitly as a
+stale/reference layer. This is the intended, clinically honest result until
+dose is recomputed for the child geometry.
+
+## 3. Persistence and latency repair
+
+Small plain NumPy arrays are now stored inline in the atomic JSON snapshot as
+base64 with exact dtype and shape. Large medical volumes remain NPY sidecars
+and keep mmap behavior. Scalar arrays, empty dimensions, byte order, and
+writability are covered by round-trip tests; object and structured dtypes are
+not inlined.
+
+Checkpoint generation fencing now reaches the recursive encoder. A checkpoint
+that has already been superseded stops promptly, removes sidecars created by
+its abandoned preparation, and cannot populate the array-reference cache with
+uncommitted paths. Read-only render endpoints are excluded from generic
+`request.completed` checkpoints, including Viewer slices/overlays/3D surfaces
+and planning isodose/overlay/contour queries.
+
+The real case was migrated after a hard-link backup was created at:
+
+`/home/lht/snap/brachyplan/BrachyBot/.runtime/migration-backups/2e23320cb79342b89633e50b79f64be9-before-inline-20260830`
+
+| Real-workspace measurement | Before migration | After migration |
+|---|---:|---:|
+| NPY sidecars | 16,097 | 333 |
+| 152-byte NPY fragments | 15,764 | 0 |
+| Full independent-process hydration | 3.70–3.92 s | 0.82 s |
+| Array decode phase | 3.44–3.49 s | 0.375 s |
+| Full migration checkpoint | previously observed 25–69 s | 4.24 s |
+
+The 0.82-second post-migration restore retained the same 75 seeds, 15 needles,
+`11×512×512` CT and dose grids, guide, skin surface, three Planning records,
+active Planning ID, and stale/reference dose provenance.
+
+## 4. Viewer reconstruction and progress repair
+
+- Thin-structure preprocessing retains an untouched source mask. If closing,
+  hole filling, or another presentation operation removes all foreground, the
+  endpoint logs the condition and extracts the exact source boundary instead.
+  Invalid geometry returns a precise 422 (or a skipped prewarm response), not
+  a generic marching-cubes exception.
+- The four standard dose surfaces use a bounded worker pool (default two,
+  maximum four). Each request suppresses its own intermediate Data Tree entry
+  and render; results are committed in deterministic threshold order and the
+  scene is rendered/camera-fitted once.
+- Session and generation fences remain active for every result, so a response
+  from a previously selected case cannot paint into the new case.
+- The outer workspace loading notice owns the complete visual transaction via
+  `backgroundCompletion`; child 3D loaders do not open a competing automatic
+  cold-restore overlay. The notice therefore remains continuous until actual
+  Viewer work settles.
+- Legacy resource detection now includes algorithm baseline dose, physical-Gy
+  dose, manual seed/needle plans, skin surfaces, and uploaded/generic masks.
+
+## 5. Second-pass verification
+
+The fixes were rechecked at source, unit/integration, deployed-runtime, and
+real-data levels:
+
+- Local complete suite: **791 passed, 2 skipped, 0 failed**.
+- Focused remote suite in the Server's exact Conda environment:
+  **228 passed, 0 failed**.
+- `py_compile`, `node --check` for all changed bundles, and
+  `git diff --check` passed.
+- A fresh independent process hydrated the migrated real case in 0.82 seconds
+  and retained all checked Planning products.
+- The same real dose grid produced valid surfaces at every configured level:
+  120 Gy (10,436 vertices), 180 Gy (7,684), 240 Gy (6,258), and 480 Gy
+  (3,858).
+- The deployed root page loads successfully through a local-only SSH forward.
+  A clean browser origin reached the normal BrachyBot login screen; it did not
+  possess the user's authenticated medical-case cookie, so no claim is made
+  that this temporary browser visually opened the private case.
+- Implementation commit: `8bc2db4150faf01b6f7ea02744a6ad08c489eeff`.
+
 # 2026-08-28 Incident Review — Viewer hydration lost its loading owner before visual completion
 
 > **This is the newest authoritative review entry and is intentionally located
