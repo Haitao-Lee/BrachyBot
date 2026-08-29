@@ -14,6 +14,7 @@ untrusted code.
 from __future__ import annotations
 
 import copy
+import base64
 import json
 import hashlib
 import logging
@@ -63,11 +64,23 @@ TRANSIENT_COLLECTION_LIMIT = int(
 EAGER_ARRAY_LOAD_MAX_BYTES = int(
     os.environ.get("BRACHYBOT_EAGER_ARRAY_LOAD_MAX_BYTES", str(1024 ** 2))
 )
+# Persisting every three-component point as an individual ``.npy`` file turns
+# one Planning history into tens of thousands of filesystem operations.  Keep
+# genuinely large medical volumes as mmap-friendly sidecars, but embed small
+# numeric arrays in the atomic JSON snapshot.  The binary representation is
+# compact, exact (dtype/shape are retained), and avoids JSON float coercion.
+INLINE_ARRAY_MAX_BYTES = int(
+    os.environ.get("BRACHYBOT_INLINE_ARRAY_MAX_BYTES", str(4 * 1024))
+)
 MIN_OPEN_FILE_LIMIT = int(
     os.environ.get("BRACHYBOT_MIN_OPEN_FILE_LIMIT", "65536")
 )
 
 logger = logging.getLogger(__name__)
+
+
+class _CheckpointSuperseded(RuntimeError):
+    """Internal signal used to stop an obsolete background checkpoint."""
 
 
 def _ui_control_value(ui_state: Any, control_id: str, default: Any = None) -> Any:
@@ -490,6 +503,7 @@ class _ArtifactEncoder:
         reuse_array: Optional[Callable[[str, str], Optional[str]]] = None,
         record_array: Optional[Callable[[str, str, str], None]] = None,
         array_version: Optional[Callable[[str], int]] = None,
+        checkpoint_cancelled: Optional[Callable[[], bool]] = None,
     ):
         self.root = root
         self.arrays_dir = root / "arrays"
@@ -499,10 +513,48 @@ class _ArtifactEncoder:
         self._reuse_array = reuse_array
         self._record_array = record_array
         self._array_version = array_version
+        self._checkpoint_cancelled = checkpoint_cancelled
+        self._visited_values = 0
+
+    def _check_checkpoint(self, *, force: bool = False) -> None:
+        """Abort recursive encoding promptly when a newer generation exists."""
+
+        self._visited_values += 1
+        if not force and self._visited_values % 128:
+            return
+        if self._checkpoint_cancelled is not None and self._checkpoint_cancelled():
+            raise _CheckpointSuperseded("A newer workspace checkpoint is pending")
+
+    @staticmethod
+    def _inline_array(value: np.ndarray) -> Optional[Dict[str, Any]]:
+        """Return an exact compact representation for a small plain ndarray."""
+
+        if (
+            INLINE_ARRAY_MAX_BYTES < 0
+            or int(value.nbytes) > INLINE_ARRAY_MAX_BYTES
+            or value.dtype.hasobject
+            or value.dtype.fields is not None
+        ):
+            return None
+        # ``np.ascontiguousarray`` promotes a zero-dimensional ndarray to
+        # shape ``(1,)``. A C-order copy retains the exact scalar/empty shape
+        # while still giving ``tobytes(order='C')`` a contiguous buffer.
+        contiguous = np.array(value, copy=True, order="C", subok=False)
+        return {
+            "$ndarray_inline": base64.b64encode(
+                contiguous.tobytes(order="C")
+            ).decode("ascii"),
+            "dtype": contiguous.dtype.str,
+            "shape": [int(item) for item in contiguous.shape],
+        }
 
     def encode(self, value: Any, name: str, source_key: Optional[str] = None) -> Any:
+        self._check_checkpoint()
         if isinstance(value, np.ndarray):
             self._counter += 1
+            inline = self._inline_array(value)
+            if inline is not None:
+                return inline
             if source_key and self._reuse_array is not None:
                 existing = self._reuse_array(source_key, name)
                 if existing:
@@ -522,6 +574,7 @@ class _ArtifactEncoder:
                 f"{source_prefix}_{logical_digest}_{version_suffix}_{self._counter}.npy"
             )
             path = self.root / relative
+            self._check_checkpoint(force=True)
             if self._ensure_capacity is not None:
                 # ``.npy`` headers are small for the numeric volumes used by
                 # BrachyBot; keep a conservative allowance before writing.
@@ -559,6 +612,26 @@ def _decode_artifacts(value: Any, root: Path) -> Any:
         # retain lazy, read-only mmap behavior to bound resident memory.
         mmap_mode = "r" if path.stat().st_size > EAGER_ARRAY_LOAD_MAX_BYTES else None
         return np.load(path, allow_pickle=False, mmap_mode=mmap_mode)
+    if "$ndarray_inline" in value:
+        try:
+            dtype = np.dtype(str(value["dtype"]))
+            if dtype.hasobject or dtype.fields is not None:
+                raise ValueError("Unsupported inline ndarray dtype")
+            shape = tuple(int(item) for item in value.get("shape", []))
+            if any(item < 0 for item in shape):
+                raise ValueError("Invalid inline ndarray shape")
+            raw = base64.b64decode(str(value["$ndarray_inline"]), validate=True)
+            expected = int(dtype.itemsize) * int(math.prod(shape) if shape else 1)
+            if len(raw) != expected:
+                raise ValueError("Inline ndarray payload length does not match its shape")
+            # ``frombuffer`` points at immutable bytes.  Copy so small restored
+            # planning coordinates retain the writable semantics of eager NPY
+            # arrays while large mmap sidecars remain deliberately read-only.
+            # Construct with the stored shape explicitly so scalars remain
+            # zero-dimensional and empty axes remain exact.
+            return np.ndarray(shape=shape, dtype=dtype, buffer=raw).copy()
+        except (KeyError, TypeError, ValueError) as exc:
+            raise WorkspaceError("Invalid inline ndarray artifact") from exc
     if "$tuple" in value:
         return tuple(_decode_artifacts(item, root) for item in value["$tuple"])
     if "$image" in value or "$unsupported" in value:
@@ -577,7 +650,7 @@ def _restore_hydration_metadata(value: Any) -> Any:
         return [_restore_hydration_metadata(item) for item in value]
     if not isinstance(value, dict):
         return _restore_json(value)
-    if "$array" in value or "$image" in value:
+    if "$array" in value or "$ndarray_inline" in value or "$image" in value:
         return None
     if "$tuple" in value:
         return tuple(_restore_hydration_metadata(item) for item in value["$tuple"])
@@ -2043,7 +2116,12 @@ class WorkspaceStore:
         )
         try:
             prepare_started = time.perf_counter()
-            payload = self._prepare_agent_snapshot(user_id, session_id, agent)
+            payload = self._prepare_agent_snapshot(
+                user_id,
+                session_id,
+                agent,
+                checkpoint_generation=checkpoint_generation,
+            )
             prepare_ms = (time.perf_counter() - prepare_started) * 1000.0
             if checkpoint_generation is not None:
                 with self._lock:
@@ -2082,6 +2160,15 @@ class WorkspaceStore:
                 not bool(result),
             )
             return result
+        except _CheckpointSuperseded:
+            logger.info(
+                "workspace checkpoint cancelled stale session=%s reason=%s generation=%s duration_ms=%.1f",
+                session_id,
+                reason,
+                checkpoint_generation,
+                (time.perf_counter() - started) * 1000.0,
+            )
+            return {}
         except Exception:
             logger.warning(
                 "workspace checkpoint failed session=%s reason=%s duration_ms=%.1f",
@@ -2114,6 +2201,8 @@ class WorkspaceStore:
         user_id: str,
         session_id: str,
         agent: Any,
+        *,
+        checkpoint_generation: Optional[int] = None,
     ) -> Dict[str, Any]:
         """Read agent memory and encode large arrays to disk WITHOUT
         acquiring the per-case _case_guard.  The heavy npy I/O must not
@@ -2167,6 +2256,27 @@ class WorkspaceStore:
         created_array_paths: List[str] = []
         reused_array_count = 0
 
+        def checkpoint_cancelled() -> bool:
+            if checkpoint_generation is None:
+                return False
+            with self._lock:
+                current = self._checkpoint_generations.get((user_id, session_id), 0)
+            return int(current) != int(checkpoint_generation)
+
+        def discard_created_arrays() -> None:
+            for relative in list(created_array_paths):
+                try:
+                    _safe_workspace_child(root, str(relative)).unlink(missing_ok=True)
+                except (OSError, WorkspaceError):
+                    continue
+            with self._lock:
+                for cache_key, cached in list(self._array_refs.items()):
+                    if cache_key[:2] == (user_id, session_id) and cached[1] in created_array_paths:
+                        self._array_refs.pop(cache_key, None)
+
+        if checkpoint_cancelled():
+            raise _CheckpointSuperseded("Checkpoint superseded before artifact indexing")
+
         # Reuse nested arrays after a process restart.  A top-level lookup is
         # insufficient for OAR/CTV payloads because their arrays are commonly
         # stored below a structure-name mapping.  Rebuilding this name-to-path
@@ -2187,6 +2297,9 @@ class WorkspaceStore:
 
         for source_key, value in durable_results.items():
             collect_array_refs(value, _safe_filename(source_key), str(source_key))
+
+        if checkpoint_cancelled():
+            raise _CheckpointSuperseded("Checkpoint superseded during artifact indexing")
 
         def reuse_array(source_key: str, name: str) -> Optional[str]:
             nonlocal reused_array_count
@@ -2268,6 +2381,7 @@ class WorkspaceStore:
             reuse_array=reuse_array,
             record_array=record_array,
             array_version=lambda source_key: int(planning_versions.get(source_key, 0)),
+            checkpoint_cancelled=checkpoint_cancelled,
         )
         encoded_results: Dict[str, Any] = {}
         ct_path_value = str(
@@ -2309,37 +2423,48 @@ class WorkspaceStore:
             except (TypeError, ValueError):
                 return False
 
-        for key, value in planning_results.items():
-            key = str(key)
-            if should_skip_result(key, value):
-                skipped_transient_results.append(key)
-                continue
-            if (
-                preserve_durable_results
-                and key in durable_results
-                and durable_version_matches(key)
-            ):
-                # Reuse the entire encoded value, not only its top-level array.
-                # Planning run snapshots contain deeply nested dose and skin
-                # arrays whose metadata-only representation is a tree of None
-                # placeholders during cold-start hydration.
-                encoded_results[key] = durable_results[key]
-                continue
-            encoded = encoder.encode(value, _safe_filename(key), str(key))
-            if isinstance(encoded, dict) and "$image" in encoded:
-                continue
-            encoded_results[key] = encoded
-
-        if preserve_durable_results:
-            for raw_key, durable_value in durable_results.items():
-                key = str(raw_key)
-                if key in encoded_results or should_skip_result(key, durable_value):
+        try:
+            for key, value in planning_results.items():
+                key = str(key)
+                if checkpoint_cancelled():
+                    raise _CheckpointSuperseded(
+                        "Checkpoint superseded while encoding planning results"
+                    )
+                if should_skip_result(key, value):
+                    skipped_transient_results.append(key)
                     continue
-                if durable_version_matches(key):
-                    # Top-level arrays disappear completely from a metadata
-                    # hydration pass. Preserve those missing unchanged keys as
-                    # well as nested arrays handled above.
-                    encoded_results[key] = durable_value
+                if (
+                    preserve_durable_results
+                    and key in durable_results
+                    and durable_version_matches(key)
+                ):
+                    # Reuse the entire encoded value, not only its top-level array.
+                    # Planning run snapshots contain deeply nested dose and skin
+                    # arrays whose metadata-only representation is a tree of None
+                    # placeholders during cold-start hydration.
+                    encoded_results[key] = durable_results[key]
+                    continue
+                encoded = encoder.encode(value, _safe_filename(key), str(key))
+                if isinstance(encoded, dict) and "$image" in encoded:
+                    continue
+                encoded_results[key] = encoded
+
+            if preserve_durable_results:
+                for raw_key, durable_value in durable_results.items():
+                    key = str(raw_key)
+                    if key in encoded_results or should_skip_result(key, durable_value):
+                        continue
+                    if durable_version_matches(key):
+                        # Top-level arrays disappear completely from a metadata
+                        # hydration pass. Preserve those missing unchanged keys as
+                        # well as nested arrays handled above.
+                        encoded_results[key] = durable_value
+        except Exception:
+            # Preparation happens before a commit payload exists.  Without this
+            # cleanup, cancellation or an I/O error leaks unreferenced sidecars
+            # until a later successful checkpoint happens to prune them.
+            discard_created_arrays()
+            raise
         logger.info(
             "workspace checkpoint artifacts encoded session=%s duration_ms=%.1f arrays_created=%d arrays_reused=%d transient_skipped=%s preserve_durable=%s",
             session_id,

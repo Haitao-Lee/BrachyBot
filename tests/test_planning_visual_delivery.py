@@ -143,7 +143,7 @@ def test_planning_result_contract_exposes_run_identity_and_artifact_state():
         '"planning_status": active_run.get("status")',
         '"artifact_status": artifact_status',
         "pending = dose_workspace_data_pending(agent)",
-        "durable_dvh = agent.memory.retrieve(\"dvh_data\")",
+        "dvh_data = dose_context.get(\"dvh\")",
     ):
         assert required in result_block
 
@@ -232,7 +232,10 @@ def test_iso_surface_refresh_keeps_data_tree_appearance_and_view_flags():
     assert "const priorLevels = new Map" in manual
     assert "existing.visible2D = existing.visible2D !== false" in manual
     assert "existing.visible3D = existing.visible3D !== false" in manual
-    assert "rebuiltLevels.push(existing)" in manual
+    assert "rebuiltLevels[i] = existing" in manual
+    assert "Array.from({ length: Math.min(maxConcurrent, relValues.length) }" in manual
+    assert "suppressTreeEntry: true" in manual
+    assert "deferRender: true" in manual
     assert "let loadedLevels = 0" in manual
     assert "const failedLevels = []" in manual
     assert "loaded: level.loaded === true" in viewer

@@ -154,6 +154,33 @@ def test_session_restore_uses_corner_non_blocking_hydration_and_fresh_snapshot()
     assert "initial case has no clinical resources; hydration skipped" in ui_api
 
 
+def test_legacy_clinical_snapshots_are_not_skipped_by_restore_gate():
+    """Baseline dose/manual plans remain loadable even without current aliases."""
+    workspace = read("web/app/static/js/brachybot-workspace.js")
+    for durable_key in (
+        "algorithm_plan_dose_distribution",
+        "algorithm_plan_dose_distribution_gy",
+        "dose_distribution_physical_gy",
+        "manual_seeds",
+        "manual_needles",
+        "skin_surface_mask",
+        "generic_mask_sources",
+    ):
+        assert f"'{durable_key}'" in workspace
+
+
+def test_workspace_loading_notice_tracks_real_background_viewer_completion():
+    """The corner notice must bridge CT readiness through final 3D rendering."""
+    ui_api = read("web/app/static/js/brachybot-ui-api.js")
+    planning = read("web/app/static/js/brachybot-dvh-planning.js")
+    assert "planningResult.value?.backgroundCompletion" in ui_api
+    assert "options.registerBackgroundTask(completion, { kind: 'viewer_3d' })" in ui_api
+    assert "Promise.allSettled(backgroundTasks).finally" in ui_api
+    assert "showLoading: !options.hydrationScope" in ui_api
+    assert "Object.defineProperty(refreshOutcome, 'backgroundCompletion'" in planning
+    assert "value: viewerCompletionPromise" in planning
+
+
 def test_session_restore_fits_all_viewers_with_authoritative_session_guard():
     """The final restore pass must reset MPR geometry without cross-case races."""
     layout = read("web/app/static/js/brachybot-viewer-layout.js")
@@ -321,13 +348,19 @@ def test_final_chat_commit_separates_transcript_from_heavy_checkpoint():
 def test_viewer_render_posts_do_not_schedule_workspace_checkpoints():
     """Slice/overlay refreshes are reads even though their transport is POST."""
     server = read("web/server.py")
-    assert "viewer_read_posts" in server
+    assert "WORKSPACE_READ_ONLY_POST_PATHS" in server
     for path in (
         "/api/viewer/slice",
         "/api/viewer/overlay",
+        "/api/viewer/threshold",
         "/api/viewer/3d",
         "/api/viewer/3d_mask",
         "/api/viewer/3d_skin",
+        "/api/planning/show_step",
+        "/api/planning/dose_isosurface",
+        "/api/planning/dose_overlay_slice",
+        "/api/planning/dose_contour_slice",
+        "/api/header/info",
     ):
         assert path in server
 

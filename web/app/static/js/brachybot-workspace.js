@@ -222,8 +222,14 @@
         return [
             'ct_data', 'ct_image', 'ctv_array', 'ctv_mask', 'oar_array',
             'dose_distribution', 'dose_distribution_gy', 'dose_metrics',
+            'dose_distribution_physical_gy',
+            'algorithm_plan_dose_distribution',
+            'algorithm_plan_dose_distribution_gy',
+            'algorithm_plan_dose_metrics', 'algorithm_plan_dvh_data',
             'trajectories', 'seed_plan', 'seed_plan_serialized',
-            'surgical_guide',
+            'manual_seeds', 'manual_needles', 'manual_plan_serialized',
+            'surgical_guide', 'skin_surface', 'skin_surface_mask',
+            'generic_mask_sources', 'uploaded_mask_sources',
         ].some(key => Object.prototype.hasOwnProperty.call(results, key))
             || Object.keys(results).some(key => key === 'planning_runs'
                 || key.startsWith('planning_run:'));

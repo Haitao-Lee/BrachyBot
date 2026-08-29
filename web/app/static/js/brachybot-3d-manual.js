@@ -4620,7 +4620,12 @@ function applyDoseCoverageAudit(level, audit) {
     return level;
 }
 
-async function loadDoseIsosurface(threshold = 1.0, color = 0x00ff88, requestScope = null) {
+async function loadDoseIsosurface(
+    threshold = 1.0,
+    color = 0x00ff88,
+    requestScope = null,
+    options = {},
+) {
     const scope = requestScope || _capturePlanningSceneScope();
     try {
         let res;
@@ -4710,6 +4715,9 @@ async function loadDoseIsosurface(threshold = 1.0, color = 0x00ff88, requestScop
             type: 'dose_isosurface',
             threshold: threshold,
             coverageAudit: data.coverage_audit || null,
+            doseStale: data.dose_stale === true,
+            doseSource: data.dose_source || 'current_planning',
+            doseSourcePlanningId: data.dose_source_planning_id || null,
             depthWriteWhenTransparent: false,
             renderRole: 'dose_surface',
         };
@@ -4747,10 +4755,13 @@ async function loadDoseIsosurface(threshold = 1.0, color = 0x00ff88, requestScop
         const absGy = isAlreadyGy ? threshold.toFixed(0) : (threshold * rxGy).toFixed(0);
         if (existingLevel) {
             existingLevel.loaded = true;
-            existingLevel.status = 'ready';
+            existingLevel.status = data.dose_stale === true ? 'stale' : 'ready';
+            existingLevel.doseStale = data.dose_stale === true;
+            existingLevel.doseSource = data.dose_source || 'current_planning';
+            existingLevel.doseSourcePlanningId = data.dose_source_planning_id || null;
             delete existingLevel.error;
             applyDoseCoverageAudit(existingLevel, data.coverage_audit);
-        } else if (!window._suppressSingleIsoEntry) {
+        } else if (options.suppressTreeEntry !== true && !window._suppressSingleIsoEntry) {
             const levelEntry = {
                 threshold: threshold,
                 thresholdGy: parseFloat(absGy),
@@ -4761,19 +4772,27 @@ async function loadDoseIsosurface(threshold = 1.0, color = 0x00ff88, requestScop
                 color: '#' + color.toString(16).padStart(6, '0'),
                 pctLabel: `${absGy} Gy`,
                 loaded: true,
-                status: 'ready',
+                status: data.dose_stale === true ? 'stale' : 'ready',
+                doseStale: data.dose_stale === true,
+                doseSource: data.dose_source || 'current_planning',
+                doseSourcePlanningId: data.dose_source_planning_id || null,
             };
             applyDoseCoverageAudit(levelEntry, data.coverage_audit);
             dataTreeState.planning.doseLevels.push(levelEntry);
         }
-        renderDataTree();
-        window.scheduleCameraFitForSceneMutation?.('dose-isosurface-loaded');
+        if (options.deferRender !== true) {
+            renderDataTree();
+            window.scheduleCameraFitForSceneMutation?.('dose-isosurface-loaded');
+        }
 
         return {
             vertices: data.vertex_count,
             faces: data.face_count,
             threshold,
             coverageAudit: data.coverage_audit || null,
+            doseStale: data.dose_stale === true,
+            doseSource: data.dose_source || 'current_planning',
+            doseSourcePlanningId: data.dose_source_planning_id || null,
         };
     } catch (e) {
         if (_planningSceneScopeIsCurrent(scope)) console.error('Dose isosurface failed:', e);
@@ -4909,8 +4928,11 @@ async function _loadAllIsoSurfaces(options = {}, scope = null) {
     let loadedLevels = 0;
     const failedLevels = [];
 
-    // Convert relative multipliers → Gy (e.g. 1.0×120=120, 1.5×120=180)
-    for (let i = 0; i < relValues.length; i++) {
+    // Convert relative multipliers → Gy (e.g. 1.0×120=120, 1.5×120=180).
+    // Surface extraction is independent per threshold. Run a small bounded
+    // worker pool so four CPU-heavy requests do not serialize, while avoiding
+    // an unbounded burst that would contend with CT/OAR restore work.
+    const loadIsoLevel = async (i) => {
         const v = parseFloat((relValues[i] * rxGy).toFixed(2));
         requestedThresholds.add(v);
         const absGy = v.toFixed(0);
@@ -4926,17 +4948,13 @@ async function _loadAllIsoSurfaces(options = {}, scope = null) {
             const existing = priorLevels.get(v);
             if (reconstruct3d) {
                 uiDebugLog(`[IsoSurf] Loading ${v} Gy (color=${hexStr}, opacity=${opacity})...`);
-                // loadDoseIsosurface would push its own data-tree entry;
-                // loadAllIsoSurfaces owns the doseLevels array and adds the
-                // richer entry below. Suppress the single-entry push here to
-                // avoid two identical rows per threshold in the Data Tree.
-                const _prevSuppress = window._suppressSingleIsoEntry;
-                window._suppressSingleIsoEntry = true;
-                try {
-                    isoResult = await loadDoseIsosurface(v, color, requestScope);
-                } finally {
-                    window._suppressSingleIsoEntry = _prevSuppress;
-                }
+                // This aggregate loader owns doseLevels. Per-call options are
+                // concurrency-safe; a shared global suppression flag can be
+                // restored by one request while another is still running.
+                isoResult = await loadDoseIsosurface(v, color, requestScope, {
+                    suppressTreeEntry: true,
+                    deferRender: true,
+                });
                 if (!_planningSceneScopeIsCurrent(requestScope)) return { stale: true };
                 const mesh = scene3D.meshes[`dose_iso_${v}`];
                 const levelAvailable = !!mesh
@@ -4994,7 +5012,17 @@ async function _loadAllIsoSurfaces(options = {}, scope = null) {
                     && !!scene3D?.meshes?.[`dose_iso_${v}`]
                     && isoResult?.retryable === true;
                 const effectiveLevelAvailable = levelAvailable || preserveExistingMesh;
-                const levelStatus = effectiveLevelAvailable ? 'ready'
+                const effectiveDoseStale = levelAvailable
+                    ? isoResult?.doseStale === true
+                    : preserveExistingMesh && existing?.doseStale === true;
+                const effectiveDoseSource = levelAvailable
+                    ? (isoResult?.doseSource || 'current_planning')
+                    : (existing?.doseSource || 'current_planning');
+                const effectiveSourcePlanningId = levelAvailable
+                    ? (isoResult?.doseSourcePlanningId || null)
+                    : (existing?.doseSourcePlanningId || null);
+                const levelStatus = effectiveLevelAvailable
+                    ? (effectiveDoseStale ? 'stale' : 'ready')
                     : (isoResult?.error ? 'error' : 'not_generated');
                 const levelError = effectiveLevelAvailable
                     ? undefined
@@ -5011,10 +5039,13 @@ async function _loadAllIsoSurfaces(options = {}, scope = null) {
                         pctLabel: `${absGy} Gy`,
                         loaded: effectiveLevelAvailable,
                         status: levelStatus,
+                        doseStale: effectiveDoseStale,
+                        doseSource: effectiveDoseSource,
+                        doseSourcePlanningId: effectiveSourcePlanningId,
                     };
                     if (levelError) levelEntry.error = levelError;
                     applyDoseCoverageAudit(levelEntry, isoResult?.coverageAudit);
-                    rebuiltLevels.push(levelEntry);
+                    rebuiltLevels[i] = levelEntry;
                 } else {
                     // Keep Data Tree-selected appearance and independent
                     // 2D/3D visibility when a dose refresh replaces mesh
@@ -5028,19 +5059,38 @@ async function _loadAllIsoSurfaces(options = {}, scope = null) {
                     existing.pctLabel = `${absGy} Gy`;
                     existing.loaded = effectiveLevelAvailable;
                     existing.status = levelStatus;
+                    existing.doseStale = effectiveDoseStale;
+                    existing.doseSource = effectiveDoseSource;
+                    existing.doseSourcePlanningId = effectiveSourcePlanningId;
                     if (levelError) existing.error = levelError;
                     else delete existing.error;
                     applyDoseCoverageAudit(existing, isoResult?.coverageAudit);
-                    rebuiltLevels.push(existing);
+                    rebuiltLevels[i] = existing;
                 }
             }
         } catch (e) {
             console.warn(`loadAllIsoSurfaces: level ${v}× failed:`, e);
         }
-    }
+    };
+    let nextLevelIndex = 0;
+    const requestedConcurrency = Number(options.maxConcurrent);
+    const maxConcurrent = Number.isFinite(requestedConcurrency)
+        ? Math.max(1, Math.min(4, Math.floor(requestedConcurrency)))
+        : 2;
+    const worker = async () => {
+        while (_planningSceneScopeIsCurrent(requestScope)) {
+            const index = nextLevelIndex;
+            nextLevelIndex += 1;
+            if (index >= relValues.length) return;
+            await loadIsoLevel(index);
+        }
+    };
+    await Promise.all(
+        Array.from({ length: Math.min(maxConcurrent, relValues.length) }, () => worker()),
+    );
     if (!_planningSceneScopeIsCurrent(requestScope)) return { stale: true };
     if (dataTreeState?.planning) {
-        dataTreeState.planning.doseLevels = rebuiltLevels;
+        dataTreeState.planning.doseLevels = rebuiltLevels.filter(Boolean);
         // Older client versions mirrored iso surfaces in planning.meshes.
         // Remove only obsolete dose rows from that legacy mirror; never
         // remove seeds, needles, guides, or other planning artifacts.
@@ -5067,6 +5117,7 @@ async function _loadAllIsoSurfaces(options = {}, scope = null) {
     }
     if (typeof window.applyDataTreeViewVisibility === 'function') window.applyDataTreeViewVisibility();
     try { renderDataTree(); } catch (_) {}
+    window.scheduleCameraFitForSceneMutation?.('dose-isosurfaces-loaded');
     return { stale: false, levels: relValues.length, loadedLevels, failedLevels };
 }
 
@@ -6349,6 +6400,11 @@ async function _loadDoseOverlayImpl(retryAttempt = 0) {
             doseMax: data.dose_max,
             doseUnits: data.dose_units || 'normalized_model_output',
             doseScaleGy: data.dose_scale_gy || _getDoseScaleGy(),
+            doseStale: data.dose_stale === true,
+            doseStatus: data.dose_status || (data.dose_stale === true ? 'stale' : 'ready'),
+            doseSource: data.dose_source || 'current_planning',
+            doseSourcePlanningId: data.dose_source_planning_id || null,
+            status: data.dose_stale === true ? 'stale' : 'ready',
             // Rebuilding the dose metadata must not reset a Data Tree hide.
             // The parent Planning/view gates are applied immediately below;
             // this is the node-local preference that survives a refresh.
@@ -6398,7 +6454,12 @@ async function _loadDoseOverlayImpl(retryAttempt = 0) {
         updateSlice('axial', state.slices.axial);
         updateSlice('coronal', state.slices.coronal);
         updateSlice('sagittal', state.slices.sagittal);
-        return { shape: data.dose_shape, range: [data.dose_min, data.dose_max] };
+        return {
+            shape: data.dose_shape,
+            range: [data.dose_min, data.dose_max],
+            doseStale: data.dose_stale === true,
+            doseSource: data.dose_source || 'current_planning',
+        };
     } catch (e) {
         console.error('Dose overlay failed:', e);
         return { error: e.message };
@@ -6466,6 +6527,8 @@ async function loadDoseOverlayVolume(ownerOverlay = state.doseOverlay) {
                 .split(',').map(value => Number(value));
             const responsePlanningId = String(res.headers.get('X-Planning-Id') || '');
             const responseDoseGeneration = Number(res.headers.get('X-Dose-Generation') || 0);
+            const responseDoseStale = String(res.headers.get('X-Dose-Stale') || '0') === '1';
+            const responseDoseSource = String(res.headers.get('X-Dose-Source') || 'current_planning');
             const volumeMin = Number(res.headers.get('X-Dose-Min'));
             const quantizationScale = Number(res.headers.get('X-Dose-Quantization-Scale'));
             if (encoding !== 'uint16-linear-le'
@@ -6482,7 +6545,9 @@ async function loadDoseOverlayVolume(ownerOverlay = state.doseOverlay) {
                 throw new Error('Dose volume shape changed during download');
             }
             if ((ownerPlanningId && responsePlanningId !== ownerPlanningId)
-                || (ownerDoseGeneration > 0 && responseDoseGeneration !== ownerDoseGeneration)) {
+                || (ownerDoseGeneration > 0 && responseDoseGeneration !== ownerDoseGeneration)
+                || responseDoseStale !== (ownerOverlay.doseStale === true)
+                || responseDoseSource !== String(ownerOverlay.doseSource || 'current_planning')) {
                 throw new Error('Dose volume generation changed during download');
             }
             const buffer = await res.arrayBuffer();

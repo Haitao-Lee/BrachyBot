@@ -235,6 +235,59 @@ def test_generic_biomedparse_mask_catalogue_and_volume_are_session_scoped(monkey
     assert np.count_nonzero(np.frombuffer(volume.data, dtype=np.uint8)) == 1
 
 
+def test_thin_oar_mesh_falls_back_when_presentation_cleanup_erases_mask(monkeypatch):
+    """A one-slice label must produce a mesh instead of a marching-cubes 500."""
+    from flask import Flask
+    from web.routes import viewer_routes
+
+    ct = np.zeros((1, 9, 9), dtype=np.int16)
+    oar = np.zeros_like(ct, dtype=np.uint16)
+    oar[0, 3:6, 3:6] = 501
+
+    class Memory:
+        session_id = "thin-oar"
+
+        def __init__(self):
+            self.values = {
+                "ct_data": ct,
+                "oar_array": oar,
+                "ct_spacing": (0.7, 0.7, 5.0),
+                "ct_origin": (0.0, 0.0, 0.0),
+                "ct_direction": (1, 0, 0, 0, 1, 0, 0, 0, 1),
+            }
+
+        def retrieve(self, key, default=None):
+            return self.values.get(key, default)
+
+    class Agent:
+        def __init__(self):
+            self.memory = Memory()
+            self._workspace_data_ready = True
+
+        def _get_label_array(self, key):
+            return self.memory.retrieve(key)
+
+    monkeypatch.setattr(viewer_routes, "require_api_key", lambda func: func)
+    monkeypatch.setattr(viewer_routes, "rate_limit", lambda func: func)
+    monkeypatch.setattr(viewer_routes, "_requires_label_faithful_mesh", lambda *_args: False)
+    app = Flask(__name__)
+    viewer_routes.register_viewer_routes(
+        app,
+        lambda **_kwargs: Agent(),
+        lambda *_args, **_kwargs: None,
+        lambda *_args, **_kwargs: {},
+    )
+
+    response = app.test_client().post(
+        "/api/viewer/3d_mask",
+        json={"source": "oar", "label_id": 501},
+    )
+    assert response.status_code == 200
+    assert response.json["success"] is True
+    assert response.json["vertex_count"] > 0
+    assert response.json["preprocessing_fallback"] is True
+
+
 def test_embedded_pancreas_labels_do_not_wrap_before_uint16_transport(monkeypatch):
     """The nnUNet artery/vein/pancreas remap must preserve IDs 201-203."""
     from flask import Flask

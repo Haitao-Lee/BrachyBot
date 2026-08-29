@@ -13,12 +13,16 @@ import pytest
 
 from web.workspace_store import (
     EAGER_ARRAY_LOAD_MAX_BYTES,
+    INLINE_ARRAY_MAX_BYTES,
     WorkspaceLeaseConflict,
     WorkspaceNotFound,
     WorkspaceQuotaExceeded,
     WorkspaceStore,
+    _ArtifactEncoder,
+    _array_references,
     _decode_artifacts,
     _repair_restored_manual_ctv,
+    _restore_hydration_metadata,
 )
 
 
@@ -146,7 +150,7 @@ def test_workspace_snapshot_round_trip_preserves_arrays_and_ui(tmp_path):
     agent = _Agent()
 
     saved = store.snapshot_agent(user["id"], case.id, agent, reason="test")
-    assert saved["agent"]["planning_results"]["ct_data"]["$array"].endswith(".npy")
+    assert "$ndarray_inline" in saved["agent"]["planning_results"]["ct_data"]
     store.save_snapshot_patch(user["id"], case.id, {
         "ui": {"state": {"viewer": {"slices": {"axial": 12}}, "data_tree": {"organs": [{"name": "aorta"}]}}},
         "report": {"form": {"version": 3, "case": {"tumorType": "pancreas"}}},
@@ -170,6 +174,90 @@ def test_workspace_snapshot_round_trip_preserves_arrays_and_ui(tmp_path):
     assert snapshot["ui"]["state"]["data_tree"]["organs"][0]["name"] == "aorta"
     assert snapshot["report"]["form"]["case"]["tumorType"] == "pancreas"
     assert snapshot["chat"]["messages"][0]["content"] == "ready"
+
+
+@pytest.mark.parametrize(
+    "array",
+    [
+        np.asarray(7, dtype=np.int16),
+        np.asarray([], dtype=np.float32),
+        np.arange(12, dtype=np.float32).reshape(2, 2, 3),
+    ],
+)
+def test_small_arrays_are_inline_exact_and_writable(tmp_path, array):
+    encoder = _ArtifactEncoder(tmp_path / "case")
+    encoded = encoder.encode(array, "small", "small")
+
+    assert "$ndarray_inline" in encoded
+    assert _restore_hydration_metadata(encoded) is None
+    restored = _decode_artifacts(encoded, tmp_path / "case")
+    assert restored.dtype == array.dtype
+    assert restored.shape == array.shape
+    assert np.array_equal(restored, array)
+    assert restored.flags.writeable is True
+    if restored.size:
+        restored.reshape(-1)[0] = restored.reshape(-1)[0]
+
+
+def test_large_arrays_remain_sidecars(tmp_path):
+    root = tmp_path / "case"
+    array = np.zeros(INLINE_ARRAY_MAX_BYTES + 1, dtype=np.uint8)
+    encoded = _ArtifactEncoder(root).encode(array, "large", "large")
+
+    assert encoded["$array"].endswith(".npy")
+    assert (root / encoded["$array"]).is_file()
+
+
+def test_checkpoint_migrates_legacy_tiny_sidecars_to_inline(tmp_path, monkeypatch):
+    store = WorkspaceStore(tmp_path / "runtime")
+    user = store.create_user("inline_migration_owner", "hash")
+    case = store.create_session(user["id"], "Inline migration")
+    agent = _Agent()
+
+    monkeypatch.setattr("web.workspace_store.INLINE_ARRAY_MAX_BYTES", -1)
+    legacy = store.snapshot_agent(user["id"], case.id, agent, reason="legacy")
+    legacy_refs = _array_references(legacy["agent"]["planning_results"])
+    assert legacy_refs
+
+    monkeypatch.setattr("web.workspace_store.INLINE_ARRAY_MAX_BYTES", INLINE_ARRAY_MAX_BYTES)
+    migrated = store.snapshot_agent(user["id"], case.id, agent, reason="inline")
+    assert not _array_references(migrated["agent"]["planning_results"])
+    assert "$ndarray_inline" in migrated["agent"]["planning_results"]["ct_data"]
+    assert all(
+        not (store.workspace_root(user["id"], case.id) / relative).exists()
+        for relative in legacy_refs
+    )
+
+
+def test_superseded_checkpoint_stops_encoding_and_cleans_sidecars(
+    tmp_path, monkeypatch,
+):
+    store = WorkspaceStore(tmp_path / "runtime")
+    user = store.create_user("cancelled_checkpoint_owner", "hash")
+    case = store.create_session(user["id"], "Cancelled checkpoint")
+    agent = _Agent()
+    key = (user["id"], case.id)
+    store._checkpoint_generations[key] = 1
+    monkeypatch.setattr("web.workspace_store.INLINE_ARRAY_MAX_BYTES", -1)
+
+    from web import workspace_store as workspace_module
+    real_atomic_npy = workspace_module._atomic_npy
+    writes = []
+
+    def superseding_write(path, value):
+        real_atomic_npy(path, value)
+        writes.append(Path(path))
+        store._checkpoint_generations[key] = 2
+
+    monkeypatch.setattr(workspace_module, "_atomic_npy", superseding_write)
+    result = store.snapshot_agent(
+        user["id"], case.id, agent,
+        reason="cancelled", checkpoint_generation=1,
+    )
+
+    assert result == {}
+    assert writes
+    assert not any(path.exists() for path in writes)
 
 
 def test_hydration_holds_checkpoint_lock_while_reading_array_sidecars(tmp_path):
@@ -206,8 +294,11 @@ def test_hydration_holds_checkpoint_lock_while_reading_array_sidecars(tmp_path):
     )
 
 
-def test_metadata_hydration_checkpoint_preserves_planning_sidecars(tmp_path):
+def test_metadata_hydration_checkpoint_preserves_planning_sidecars(tmp_path, monkeypatch):
     """A lightweight startup checkpoint must not prune durable plan arrays."""
+    # This test specifically exercises the historical sidecar preservation
+    # path; tiny-array inline persistence has its own migration tests above.
+    monkeypatch.setattr("web.workspace_store.INLINE_ARRAY_MAX_BYTES", -1)
     store = WorkspaceStore(tmp_path / "runtime")
     user = store.create_user("partial_hydration_owner", "hash")
     case = store.create_session(user["id"], "Partial hydration case")
@@ -1034,7 +1125,10 @@ def test_restart_closes_orphaned_planning_run_without_interrupting_completed_ses
     assert runs[0]["error"] == "Server restarted before this Planning completed"
 
 
-def test_checkpoint_reuses_unchanged_arrays_and_prunes_replaced_versions(tmp_path):
+def test_checkpoint_reuses_unchanged_arrays_and_prunes_replaced_versions(
+    tmp_path, monkeypatch,
+):
+    monkeypatch.setattr("web.workspace_store.INLINE_ARRAY_MAX_BYTES", -1)
     store = WorkspaceStore(tmp_path / "runtime")
     user = store.create_user("array_owner", "hash")
     case = store.create_session(user["id"], "Array case")
@@ -1060,8 +1154,11 @@ def test_checkpoint_reuses_unchanged_arrays_and_prunes_replaced_versions(tmp_pat
     assert float(restored.memory.retrieve("dose_distribution_gy").max()) == 2.0
 
 
-def test_checkpoint_reuses_nested_arrays_after_restart_and_logs_stages(tmp_path, caplog):
+def test_checkpoint_reuses_nested_arrays_after_restart_and_logs_stages(
+    tmp_path, caplog, monkeypatch,
+):
     """Restart checkpoints must not rewrite unchanged per-organ mask arrays."""
+    monkeypatch.setattr("web.workspace_store.INLINE_ARRAY_MAX_BYTES", -1)
     runtime = tmp_path / "runtime"
     store = WorkspaceStore(runtime)
     user = store.create_user("nested_owner", "hash")

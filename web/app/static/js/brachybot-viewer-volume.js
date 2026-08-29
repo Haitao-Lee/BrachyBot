@@ -2998,6 +2998,10 @@ function reconcileDataTreeVisualNodes() {
             opacity: typeof getDoseOverlayOpacity === 'function'
                 ? getDoseOverlayOpacity()
                 : Number(overlay.opacity ?? state.doseOpacity ?? 0.4),
+            status: overlay.status || (overlay.doseStale === true ? 'stale' : 'ready'),
+            doseStale: overlay.doseStale === true,
+            doseSource: overlay.doseSource || 'current_planning',
+            doseSourcePlanningId: overlay.doseSourcePlanningId || null,
             color: '#f59e0b', loaded: true,
         }, 'dose_contour_2d', 'planning')
         : null;
@@ -4283,7 +4287,10 @@ function renderDataTree() {
             const artifactRows = [
                 ['trajectories', 'Trajectories', run?.num_trajectories ? `${run.num_trajectories}` : 'not generated', artifactState('trajectories', run?.num_trajectories)],
                 ['seeds', 'Seeds', run?.total_seeds ? `${run.total_seeds}` : 'not generated', artifactState('seeds', run?.total_seeds)],
-                ['dose', 'Dose / iso-surfaces', run?.has_dose ? 'ready' : 'not generated', artifactState('dose', run?.has_dose)],
+                ['dose', 'Dose / iso-surfaces', run?.has_current_dose
+                    ? 'ready'
+                    : (run?.has_reference_dose ? 'reference' : 'not generated'),
+                    artifactState('dose', run?.has_dose || run?.has_reference_dose)],
                 ['dvh', 'DVH / metrics', run?.has_dvh || run?.has_metrics ? 'ready' : 'not generated', artifactState('dvh', run?.has_dvh || run?.has_metrics)],
                 ['guide', 'Surgical Guide', run?.has_guide ? 'ready' : 'not generated', artifactState('guide', run?.has_guide)],
                 ['skin', 'Guide skin surface', run?.has_skin ? 'ready' : 'not generated', artifactState('skin', run?.has_skin)],
@@ -4463,6 +4470,14 @@ function renderDataTree() {
     // Dose overlay toggle (2D overlay on CT slices)
     if (dataTreeState.planning.doseOverlay) {
         const ovVis = planningMasterVisible && isDataTreeNodeVisible2D(dataTreeState.planning.doseOverlay);
+        const overlayStatus = String(dataTreeState.planning.doseOverlay.status || 'ready');
+        const overlayStatusLabel = overlayStatus !== 'ready'
+            ? `<span class="item-status item-status-${escHtml(overlayStatus)}" title="${escHtml(
+                dataTreeState.planning.doseOverlay.doseStale
+                    ? _dtText('显示的是算法规划基线；当前几何尚未重新计算剂量', 'Algorithm-plan reference; dose has not been recomputed for the current geometry')
+                    : overlayStatus
+            )}">${escHtml(_dtStatusText(overlayStatus))}</span>`
+            : '';
         const ovOp = typeof getDoseOverlayOpacity === 'function'
             ? getDoseOverlayOpacity()
             : Number(state.doseOverlay?.opacity ?? dataTreeState.planning.doseOverlay.opacity ?? 0.4);
@@ -4470,7 +4485,7 @@ function renderDataTree() {
             <button class="eye-btn ${ovVis ? '' : 'hidden'}" onclick="event.stopPropagation();toggleDataVisibility('dose_overlay')" style="font-size:0.65rem;">${ovVis ? '&#128065;' : '&#128064;'}</button>
             <span style="color:#22d3ee;">◉</span>
             <span>${escHtml(dataTreeState.planning.doseOverlay.label || 'Dose Overlay (2D)')}</span>
-            <span style="margin-left:auto;font-size:0.6rem;color:var(--text-dim);">max: ${state.doseOverlay.doseMax?.toFixed(1) || '--'}</span>
+            <span style="margin-left:auto;font-size:0.6rem;color:var(--text-dim);">max: ${state.doseOverlay.doseMax?.toFixed(1) || '--'}</span>${overlayStatusLabel}
             <input type="range" class="opacity-slider" min="0" max="100" value="${Math.round(ovOp * 100)}" onclick="event.stopPropagation()" oninput="setDoseOverlayOpacity(this.value)" title="Opacity">
         </div>`;
     }

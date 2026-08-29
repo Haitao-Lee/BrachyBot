@@ -186,14 +186,15 @@ def _dose_coverage_audit(
     }
 
 
-def _saved_dose_scale_gy(agent) -> float:
+def _saved_dose_scale_gy(agent, dose_metrics: Optional[Mapping[str, Any]] = None) -> float:
     """Return the calibration owned by the current plan/session."""
     if agent is None:
         return DOSE_MODEL_SCALE_GY
     memory = getattr(agent, "memory", None)
     try:
         plan_config = memory.retrieve("plan_config") or {}
-        dose_metrics = memory.retrieve("dose_metrics") or {}
+        if dose_metrics is None:
+            dose_metrics = memory.retrieve("dose_metrics") or {}
         stored_scale = memory.retrieve("dose_scale_gy")
     except Exception:
         plan_config = {}
@@ -206,7 +207,149 @@ def _saved_dose_scale_gy(agent) -> float:
     )
 
 
-def _dose_data_generation(agent) -> int:
+def _active_planning_run_metadata(agent) -> Dict[str, Any]:
+    """Return the active compact Planning row without decoding new artifacts."""
+
+    memory = getattr(agent, "memory", None)
+    if memory is None:
+        return {}
+    planning_id = active_planning_id(memory)
+    return next(
+        (
+            dict(item)
+            for item in list_planning_runs(memory)
+            if str(item.get("planning_id") or "") == str(planning_id or "")
+        ),
+        {},
+    )
+
+
+def _dose_display_context(agent) -> Dict[str, Any]:
+    """Resolve the dose field that may be shown in the Viewer.
+
+    A geometry-only manual child correctly invalidates its clinical dose/DVH.
+    The immutable algorithm baseline is nevertheless useful as a visual
+    reference after a restart, provided every response labels it stale and no
+    clinical computation mistakes it for the current geometry's dose.
+    """
+
+    memory = getattr(agent, "memory", None)
+    if memory is None:
+        return {
+            "array": None,
+            "metrics": {},
+            "dvh": {},
+            "stale": False,
+            "source": "unavailable",
+            "source_planning_id": None,
+            "original_ct_space": False,
+        }
+
+    current_gy = memory.retrieve("dose_distribution_gy")
+    current_raw = memory.retrieve("dose_distribution")
+    current_physical_gy = memory.retrieve("dose_distribution_physical_gy")
+    current_metrics = memory.retrieve("dose_metrics") or {}
+    if not isinstance(current_metrics, Mapping):
+        current_metrics = {}
+    current_dvh = current_metrics.get("dvh_data")
+    if not isinstance(current_dvh, Mapping) or not current_dvh:
+        current_dvh = memory.retrieve("dvh_data") or {}
+    if not isinstance(current_dvh, Mapping):
+        current_dvh = {}
+
+    artifact_status = memory.retrieve("manual_artifact_status") or {}
+    dose_status = str(
+        artifact_status.get("dose") if isinstance(artifact_status, Mapping) else ""
+    ).strip().lower()
+    geometry_only = bool(memory.retrieve("manual_geometry_only"))
+    baseline_gy = memory.retrieve("algorithm_plan_dose_distribution_gy")
+    baseline_raw = memory.retrieve("algorithm_plan_dose_distribution")
+    baseline_allowed = geometry_only or dose_status in {"stale", "expired"}
+    current_array = current_gy if current_gy is not None else current_raw
+    current_original_ct_space = current_gy is not None
+    current_source = "current_planning"
+    # Manual dose recomputation persists both normalized and physical grids.
+    # Recover a legacy snapshot that retained only the physical-Gy alias by
+    # converting it back to the normalized display contract expected by all
+    # contour/isosurface endpoints. This fallback is display-only and never
+    # writes a repaired value into clinical memory.
+    if current_array is None and current_physical_gy is not None:
+        dose_scale_gy = _saved_dose_scale_gy(agent, current_metrics)
+        if dose_scale_gy > 0:
+            current_array = (
+                np.asarray(current_physical_gy, dtype=np.float32) / dose_scale_gy
+            )
+            current_original_ct_space = True
+            current_source = "current_physical_gy_recovered"
+
+    if baseline_allowed and (baseline_gy is not None or baseline_raw is not None):
+        baseline_metrics = memory.retrieve("algorithm_plan_dose_metrics") or {}
+        if not isinstance(baseline_metrics, Mapping):
+            baseline_metrics = {}
+        baseline_dvh = memory.retrieve("algorithm_plan_dvh_data") or {}
+        if not isinstance(baseline_dvh, Mapping) or not baseline_dvh:
+            baseline_dvh = baseline_metrics.get("dvh_data") or {}
+        if not isinstance(baseline_dvh, Mapping):
+            baseline_dvh = {}
+        active_run = _active_planning_run_metadata(agent)
+        return {
+            "array": baseline_gy if baseline_gy is not None else baseline_raw,
+            "metrics": dict(baseline_metrics),
+            "dvh": dict(baseline_dvh),
+            "stale": True,
+            "status": dose_status or "stale",
+            "source": "algorithm_plan_reference",
+            "source_planning_id": active_run.get("parent_planning_id"),
+            "original_ct_space": baseline_gy is not None,
+        }
+
+    if current_array is not None:
+        active_run = _active_planning_run_metadata(agent)
+        # Legacy snapshots occasionally retained a canonical dose alias after
+        # a geometry-only edit. Never advertise it as current: it belongs to
+        # the parent geometry even when no algorithm-prefixed copy survived.
+        return {
+            "array": current_array,
+            "metrics": dict(current_metrics),
+            "dvh": dict(current_dvh),
+            "stale": baseline_allowed,
+            "status": (dose_status or "stale") if baseline_allowed else "ready",
+            "source": (
+                "legacy_stale_current_reference"
+                if baseline_allowed else current_source
+            ),
+            "source_planning_id": (
+                active_run.get("parent_planning_id")
+                if baseline_allowed else active_planning_id(memory)
+            ),
+            "original_ct_space": current_original_ct_space,
+        }
+
+    return {
+        "array": None,
+        "metrics": dict(current_metrics),
+        "dvh": dict(current_dvh),
+        "stale": False,
+        "status": dose_status or "not_generated",
+        "source": "unavailable",
+        "source_planning_id": None,
+        "original_ct_space": False,
+    }
+
+
+def _dose_display_metadata(agent, context: Optional[Mapping[str, Any]] = None) -> Dict[str, Any]:
+    context = dict(context or _dose_display_context(agent))
+    return {
+        "dose_stale": bool(context.get("stale")),
+        "dose_status": str(context.get("status") or "ready"),
+        "dose_source": str(context.get("source") or "unavailable"),
+        "dose_source_planning_id": context.get("source_planning_id"),
+        "has_current_dose": bool(context.get("array") is not None and not context.get("stale")),
+        "has_display_dose": bool(context.get("array") is not None),
+    }
+
+
+def _dose_data_generation(agent, context: Optional[Mapping[str, Any]] = None) -> int:
     """Return the newest persisted dose generation for cache validation.
 
     Workspace memory versions are incremented whenever a value is stored.  A
@@ -224,6 +367,11 @@ def _dose_data_generation(agent) -> int:
         "dose_distribution",
         "dose_metrics",
         "dvh_data",
+        "algorithm_plan_dose_distribution_gy",
+        "algorithm_plan_dose_distribution",
+        "algorithm_plan_dose_metrics",
+        "algorithm_plan_dvh_data",
+        "manual_plan_version",
     ):
         try:
             generations.append(int(versions.get(key, 0) or 0))
@@ -232,17 +380,20 @@ def _dose_data_generation(agent) -> int:
     return max(generations, default=0)
 
 
-def _dose_overlay_volume_array(agent) -> np.ndarray:
+def _dose_overlay_volume_array(
+    agent,
+    context: Optional[Mapping[str, Any]] = None,
+) -> np.ndarray:
     """Return finite float32 dose on the original CT Z/Y/X grid."""
 
-    dose_np = agent.memory.retrieve("dose_distribution_gy")
-    if dose_np is not None:
-        result = np.asarray(dose_np, dtype=np.float32)
+    resolved = dict(context or _dose_display_context(agent))
+    dose_value = resolved.get("array")
+    if dose_value is None:
+        raise ValueError("No dose distribution available")
+    if bool(resolved.get("original_ct_space")):
+        result = np.asarray(dose_value, dtype=np.float32)
     else:
-        dose_array = agent.memory.retrieve("dose_distribution")
-        if dose_array is None:
-            raise ValueError("No dose distribution available")
-        result = np.asarray(dose_array, dtype=np.float32)
+        result = np.asarray(dose_value, dtype=np.float32)
         resampled_ct = agent.memory.retrieve("resampled_ct")
         ct_image = agent.memory.retrieve("ct_image")
         if resampled_ct is not None and ct_image is not None:
@@ -258,6 +409,12 @@ def _dose_overlay_volume_array(agent) -> np.ndarray:
                 0.0,
                 sitk.sitkFloat32,
             ))
+        else:
+            ct_data = agent.memory.retrieve("ct_data")
+            if ct_data is None or tuple(result.shape) != tuple(np.asarray(ct_data).shape):
+                raise ValueError(
+                    "Dose grid is not on the original CT geometry and its resampling metadata is unavailable"
+                )
     if result.ndim != 3 or result.size == 0:
         raise ValueError(f"Dose overlay must be a non-empty 3D volume; received {result.shape}.")
     if not np.all(np.isfinite(result)):
@@ -967,6 +1124,25 @@ def register_planning_routes(
         if memory.retrieve("dose_distribution_gy") is not None:
             return None
         if memory.retrieve("dose_distribution_physical_gy") is not None:
+            return None
+        # A geometry-only child intentionally clears its current clinical
+        # dose, but the immutable algorithm baseline may still be restored for
+        # explicitly stale/reference Viewer display.  Let the dose endpoints
+        # serve it as soon as that sidecar is decoded; they attach provenance
+        # and never publish it back into the current clinical aliases.
+        artifact_status = memory.retrieve("manual_artifact_status") or {}
+        baseline_allowed = bool(memory.retrieve("manual_geometry_only")) or str(
+            artifact_status.get("dose")
+            if isinstance(artifact_status, Mapping) else ""
+        ).lower() in {"stale", "expired"}
+        if baseline_allowed and memory.retrieve("algorithm_plan_dose_distribution_gy") is not None:
+            return None
+        if (
+            baseline_allowed
+            and memory.retrieve("algorithm_plan_dose_distribution") is not None
+            and memory.retrieve("resampled_ct") is not None
+            and memory.retrieve("ct_image") is not None
+        ):
             return None
         if (
             memory.retrieve("dose_distribution") is not None
@@ -1848,15 +2024,15 @@ def register_planning_routes(
             # Get data from memory.  A legacy or partially migrated snapshot
             # can contain a non-dict metric artifact; this read-only endpoint
             # must still return its independently durable dose/DVH sidecars.
-            dose_metrics = agent.memory.retrieve("dose_metrics") or {}
+            dose_context = _dose_display_context(agent)
+            dose_metadata = _dose_display_metadata(agent, dose_context)
+            dose_metrics = dose_context.get("metrics") or {}
             if not isinstance(dose_metrics, dict):
-                dose_metrics = {}
+                dose_metrics = dict(dose_metrics) if isinstance(dose_metrics, Mapping) else {}
             total_seeds = agent.memory.retrieve("total_seeds") or 0
             num_trajectories = agent.memory.retrieve("num_trajectories") or 0
             seed_plan = agent.memory.retrieve("seed_plan")
             seed_plan_serialized = agent.memory.retrieve("seed_plan_serialized") or []
-            dose_distribution = agent.memory.retrieve("dose_distribution")
-            dose_distribution_gy = agent.memory.retrieve("dose_distribution_gy")
             trajectories = agent.memory.retrieve("trajectories") or agent.memory.retrieve("refined_trajectories")
 
             # Build seeds list with trajectory linkage for the data tree.
@@ -1985,16 +2161,15 @@ def register_planning_routes(
             # historical nested metrics object is available. Prefer the
             # nested value when present, otherwise return that authoritative
             # sidecar instead of telling the client to purge a valid chart.
-            dvh_data = dose_metrics.get("dvh_data")
-            if not isinstance(dvh_data, dict) or not dvh_data:
-                durable_dvh = agent.memory.retrieve("dvh_data")
-                dvh_data = durable_dvh if isinstance(durable_dvh, dict) else {}
+            dvh_data = dose_context.get("dvh") or dose_metrics.get("dvh_data") or {}
+            if not isinstance(dvh_data, dict):
+                dvh_data = dict(dvh_data) if isinstance(dvh_data, Mapping) else {}
 
             # Dose shape/range
             dose_shape = None
             dose_min = None
             dose_max = None
-            dose_for_stats = dose_distribution_gy if dose_distribution_gy is not None else dose_distribution
+            dose_for_stats = dose_context.get("array")
             if dose_for_stats is not None:
                 try:
                     dnp = np.asarray(dose_for_stats)
@@ -2012,13 +2187,7 @@ def register_planning_routes(
                 dose_metrics["tumor_type"] = tumor_type
 
             current_planning_id = active_planning_id(agent.memory)
-            active_run = next(
-                (
-                    item for item in list_planning_runs(agent.memory)
-                    if str(item.get("planning_id") or "") == str(current_planning_id or "")
-                ),
-                {},
-            )
+            active_run = _active_planning_run_metadata(agent)
             artifact_status = agent.memory.retrieve("manual_artifact_status") or {}
             guide_payload = agent.memory.retrieve("surgical_guide")
             skin_payload = agent.memory.retrieve("skin_surface")
@@ -2048,7 +2217,8 @@ def register_planning_routes(
                 "dose_min": dose_min,
                 "dose_max": dose_max,
                 "dose_units": DOSE_MODEL_UNITS,
-                "dose_scale_gy": _saved_dose_scale_gy(agent),
+                "dose_scale_gy": _saved_dose_scale_gy(agent, dose_metrics),
+                **dose_metadata,
             })
         except Exception as e:
             logger.error(f"Get planning results failed: {e}")
@@ -2886,12 +3056,12 @@ def register_planning_routes(
             import numpy as np
             from skimage import measure
 
-            # Prefer the resampled original-CT dose field. The legacy key name
-            # includes "_gy", but values remain normalized model output.
-            dose_array = agent.memory.retrieve("dose_distribution_gy")
-            dose_in_original_ct_space = dose_array is not None
-            if dose_array is None:
-                dose_array = agent.memory.retrieve("dose_distribution")
+            # Resolve either the current dose or the immutable algorithm
+            # baseline used strictly as a stale/reference Viewer layer.
+            dose_context = _dose_display_context(agent)
+            dose_metadata = _dose_display_metadata(agent, dose_context)
+            dose_array = dose_context.get("array")
+            dose_in_original_ct_space = bool(dose_context.get("original_ct_space"))
             if dose_array is None:
                 return jsonify({"error": "No dose distribution available"}), 400
 
@@ -2922,10 +3092,23 @@ def register_planning_routes(
                     direction = resampled_ct.GetDirection()
                     logger.info(f"[dose_isosurface] Using resampled_ct (planning grid) spacing={spacing}")
                 else:
+                    # Persisted planning-grid dose cannot be placed in patient
+                    # space without its own image geometry.  Guessing CT
+                    # spacing/origin makes a plausible-looking but displaced
+                    # surface, which is worse than a diagnostic response.
+                    ct_data = agent.memory.retrieve("ct_data")
+                    if ct_data is None or tuple(np.asarray(dose_array).shape) != tuple(np.asarray(ct_data).shape):
+                        return jsonify({
+                            "success": False,
+                            "code": "dose_geometry_unavailable",
+                            "error": "Dose grid geometry is unavailable; recompute dose for the active Planning.",
+                            **dose_metadata,
+                        }), 409
                     spacing = agent.memory.retrieve("ct_spacing") or (0.68, 0.68, 5.0)
                     origin = agent.memory.retrieve("ct_origin") or (0.0, 0.0, 0.0)
                     direction = agent.memory.retrieve("ct_direction") or (1, 0, 0, 0, 1, 0, 0, 0, 1)
-                    logger.info(f"[dose_isosurface] Using fallback spacing={spacing}")
+                    dose_in_original_ct_space = True
+                    logger.info("[dose_isosurface] Raw dose shape matches CT; using CT geometry")
 
             target_mask = (
                 agent.memory.retrieve("ctv_array")
@@ -2943,7 +3126,7 @@ def register_planning_routes(
                         f"dose_shape={dose_np.shape}, spacing={spacing}, origin={origin}")
 
             level = float(threshold)
-            dose_metrics = agent.memory.retrieve("dose_metrics") or {}
+            dose_metrics = dose_context.get("metrics") or {}
             plan_config = agent.memory.retrieve("plan_config") or {}
             dose_scale_gy = resolve_dose_scale_gy(
                 plan_config,
@@ -2986,8 +3169,9 @@ def register_planning_routes(
                                 "face_count": 0, "threshold": threshold, "dose_range": [data_min, data_max],
                                 "dose_units": DOSE_MODEL_UNITS, "dose_scale_gy": dose_scale_gy,
                                 "planning_id": active_planning_id(agent.memory),
-                                "dose_generation": _dose_data_generation(agent),
-                                "coverage_audit": coverage_audit})
+                                "dose_generation": _dose_data_generation(agent, dose_context),
+                                "coverage_audit": coverage_audit,
+                                **dose_metadata})
 
             # Use resampled_ct spacing (z,y,x -> x,y,z for marching cubes).
             # Pad only the extraction field so an isosurface that touches the
@@ -3029,9 +3213,10 @@ def register_planning_routes(
                 "dose_units": DOSE_MODEL_UNITS,
                 "dose_scale_gy": dose_scale_gy,
                 "planning_id": active_planning_id(agent.memory),
-                "dose_generation": _dose_data_generation(agent),
+                "dose_generation": _dose_data_generation(agent, dose_context),
                 "coverage_audit": coverage_audit,
                 "surface_boundary_padding_voxels": int(_DOSE_SURFACE_BOUNDARY_PADDING_VOXELS),
+                **dose_metadata,
             })
         except Exception as e:
             logger.error(f"Dose isosurface failed: {e}")
@@ -3054,7 +3239,9 @@ def register_planning_routes(
             return pending
 
         try:
-            dose_np = _dose_overlay_volume_array(agent)
+            dose_context = _dose_display_context(agent)
+            dose_metadata = _dose_display_metadata(agent, dose_context)
+            dose_np = _dose_overlay_volume_array(agent, dose_context)
             logger.info("[dose_overlay] Original-grid dose shape=%s", dose_np.shape)
 
             # Get CT metadata
@@ -3081,14 +3268,15 @@ def register_planning_routes(
                 "ct_origin": ct_origin,
                 "ct_size": ct_size,
                 "dose_units": DOSE_MODEL_UNITS,
-                "dose_scale_gy": _saved_dose_scale_gy(agent),
+                "dose_scale_gy": _saved_dose_scale_gy(agent, dose_context.get("metrics")),
                 "planning_id": active_planning_id(agent.memory),
-                "dose_generation": _dose_data_generation(agent),
+                "dose_generation": _dose_data_generation(agent, dose_context),
                 "peak_voxel": {
                     "x": int(peak_x),
                     "y": int(peak_y),
                     "z": int(peak_z),
                 },
+                **dose_metadata,
             })
         except Exception as e:
             logger.error(f"Dose overlay data failed: {e}")
@@ -3108,7 +3296,9 @@ def register_planning_routes(
             return pending
 
         planning_id = str(active_planning_id(agent.memory) or "")
-        generation = _dose_data_generation(agent)
+        dose_context = _dose_display_context(agent)
+        dose_metadata = _dose_display_metadata(agent, dose_context)
+        generation = _dose_data_generation(agent, dose_context)
         expected_planning_id = str(request.args.get("planning_id") or "")
         if expected_planning_id and expected_planning_id != planning_id:
             return jsonify({
@@ -3134,7 +3324,7 @@ def register_planning_routes(
                 }), 409
 
         try:
-            dose_np = _dose_overlay_volume_array(agent)
+            dose_np = _dose_overlay_volume_array(agent, dose_context)
             quantized, data_min, quantization_scale = _quantize_dose_overlay_volume(dose_np)
             response = Response(
                 quantized.tobytes(order="C"),
@@ -3147,6 +3337,11 @@ def register_planning_routes(
             response.headers["X-Dose-Quantization-Scale"] = repr(quantization_scale)
             response.headers["X-Planning-Id"] = planning_id
             response.headers["X-Dose-Generation"] = str(generation)
+            response.headers["X-Dose-Stale"] = "1" if dose_metadata["dose_stale"] else "0"
+            response.headers["X-Dose-Source"] = dose_metadata["dose_source"]
+            response.headers["X-Dose-Source-Planning-Id"] = str(
+                dose_metadata.get("dose_source_planning_id") or ""
+            )
             return response
         except Exception as exc:
             logger.error("Dose overlay volume failed: %s", exc)
@@ -3172,7 +3367,9 @@ def register_planning_routes(
         slice_index = data.get("slice_index", 0)
 
         try:
-            dose_np = _dose_overlay_volume_array(agent)
+            dose_context = _dose_display_context(agent)
+            dose_metadata = _dose_display_metadata(agent, dose_context)
+            dose_np = _dose_overlay_volume_array(agent, dose_context)
 
             # Extract 2D slice (dose_np is in z,y,x order).
             # The 2D CT renderer (brachybot-viewer-volume.js) draws the
@@ -3201,9 +3398,10 @@ def register_planning_routes(
                 "dose_min": float(dose_np.min()),
                 "dose_max": float(dose_np.max()),
                 "dose_units": DOSE_MODEL_UNITS,
-                "dose_scale_gy": _saved_dose_scale_gy(agent),
+                "dose_scale_gy": _saved_dose_scale_gy(agent, dose_context.get("metrics")),
                 "planning_id": active_planning_id(agent.memory),
-                "dose_generation": _dose_data_generation(agent),
+                "dose_generation": _dose_data_generation(agent, dose_context),
+                **dose_metadata,
             })
         except Exception as e:
             logger.error(f"Dose overlay slice failed: {e}")
@@ -3233,15 +3431,9 @@ def register_planning_routes(
             import numpy as np
             from skimage import measure as ski_measure
 
-            # Get dose distribution
-            dose_np = agent.memory.retrieve("dose_distribution_gy")
-            if dose_np is not None:
-                dose_np = np.array(dose_np, dtype=np.float32)
-            else:
-                dose_dist = agent.memory.retrieve("dose_distribution")
-                if dose_dist is None:
-                    return jsonify({"error": "No dose distribution available"}), 400
-                dose_np = np.array(dose_dist, dtype=np.float32)
+            dose_context = _dose_display_context(agent)
+            dose_metadata = _dose_display_metadata(agent, dose_context)
+            dose_np = _dose_overlay_volume_array(agent, dose_context)
 
             # Get iso-dose values from config
             config = getattr(agent, 'config', {})
@@ -3266,7 +3458,7 @@ def register_planning_routes(
             # DoseUNet calibration, then build Rx-relative isodose levels.
             dose_metrics = {}
             try:
-                dose_metrics = agent.memory.retrieve("dose_metrics") or {}
+                dose_metrics = dose_context.get("metrics") or {}
             except Exception:
                 pass
             plan_config = agent.memory.retrieve("plan_config") or config
@@ -3331,8 +3523,9 @@ def register_planning_routes(
                     "dose_units": DOSE_MODEL_UNITS,
                     "dose_scale_gy": dose_scale_gy,
                     "planning_id": active_planning_id(agent.memory),
-                    "dose_generation": _dose_data_generation(agent),
+                    "dose_generation": _dose_data_generation(agent, dose_context),
                     "slice_shape": [int(slice_2d.shape[0]), int(slice_2d.shape[1])],
+                    **dose_metadata,
                 })
 
             # Generate contour lines using marching squares
@@ -3373,7 +3566,8 @@ def register_planning_routes(
                 "dose_units": DOSE_MODEL_UNITS,
                 "dose_scale_gy": dose_scale_gy,
                 "planning_id": active_planning_id(agent.memory),
-                "dose_generation": _dose_data_generation(agent),
+                "dose_generation": _dose_data_generation(agent, dose_context),
+                **dose_metadata,
             })
         except Exception as e:
             logger.error(f"Dose contour slice failed: {e}")

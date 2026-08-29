@@ -204,6 +204,13 @@ def _clear_active_plan(memory: Any) -> None:
 
 def _run_summary(run: Mapping[str, Any]) -> Dict[str, Any]:
     """Return only compact metadata suitable for Data Tree and API lists."""
+    legacy_has_dose = bool(run.get("has_dose"))
+    has_current_dose = bool(
+        run.get("has_current_dose")
+        if "has_current_dose" in run
+        else legacy_has_dose
+    )
+    has_reference_dose = bool(run.get("has_reference_dose"))
     return {
         "planning_id": str(run.get("planning_id") or ""),
         "sequence": int(run.get("sequence") or 0),
@@ -217,7 +224,14 @@ def _run_summary(run: Mapping[str, Any]) -> Dict[str, Any]:
         "data_version": int(run.get("data_version") or 0),
         "total_seeds": int(run.get("total_seeds") or 0),
         "num_trajectories": int(run.get("num_trajectories") or 0),
-        "has_dose": bool(run.get("has_dose")),
+        "has_dose": legacy_has_dose,
+        "has_current_dose": has_current_dose,
+        "has_reference_dose": has_reference_dose,
+        "has_display_dose": bool(
+            run.get("has_display_dose")
+            or legacy_has_dose
+            or has_reference_dose
+        ),
         "has_dvh": bool(run.get("has_dvh")),
         "has_metrics": bool(run.get("has_metrics")),
         "has_guide": bool(run.get("has_guide")),
@@ -533,13 +547,25 @@ def publish_planning_run(agent: Any, result: Any = None, *, status: str = "compl
     _memory_put(memory, PLANNING_RUN_PREFIX + planning_id, snapshot)
     metrics = memory.retrieve("dose_metrics") or {}
     guide = memory.retrieve("surgical_guide")
+    has_current_dose = (
+        memory.retrieve("dose_distribution_gy") is not None
+        or memory.retrieve("dose_distribution") is not None
+        or memory.retrieve("dose_distribution_physical_gy") is not None
+    )
+    has_reference_dose = (
+        memory.retrieve("algorithm_plan_dose_distribution_gy") is not None
+        or memory.retrieve("algorithm_plan_dose_distribution") is not None
+    )
     _update_run(
         memory,
         planning_id,
         status=status,
         total_seeds=int(memory.retrieve("total_seeds") or len(memory.retrieve("manual_seeds") or [])),
         num_trajectories=int(memory.retrieve("num_trajectories") or len(memory.retrieve("trajectories") or [])),
-        has_dose=memory.retrieve("dose_distribution_gy") is not None or memory.retrieve("dose_distribution") is not None,
+        has_dose=has_current_dose or has_reference_dose,
+        has_current_dose=has_current_dose,
+        has_reference_dose=has_reference_dose,
+        has_display_dose=has_current_dose or has_reference_dose,
         has_dvh=memory.retrieve("dvh_data") is not None or memory.retrieve("algorithm_plan_dvh_data") is not None,
         has_metrics=isinstance(metrics, Mapping) and bool(metrics),
         has_guide=isinstance(guide, Mapping),
@@ -729,17 +755,26 @@ def _planning_snapshot_flags(snapshot: Mapping[str, Any]) -> Dict[str, Any]:
             "manual_needles",
         )
     )
-    has_dose = any(
+    has_current_dose = any(
         _planning_value_present(snapshot.get(key))
         for key in (
             "dose_distribution",
             "dose_distribution_gy",
             "dose_distribution_physical_gy",
-            "algorithm_plan_dose_distribution",
-            "algorithm_plan_dose_distribution_gy",
-            "manual_ai_dose",
         )
     )
+    has_reference_dose = any(
+        _planning_value_present(snapshot.get(key))
+        for key in (
+            "algorithm_plan_dose_distribution",
+            "algorithm_plan_dose_distribution_gy",
+        )
+    )
+    # ``has_dose`` remains the compatibility/display flag used by the Data
+    # Tree.  Callers that make clinical decisions must use
+    # ``has_current_dose``; a retained algorithm baseline can only be shown as
+    # a stale reference after manual geometry changes.
+    has_dose = has_current_dose or has_reference_dose
     has_metrics = any(
         _planning_value_present(snapshot.get(key))
         for key in ("dose_metrics", "algorithm_plan_dose_metrics", "metrics")
@@ -808,6 +843,9 @@ def _planning_snapshot_flags(snapshot: Mapping[str, Any]) -> Dict[str, Any]:
     return {
         "geometry": geometry,
         "has_dose": has_dose,
+        "has_current_dose": has_current_dose,
+        "has_reference_dose": has_reference_dose,
+        "has_display_dose": has_dose,
         "has_dvh": has_dvh,
         "has_metrics": has_metrics,
         "has_guide": has_guide,
@@ -914,9 +952,12 @@ def reconcile_planning_history(
         for key in ("total_seeds", "num_trajectories"):
             if flags[key] and int(run.get(key) or 0) != int(flags[key]):
                 updates[key] = int(flags[key])
-        for key in ("has_dose", "has_dvh", "has_metrics", "has_guide", "has_skin"):
-            if flags[key] and not bool(run.get(key)):
-                updates[key] = True
+        for key in (
+            "has_dose", "has_current_dose", "has_reference_dose",
+            "has_display_dose", "has_dvh", "has_metrics", "has_guide", "has_skin",
+        ):
+            if bool(run.get(key)) != bool(flags[key]):
+                updates[key] = bool(flags[key])
         if flags["artifact_status"] and run.get("artifact_status") != flags["artifact_status"]:
             updates["artifact_status"] = flags["artifact_status"]
         if flags["metrics_summary"] and run.get("metrics_summary") != flags["metrics_summary"]:
