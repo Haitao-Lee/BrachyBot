@@ -288,14 +288,21 @@ def test_3d_loading_has_reference_counted_ownership_and_soft_watchdog():
 
 
 def test_3d_progress_overlay_never_blocks_interaction_or_cancels_hydration():
-    """Progress remains visible while OrbitControls and mesh promises run."""
+    """The legacy in-canvas marker is hidden while mesh loading stays active."""
     html = read("web/app/index.html")
     css = read("web/app/static/css/brachybot-report-controls.css")
     layout = read("web/app/static/js/brachybot-viewer-layout.js")
     manual = read("web/app/static/js/brachybot-3d-manual.js")
 
     assert 'id="loading3D" role="status" aria-live="polite" aria-atomic="true"' in html
+    assert 'id="loading3D" role="status" aria-live="polite" aria-atomic="true" hidden' in html
     assert 'data-interaction-mode="passthrough"' in html
+
+    hidden_rule = css.split("#loading3D", 1)[1]
+    assert "display: none !important" in hidden_rule
+    assert "visibility: hidden !important" in hidden_rule
+    assert "pointer-events: none !important" in hidden_rule
+    assert 'id="workspaceHydrationNotice"' in read("web/app/index.html")
 
     base_rule = css.split(".loading-overlay {", 1)[1].split("}", 1)[0]
     active_rule = css.split(".loading-overlay.active {", 1)[1].split("}", 1)[0]

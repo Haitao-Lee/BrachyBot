@@ -535,13 +535,24 @@ def is_current_planning_provenance_query(message: str) -> bool:
         "planning", "plan", "treatment plan", "dose plan", "planning result",
         "\u89c4\u5212", "\u8ba1\u5212", "\u65b9\u6848",
     ))
-    has_provenance_marker = _contains_any(text, (
-        "based on", "derived from", "according to", "source", "origin",
-        "which", "what plan", "what planning", "used", "use", "active",
-        "current", "\u4f9d\u636e", "\u57fa\u4e8e", "\u6839\u636e", "\u6765\u6e90", "\u6765\u81ea", "\u54ea\u6b21", "\u54ea\u4e2a",
-        "\u54ea\u4e00\u4e2a", "\u5bf9\u5e94", "\u672c\u6b21", "\u8fd9\u6b21", "\u5f53\u524d",
+    # ``current``/``active`` alone are not provenance questions. They are
+    # common in ordinary requests such as "what is wrong with the current
+    # plan?". The old broad marker list treated those words as proof of
+    # provenance and routed unrelated questions to the fixed
+    # ``Planning used for this Dose/DVH calculation`` paragraph. Require an
+    # explicit source/basis relation (or a which-plan form) instead.
+    has_provenance_relation = bool(re.search(
+        r"(?:based\s+on|derived\s+from|according\s+to|source|origin|"
+        r"which\s+(?:plan|planning|planning\s+result)|what\s+(?:plan|planning)|"
+        r"(?:plan|planning|result).{0,24}\bused\b|\bused\s+(?:for|to)\b)|"
+        r"(?:\u4f9d\u636e|\u57fa\u4e8e|\u6839\u636e|\u6765\u6e90|\u6765\u81ea|\u54ea\u6b21|\u54ea\u4e2a|\u54ea\u4e00\u4e2a).{0,24}"
+        r"(?:\u89c4\u5212|\u8ba1\u5212|\u65b9\u6848|\u8ba1\u7b97|\u5242\u91cf|\u7ed3\u679c)|"
+        r"(?:\u89c4\u5212|\u8ba1\u5212|\u65b9\u6848|\u8ba1\u7b97|\u5242\u91cf|\u7ed3\u679c).{0,24}"
+        r"(?:\u4f9d\u636e|\u57fa\u4e8e|\u6839\u636e|\u6765\u6e90|\u6765\u81ea|\u54ea\u6b21|\u54ea\u4e2a|\u54ea\u4e00\u4e2a)",
+        text,
+        flags=re.IGNORECASE,
     ))
-    if not (has_planning_object and has_provenance_marker):
+    if not (has_planning_object and has_provenance_relation):
         return False
 
     # A sentence that explicitly asks the system to execute a new operation
@@ -557,6 +568,65 @@ def is_current_planning_provenance_query(message: str) -> bool:
     ):
         return False
     return True
+
+
+def is_current_planning_assessment_query(message: str) -> bool:
+    """Identify a read-only question asking for problems with this plan.
+
+    This is intentionally separate from provenance. A question about the
+    current plan's quality, risks, anomalies, or items needing review should
+    read the active Session facts and let the LLM explain them; it must not be
+    answered with the unrelated "which Planning was used" template.
+    """
+    text = re.sub(r"\s+", " ", str(message or "").strip().lower())
+    if not text or not _is_interrogative(text):
+        return False
+    if is_planning_reexecution_request(text) or _has_explicit_planning_action(text):
+        return False
+
+    has_planning_object = _contains_any(text, (
+        "planning", "plan", "treatment plan", "dose plan", "planning result",
+        "\u89c4\u5212", "\u8ba1\u5212", "\u65b9\u6848",
+    ))
+    has_assessment_marker = bool(re.search(
+        r"(?:problem|problems|issue|issues|concern|concerns|wrong|abnormal|"
+        r"risk|quality|status|assessment|assess|review|check|acceptable|"
+        r"any\s+(?:issue|problem)|what.{0,12}(?:wrong|problem)|"
+        r"\u95ee\u9898|\u6bdb\u75c5|\u5f02\u5e38|\u98ce\u9669|\u9690\u60a3|\u7f3a\u9679|\u4e0d\u8db3|\u8d28\u91cf|\u72b6\u6001|\u8bc4\u4f30|\u8bc4\u4ef7|\u68c0\u67e5|"
+        r"\u590d\u6838|\u5173\u6ce8|\u9700\u8981\u6ce8\u610f|\u662f\u5426\u5408\u7406|\u662f\u5426\u6b63\u5e38|\u600e\u4e48\u6837)",
+        text,
+        flags=re.IGNORECASE,
+    ))
+    if not (has_planning_object and has_assessment_marker):
+        return False
+
+    # Standards questions need evidence retrieval. The local assessment route
+    # can report observed facts, but must not imply a site-specific guideline
+    # pass/fail decision without a sourced constraint.
+    if _contains_any(text, (
+        "guideline", "standard", "constraint", "limit", "tolerance",
+        "recommendation", "\u6307\u5357", "\u6807\u51c6", "\u9650\u503c", "\u8010\u53d7", "\u89c4\u8303",
+    )):
+        return False
+    return True
+
+
+def is_current_oar_count_query(message: str) -> bool:
+    """Identify a question about the OAR structures loaded in this case."""
+    text = re.sub(r"\s+", " ", str(message or "").strip().lower())
+    if not text or not _is_interrogative(text):
+        return False
+    if _contains_any(text, (
+        "guideline", "standard", "constraint", "limit", "recommended",
+        "clinical", "指南", "标准", "限值", "推荐", "临床",
+    )):
+        return False
+    return bool(
+        re.search(r"(?:how many|number of|count of)\s+(?:the\s+)?(?:oars?|organs?)", text)
+        or re.search(r"(?:oars?|organs?).*(?:how many|how much|number|count)", text)
+        or re.search(r"(?:多少|几种|数量|数一下).*(?:oar|危及器官|器官)", text)
+        or re.search(r"(?:oar|危及器官|器官).*(?:多少|几种|数量)", text)
+    )
 
 
 def _is_current_image_metadata_query(message: str) -> bool:
@@ -909,6 +979,20 @@ def classify_local_turn(message: str, pending_tumor_site: bool = False) -> Local
             frozenset(),
         )
 
+    # A question about problems, risks, or review items in the active plan is
+    # a different read boundary from provenance.  Keep it out of the fixed
+    # "which Planning was used" response, while still avoiding a mutating
+    # planning pipeline.
+    if is_current_planning_assessment_query(text):
+        return LocalTurnPolicy(
+            "planning_assessment_query",
+            "low",
+            False,
+            False,
+            False,
+            frozenset(),
+        )
+
     # A re-plan is a mutating operation even when it is expressed as a short
     # correction or follow-up. Resolve it before the guide fast path so the
     # existing masks can be reused but the planning pipeline is mandatory.
@@ -1040,6 +1124,16 @@ def classify_local_turn(message: str, pending_tumor_site: bool = False) -> Local
             return _semantic_action_policy(complexity="medium", review=False)
         return LocalTurnPolicy(
             "session_content_query",
+            "low",
+            False,
+            False,
+            False,
+            frozenset(),
+        )
+
+    if is_current_oar_count_query(text):
+        return LocalTurnPolicy(
+            "current_oar_query",
             "low",
             False,
             False,

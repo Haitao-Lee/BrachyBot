@@ -1621,3 +1621,17 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 }
 @keyframes rp-modal-breathe { 0%, 100% { opacity: 0.55; } 50% { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { .rp-modal-loading { animation: none; } }
+
+/*
+ * 3D resource progress is represented by the shared bottom-right workspace
+ * notice. Keep the legacy in-canvas marker in the DOM for accessibility/state
+ * bookkeeping, but never paint it over the viewer. This is intentionally a
+ * presentation-only rule: the JS token lifecycle still waits for every mesh
+ * promise and the canvas remains interactive while resources arrive.
+ */
+#loading3D,
+#loading3D.active {
+    display: none !important;
+    visibility: hidden !important;
+    pointer-events: none !important;
+}

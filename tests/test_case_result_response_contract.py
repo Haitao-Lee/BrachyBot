@@ -155,6 +155,23 @@ def test_planning_provenance_followup_is_localized_read_only_and_never_replans()
     assert "I can help with brachytherapy planning" not in response
 
 
+def test_current_planning_assessment_is_not_misclassified_as_provenance():
+    from agent_runtime.turn_policy import (
+        classify_local_turn,
+        is_current_planning_assessment_query,
+        is_current_planning_provenance_query,
+    )
+
+    message = "你好，当前规划有什么问题吗"
+    policy = classify_local_turn(message)
+
+    assert is_current_planning_provenance_query(message) is False
+    assert is_current_planning_assessment_query(message) is True
+    assert policy.intent == "planning_assessment_query"
+    assert policy.use_router is False
+    assert policy.direct_execution is False
+
+
 def test_unavailable_provider_never_turns_semantic_question_into_keyword_action_or_english_menu():
     from agent_runtime.chat_workflows import ChatWorkflowMixin
     from agent_runtime.turn_policy import classify_local_turn
@@ -194,9 +211,10 @@ def test_english_planning_provenance_question_uses_the_same_local_read_route():
     assert policy.use_router is False
 
 
-def test_streaming_entrypoint_answers_provenance_without_provider_or_tool_calls():
+def test_streaming_entrypoint_answers_provenance_through_grounded_llm_when_available():
     import json
     import threading
+    from types import SimpleNamespace
 
     from agent_runtime.chat_workflows import ChatWorkflowMixin
 
@@ -240,7 +258,20 @@ def test_streaming_entrypoint_answers_provenance_without_provider_or_tool_calls(
     workflow.memory = Memory()
     workflow.multi_agent_wrapper = None
     workflow.enhanced = None
-    workflow.brain_available = False
+    calls = []
+
+    class Router:
+        def chat_messages(self, **kwargs):
+            calls.append(kwargs)
+            return SimpleNamespace(
+                content="当前重算依据的是 Planning_4；这是从当前 Session 读取到的规划来源。",
+                usage={"prompt_tokens": 10, "completion_tokens": 12},
+                finish_reason="stop",
+                model="test-grounded-router",
+            )
+
+    workflow.brain_router = Router()
+    workflow.brain_available = True
     workflow.exp_memory = None
     workflow._active_turn_context = {}
     workflow._pending_tumor_site_clarification = lambda: False
@@ -253,10 +284,15 @@ def test_streaming_entrypoint_answers_provenance_without_provider_or_tool_calls(
     ]
 
     assert len(response_events) == 1
-    assert response_events[0]["llm_meta"]["route"] == "local_planning_provenance"
+    assert response_events[0]["llm_meta"]["route"] == "grounded_local_llm"
+    assert response_events[0]["llm_meta"]["llm_calls"] == 1
     assert "Planning_4" in response_events[0]["response"]
     assert "planning_pipeline" not in response_events[0]["response"]
     assert "I can help with brachytherapy planning" not in response_events[0]["response"]
+    assert len(calls) == 1
+    assert calls[0]["tools"] is None
+    assert "本次计算是以哪次规划结果为依据的呢" in calls[0]["messages"][1]["content"]
+    assert "FACTS JSON" in calls[0]["messages"][1]["content"]
 
 
 def test_query_metrics_exposes_typed_direct_read_contract_and_localized_table():
