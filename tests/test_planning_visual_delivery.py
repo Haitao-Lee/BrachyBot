@@ -81,7 +81,9 @@ def test_cold_restore_keeps_one_loading_owner_until_parallel_viewer_work_finishe
     assert "if (!backgroundNoticeTransferred)" in ui_api
     assert "registerBackgroundTask: options.registerBackgroundTask" in ui_api
     assert "pendingBackgroundKinds" in ui_api
-    assert "const batchSize = Math.max(1, Number(opts.batchSize) || 6)" in manual
+    assert "const maxConcurrent = Math.max(" in manual
+    assert "Array.from({ length: workerCount }, () => runOarWorker())" in manual
+    assert "await Promise.all(batch)" not in manual
     assert "reportProgress({ phase: 'oar', current: completed, total: oarIds.length })" in manual
 
 
@@ -251,13 +253,19 @@ def test_planning_visual_loads_are_retryable_and_case_scoped():
 
     assert "_seeds3DLoadInFlight" in manual
     assert "_organ3DReconstructionInFlight" in layout
-    assert "payload.code === 'rate_limit_exceeded'" in manual
+    # Rate-limit/pending handling is centralized in the bounded request
+    # helper. Individual mesh loaders consume its response rather than
+    # maintaining their own unbounded status whitelist.
+    assert "response.status === 429" in manual
+    assert "request.data?.error" in manual
+    assert "timedOut: true" in manual
     assert "_isoSurfaceLoadInFlight" in manual
     assert "const rebuiltLevels = [];" in manual
     assert "Keep the currently displayed surfaces until each replacement" in manual
     assert "if (_viewer3DRequestScopeIsCurrent(requestScope) && !silent)" in layout
     assert "silent && [202, 404, 409, 429].includes(res.status)" in layout
-    assert "res.status === 429 && pending.code === 'rate_limit_exceeded'" in viewer
+    assert "window.fetchViewerJsonWithRetry(API + '/viewer/overlay'" in viewer
+    assert "request.response?.ok" in viewer
     assert "loadAllIsoSurfaces({" in planning
     assert "reconstruct3d: true" in planning
     assert "'Isosurface reconstruction',\n                180000" in planning
@@ -285,6 +293,74 @@ def test_3d_loading_has_reference_counted_ownership_and_soft_watchdog():
     assert "window.beginViewer3DLoading('Rendering dose surfaces...')" in manual
     assert "still running after ${ms/1000}s; waiting for completion" in planning
     assert "Promise.race([" not in planning
+
+
+def test_derived_viewer_resources_have_restart_safe_persistent_cache_contract():
+    """Restart recovery must reuse only case-scoped, validated derived data."""
+    cache = read("web/viewer_cache.py")
+    viewer_routes = read("web/routes/viewer_routes.py")
+    planning_routes = read("web/routes/planning_routes.py")
+
+    assert "artifacts" in cache
+    assert "viewer-cache" in cache
+    assert "json.gz" in cache
+    assert "os.replace(temporary, path)" in cache
+    assert "cache_key" in cache
+    assert "load_viewer_cache" in viewer_routes
+    assert "schedule_viewer_cache_write" in viewer_routes
+    assert "viewer_cache_key(\"segmentation_mesh\"" in viewer_routes
+    assert "viewer_cache_key(\n                \"skin_mesh\"" in viewer_routes
+    assert "skin-mesh" in viewer_routes
+    assert "load_viewer_cache" in planning_routes
+    assert "schedule_viewer_cache_write" in planning_routes
+    assert "viewer_cache_key(\n                \"dose_isosurface\"" in planning_routes
+    assert "dose_digest" in planning_routes
+
+
+def test_label_mesh_extraction_crops_only_the_derived_display_domain():
+    """OAR/CTV mesh acceleration must preserve source geometry and world position."""
+    viewer_routes = read("web/routes/viewer_routes.py")
+
+    # The crop is a display-only optimisation.  Both mesh endpoints must add
+    # the crop origin back before the existing patient-world transformation,
+    # and the cache key must include the crop/version contract.
+    assert "_MESH_CROP_MARGIN_VOXELS = 8" in viewer_routes
+    assert "def _crop_binary_surface_volume(binary_volume, margin=None)" in viewer_routes
+    assert "np.any(array, axis=(1, 2))" in viewer_routes
+    assert "np.any(array, axis=(0, 2))" in viewer_routes
+    assert "np.any(array, axis=(0, 1))" in viewer_routes
+    assert "source_mask_digest = hashlib.blake2b(" in viewer_routes
+    assert '"processing_version": "label-mesh-v3-cropped"' in viewer_routes
+    assert viewer_routes.count("vertices += crop_origin_zyx * np.asarray(spacing_zyx") >= 2
+    assert "mask_volume = max(1, int(np.prod(source_mask_shape)))" in viewer_routes
+    assert "coordinates = np.nonzero(array)" not in viewer_routes
+
+
+def test_iso_surface_exceptions_are_visible_in_the_completion_ledger():
+    """An unexpected per-level exception must not be silently dropped."""
+    manual = read("web/app/static/js/brachybot-3d-manual.js")
+
+    assert "Every requested level must settle into the ledger" in manual
+    assert "const alreadyRecorded = failedLevels.some" in manual
+    assert "rebuiltLevels[i] = levelEntry" in manual
+    assert "levelEntry.status = preserved ? 'stale' : 'error'" in manual
+
+
+def test_viewer_requests_share_a_bounded_retry_and_abort_contract():
+    """All expensive browser resource paths must settle instead of spinning forever."""
+    manual = read("web/app/static/js/brachybot-3d-manual.js")
+    layout = read("web/app/static/js/brachybot-viewer-layout.js")
+    volume = read("web/app/static/js/brachybot-viewer-volume.js")
+    guide = read("web/app/static/js/brachybot-surgical-guide.js")
+
+    assert "const _VIEWER_RESOURCE_MAX_WAIT_MS = 300000" in manual
+    assert "new AbortController()" in manual
+    assert "externalSignal?.aborted" in manual
+    assert "Retry-After" in manual
+    assert "_viewer3DJsonRequest" in layout
+    assert "window.fetchViewerJsonWithRetry" in volume
+    assert "window.fetchViewerJsonWithRetry" in guide
+    assert "for (let attempt = 0; attempt <= 60; attempt += 1)" not in manual
 
 
 def test_3d_progress_overlay_never_blocks_interaction_or_cancels_hydration():

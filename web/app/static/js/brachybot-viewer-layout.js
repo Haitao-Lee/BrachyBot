@@ -882,6 +882,21 @@ function _viewer3DRequestScopeIsCurrent(scope) {
         && (!state?.sessionId || scope.sessionId === String(state.sessionId));
 }
 
+async function _viewer3DJsonRequest(url, init = {}, options = {}) {
+    const requestHelper = window.fetchViewerJsonWithRetry;
+    if (typeof requestHelper !== 'function') {
+        throw new Error('Viewer request helper is not available');
+    }
+    const request = await requestHelper(url, init, {
+        requestTimeoutMs: Number(options.requestTimeoutMs) || 120000,
+        maxWaitMs: Number(options.maxWaitMs) || 300000,
+    });
+    if (!request.response) {
+        throw request.error || new Error('Viewer resource request timed out');
+    }
+    return request;
+}
+
 function _viewer3DRequestHeaders(scope, headers = {}) {
     return {
         ...headers,
@@ -1171,12 +1186,10 @@ async function _reconstructOrgan3D(id, silent = false, scope = null) {
         if (id === 'ctv') {
             const labelIds = getCtvMeshLabelIds();
             let successCount = 0;
-            const retryAttempts = new Map();
             for (let i = 0; i < labelIds.length; i++) {
                 const labelId = labelIds[i];
-                const retryAttempt = retryAttempts.get(labelId) || 0;
                 try {
-                    const res = await fetch(API + '/viewer/3d_mask', {
+                    const request = await _viewer3DJsonRequest(API + '/viewer/3d_mask', {
                         method: 'POST',
                         headers: _viewer3DRequestHeaders(requestScope, { 'Content-Type': 'application/json' }),
                         body: JSON.stringify({
@@ -1186,36 +1199,17 @@ async function _reconstructOrgan3D(id, silent = false, scope = null) {
                             allow_missing: silent,
                         }),
                     });
-                    const errData = (res.status === 202 || res.status === 429)
-                        ? await res.clone().json().catch(() => ({}))
-                        : {};
-                    const retryable = res.status === 202
-                        || (res.status === 429 && errData.code === 'rate_limit_exceeded');
-                    if (retryable && retryAttempt < 60) {
-                        // This path is user-triggered but can overlap a cold
-                        // case restore. Do not convert a temporary data-plane
-                        // limit into a false "no CTV" result.
-                        const retryAfter = Number(
-                            errData.retry_after_ms
-                            || res.headers.get('Retry-After-Ms')
-                            || 1000,
-                        );
-                        await new Promise(resolve => setTimeout(
-                            resolve,
-                            Math.max(1000, Math.min(
-                                res.status === 429 ? 60000 : 5000,
-                                Number.isFinite(retryAfter) ? retryAfter : 1000,
-                            )),
-                        ));
-                        retryAttempts.set(labelId, retryAttempt + 1);
-                        i -= 1;
-                        continue;
-                    }
-                    if (retryable && !silent) {
-                        throw new Error(errData.error || errData.message || `HTTP ${res.status}`);
+                    const res = request.response;
+                    const errData = request.data || {};
+                    if (!res.ok) {
+                        const errMsg = errData.error || errData.message || `HTTP ${res.status}`;
+                        // Don't show a missing label as a reconstruction error.
+                        if (res.status === 400 && errMsg.includes('not found')) continue;
+                        if (silent && [202, 404, 409, 429].includes(res.status)) continue;
+                        throw new Error(errMsg);
                     }
                     if (res.ok) {
-                        const data = await res.json();
+                        const data = request.data || {};
                         if (!_viewer3DRequestScopeIsCurrent(requestScope)) return { stale: true };
                         if (data.success && data.vertex_count > 0) {
                             // CTV has a dedicated namespace because OAR masks
@@ -1292,7 +1286,7 @@ async function _reconstructOrgan3D(id, silent = false, scope = null) {
                     ? parseInt(genericColor.slice(1), 16)
                     : 0xf08a5d;
                 source = 'generic';
-                const res = await fetch(API + '/viewer/3d_mask', {
+                const request = await _viewer3DJsonRequest(API + '/viewer/3d_mask', {
                     method: 'POST',
                     headers: _viewer3DRequestHeaders(requestScope, { 'Content-Type': 'application/json' }),
                     body: JSON.stringify({
@@ -1302,8 +1296,9 @@ async function _reconstructOrgan3D(id, silent = false, scope = null) {
                         allow_missing: silent,
                     }),
                 });
+                const res = request.response;
+                const errData = request.data || {};
                 if (!res.ok) {
-                    const errData = await res.json().catch(() => ({}));
                     const deferred = silent && [202, 404, 409, 429].includes(res.status);
                     if (deferred) {
                         return {
@@ -1313,7 +1308,7 @@ async function _reconstructOrgan3D(id, silent = false, scope = null) {
                     }
                     throw new Error(errData.error || `HTTP ${res.status}`);
                 }
-                const data = await res.json();
+                const data = request.data || {};
                 if (!_viewer3DRequestScopeIsCurrent(requestScope)) return { stale: true };
                 if (data.success) {
                     data.color = color;
@@ -1331,19 +1326,20 @@ async function _reconstructOrgan3D(id, silent = false, scope = null) {
             return;
         }
 
-        const res = await fetch(API + '/viewer/3d_mask', {
+        const request = await _viewer3DJsonRequest(API + '/viewer/3d_mask', {
             method: 'POST',
             headers: _viewer3DRequestHeaders(requestScope, { 'Content-Type': 'application/json' }),
-        body: JSON.stringify({
-            label_id,
-            source,
-            smoothing: 1,
-            allow_missing: silent,
-        }),
+            body: JSON.stringify({
+                label_id,
+                source,
+                smoothing: 1,
+                allow_missing: silent,
+            }),
         });
+        const res = request.response;
 
         if (!res.ok) {
-            const errData = await res.json().catch(() => ({}));
+            const errData = request.data || {};
             const errMsg = errData.error || `HTTP ${res.status}`;
             // Don't show error for "label not found" - just skip silently
             if (res.status === 400 && errMsg.includes('not found')) {
@@ -1361,7 +1357,7 @@ async function _reconstructOrgan3D(id, silent = false, scope = null) {
             throw new Error(errMsg);
         }
 
-        const data = await res.json();
+        const data = request.data || {};
         if (!_viewer3DRequestScopeIsCurrent(requestScope)) return { stale: true };
         if (data.success) {
             data.color = color;
@@ -1673,13 +1669,14 @@ async function _fetchDoseRawAxialSlice(rawZ, requestScope = _captureViewer3DRequ
         || (state.doseTexture.rawAxialSlicePromises = {});
     if (pending[z]) return pending[z];
     pending[z] = (async () => {
-        const res = await fetch(API + '/planning/dose_overlay_slice', {
+        const request = await _viewer3DJsonRequest(API + '/planning/dose_overlay_slice', {
             method: 'POST',
             headers: _viewer3DRequestHeaders(requestScope, { 'Content-Type': 'application/json' }),
             body: JSON.stringify({ axis: 'axial', slice_index: z }),
         });
-        if (!res.ok) return null;
-        const data = await res.json();
+        const res = request.response;
+        if (!res?.ok) return null;
+        const data = request.data || {};
         if (!_viewer3DRequestScopeIsCurrent(requestScope)) return null;
         if (!data.success || !data.slice) return null;
         cache[z] = data.slice;
@@ -1831,21 +1828,14 @@ async function _reconstructGuideSkinSurface3D(silent = false) {
     node.status = 'loading';
     renderDataTree?.();
     try {
-        let response = null;
-        let payload = null;
-        for (let attempt = 0; attempt <= 80; attempt += 1) {
-            if (!_viewer3DRequestScopeIsCurrent(scope)) return { stale: true };
-            response = await fetch(API + '/viewer/3d_skin', {
+        if (!_viewer3DRequestScopeIsCurrent(scope)) return { stale: true };
+        const request = await _viewer3DJsonRequest(API + '/viewer/3d_skin', {
                 method: 'POST',
                 headers: _viewer3DRequestHeaders(scope, { 'Content-Type': 'application/json' }),
                 body: JSON.stringify({ source: 'guide' }),
-            });
-            payload = await response.json().catch(() => ({}));
-            if (!(response.status === 202 && payload.pending)) break;
-            await new Promise(resolve => setTimeout(
-                resolve, Math.max(100, Math.min(1000, Number(payload.retry_after_ms) || 250)),
-            ));
-        }
+            }, { requestTimeoutMs: 120000, maxWaitMs: 300000 });
+        const response = request.response;
+        const payload = request.data || {};
         if (!response?.ok || !payload?.success) {
             throw new Error(payload?.error || `HTTP ${response?.status || 500}`);
         }
@@ -1896,23 +1886,14 @@ async function _reconstructThresholdMask3D(id, silent = false) {
     mask.status = 'loading';
     renderDataTree?.();
     try {
-        let res = null;
-        let data = null;
-        const maxPendingAttempts = 40;
-        for (let attempt = 0; attempt <= maxPendingAttempts; attempt += 1) {
-            if (!_viewer3DRequestScopeIsCurrent(scope)) return { stale: true };
-            res = await fetch(API + '/viewer/3d_skin', {
+        if (!_viewer3DRequestScopeIsCurrent(scope)) return { stale: true };
+        const request = await _viewer3DJsonRequest(API + '/viewer/3d_skin', {
                 method: 'POST',
                 headers: _viewer3DRequestHeaders(scope, { 'Content-Type': 'application/json' }),
                 body: JSON.stringify({ threshold: Number(mask.threshold) }),
-            });
-            data = await res.json().catch(() => ({}));
-            if (!(res.status === 202 && data.pending)) break;
-            if (attempt >= maxPendingAttempts) {
-                throw new Error(data.error || 'CT volume is still loading');
-            }
-            await new Promise(resolve => setTimeout(resolve, Number(data.retry_after_ms) || 300));
-        }
+            }, { requestTimeoutMs: 120000, maxWaitMs: 300000 });
+        const res = request.response;
+        const data = request.data || {};
         if (!res?.ok || !data?.success) throw new Error(data?.error || `HTTP ${res?.status || 500}`);
         if (!_viewer3DRequestScopeIsCurrent(scope)) return { stale: true };
         const color = String(mask.color || '#8b5cf6').replace('#', '');

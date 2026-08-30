@@ -4119,16 +4119,22 @@ async function toggle3DSkin(on) {
     // Fetch CT skin mesh from server
     const requestScope = _capturePlanningSceneScope();
     try {
-        const res = await fetch(API + '/viewer/3d_skin', {
+        const request = await _fetchViewerJsonWithRetry(API + '/viewer/3d_skin', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
                 'X-BrachyBot-Session': requestScope.sessionId,
             },
             body: '{}',
+        }, {
+            requestTimeoutMs: 120000,
+            maxWaitMs: 300000,
         });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const data = await res.json();
+        const res = request.response;
+        if (!res?.ok) {
+            throw request.error || new Error(`HTTP ${res?.status || 500}`);
+        }
+        const data = request.data || {};
         if (!_planningSceneScopeIsCurrent(requestScope)) return { stale: true };
         if (data.success) {
             init3DScene();
@@ -4248,35 +4254,20 @@ window.invalidatePlanningSceneLoads = invalidatePlanningSceneLoads;
 let _seeds3DLoadInFlight = null;
 
 async function _fetchPlanningSeeds3D(requestScope) {
-    let res;
-    let payload = {};
-    for (let attempt = 0; attempt <= 60; attempt += 1) {
-        res = await fetch(API + '/planning/seeds_3d', {
-            headers: { 'X-BrachyBot-Session': requestScope.sessionId },
-        });
-        payload = (res.status === 202 || res.status === 429)
-            ? await res.clone().json().catch(() => ({}))
-            : {};
-        const retryable = res.status === 202
-            || (res.status === 429 && payload.code === 'rate_limit_exceeded');
-        if (!retryable || attempt >= 60) break;
-        const retryAfter = Number(
-            payload.retry_after_ms
-            || res.headers.get('Retry-After-Ms')
-            || 1000,
+    const request = await _fetchViewerJsonWithRetry(
+        API + '/planning/seeds_3d',
+        { headers: { 'X-BrachyBot-Session': requestScope.sessionId } },
+        { requestTimeoutMs: 120000, maxWaitMs: 300000 },
+    );
+    if (!request.response) {
+        throw request.error || new Error('Seed/needle request timed out');
+    }
+    if (!request.response.ok) {
+        throw new Error(
+            request.data?.error || request.data?.message || `HTTP ${request.response.status}`,
         );
-        await new Promise(resolve => setTimeout(
-            resolve,
-            Math.max(1000, Math.min(
-                res.status === 429 ? 60000 : 5000,
-                Number.isFinite(retryAfter) ? retryAfter : 1000,
-            )),
-        ));
     }
-    if (!res.ok) {
-        throw new Error(payload.error || payload.message || `HTTP ${res.status}`);
-    }
-    return res.json();
+    return request.data;
 }
 
 async function loadSeeds3D(options = {}) {
@@ -4628,47 +4619,40 @@ async function loadDoseIsosurface(
 ) {
     const scope = requestScope || _capturePlanningSceneScope();
     try {
-        let res;
-        let payload = {};
-        for (let attempt = 0; attempt <= 60; attempt += 1) {
-            res = await fetch(API + '/planning/dose_isosurface', {
+        const request = await _fetchViewerJsonWithRetry(
+            API + '/planning/dose_isosurface',
+            {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                     'X-BrachyBot-Session': scope.sessionId,
                 },
                 body: JSON.stringify({ threshold }),
-            });
-            payload = (res.status === 202 || res.status === 429)
-                ? await res.clone().json().catch(() => ({}))
-                : {};
-            const retryable = res.status === 202
-                || (res.status === 429 && payload.code === 'rate_limit_exceeded');
-            if (!retryable || attempt >= 60) break;
-            const retryAfter = Number(
-                payload.retry_after_ms
-                || res.headers.get('Retry-After-Ms')
-                || 1000,
-            );
-            await new Promise(resolve => setTimeout(
-                resolve,
-                Math.max(1000, Math.min(
-                    res.status === 429 ? 60000 : 5000,
-                    Number.isFinite(retryAfter) ? retryAfter : 1000,
-                )),
-            ));
+            },
+            {
+                requestTimeoutMs: options.requestTimeoutMs || 120000,
+                maxWaitMs: options.maxWaitMs || 300000,
+            },
+        );
+        const res = request.response;
+        const payload = request.data || {};
+        if (!res) {
+            const error = request.timedOut
+                ? `Viewer resource request timed out after ${Math.round((options.maxWaitMs || 300000) / 1000)}s`
+                : (request.error?.message || 'Viewer resource request failed');
+            console.warn(`[loadDoseIsosurface] ${threshold} Gy: ${error}`);
+            return { error, retryable: true, timedOut: request.timedOut === true };
         }
         if (!res.ok) {
             const error = payload.error || payload.message || `HTTP ${res.status}`;
             console.warn(`[loadDoseIsosurface] ${threshold} Gy: ${error}`);
             return {
                 error,
-                retryable: res.status === 202
-                    || (res.status === 429 && payload.code === 'rate_limit_exceeded')
+                retryable: request.retryable === true
                     || res.status >= 500,
             };
         }
-        const data = await res.json();
+        const data = payload;
         if (!data.success) {
             const error = data.error || 'Backend did not return an isosurface';
             console.warn(`[loadDoseIsosurface] ${threshold} Gy: ${error}`);
@@ -4879,11 +4863,13 @@ async function _loadAllIsoSurfaces(options = {}, scope = null) {
     let display3d = window._display3dConfig;
     if (!display3d) {
         try {
-            const r = await fetch(API + '/planning/config', {
-                headers: { 'X-BrachyBot-Session': requestScope.sessionId },
-            });
-            if (r.ok) {
-                const data = await r.json();
+            const configRequest = await _fetchViewerJsonWithRetry(
+                API + '/planning/config',
+                { headers: { 'X-BrachyBot-Session': requestScope.sessionId } },
+                { requestTimeoutMs: 30000, maxWaitMs: 60000 },
+            );
+            if (configRequest.response?.ok && configRequest.data) {
+                const data = configRequest.data;
                 if (!_planningSceneScopeIsCurrent(requestScope)) return { stale: true };
                 display3d = data.display_3d || {};
                 window._display3dConfig = display3d;
@@ -4943,9 +4929,9 @@ async function _loadAllIsoSurfaces(options = {}, scope = null) {
         const b = parseInt(hexStr.slice(5, 7), 16);
         const color = (r << 16) | (g << 8) | b;
         const opacity = (opacities[i] !== undefined) ? opacities[i] : 0.3;
+        const existing = priorLevels.get(v);
         try {
             let isoResult = null;
-            const existing = priorLevels.get(v);
             if (reconstruct3d) {
                 uiDebugLog(`[IsoSurf] Loading ${v} Gy (color=${hexStr}, opacity=${opacity})...`);
                 // This aggregate loader owns doseLevels. Per-call options are
@@ -5069,6 +5055,38 @@ async function _loadAllIsoSurfaces(options = {}, scope = null) {
                 }
             }
         } catch (e) {
+            // Every requested level must settle into the ledger, including
+            // unexpected client-side exceptions (for example a scene update
+            // failure after a successful response). Otherwise filter(Boolean)
+            // silently drops the level and the global restore promise can
+            // report completion with an unaccounted-for resource.
+            const reason = e?.message || String(e || 'Unknown dose surface error');
+            const mesh = scene3D?.meshes?.[`dose_iso_${v}`];
+            const preserved = !!existing
+                && existing.loaded === true
+                && !!mesh;
+            const alreadyRecorded = failedLevels.some(item => Number(item?.threshold) === v);
+            if (!alreadyRecorded) {
+                failedLevels.push({ threshold: v, reason, preserved });
+            }
+            const alreadySettled = rebuiltLevels[i] !== undefined;
+            if (preserved && !alreadySettled) loadedLevels += 1;
+            if (dataTreeState?.planning) {
+                const levelEntry = existing || {
+                    threshold: v,
+                    thresholdGy: parseFloat(absGy),
+                    visible: true,
+                    visible2D: true,
+                    visible3D: true,
+                    opacity,
+                    color: '#' + color.toString(16).padStart(6, '0'),
+                    pctLabel: `${absGy} Gy`,
+                };
+                levelEntry.loaded = preserved;
+                levelEntry.status = preserved ? 'stale' : 'error';
+                levelEntry.error = reason;
+                rebuiltLevels[i] = levelEntry;
+            }
             console.warn(`loadAllIsoSurfaces: level ${v}× failed:`, e);
         }
     };
@@ -5179,8 +5197,8 @@ function invalidateSegmentationMeshPrewarm() {
     return _segmentationMeshPrewarm.generation;
 }
 
-function _meshTaskKey(source, labelId, smoothing = 1) {
-    return `${source}:${labelId}:${smoothing}`;
+function _meshTaskKey(source, labelId, smoothing = 1, sessionId = '') {
+    return `${String(sessionId || '')}:${source}:${labelId}:${smoothing}`;
 }
 
 function _sceneHasMesh(id) {
@@ -5228,6 +5246,148 @@ function _setMeshPrewarmStatus(text, show = true) {
     }
 }
 
+// Viewer resource requests are read-only and idempotent, so they can be
+// retried safely. They must nevertheless have a real completion boundary:
+// the old 60-attempt loop had no fetch timeout and could leave the single
+// lower-right loading notice spinning forever when a response or JSON body
+// stalled. A terminal timeout is reported as a failed resource, never as a
+// successful reconstruction.
+const _VIEWER_RESOURCE_REQUEST_TIMEOUT_MS = 120000;
+const _VIEWER_RESOURCE_MAX_WAIT_MS = 300000;
+
+async function _fetchViewerJsonWithRetry(url, init = {}, options = {}) {
+    const requestTimeoutMs = Math.max(
+        1000,
+        Number(options.requestTimeoutMs) || _VIEWER_RESOURCE_REQUEST_TIMEOUT_MS,
+    );
+    const maxWaitMs = Math.max(
+        requestTimeoutMs,
+        Number(options.maxWaitMs) || _VIEWER_RESOURCE_MAX_WAIT_MS,
+    );
+    const deadline = Date.now() + maxWaitMs;
+    let attempt = 0;
+    let lastError = null;
+
+    while (Date.now() < deadline) {
+        attempt += 1;
+        const controller = typeof AbortController === 'function'
+            ? new AbortController()
+            : null;
+        const externalSignal = init?.signal || null;
+        const requestInit = { ...init };
+        let removeExternalAbort = null;
+        if (controller) {
+            requestInit.signal = controller.signal;
+            if (externalSignal) {
+                const abortFromCaller = () => controller.abort();
+                if (externalSignal.aborted) {
+                    controller.abort();
+                } else if (typeof externalSignal.addEventListener === 'function') {
+                    externalSignal.addEventListener('abort', abortFromCaller, { once: true });
+                    removeExternalAbort = () => externalSignal.removeEventListener('abort', abortFromCaller);
+                }
+            }
+        }
+        const remaining = Math.max(1, deadline - Date.now());
+        const timeoutMs = Math.min(requestTimeoutMs, remaining);
+        let timer = null;
+        try {
+            if (controller) {
+                timer = setTimeout(() => controller.abort(), timeoutMs);
+            }
+            const response = await fetch(url, requestInit);
+            const retryableStatus = response.status === 202
+                || response.status === 429
+                || [502, 503, 504].includes(response.status);
+            let data = null;
+            let bodyError = null;
+            if (options.responseType === 'arrayBuffer' && !retryableStatus) {
+                try { data = await response.arrayBuffer(); } catch (error) { bodyError = error; }
+            } else {
+                try { data = await response.json(); } catch (error) { bodyError = error; }
+            }
+            // A successful status with a stalled/malformed body is not a
+            // valid resource. Retry it within the same bounded deadline so a
+            // half-read mesh can never be reported as a completed load.
+            if (bodyError && (response.ok || retryableStatus)) {
+                lastError = bodyError;
+                if (Date.now() >= deadline) break;
+                const waitMs = Math.min(
+                    Math.max(100, deadline - Date.now()),
+                    Math.min(5000, 500 * (2 ** Math.min(attempt - 1, 4))),
+                );
+                await new Promise(resolve => setTimeout(resolve, waitMs));
+                continue;
+            }
+            if (!retryableStatus || Date.now() >= deadline) {
+                return {
+                    response,
+                    data,
+                    attempts: attempt,
+                    retryable: retryableStatus,
+                };
+            }
+            const retryAfterMs = Number(
+                data?.retry_after_ms || response.headers.get('Retry-After-Ms') || 0,
+            );
+            const retryAfterSeconds = Number(response.headers.get('Retry-After') || 0);
+            const retryAfter = Number.isFinite(retryAfterMs) && retryAfterMs > 0
+                ? retryAfterMs
+                : Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0
+                    ? retryAfterSeconds * 1000
+                    : 0;
+            const fallbackDelay = response.status === 202
+                ? Math.min(5000, 250 * (2 ** Math.min(attempt - 1, 4)))
+                : Math.min(60000, 1000 * (2 ** Math.min(attempt - 1, 5)));
+            const waitMs = Math.max(
+                100,
+                Math.min(
+                    Math.max(1, deadline - Date.now()),
+                    Number.isFinite(retryAfter) && retryAfter > 0
+                        ? retryAfter : fallbackDelay,
+                ),
+            );
+            await new Promise(resolve => setTimeout(resolve, waitMs));
+        } catch (error) {
+            lastError = error;
+            if (externalSignal?.aborted) {
+                return {
+                    response: null,
+                    data: null,
+                    attempts: attempt,
+                    retryable: false,
+                    aborted: true,
+                    error,
+                };
+            }
+            if (Date.now() >= deadline) break;
+            const waitMs = Math.min(
+                Math.max(100, deadline - Date.now()),
+                Math.min(5000, 500 * (2 ** Math.min(attempt - 1, 4))),
+            );
+            await new Promise(resolve => setTimeout(resolve, waitMs));
+        } finally {
+            if (timer != null) clearTimeout(timer);
+            if (removeExternalAbort) removeExternalAbort();
+        }
+    }
+
+    const timeoutError = lastError && lastError.name !== 'AbortError'
+        ? lastError
+        : new Error(
+        `Viewer resource request timed out after ${Math.round(maxWaitMs / 1000)}s`,
+    );
+    return {
+        response: null,
+        data: null,
+        attempts: attempt,
+        retryable: true,
+        timedOut: true,
+        error: timeoutError,
+    };
+}
+window.fetchViewerJsonWithRetry = _fetchViewerJsonWithRetry;
+
 // Explicit replan command for the edited manual geometry. This uses the same
 // trained dose_unet_spacing1mm path as seed/needle edits, but gives chat and the UI a
 // stable action name instead of silently treating a replan as a generic edit.
@@ -5257,14 +5417,14 @@ async function _fetchAndAddOrganMesh({ labelId, source, organId, label, color, o
         return { status: 'missing_label', id: organId };
     }
 
-    const key = _meshTaskKey(source, labelId, smoothing);
+    const sid = String(sessionId || _activePlanningSceneSessionId());
+    const key = _meshTaskKey(source, labelId, smoothing, sid);
     if (_segmentationMeshPrewarm.tasks.has(key)) {
         return _segmentationMeshPrewarm.tasks.get(key);
     }
 
     const task = (async () => {
         try {
-            const sid = String(sessionId || _activePlanningSceneSessionId());
             let data = null;
             // --- IndexedDB cache: mesh geometry is immutable once generated ---
             // A forced rebuild follows a new segmentation/import. Its mesh
@@ -5272,7 +5432,16 @@ async function _fetchAndAddOrganMesh({ labelId, source, organId, label, color, o
             // the freshly published server geometry.
             if (sid && window.SessionCache && !force) {
                 const cacheKey = `mesh:${labelId}:${source}:${smoothing}`;
-                const cached = await window.SessionCache.get(sid, 'mesh', cacheKey);
+                // IndexedDB is an optimisation only. A browser profile can
+                // hold a large stale record or a blocked transaction after a
+                // server restart; it must never own the Viewer completion
+                // boundary. The underlying read is harmless if it finishes
+                // later, while this request falls back to the authoritative
+                // server mesh after a short local-cache deadline.
+                const cached = await Promise.race([
+                    Promise.resolve(window.SessionCache.get(sid, 'mesh', cacheKey)).catch(() => null),
+                    new Promise(resolve => setTimeout(() => resolve(null), 5000)),
+                ]);
                 if (cached && cached.byteLength > 0) {
                     try {
                         const dec = new TextDecoder();
@@ -5284,48 +5453,43 @@ async function _fetchAndAddOrganMesh({ labelId, source, organId, label, color, o
             if (!data) {
                 // A completed segmentation can reach the browser a moment
                 // before the lightweight workspace agent has finished loading
-                // its binary labels.  ``202`` means exactly that; it is not an
-                // empty mesh. Retry locally so the segmentation event always
-                // leads to a real 3D object once the data becomes available.
-                for (let attempt = 0; attempt <= 60; attempt += 1) {
-                    const res = await fetch(API + '/viewer/3d_mask', {
+                // its binary labels. ``202`` means exactly that; it is not an
+                // empty mesh. Retry locally, but with a real deadline so a
+                // stalled response cannot own the loading notice forever.
+                const request = await _fetchViewerJsonWithRetry(
+                    API + '/viewer/3d_mask',
+                    {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json',
                             'X-BrachyBot-Session': String(sessionId || _activePlanningSceneSessionId()),
                         },
                         body: JSON.stringify({ label_id: labelId, source, smoothing }),
-                    });
-                    const payload = (res.status === 202 || res.status === 429)
-                        ? await res.clone().json().catch(() => ({}))
-                        : {};
-                    const retryable = res.status === 202
-                        || (res.status === 429 && payload.code === 'rate_limit_exceeded');
-                    if (retryable && attempt < 60) {
-                        const retryAfter = Number(
-                            payload.retry_after_ms
-                            || res.headers.get('Retry-After-Ms')
-                            || 1000,
-                        );
-                        await new Promise(resolve => setTimeout(
-                            resolve,
-                            Math.max(1000, Math.min(
-                                res.status === 429 ? 60000 : 5000,
-                                Number.isFinite(retryAfter) ? retryAfter : 1000,
-                            )),
-                        ));
-                        continue;
-                    }
-                    if (!res.ok) return {
-                        status: 'http',
-                        code: res.status,
-                        error: payload.error || payload.message,
+                    },
+                    {
+                        requestTimeoutMs: 120000,
+                        maxWaitMs: 300000,
+                    },
+                );
+                if (!request.response) {
+                    return {
+                        status: request.timedOut ? 'timeout' : 'network_error',
+                        error: request.timedOut
+                            ? 'Mesh request timed out after 300s'
+                            : (request.error?.message || 'Mesh request failed'),
+                        retryable: true,
                         id: organId,
                     };
-                    data = await res.json();
-                    break;
                 }
-                if (!data) return { status: 'pending_timeout', id: organId };
+                if (!request.response.ok) return {
+                    status: 'http',
+                    code: request.response.status,
+                    error: request.data?.error || request.data?.message
+                        || `HTTP ${request.response.status}`,
+                    retryable: request.retryable === true,
+                    id: organId,
+                };
+                data = request.data;
             }
             if (!data || !data.success || !data.vertex_count) return { status: 'empty', id: organId };
             if (data.face_count > 500000) {
@@ -5366,7 +5530,15 @@ async function _fetchAndAddOrganMesh({ labelId, source, organId, label, color, o
 }
 
 async function prewarmSegmentationMeshes(kind = 'all', opts = {}) {
-    if (!state.ctLoaded && !state.ctPath) return;
+    if (!state.ctLoaded && !state.ctPath) {
+        return {
+            success: false,
+            complete: true,
+            requested: 0,
+            completed: 0,
+            failed: [{ status: 'no_ct', error: 'CT image is not available' }],
+        };
+    }
     init3DScene();
 
     const generation = _segmentationMeshPrewarm.generation;
@@ -5388,6 +5560,9 @@ async function prewarmSegmentationMeshes(kind = 'all', opts = {}) {
     const force = opts.force === true;
     const ctvLabelIds = getCtvMeshLabelIds();
     const promises = [];
+    const ctvResults = [];
+    let oarResults = [];
+    let oarIds = [];
 
     _segmentationMeshPrewarm.activeRuns += 1;
     if (showStatus) _setMeshPrewarmStatus(kind === 'ctv' ? '3D CTV reconstruction started...' : '3D OAR reconstruction running...');
@@ -5401,7 +5576,7 @@ async function prewarmSegmentationMeshes(kind = 'all', opts = {}) {
             for (const lid of ctvLabelIds) {
                 const c = ctvLabelColorLUT && ctvLabelColorLUT[lid];
                 const ctvNode = dataTreeState.ctvLabels?.[`ctv_${lid}`] || dataTreeState.ctv || {};
-                promises.push(_fetchAndAddOrganMesh({
+                const ctvPromise = _fetchAndAddOrganMesh({
                     labelId: lid,
                     source: 'ctv',
                     organId: `ctv_${lid}`,
@@ -5413,7 +5588,11 @@ async function prewarmSegmentationMeshes(kind = 'all', opts = {}) {
                     force,
                     generation,
                     sessionId,
-                }));
+                }).then(result => {
+                    ctvResults.push(result);
+                    return result;
+                });
+                promises.push(ctvPromise);
             }
         }
 
@@ -5434,45 +5613,102 @@ async function prewarmSegmentationMeshes(kind = 'all', opts = {}) {
                     .map(o => Number(o.labelId))
                     .filter(value => Number.isInteger(value) && value > 0))]
                 : [];
-            const oarIds = requestedOarIds !== null
+            oarIds = requestedOarIds !== null
                 ? requestedOarIds
                 : (allOarIds.length ? allOarIds : _getNonTraversableOarMeshIds(ctvLabelIds));
-            // Full cold restores use six independent read-only mesh requests
-            // per batch. CTV/OAR, planning geometry, and dose surfaces remain
-            // separate top-level promises, so this shortens wall-clock time
-            // without serializing unrelated viewer products.
-            const batchSize = Math.max(1, Number(opts.batchSize) || 6);
-            for (let i = 0; i < oarIds.length; i += batchSize) {
-                if (generation !== _segmentationMeshPrewarm.generation
-                    || (sessionId && sessionId !== String(state.sessionId || ''))) {
-                    return { stale: true };
-                }
-                const batch = oarIds.slice(i, i + batchSize).map(lid => {
-                    const organ = (dataTreeState.organs || []).find(o => Number(o.labelId) === lid);
-                    return _fetchAndAddOrganMesh({
-                        labelId: lid,
-                        source: 'oar',
-                        organId: `organ_${lid}`,
-                        label: (organ && (organ.label || organ.name)) || `OAR ${lid}`,
-                        color: _parseTreeColorValue(organ && organ.color, 0x4d9de0),
-                        opacity: organ && typeof organ.opacity === 'number' ? organ.opacity : undefined,
-                        visible2D: organ?.visible2D,
-                        visible3D: organ?.visible3D,
-                        force,
-                        generation,
-                        sessionId,
-                    });
-                });
-                promises.push(Promise.all(batch));
-                await Promise.all(batch);
-                const completed = Math.min(i + batchSize, oarIds.length);
+            // Use a bounded dynamic worker pool. A wave/barrier pool made a
+            // slow organ hold the next six requests hostage, which turned 58
+            // independent surfaces into a long sequence of batch waits. Each
+            // worker claims the next immutable label as soon as it settles;
+            // no item is dropped and the denominator never changes.
+            const maxConcurrent = Math.max(
+                1,
+                Math.min(8, Number(opts.maxConcurrent ?? opts.batchSize) || 6),
+            );
+            oarResults = new Array(oarIds.length);
+            let nextOarIndex = 0;
+            let completed = 0;
+            const publishOarProgress = () => {
                 if (showStatus) _setMeshPrewarmStatus(`3D OAR reconstruction ${completed}/${oarIds.length}`);
                 updateLoading(`Rendering OAR surfaces ${completed}/${oarIds.length}...`);
                 reportProgress({ phase: 'oar', current: completed, total: oarIds.length });
-            }
+            };
+            const runOarWorker = async () => {
+                while (true) {
+                    const index = nextOarIndex++;
+                    if (index >= oarIds.length) return;
+                    if (generation !== _segmentationMeshPrewarm.generation
+                        || (sessionId && sessionId !== String(state.sessionId || ''))) {
+                        return;
+                    }
+                    const lid = oarIds[index];
+                    const organ = (dataTreeState.organs || []).find(o => Number(o.labelId) === lid);
+                    let result;
+                    try {
+                        result = await _fetchAndAddOrganMesh({
+                            labelId: lid,
+                            source: 'oar',
+                            organId: `organ_${lid}`,
+                            label: (organ && (organ.label || organ.name)) || `OAR ${lid}`,
+                            color: _parseTreeColorValue(organ && organ.color, 0x4d9de0),
+                            opacity: organ && typeof organ.opacity === 'number' ? organ.opacity : undefined,
+                            visible2D: organ?.visible2D,
+                            visible3D: organ?.visible3D,
+                            force,
+                            generation,
+                            sessionId,
+                        });
+                    } catch (error) {
+                        // Keep the queue alive if a future implementation of
+                        // the per-item loader ever leaks an exception. This
+                        // resource remains visible as failed in the summary.
+                        result = { status: 'error', id: `organ_${lid}`, error };
+                    }
+                    oarResults[index] = result;
+                    completed += 1;
+                    publishOarProgress();
+                }
+            };
+            const workerCount = Math.min(maxConcurrent, oarIds.length);
+            promises.push(Promise.all(
+                Array.from({ length: workerCount }, () => runOarWorker()),
+            ).then(() => ({ status: 'oar_workers_settled' })));
         }
 
         await Promise.all(promises);
+        if (generation !== _segmentationMeshPrewarm.generation
+            || (sessionId && sessionId !== String(state.sessionId || ''))) {
+            return { stale: true };
+        }
+        const successfulStatuses = new Set(['loaded', 'cached', 'exists']);
+        const failedResources = [
+            ...ctvResults
+                .filter(result => result && !successfulStatuses.has(result.status))
+                .map(result => ({ ...result, kind: 'ctv' })),
+            ...oarResults
+                .filter(result => result && !successfulStatuses.has(result.status))
+                .map(result => ({ ...result, kind: 'oar' })),
+        ];
+        if (failedResources.length) {
+            console.warn(
+                `[3D prewarm] ${failedResources.length} resource(s) failed; `
+                + 'the loading boundary settled without claiming a full reconstruction',
+                failedResources,
+            );
+            failedResources.forEach(failure => {
+                const node = failure.kind === 'oar'
+                    ? (dataTreeState.organs || []).find(item => item.id === failure.id)
+                    : (dataTreeState.ctvLabels?.[failure.id] || dataTreeState.ctv);
+                if (!node) return;
+                node.loaded = false;
+                node.loading = false;
+                node.status = 'error';
+                node.error = String(
+                    failure.error?.message || failure.error || failure.status || '3D reconstruction failed',
+                );
+            });
+            try { renderDataTree(); } catch (_) {}
+        }
         updateLoading('Finalizing 3D scene...');
         reportProgress({ phase: 'finalizing', current: 1, total: 1 });
         // The all-OAR restore is deliberately progressive. Reframe once the
@@ -5491,6 +5727,13 @@ async function prewarmSegmentationMeshes(kind = 'all', opts = {}) {
             }
         }
         // Fit removed — camera only resets on explicit button click
+        return {
+            success: failedResources.length === 0,
+            complete: true,
+            requested: ctvLabelIds.length + oarIds.length,
+            completed: ctvResults.length + oarResults.filter(Boolean).length,
+            failed: failedResources,
+        };
     } finally {
         if (opts.reframeCamera === true && scene3D?._cameraHydrationActive === true) {
             scene3D._cameraHydrationActive = false;
@@ -5594,11 +5837,11 @@ async function _loadCTVAndObstacleMeshes(options, scope) {
             : null;
 
         uiDebugLog(`[loadCTVAndObstacle] Frozen structural target set: CTV=${ctvLabelIds.length}, OAR=${allOarIds ? allOarIds.length : 0}`);
-        await prewarmSegmentationMeshes('all', {
+        const prewarmResult = await prewarmSegmentationMeshes('all', {
             allOAR: Array.isArray(allOarIds),
             oarIds: allOarIds,
             showStatus: false,
-            batchSize: options?.batchSize || 6,
+            maxConcurrent: options?.maxConcurrent || options?.batchSize || 6,
             reframeCamera: Array.isArray(allOarIds),
             loadingToken,
             onProgress: options?.onProgress,
@@ -5608,7 +5851,14 @@ async function _loadCTVAndObstacleMeshes(options, scope) {
             scene3D._cameraHydrationActive = false;
         }
         uiDebugLog(`[loadCTVAndObstacle] Full structural mesh rebuild complete. Total scene meshes: ${Object.keys(scene3D.meshes).length}`);
-        return { success: true, complete: true, meshCount: Object.keys(scene3D.meshes).length };
+        return {
+            success: prewarmResult?.success !== false,
+            complete: prewarmResult?.complete !== false,
+            meshCount: Object.keys(scene3D.meshes).length,
+            failed: prewarmResult?.failed || [],
+            requested: prewarmResult?.requested,
+            completed: prewarmResult?.completed,
+        };
     } finally {
         if (loadingToken != null && typeof window.endViewer3DLoading === 'function') {
             window.endViewer3DLoading(loadingToken);
@@ -6325,38 +6575,21 @@ async function loadDoseOverlay() {
     }
 }
 
-async function _loadDoseOverlayImpl(retryAttempt = 0) {
+async function _loadDoseOverlayImpl() {
     const requestGeneration = _doseOverlayLoadGeneration;
     const requestSessionId = _doseOverlaySessionId();
     try {
-        const res = await fetch(API + '/planning/dose_overlay', {
-            headers: { 'X-BrachyBot-Session': requestSessionId },
-        });
-        const pending = (res.status === 202 || res.status === 429)
-            ? await res.clone().json().catch(() => ({}))
-            : {};
-        const retryable = res.status === 202
-            || (res.status === 429 && pending.code === 'rate_limit_exceeded');
-        if (retryable && retryAttempt < 60) {
-            // Cold-case hydration is deliberately non-blocking. Keep the
-            // dose request alive with a bounded retry instead of showing a
-            // false "no dose" error while the background restore finishes.
-            const retryAfter = Number(
-                pending.retry_after_ms
-                || res.headers.get('Retry-After-Ms')
-                || 1000,
-            );
-            await new Promise(resolve => setTimeout(
-                resolve,
-                Math.max(1000, Math.min(
-                    res.status === 429 ? 60000 : 5000,
-                    Number.isFinite(retryAfter) ? retryAfter : 1000,
-                )),
-            ));
-            return _loadDoseOverlayImpl(retryAttempt + 1);
+        const request = await _fetchViewerJsonWithRetry(
+            API + '/planning/dose_overlay',
+            { headers: { 'X-BrachyBot-Session': requestSessionId } },
+            { requestTimeoutMs: 120000, maxWaitMs: 300000 },
+        );
+        const res = request.response;
+        const data = request.data || {};
+        if (!res) {
+            throw request.error || new Error('Dose overlay request timed out');
         }
-        if (!res.ok) throw new Error(pending.error || pending.message || `HTTP ${res.status}`);
-        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || data.message || `HTTP ${res.status}`);
         if (!data.success) throw new Error(data.error || 'Failed to load dose overlay');
         // A workspace transition intentionally does not cancel its server
         // task, but it must discard render payloads that belong to the old
@@ -6496,30 +6729,21 @@ async function loadDoseOverlayVolume(ownerOverlay = state.doseOverlay) {
             const params = new URLSearchParams();
             if (ownerPlanningId) params.set('planning_id', ownerPlanningId);
             if (ownerDoseGeneration > 0) params.set('dose_generation', String(ownerDoseGeneration));
-            let res;
-            for (let attempt = 0; attempt <= 60; attempt += 1) {
-                res = await fetch(`${API}/planning/dose_overlay_volume?${params.toString()}`, {
+            const request = await _fetchViewerJsonWithRetry(
+                `${API}/planning/dose_overlay_volume?${params.toString()}`,
+                {
                     headers: { 'X-BrachyBot-Session': ownerSessionId },
                     signal: controller.signal,
-                });
-                const payload = (res.status === 202 || res.status === 429)
-                    ? await res.clone().json().catch(() => ({}))
-                    : {};
-                const retryable = res.status === 202
-                    || (res.status === 429 && payload.code === 'rate_limit_exceeded');
-                if (!retryable || attempt >= 60) break;
-                const retryAfter = Number(
-                    payload.retry_after_ms
-                    || res.headers.get('Retry-After-Ms')
-                    || 1000,
-                );
-                await new Promise(resolve => setTimeout(
-                    resolve,
-                    Math.max(1000, Math.min(
-                        res.status === 429 ? 60000 : 5000,
-                        Number.isFinite(retryAfter) ? retryAfter : 1000,
-                    )),
-                ));
+                },
+                {
+                    responseType: 'arrayBuffer',
+                    requestTimeoutMs: 120000,
+                    maxWaitMs: 300000,
+                },
+            );
+            const res = request.response;
+            if (!res) {
+                throw request.error || new Error('Dose volume request timed out');
             }
             if (!res.ok) throw new Error(`HTTP ${res.status}`);
             const encoding = String(res.headers.get('X-Dose-Encoding') || '');
@@ -6550,7 +6774,9 @@ async function loadDoseOverlayVolume(ownerOverlay = state.doseOverlay) {
                 || responseDoseSource !== String(ownerOverlay.doseSource || 'current_planning')) {
                 throw new Error('Dose volume generation changed during download');
             }
-            const buffer = await res.arrayBuffer();
+            const buffer = request.data instanceof ArrayBuffer
+                ? request.data
+                : await res.arrayBuffer();
             const expectedValues = responseShape.reduce((total, value) => total * value, 1);
             if (buffer.byteLength !== expectedValues * Uint16Array.BYTES_PER_ELEMENT) {
                 throw new Error('Dose volume payload length does not match its shape');
@@ -6645,9 +6871,9 @@ async function fetchDoseOverlaySlice(axis, sliceIndex) {
         const requestSliceIndex = axis === 'axial' && Number.isFinite(axialMax)
             ? Math.max(0, Math.min(axialMax, axialMax - sliceIndex))
             : sliceIndex;
-        let res;
-        for (let attempt = 0; attempt <= 60; attempt += 1) {
-            res = await fetch(API + '/planning/dose_overlay_slice', {
+        const request = await _fetchViewerJsonWithRetry(
+            API + '/planning/dose_overlay_slice',
+            {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -6659,26 +6885,10 @@ async function fetchDoseOverlaySlice(axis, sliceIndex) {
                     planning_id: ownerPlanningId || undefined,
                 }),
                 signal: controller.signal,
-            });
-            const payload = (res.status === 202 || res.status === 429)
-                ? await res.clone().json().catch(() => ({}))
-                : {};
-            const retryable = res.status === 202
-                || (res.status === 429 && payload.code === 'rate_limit_exceeded');
-            if (!retryable || attempt >= 60) break;
-            const retryAfter = Number(
-                payload.retry_after_ms
-                || res.headers.get('Retry-After-Ms')
-                || 1000,
-            );
-            await new Promise(resolve => setTimeout(
-                resolve,
-                Math.max(1000, Math.min(
-                    res.status === 429 ? 60000 : 5000,
-                    Number.isFinite(retryAfter) ? retryAfter : 1000,
-                )),
-            ));
-        }
+            },
+            { requestTimeoutMs: 60000, maxWaitMs: 120000 },
+        );
+        const res = request.response;
         // A concurrent request for the same axis may abort this one (abort is
         // used to drop redundant in-flight fetches). If the fetch already
         // resolved with valid data, that data is still authoritative for its
@@ -6687,7 +6897,7 @@ async function fetchDoseOverlaySlice(axis, sliceIndex) {
         // Versioning below decides whether this (possibly stale) request gets
         // to repaint — the slice data itself is always worth keeping.
         if (!res.ok) { uiDebugLog(`[dose] fetch HTTP ${res.status} for ${cacheKey}`); return null; }
-        const data = await res.json();
+        const data = request.data || {};
         if (!data.success) { uiDebugLog(`[dose] fetch failed: ${data.error} for ${cacheKey}`); return null; }
         if (ownerGeneration !== _doseOverlayLoadGeneration
             || ownerSessionId !== _doseOverlaySessionId()
@@ -7000,9 +7210,9 @@ async function fetchDoseContourSlice(axis, sliceIndex) {
         const requestSliceIndex = axis === 'axial' && Number.isFinite(axialMax)
             ? Math.max(0, Math.min(axialMax, axialMax - sliceIndex))
             : sliceIndex;
-        let res;
-        for (let attempt = 0; attempt <= 60; attempt += 1) {
-            res = await fetch(API + '/planning/dose_contour_slice', {
+        const request = await _fetchViewerJsonWithRetry(
+            API + '/planning/dose_contour_slice',
+            {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -7013,12 +7223,13 @@ async function fetchDoseContourSlice(axis, sliceIndex) {
                     slice_index: requestSliceIndex,
                     planning_id: ownerPlanningId || undefined,
                 }),
-            });
-            if (res.status !== 202 || attempt >= 60) break;
-            await new Promise(resolve => setTimeout(resolve, Math.min(1000, 150 + attempt * 25)));
-        }
+            },
+            { requestTimeoutMs: 60000, maxWaitMs: 120000 },
+        );
+        const res = request.response;
+        if (!res) return null;
         if (!res.ok) return null;
-        const data = await res.json();
+        const data = request.data || {};
         if (!data.success) return null;
         const responsePlanningId = String(data.planning_id || '');
         if (responsePlanningId && responsePlanningId !== ownerPlanningId) return null;
