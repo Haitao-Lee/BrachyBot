@@ -1,7 +1,7 @@
 """
 CTV model catalog.
 
-This module records which CT-based CTV segmentation resources are actually
+This module records which 3D CTV segmentation resources are actually
 usable from BrachyBot, which ones are external experimental candidates, and
 which public datasets should be used for new nnU-Net training.
 """
@@ -13,6 +13,7 @@ from typing import Dict, Iterable, List, Optional
 
 from tool_factory import BaseTool, ToolResult
 
+from .biomedparse_v2 import SITE_SPECS as BIOMEDPARSE_SITE_SPECS
 from .sat3d import SITE_SPECS as SAT3D_SITE_SPECS
 
 
@@ -38,23 +39,24 @@ CTV_MODEL_CATALOG: List[Dict[str, object]] = [
     },
     *[
         {
-            "id": tumor_type,
+            "id": f"sat3d_interactive_{tumor_type.removeprefix('sat3d_')}",
             "site": spec["site"],
             "modality": "/".join(str(value).upper() for value in spec["modalities"]),
             "target": f"{spec['label']} CTV candidate",
             "status": "integrated_external_runtime_requires_review",
-            "tool": "ctv_segmentation",
-            "tumor_type": tumor_type,
-            "ui_visible": True,
+            "tool": "sat3d_ctv_segmentation",
+            "tumor_type": f"sat3d_interactive_{tumor_type.removeprefix('sat3d_')}",
+            "ui_visible": False,
             "runtime_root_env": "SAT3D_ROOT",
             "checkpoint_env": "SAT3D_MODEL_CHECKPOINT",
-            "prompt_support": {"positive_points": True, "negative_points": True, "zero_prompt": True},
+            "prompt_support": {"positive_points": True, "negative_points": True, "zero_prompt": False},
             "evidence": spec["evidence"],
             "datasets": list(spec["datasets"]),
             "target_semantics": "review_required_tumor_candidate",
             "notes": (
-                "Official SAT3D 3D point-prompt model. Output is a research candidate "
-                "and requires clinician contour review before clinical acceptance."
+                "Official SAT3D 3D point-prompt model. At least one positive point is "
+                "required; it is not an automatic site-specific CTV route. Output is a "
+                "research candidate requiring clinician contour review."
             ),
             "sources": [
                 "https://github.com/himashi92/SAT3D",
@@ -93,7 +95,7 @@ CTV_MODEL_CATALOG: List[Dict[str, object]] = [
         "tumor_type": "totalsegmentator_liver_tumor",
         "ui_visible": False,
         "deprecated": True,
-        "deprecated_reason": "Closed-set liver tumor CTV now uses SAT3D.",
+        "deprecated_reason": "Automatic liver tumor CTV now uses BiomedParse v2.",
         "runtime_executable": "TotalSegmentator",
         "total_segmentator_task": "liver_vessels",
         "total_segmentator_label": "liver_tumor",
@@ -158,17 +160,13 @@ CTV_MODEL_CATALOG: List[Dict[str, object]] = [
         "site": "liver",
         "modality": "CT",
         "target": "liver tumor CTV candidate",
-        "status": "external_runtime_requires_installation",
-        # Kept only as an audit/compatibility record. CTV dispatch redirects
-        # this historical id to SAT3D; generic open segmentation may still
-        # use a BiomedParse prompt through its own tool.
-        "tool": None,
-        "ui_visible": False,
-        "deprecated": True,
+        "status": "integrated_external_runtime_requires_review",
+        "tool": "ctv_segmentation",
+        "ui_visible": True,
         "tumor_type": "biomedparse_liver_tumor",
         "runtime_root_env": "BIOMEDPARSE_ROOT",
         "checkpoint_env": "BIOMEDPARSE_V2_CHECKPOINT",
-        "notes": "Not used for liver CTV. Retained for historical catalog/audit compatibility; use the SAT3D liver tumor CTV route.",
+        "notes": "Automatic BiomedParse v2 text-guided candidate using the official liver tumors task; contour review is required.",
         "sources": [
             "https://github.com/microsoft/BiomedParse/tree/v2",
             "https://huggingface.co/microsoft/BiomedParse",
@@ -180,11 +178,9 @@ CTV_MODEL_CATALOG: List[Dict[str, object]] = [
         "site": "kidney",
         "modality": "CT",
         "target": "kidney lesion CTV candidate",
-        "status": "external_runtime_requires_installation",
-        "tool": "biomedparse_segmentation",
-        "ui_visible": False,
-        "deprecated": True,
-        "deprecated_reason": "BiomedParse is retained only for open-vocabulary segmentation; kidney CTV uses SAT3D.",
+        "status": "integrated_external_runtime_requires_review",
+        "tool": "ctv_segmentation",
+        "ui_visible": True,
         "tumor_type": "biomedparse_kidney_lesion",
         "runtime_root_env": "BIOMEDPARSE_ROOT",
         "checkpoint_env": "BIOMEDPARSE_V2_CHECKPOINT",
@@ -200,11 +196,9 @@ CTV_MODEL_CATALOG: List[Dict[str, object]] = [
         "site": "lung",
         "modality": "CT",
         "target": "lung lesion CTV candidate",
-        "status": "external_runtime_requires_installation",
-        "tool": "biomedparse_segmentation",
-        "ui_visible": False,
-        "deprecated": True,
-        "deprecated_reason": "BiomedParse is retained only for open-vocabulary segmentation; lung CTV uses SAT3D.",
+        "status": "integrated_external_runtime_requires_review",
+        "tool": "ctv_segmentation",
+        "ui_visible": True,
         "tumor_type": "biomedparse_lung_lesion",
         "runtime_root_env": "BIOMEDPARSE_ROOT",
         "checkpoint_env": "BIOMEDPARSE_V2_CHECKPOINT",
@@ -220,11 +214,9 @@ CTV_MODEL_CATALOG: List[Dict[str, object]] = [
         "site": "colon",
         "modality": "CT",
         "target": "colon cancer primary CTV candidate",
-        "status": "external_runtime_requires_installation",
-        "tool": "biomedparse_segmentation",
-        "ui_visible": False,
-        "deprecated": True,
-        "deprecated_reason": "BiomedParse is retained only for open-vocabulary segmentation; colon CTV uses SAT3D.",
+        "status": "integrated_external_runtime_requires_review",
+        "tool": "ctv_segmentation",
+        "ui_visible": True,
         "tumor_type": "biomedparse_colon_primary",
         "runtime_root_env": "BIOMEDPARSE_ROOT",
         "checkpoint_env": "BIOMEDPARSE_V2_CHECKPOINT",
@@ -240,15 +232,31 @@ CTV_MODEL_CATALOG: List[Dict[str, object]] = [
         "site": "head_neck",
         "modality": "CT",
         "target": "head and neck cancer CTV candidate",
-        "status": "external_runtime_requires_installation",
-        "tool": "biomedparse_segmentation",
-        "ui_visible": False,
-        "deprecated": True,
-        "deprecated_reason": "BiomedParse is retained only for open-vocabulary segmentation; head/neck CTV uses SAT3D.",
+        "status": "integrated_external_runtime_requires_review",
+        "tool": "ctv_segmentation",
+        "ui_visible": True,
         "tumor_type": "biomedparse_head_neck_cancer",
         "runtime_root_env": "BIOMEDPARSE_ROOT",
         "checkpoint_env": "BIOMEDPARSE_V2_CHECKPOINT",
         "notes": "Official BiomedParse v2 text-guided candidate; requires the isolated official runtime and contour review.",
+        "sources": [
+            "https://github.com/microsoft/BiomedParse/tree/v2",
+            "https://huggingface.co/microsoft/BiomedParse",
+            "https://doi.org/10.1038/s41592-024-02499-w",
+        ],
+    },
+    {
+        "id": "biomedparse_v2_prostate_lesion",
+        "site": "prostate",
+        "modality": "MRI/T2W",
+        "target": "prostate lesion CTV candidate",
+        "status": "integrated_external_runtime_requires_review",
+        "tool": "ctv_segmentation",
+        "ui_visible": True,
+        "tumor_type": "biomedparse_prostate_lesion",
+        "runtime_root_env": "BIOMEDPARSE_ROOT",
+        "checkpoint_env": "BIOMEDPARSE_V2_CHECKPOINT",
+        "notes": "Automatic BiomedParse v2 MRI candidate using the official prostate lesion task and percentile preprocessing; contour review is required.",
         "sources": [
             "https://github.com/microsoft/BiomedParse/tree/v2",
             "https://huggingface.co/microsoft/BiomedParse",
@@ -264,7 +272,7 @@ CTV_MODEL_CATALOG: List[Dict[str, object]] = [
         "tool": None,
         "ui_visible": False,
         "deprecated": True,
-        "deprecated_reason": "Whole-organ prostate segmentation is not lesion CTV; prostate tumor CTV now uses SAT3D T2w MRI.",
+        "deprecated_reason": "Whole-organ prostate segmentation is not lesion CTV; prostate lesion CTV uses BiomedParse v2 MRI.",
         "tumor_type": "prostate_tumor",
         "notes": "Uses TotalSegmentator's prostate task only when the whole gland is the intended target.",
         "sources": ["https://github.com/wasserth/TotalSegmentator"],
@@ -408,6 +416,21 @@ def catalog_with_local_status(repo_root: Optional[str] = None) -> List[Dict[str,
     except Exception as exc:
         sat3d_probe = {"available": False, "missing": [f"SAT3D runtime probe failed: {exc}"]}
         sat3d_available = False
+    try:
+        from .biomedparse_v2 import (
+            _availability as _biomedparse_availability,
+            _validation_records as _biomedparse_validation_records,
+        )
+        biomedparse_probe = _biomedparse_availability()
+        biomedparse_available = bool(biomedparse_probe.get("available"))
+        biomedparse_records = _biomedparse_validation_records()
+    except Exception as exc:
+        biomedparse_probe = {
+            "available": False,
+            "missing": [f"BiomedParse v2 runtime probe failed: {exc}"],
+        }
+        biomedparse_available = False
+        biomedparse_records = {}
     for item in CTV_MODEL_CATALOG:
         entry = dict(item)
         rel = entry.get("local_expected_path")
@@ -423,15 +446,16 @@ def catalog_with_local_status(repo_root: Optional[str] = None) -> List[Dict[str,
         entry["data_tree_viewer_passed"] = False
         entry["clinical_case_validation"] = False
 
-        if tumor_type.startswith("sat3d_"):
+        if tumor_type.startswith("sat3d_interactive_"):
             missing = ", ".join(str(value) for value in sat3d_probe.get("missing", []))
             evidence = str(entry.get("evidence") or "research")
             entry.update({
                 "capability_state": "experimental" if sat3d_available else "unavailable",
                 "capability_color": "green" if sat3d_available else "red",
                 "capability_reason": (
-                    "SAT3D is installed and callable. This is a review-required research "
-                    f"candidate ({evidence}); positive/negative point prompts are supported."
+                    "SAT3D is installed for explicit interactive use. This is a "
+                    f"review-required research candidate ({evidence}); at least one "
+                    "positive point prompt is required."
                     if sat3d_available
                     else f"SAT3D runtime is unavailable: {missing}."
                 ),
@@ -443,6 +467,33 @@ def catalog_with_local_status(repo_root: Optional[str] = None) -> List[Dict[str,
                 "result_save_path_passed": False,
                 "data_tree_viewer_passed": False,
                 "clinical_case_validation": False,
+            })
+        elif tumor_type in BIOMEDPARSE_SITE_SPECS:
+            missing = ", ".join(
+                str(value) for value in biomedparse_probe.get("missing", [])
+            )
+            validation = biomedparse_records.get(tumor_type, {})
+            entry.update({
+                "capability_state": "experimental" if biomedparse_available else "unavailable",
+                "capability_color": "green" if biomedparse_available else "red",
+                "capability_reason": (
+                    "BiomedParse v2 is installed and callable for automatic text-guided "
+                    "candidate segmentation; no point prompt is required and clinician "
+                    "contour review remains mandatory."
+                    if biomedparse_available
+                    else f"BiomedParse v2 runtime is unavailable: {missing}."
+                ),
+                "callable": biomedparse_available,
+                "runtime_available": biomedparse_available,
+                "runtime_probe": biomedparse_probe,
+                "technical_call_chain_passed": bool(
+                    validation.get("technical_call_chain_passed")
+                ),
+                "space_alignment_passed": bool(validation.get("space_alignment_passed")),
+                "result_save_path_passed": bool(validation.get("result_save_path_passed")),
+                "data_tree_viewer_passed": bool(validation.get("data_tree_viewer_passed")),
+                "clinical_case_validation": False,
+                "target_semantics": "automatic_text_guided_review_required_candidate",
             })
         elif tumor_type == "nnunet_pancreatic":
             if entry["local_present"]:
@@ -471,7 +522,7 @@ def catalog_with_local_status(repo_root: Optional[str] = None) -> List[Dict[str,
                 else next(
                     (
                         canonical
-                        for canonical, spec in SAT3D_SITE_SPECS.items()
+                        for canonical, spec in BIOMEDPARSE_SITE_SPECS.items()
                         if str(spec.get("site")) == str(entry.get("site"))
                     ),
                     None,

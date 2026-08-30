@@ -938,6 +938,22 @@ print(json.dumps(result))
                     f"SAT3D {site}",
                     L("SAT3D 研究候选轮廓（需临床复核）", "SAT3D research candidate (clinical review required)"),
                 )
+            if source.startswith("biomedparse") or model.startswith("biomedparse_"):
+                site = (
+                    model.removeprefix("biomedparse_")
+                    .replace("_lesion", "")
+                    .replace("_primary", "")
+                    .replace("_cancer", "")
+                    .replace("_tumor", "")
+                    .replace("_", " ")
+                )
+                return (
+                    f"BiomedParse v2 {site}",
+                    L(
+                        "BiomedParse v2 自动文本引导候选轮廓（需临床复核）",
+                        "BiomedParse v2 automatic text-guided candidate (clinical review required)",
+                    ),
+                )
             clean = model.replace("_", " ").replace("nnunet ", "").replace("voco ", "")
             return (clean, f"CTV model ({model})")
 
@@ -1508,64 +1524,64 @@ Output (JSON array of strings):"""
 
     # Tumor type maps to canonical CTV tools. The registry retains legacy
     # aliases for restored Sessions, but automatic planning must only emit the
-    # current nnU-Net or SAT3D route names.
+    # current nnU-Net or BiomedParse v2 automatic route names.
     _TUMOR_TYPE_MAP = {
         # English names — pancreatic uses nnUNet (more accurate)
         "pancreatic_tumor": "nnunet_pancreatic",
         "pancreatic": "nnunet_pancreatic",
         "pancreas": "nnunet_pancreatic",
-        "liver_tumor": "sat3d_liver_tumor",
-        "liver": "sat3d_liver_tumor",
-        "kidney_tumor": "sat3d_kidney_tumor",
-        "kidney": "sat3d_kidney_tumor",
-        "colon_tumor": "sat3d_colon_tumor",
-        "colon": "sat3d_colon_tumor",
-        "lung_tumor": "sat3d_lung_tumor",
-        "lung": "sat3d_lung_tumor",
-        "head_neck": "sat3d_head_neck_tumor",
-        "head and neck": "sat3d_head_neck_tumor",
+        "liver_tumor": "biomedparse_liver_tumor",
+        "liver": "biomedparse_liver_tumor",
+        "kidney_tumor": "biomedparse_kidney_lesion",
+        "kidney": "biomedparse_kidney_lesion",
+        "colon_tumor": "biomedparse_colon_primary",
+        "colon": "biomedparse_colon_primary",
+        "lung_tumor": "biomedparse_lung_lesion",
+        "lung": "biomedparse_lung_lesion",
+        "head_neck": "biomedparse_head_neck_cancer",
+        "head and neck": "biomedparse_head_neck_cancer",
         "pdac": "nnunet_pancreatic",
-        "hepatocellular": "sat3d_liver_tumor",
-        "hcc": "sat3d_liver_tumor",
-        "renal": "sat3d_kidney_tumor",
-        "colorectal": "sat3d_colon_tumor",
-        "nsclc": "sat3d_lung_tumor",
-        "prostate": "sat3d_prostate_tumor",
-        "prostate_tumor": "sat3d_prostate_tumor",
+        "hepatocellular": "biomedparse_liver_tumor",
+        "hcc": "biomedparse_liver_tumor",
+        "renal": "biomedparse_kidney_lesion",
+        "colorectal": "biomedparse_colon_primary",
+        "nsclc": "biomedparse_lung_lesion",
+        "prostate": "biomedparse_prostate_lesion",
+        "prostate_tumor": "biomedparse_prostate_lesion",
         "胰腺癌": "nnunet_pancreatic",
         "胰腺肿瘤": "nnunet_pancreatic",
         "胰腺": "nnunet_pancreatic",
-        "肝癌": "sat3d_liver_tumor",
-        "肝肿瘤": "sat3d_liver_tumor",
-        "肝脏": "sat3d_liver_tumor",
-        "肾癌": "sat3d_kidney_tumor",
-        "肾肿瘤": "sat3d_kidney_tumor",
-        "肾脏": "sat3d_kidney_tumor",
-        "结肠癌": "sat3d_colon_tumor",
-        "结直肠癌": "sat3d_colon_tumor",
-        "结肠": "sat3d_colon_tumor",
-        "肺癌": "sat3d_lung_tumor",
-        "肺肿瘤": "sat3d_lung_tumor",
-        "肺部": "sat3d_lung_tumor",
-        "头颈": "sat3d_head_neck_tumor",
-        "头颈肿瘤": "sat3d_head_neck_tumor",
-        "前列腺": "sat3d_prostate_tumor",
-        "前列腺癌": "sat3d_prostate_tumor",
+        "肝癌": "biomedparse_liver_tumor",
+        "肝肿瘤": "biomedparse_liver_tumor",
+        "肝脏": "biomedparse_liver_tumor",
+        "肾癌": "biomedparse_kidney_lesion",
+        "肾肿瘤": "biomedparse_kidney_lesion",
+        "肾脏": "biomedparse_kidney_lesion",
+        "结肠癌": "biomedparse_colon_primary",
+        "结直肠癌": "biomedparse_colon_primary",
+        "结肠": "biomedparse_colon_primary",
+        "肺癌": "biomedparse_lung_lesion",
+        "肺肿瘤": "biomedparse_lung_lesion",
+        "肺部": "biomedparse_lung_lesion",
+        "头颈": "biomedparse_head_neck_cancer",
+        "头颈肿瘤": "biomedparse_head_neck_cancer",
+        "前列腺": "biomedparse_prostate_lesion",
+        "前列腺癌": "biomedparse_prostate_lesion",
         "胰腺癌患者": "nnunet_pancreatic",   # pancreatic cancer patient
-        "肝癌患者": "sat3d_liver_tumor",  # liver cancer patient
-        "肾癌患者": "sat3d_kidney_tumor",    # kidney cancer patient
-        "肺癌患者": "sat3d_lung_tumor",      # lung cancer patient
-        "结肠癌患者": "sat3d_colon_tumor",   # colon cancer patient
+        "肝癌患者": "biomedparse_liver_tumor",  # liver cancer patient
+        "肾癌患者": "biomedparse_kidney_lesion",    # kidney cancer patient
+        "肺癌患者": "biomedparse_lung_lesion",      # lung cancer patient
+        "结肠癌患者": "biomedparse_colon_primary",   # colon cancer patient
     }
 
     _SUPPORTED_AUTOMATIC_CTV_TYPES = frozenset({
         "nnunet_pancreatic",
-        "sat3d_liver_tumor",
-        "sat3d_kidney_tumor",
-        "sat3d_lung_tumor",
-        "sat3d_colon_tumor",
-        "sat3d_head_neck_tumor",
-        "sat3d_prostate_tumor",
+        "biomedparse_liver_tumor",
+        "biomedparse_kidney_lesion",
+        "biomedparse_lung_lesion",
+        "biomedparse_colon_primary",
+        "biomedparse_head_neck_cancer",
+        "biomedparse_prostate_lesion",
     })
 
     def _map_tumor_type(self, tumor_type: Optional[str]) -> Optional[str]:
@@ -1649,29 +1665,29 @@ Output (JSON array of strings):"""
             ("\u80f0\u817a\u764c", "nnunet_pancreatic"),
             ("\u80f0\u817a\u80bf\u7624", "nnunet_pancreatic"),
             ("\u80f0\u817a", "nnunet_pancreatic"),
-            ("\u809d\u764c", "sat3d_liver_tumor"),
-            ("\u809d\u810f", "sat3d_liver_tumor"),
-            ("\u80be\u764c", "sat3d_kidney_tumor"),
-            ("\u80be", "sat3d_kidney_tumor"),
-            ("\u80ba\u764c", "sat3d_lung_tumor"),
-            ("\u80ba", "sat3d_lung_tumor"),
-            ("\u7ed3\u80a0\u764c", "sat3d_colon_tumor"),
-            ("\u7ed3\u80a0", "sat3d_colon_tumor"),
-            ("\u5934\u9888", "sat3d_head_neck_tumor"),
-            ("\u524d\u5217\u817a", "sat3d_prostate_tumor"),
+            ("\u809d\u764c", "biomedparse_liver_tumor"),
+            ("\u809d\u810f", "biomedparse_liver_tumor"),
+            ("\u80be\u764c", "biomedparse_kidney_lesion"),
+            ("\u80be", "biomedparse_kidney_lesion"),
+            ("\u80ba\u764c", "biomedparse_lung_lesion"),
+            ("\u80ba", "biomedparse_lung_lesion"),
+            ("\u7ed3\u80a0\u764c", "biomedparse_colon_primary"),
+            ("\u7ed3\u80a0", "biomedparse_colon_primary"),
+            ("\u5934\u9888", "biomedparse_head_neck_cancer"),
+            ("\u524d\u5217\u817a", "biomedparse_prostate_lesion"),
             ("pancreatic cancer", "nnunet_pancreatic"),
             ("pancreatic tumor", "nnunet_pancreatic"),
-            ("liver cancer", "sat3d_liver_tumor"),
-            ("liver tumor", "sat3d_liver_tumor"),
-            ("kidney cancer", "sat3d_kidney_tumor"),
-            ("kidney tumor", "sat3d_kidney_tumor"),
-            ("lung cancer", "sat3d_lung_tumor"),
-            ("lung tumor", "sat3d_lung_tumor"),
-            ("colon cancer", "sat3d_colon_tumor"),
-            ("colon tumor", "sat3d_colon_tumor"),
-            ("head and neck", "sat3d_head_neck_tumor"),
-            ("prostate cancer", "sat3d_prostate_tumor"),
-            ("prostate tumor", "sat3d_prostate_tumor"),
+            ("liver cancer", "biomedparse_liver_tumor"),
+            ("liver tumor", "biomedparse_liver_tumor"),
+            ("kidney cancer", "biomedparse_kidney_lesion"),
+            ("kidney tumor", "biomedparse_kidney_lesion"),
+            ("lung cancer", "biomedparse_lung_lesion"),
+            ("lung tumor", "biomedparse_lung_lesion"),
+            ("colon cancer", "biomedparse_colon_primary"),
+            ("colon tumor", "biomedparse_colon_primary"),
+            ("head and neck", "biomedparse_head_neck_cancer"),
+            ("prostate cancer", "biomedparse_prostate_lesion"),
+            ("prostate tumor", "biomedparse_prostate_lesion"),
         )
         for text in messages:
             msg = text.lower()

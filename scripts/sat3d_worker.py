@@ -210,6 +210,11 @@ def main() -> int:
     point_payload = json.loads(Path(args.points).read_text(encoding="utf-8"))
     positive = point_payload.get("positive") or []
     negative = point_payload.get("negative") or []
+    if not positive:
+        raise RuntimeError(
+            "SAT3D requires at least one positive point prompt; zero-prompt output "
+            "has no target-selection semantics"
+        )
     all_points = positive + negative
     original_shape = tuple(int(value) for value in normalised.shape[2:])
     # The official custom sliding-window function pads volumes smaller than
@@ -288,7 +293,7 @@ def main() -> int:
         "model_points_after_padding": shifted_points,
         "explicit_padding_before_zyx": pad_before,
         "explicit_padding_after_zyx": pad_after,
-        "prompt_mode": "point_guided" if all_points else "zero_prompt",
+        "prompt_mode": "point_guided",
         "retained_components": retained_components,
         "threshold": 0.5,
         "roi_size": [128, 128, 128],

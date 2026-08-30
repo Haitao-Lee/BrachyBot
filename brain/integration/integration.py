@@ -81,13 +81,13 @@ def create_ctv_segmentation_tool(anatomy: str):
 
     key_map = {
         "pancreatic": "pancreatic_tumor",
-        "liver": "sat3d_liver_tumor",
-        "kidney": "sat3d_kidney_tumor",
-        "prostate": "sat3d_prostate_tumor",
-        "lung": "sat3d_lung_tumor",
-        "colon": "sat3d_colon_tumor",
-        "head_neck": "sat3d_head_neck_tumor",
-        "head and neck": "sat3d_head_neck_tumor",
+        "liver": "biomedparse_liver_tumor",
+        "kidney": "biomedparse_kidney_lesion",
+        "prostate": "biomedparse_prostate_lesion",
+        "lung": "biomedparse_lung_lesion",
+        "colon": "biomedparse_colon_primary",
+        "head_neck": "biomedparse_head_neck_cancer",
+        "head and neck": "biomedparse_head_neck_cancer",
         "voco_pancreatic": "voco_pancreatic",
         "voco_liver": "voco_liver",
         "voco_kidney": "voco_kidney",
@@ -99,13 +99,19 @@ def create_ctv_segmentation_tool(anatomy: str):
     if tool_key is None:
         tool_key = anatomy.lower()
 
+    from tool_factory.CTV_seg import SAT3D_INTERACTIVE_ROUTES, normalize_tumor_type
+    tool_key = normalize_tumor_type(tool_key)
     tool_class = CTV_REGISTRY.get(tool_key)
     if tool_class is None:
         raise ValueError(f"Unknown anatomy: {anatomy}. Available: {list(CTV_REGISTRY.keys())}")
+    from tool_factory.CTV_seg.biomedparse_v2 import BiomedParseV2CTVTool
     from tool_factory.CTV_seg.sat3d import SAT3DCTVTool
     if tool_class is SAT3DCTVTool:
-        from tool_factory.CTV_seg import normalize_tumor_type
-        return tool_class(default_tumor_type=normalize_tumor_type(tool_key))
+        return tool_class(
+            default_tumor_type=SAT3D_INTERACTIVE_ROUTES.get(tool_key, tool_key)
+        )
+    if tool_class is BiomedParseV2CTVTool:
+        return tool_class(default_tumor_type=tool_key)
     return tool_class()
 
 

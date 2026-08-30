@@ -1,14 +1,15 @@
-"""Optional Microsoft BiomedParse v2 open-vocabulary segmentation adapter.
+"""Microsoft BiomedParse v2 text-guided segmentation adapters.
 
 BiomedParse v2 is a text-guided research foundation model, not a
-site-specific clinically validated CTV model.  The adapter is deliberately
-opt-in: the official checkout, its isolated dependencies, and its checkpoint
-must be supplied by deployment configuration.  The pancreatic production
-nnU-Net path is not routed through this module. The legacy closed-set CTV
-class remains importable only for old audit tests and serialized identifiers;
-the unified CTV registry redirects every supported non-pancreatic closed-set
-site to SAT3D. New BiomedParse use goes through
-``BiomedParseV2GenericSegmentationTool`` and creates an independent mask.
+site-specific clinically validated CTV model. The official checkout, its
+isolated dependencies, and its checkpoint are deployment resources; the
+pancreatic production nnU-Net path is not routed through this module.
+
+The closed-set adapter supplies an official task phrase (for example,
+``liver tumors`` or ``prostate lesion``) and therefore satisfies BrachyBot's
+automatic target-selection contract without per-case clicks. The generic
+adapter remains available for open-vocabulary masks that are not promoted to
+CTV until the user explicitly moves one in the Data Tree.
 """
 
 from __future__ import annotations
@@ -46,38 +47,50 @@ _TEXT_ASSET_FILES = (
 )
 
 
-# These prompts are the CT lesion/anatomy phrases documented by the official
-# v2 project.  They produce candidate masks, not a clinical contour approval.
+# These prompts and modality families are documented by the official v2
+# project. They produce candidate masks, not a clinical contour approval.
 SITE_SPECS: Dict[str, Dict[str, Any]] = {
     "biomedparse_liver_tumor": {
         "site": "liver",
         "prompt": "liver tumors",
         "window": (400.0, 40.0),
         "label": "liver tumor",
+        "modalities": ("ct", "cta"),
     },
     "biomedparse_kidney_lesion": {
         "site": "kidney",
         "prompt": "kidney lesion",
         "window": (400.0, 40.0),
         "label": "kidney lesion",
+        "modalities": ("ct", "cta"),
     },
     "biomedparse_lung_lesion": {
         "site": "lung",
         "prompt": "lung lesion",
         "window": (1500.0, -160.0),
         "label": "lung lesion",
+        "modalities": ("ct",),
     },
     "biomedparse_colon_primary": {
         "site": "colon",
         "prompt": "colon cancer primary",
         "window": (400.0, 40.0),
         "label": "colon cancer primary",
+        "modalities": ("ct",),
     },
     "biomedparse_head_neck_cancer": {
         "site": "head_neck",
         "prompt": "head and neck cancer",
         "window": (400.0, 40.0),
         "label": "head and neck cancer",
+        "modalities": ("ct",),
+    },
+    "biomedparse_prostate_lesion": {
+        "site": "prostate",
+        "prompt": "prostate lesion",
+        "window": None,
+        "label": "prostate lesion",
+        "modalities": ("mri", "t2", "t2w"),
     },
 }
 
@@ -395,6 +408,52 @@ def _normalise_ct(array: np.ndarray, window: Tuple[float, float]) -> np.ndarray:
         neginf=low,
     )
     return (np.clip(values, low, high) - low) * (255.0 / (high - low))
+
+
+def _normalise_non_ct(array: np.ndarray) -> np.ndarray:
+    """Apply the official v2 non-CT 0.5--99.5 percentile contract."""
+    values = np.asarray(array, dtype=np.float32)
+    finite = np.isfinite(values)
+    if not np.any(finite):
+        raise ValueError("BiomedParse input contains no finite voxels")
+    finite_values = values[finite]
+    if float(finite_values.min()) >= 0.0 and float(finite_values.max()) <= 255.0:
+        return np.nan_to_num(values, nan=0.0, posinf=255.0, neginf=0.0).astype(
+            np.float32,
+            copy=False,
+        )
+    foreground = finite & (values != 0)
+    sample = values[foreground] if np.any(foreground) else finite_values
+    lower, upper = np.percentile(sample, (0.5, 99.5))
+    if not np.isfinite(lower) or not np.isfinite(upper) or upper <= lower:
+        raise ValueError("BiomedParse input has no usable intensity range")
+    clipped = np.clip(np.nan_to_num(values, nan=float(lower)), lower, upper)
+    return ((clipped - lower) / (upper - lower) * 255.0).astype(np.float32)
+
+
+def _normalise_modality(value: Any) -> str:
+    modality = str(value or "CT").strip().casefold()
+    aliases = {
+        "mr": "mri",
+        "magnetic resonance": "mri",
+        "t2-weighted": "t2w",
+        "t2 weighted": "t2w",
+        "t2wi": "t2w",
+    }
+    return aliases.get(modality, modality)
+
+
+def _normalise_volume(
+    array: np.ndarray,
+    *,
+    modality: str,
+    window: Optional[Tuple[float, float]],
+) -> np.ndarray:
+    if modality in {"ct", "cta"}:
+        if window is None:
+            raise ValueError("BiomedParse CT route is missing its window contract")
+        return _normalise_ct(array, window)
+    return _normalise_non_ct(array)
 
 
 def _load_runtime(
@@ -811,7 +870,10 @@ class BiomedParseV2GenericSegmentationTool(BaseTool):
 
 
 class BiomedParseV2CTVTool(BaseTool):
-    """Generate research CTV candidates from BiomedParse v2 CT inference."""
+    """Generate automatic text-selected CTV candidates with BiomedParse v2."""
+
+    def __init__(self, default_tumor_type: Optional[str] = None):
+        self.default_tumor_type = default_tumor_type
 
     @property
     def name(self) -> str:
@@ -820,10 +882,11 @@ class BiomedParseV2CTVTool(BaseTool):
     @property
     def description(self) -> str:
         return (
-        "Text-guided CT tumor/lesion candidate segmentation for research workflows using "
-            "Microsoft BiomedParse v2. Supports selected liver, kidney, lung, colon, "
-            "and head/neck prompts. The official checkout and checkpoint must be "
-            "installed explicitly; this is not a validated clinical CTV model."
+            "Automatic text-guided 3D tumor/lesion candidate segmentation for research "
+            "workflows using Microsoft BiomedParse v2. Supports selected CT liver, "
+            "kidney, lung, colon and head/neck tasks plus MRI prostate lesions. "
+            "No per-case point prompt is required; every contour still requires "
+            "qualified clinical review."
         )
 
     @property
@@ -834,9 +897,11 @@ class BiomedParseV2CTVTool(BaseTool):
                 "image": {"type": "object", "x-server-injected": True},
                 "image_path": {"type": "string"},
                 "tumor_type": {"type": "string", "enum": sorted(SITE_SPECS)},
+                "image_modality": {"type": "string", "default": "CT"},
+                "volume_index": {"type": "integer", "minimum": 0, "default": 0},
                 "slice_batch_size": {"type": "integer", "minimum": 1, "default": 4},
             },
-            "required": ["tumor_type"],
+            "required": [] if self.default_tumor_type else ["tumor_type"],
         }
 
     @property
@@ -855,7 +920,9 @@ class BiomedParseV2CTVTool(BaseTool):
     def _execute(self, **kwargs: Any) -> ToolResult:
         image = kwargs.get("image")
         image_path = kwargs.get("image_path")
-        tumor_type = str(kwargs.get("tumor_type") or "").strip().lower()
+        tumor_type = str(
+            kwargs.get("tumor_type") or self.default_tumor_type or ""
+        ).strip().lower()
         spec = SITE_SPECS.get(tumor_type)
         if spec is None:
             return ToolResult(
@@ -870,6 +937,80 @@ class BiomedParseV2CTVTool(BaseTool):
                 return ToolResult(success=False, error=f"Unable to read CT image: {exc}")
         if image is None:
             return ToolResult(success=False, error="Either image or image_path must be provided")
+
+        try:
+            volume_index = int(kwargs.get("volume_index", 0))
+        except (TypeError, ValueError):
+            return ToolResult(
+                success=False,
+                error="BiomedParse volume_index must be a non-negative integer.",
+                metadata={"code": "invalid_biomedparse_volume_index"},
+            )
+        if volume_index < 0 or (image.GetDimension() == 3 and volume_index != 0):
+            return ToolResult(
+                success=False,
+                error=(
+                    "BiomedParse volume_index must be 0 for a 3D image."
+                    if image.GetDimension() == 3
+                    else "BiomedParse volume_index must be a non-negative integer."
+                ),
+                metadata={"code": "invalid_biomedparse_volume_index"},
+            )
+        if image.GetDimension() == 4:
+            fourth_size = int(image.GetSize()[3])
+            if volume_index >= fourth_size:
+                return ToolResult(
+                    success=False,
+                    error=(
+                        f"BiomedParse volume_index {volume_index} is outside 4D size "
+                        f"{fourth_size}."
+                    ),
+                    metadata={"code": "invalid_biomedparse_volume_index"},
+                )
+            image = sitk.Extract(
+                image,
+                [int(value) for value in image.GetSize()[:3]] + [0],
+                [0, 0, 0, volume_index],
+            )
+        if image.GetDimension() != 3:
+            return ToolResult(
+                success=False,
+                error=f"BiomedParse requires one 3D volume; received {image.GetDimension()}D input.",
+                metadata={"code": "biomedparse_requires_3d_volume"},
+            )
+
+        modality = _normalise_modality(kwargs.get("image_modality"))
+        supported_modalities = tuple(spec.get("modalities") or ())
+        if modality not in supported_modalities:
+            return ToolResult(
+                success=False,
+                error=(
+                    f"BiomedParse {spec['site']} segmentation does not accept modality "
+                    f"'{modality}' for this automatic route. Select one of "
+                    f"{list(supported_modalities)} or provide a reviewed CTV mask."
+                ),
+                metadata={
+                    "code": "biomedparse_modality_mismatch",
+                    "tumor_type_used": tumor_type,
+                    "image_modality": modality,
+                    "supported_modalities": list(supported_modalities),
+                },
+            )
+
+        try:
+            slice_batch_size = int(kwargs.get("slice_batch_size") or 4)
+        except (TypeError, ValueError):
+            return ToolResult(
+                success=False,
+                error="BiomedParse slice_batch_size must be a positive integer.",
+                metadata={"code": "invalid_biomedparse_slice_batch_size"},
+            )
+        if slice_batch_size < 1:
+            return ToolResult(
+                success=False,
+                error="BiomedParse slice_batch_size must be a positive integer.",
+                metadata={"code": "invalid_biomedparse_slice_batch_size"},
+            )
 
         availability = _availability()
         if not availability["available"]:
@@ -886,9 +1027,10 @@ class BiomedParseV2CTVTool(BaseTool):
         text_assets = _text_assets_path(root)
         try:
             lpi_image = sitk.DICOMOrient(image, "LPI")
-            normalised = _normalise_ct(
+            normalised = _normalise_volume(
                 sitk.GetArrayFromImage(lpi_image),
-                spec["window"],
+                modality=modality,
+                window=spec.get("window"),
             )
             runtime_python_text = availability.get("runtime_python")
             # Do NOT resolve symlinks here: POSIX venvs expose .venv/bin/python
@@ -907,7 +1049,7 @@ class BiomedParseV2CTVTool(BaseTool):
                     text_assets=text_assets,
                     runtime_python=runtime_python,
                     prompt=spec["prompt"],
-                    slice_batch_size=max(1, int(kwargs.get("slice_batch_size") or 4)),
+                    slice_batch_size=slice_batch_size,
                 )
             else:
                 runtime = _load_runtime(root, checkpoint, text_assets)
@@ -931,7 +1073,7 @@ class BiomedParseV2CTVTool(BaseTool):
                     output = model(
                         {"image": prepared.unsqueeze(0), "text": [spec["prompt"]]},
                         mode="eval",
-                        slice_batch_size=max(1, int(kwargs.get("slice_batch_size") or 4)),
+                        slice_batch_size=slice_batch_size,
                     )
                     predictions = output["predictions"]
                     mask_logits = predictions["pred_gmasks"]
@@ -964,8 +1106,9 @@ class BiomedParseV2CTVTool(BaseTool):
                 return ToolResult(
                     success=False,
                     error=(
-                        "BiomedParse v2 returned an empty candidate mask. Review the CT "
-                        "window/prompt and provide a clinician-approved CTV mask instead."
+                        "BiomedParse v2 returned an empty candidate mask. Review the input "
+                        "modality, preprocessing, and text target, then provide a "
+                        "clinician-approved CTV mask if no valid candidate is produced."
                     ),
                     metadata={
                         **availability,
@@ -996,6 +1139,8 @@ class BiomedParseV2CTVTool(BaseTool):
                 "label_grid_orientation": "LPI",
                 "label_map": {1: spec["label"]},
                 "text_prompt": spec["prompt"],
+                "image_modality": modality,
+                "volume_index": volume_index,
                 "object_existence_confidence": confidence,
                 "model_name": "BiomedParse v2",
             }

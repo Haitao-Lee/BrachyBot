@@ -2678,6 +2678,7 @@ def register_planning_routes(
                             "sat3d_prompt_mode", "sat3d_positive_points_zyx",
                             "sat3d_negative_points_zyx", "sat3d_requires_clinician_review",
                             "image_modality", "volume_index", "target_semantics",
+                            "text_prompt", "object_existence_confidence",
                         ):
                             agent.memory.store(provenance_key, meta.get(provenance_key))
                     except Exception as e:
@@ -2783,10 +2784,15 @@ def register_planning_routes(
                     "repository": meta.get("repository"),
                     "checkpoint_md5": meta.get("checkpoint_md5"),
                     "prompt_mode": meta.get("sat3d_prompt_mode"),
+                    "text_prompt": meta.get("text_prompt"),
                     "positive_points": meta.get("sat3d_positive_points_zyx") or [],
                     "negative_points": meta.get("sat3d_negative_points_zyx") or [],
                     "out_of_distribution": bool(meta.get("sat3d_out_of_distribution")),
-                    "requires_clinician_review": bool(meta.get("sat3d_requires_clinician_review")),
+                    "requires_clinician_review": bool(
+                        meta.get("sat3d_requires_clinician_review")
+                        or str(meta.get("ctv_source") or "").startswith("biomedparse")
+                    ),
+                    "object_existence_confidence": meta.get("object_existence_confidence"),
                     "image_modality": meta.get("image_modality"),
                     "volume_index": meta.get("volume_index", 0),
                 } if kind == "ctv" else None),
