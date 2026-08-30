@@ -108,6 +108,37 @@ def test_3d_host_cannot_leave_a_smaller_inner_surface_after_flex_reflow():
     assert "height: auto !important;" in css
 
 
+def test_pointer_hover_never_moves_or_relayers_viewer_canvases():
+    """Passive pointer travel must not resize or re-composite 2D/3D panes."""
+    css = (ROOT / "web/app/static/css/brachybot-report-controls.css").read_text(encoding="utf-8")
+
+    base = css.split(".viewer-card {", 1)[1].split("}", 1)[0]
+    hover = css.split(".viewer-card:hover {", 1)[1].split("}", 1)[0]
+    assert "transform:" not in base
+    assert "transform:" not in hover
+    assert "z-index" not in hover
+    assert "border-color" in hover
+    assert "box-shadow" in hover
+
+
+def test_passive_hu_readout_cannot_reflow_the_viewer_workspace():
+    """Hover HU telemetry stays in a fixed slot and stale fetches are ignored."""
+    css = (ROOT / "web/app/static/css/brachybot-report-controls.css").read_text(encoding="utf-8")
+    annotation = (ROOT / "web/app/static/js/brachybot-manual-annotation.js").read_text(encoding="utf-8")
+
+    hu = css.split("#huDisplay {", 1)[1].split("}", 1)[0]
+    assert "flex: 0 0 208px" in hu
+    assert "width: 208px" in hu
+    assert "min-width: 208px" in hu
+    assert "max-width: 208px" in hu
+    assert "white-space: nowrap" in hu
+    assert "let huFetchGeneration = 0" in annotation
+    assert "function clearHUReadout()" in annotation
+    assert "if (generation !== huFetchGeneration) return" in annotation
+    assert "canvas.addEventListener('mouseleave', () => {" in annotation
+    assert "clearHUReadout();" in annotation
+
+
 def test_world_coordinate_surfaces_are_centered_before_transparent_sorting():
     manual = (ROOT / "web/app/static/js/brachybot-3d-manual.js").read_text(encoding="utf-8")
     layout = (ROOT / "web/app/static/js/brachybot-viewer-layout.js").read_text(encoding="utf-8")

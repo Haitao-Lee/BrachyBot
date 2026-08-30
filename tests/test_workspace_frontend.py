@@ -417,7 +417,7 @@ def test_workspace_transitions_publish_measurable_first_paint_and_restore_stages
     assert "brachybot-workspace.js?v=38" in index
     assert "brachybot-ui-api.js?v=50" in index
     assert "brachybot-viewer-volume.js?v=44" in index
-    assert "brachybot-manual-annotation.js?v=18" in index
+    assert "brachybot-manual-annotation.js?v=19" in index
 
 
 def test_case_owned_api_requests_never_use_presentation_placeholders():

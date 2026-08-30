@@ -885,10 +885,25 @@ function _wireManualStepInputs() {
 }
 
 let huFetchTimeout = null;
+let huFetchGeneration = 0;
+
+function clearHUReadout() {
+    // Invalidate both a debounced request and a request already in flight.
+    // Otherwise a response from the 2D pane can arrive after the pointer has
+    // moved into 3D and repopulate the toolbar with stale coordinates.
+    huFetchGeneration += 1;
+    if (huFetchTimeout) clearTimeout(huFetchTimeout);
+    huFetchTimeout = null;
+    const display = document.getElementById('huDisplay');
+    if (display) display.textContent = 'HU: —';
+}
+
 function fetchHUValue(volX, volY, volZ) {
     if (huFetchTimeout) clearTimeout(huFetchTimeout);
+    const generation = ++huFetchGeneration;
 
     huFetchTimeout = setTimeout(async () => {
+        huFetchTimeout = null;
         try {
             const res = await fetch(API + '/viewer/hu', {
                 method: 'POST',
@@ -899,10 +914,13 @@ function fetchHUValue(volX, volY, volZ) {
                     z: volZ,
                 }),
             });
+            if (generation !== huFetchGeneration) return;
             if (res.ok) {
                 const data = await res.json();
+                if (generation !== huFetchGeneration) return;
                 if (data.success) {
-                    document.getElementById('huDisplay').textContent = `HU: ${data.hu.toFixed(0)} | [${volX}, ${volY}, ${volZ}]`;
+                    const display = document.getElementById('huDisplay');
+                    if (display) display.textContent = `HU: ${data.hu.toFixed(0)} | [${volX}, ${volY}, ${volZ}]`;
                 }
             }
         } catch (e) {
@@ -2987,7 +3005,7 @@ function setupBasicInteractions(axis, canvas) {
     canvas.addEventListener('mouseleave', () => {
         isDragging = false;
         canvas.style.cursor = '';
-        document.getElementById('huDisplay').textContent = '';
+        clearHUReadout();
         clearLinkedCrosshairs();
     });
 
