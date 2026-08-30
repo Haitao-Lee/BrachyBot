@@ -1211,21 +1211,27 @@ def test_direct_ctv_request_does_not_treat_manual_provenance_as_a_model():
     assert agent._detect_tool_request("segment CTV") is None
 
 
-def test_ctv_registry_excludes_non_target_and_mri_only_research_models():
-    from tool_factory.CTV_seg import TOOL_REGISTRY
+def test_ctv_registry_exposes_only_automatic_or_explicit_interactive_routes():
+    from tool_factory.CTV_seg import TOOL_REGISTRY, get_tool
+    from tool_factory.CTV_seg.biomedparse_v2 import BiomedParseV2CTVTool
     from tool_factory.CTV_seg.pancreatic_tumor_voco import VoCoPancreaticTumorTool
 
     assert VoCoPancreaticTumorTool.LABEL_MAP[1] == ("pancreatic_tumor", True)
     assert VoCoPancreaticTumorTool.LABEL_MAP[2] == ("vein", False)
     assert VoCoPancreaticTumorTool.LABEL_MAP[3] == ("artery", False)
     assert VoCoPancreaticTumorTool.LABEL_MAP[4] == ("pancreas", False)
-    assert {"voco_liver", "voco_kidney", "voco_lung", "voco_colon"} <= set(TOOL_REGISTRY)
+    assert {"voco_liver", "voco_kidney", "voco_lung", "voco_colon"}.isdisjoint(TOOL_REGISTRY)
+    assert all(
+        isinstance(get_tool(alias), BiomedParseV2CTVTool)
+        for alias in ("voco_liver", "voco_kidney", "voco_lung", "voco_colon")
+    )
     assert {
         "voco_btcv", "voco_segthor", "voco_fumpe", "voco_covid",
         "voco_aorta", "voco_brats21",
     }.isdisjoint(TOOL_REGISTRY)
     from tool_factory.CTV_seg.sat3d import SAT3DCTVTool
-    assert TOOL_REGISTRY["head_neck_tumor"] is SAT3DCTVTool
+    assert TOOL_REGISTRY["biomedparse_head_neck_cancer"] is BiomedParseV2CTVTool
+    assert TOOL_REGISTRY["sat3d_interactive_head_neck_tumor"] is SAT3DCTVTool
 
 
 def test_manual_ctv_label_preserves_source_when_site_is_also_declared(tmp_path):
