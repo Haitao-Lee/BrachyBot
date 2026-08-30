@@ -47,7 +47,7 @@ def test_prostate_route_rejects_ct_but_accepts_t2_modality_before_runtime_probe(
     monkeypatch.setattr(
         sat3d,
         "_availability",
-        lambda: {"available": False, "missing": ["test runtime"]},
+        lambda **_kwargs: {"available": False, "missing": ["test runtime"]},
     )
     result = sat3d.SAT3DCTVTool()._execute(
         image=image,
@@ -84,7 +84,7 @@ def test_sat3d_adapter_passes_prompts_and_preserves_lpi_geometry(monkeypatch, tm
     monkeypatch.setattr(
         sat3d,
         "_availability",
-        lambda: {
+        lambda **_kwargs: {
             "available": True,
             "missing": [],
             "runtime_python": str(runtime),
