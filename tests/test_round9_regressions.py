@@ -287,14 +287,17 @@ class Round9RegressionTests(unittest.TestCase):
         self.assertIn("zoom: 1", report)
         self.assertIn("function _captureReportCanvasFit", report)
         # The dose-surface capture preserves the complete canvas and
-        # applies only the shared long-edge bound.
+        # applies only the shared long-edge bound.  Report-only annotations
+        # (such as the dose colorbar) are added after the fit operation so
+        # the live viewer canvas remains untouched.
         normalized = re.sub(r"\s+", " ", report)
         self.assertIn(
-            "_captureReportCanvasFit(canvas, REPORT_FIGURE_LONG_EDGE);",
+            "_captureReportCanvasFit( canvas, REPORT_FIGURE_LONG_EDGE,",
             normalized,
         )
+        self.assertIn("_drawReport3DDoseColorbar(", report)
         self.assertIn("candidate.clone().intersect(context)", report)
-        self.assertIn("brachybot-report-editor.js?v=25", index)
+        self.assertIn("brachybot-report-editor.js?v=26", index)
 
 
 if __name__ == "__main__":
