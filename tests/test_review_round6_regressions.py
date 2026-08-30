@@ -1186,7 +1186,9 @@ def test_direct_ctv_request_uses_explicit_site_without_inventing_an_ambiguous_on
     assert routed[0]["params"]["tumor_type"] == "nnunet_pancreatic"
 
     assert agent._detect_tool_request("segment CTV") is None
-    assert agent._detect_tool_request("segment a head and neck tumor CTV") is None
+    head_neck = agent._detect_tool_request("segment a head and neck tumor CTV")
+    assert head_neck[0]["tool"] == "ctv_segmentation"
+    assert head_neck[0]["params"]["tumor_type"] == "sat3d_head_neck_tumor"
 
 
 def test_direct_ctv_request_does_not_treat_manual_provenance_as_a_model():
@@ -1220,8 +1222,10 @@ def test_ctv_registry_excludes_non_target_and_mri_only_research_models():
     assert {"voco_liver", "voco_kidney", "voco_lung", "voco_colon"} <= set(TOOL_REGISTRY)
     assert {
         "voco_btcv", "voco_segthor", "voco_fumpe", "voco_covid",
-        "voco_aorta", "voco_brats21", "head_neck_tumor",
+        "voco_aorta", "voco_brats21",
     }.isdisjoint(TOOL_REGISTRY)
+    from tool_factory.CTV_seg.sat3d import SAT3DCTVTool
+    assert TOOL_REGISTRY["head_neck_tumor"] is SAT3DCTVTool
 
 
 def test_manual_ctv_label_preserves_source_when_site_is_also_declared(tmp_path):
