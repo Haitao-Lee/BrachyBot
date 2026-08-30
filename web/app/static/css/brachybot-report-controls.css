@@ -444,12 +444,15 @@
     min-width: 0;
     z-index: 1;
     box-shadow: var(--inset-top), var(--shadow-elevated);
-    transition: box-shadow var(--t-base) var(--ease), border-color var(--t-base) var(--ease), transform var(--t-base) var(--ease);
+    /* Viewer cards host raster and WebGL drawing surfaces.  Their geometry and
+       compositor layer must stay invariant while the pointer crosses between
+       panes: animating the card transform makes every canvas move by a pixel
+       and can transiently drop a WebGL frame when Chromium re-composites it. */
+    transition: box-shadow var(--t-base) var(--ease), border-color var(--t-base) var(--ease);
 }
 .viewer-card:hover {
     border-color: var(--border-emphasis);
     box-shadow: var(--inset-top), 0 0 0 1px rgba(79, 124, 255, 0.25), 0 8px 24px rgba(79, 124, 255, 0.12);
-    transform: translateY(-1px);
 }
 .tree-item--ct { gap: 0.28rem; }
 .tree-item--ct .item-info { display: none; }
@@ -589,8 +592,6 @@
 .viewers-row.viewer-resized { flex: 0 0 var(--resize-h, auto) !important; }
 .viewer-card.viewer-resized { flex: 0 0 var(--resize-h, auto) !important; }
 .viewer-card-3d.viewer-resized { flex: 0 0 var(--resize-h, auto) !important; }
-.viewer-card:hover { z-index: 2; }
-
 .viewer-card.fullscreen {
     position: absolute !important;
     inset: 0 !important;
@@ -1229,11 +1230,23 @@ input[type="checkbox"] {
 #huDisplay {
     color: var(--primary) !important;
     font-family: 'JetBrains Mono', monospace !important;
+    /* HU/voxel text changes on every passive pointer move.  Keep it in a
+       fixed flex slot so those text-width changes cannot wrap the toolbar,
+       resize every viewer, and force the WebGL drawing buffer to churn. */
+    flex: 0 0 208px;
+    width: 208px;
+    min-width: 208px;
+    max-width: 208px;
     padding: 0.2rem 0.5rem;
     background: var(--bg-2);
     border: 1px solid var(--border-hairline);
     border-radius: var(--radius-sm);
     box-shadow: var(--inset-top), var(--shadow-xs);
+    text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-variant-numeric: tabular-nums;
 }
 
 #colorDialog {
