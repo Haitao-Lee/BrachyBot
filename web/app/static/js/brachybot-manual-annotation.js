@@ -676,7 +676,9 @@ async function runSegmentationStep(kind) {
                 tumor_type: document.getElementById('ctvModelSelect')?.value || 'nnunet_pancreatic',
                 image_modality: document.getElementById('ctvImageModality')?.value || 'CT',
                 volume_index: Math.max(0, Math.trunc(Number(document.getElementById('ctvVolumeIndex')?.value) || 0)),
-                ...sat3dPromptPayload(),
+                ...(String(document.getElementById('ctvModelSelect')?.value || '').startsWith('sat3d_interactive_')
+                    ? sat3dPromptPayload()
+                    : {}),
             } : {}),
         };
         // A manual step may be started while the selected case is still
@@ -781,7 +783,7 @@ async function runSegmentationStep(kind) {
             }).catch(error => console.warn('[manual segmentation] fallback label load failed:', error));
         }
         if (!isCurrentOwner()) return { success: true, kind, labels: n, detached: true };
-        if (apiKind === 'ctv' && String(body.tumor_type || '').startsWith('sat3d_')) {
+        if (apiKind === 'ctv' && String(body.tumor_type || '').startsWith('biomedparse_')) {
             fetch(API + '/ctv/models/validation', {
                 method: 'POST',
                 headers: sessionHeaders,
@@ -2572,8 +2574,8 @@ function _updateSat3dPromptHelp() {
     const help = document.getElementById('sat3dPromptHelp');
     if (!help) return;
     const payload = sat3dPromptPayload();
-    const zh = `SAT3D 提示点：正点 ${payload.positive_points.length}，负点 ${payload.negative_points.length}。未放点时执行零点初始推理。`;
-    const en = `SAT3D prompts: ${payload.positive_points.length} positive, ${payload.negative_points.length} negative. With no points, initial zero-prompt inference is used.`;
+    const zh = `SAT3D 提示点：正点 ${payload.positive_points.length}，负点 ${payload.negative_points.length}。至少需要一个肿瘤内正点。`;
+    const en = `SAT3D prompts: ${payload.positive_points.length} positive, ${payload.negative_points.length} negative. At least one positive point inside the tumor is required.`;
     help.dataset.i18nZh = zh;
     help.dataset.i18nEn = en;
     help.textContent = typeof window._t === 'function' ? window._t(zh, en) : en;

@@ -1188,7 +1188,7 @@ def test_direct_ctv_request_uses_explicit_site_without_inventing_an_ambiguous_on
     assert agent._detect_tool_request("segment CTV") is None
     head_neck = agent._detect_tool_request("segment a head and neck tumor CTV")
     assert head_neck[0]["tool"] == "ctv_segmentation"
-    assert head_neck[0]["params"]["tumor_type"] == "sat3d_head_neck_tumor"
+    assert head_neck[0]["params"]["tumor_type"] == "biomedparse_head_neck_cancer"
 
 
 def test_direct_ctv_request_does_not_treat_manual_provenance_as_a_model():

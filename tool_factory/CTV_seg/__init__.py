@@ -46,54 +46,23 @@ from .model_catalog import CTVModelCatalogTool, catalog_with_local_status, filte
 # Removed VoCoPancSegTool (was pointing to PANORAMA weights with wrong out_channels)
 
 
-TOOL_REGISTRY = {
-    # CTV models. The pancreatic production path always uses nnU-Net.
-    "pancreatic_tumor": NNUNetPancreaticTumorTool,
-    # Non-pancreatic closed-set tumor candidates use the official SAT3D
-    # adapter. Historical identifiers are normalized below; they never fall
-    # back silently to BiomedParse or whole-organ segmentation.
-    **{key: SAT3DCTVTool for key in SAT3D_SITE_SPECS},
-    "liver_tumor": SAT3DCTVTool,
-    "kidney_tumor": SAT3DCTVTool,
-    "lung_tumor": SAT3DCTVTool,
-    "colon_tumor": SAT3DCTVTool,
-    "prostate_tumor": SAT3DCTVTool,
-    "head_neck_tumor": SAT3DCTVTool,
-    # Legacy aliases remain accepted for restored sessions, but normalization
-    # sends each one to its canonical SAT3D route.
-    "voco_pancreatic": NNUNetPancreaticTumorTool,
-    "nnunet_pancreatic": NNUNetPancreaticTumorTool,
-    "voco_liver": SAT3DCTVTool,
-    "voco_colon": SAT3DCTVTool,
-    "voco_kidney": SAT3DCTVTool,
-    "voco_lung": SAT3DCTVTool,
-    **{key: SAT3DCTVTool for key in BIOMEDPARSE_SITE_SPECS},
-    "totalsegmentator_liver_tumor": SAT3DCTVTool,
-    # Anatomical, embolism, infection, and MRI-only research models remain
-    # importable below but are intentionally excluded from automatic CTV
-    # routing. Treating their masks as a CT tumor target would be unsafe.
+SAT3D_INTERACTIVE_ROUTES = {
+    f"sat3d_interactive_{key.removeprefix('sat3d_')}": key
+    for key in SAT3D_SITE_SPECS
 }
 
 
-# Non-liver legacy site aliases resolve to their BiomedParse prompts. Liver is
-# intentionally absent because its CTV route is TotalSegmentator.
-SAT3D_LEGACY_ROUTES = {
-    "liver_tumor": "sat3d_liver_tumor",
-    "totalsegmentator_liver_tumor": "sat3d_liver_tumor",
-    "voco_liver": "sat3d_liver_tumor",
-    "biomedparse_liver_tumor": "sat3d_liver_tumor",
-    "kidney_tumor": "sat3d_kidney_tumor",
-    "voco_kidney": "sat3d_kidney_tumor",
-    "biomedparse_kidney_lesion": "sat3d_kidney_tumor",
-    "lung_tumor": "sat3d_lung_tumor",
-    "voco_lung": "sat3d_lung_tumor",
-    "biomedparse_lung_lesion": "sat3d_lung_tumor",
-    "colon_tumor": "sat3d_colon_tumor",
-    "voco_colon": "sat3d_colon_tumor",
-    "biomedparse_colon_primary": "sat3d_colon_tumor",
-    "head_neck_tumor": "sat3d_head_neck_tumor",
-    "biomedparse_head_neck_cancer": "sat3d_head_neck_tumor",
-    "prostate_tumor": "sat3d_prostate_tumor",
+TOOL_REGISTRY = {
+    # The pancreatic production path remains on the validated nnU-Net model.
+    "pancreatic_tumor": NNUNetPancreaticTumorTool,
+    "nnunet_pancreatic": NNUNetPancreaticTumorTool,
+    "voco_pancreatic": NNUNetPancreaticTumorTool,
+    # Supported non-pancreatic automatic tasks use BiomedParse v2 semantic
+    # text prompts. These routes need no image-specific point clicks.
+    **{key: BiomedParseV2CTVTool for key in BIOMEDPARSE_SITE_SPECS},
+    # SAT3D remains available only under an explicit interactive route name.
+    # Historical sat3d_* automatic ids are migrated by normalize_tumor_type.
+    **{key: SAT3DCTVTool for key in SAT3D_INTERACTIVE_ROUTES},
 }
 
 
@@ -120,41 +89,50 @@ def normalize_tumor_type(value) -> str:
         "\u80f0\u817a": "nnunet_pancreatic",
         "\u80f0\u817a\u80bf\u7624": "nnunet_pancreatic",
         "\u80f0\u817a\u764c": "nnunet_pancreatic",
-        "liver": "sat3d_liver_tumor", "liver_tumor": "sat3d_liver_tumor",
-        "liver_cancer": "sat3d_liver_tumor", "hepatocellular": "sat3d_liver_tumor",
-        "hcc": "sat3d_liver_tumor", "voco_liver": "sat3d_liver_tumor",
-        "totalsegmentator_liver_tumor": "sat3d_liver_tumor",
-        "total_segmentator_liver_tumor": "sat3d_liver_tumor",
-        "biomedparse_liver_tumor": "sat3d_liver_tumor",
-        "biomedparse_v2_liver_tumor": "sat3d_liver_tumor",
-        "\u809d": "sat3d_liver_tumor", "\u809d\u810f": "sat3d_liver_tumor",
-        "\u809d\u810f\u80bf\u7624": "sat3d_liver_tumor", "\u809d\u764c": "sat3d_liver_tumor",
-        "kidney": "sat3d_kidney_tumor", "kidney_tumor": "sat3d_kidney_tumor",
-        "kidney_lesion": "sat3d_kidney_tumor", "renal_tumor": "sat3d_kidney_tumor",
-        "voco_kidney": "sat3d_kidney_tumor", "biomedparse_kidney_lesion": "sat3d_kidney_tumor",
-        "biomedparse_v2_kidney_lesion": "sat3d_kidney_tumor",
-        "\u80be": "sat3d_kidney_tumor", "\u80be\u810f": "sat3d_kidney_tumor",
-        "\u80be\u810f\u80bf\u7624": "sat3d_kidney_tumor",
-        "lung": "sat3d_lung_tumor", "lung_tumor": "sat3d_lung_tumor",
-        "lung_lesion": "sat3d_lung_tumor", "voco_lung": "sat3d_lung_tumor",
-        "biomedparse_lung_lesion": "sat3d_lung_tumor",
-        "biomedparse_v2_lung_lesion": "sat3d_lung_tumor",
-        "\u80ba": "sat3d_lung_tumor", "\u80ba\u80bf\u7624": "sat3d_lung_tumor",
-        "\u80ba\u764c": "sat3d_lung_tumor",
-        "colon": "sat3d_colon_tumor", "colon_tumor": "sat3d_colon_tumor",
-        "colon_primary": "sat3d_colon_tumor", "voco_colon": "sat3d_colon_tumor",
-        "biomedparse_colon_primary": "sat3d_colon_tumor",
-        "biomedparse_v2_colon_primary": "sat3d_colon_tumor",
-        "\u7ed3\u80a0": "sat3d_colon_tumor", "\u7ed3\u80a0\u80bf\u7624": "sat3d_colon_tumor",
-        "\u7ed3\u80a0\u764c": "sat3d_colon_tumor",
-        "head_neck": "sat3d_head_neck_tumor", "head_and_neck": "sat3d_head_neck_tumor",
-        "head_neck_tumor": "sat3d_head_neck_tumor", "head_neck_cancer": "sat3d_head_neck_tumor",
-        "biomedparse_head_neck_cancer": "sat3d_head_neck_tumor",
-        "biomedparse_v2_head_neck_cancer": "sat3d_head_neck_tumor",
-        "\u5934\u9888": "sat3d_head_neck_tumor", "\u5934\u9888\u80bf\u7624": "sat3d_head_neck_tumor",
-        "prostate": "sat3d_prostate_tumor", "prostate_tumor": "sat3d_prostate_tumor",
-        "whole_prostate": "sat3d_prostate_tumor", "\u524d\u5217\u817a": "sat3d_prostate_tumor",
-        "\u524d\u5217\u817a\u764c": "sat3d_prostate_tumor",
+        "liver": "biomedparse_liver_tumor", "liver_tumor": "biomedparse_liver_tumor",
+        "liver_cancer": "biomedparse_liver_tumor", "hepatocellular": "biomedparse_liver_tumor",
+        "hcc": "biomedparse_liver_tumor", "voco_liver": "biomedparse_liver_tumor",
+        "totalsegmentator_liver_tumor": "biomedparse_liver_tumor",
+        "total_segmentator_liver_tumor": "biomedparse_liver_tumor",
+        "biomedparse_liver_tumor": "biomedparse_liver_tumor",
+        "biomedparse_v2_liver_tumor": "biomedparse_liver_tumor",
+        "sat3d_liver_tumor": "biomedparse_liver_tumor",
+        "\u809d": "biomedparse_liver_tumor", "\u809d\u810f": "biomedparse_liver_tumor",
+        "\u809d\u810f\u80bf\u7624": "biomedparse_liver_tumor", "\u809d\u764c": "biomedparse_liver_tumor",
+        "kidney": "biomedparse_kidney_lesion", "kidney_tumor": "biomedparse_kidney_lesion",
+        "kidney_lesion": "biomedparse_kidney_lesion", "renal_tumor": "biomedparse_kidney_lesion",
+        "voco_kidney": "biomedparse_kidney_lesion",
+        "biomedparse_kidney_lesion": "biomedparse_kidney_lesion",
+        "biomedparse_v2_kidney_lesion": "biomedparse_kidney_lesion",
+        "sat3d_kidney_tumor": "biomedparse_kidney_lesion",
+        "\u80be": "biomedparse_kidney_lesion", "\u80be\u810f": "biomedparse_kidney_lesion",
+        "\u80be\u810f\u80bf\u7624": "biomedparse_kidney_lesion",
+        "lung": "biomedparse_lung_lesion", "lung_tumor": "biomedparse_lung_lesion",
+        "lung_lesion": "biomedparse_lung_lesion", "voco_lung": "biomedparse_lung_lesion",
+        "biomedparse_lung_lesion": "biomedparse_lung_lesion",
+        "biomedparse_v2_lung_lesion": "biomedparse_lung_lesion",
+        "sat3d_lung_tumor": "biomedparse_lung_lesion",
+        "\u80ba": "biomedparse_lung_lesion", "\u80ba\u80bf\u7624": "biomedparse_lung_lesion",
+        "\u80ba\u764c": "biomedparse_lung_lesion",
+        "colon": "biomedparse_colon_primary", "colon_tumor": "biomedparse_colon_primary",
+        "colon_primary": "biomedparse_colon_primary", "voco_colon": "biomedparse_colon_primary",
+        "biomedparse_colon_primary": "biomedparse_colon_primary",
+        "biomedparse_v2_colon_primary": "biomedparse_colon_primary",
+        "sat3d_colon_tumor": "biomedparse_colon_primary",
+        "\u7ed3\u80a0": "biomedparse_colon_primary", "\u7ed3\u80a0\u80bf\u7624": "biomedparse_colon_primary",
+        "\u7ed3\u80a0\u764c": "biomedparse_colon_primary",
+        "head_neck": "biomedparse_head_neck_cancer", "head_and_neck": "biomedparse_head_neck_cancer",
+        "head_neck_tumor": "biomedparse_head_neck_cancer", "head_neck_cancer": "biomedparse_head_neck_cancer",
+        "biomedparse_head_neck_cancer": "biomedparse_head_neck_cancer",
+        "biomedparse_v2_head_neck_cancer": "biomedparse_head_neck_cancer",
+        "sat3d_head_neck_tumor": "biomedparse_head_neck_cancer",
+        "\u5934\u9888": "biomedparse_head_neck_cancer", "\u5934\u9888\u80bf\u7624": "biomedparse_head_neck_cancer",
+        "prostate": "biomedparse_prostate_lesion", "prostate_tumor": "biomedparse_prostate_lesion",
+        "prostate_lesion": "biomedparse_prostate_lesion",
+        "biomedparse_v2_prostate_lesion": "biomedparse_prostate_lesion",
+        "sat3d_prostate_tumor": "biomedparse_prostate_lesion",
+        "\u524d\u5217\u817a": "biomedparse_prostate_lesion",
+        "\u524d\u5217\u817a\u764c": "biomedparse_prostate_lesion",
     }
     return aliases.get(normalized, raw)
 
@@ -217,11 +195,11 @@ def list_tools():
     return list(TOOL_REGISTRY.keys())
 
 
-# The LLM-facing closed-set options. Pancreatic production routing stays on
-# nnU-Net; all other advertised tumor sites use SAT3D.
+# The LLM-facing automatic options. Pancreatic production routing stays on
+# nnU-Net; supported non-pancreatic tumor tasks use BiomedParse v2 text prompts.
 _PREFERRED_TUMOR_TYPES = (
     ["pancreatic_tumor", "nnunet_pancreatic"]
-    + list(SAT3D_SITE_SPECS)
+    + list(BIOMEDPARSE_SITE_SPECS)
 )
 
 
@@ -300,9 +278,10 @@ class CTVSegmentationTool(BaseTool):
     def description(self) -> str:
         return (
             "Segment Clinical Target Volume (CTV/tumor) from CT images. "
-            "Supports verified local pancreatic nnU-Net and SAT3D for supported "
-            "non-pancreatic tumor candidates. BiomedParse remains a separate "
-            "open-vocabulary tool. Input: 3D image (SimpleITK) or path, required tumor_type for automatic "
+            "Supports verified local pancreatic nnU-Net and automatic BiomedParse v2 "
+            "text-guided candidates for supported non-pancreatic tumors. BiomedParse "
+            "also remains available as a separate open-vocabulary tool; SAT3D is an "
+            "explicit point-prompted research option. Input: 3D image (SimpleITK) or path, required tumor_type for automatic "
             "segmentation, or label_path for an existing/manual CTV mask. "
             "Output: CTV binary mask and volume metrics."
         )
@@ -324,9 +303,10 @@ class CTVSegmentationTool(BaseTool):
                     "description": (
                         "Tumor type for specialized model. Canonical options: "
                         f"{self._tumor_types}. Friendly anatomy names, legacy "
-                        "VoCo, TotalSegmentator, and historical BiomedParse CTV ids "
-                        "are normalized to SAT3D by the server. Pancreas remains "
-                        "on nnU-Net. Required "
+                        "VoCo, TotalSegmentator, and historical SAT3D automatic ids "
+                        "are migrated to BiomedParse v2 by the server. Pancreas remains "
+                        "on nnU-Net. Explicit sat3d_interactive_* routes require a "
+                        "positive point prompt and are not automatic options. Required "
                         "unless label_path is provided."
                     ),
                 },
@@ -356,10 +336,11 @@ class CTVSegmentationTool(BaseTool):
                 "target_value": {"type": "number", "default": 1, "description": "Label value for tumor voxels"},
                 "fast_mode": {"type": "boolean", "default": False, "description": "Disable TTA, reduce threads"},
                 "image_modality": {"type": "string", "default": "CT", "description": "Input modality, e.g. CT, CTA, MRI, T2w"},
-                "positive_points": {"type": "array", "description": "Optional SAT3D positive point prompts"},
+                "positive_points": {"type": "array", "description": "Required for explicit sat3d_interactive_* routes"},
                 "negative_points": {"type": "array", "description": "Optional SAT3D negative point prompts"},
                 "point_coordinate_system": {"type": "string", "default": "voxel_zyx"},
                 "volume_index": {"type": "integer", "default": 0, "description": "Volume to extract from a 4D input"},
+                "slice_batch_size": {"type": "integer", "minimum": 1, "default": 4, "description": "BiomedParse v2 3D slice batch size"},
                 "allow_empty": {"type": "boolean", "default": False, "description": "Only for tests; never allow empty clinical CTV by default"},
                 "force_reexecution": {"type": "boolean", "default": False, "description": "Explicitly replace an existing in-memory CTV result"},
             },
@@ -487,8 +468,15 @@ class CTVSegmentationTool(BaseTool):
             if isinstance(tool, NNUNetPancreaticTumorTool):
                 tool_kwargs["return_all_labels"] = True
             tumor_type_used = tumor_type
+            if isinstance(tool, BiomedParseV2CTVTool):
+                tool_kwargs.update({
+                    "tumor_type": tumor_type,
+                    "image_modality": kwargs.get("image_modality", "CT"),
+                    "volume_index": kwargs.get("volume_index", 0),
+                    "slice_batch_size": kwargs.get("slice_batch_size", 4),
+                })
             if isinstance(tool, SAT3DCTVTool):
-                tumor_type_used = SAT3D_LEGACY_ROUTES.get(tumor_type, tumor_type)
+                tumor_type_used = SAT3D_INTERACTIVE_ROUTES.get(tumor_type, tumor_type)
                 tool_kwargs.update({
                     "tumor_type": tumor_type_used,
                     "image_modality": kwargs.get("image_modality", "CT"),
@@ -496,7 +484,7 @@ class CTVSegmentationTool(BaseTool):
                     "negative_points": kwargs.get("negative_points") or [],
                     "point_coordinate_system": kwargs.get("point_coordinate_system", "voxel_zyx"),
                     "allow_out_of_distribution": bool(kwargs.get("allow_out_of_distribution", False)),
-                    "volume_index": int(kwargs.get("volume_index", 0)),
+                    "volume_index": kwargs.get("volume_index", 0),
                 })
             result = tool._execute(**tool_kwargs)
             if result.success:
@@ -600,7 +588,7 @@ class CTVSegmentationTool(BaseTool):
                     )
                     diagnostic = (
                         f"The segmentation model completed inference but did NOT detect any "
-                        f"tumor region in this CT (labels it did find: {found_desc}). "
+                        f"tumor region in this volume (labels it did find: {found_desc}). "
                         f"This is usually a data problem rather than a missing model: the CT "
                         f"may not cover the full tumor extent (too few slices / large slice "
                         f"thickness), the tumor may be outside the scanned field, or too "
@@ -646,7 +634,8 @@ class CTVSegmentationTool(BaseTool):
                 logger.warning("Manual CTV upload requires label selection: %s", plausibility_warning)
 
         # Keep CTV display names source-aware.
-        label_map = dict(res_meta.get("label_map", {}))
+        source_label_map = dict(res_meta.get("label_map", {}))
+        label_map = dict(source_label_map)
         if from_label_path:
             # Source label ids are provenance only.  The active manual CTV is
             # always a single binary Data Tree object on label 1.
@@ -663,12 +652,13 @@ class CTVSegmentationTool(BaseTool):
             .replace("nnunet ", "")
             .replace("voco ", "")
             .replace("sat3d ", "")
+            .replace("biomedparse ", "")
             if tumor_type else ""
         )
         # Avoid labels such as ``prostate tumor tumor`` while keeping the
         # selected tumor site explicit for uploaded/manual CTV masks.
         tumor_type_name = re.sub(r"\s+tumor$", "", tumor_type_name, flags=re.IGNORECASE).strip()
-        if tumor_type_name and 1 in label_map:
+        if tumor_type_name and 1 in label_map and not source_label_map:
             label_map[1] = f"{tumor_type_name} tumor"
         import logging
         logging.getLogger(__name__).info(f"CTV label_map updated: {label_map}, tumor_type={tumor_type}, tumor_type_name={tumor_type_name}")

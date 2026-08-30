@@ -9,26 +9,41 @@ import numpy as np
 import SimpleITK as sitk
 
 
-def test_closed_set_routes_use_sat3d_and_pancreas_stays_nnunet():
+def test_automatic_routes_use_biomedparse_and_pancreas_stays_nnunet():
     from tool_factory.CTV_seg import get_tool, normalize_tumor_type
+    from tool_factory.CTV_seg.biomedparse_v2 import BiomedParseV2CTVTool
     from tool_factory.CTV_seg.pancreatic_tumor_nnunet import NNUNetPancreaticTumorTool
     from tool_factory.CTV_seg.sat3d import SAT3DCTVTool
 
     expected = {
-        "liver": "sat3d_liver_tumor",
-        "biomedparse_liver_tumor": "sat3d_liver_tumor",
-        "kidney": "sat3d_kidney_tumor",
-        "biomedparse_kidney_lesion": "sat3d_kidney_tumor",
-        "lung": "sat3d_lung_tumor",
-        "colon": "sat3d_colon_tumor",
-        "head and neck": "sat3d_head_neck_tumor",
-        "prostate": "sat3d_prostate_tumor",
+        "liver": "biomedparse_liver_tumor",
+        "sat3d_liver_tumor": "biomedparse_liver_tumor",
+        "kidney": "biomedparse_kidney_lesion",
+        "sat3d_kidney_tumor": "biomedparse_kidney_lesion",
+        "lung": "biomedparse_lung_lesion",
+        "colon": "biomedparse_colon_primary",
+        "head and neck": "biomedparse_head_neck_cancer",
+        "prostate": "biomedparse_prostate_lesion",
     }
     for alias, canonical in expected.items():
         assert normalize_tumor_type(alias) == canonical
-        assert isinstance(get_tool(alias), SAT3DCTVTool)
+        assert isinstance(get_tool(alias), BiomedParseV2CTVTool)
+    assert normalize_tumor_type("sat3d_interactive_liver_tumor") == "sat3d_interactive_liver_tumor"
+    assert isinstance(get_tool("sat3d_interactive_liver_tumor"), SAT3DCTVTool)
     assert normalize_tumor_type("pancreas") == "nnunet_pancreatic"
     assert isinstance(get_tool("pancreas"), NNUNetPancreaticTumorTool)
+
+
+def test_brain_factory_preserves_automatic_and_interactive_default_routes():
+    from brain.integration.integration import create_ctv_segmentation_tool
+
+    automatic = create_ctv_segmentation_tool("liver")
+    interactive = create_ctv_segmentation_tool("sat3d_interactive_liver_tumor")
+
+    assert automatic.default_tumor_type == "biomedparse_liver_tumor"
+    assert automatic.input_schema["required"] == []
+    assert interactive.default_tumor_type == "sat3d_liver_tumor"
+    assert interactive.input_schema["required"] == ["positive_points"]
 
 
 def test_prostate_route_rejects_ct_but_accepts_t2_modality_before_runtime_probe(monkeypatch):
@@ -53,6 +68,7 @@ def test_prostate_route_rejects_ct_but_accepts_t2_modality_before_runtime_probe(
         image=image,
         tumor_type="sat3d_prostate_tumor",
         image_modality="T2w",
+        positive_points=[[1, 2, 3]],
     )
     assert not result.success
     assert result.metadata["code"] == "sat3d_unavailable"
@@ -70,6 +86,28 @@ def test_sat3d_rejects_nonzero_volume_index_for_3d_input():
     )
     assert not result.success
     assert result.metadata["code"] == "invalid_sat3d_volume_index"
+
+
+def test_sat3d_requires_positive_prompt_before_runtime_probe(monkeypatch):
+    import tool_factory.CTV_seg.sat3d as sat3d
+
+    monkeypatch.setattr(
+        sat3d,
+        "_availability",
+        lambda **_kwargs: (_ for _ in ()).throw(
+            AssertionError("zero-prompt request must fail before deployment hashing")
+        ),
+    )
+    image = sitk.GetImageFromArray(np.ones((4, 5, 6), dtype=np.float32))
+    result = sat3d.SAT3DCTVTool()._execute(
+        image=image,
+        tumor_type="sat3d_liver_tumor",
+        image_modality="CT",
+    )
+
+    assert not result.success
+    assert result.metadata["code"] == "sat3d_positive_prompt_required"
+    assert "BiomedParse v2" in (result.error or "")
 
 
 def test_sat3d_adapter_passes_prompts_and_preserves_lpi_geometry(monkeypatch, tmp_path):
@@ -145,6 +183,7 @@ def test_sat3d_worker_does_not_depend_on_ground_truth_click_generation():
     assert "gt3D" not in source
     assert "get_next_click" not in source
     assert "positive_points" in source
+    assert "requires at least one positive point prompt" in source
 
 
 def test_sat3d_runtime_keeps_virtual_environment_launcher(monkeypatch, tmp_path):
@@ -172,21 +211,24 @@ def test_sat3d_thin_volume_padding_shifts_prompt_to_the_image_grid():
     assert shifted == [[63, 64, 36]]
 
 
-def test_frontend_exposes_sat3d_models_modality_and_point_tools():
+def test_frontend_exposes_biomedparse_automatic_routes_and_hides_sat3d_prompt_tools():
     root = Path(__file__).parents[1]
     html = (root / "web" / "app" / "index.html").read_text(encoding="utf-8")
     manual = (root / "web" / "app" / "static" / "js" / "brachybot-manual-annotation.js").read_text(encoding="utf-8")
     for tumor_type in (
-        "sat3d_liver_tumor",
-        "sat3d_kidney_tumor",
-        "sat3d_lung_tumor",
-        "sat3d_colon_tumor",
-        "sat3d_prostate_tumor",
-        "sat3d_head_neck_tumor",
+        "biomedparse_liver_tumor",
+        "biomedparse_kidney_lesion",
+        "biomedparse_lung_lesion",
+        "biomedparse_colon_primary",
+        "biomedparse_prostate_lesion",
+        "biomedparse_head_neck_cancer",
     ):
         assert f'value="{tumor_type}"' in html
+    assert 'value="sat3d_liver_tumor"' not in html
     assert 'id="ctvImageModality"' in html
     assert 'id="ctvVolumeIndex"' in html
+    assert 'hidden class="file-btn"' in html
     assert "sat3d_positive" in html and "sat3d_negative" in html
+    assert "startsWith('sat3d_interactive_')" in manual
     assert "point_coordinate_system: 'voxel_zyx'" in manual
     assert "positive_points" in manual and "negative_points" in manual

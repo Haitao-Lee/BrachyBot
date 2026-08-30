@@ -1,13 +1,14 @@
-"""SAT3D-backed closed-set CTV candidate segmentation.
+"""SAT3D-backed interactive CTV candidate segmentation.
 
 The official SAT3D checkout and checkpoints intentionally live outside this
 repository.  BrachyBot invokes them in an isolated worker process so the web
 server does not retain a 24 GB-class model or contaminate its Python runtime.
 
-SAT3D is a research model.  Its output is a candidate contour that must be
-reviewed by a qualified clinician before planning.  Pancreatic CTV remains on
-the existing validated nnU-Net route; BiomedParse remains available through
-the separate open-vocabulary segmentation tool.
+SAT3D is a point-prompted research model. Its output is a candidate contour
+that must be reviewed by a qualified clinician before planning. It is kept as
+an explicit interactive tool, not an automatic site-specific dispatcher:
+without at least one positive point, a shared cross-site model has no semantic
+signal identifying which tumor the user intends to segment.
 """
 
 from __future__ import annotations
@@ -317,7 +318,7 @@ def _points_to_zyx(
 
 
 class SAT3DCTVTool(BaseTool):
-    """Run the official SAT3D model for a supported non-pancreatic site."""
+    """Run the official SAT3D model with explicit point prompts."""
 
     def __init__(self, default_tumor_type: Optional[str] = None):
         self.default_tumor_type = default_tumor_type
@@ -329,8 +330,9 @@ class SAT3DCTVTool(BaseTool):
     @property
     def description(self) -> str:
         return (
-            "Generate a review-required SAT3D tumor CTV candidate from a 3D volume, "
-            "optionally guided by positive and negative voxel point prompts."
+            "Generate a review-required SAT3D tumor CTV candidate from a 3D volume. "
+            "At least one positive voxel point prompt is required; negative points "
+            "may be added to exclude false regions."
         )
 
     @property
@@ -342,7 +344,11 @@ class SAT3DCTVTool(BaseTool):
                 "image_path": {"type": "string"},
                 "tumor_type": {"type": "string", "enum": sorted(SITE_SPECS)},
                 "image_modality": {"type": "string", "default": "CT"},
-                "positive_points": {"type": "array", "items": {"type": "array"}},
+                "positive_points": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {"type": "array"},
+                },
                 "negative_points": {"type": "array", "items": {"type": "array"}},
                 "point_coordinate_system": {
                     "type": "string",
@@ -352,7 +358,11 @@ class SAT3DCTVTool(BaseTool):
                 "volume_index": {"type": "integer", "default": 0, "description": "Volume to extract from a 4D single-modality file"},
                 "allow_out_of_distribution": {"type": "boolean", "default": False},
             },
-            "required": ["tumor_type"],
+            "required": (
+                ["positive_points"]
+                if self.default_tumor_type
+                else ["tumor_type", "positive_points"]
+            ),
         }
 
     @property
@@ -442,27 +452,6 @@ class SAT3DCTVTool(BaseTool):
                 },
             )
 
-        # Inference is the mutation boundary for the active clinical CTV.
-        # Verify source identity and both large artifacts here even though the
-        # catalog probe avoids hashing checkpoints on every page request.
-        availability = _availability(verify_checksums=True)
-        if not availability.get("available"):
-            return ToolResult(
-                success=False,
-                error=(
-                    "SAT3D is not ready in this runtime: "
-                    + "; ".join(availability.get("missing") or ["unknown deployment error"])
-                    + ". Run scripts/install_sat3d.py and restart the server with the "
-                    "SAT3D_* environment variables."
-                ),
-                metadata={
-                    "code": "sat3d_unavailable",
-                    "tumor_type_used": tumor_type,
-                    "ctv_source": "sat3d",
-                    "sat3d_availability": availability,
-                },
-            )
-
         coordinate_system = str(
             kwargs.get("point_coordinate_system") or "voxel_zyx"
         ).strip().casefold()
@@ -483,12 +472,48 @@ class SAT3DCTVTool(BaseTool):
                 error=str(exc),
                 metadata={"code": "invalid_sat3d_prompt", "tumor_type_used": tumor_type},
             )
+        if not positive:
+            return ToolResult(
+                success=False,
+                error=(
+                    "SAT3D is an interactive point-prompted model and requires at least "
+                    "one positive point inside the intended tumor. Use BiomedParse v2 "
+                    "for supported automatic text-guided CTV tasks."
+                ),
+                metadata={
+                    "code": "sat3d_positive_prompt_required",
+                    "tumor_type_used": tumor_type,
+                    "ctv_source": "sat3d_interactive",
+                },
+            )
         overlap = {tuple(point) for point in positive} & {tuple(point) for point in negative}
         if overlap:
             return ToolResult(
                 success=False,
                 error=f"SAT3D points cannot be both positive and negative: {sorted(overlap)}",
                 metadata={"code": "conflicting_sat3d_prompt", "tumor_type_used": tumor_type},
+            )
+
+        # Inference is the mutation boundary for the active clinical CTV.
+        # Validate the required interaction contract first so a zero-prompt
+        # request fails immediately instead of hashing two large checkpoints.
+        # Only a valid point-guided request needs the full deployment check.
+        availability = _availability(verify_checksums=True)
+        if not availability.get("available"):
+            return ToolResult(
+                success=False,
+                error=(
+                    "SAT3D is not ready in this runtime: "
+                    + "; ".join(availability.get("missing") or ["unknown deployment error"])
+                    + ". Run scripts/install_sat3d.py and restart the server with the "
+                    "SAT3D_* environment variables."
+                ),
+                metadata={
+                    "code": "sat3d_unavailable",
+                    "tumor_type_used": tumor_type,
+                    "ctv_source": "sat3d_interactive",
+                    "sat3d_availability": availability,
+                },
             )
 
         worker = Path(__file__).resolve().parents[2] / "scripts" / "sat3d_worker.py"
@@ -572,7 +597,7 @@ class SAT3DCTVTool(BaseTool):
                     "code": "sat3d_empty_mask",
                     "tumor_type_used": tumor_type,
                     "ctv_source": "sat3d",
-                    "sat3d_prompt_mode": "point_guided" if positive or negative else "zero_prompt",
+                    "sat3d_prompt_mode": "point_guided",
                 },
             )
 
@@ -599,7 +624,7 @@ class SAT3DCTVTool(BaseTool):
             "sat3d_datasets": list(spec.get("datasets") or ()),
             "sat3d_evidence": spec.get("evidence"),
             "sat3d_out_of_distribution": bool(is_ood),
-            "sat3d_prompt_mode": "point_guided" if positive or negative else "zero_prompt",
+            "sat3d_prompt_mode": "point_guided",
             "sat3d_positive_points_zyx": positive,
             "sat3d_negative_points_zyx": negative,
             "sat3d_requires_clinician_review": True,

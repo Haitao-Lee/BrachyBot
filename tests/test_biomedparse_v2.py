@@ -9,55 +9,57 @@ import SimpleITK as sitk
 import torch
 
 
-def test_biomedparse_is_open_only_and_sat3d_closed_set_is_advertised():
+def test_biomedparse_automatic_routes_are_advertised_and_pancreas_stays_separate():
     from tool_factory.CTV_seg import CTVSegmentationTool, TOOL_REGISTRY
     from tool_factory.CTV_seg.biomedparse_v2 import SITE_SPECS
 
     assert set(SITE_SPECS) <= set(TOOL_REGISTRY)  # compatibility aliases
     assert "nnunet_pancreatic" in TOOL_REGISTRY
     assert "biomedparse_pancreas_tumor" not in SITE_SPECS
+    assert "biomedparse_prostate_lesion" in SITE_SPECS
     tumor_schema = CTVSegmentationTool().input_schema["properties"]["tumor_type"]
     # Site aliases are normalized server-side. An enum here would reject a
     # valid restored ``voco_liver`` or a user-facing ``liver`` before that
     # normalization can route it to the current CTV executor.
     assert "enum" not in tumor_schema
-    assert "sat3d_liver_tumor" in tumor_schema["description"]
-    assert "sat3d_kidney_tumor" in tumor_schema["description"]
+    assert "biomedparse_liver_tumor" in tumor_schema["description"]
+    assert "biomedparse_kidney_lesion" in tumor_schema["description"]
+    assert "sat3d_interactive" in tumor_schema["description"]
 
 
 def test_deprecated_voco_aliases_are_hidden_from_the_agent():
     """The LLM-facing contract advertises the dedicated liver route.
 
-    Historical VoCo and BiomedParse liver IDs remain accepted only as server
-    compatibility aliases and must never be presented as a second CTV model.
+    Historical VoCo and SAT3D automatic IDs remain accepted only as server
+    compatibility aliases and must never be presented as a second automatic model.
     """
     from tool_factory.CTV_seg import CTVSegmentationTool, get_tool
-    from tool_factory.CTV_seg.sat3d import SAT3DCTVTool
+    from tool_factory.CTV_seg.biomedparse_v2 import BiomedParseV2CTVTool
     from tool_factory.CTV_seg.model_catalog import filter_catalog
 
     description = CTVSegmentationTool().input_schema["properties"]["tumor_type"]["description"]
-    assert "sat3d_liver_tumor" in description
-    assert "biomedparse_liver_tumor" not in description
+    assert "biomedparse_liver_tumor" in description
+    assert "sat3d_liver_tumor" not in description
     # No deprecated VoCo alias may be advertised to the agent. The aliases
     # remain accepted only by the server-side compatibility normalizer.
     assert "voco_liver" not in description
     assert not any(str(m.get("tumor_type", "")).startswith("voco_") for m in filter_catalog())
     # The alias must still resolve so existing callers keep working, but it
-    # must resolve to SAT3D rather than BiomedParse.
-    assert isinstance(get_tool("voco_liver"), SAT3DCTVTool)
+    # must resolve to the automatic text-guided route rather than SAT3D.
+    assert isinstance(get_tool("voco_liver"), BiomedParseV2CTVTool)
 
 
 def test_legacy_voco_aliases_route_to_current_ctv_executors():
-    """All non-pancreatic closed-set legacy aliases now use SAT3D."""
+    """All non-pancreatic automatic legacy aliases now use BiomedParse v2."""
     from tool_factory.CTV_seg import TOOL_REGISTRY, get_tool
+    from tool_factory.CTV_seg.biomedparse_v2 import BiomedParseV2CTVTool
     from tool_factory.CTV_seg.pancreatic_tumor_nnunet import NNUNetPancreaticTumorTool
-    from tool_factory.CTV_seg.sat3d import SAT3DCTVTool
 
     for alias in ("kidney_tumor", "lung_tumor", "colon_tumor",
                   "voco_kidney", "voco_lung", "voco_colon"):
-        assert isinstance(get_tool(alias), SAT3DCTVTool), alias
+        assert isinstance(get_tool(alias), BiomedParseV2CTVTool), alias
     for alias in ("liver_tumor", "voco_liver"):
-        assert isinstance(get_tool(alias), SAT3DCTVTool), alias
+        assert isinstance(get_tool(alias), BiomedParseV2CTVTool), alias
     # Pancreatic stays on nnU-Net for all aliases.
     assert isinstance(get_tool("nnunet_pancreatic"), NNUNetPancreaticTumorTool)
     assert isinstance(get_tool("voco_pancreatic"), NNUNetPancreaticTumorTool)
@@ -68,15 +70,17 @@ def test_tumor_type_normalizer_unifies_catalog_display_and_legacy_aliases():
     from tool_factory.CTV_seg import normalize_tumor_type
 
     aliases = {
-        "liver": "sat3d_liver_tumor",
-        "liver tumor": "sat3d_liver_tumor",
-        "biomedparse_v2_liver_tumor": "sat3d_liver_tumor",
-        "voco_liver": "sat3d_liver_tumor",
-        "\u809d\u810f\u80bf\u7624": "sat3d_liver_tumor",
-        "kidney": "sat3d_kidney_tumor",
-        "lung": "sat3d_lung_tumor",
-        "colon": "sat3d_colon_tumor",
-        "head and neck": "sat3d_head_neck_tumor",
+        "liver": "biomedparse_liver_tumor",
+        "liver tumor": "biomedparse_liver_tumor",
+        "biomedparse_v2_liver_tumor": "biomedparse_liver_tumor",
+        "voco_liver": "biomedparse_liver_tumor",
+        "sat3d_liver_tumor": "biomedparse_liver_tumor",
+        "\u809d\u810f\u80bf\u7624": "biomedparse_liver_tumor",
+        "kidney": "biomedparse_kidney_lesion",
+        "lung": "biomedparse_lung_lesion",
+        "colon": "biomedparse_colon_primary",
+        "head and neck": "biomedparse_head_neck_cancer",
+        "prostate": "biomedparse_prostate_lesion",
         "pancreatic tumor": "nnunet_pancreatic",
     }
     for alias, expected in aliases.items():
@@ -321,20 +325,57 @@ def test_biomedparse_ct_window_maps_to_official_byte_range():
     assert np.allclose(result, [0.0, 127.5, 255.0])
 
 
-def test_unavailable_liver_ctv_fails_closed_without_biomedparse_fallback(monkeypatch):
+def test_biomedparse_mri_percentile_normalisation_maps_to_official_byte_range():
+    from tool_factory.CTV_seg.biomedparse_v2 import _normalise_non_ct
+
+    values = np.arange(1000, dtype=np.float32)
+    result = _normalise_non_ct(values)
+    assert result.dtype == np.float32
+    assert float(result.min()) == 0.0
+    assert float(result.max()) == 255.0
+    assert np.all(np.diff(result) >= 0)
+
+
+def test_unavailable_liver_ctv_fails_closed_on_biomedparse_runtime(monkeypatch):
     from tool_factory.CTV_seg import CTVSegmentationTool
-    import tool_factory.CTV_seg.sat3d as sat3d
+    import tool_factory.CTV_seg.biomedparse_v2 as adapter
 
     monkeypatch.setattr(
-        sat3d,
+        adapter,
         "_availability",
-        lambda **_kwargs: {"available": False, "missing": ["checkpoint"]},
+        lambda: {"available": False, "missing": ["checkpoint"]},
     )
     image = sitk.GetImageFromArray(np.zeros((4, 4, 4), dtype=np.int16))
     result = CTVSegmentationTool().execute(image=image, tumor_type="liver")
     assert result.success is False
-    assert "SAT3D" in (result.error or "")
-    assert "BiomedParse" not in (result.error or "")
+    assert "BiomedParse" in (result.error or "")
+    assert "SAT3D" not in (result.error or "")
+
+
+def test_biomedparse_prostate_requires_mri_before_runtime_probe(monkeypatch):
+    import tool_factory.CTV_seg.biomedparse_v2 as adapter
+
+    image = sitk.GetImageFromArray(np.ones((4, 5, 6), dtype=np.float32))
+    result = adapter.BiomedParseV2CTVTool()._execute(
+        image=image,
+        tumor_type="biomedparse_prostate_lesion",
+        image_modality="CT",
+    )
+    assert not result.success
+    assert result.metadata["code"] == "biomedparse_modality_mismatch"
+
+    monkeypatch.setattr(
+        adapter,
+        "_availability",
+        lambda: {"available": False, "missing": ["test runtime"]},
+    )
+    result = adapter.BiomedParseV2CTVTool()._execute(
+        image=image,
+        tumor_type="biomedparse_prostate_lesion",
+        image_modality="T2w",
+    )
+    assert not result.success
+    assert result.metadata["missing"] == ["test runtime"]
 
 
 def test_mocked_biomedparse_runtime_preserves_lpi_geometry_and_records_chain(
@@ -359,8 +400,11 @@ def test_mocked_biomedparse_runtime_preserves_lpi_geometry_and_records_chain(
         },
     )
 
+    seen_payload = {}
+
     class FakeModel:
         def __call__(self, payload, mode, slice_batch_size):
+            seen_payload.update(payload)
             depth = int(payload["image"].shape[1])
             return {
                 "predictions": {
@@ -395,6 +439,9 @@ def test_mocked_biomedparse_runtime_preserves_lpi_geometry_and_records_chain(
     )
 
     assert result.success is True
+    assert seen_payload["text"] == ["liver tumors"]
+    assert "positive_points" not in seen_payload
+    assert "negative_points" not in seen_payload
     expected = sitk.DICOMOrient(image, "LPI")
     mask = result.metadata["ctv_mask"]
     assert mask.GetSize() == expected.GetSize()
@@ -409,7 +456,6 @@ def test_mocked_biomedparse_runtime_preserves_lpi_geometry_and_records_chain(
 
 def test_model_catalog_exposes_four_state_capability(monkeypatch, tmp_path):
     import tool_factory.CTV_seg.biomedparse_v2 as adapter
-    import tool_factory.CTV_seg.model_catalog as catalog
     from tool_factory.CTV_seg.model_catalog import catalog_with_local_status
 
     monkeypatch.setattr(adapter, "_availability", lambda: {"available": True, "missing": []})
@@ -430,12 +476,15 @@ def test_model_catalog_exposes_four_state_capability(monkeypatch, tmp_path):
         for item in catalog_with_local_status(str(tmp_path))
         if item.get("tumor_type")
     }
-    liver = items["sat3d_liver_tumor"]
-    assert liver["capability_state"] in {"experimental", "unavailable"}
-    assert liver["target_semantics"] == "review_required_tumor_candidate"
+    liver = items["biomedparse_liver_tumor"]
+    assert liver["capability_state"] == "experimental"
+    assert liver["target_semantics"] == "automatic_text_guided_review_required_candidate"
     assert liver["clinical_case_validation"] is False
-    assert items["biomedparse_liver_tumor"]["callable"] is False
-    assert items["biomedparse_liver_tumor"]["replacement_tumor_type"] == "sat3d_liver_tumor"
+    assert liver["callable"] is True
+    assert liver["technical_call_chain_passed"] is True
+    interactive = items["sat3d_interactive_liver_tumor"]
+    assert interactive["prompt_support"]["zero_prompt"] is False
+    assert interactive["ui_visible"] is False
     assert items["nnunet_pancreatic"]["capability_state"] == "unavailable"
 
 

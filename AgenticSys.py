@@ -1412,7 +1412,7 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
             # Modality and 4D volume selection are clinical inputs stored in
             # the case-owned UI snapshot. Inject them at this final execution
             # boundary so direct chat, workflow enforcement, and manual UI
-            # calls all use the same SAT3D contract. Explicit tool arguments
+            # calls all use the same modality-aware CTV contract. Explicit tool arguments
             # still win, and there is no model fallback on mismatch.
             get_ui_state = getattr(self.memory, "get_ui_state", None)
             ctv_ui_state = get_ui_state() if callable(get_ui_state) else {}
@@ -2408,6 +2408,7 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
                 "sat3d_prompt_mode", "sat3d_positive_points_zyx",
                 "sat3d_negative_points_zyx", "sat3d_requires_clinician_review",
                 "image_modality", "volume_index", "target_semantics",
+                "text_prompt", "object_existence_confidence",
             ):
                 if provenance_key in meta:
                     self.memory.store(provenance_key, meta.get(provenance_key))
