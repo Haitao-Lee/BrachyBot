@@ -1169,7 +1169,8 @@ def test_tumor_type_selector_hides_model_implementation_from_the_user():
     assert "nnU-Net" not in selector
     assert "VoCo" not in selector
     assert 'data-capability-state="loading"' in selector
-    assert "Whole-prostate target" in selector
+    assert "Prostate tumor (T2 MRI)" in selector
+    assert "Whole-prostate target" not in selector
     assert "refreshTumorTypeAvailability" in ui_api
     assert "capability_state" in ui_api
     # The first probe can run before the authenticated SPA starts. It must be
