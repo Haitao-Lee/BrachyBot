@@ -1,10 +1,14 @@
-"""Optional Microsoft BiomedParse v2 CT CTV adapter.
+"""Optional Microsoft BiomedParse v2 open-vocabulary segmentation adapter.
 
 BiomedParse v2 is a text-guided research foundation model, not a
 site-specific clinically validated CTV model.  The adapter is deliberately
 opt-in: the official checkout, its isolated dependencies, and its checkpoint
 must be supplied by deployment configuration.  The pancreatic production
-nnU-Net path is not routed through this module.
+nnU-Net path is not routed through this module. The legacy closed-set CTV
+class remains importable only for old audit tests and serialized identifiers;
+the unified CTV registry redirects every supported non-pancreatic closed-set
+site to SAT3D. New BiomedParse use goes through
+``BiomedParseV2GenericSegmentationTool`` and creates an independent mask.
 """
 
 from __future__ import annotations

@@ -113,10 +113,12 @@ def _is_model_ctv_source(source: Any) -> bool:
             "biomedparse_v2_research_candidate",
             "totalsegmentator",
             "totalsegmentator_liver_tumor",
+            "sat3d",
         }
         or token.startswith("nnunet_")
         or token.startswith("biomedparse_")
         or token.startswith("totalsegmentator_")
+        or token.startswith("sat3d")
     )
 
 

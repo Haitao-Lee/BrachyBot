@@ -81,10 +81,13 @@ def create_ctv_segmentation_tool(anatomy: str):
 
     key_map = {
         "pancreatic": "pancreatic_tumor",
-        "liver": "liver_tumor",
-        "kidney": "kidney_tumor",
-        "prostate": "prostate_tumor",
-        "lung": "lung_tumor",
+        "liver": "sat3d_liver_tumor",
+        "kidney": "sat3d_kidney_tumor",
+        "prostate": "sat3d_prostate_tumor",
+        "lung": "sat3d_lung_tumor",
+        "colon": "sat3d_colon_tumor",
+        "head_neck": "sat3d_head_neck_tumor",
+        "head and neck": "sat3d_head_neck_tumor",
         "voco_pancreatic": "voco_pancreatic",
         "voco_liver": "voco_liver",
         "voco_kidney": "voco_kidney",
@@ -99,6 +102,10 @@ def create_ctv_segmentation_tool(anatomy: str):
     tool_class = CTV_REGISTRY.get(tool_key)
     if tool_class is None:
         raise ValueError(f"Unknown anatomy: {anatomy}. Available: {list(CTV_REGISTRY.keys())}")
+    from tool_factory.CTV_seg.sat3d import SAT3DCTVTool
+    if tool_class is SAT3DCTVTool:
+        from tool_factory.CTV_seg import normalize_tumor_type
+        return tool_class(default_tumor_type=normalize_tumor_type(tool_key))
     return tool_class()
 
 
@@ -158,6 +165,8 @@ def initialize_brain_integration(bridge: Optional[BrainToolBridge] = None) -> Br
     b.register_tool_factory("kidney_ctv", lambda: create_ctv_segmentation_tool("kidney"))
     b.register_tool_factory("prostate_ctv", lambda: create_ctv_segmentation_tool("prostate"))
     b.register_tool_factory("lung_ctv", lambda: create_ctv_segmentation_tool("lung"))
+    b.register_tool_factory("colon_ctv", lambda: create_ctv_segmentation_tool("colon"))
+    b.register_tool_factory("head_neck_ctv", lambda: create_ctv_segmentation_tool("head_neck"))
 
     b.register_tool_factory("voco_pancreatic_ctv", lambda: create_ctv_segmentation_tool("voco_pancreatic"))
     b.register_tool_factory("voco_liver_ctv", lambda: create_ctv_segmentation_tool("voco_liver"))

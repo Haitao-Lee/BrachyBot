@@ -1409,6 +1409,39 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
             normalized_ctv_params = self._normalize_ctv_tool_params(params)
             params.clear()
             params.update(normalized_ctv_params)
+            # Modality and 4D volume selection are clinical inputs stored in
+            # the case-owned UI snapshot. Inject them at this final execution
+            # boundary so direct chat, workflow enforcement, and manual UI
+            # calls all use the same SAT3D contract. Explicit tool arguments
+            # still win, and there is no model fallback on mismatch.
+            get_ui_state = getattr(self.memory, "get_ui_state", None)
+            ctv_ui_state = get_ui_state() if callable(get_ui_state) else {}
+            ctv_controls = (
+                ctv_ui_state.get("controls", {})
+                if isinstance(ctv_ui_state, dict)
+                else {}
+            )
+
+            def _ctv_control_value(control_id, default=None):
+                value = ctv_controls.get(control_id)
+                if isinstance(value, dict):
+                    return value.get("value", default)
+                return value if value is not None else default
+
+            if not params.get("image_modality"):
+                params["image_modality"] = (
+                    _ctv_control_value("ctvImageModality")
+                    or self.memory.retrieve("image_modality")
+                    or "CT"
+                )
+            if params.get("volume_index") is None:
+                try:
+                    params["volume_index"] = max(
+                        0,
+                        int(_ctv_control_value("ctvVolumeIndex", 0) or 0),
+                    )
+                except (TypeError, ValueError):
+                    params["volume_index"] = 0
             # ALWAYS force-inject the LPI-oriented CT from memory.
             # The LLM may pass `image` as a string repr of a SimpleITK object,
             # which blocks injection and causes the tool to load raw CT from
@@ -2367,6 +2400,17 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
                 self.memory.store("tumor_type_used", tumor_type_used)
             if meta.get("ctv_source"):
                 self.memory.store("ctv_source", meta["ctv_source"])
+            for provenance_key in (
+                "model_name", "repository", "model_url", "artifact_doi",
+                "checkpoint", "checkpoint_md5", "critic_checkpoint",
+                "critic_checkpoint_md5", "sat3d_commit", "sat3d_site",
+                "sat3d_datasets", "sat3d_evidence", "sat3d_out_of_distribution",
+                "sat3d_prompt_mode", "sat3d_positive_points_zyx",
+                "sat3d_negative_points_zyx", "sat3d_requires_clinician_review",
+                "image_modality", "volume_index", "target_semantics",
+            ):
+                if provenance_key in meta:
+                    self.memory.store(provenance_key, meta.get(provenance_key))
             self.memory.store("label_grid_orientation", meta.get("label_grid_orientation") or "LPI")
             from web.structure_service import replace_structure_source
             replace_structure_source(self.memory, "ctv")

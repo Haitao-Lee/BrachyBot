@@ -24,11 +24,12 @@ class _Memory:
 class _DirectHarness(ResponseToolMixin):
     _SUPPORTED_AUTOMATIC_CTV_TYPES = frozenset({
         "nnunet_pancreatic",
-        "totalsegmentator_liver_tumor",
-        "biomedparse_kidney_lesion",
-        "biomedparse_lung_lesion",
-        "biomedparse_colon_primary",
-        "biomedparse_head_neck_cancer",
+        "sat3d_liver_tumor",
+        "sat3d_kidney_tumor",
+        "sat3d_lung_tumor",
+        "sat3d_colon_tumor",
+        "sat3d_head_neck_tumor",
+        "sat3d_prostate_tumor",
     })
 
     def __init__(self, memory):
@@ -129,7 +130,7 @@ def test_patient_tumor_measurement_question_routes_to_ctv_segmentation():
     )
 
     assert [call["tool"] for call in calls] == ["ctv_segmentation"]
-    assert calls[0]["params"]["tumor_type"] == "totalsegmentator_liver_tumor"
+    assert calls[0]["params"]["tumor_type"] == "sat3d_liver_tumor"
 
 
 def test_tumor_site_clarification_restores_the_original_full_planning_workflow():
@@ -223,14 +224,14 @@ def test_ctv_normalization_recovers_catalog_model_and_organ_aliases():
     })
 
     assert normalized["image_path"] == "/tmp/case.nii.gz"
-    assert normalized["tumor_type"] == "totalsegmentator_liver_tumor"
+    assert normalized["tumor_type"] == "sat3d_liver_tumor"
     assert all(key not in normalized for key in ("model", "organ", "ct_image_path"))
 
     calls = harness._normalize_tool_params([{
         "tool": "ctv_segmentation",
         "params": {"model": "biomedparse_liver_tumor", "organ": "liver"},
     }])
-    assert calls[0]["params"]["tumor_type"] == "totalsegmentator_liver_tumor"
+    assert calls[0]["params"]["tumor_type"] == "sat3d_liver_tumor"
     assert "model" not in calls[0]["params"]
 
 
@@ -244,7 +245,7 @@ def test_ctv_normalization_prefers_a_valid_site_over_an_unknown_model_alias():
     })
 
     assert normalized["image_path"] == "/case/ct.nii"
-    assert normalized["tumor_type"] == "totalsegmentator_liver_tumor"
+    assert normalized["tumor_type"] == "sat3d_liver_tumor"
 
 
 def test_ctv_normalization_does_not_let_an_unknown_model_hide_user_context():
@@ -257,7 +258,7 @@ def test_ctv_normalization_does_not_let_an_unknown_model_hide_user_context():
         ),
     )
 
-    assert normalized["tumor_type"] == "totalsegmentator_liver_tumor"
+    assert normalized["tumor_type"] == "sat3d_liver_tumor"
 
 
 def test_ctv_tool_boundary_prefers_a_valid_organ_over_a_stale_model_id():
@@ -266,7 +267,7 @@ def test_ctv_tool_boundary_prefers_a_valid_organ_over_a_stale_model_id():
     assert resolve_ctv_tumor_type({
         "model": "stale_catalog_model_v0",
         "organ": "liver",
-    }) == "totalsegmentator_liver_tumor"
+    }) == "sat3d_liver_tumor"
 
 
 def test_ctv_tool_boundary_reports_missing_ct_after_resolving_site_aliases():
@@ -292,10 +293,10 @@ def test_ctv_normalization_recovers_site_from_current_user_message():
 
     normalized = harness._normalize_ctv_tool_params({"image_path": "/tmp/case.nii.gz"})
 
-    assert normalized["tumor_type"] == "totalsegmentator_liver_tumor"
+    assert normalized["tumor_type"] == "sat3d_liver_tumor"
 
 
-def test_liver_aliases_use_the_totalsegmentator_route_before_ctv_validation():
+def test_liver_aliases_use_the_sat3d_route_before_ctv_validation():
     """A liver planning request must not emit the retired ``voco_liver``.
 
     The CTV tool accepts legacy aliases for old Sessions, but automatic
@@ -305,14 +306,14 @@ def test_liver_aliases_use_the_totalsegmentator_route_before_ctv_validation():
     harness = _DirectHarness(_Memory({"ct_path": "/tmp/case.nii.gz"}))
     harness._SUPPORTED_AUTOMATIC_CTV_TYPES = frozenset({
         "nnunet_pancreatic",
-        "totalsegmentator_liver_tumor",
+        "sat3d_liver_tumor",
     })
 
-    assert harness._map_tumor_type("liver") == "totalsegmentator_liver_tumor"
-    assert harness._map_tumor_type("voco_liver") == "totalsegmentator_liver_tumor"
+    assert harness._map_tumor_type("liver") == "sat3d_liver_tumor"
+    assert harness._map_tumor_type("voco_liver") == "sat3d_liver_tumor"
     assert harness._normalize_ctv_tool_params({
         "tumor_type": "biomedparse_v2_liver_tumor",
-    })["tumor_type"] == "totalsegmentator_liver_tumor"
+    })["tumor_type"] == "sat3d_liver_tumor"
 
 
 

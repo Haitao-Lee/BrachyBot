@@ -1883,6 +1883,13 @@
                 prescriptionBaseGy: uiState.prescription_base_gy,
                 doseScaleGy: uiState.dose_model_scale_gy,
             }));
+            // Controls are restored before clinical arrays. Recompute SAT3D
+            // availability/help state immediately so a restored prostate or
+            // head/neck Session cannot retain the previous case's point-tool
+            // enablement or modality presentation.
+            if (typeof _syncTumorTypeSelectorAppearance === 'function') {
+                _syncTumorTypeSelectorAppearance();
+            }
             if (uiState.viewer && typeof state !== 'undefined') {
                 state.slices = Object.assign(state.slices || {}, uiState.viewer.slices || {});
                 state.viewerSettings = Object.assign(state.viewerSettings || {}, uiState.viewer.settings || {});

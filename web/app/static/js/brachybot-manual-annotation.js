@@ -674,6 +674,9 @@ async function runSegmentationStep(kind) {
             } : {}),
             ...(apiKind === 'ctv' ? {
                 tumor_type: document.getElementById('ctvModelSelect')?.value || 'nnunet_pancreatic',
+                image_modality: document.getElementById('ctvImageModality')?.value || 'CT',
+                volume_index: Math.max(0, Math.trunc(Number(document.getElementById('ctvVolumeIndex')?.value) || 0)),
+                ...sat3dPromptPayload(),
             } : {}),
         };
         // A manual step may be started while the selected case is still
@@ -778,7 +781,7 @@ async function runSegmentationStep(kind) {
             }).catch(error => console.warn('[manual segmentation] fallback label load failed:', error));
         }
         if (!isCurrentOwner()) return { success: true, kind, labels: n, detached: true };
-        if (apiKind === 'ctv' && String(body.tumor_type || '').startsWith('biomedparse_')) {
+        if (apiKind === 'ctv' && String(body.tumor_type || '').startsWith('sat3d_')) {
             fetch(API + '/ctv/models/validation', {
                 method: 'POST',
                 headers: sessionHeaders,
@@ -2148,7 +2151,18 @@ function drawAnnotation(ctx, ann) {
     ctx.lineWidth = 2;
     ctx.font = '12px monospace';
 
-    if (ann.type === 'line') {
+    if (ann.type === 'sat3d_prompt') {
+        ctx.beginPath();
+        ctx.arc(ann.x, ann.y, 6, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+        ctx.fillStyle = '#ffffff';
+        ctx.textAlign = 'center';
+        ctx.font = 'bold 10px monospace';
+        ctx.fillText(ann.promptLabel === 0 ? '−' : '+', ann.x, ann.y + 3.5);
+    } else if (ann.type === 'line') {
         ctx.beginPath();
         ctx.moveTo(ann.x1, ann.y1);
         ctx.lineTo(ann.x2, ann.y2);
@@ -2510,6 +2524,50 @@ function screenToImageCoords(axis, screenX, screenY) {
     return { x: imgX, y: imgY, displayX: canvasX, displayY: canvasY };
 }
 
+function _sliceImageCoordsToVoxel(axis, coords) {
+    if (!state.ctShape || state.ctShape.length !== 3) return null;
+    const spacing = window.volumeSpacing || state.ctSpacing || [0.68, 0.68, 5.0];
+    let x, y, z;
+    if (axis === 'axial') {
+        x = Math.round(coords.x); y = Math.round(coords.y); z = Math.round(state.slices.axial);
+    } else if (axis === 'sagittal') {
+        const ratio = _getMprGeometry('sagittal', state.ctShape, spacing).resampleRatio;
+        x = Math.round(state.slices.sagittal); y = Math.round(coords.x); z = Math.round(coords.y / ratio);
+    } else {
+        const ratio = _getMprGeometry('coronal', state.ctShape, spacing).resampleRatio;
+        x = Math.round(coords.x); y = Math.round(state.slices.coronal); z = Math.round(coords.y / ratio);
+    }
+    if (x < 0 || x >= state.ctShape[2] || y < 0 || y >= state.ctShape[1] || z < 0 || z >= state.ctShape[0]) return null;
+    return { x, y, z, zyx: [z, y, x] };
+}
+
+function sat3dPromptPayload() {
+    const points = (state.annotations || []).filter(annotation => annotation.type === 'sat3d_prompt');
+    return {
+        positive_points: points.filter(point => point.promptLabel !== 0).map(point => point.voxelZyx),
+        negative_points: points.filter(point => point.promptLabel === 0).map(point => point.voxelZyx),
+        point_coordinate_system: 'voxel_zyx',
+    };
+}
+
+function _updateSat3dPromptHelp() {
+    const help = document.getElementById('sat3dPromptHelp');
+    if (!help) return;
+    const payload = sat3dPromptPayload();
+    const zh = `SAT3D 提示点：正点 ${payload.positive_points.length}，负点 ${payload.negative_points.length}。未放点时执行零点初始推理。`;
+    const en = `SAT3D prompts: ${payload.positive_points.length} positive, ${payload.negative_points.length} negative. With no points, initial zero-prompt inference is used.`;
+    help.dataset.i18nZh = zh;
+    help.dataset.i18nEn = en;
+    help.textContent = typeof window._t === 'function' ? window._t(zh, en) : en;
+}
+
+function clearSat3dPromptPoints() {
+    state.annotations = (state.annotations || []).filter(annotation => annotation.type !== 'sat3d_prompt');
+    redrawAllAnnotations();
+    _updateSat3dPromptHelp();
+    if (typeof window.scheduleWorkspaceSave === 'function') window.scheduleWorkspaceSave('sat3d.prompts.clear');
+}
+
 function setupAnnotationTool(axis) {
     const sliceCanvas = getSliceCanvas(axis);
     if (!sliceCanvas) return;
@@ -2669,7 +2727,29 @@ function setupAnnotationTool(axis) {
         else { pxSpacingX = volSpacing[0]; pxSpacingY = volSpacing[2]; }
         let annotation = null;
 
-        if (tool === 'measure') {
+        if (tool === 'sat3d_positive' || tool === 'sat3d_negative') {
+            const voxel = _sliceImageCoordsToVoxel(axis, coords);
+            if (voxel) {
+                const promptLabel = tool === 'sat3d_negative' ? 0 : 1;
+                const duplicate = (state.annotations || []).some(item =>
+                    item.type === 'sat3d_prompt'
+                    && item.promptLabel === promptLabel
+                    && Array.isArray(item.voxelZyx)
+                    && item.voxelZyx.join(',') === voxel.zyx.join(',')
+                );
+                if (!duplicate) {
+                    annotation = {
+                        type: 'sat3d_prompt',
+                        axis,
+                        x: coords.displayX,
+                        y: coords.displayY,
+                        voxelZyx: voxel.zyx,
+                        promptLabel,
+                        color: promptLabel ? '#22c55e' : '#ef4444',
+                    };
+                }
+            }
+        } else if (tool === 'measure') {
             annotation = {
                 type: 'line',
                 axis: axis,
@@ -2750,6 +2830,10 @@ function setupAnnotationTool(axis) {
         if (annotation) {
             state.annotations.push(annotation);
             pushUndo(annotation);
+            if (annotation.type === 'sat3d_prompt') {
+                _updateSat3dPromptHelp();
+                if (typeof window.scheduleWorkspaceSave === 'function') window.scheduleWorkspaceSave('sat3d.prompts.add');
+            }
         }
 
         // Redraw

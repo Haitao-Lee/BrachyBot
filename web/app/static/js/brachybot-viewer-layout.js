@@ -404,7 +404,7 @@ function setViewerTool(tool) {
             state.activeMaskId = null;
             addChat('system', `Manual mask "${finalName}" finalised. Right-click it in the Data Tree to rename or move it.`);
         }
-        const toolIds = ['toolCrosshair', 'toolMeasure', 'toolAngle', 'toolRect', 'toolZoombox', 'toolAnnotate', 'toolEraser'];
+        const toolIds = ['toolCrosshair', 'toolMeasure', 'toolAngle', 'toolRect', 'toolZoombox', 'toolAnnotate', 'toolEraser', 'toolSat3dPositive', 'toolSat3dNegative'];
         toolIds.forEach(id => {
             const btn = document.getElementById(id);
             if (btn) btn.style.background = '';
@@ -454,17 +454,17 @@ function setViewerTool(tool) {
             addChat('system', `Manual mask "${finalName}" finalised.`);
         }
     }
-    const toolIds = ['toolCrosshair', 'toolMeasure', 'toolAngle', 'toolRect', 'toolZoombox', 'toolAnnotate', 'toolEraser'];
+    const toolIds = ['toolCrosshair', 'toolMeasure', 'toolAngle', 'toolRect', 'toolZoombox', 'toolAnnotate', 'toolEraser', 'toolSat3dPositive', 'toolSat3dNegative'];
     toolIds.forEach(id => {
         const btn = document.getElementById(id);
         if (btn) btn.style.background = '';
     });
-    const toolMap = { crosshair: 'toolCrosshair', measure: 'toolMeasure', angle: 'toolAngle', rect: 'toolRect', zoombox: 'toolZoombox', annotate: 'toolAnnotate', eraser: 'toolEraser' };
+    const toolMap = { crosshair: 'toolCrosshair', measure: 'toolMeasure', angle: 'toolAngle', rect: 'toolRect', zoombox: 'toolZoombox', annotate: 'toolAnnotate', eraser: 'toolEraser', sat3d_positive: 'toolSat3dPositive', sat3d_negative: 'toolSat3dNegative' };
     const activeBtn = document.getElementById(toolMap[tool]);
     if (activeBtn) activeBtn.style.background = 'var(--primary)';
 
     // Update cursor on all slice canvases
-    const cursors = { crosshair: 'crosshair', measure: 'crosshair', angle: 'crosshair', rect: 'crosshair', zoombox: 'zoom-in', annotate: 'crosshair', eraser: 'cell' };
+    const cursors = { crosshair: 'crosshair', measure: 'crosshair', angle: 'crosshair', rect: 'crosshair', zoombox: 'zoom-in', annotate: 'crosshair', eraser: 'cell', sat3d_positive: 'crosshair', sat3d_negative: 'crosshair' };
     ['axial', 'sagittal', 'coronal'].forEach(axis => {
         const canvas = document.getElementById('sliceCanvas' + capitalize(axis));
         if (canvas) canvas.style.cursor = cursors[tool] || 'default';
