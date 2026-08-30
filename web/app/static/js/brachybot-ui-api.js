@@ -1605,11 +1605,40 @@ function _syncTumorTypeSelectorAppearanceLegacy() {
 function _syncTumorTypeSelectorAppearance() {
     const select = document.getElementById('ctvModelSelect');
     if (!select) return;
+    if (!select.dataset.sat3dChangeBound) {
+        select.dataset.sat3dChangeBound = 'true';
+        select.addEventListener('change', () => {
+            const modality = document.getElementById('ctvImageModality');
+            // Prostate158 evidence is T2w MRI. Avoid an immediately-invalid CT
+            // request when the user switches from an abdominal model, while
+            // leaving all other modality choices under explicit user control.
+            if (select.value === 'sat3d_prostate_tumor' && modality?.value === 'CT') {
+                modality.value = 'T2w';
+            }
+            _syncTumorTypeSelectorAppearance();
+            if (typeof window.scheduleWorkspaceSave === 'function') window.scheduleWorkspaceSave('ctv.model.change');
+        });
+    }
+    ['ctvImageModality', 'ctvVolumeIndex'].forEach(id => {
+        const control = document.getElementById(id);
+        if (!control || control.dataset.sat3dPersistenceBound === 'true') return;
+        control.dataset.sat3dPersistenceBound = 'true';
+        control.addEventListener('change', () => {
+            if (typeof window.scheduleWorkspaceSave === 'function') window.scheduleWorkspaceSave(`ctv.${id}.change`);
+        });
+    });
     const selected = select.options[select.selectedIndex];
+    const sat3dSelected = String(selected?.value || '').startsWith('sat3d_');
+    ['toolSat3dPositive', 'toolSat3dNegative', 'toolSat3dClear'].forEach(id => {
+        const button = document.getElementById(id);
+        if (button) button.disabled = !sat3dSelected;
+    });
+    const promptHelp = document.getElementById('sat3dPromptHelp');
+    if (promptHelp) promptHelp.style.display = sat3dSelected ? '' : 'none';
     const capability = selected?.dataset?.capabilityState || 'disabled';
     // The user-facing distinction is operational availability, not the
-    // research/verified maturity label. Experimental BiomedParse routes are
-    // green when callable; missing runtimes and disabled routes are red.
+    // research/verified maturity label. SAT3D research routes are green when
+    // callable; missing runtimes and disabled routes are red.
     const callable = selected?.dataset?.callable === 'true'
         || capability === 'verified'
         // The validated pancreatic route gets an immediate green bootstrap
@@ -1665,8 +1694,8 @@ async function refreshTumorTypeAvailability() {
     // state in the native menu.
     _syncTumorTypeSelectorAppearance();
     try {
-        // Include the optional research catalog so a configured BiomedParse
-        // runtime can mark the corresponding tumor type as actionable. The
+        // Include the optional research catalog so the configured SAT3D
+        // runtime can mark each supported tumor type as actionable. The
         // catalog is not rendered as model-brand text in the selector.
         const response = await fetch(API + '/ctv/models?include_experimental=1', {
             credentials: 'same-origin',
@@ -1681,9 +1710,9 @@ async function refreshTumorTypeAvailability() {
             // local resource is present. Manual CTV import remains available
             // for every tumor type, so unavailable options stay selectable.
             // An optional site is automatically actionable when its local
-            // model exists or its explicitly configured BiomedParse research
-            // fallback is available. The server still preserves provenance
-            // and blocks empty/failed candidates.
+            // model runtime exists. The server still preserves provenance and
+            // blocks empty/failed candidates; there is no silent fallback to
+            // a different segmentation model.
             capabilities.set(type, {
                 state: String(model.capability_state || 'disabled'),
                 callable: !!model.callable,
@@ -1715,17 +1744,17 @@ function updateTumorTypeSelector(value) {
     if (!raw) return false;
     const aliases = {
         pancreas: 'nnunet_pancreatic', pancreatic: 'nnunet_pancreatic',
-        liver: 'totalsegmentator_liver_tumor', kidney: 'biomedparse_kidney_lesion',
-        lung: 'biomedparse_lung_lesion', colon: 'biomedparse_colon_primary',
-        prostate: 'prostate_tumor',
-        'head and neck': 'biomedparse_head_neck_cancer', head_neck: 'biomedparse_head_neck_cancer',
+        liver: 'sat3d_liver_tumor', kidney: 'sat3d_kidney_tumor',
+        lung: 'sat3d_lung_tumor', colon: 'sat3d_colon_tumor',
+        prostate: 'sat3d_prostate_tumor',
+        'head and neck': 'sat3d_head_neck_tumor', head_neck: 'sat3d_head_neck_tumor',
         '胰腺': 'nnunet_pancreatic', '胰脏': 'nnunet_pancreatic',
-        '肝': 'totalsegmentator_liver_tumor', '肝脏': 'totalsegmentator_liver_tumor',
-        '肾': 'biomedparse_kidney_lesion', '肾脏': 'biomedparse_kidney_lesion',
-        '肺': 'biomedparse_lung_lesion', '肺部': 'biomedparse_lung_lesion',
-        '结肠': 'biomedparse_colon_primary', '结肠癌': 'biomedparse_colon_primary',
-        '前列腺': 'prostate_tumor', '头颈': 'biomedparse_head_neck_cancer',
-        '头颈部': 'biomedparse_head_neck_cancer', '头颈肿瘤': 'biomedparse_head_neck_cancer',
+        '肝': 'sat3d_liver_tumor', '肝脏': 'sat3d_liver_tumor',
+        '肾': 'sat3d_kidney_tumor', '肾脏': 'sat3d_kidney_tumor',
+        '肺': 'sat3d_lung_tumor', '肺部': 'sat3d_lung_tumor',
+        '结肠': 'sat3d_colon_tumor', '结肠癌': 'sat3d_colon_tumor',
+        '前列腺': 'sat3d_prostate_tumor', '头颈': 'sat3d_head_neck_tumor',
+        '头颈部': 'sat3d_head_neck_tumor', '头颈肿瘤': 'sat3d_head_neck_tumor',
     };
     const key = aliases[raw.toLowerCase()] || raw.toLowerCase();
     const select = document.getElementById('ctvModelSelect');

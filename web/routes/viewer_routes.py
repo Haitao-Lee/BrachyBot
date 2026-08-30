@@ -876,10 +876,10 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
             ctv_full_memory = agent._get_label_array("ctv_full_labels")
             # Only model-produced multi-label CTV output may be split into
             # embedded artery/vein/pancreas OAR labels. Uploaded CTV data is
-            # opaque user data and remains a foreground CTV mask. BiomedParse
-            # BiomedParse and TotalSegmentator CTV outputs are model-produced,
-            # so restored multi-label payloads from either source must follow
-            # the model path rather than the uploaded-label path.
+            # opaque user data and remains a foreground CTV mask. Historical
+            # BiomedParse/TotalSegmentator CTV outputs and current SAT3D
+            # outputs are model-produced, so restored payloads from those
+            # sources follow the model path rather than uploaded-label logic.
             # Keep the former source token for old sessions created before the
             # provenance field was simplified.
             model_sources = {
@@ -888,6 +888,7 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
                 "biomedparse_v2_research_candidate",
                 "totalsegmentator",
                 "totalsegmentator_liver_tumor",
+                "sat3d",
             }
             # Keep model-produced multi-label CTV payloads intact across
             # restore. The pancreatic nnUNet route uses a specific provenance
@@ -898,10 +899,12 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
                 or ctv_source.startswith("nnunet_")
                 or ctv_source.startswith("biomedparse_")
                 or ctv_source.startswith("totalsegmentator_")
+                or ctv_source.startswith("sat3d")
                 or base_ctv_source in model_sources
                 or base_ctv_source.startswith("nnunet_")
                 or base_ctv_source.startswith("biomedparse_")
                 or base_ctv_source.startswith("totalsegmentator_")
+                or base_ctv_source.startswith("sat3d")
             )
             ctv_full = ctv_full_memory if is_model_ctv else None
             if ctv_full is None:

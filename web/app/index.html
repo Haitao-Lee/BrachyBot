@@ -573,16 +573,30 @@
                     <select class="form-input" id="ctvModelSelect" aria-describedby="ctvModelHelp">
                         <!-- Values retain the implementation key for the API; users choose a tumor type, not a model brand. -->
                         <option value="nnunet_pancreatic" data-capability-state="loading" data-i18n-zh="胰腺肿瘤" data-i18n-en="Pancreatic tumor">Pancreatic tumor</option>
-                        <option value="totalsegmentator_liver_tumor" data-capability-state="loading" data-i18n-zh="肝脏肿瘤" data-i18n-en="Liver tumor">Liver tumor</option>
-                        <option value="biomedparse_kidney_lesion" data-capability-state="loading" data-i18n-zh="肾脏病灶" data-i18n-en="Kidney lesion">Kidney lesion</option>
-                        <option value="biomedparse_lung_lesion" data-capability-state="loading" data-i18n-zh="肺部病灶" data-i18n-en="Lung lesion">Lung lesion</option>
-                        <option value="biomedparse_colon_primary" data-capability-state="loading" data-i18n-zh="结肠原发肿瘤" data-i18n-en="Colon primary tumor">Colon primary tumor</option>
-                        <option value="prostate_tumor" data-capability-state="loading" data-i18n-zh="前列腺全腺体靶区" data-i18n-en="Whole-prostate target">Whole-prostate target</option>
-                        <option value="biomedparse_head_neck_cancer" data-capability-state="loading" data-i18n-zh="头颈部肿瘤" data-i18n-en="Head and neck tumor">Head and neck tumor</option>
+                        <option value="sat3d_liver_tumor" data-capability-state="loading" data-i18n-zh="肝脏肿瘤" data-i18n-en="Liver tumor">Liver tumor</option>
+                        <option value="sat3d_kidney_tumor" data-capability-state="loading" data-i18n-zh="肾脏肿瘤" data-i18n-en="Kidney tumor">Kidney tumor</option>
+                        <option value="sat3d_lung_tumor" data-capability-state="loading" data-i18n-zh="肺部肿瘤" data-i18n-en="Lung tumor">Lung tumor</option>
+                        <option value="sat3d_colon_tumor" data-capability-state="loading" data-i18n-zh="结肠肿瘤" data-i18n-en="Colon tumor">Colon tumor</option>
+                        <option value="sat3d_prostate_tumor" data-capability-state="loading" data-i18n-zh="前列腺肿瘤（T2 MRI）" data-i18n-en="Prostate tumor (T2 MRI)">Prostate tumor (T2 MRI)</option>
+                        <option value="sat3d_head_neck_tumor" data-capability-state="loading" data-i18n-zh="头颈部肿瘤" data-i18n-en="Head and neck tumor">Head and neck tumor</option>
                     </select>
                     <div id="ctvModelHelp" class="tumor-type-help" aria-live="polite"
                         data-i18n-zh="正在检查当前运行环境中的分割能力..."
                         data-i18n-en="Checking segmentation capability in this runtime...">Checking segmentation capability in this runtime...</div>
+                    <label class="form-label" for="ctvImageModality" style="margin-top:8px;" data-i18n-zh="影像模态" data-i18n-en="Image Modality">Image Modality</label>
+                    <select class="form-input" id="ctvImageModality">
+                        <option value="CT">CT</option>
+                        <option value="CTA">CTA</option>
+                        <option value="MRI">MRI</option>
+                        <option value="T2w">T2-weighted MRI</option>
+                        <option value="T1ce">Contrast-enhanced T1 MRI</option>
+                    </select>
+                    <label class="form-label" for="ctvVolumeIndex" style="margin-top:8px;" data-i18n-zh="4D 影像卷序号" data-i18n-en="4D Volume Index">4D Volume Index</label>
+                    <input class="form-input" id="ctvVolumeIndex" type="number" min="0" step="1" value="0"
+                        aria-describedby="sat3dPromptHelp">
+                    <div class="tumor-type-help" id="sat3dPromptHelp" aria-live="polite"
+                        data-i18n-zh="SAT3D 可先零点推理；建议在肿瘤内放置绿色正点，并用红色负点排除错误区域。4D 单模态文件默认使用第 0 卷。"
+                        data-i18n-en="SAT3D can start without points; place green positive points inside tumor and red negative points to exclude false regions. A 4D single-modality file uses volume 0 by default.">SAT3D can start without points; place green positive points inside tumor and red negative points to exclude false regions. A 4D single-modality file uses volume 0 by default.</div>
                 </div>
 
                 <!-- OAR file picker -->
@@ -1236,6 +1250,9 @@
                 <button class="file-btn" style="padding:2px 6px;font-size:0.6rem;" onclick="setViewerTool('zoombox')" id="toolZoombox">&#128269; Zoom</button>
                 <button class="file-btn" style="padding:2px 6px;font-size:0.6rem;" onclick="setViewerTool('annotate')" id="toolAnnotate">&#9998; Draw</button>
                 <button class="file-btn" style="padding:2px 6px;font-size:0.6rem;" onclick="setViewerTool('eraser')" id="toolEraser">&#9003; Erase</button>
+                <button class="file-btn" style="padding:2px 6px;font-size:0.6rem;color:#4ade80;" onclick="setViewerTool('sat3d_positive')" id="toolSat3dPositive" title="SAT3D positive point">SAT3D +</button>
+                <button class="file-btn" style="padding:2px 6px;font-size:0.6rem;color:#fb7185;" onclick="setViewerTool('sat3d_negative')" id="toolSat3dNegative" title="SAT3D negative point">SAT3D -</button>
+                <button class="file-btn" style="padding:2px 6px;font-size:0.6rem;" onclick="clearSat3dPromptPoints()" id="toolSat3dClear" title="Clear SAT3D points">Clear pts</button>
                 <div class="ctrl-sep" style="height:16px;"></div>
                 <button class="file-btn" style="padding:2px 6px;font-size:0.6rem;" onclick="viewerFlipH()">&#8644; FlipH</button>
                 <button class="file-btn" style="padding:2px 6px;font-size:0.6rem;" onclick="viewerFlipV()">&#8645; FlipV</button>

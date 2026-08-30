@@ -2481,6 +2481,11 @@ def register_planning_routes(
         tumor_type = data.get("tumor_type")
         label_path = data.get("label_path")
         target_value = data.get("target_value", 1)
+        image_modality = data.get("image_modality", "CT")
+        positive_points = data.get("positive_points") or []
+        negative_points = data.get("negative_points") or []
+        point_coordinate_system = data.get("point_coordinate_system", "voxel_zyx")
+        volume_index = data.get("volume_index", 0)
         if kind == "ctv":
             try:
                 from tool_factory.segmentation_alignment import normalize_positive_label_value
@@ -2570,6 +2575,13 @@ def register_planning_routes(
                 kwargs = {"image_path": image_path}
                 if tumor_type:
                     kwargs["tumor_type"] = tumor_type
+                kwargs.update({
+                    "image_modality": image_modality,
+                    "positive_points": positive_points,
+                    "negative_points": negative_points,
+                    "point_coordinate_system": point_coordinate_system,
+                    "volume_index": volume_index,
+                })
                 if label_path:
                     kwargs["label_path"] = label_path
                     kwargs["target_value"] = target_value
@@ -2585,6 +2597,7 @@ def register_planning_routes(
                 return jsonify({"error": f"Unknown segmentation kind: {kind}"}), 400
 
             if not result.success:
+                result_metadata = getattr(result, "metadata", {}) or {}
                 checkpoint_operation(
                     agent,
                     "interrupted",
@@ -2599,8 +2612,11 @@ def register_planning_routes(
                     "success": False,
                     "kind": kind,
                     "tumor_type": tumor_type,
-                    "clarification_required": bool((getattr(result, "metadata", {}) or {}).get("clarification_required")),
-                    "clarification_question": (getattr(result, "metadata", {}) or {}).get("clarification_question"),
+                    "code": result_metadata.get("code") or "segmentation_failed",
+                    "clarification_required": bool(result_metadata.get("clarification_required")),
+                    "clarification_question": result_metadata.get("clarification_question"),
+                    "supported_modalities": result_metadata.get("supported_modalities") or [],
+                    "sat3d_availability": result_metadata.get("sat3d_availability"),
                     "error": result.error or result.message or "Segmentation failed",
                 }), 422
 
@@ -2650,6 +2666,20 @@ def register_planning_routes(
                             agent.memory.store("ctv_volume_mm3", meta["ctv_volume_mm3"])
                         if meta.get("ctv_voxel_count") is not None:
                             agent.memory.store("ctv_voxels", meta["ctv_voxel_count"])
+                        # Persist model identity and prompt provenance as one
+                        # authoritative result contract.  Session restore and
+                        # report generation must not infer these fields from a
+                        # legacy tumor_type string.
+                        for provenance_key in (
+                            "model_name", "repository", "model_url", "artifact_doi",
+                            "checkpoint", "checkpoint_md5", "critic_checkpoint",
+                            "critic_checkpoint_md5", "sat3d_commit", "sat3d_site",
+                            "sat3d_datasets", "sat3d_evidence", "sat3d_out_of_distribution",
+                            "sat3d_prompt_mode", "sat3d_positive_points_zyx",
+                            "sat3d_negative_points_zyx", "sat3d_requires_clinician_review",
+                            "image_modality", "volume_index", "target_semantics",
+                        ):
+                            agent.memory.store(provenance_key, meta.get(provenance_key))
                     except Exception as e:
                         logger.warning(f"store ctv_label_data failed: {e}")
             elif kind == "oar" and hasattr(agent, "memory"):
@@ -2747,6 +2777,19 @@ def register_planning_routes(
                 "target_value": meta.get("ctv_target_value") if kind == "ctv" else None,
                 "requested_target_value": meta.get("ctv_requested_target_value") if kind == "ctv" else None,
                 "ctv_normalized_binary": bool(meta.get("ctv_normalized_binary")) if kind == "ctv" else False,
+                "ctv_provenance": ({
+                    "source": meta.get("ctv_source"),
+                    "model_name": meta.get("model_name"),
+                    "repository": meta.get("repository"),
+                    "checkpoint_md5": meta.get("checkpoint_md5"),
+                    "prompt_mode": meta.get("sat3d_prompt_mode"),
+                    "positive_points": meta.get("sat3d_positive_points_zyx") or [],
+                    "negative_points": meta.get("sat3d_negative_points_zyx") or [],
+                    "out_of_distribution": bool(meta.get("sat3d_out_of_distribution")),
+                    "requires_clinician_review": bool(meta.get("sat3d_requires_clinician_review")),
+                    "image_modality": meta.get("image_modality"),
+                    "volume_index": meta.get("volume_index", 0),
+                } if kind == "ctv" else None),
                 "label_counts": label_counts,
                 "total_labels": len(label_counts),
                 # The browser can populate the Data Tree immediately from the
@@ -2801,15 +2844,21 @@ def register_planning_routes(
         payload = request.get_json(silent=True) or {}
         tumor_type = str(payload.get("tumor_type") or "").strip()
         current_type = str(agent.memory.retrieve("tumor_type_used", "") or "").strip()
-        if not tumor_type.startswith("biomedparse_") or tumor_type != current_type:
+        if not tumor_type.startswith(("biomedparse_", "sat3d_")) or tumor_type != current_type:
             return jsonify({"success": False, "error": "Tumor type does not match the active case"}), 409
         if not bool(agent.memory.retrieve("ctv_segmented", False)):
             return jsonify({"success": False, "error": "No active CTV result"}), 409
-        from tool_factory.CTV_seg.biomedparse_v2 import record_pipeline_validation
-        record_pipeline_validation(
-            tumor_type,
-            data_tree_viewer_passed=bool(payload.get("data_tree_viewer_passed")),
-        )
+        if tumor_type.startswith("biomedparse_"):
+            from tool_factory.CTV_seg.biomedparse_v2 import record_pipeline_validation
+            record_pipeline_validation(
+                tumor_type,
+                data_tree_viewer_passed=bool(payload.get("data_tree_viewer_passed")),
+            )
+        else:
+            agent.memory.store(
+                "sat3d_data_tree_viewer_passed",
+                bool(payload.get("data_tree_viewer_passed")),
+            )
         return jsonify({"success": True, "tumor_type": tumor_type})
 
     @app.route("/api/planning/run_step", methods=["POST"])
