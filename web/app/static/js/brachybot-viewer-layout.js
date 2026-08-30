@@ -905,8 +905,15 @@ function _renderViewer3DLoading() {
     const loading = document.getElementById('loading3D');
     if (!loading) return;
     const active = _viewer3DLoadingState.tokens.size > 0;
+    // Loading is progressive and must never become an input boundary.  Keep
+    // this runtime guard as well as the stylesheet contract so a mixed-cache
+    // tab cannot put an older blocking overlay in front of OrbitControls.
+    loading.style.pointerEvents = 'none';
+    loading.dataset.interactionMode = 'passthrough';
     loading.classList.toggle('active', active);
     loading.setAttribute('aria-hidden', active ? 'false' : 'true');
+    const canvas = document.getElementById('canvas3D');
+    if (canvas) canvas.setAttribute('aria-busy', active ? 'true' : 'false');
     const text = loading.querySelector('.loading-text');
     if (text) {
         const messages = [..._viewer3DLoadingState.tokens.values()]

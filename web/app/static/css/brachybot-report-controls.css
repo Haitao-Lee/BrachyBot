@@ -903,26 +903,47 @@
 
 .loading-overlay {
     position: absolute;
-    inset: 0;
-    background: rgba(10, 14, 26, 0.78);
-    display: flex; flex-direction: column;
+    top: 2.25rem;
+    left: 50%;
+    right: auto;
+    bottom: auto;
+    max-width: calc(100% - 2rem);
+    padding: 0.45rem 0.75rem;
+    border: 1px solid rgba(112, 142, 255, 0.32);
+    border-radius: 999px;
+    background: rgba(10, 14, 26, 0.86);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+    display: flex; flex-direction: row;
     align-items: center; justify-content: center;
     z-index: 50;
-    gap: 0.65rem;
+    gap: 0.55rem;
     opacity: 0;
     visibility: hidden;
-    pointer-events: none;
+    /* This is progress telemetry, not a modal dialog.  Keeping the entire
+       overlay out of hit testing lets wheel, pointer and touch events reach
+       the WebGL canvas while background mesh promises continue to settle. */
+    pointer-events: none !important;
+    user-select: none;
+    transform: translate(-50%, -6px);
     transition:
         opacity var(--t-base) var(--ease),
+        transform var(--t-base) var(--ease),
         visibility 0s linear var(--t-base);
-    backdrop-filter: blur(4px);
-    -webkit-backdrop-filter: blur(4px);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
 }
 .loading-overlay.active {
     opacity: 1;
     visibility: visible;
-    pointer-events: all;
+    pointer-events: none !important;
+    transform: translate(-50%, 0);
     transition-delay: 0s;
+}
+
+.loading-overlay .spinner-ring {
+    width: 20px;
+    height: 20px;
+    border-width: 2px;
 }
 
 .spinner-ring {
@@ -946,6 +967,9 @@
     color: var(--text-secondary);
     font-weight: 500;
     letter-spacing: 0.04em;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .upload-progress-overlay {

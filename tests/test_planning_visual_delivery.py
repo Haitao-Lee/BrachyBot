@@ -285,3 +285,50 @@ def test_3d_loading_has_reference_counted_ownership_and_soft_watchdog():
     assert "window.beginViewer3DLoading('Rendering dose surfaces...')" in manual
     assert "still running after ${ms/1000}s; waiting for completion" in planning
     assert "Promise.race([" not in planning
+
+
+def test_3d_progress_overlay_never_blocks_interaction_or_cancels_hydration():
+    """Progress remains visible while OrbitControls and mesh promises run."""
+    html = read("web/app/index.html")
+    css = read("web/app/static/css/brachybot-report-controls.css")
+    layout = read("web/app/static/js/brachybot-viewer-layout.js")
+    manual = read("web/app/static/js/brachybot-3d-manual.js")
+
+    assert 'id="loading3D" role="status" aria-live="polite" aria-atomic="true"' in html
+    assert 'data-interaction-mode="passthrough"' in html
+
+    base_rule = css.split(".loading-overlay {", 1)[1].split("}", 1)[0]
+    active_rule = css.split(".loading-overlay.active {", 1)[1].split("}", 1)[0]
+    assert "pointer-events: none !important" in base_rule
+    assert "pointer-events: none !important" in active_rule
+    assert "pointer-events: all" not in active_rule
+    assert "pointer-events: auto" not in active_rule
+    # The progress UI is a compact heads-up chip, not a full-card scrim.
+    assert "top: 2.25rem" in base_rule
+    assert "left: 50%" in base_rule
+    assert "inset: 0" not in base_rule
+
+    render_loading = layout.split("function _renderViewer3DLoading()", 1)[1].split(
+        "function beginViewer3DLoading", 1
+    )[0]
+    assert "loading.style.pointerEvents = 'none'" in render_loading
+    assert "loading.dataset.interactionMode = 'passthrough'" in render_loading
+    assert "canvas.setAttribute('aria-busy', active ? 'true' : 'false')" in render_loading
+    assert "tokens.size > 0" in render_loading
+
+    camera_interaction = manual.split("const markCameraInteraction", 1)[1].split(
+        "scene3D.renderer.domElement.addEventListener('pointerdown'", 1
+    )[0]
+    # A pointer gesture transfers camera ownership away from auto-fit only.
+    # It must not invalidate, clear or abort the background resource run.
+    assert "_cameraUserInteracted = true" in camera_interaction
+    assert "_cameraHydrationActive = false" in camera_interaction
+    assert "invalidateSegmentationMeshPrewarm" not in camera_interaction
+    assert "invalidateViewer3DRequests" not in camera_interaction
+    assert "_segmentationMeshPrewarm.tasks.clear" not in camera_interaction
+
+    prewarm = manual.split("async function prewarmSegmentationMeshes", 1)[1].split(
+        "function startSegmentationMeshPrewarm", 1
+    )[0]
+    assert "await Promise.all(promises)" in prewarm
+    assert "finally" in prewarm
