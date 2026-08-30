@@ -434,25 +434,31 @@
             maxPendingRetries = 240,
             ...fetchOptions
         } = options || {};
-        const response = await fetch(url, {
+        const sharedRequest = window.fetchViewerJsonWithRetry;
+        if (typeof sharedRequest !== 'function') {
+            throw new Error('Viewer request helper is not available');
+        }
+        const request = await sharedRequest(url, {
             credentials: 'same-origin',
             ...fetchOptions,
             headers: {
                 ...(fetchOptions.headers || {}),
                 ...(sessionId ? { 'X-BrachyBot-Session': sessionId } : {}),
             },
+        }, {
+            requestTimeoutMs: 120000,
+            maxWaitMs: 300000,
         });
-        const payload = await response.json().catch(() => ({}));
-        if (response.status === 202 && payload.pending && retryPending
-            && attempt < Number(maxPendingRetries)) {
-            const delayMs = Math.max(100, Math.min(1000, Number(payload.retry_after_ms) || 250));
-            await new Promise(resolve => setTimeout(resolve, delayMs));
-            if (sessionId !== activeSessionId()) return { success: false, pending: true, session_changed: true };
-            return guideFetch(url, {
-                ...fetchOptions,
-                retryPending,
-                maxPendingRetries,
-            }, sessionId, attempt + 1);
+        if (!request.response) {
+            throw request.error || new Error('Guide request timed out');
+        }
+        const response = request.response;
+        const payload = request.data || {};
+        if (response.status === 202 && payload.pending && retryPending) {
+            // The shared request helper has already consumed the bounded
+            // pending/retry budget. Do not recurse again and leave the global
+            // Viewer restore spinner alive indefinitely.
+            throw new Error(payload.error || 'Guide request is still pending after the retry deadline');
         }
         if (!response.ok || payload.success === false) throw new Error(payload.error || `Guide request failed: HTTP ${response.status}`);
         return payload;

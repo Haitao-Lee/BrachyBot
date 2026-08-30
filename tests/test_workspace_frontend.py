@@ -416,7 +416,7 @@ def test_workspace_transitions_publish_measurable_first_paint_and_restore_stages
     # assertion aligned with the workspace/report artifact restore contract.
     assert "brachybot-workspace.js?v=38" in index
     assert "brachybot-ui-api.js?v=50" in index
-    assert "brachybot-viewer-volume.js?v=44" in index
+    assert "brachybot-viewer-volume.js?v=45" in index
     assert "brachybot-manual-annotation.js?v=19" in index
 
 
@@ -1266,8 +1266,9 @@ def test_completed_segmentation_retries_publication_and_rebuilds_2d_3d_per_sessi
     assert "hydrateCompletedSegmentationArtifacts({" in chat
     assert "hydrateCompletedSegmentationArtifacts({" in manual
     assert "await prewarmSegmentationMeshes(kind" not in manual
-    assert "res.status === 202" in manual_3d
-    assert "pending_timeout" in manual_3d
+    assert "response.status === 202" in manual_3d
+    assert "fetchViewerJsonWithRetry" in manual_3d
+    assert "status: request.timedOut ? 'timeout' : 'network_error'" in manual_3d
     assert "window.SessionCache && !force" in manual_3d
 
 
@@ -1318,7 +1319,7 @@ def test_generic_masks_hydrate_without_a_shared_label_volume():
         "const genericMasksTask = Promise.resolve(hydrateGenericMasksFromServer(scope));",
         start,
     )
-    first_fetch = volume.index("fetch(API + '/viewer/label_volume'", start)
+    first_fetch = volume.index("API + '/viewer/label_volume'", start)
     assert generic_start < first_fetch
     assert "options.registerBackgroundTask(genericMasksTask, { kind: 'generic_masks' })" in volume
     assert "genericMaskCatalogGeneration" in volume
@@ -1333,7 +1334,7 @@ def test_generic_segmentation_masks_keep_a_real_tree_and_structure_contract():
 
     assert "biomedparse_segmentation" in chat
     assert "hydrateGenericMasksFromServer" in chat
-    assert "fetch(API + '/viewer/generic_masks'" in volume
+    assert "API + '/viewer/generic_masks'" in volume
     assert "_isOpenGenericMask" in volume
     assert "reclassify_generic_segmentation_masks" in routes
     assert "def reclassify_generic_segmentation_masks" in structures

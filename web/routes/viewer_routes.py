@@ -1,6 +1,7 @@
 """Viewer and 3D visualization routes for the BrachyBot web API."""
 
 import gzip
+import hashlib
 import json
 import logging
 import os
@@ -16,6 +17,11 @@ from flask import Response, current_app, jsonify, request, send_from_directory, 
 
 from web.auth import current_user
 from web.structure_service import build_effective_structures
+from web.viewer_cache import (
+    load_viewer_cache,
+    schedule_viewer_cache_write,
+    viewer_cache_key,
+)
 from utils.ct_volume import normalize_ct_image
 from agent_runtime.core import PlanningPhase
 
@@ -27,6 +33,39 @@ except ImportError:  # pragma: no cover - supports `python web/server.py`.
     import server_support as _server_support  # type: ignore
 
 logger = logging.getLogger(__name__)
+
+
+def _viewer_json_response(payload, status=200):
+    """Return a private JSON response, gzip-compressed when supported.
+
+    Meshes contain large repetitive numeric lists. Compressing the response
+    reduces transfer time without changing the JSON contract; browsers
+    transparently decode ``Content-Encoding: gzip`` before ``response.json()``.
+    Small/error responses stay uncompressed.
+    """
+    response = jsonify(payload)
+    raw = response.get_data()
+    if len(raw) >= 1024 and "gzip" in request.headers.get("Accept-Encoding", "").lower():
+        response.set_data(gzip.compress(raw, compresslevel=1))
+        response.headers["Content-Encoding"] = "gzip"
+        response.headers["Vary"] = "Accept-Encoding"
+    return (response, status) if status != 200 else response
+
+
+def _viewer_geometry_signature(agent, shape):
+    """Build a stable CT geometry signature for derived mesh cache keys."""
+    def values(value, length):
+        try:
+            return [float(item) for item in list(value)[:length]]
+        except (TypeError, ValueError):
+            return []
+
+    return {
+        "shape_zyx": [int(item) for item in tuple(shape or ())],
+        "spacing_xyz": values(agent.memory.retrieve("ct_spacing"), 3),
+        "origin_xyz": values(agent.memory.retrieve("ct_origin"), 3),
+        "direction": values(agent.memory.retrieve("ct_direction"), 9),
+    }
 
 _MESH_CACHE = _server_support._MESH_CACHE
 _MESH_CACHE_LOCK = _server_support._MESH_CACHE_LOCK
@@ -51,6 +90,15 @@ _UPLOADED_LABEL_SOURCES = {
 # is only for surface extraction. The planning mask and all physical
 # coordinates remain unchanged.
 _MESH_BOUNDARY_PADDING_VOXELS = 1
+
+# OAR/CTV surfaces are derived display products.  Running two full-volume
+# distance transforms for every label is needlessly expensive for a 48 x 512
+# x 512 CT (and becomes catastrophic when 50+ structures are requested).
+# Crop each binary label to a padded bounding box before extraction.  The
+# returned voxel origin is added back before the patient-world transform, so
+# this is an exact display-domain optimisation rather than a clinical-data
+# change.  The margin covers the largest presentation cleanup operation below.
+_MESH_CROP_MARGIN_VOXELS = 8
 
 
 def _pad_surface_volume(volume, fill_value=0):
@@ -101,6 +149,44 @@ def _signed_surface_field(binary_volume):
             f"(signed range {field_min:.6g} to {field_max:.6g})."
         )
     return signed_field, surface_padding_zyx
+
+
+def _crop_binary_surface_volume(binary_volume, margin=None):
+    """Crop a non-empty binary volume and return ``(crop, origin_zyx)``.
+
+    ``origin_zyx`` is the crop's offset in the original NumPy volume.  A
+    generous fixed margin keeps the subsequent sparse-mask morphology away
+    from the crop edge.  Empty/invalid inputs are returned unchanged so the
+    caller retains the existing precise validation/error path.
+    """
+    array = np.asarray(binary_volume)
+    if array.ndim != 3 or not np.any(array):
+        return array, np.zeros(3, dtype=np.int64)
+    try:
+        # Reduce each axis to a tiny presence vector instead of materialising
+        # three coordinate arrays for every occupied voxel. The latter can
+        # consume hundreds of MB for a dense 512 x 512 CT label and is
+        # especially harmful while several bounded mesh workers run together.
+        occupied_by_axis = (
+            np.any(array, axis=(1, 2)),
+            np.any(array, axis=(0, 2)),
+            np.any(array, axis=(0, 1)),
+        )
+        occupied_indices = [np.flatnonzero(values) for values in occupied_by_axis]
+        if any(len(values) == 0 for values in occupied_indices):
+            return array, np.zeros(3, dtype=np.int64)
+        lower = np.array([int(values[0]) for values in occupied_indices], dtype=np.int64)
+        upper = np.array([int(values[-1]) + 1 for values in occupied_indices], dtype=np.int64)
+    except (AttributeError, TypeError, ValueError):
+        return array, np.zeros(3, dtype=np.int64)
+    pad = max(0, int(_MESH_CROP_MARGIN_VOXELS if margin is None else margin))
+    shape = np.asarray(array.shape, dtype=np.int64)
+    lower = np.maximum(0, lower - pad)
+    upper = np.minimum(shape, upper + pad)
+    cropped = np.ascontiguousarray(array[
+        lower[0]:upper[0], lower[1]:upper[1], lower[2]:upper[2],
+    ])
+    return cropped, lower
 
 
 def _viewer_label_array(agent, array_key, path_key, source, reference_image, target_shape):
@@ -1658,27 +1744,56 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
             return jsonify({"error": str(e)}), 500
 
     def _laplacian_smooth(vertices, faces, iterations=3, factor=0.3):
-        """Lightweight Laplacian mesh smoothing using numpy.
-        Moves each vertex toward the centroid of its neighbors."""
+        """Vectorized Laplacian smoothing for a presentation mesh.
+
+        The previous implementation built Python ``set`` adjacency objects
+        and iterated over every vertex for every smoothing pass. With dozens
+        of OAR surfaces this made a normal Viewer restore spend minutes in
+        Python while the browser correctly waited for the mesh promises.
+        Aggregate triangle-edge neighbor coordinates with NumPy instead of
+        allocating Python adjacency sets. Repeated incidences preserve the
+        local triangle weighting used by the presentation smoother; this
+        changes only presentation smoothing, never the authoritative mask or
+        dose data.
+        """
         import numpy as np
-        from collections import defaultdict
+        verts = np.asarray(vertices, dtype=np.float64).copy()
+        triangles = np.asarray(faces, dtype=np.int64)
+        if (verts.ndim != 2 or verts.shape[1] != 3
+                or triangles.ndim != 2 or triangles.shape[1] != 3
+                or len(verts) == 0 or len(triangles) == 0):
+            return verts
 
-        # Build vertex adjacency from faces
-        adj = defaultdict(set)
-        for f in faces:
-            adj[f[0]].add(f[1]); adj[f[0]].add(f[2])
-            adj[f[1]].add(f[0]); adj[f[1]].add(f[2])
-            adj[f[2]].add(f[0]); adj[f[2]].add(f[1])
-
-        verts = vertices.copy().astype(np.float64)
-        for _ in range(iterations):
-            new_verts = verts.copy()
-            for vi, neighbors in adj.items():
-                if not neighbors:
-                    continue
-                centroid = verts[list(neighbors)].mean(axis=0)
-                new_verts[vi] += factor * (centroid - verts[vi])
-            verts = new_verts
+        # Every triangle contributes both orientations of its three edges.
+        # Duplicate incidences are intentional: they cancel in the degree /
+        # sum ratio and avoid a costly Python/set de-duplication pass.
+        edges = np.concatenate((
+            triangles[:, [0, 1]], triangles[:, [1, 0]],
+            triangles[:, [1, 2]], triangles[:, [2, 1]],
+            triangles[:, [2, 0]], triangles[:, [0, 2]],
+        ), axis=0)
+        valid_edges = (
+            (edges[:, 0] >= 0) & (edges[:, 0] < len(verts))
+            & (edges[:, 1] >= 0) & (edges[:, 1] < len(verts))
+        )
+        edges = edges[valid_edges]
+        if len(edges) == 0:
+            return verts
+        sources = edges[:, 0]
+        targets = edges[:, 1]
+        degree = np.bincount(sources, minlength=len(verts)).astype(np.float64)
+        valid_vertices = degree > 0
+        for _ in range(max(0, int(iterations))):
+            neighbor_sum = np.zeros_like(verts)
+            np.add.at(neighbor_sum, sources, verts[targets])
+            centroid = np.zeros_like(verts)
+            centroid[valid_vertices] = (
+                neighbor_sum[valid_vertices]
+                / degree[valid_vertices, None]
+            )
+            verts[valid_vertices] += factor * (
+                centroid[valid_vertices] - verts[valid_vertices]
+            )
         return verts
 
     @app.route("/api/viewer/3d", methods=["POST"])
@@ -1720,6 +1835,8 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
             if mask.sum() == 0:
                 return jsonify({"error": "Empty mask"}), 400
             original_mask = mask.copy()
+            source_mask_shape = tuple(int(value) for value in mask.shape)
+            mask, crop_origin_zyx = _crop_binary_surface_volume(mask)
 
             # CTV geometry must remain identical to the mask used by DVH and
             # dose evaluation. Ordinary anatomy can retain presentation
@@ -1727,7 +1844,9 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
             # the prescription isosurface.
             label_faithful = str(source or "").strip().lower() == "ctv"
             if not label_faithful:
-                density = mask.sum() / (mask.shape[0] * mask.shape[1] * mask.shape[2])
+                # Keep the historical full-volume density decision while
+                # applying morphology only to the cropped display domain.
+                density = mask.sum() / max(1, int(np.prod(source_mask_shape)))
                 if density < 0.001:
                     struct = np.ones((3, 3, 3), dtype=np.uint8)
                     mask = binary_dilation(mask, structure=struct, iterations=2)
@@ -1753,6 +1872,7 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
                     label_id,
                 )
                 mask = original_mask
+                mask, crop_origin_zyx = _crop_binary_surface_volume(mask)
                 preprocessing_fallback = True
 
             try:
@@ -1772,6 +1892,10 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
                 smooth_field, level=0.0, spacing=spacing_zyx, allow_degenerate=False
             )
             vertices -= surface_padding_zyx * np.asarray(spacing_zyx, dtype=np.float64)
+            # ``vertices`` are currently relative to the cropped volume. Put
+            # them back in the original CT array coordinate system before the
+            # existing spacing/direction/origin conversion.
+            vertices += crop_origin_zyx * np.asarray(spacing_zyx, dtype=np.float64)
 
             if not label_faithful:
                 vertices = _laplacian_smooth(vertices, faces, iterations=5, factor=0.4)
@@ -1906,7 +2030,6 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
                 if source == "generic"
                 else (mask_data == label_id).astype(np.uint8)
             )
-            original_binary_mask = binary_mask.copy()
 
             total_voxels = int(binary_mask.sum())
             if total_voxels == 0:
@@ -1924,26 +2047,77 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
                         "message": f"{missing} is not present in the current mask.",
                     })
                 return jsonify({"error": f"{missing} not found in mask"}), 400
-            mask_digest = hashlib.blake2b(binary_mask.tobytes(), digest_size=8).hexdigest()
+            source_mask_shape = tuple(int(value) for value in binary_mask.shape)
+            source_mask_digest = hashlib.blake2b(
+                np.ascontiguousarray(binary_mask).tobytes(), digest_size=16,
+            ).hexdigest()
+            # Distance transforms are the dominant cost of one mesh. Limit
+            # them to the structure's padded bounding box, then restore the
+            # original array offset before converting to patient coordinates.
+            binary_mask, crop_origin_zyx = _crop_binary_surface_volume(binary_mask)
+            original_binary_mask = binary_mask.copy()
+            binary_mask = np.ascontiguousarray(binary_mask, dtype=np.uint8)
+            # Hash the complete source mask, not only the crop. The crop
+            # origin is included below as well, so a same-shaped label at a
+            # different patient position can never reuse the wrong geometry.
+            mask_digest = source_mask_digest
+            geometry = _viewer_geometry_signature(agent, mask_shape_key)
+            cache_components = {
+                "source": source,
+                "label_id": mask_id if source == "generic" else label_id,
+                "smoothing": str(smoothing_key),
+                "label_faithful": bool(label_faithful),
+                "mask_shape": list(mask_shape_key),
+                "mask_voxels": total_voxels,
+                "mask_digest": mask_digest,
+                "crop_origin_zyx": [int(value) for value in crop_origin_zyx],
+                "geometry": geometry,
+                "boundary_padding": int(_MESH_BOUNDARY_PADDING_VOXELS),
+                "crop_margin_voxels": int(_MESH_CROP_MARGIN_VOXELS),
+                "processing_version": "label-mesh-v3-cropped",
+            }
+            persistent_cache_key = viewer_cache_key("segmentation_mesh", cache_components)
+            # Include the case identity in the process-local cache as well.
+            # The previous key could reuse a same-shaped/same-label mesh from
+            # another session with different CT origin or direction.
             cache_key = (
-                source, mask_id if source == "generic" else label_id,
-                str(smoothing_key), label_faithful,
-                mask_shape_key, total_voxels, mask_digest,
-                "surface_boundary_padding_v1",
+                "v2", case_session_id, persistent_cache_key,
             )
             with _MESH_CACHE_LOCK:
                 cached = _MESH_CACHE.get(cache_key)
             if cached is not None:
                 cached_payload = dict(cached)
                 cached_payload["cached"] = True
-                return jsonify(cached_payload)
+                return _viewer_json_response(cached_payload)
+
+            if cache_root is not None:
+                cached = load_viewer_cache(
+                    cache_root, "segmentation-mesh", persistent_cache_key,
+                )
+                if cached is not None and cached.get("success") is True and cached.get("vertex_count"):
+                    with _MESH_CACHE_LOCK:
+                        _MESH_CACHE[cache_key] = dict(cached)
+                        _MESH_CACHE_ORDER.append(cache_key)
+                        while len(_MESH_CACHE_ORDER) > _MESH_CACHE_MAX_ITEMS:
+                            old_key = _MESH_CACHE_ORDER.popleft()
+                            _MESH_CACHE.pop(old_key, None)
+                    cached["cached"] = True
+                    logger.info(
+                        "[3d_mask] persistent cache hit source=%s label=%s vertices=%s",
+                        source,
+                        mask_id if source == "generic" else label_id,
+                        cached.get("vertex_count"),
+                    )
+                    return _viewer_json_response(cached)
 
             if not label_faithful:
                 # Adaptive preprocessing is useful for presentation meshes of
                 # ordinary anatomy, but it deliberately does not apply to a
                 # hard obstacle; changing that surface would contradict the
                 # physical mask used by candidate trajectory filtering.
-                mask_volume = binary_mask.shape[0] * binary_mask.shape[1] * binary_mask.shape[2]
+                # Keep the historical full-volume density decision while
+                # applying morphology only to the cropped display domain.
+                mask_volume = max(1, int(np.prod(source_mask_shape)))
                 density = total_voxels / mask_volume
 
                 # More aggressive morphological ops for sparse/fragmented masks
@@ -2010,6 +2184,9 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
                 smooth_field, level=0.0, spacing=spacing_zyx, allow_degenerate=False
             )
             vertices -= surface_padding_zyx * np.asarray(spacing_zyx, dtype=np.float64)
+            # ``vertices`` are relative to the cropped volume. Restore the
+            # original CT array offset before the patient-world transform.
+            vertices += crop_origin_zyx * np.asarray(spacing_zyx, dtype=np.float64)
 
             # Mesh smoothing also moves a boundary.  Preserve the voxel-faithful
             # hard-obstacle surface so it remains consistent with trajectory
@@ -2071,7 +2248,18 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
                     old_key = _MESH_CACHE_ORDER.popleft()
                     _MESH_CACHE.pop(old_key, None)
 
-            return jsonify(payload)
+            # Persist only after the complete mesh payload has been built and
+            # inserted into the process-local cache. The write is atomic and
+            # asynchronous; a restart during this write can lose a derived
+            # cache file, but never a clinical array or a successful response.
+            schedule_viewer_cache_write(
+                cache_root,
+                "segmentation-mesh",
+                persistent_cache_key,
+                payload,
+            )
+
+            return _viewer_json_response(payload)
         except Exception as e:
             logger.error(f"3D mask reconstruction failed: {e}")
             return jsonify({"error": str(e)}), 500
@@ -2140,6 +2328,18 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
         if agent is None:
             return jsonify({"error": "Agent not available"}), 500
 
+        # The skin surface is also a derived Viewer artifact. Keep its cache
+        # separate from clinical arrays and scope it to the authenticated
+        # case, so restarting the server does not repeat a full CT marching
+        # cubes pass or accidentally reuse another patient's surface.
+        cache_root = None
+        case_session_id = ""
+        try:
+            store, user, case_session_id = request_case_context()
+            cache_root = store.workspace_root(user["id"], case_session_id, create=False)
+        except Exception as exc:
+            logger.debug("Skin mesh persistent cache unavailable: %s", exc)
+
         data = request.get_json() or {}
         source = str(data.get("source") or "threshold").strip().lower()
         threshold = data.get("threshold", -300)  # Default: skin surface at -300 HU
@@ -2195,6 +2395,54 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
                 ct_sub = surface_data
                 sub_spacing = spacing_zyx
 
+            surface_array = np.ascontiguousarray(surface_data)
+            surface_digest = hashlib.blake2b(
+                surface_array.tobytes(), digest_size=16,
+            ).hexdigest()
+            skin_cache_key = viewer_cache_key(
+                "skin_mesh",
+                {
+                    "source": source,
+                    "threshold": float(threshold) if source != "guide" else 0.5,
+                    "surface_shape": [int(item) for item in surface_data.shape],
+                    "surface_dtype": str(surface_array.dtype),
+                    "surface_digest": surface_digest,
+                    "subsample_step": int(step) if source != "guide" and surface_data.shape[0] > 64 else 1,
+                    "subsurface_shape": [int(item) for item in ct_sub.shape],
+                    "subsurface_spacing_zyx": [float(item) for item in sub_spacing],
+                    "spacing_xyz": [float(item) for item in spacing_xyz],
+                    "origin_xyz": [float(item) for item in origin[:3]],
+                    "direction": [float(item) for item in direction[:9]],
+                    "guide_planning_id": skin_metadata.get("planning_id") if source == "guide" else None,
+                    "guide_data_version": skin_metadata.get("data_version") if source == "guide" else None,
+                    "boundary_padding": int(_MESH_BOUNDARY_PADDING_VOXELS),
+                    "processing_version": "skin-surface-v2",
+                },
+            )
+            skin_process_cache_key = ("skin-v2", case_session_id, skin_cache_key)
+            with _MESH_CACHE_LOCK:
+                process_cached = _MESH_CACHE.get(skin_process_cache_key)
+            if process_cached is not None:
+                cached_payload = dict(process_cached)
+                cached_payload["cached"] = True
+                return _viewer_json_response(cached_payload)
+            if cache_root is not None:
+                disk_cached = load_viewer_cache(cache_root, "skin-mesh", skin_cache_key)
+                if disk_cached is not None and disk_cached.get("success") is True:
+                    with _MESH_CACHE_LOCK:
+                        _MESH_CACHE[skin_process_cache_key] = dict(disk_cached)
+                        _MESH_CACHE_ORDER.append(skin_process_cache_key)
+                        while len(_MESH_CACHE_ORDER) > _MESH_CACHE_MAX_ITEMS:
+                            old_key = _MESH_CACHE_ORDER.popleft()
+                            _MESH_CACHE.pop(old_key, None)
+                    disk_cached["cached"] = True
+                    logger.info(
+                        "[3d_skin] persistent cache hit source=%s vertices=%s",
+                        source,
+                        disk_cached.get("vertex_count", 0),
+                    )
+                    return _viewer_json_response(disk_cached)
+
             data_min, data_max = float(ct_sub.min()), float(ct_sub.max())
             level = 0.5 if source == "guide" else float(threshold)
             if level <= data_min or level >= data_max:
@@ -2233,7 +2481,7 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
                 stride = max(1, len(faces) // 100000)
                 faces = faces[::stride]
 
-            return jsonify({
+            payload = {
                 "success": True,
                 "vertices": vertices.tolist(),
                 "faces": faces.tolist(),
@@ -2253,7 +2501,21 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
                 "planning_id": skin_metadata.get("planning_id") if source == "guide" else None,
                 "data_version": skin_metadata.get("data_version") if source == "guide" else None,
                 "surface_boundary_padding_voxels": int(_MESH_BOUNDARY_PADDING_VOXELS),
-            })
+                "cached": False,
+            }
+            with _MESH_CACHE_LOCK:
+                _MESH_CACHE[skin_process_cache_key] = payload
+                _MESH_CACHE_ORDER.append(skin_process_cache_key)
+                while len(_MESH_CACHE_ORDER) > _MESH_CACHE_MAX_ITEMS:
+                    old_key = _MESH_CACHE_ORDER.popleft()
+                    _MESH_CACHE.pop(old_key, None)
+            schedule_viewer_cache_write(
+                cache_root,
+                "skin-mesh",
+                skin_cache_key,
+                payload,
+            )
+            return _viewer_json_response(payload)
         except Exception as e:
             logger.error(f"CT skin reconstruction failed: {e}")
             return jsonify({"error": str(e)}), 500

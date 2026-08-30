@@ -1,5 +1,6 @@
 """Planning, chat, export, and UI bridge routes for the BrachyBot web API."""
 
+import gzip
 import json
 import copy
 import hashlib
@@ -27,6 +28,11 @@ from web.auth import current_user
 from web.chat_tasks import ChatTask, ChatTaskManager
 from web.workspace_store import WorkspaceError, WorkspaceQuotaExceeded, WorkspaceNotFound
 from web.uploaded_mask_service import UploadedMaskError, stage_uploaded_ctv_mask
+from web.viewer_cache import (
+    load_viewer_cache,
+    schedule_viewer_cache_write,
+    viewer_cache_key,
+)
 from agent_runtime.core import resolve_reference_direction_input
 from agent_runtime.visual_evidence import (
     build_visual_evidence_prompt,
@@ -69,6 +75,39 @@ except ImportError:  # pragma: no cover - supports `python web/server.py`.
     import server_support as _server_support  # type: ignore
 
 logger = logging.getLogger(__name__)
+
+
+def _planning_json_response(payload, status=200):
+    """Return a compressed private JSON response for large dose meshes."""
+    response = jsonify(payload)
+    raw = response.get_data()
+    if len(raw) >= 1024 and "gzip" in request.headers.get("Accept-Encoding", "").lower():
+        response.set_data(gzip.compress(raw, compresslevel=1))
+        response.headers["Content-Encoding"] = "gzip"
+        response.headers["Vary"] = "Accept-Encoding"
+    return (response, status) if status != 200 else response
+
+
+def _planning_geometry_signature(agent, shape, spacing=None, origin=None, direction=None):
+    """Build a stable geometry signature for a dose surface cache key."""
+    def values(value, length):
+        try:
+            return [float(item) for item in list(value)[:length]]
+        except (TypeError, ValueError):
+            return []
+
+    return {
+        "shape_zyx": [int(item) for item in tuple(shape or ())],
+        "spacing_xyz": values(
+            spacing if spacing is not None else agent.memory.retrieve("ct_spacing"), 3
+        ),
+        "origin_xyz": values(
+            origin if origin is not None else agent.memory.retrieve("ct_origin"), 3
+        ),
+        "direction": values(
+            direction if direction is not None else agent.memory.retrieve("ct_direction"), 9
+        ),
+    }
 
 # Marching cubes needs an outside background sample when a dose isosurface
 # touches the planning-grid boundary.  The padding is used only while
@@ -3104,6 +3143,20 @@ def register_planning_routes(
         if pending is not None:
             return pending
 
+        # Dose surfaces are derived display artifacts. Keep their cache under
+        # the authenticated case workspace so a server restart can reuse them
+        # without allowing one case's geometry to leak into another case.
+        cache_root = None
+        case_session_id = ""
+        try:
+            store, user, case_session_id = request_case_context()
+            cache_root = store.workspace_root(user["id"], case_session_id, create=False)
+        except Exception as exc:
+            # The route remains usable for legacy/test agents that are not
+            # attached to the workspace bridge; cache failure is never a dose
+            # calculation failure.
+            logger.debug("Dose surface persistent cache unavailable: %s", exc)
+
         data = request.get_json() or {}
         threshold = data.get("threshold", 1.0)
 
@@ -3171,7 +3224,7 @@ def register_planning_routes(
                 else agent.memory.retrieve("resampled_ctv")
             )
 
-            dose_np = np.array(dose_array)
+            dose_np = np.ascontiguousarray(np.asarray(dose_array))
             if dose_np.ndim != 3:
                 return jsonify({"error": "Invalid dose array dimensions"}), 400
 
@@ -3218,15 +3271,72 @@ def register_planning_routes(
                     coverage_audit["delta_percentage_points"],
                     coverage_audit["consistent"],
                 )
+            planning_id = active_planning_id(agent.memory)
+            dose_generation = _dose_data_generation(agent, dose_context)
+            dose_digest = hashlib.blake2b(dose_np.tobytes(), digest_size=16).hexdigest()
+            target_digest = None
+            if target_mask is not None:
+                target_np = np.ascontiguousarray(np.asarray(target_mask))
+                target_digest = hashlib.blake2b(target_np.tobytes(), digest_size=16).hexdigest()
+            geometry = _planning_geometry_signature(
+                agent,
+                dose_np.shape,
+                spacing=spacing,
+                origin=origin,
+                direction=direction,
+            )
             level = level_normalized
+            persistent_cache_key = viewer_cache_key(
+                "dose_isosurface",
+                {
+                    "planning_id": planning_id,
+                    "dose_generation": dose_generation,
+                    "dose_digest": dose_digest,
+                    "dose_source": dose_context.get("source"),
+                    "dose_original_ct_space": dose_in_original_ct_space,
+                    "threshold_gy": float(threshold),
+                    "threshold_normalized": float(level),
+                    "dose_scale_gy": float(dose_scale_gy),
+                    "dose_range": [data_min, data_max],
+                    "target_digest": target_digest,
+                    "geometry": geometry,
+                    "boundary_padding": int(_DOSE_SURFACE_BOUNDARY_PADDING_VOXELS),
+                },
+            )
+            if cache_root is not None:
+                cached = load_viewer_cache(
+                    cache_root, "dose-isosurface", persistent_cache_key,
+                )
+                if cached is not None and cached.get("success") is True:
+                    cached["cached"] = True
+                    logger.info(
+                        "[dose_isosurface] persistent cache hit planning=%s threshold=%s vertices=%s",
+                        planning_id,
+                        threshold,
+                        cached.get("vertex_count", 0),
+                    )
+                    return _planning_json_response(cached)
             if level <= data_min or level > data_max:
-                return jsonify({"success": True, "vertices": [], "faces": [], "vertex_count": 0,
-                                "face_count": 0, "threshold": threshold, "dose_range": [data_min, data_max],
-                                "dose_units": DOSE_MODEL_UNITS, "dose_scale_gy": dose_scale_gy,
-                                "planning_id": active_planning_id(agent.memory),
-                                "dose_generation": _dose_data_generation(agent, dose_context),
-                                "coverage_audit": coverage_audit,
-                                **dose_metadata})
+                empty_payload = {
+                    "success": True,
+                    "vertices": [],
+                    "faces": [],
+                    "vertex_count": 0,
+                    "face_count": 0,
+                    "threshold": threshold,
+                    "dose_range": [data_min, data_max],
+                    "dose_units": DOSE_MODEL_UNITS,
+                    "dose_scale_gy": dose_scale_gy,
+                    "planning_id": planning_id,
+                    "dose_generation": dose_generation,
+                    "coverage_audit": coverage_audit,
+                    "cached": False,
+                    **dose_metadata,
+                }
+                schedule_viewer_cache_write(
+                    cache_root, "dose-isosurface", persistent_cache_key, empty_payload,
+                )
+                return _planning_json_response(empty_payload)
 
             # Use resampled_ct spacing (z,y,x -> x,y,z for marching cubes).
             # Pad only the extraction field so an isosurface that touches the
@@ -3257,7 +3367,7 @@ def register_planning_routes(
                 stride = max(1, len(faces) // 80000)
                 faces = faces[::stride]
 
-            return jsonify({
+            payload = {
                 "success": True,
                 "vertices": vertices_world.tolist(),
                 "faces": faces.tolist(),
@@ -3267,12 +3377,17 @@ def register_planning_routes(
                 "dose_range": [data_min, data_max],
                 "dose_units": DOSE_MODEL_UNITS,
                 "dose_scale_gy": dose_scale_gy,
-                "planning_id": active_planning_id(agent.memory),
-                "dose_generation": _dose_data_generation(agent, dose_context),
+                "planning_id": planning_id,
+                "dose_generation": dose_generation,
                 "coverage_audit": coverage_audit,
                 "surface_boundary_padding_voxels": int(_DOSE_SURFACE_BOUNDARY_PADDING_VOXELS),
+                "cached": False,
                 **dose_metadata,
-            })
+            }
+            schedule_viewer_cache_write(
+                cache_root, "dose-isosurface", persistent_cache_key, payload,
+            )
+            return _planning_json_response(payload)
         except Exception as e:
             logger.error(f"Dose isosurface failed: {e}")
             return jsonify({"error": str(e)}), 500

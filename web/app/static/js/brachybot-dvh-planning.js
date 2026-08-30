@@ -1338,6 +1338,29 @@ async function refreshPlanningUI(options = {}) {
                 .finally(() => clearTimeout(watchdog));
         }
 
+        function _collectViewerMeshFailures(results) {
+            const failures = [];
+            (Array.isArray(results) ? results : []).forEach(result => {
+                if (!result) return;
+                if (result.stale === true) {
+                    failures.push({ stage: 'stale', result });
+                    return;
+                }
+                if (Array.isArray(result.failedLevels)) {
+                    result.failedLevels
+                        .filter(item => item && item.preserved !== true)
+                        .forEach(item => failures.push({ stage: 'dose_isosurface', ...item }));
+                }
+                if (Array.isArray(result.failed)) {
+                    result.failed.forEach(item => failures.push({ stage: 'segmentation_mesh', ...item }));
+                }
+                if (result.error) {
+                    failures.push({ stage: 'viewer_resource', error: result.error });
+                }
+            });
+            return failures;
+        }
+
         const _meshPromises = [];
         // Isodose surfaces
         if (data.has_dose) {
@@ -1469,7 +1492,10 @@ async function refreshPlanningUI(options = {}) {
                 try { loadAllSlices(); } catch (_) {}
             }
 
-            const backgroundMeshesPromise = Promise.all(_meshPromises);
+            const backgroundMeshesPromise = Promise.all(_meshPromises).then(results => ({
+                results,
+                failures: _collectViewerMeshFailures(results),
+            }));
             const essentialError = await validateEssentialPlanningRestore();
             if (essentialError) {
                 refreshOutcome = {
@@ -1494,7 +1520,7 @@ async function refreshPlanningUI(options = {}) {
             // restore transaction. Essential CT/2D/planning state can return
             // immediately, but the same non-blocking loading notice remains
             // owned until all mesh producers and the restored guide settle.
-            const viewerCompletionPromise = backgroundMeshesPromise.then(async () => {
+            const viewerCompletionPromise = backgroundMeshesPromise.then(async completion => {
                 if (!isCurrentCase()) return { stale: true };
                 try { if (typeof renderDataTree === 'function') renderDataTree(); } catch (_) {}
                 try { if (typeof forceRender3DViewer === 'function') forceRender3DViewer(); } catch (_) {}
@@ -1517,7 +1543,17 @@ async function refreshPlanningUI(options = {}) {
                 } catch (error) {
                     console.warn('[3D auto-load] camera fit guard:', error);
                 }
-                return { success: true, stage: 'viewer_complete' };
+                if (completion.failures.length) {
+                    console.warn(
+                        '[3D auto-load] viewer completed with failed resources:',
+                        completion.failures,
+                    );
+                }
+                return {
+                    success: completion.failures.length === 0,
+                    stage: completion.failures.length ? 'viewer_partial' : 'viewer_complete',
+                    failed: completion.failures,
+                };
             });
             Object.defineProperty(refreshOutcome, 'backgroundCompletion', {
                 value: viewerCompletionPromise,
@@ -1563,7 +1599,10 @@ async function refreshPlanningUI(options = {}) {
         // Wait for all 3D mesh loads to complete. Report state is filled only
         // after the selected case has passed the same generation check; an
         // older case must never overwrite the newly selected report.
-        await Promise.all(_meshPromises);
+        const meshCompletion = await Promise.all(_meshPromises).then(results => ({
+            results,
+            failures: _collectViewerMeshFailures(results),
+        }));
         const essentialError = await validateEssentialPlanningRestore();
         if (essentialError) {
             refreshOutcome = {
@@ -1581,7 +1620,13 @@ async function refreshPlanningUI(options = {}) {
             doseReady: data.has_dose === true,
             currentDoseReady: data.has_current_dose === true,
             doseStale: data.dose_stale === true,
+            viewerReady: meshCompletion.failures.length === 0,
+            viewerFailures: meshCompletion.failures,
         };
+        if (meshCompletion.failures.length) {
+            refreshOutcome.success = false;
+            refreshOutcome.stage = 'viewer_partial';
+        }
         if (!isCurrentCase()) return resolve();
         // Guide generation/restoration is part of the same planning refresh,
         // rather than an unobserved side effect. Awaiting it here does not

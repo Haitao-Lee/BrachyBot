@@ -352,7 +352,14 @@ async function loadVolumeData(options = {}) {
 
     // --- browser cache: CT volume is immutable per session ---
     if (sid && window.SessionCache) {
-        const cached = await window.SessionCache.get(sid, 'ct', 'volume');
+        // IndexedDB is only an optimisation. A blocked browser transaction
+        // must not prevent the authoritative server request from starting.
+        const cached = await Promise.race([
+            Promise.resolve()
+                .then(() => window.SessionCache.get(sid, 'ct', 'volume'))
+                .catch(() => null),
+            new Promise(resolve => setTimeout(() => resolve(null), 5000)),
+        ]);
         if (cached && cached.byteLength > 16) {
             try {
                 const view = new DataView(cached);
@@ -372,40 +379,18 @@ async function loadVolumeData(options = {}) {
     }
 
     if (!buffer) {
-        const ctrl = new AbortController();
-        const timer = setTimeout(function(){ ctrl.abort(); }, 30000);
-        let res;
-        try {
-            res = await fetch(API + '/viewer/volume', {
-                headers: _viewerDataHeaders(scope.sessionId),
-                signal: ctrl.signal,
-            });
-        } finally { clearTimeout(timer); }
-        const volumePayload = (res.status === 202 || res.status === 429)
-            ? await res.clone().json().catch(() => ({}))
-            : {};
-        const volumeRetryable = res.status === 202
-            || (res.status === 429 && volumePayload.code === 'rate_limit_exceeded');
-        if (volumeRetryable) {
-            if (volumeRetryAttempt >= 60) throw new Error('Case resources are still loading');
-            const retryAfter = Number(
-                volumePayload.retry_after_ms
-                || res.headers.get('Retry-After-Ms')
-                || 1000,
-            );
-            await new Promise(resolve => setTimeout(
-                resolve,
-                Math.max(
-                    1000,
-                    Math.min(
-                        res.status === 429 ? 60000 : 5000,
-                        Number.isFinite(retryAfter) ? retryAfter : 1000,
-                    ),
-                ),
-            ));
-            return loadVolumeData({ ...options, _volumeRetryAttempt: volumeRetryAttempt + 1 });
+        const request = typeof window.fetchViewerJsonWithRetry === 'function'
+            ? await window.fetchViewerJsonWithRetry(
+                API + '/viewer/volume',
+                { headers: _viewerDataHeaders(scope.sessionId) },
+                { requestTimeoutMs: 60000, maxWaitMs: 300000, responseType: 'arrayBuffer' },
+            )
+            : null;
+        if (!request?.response) {
+            throw request?.error || new Error('CT volume request timed out');
         }
-        if (!res.ok) throw new Error('Failed to load volume');
+        const res = request.response;
+        if (!res.ok) throw new Error(request.data?.error || 'Failed to load volume');
         if (!_viewerDataScopeIsCurrent(scope)) return false;
 
         shapeZ = parseInt(res.headers.get('X-Shape-Z'));
@@ -414,7 +399,10 @@ async function loadVolumeData(options = {}) {
         spacingX = parseFloat(res.headers.get('X-Spacing-X'));
         spacingY = parseFloat(res.headers.get('X-Spacing-Y'));
         spacingZ = parseFloat(res.headers.get('X-Spacing-Z'));
-        buffer = await res.arrayBuffer();
+        buffer = request.data;
+        if (!(buffer instanceof ArrayBuffer) || buffer.byteLength === 0) {
+            throw new Error('CT volume response was empty');
+        }
         if (!_viewerDataScopeIsCurrent(scope)) return false;
     }
 
@@ -475,35 +463,15 @@ async function hydrateOarDataTreeFromServer(expectedGeneration, expectedSessionI
         : viewerDataLoadGeneration;
     const sessionId = String(expectedSessionId || _viewerDataSessionId() || '');
     try {
-        let response;
-        for (let attempt = 0; attempt <= 60; attempt += 1) {
-            response = await fetch(API + '/viewer/organs', {
-                headers: _viewerDataHeaders(sessionId),
-            });
-            const organsPayload = (response.status === 202 || response.status === 429)
-                ? await response.clone().json().catch(() => ({}))
-                : {};
-            const organsRetryable = response.status === 202
-                || (response.status === 429 && organsPayload.code === 'rate_limit_exceeded');
-            if (!organsRetryable || attempt >= 60) break;
-            const retryAfter = Number(
-                organsPayload.retry_after_ms
-                || response.headers.get('Retry-After-Ms')
-                || 1000,
-            );
-            await new Promise(resolve => setTimeout(
-                resolve,
-                Math.max(
-                    1000,
-                    Math.min(
-                        response.status === 429 ? 60000 : 5000,
-                        Number.isFinite(retryAfter) ? retryAfter : 1000,
-                    ),
-                ),
-            ));
-        }
-        if (!response.ok) return false;
-        const payload = await response.json();
+        const request = typeof window.fetchViewerJsonWithRetry === 'function'
+            ? await window.fetchViewerJsonWithRetry(
+                API + '/viewer/organs',
+                { headers: _viewerDataHeaders(sessionId) },
+                { requestTimeoutMs: 30000, maxWaitMs: 120000 },
+            )
+            : null;
+        if (!request?.response?.ok) return false;
+        const payload = request.data || {};
         if (generation !== viewerDataLoadGeneration
             || (sessionId && sessionId !== _viewerDataSessionId())) return false;
         let organs = payload?.organs || {};
@@ -579,7 +547,14 @@ async function loadLabelVolumes(options = {}) {
 
     // --- IndexedDB cache ---
     if (!forceFresh && sid && window.SessionCache) {
-        const cached = await window.SessionCache.get(sid, 'labels', 'volume');
+        // A stale/locked IndexedDB read is not a valid restore boundary. Fall
+        // back to the session-owned server volume after a short deadline.
+        const cached = await Promise.race([
+            Promise.resolve()
+                .then(() => window.SessionCache.get(sid, 'labels', 'volume'))
+                .catch(() => null),
+            new Promise(resolve => setTimeout(() => resolve(null), 5000)),
+        ]);
         if (cached && cached.byteLength > 512) {
             try {
                 const view = new DataView(cached);
@@ -621,44 +596,19 @@ async function loadLabelVolumes(options = {}) {
 
     if (!allBytes) {
         try {
-            const ctrl = new AbortController();
-            const timer = setTimeout(function(){ ctrl.abort(); }, 30000);
-            let res;
-            try {
-                res = await fetch(API + '/viewer/label_volume', {
-                    headers: _viewerDataHeaders(scope.sessionId),
-                    signal: ctrl.signal,
-                });
-            } finally { clearTimeout(timer); }
-            const pending = (res.status === 202 || res.status === 429)
-                ? await res.clone().json().catch(() => ({}))
-                : {};
-            const retryable = res.status === 202
-                || (res.status === 429 && pending.code === 'rate_limit_exceeded');
-            if (retryable) {
-                uiDebugLog('Label volumes are still restoring; retrying shortly');
-                if (retryAttempt >= 60) {
-                    uiDebugLog('Label volume restore timed out; keeping the current viewer state');
-                    return false;
-                }
-                const retryAfter = Number(
-                    pending.retry_after_ms
-                    || res.headers.get('Retry-After-Ms')
-                    || 1000,
-                );
-                await new Promise(resolve => setTimeout(
-                    resolve,
-                    Math.max(1000, Math.min(
-                        res.status === 429 ? 60000 : 5000,
-                        Number.isFinite(retryAfter) ? retryAfter : 1000,
-                    )),
-                ));
-                return _retryLabelVolumeLoad(
-                    { ...options, _labelVolumeRetryAttempt: retryAttempt + 1 },
-                    retryAttempt + 1,
-                );
+            const request = typeof window.fetchViewerJsonWithRetry === 'function'
+                ? await window.fetchViewerJsonWithRetry(
+                    API + '/viewer/label_volume',
+                    { headers: _viewerDataHeaders(scope.sessionId) },
+                    { requestTimeoutMs: 60000, maxWaitMs: 300000, responseType: 'arrayBuffer' },
+                )
+                : null;
+            if (!request?.response) {
+                uiDebugLog('Label volume restore timed out; keeping the current viewer state');
+                return false;
             }
-            if (!res.ok) { uiDebugLog('No label volumes available'); return false; }
+            const res = request.response;
+            if (!res.ok) { uiDebugLog(request.data?.error || 'No label volumes available'); return false; }
             if (!_viewerDataScopeIsCurrent(scope)) return false;
 
             shapeZ = parseInt(res.headers.get('X-Shape-Z'));
@@ -697,7 +647,11 @@ async function loadLabelVolumes(options = {}) {
                 organMetaFromServer = {};
             }
 
-            const buffer = await res.arrayBuffer();
+            const buffer = request.data;
+            if (!(buffer instanceof ArrayBuffer) || buffer.byteLength === 0) {
+                uiDebugLog('Label volume response was empty');
+                return false;
+            }
             if (!_viewerDataScopeIsCurrent(scope)) return false;
             allBytes = new Uint8Array(buffer);
 
@@ -917,35 +871,19 @@ async function hydrateGenericMasksFromServer(scope, retryAttempt = 0) {
         genericMaskCatalogGeneration = scope.dataGeneration;
     }
     try {
-        const response = await fetch(API + '/viewer/generic_masks', {
-            headers: _viewerDataHeaders(scope.sessionId),
-        });
-        const catalogPayload = (response.status === 202 || response.status === 429)
-            ? await response.clone().json().catch(() => ({}))
-            : {};
-        const catalogRetryable = response.status === 202
-            || (response.status === 429 && catalogPayload.code === 'rate_limit_exceeded');
-        if (catalogRetryable) {
-            // A tool-completion event can arrive just before the workspace
-            // checkpoint exposes the binary mask. Keep the same session and
-            // data-generation scope while the server finishes that small
-            // commit; otherwise a valid mask would be absent from the tree
-            // until the user changes session or slice.
-            if (retryAttempt >= 80) return false;
-            const retryAfter = Number(
-                catalogPayload.retry_after_ms
-                || response.headers.get('Retry-After-Ms')
-                || 1000,
+        const request = typeof window.fetchViewerJsonWithRetry === 'function'
+            ? await window.fetchViewerJsonWithRetry(
+                API + '/viewer/generic_masks',
+                { headers: _viewerDataHeaders(scope.sessionId) },
+                { requestTimeoutMs: 30000, maxWaitMs: 120000 },
+            )
+            : null;
+        if (!request?.response?.ok) {
+            throw new Error(
+                request?.data?.error || 'Generic mask catalogue request timed out',
             );
-            const maxDelay = response.status === 429 ? 60000 : 5000;
-            await new Promise(resolve => setTimeout(
-                resolve,
-                Math.max(1000, Math.min(maxDelay, Number.isFinite(retryAfter) ? retryAfter : 1000)),
-            ));
-            return hydrateGenericMasksFromServer(scope, retryAttempt + 1);
         }
-        if (!response.ok) throw new Error(`Generic mask catalogue failed: HTTP ${response.status}`);
-        const payload = await response.json();
+        const payload = request.data || {};
         if (!_viewerDataScopeIsCurrent(scope)) return false;
         const entries = Array.isArray(payload.masks) ? payload.masks : [];
         if (Array.isArray(payload.uploads)) dataTreeState.uploadMasks = payload.uploads;
@@ -991,36 +929,28 @@ async function hydrateGenericMasksFromServer(scope, retryAttempt = 0) {
                 color: existing.color || '#f08a5d',
             };
             try {
-                let volumeResponse;
-                for (let attempt = 0; attempt <= 80; attempt += 1) {
-                    volumeResponse = await fetch(
+                const volumeRequest = typeof window.fetchViewerJsonWithRetry === 'function'
+                    ? await window.fetchViewerJsonWithRetry(
                         API + '/viewer/generic_mask_volume?mask_id=' + encodeURIComponent(id),
                         { headers: _viewerDataHeaders(scope.sessionId) },
+                        { requestTimeoutMs: 60000, maxWaitMs: 300000, responseType: 'arrayBuffer' },
+                    )
+                    : null;
+                if (!volumeRequest?.response?.ok) {
+                    throw new Error(
+                        volumeRequest?.data?.error || 'Generic mask volume request timed out',
                     );
-                    const volumePayload = (volumeResponse.status === 202 || volumeResponse.status === 429)
-                        ? await volumeResponse.clone().json().catch(() => ({}))
-                        : {};
-                    const volumeRetryable = volumeResponse.status === 202
-                        || (volumeResponse.status === 429 && volumePayload.code === 'rate_limit_exceeded');
-                    if (!volumeRetryable || attempt >= 80) break;
-                    const retryAfter = Number(
-                        volumePayload.retry_after_ms
-                        || volumeResponse.headers.get('Retry-After-Ms')
-                        || 1000,
-                    );
-                    const maxDelay = volumeResponse.status === 429 ? 60000 : 5000;
-                    await new Promise(resolve => setTimeout(
-                        resolve,
-                        Math.max(1000, Math.min(maxDelay, Number.isFinite(retryAfter) ? retryAfter : 1000)),
-                    ));
                 }
-                if (!volumeResponse.ok) throw new Error(`HTTP ${volumeResponse.status}`);
+                const volumeResponse = volumeRequest.response;
                 const shape = [
                     Number(volumeResponse.headers.get('X-Shape-Z')),
                     Number(volumeResponse.headers.get('X-Shape-Y')),
                     Number(volumeResponse.headers.get('X-Shape-X')),
                 ];
-                const buffer = await volumeResponse.arrayBuffer();
+                const buffer = volumeRequest.data;
+                if (!(buffer instanceof ArrayBuffer) || buffer.byteLength === 0) {
+                    throw new Error('empty generic mask volume response');
+                }
                 const expected = shape[0] * shape[1] * shape[2];
                 if (!_viewerDataScopeIsCurrent(scope)) return false;
                 if (!shape.every(value => Number.isInteger(value) && value > 0)
@@ -1181,32 +1111,18 @@ function _maskBelongsToGroup(category, mask) {
  */
 async function loadGuideSkinSurface(options = {}) {
     const scope = _captureViewerDataScope(options.sessionId);
-    const retryAttempt = Number(options._retryAttempt || 0);
     try {
-        const response = await fetch(API + '/viewer/skin_surface_volume', {
-            headers: _viewerDataHeaders(scope.sessionId),
-        });
-        const pending = (response.status === 202 || response.status === 429)
-            ? await response.clone().json().catch(() => ({}))
-            : {};
-        const retryable = response.status === 202
-            || (response.status === 429 && pending.code === 'rate_limit_exceeded');
-        if (retryable) {
-            if (retryAttempt >= 80 || !_viewerDataScopeIsCurrent(scope)) return false;
-            const retryAfter = Number(
-                pending.retry_after_ms
-                || response.headers.get('Retry-After-Ms')
-                || 1000,
-            );
-            await new Promise(resolve => setTimeout(
-                resolve,
-                Math.max(1000, Math.min(
-                    response.status === 429 ? 60000 : 5000,
-                    Number.isFinite(retryAfter) ? retryAfter : 1000,
-                )),
-            ));
-            return loadGuideSkinSurface({ ...options, _retryAttempt: retryAttempt + 1 });
-        }
+        const request = await window.fetchViewerJsonWithRetry(
+            API + '/viewer/skin_surface_volume',
+            { headers: _viewerDataHeaders(scope.sessionId) },
+            {
+                responseType: 'arrayBuffer',
+                requestTimeoutMs: 120000,
+                maxWaitMs: 300000,
+            },
+        );
+        const response = request.response;
+        if (!response) throw request.error || new Error('Guide skin request timed out');
         if (response.status === 404) {
             if (!_viewerDataScopeIsCurrent(scope)) return false;
             skinSurfaceData = null;
@@ -1230,7 +1146,9 @@ async function loadGuideSkinSurface(options = {}) {
             Number(response.headers.get('X-Shape-Y')),
             Number(response.headers.get('X-Shape-X')),
         ];
-        const buffer = await response.arrayBuffer();
+        const buffer = request.data instanceof ArrayBuffer
+            ? request.data
+            : await response.arrayBuffer();
         if (!_viewerDataScopeIsCurrent(scope)) return false;
         const expected = shape[0] * shape[1] * shape[2];
         if (!shape.every(value => Number.isInteger(value) && value > 0)
@@ -1955,19 +1873,18 @@ async function loadOverlay(axis, sliceIndex) {
         ctx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
 
         if (ctvVisible) {
-            let resCtv;
-            for (let attempt = 0; attempt <= 60; attempt += 1) {
-                resCtv = await fetch(API + '/viewer/overlay', {
+            const ctvRequest = await window.fetchViewerJsonWithRetry(API + '/viewer/overlay', {
                     method: 'POST',
                     headers: _viewerDataHeaders(scope.sessionId, { 'Content-Type': 'application/json' }),
                     body: JSON.stringify({ axis, slice_index: sliceIndex, overlay_type: 'ctv', ctv_opacity: dataTreeState.ctv.opacity }),
+                }, {
+                    requestTimeoutMs: 60000,
+                    maxWaitMs: 120000,
                 });
-                if (resCtv.status !== 202 || attempt >= 60) break;
-                await new Promise(resolve => setTimeout(resolve, 250));
-            }
+            const resCtv = ctvRequest.response;
             if (!sliceIsCurrent()) return;
-            if (resCtv.ok) {
-                const d = await resCtv.json();
+            if (resCtv?.ok) {
+                const d = ctvRequest.data || {};
                 if (!sliceIsCurrent()) return;
                 if (d.has_mask && d.data) {
                     const img = new Image();
@@ -1983,19 +1900,18 @@ async function loadOverlay(axis, sliceIndex) {
             const visibleOrgans = dataTreeState.organs.filter(o => o.visible).map(o => o.labelId);
             const organOpacities = {};
             dataTreeState.organs.forEach(o => { organOpacities[o.labelId] = o.opacity; });
-            let resOar;
-            for (let attempt = 0; attempt <= 60; attempt += 1) {
-                resOar = await fetch(API + '/viewer/overlay', {
+            const oarRequest = await window.fetchViewerJsonWithRetry(API + '/viewer/overlay', {
                     method: 'POST',
                     headers: _viewerDataHeaders(scope.sessionId, { 'Content-Type': 'application/json' }),
                     body: JSON.stringify({ axis, slice_index: sliceIndex, overlay_type: 'oar', visible_organs: visibleOrgans, organ_opacities: organOpacities, oar_opacity: dataTreeState.oar.opacity }),
+                }, {
+                    requestTimeoutMs: 60000,
+                    maxWaitMs: 120000,
                 });
-                if (resOar.status !== 202 || attempt >= 60) break;
-                await new Promise(resolve => setTimeout(resolve, 250));
-            }
+            const resOar = oarRequest.response;
             if (!sliceIsCurrent()) return;
-            if (resOar.ok) {
-                const d = await resOar.json();
+            if (resOar?.ok) {
+                const d = oarRequest.data || {};
                 if (!sliceIsCurrent()) return;
                 if (d.has_mask && d.data) {
                     const img = new Image();
@@ -2082,9 +1998,7 @@ async function loadSlice(axis, sliceIndex) {
     const requestController = new AbortController();
     viewerDataAbortControllers.add(requestController);
     try {
-        let res;
-        for (let attempt = 0; attempt <= 60; attempt += 1) {
-            res = await fetch(API + '/viewer/slice', {
+        const request = await window.fetchViewerJsonWithRetry(API + '/viewer/slice', {
                 method: 'POST',
                 headers: _viewerDataHeaders(scope.sessionId, { 'Content-Type': 'application/json' }),
                 body: JSON.stringify({
@@ -2095,14 +2009,15 @@ async function loadSlice(axis, sliceIndex) {
                     threshold: state.viewerSettings.threshold !== null ? state.viewerSettings.threshold : undefined,
                 }),
                 signal: requestController.signal,
+            }, {
+                requestTimeoutMs: 60000,
+                maxWaitMs: 120000,
             });
-            if (res.status !== 202 || attempt >= 60) break;
-            await new Promise(resolve => setTimeout(resolve, 250));
-        }
+        const res = request.response;
 
-        if (!res.ok) return;
+        if (!res?.ok) return;
 
-        const data = await res.json();
+        const data = request.data || {};
         if (!_viewerDataScopeIsCurrent(scope, true)
             || Number(state?.slices?.[axis]) !== Number(sliceIndex)) return;
         if (data.success) {
@@ -2129,7 +2044,7 @@ async function preloadAxis(axis) {
         const promises = [];
         for (let i = start; i < end; i++) {
             promises.push(
-                fetch(API + '/viewer/slice', {
+                window.fetchViewerJsonWithRetry(API + '/viewer/slice', {
                     method: 'POST',
                     headers: _viewerDataHeaders(scope.sessionId, { 'Content-Type': 'application/json' }),
                     body: JSON.stringify({
@@ -2139,8 +2054,11 @@ async function preloadAxis(axis) {
                         window_width: state.viewerSettings.window,
                         threshold: state.viewerSettings.threshold !== null ? state.viewerSettings.threshold : undefined,
                     }),
+                }, {
+                    requestTimeoutMs: 60000,
+                    maxWaitMs: 120000,
                 })
-                .then(res => res.ok ? res.json() : null)
+                .then(request => request.response?.ok ? request.data : null)
                 .then(data => {
                     if (!_viewerDataScopeIsCurrent(scope, true)) return;
                     if (data && data.success) {
