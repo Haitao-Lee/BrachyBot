@@ -52,8 +52,11 @@ def test_skin_surface_waits_for_background_ct_hydration():
     )[0]
     assert '"pending": True' in skin_route
     assert "), 202" in skin_route
-    assert "maxPendingAttempts" in layout
-    assert "data.pending" in layout
+    # 202/pending responses are retried by the common bounded request helper,
+    # so the viewer path no longer owns a separate attempt counter.
+    assert "_viewer3DJsonRequest" in layout
+    assert "maxWaitMs: 300000" in layout
+    assert "const request = await _viewer3DJsonRequest" in layout
 
 
 def test_guide_skin_is_a_persisted_segmentation_sibling_with_2d_and_3d_views():
