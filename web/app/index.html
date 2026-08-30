@@ -64,7 +64,7 @@
     <link rel="stylesheet" href="static/css/brachybot-theme-layout.css?v=12">
     <link rel="stylesheet" href="static/css/brachybot-chat-status.css?v=13">
     <link rel="stylesheet" href="static/css/brachybot-panels-viewers.css?v=14">
-    <link rel="stylesheet" href="static/css/brachybot-report-controls.css?v=19">
+    <link rel="stylesheet" href="static/css/brachybot-report-controls.css?v=20">
     <link rel="stylesheet" href="static/css/brachybot-responsive.css?v=4">
     <link rel="stylesheet" href="static/css/brachybot-auth.css?v=6">
     <link rel="stylesheet" href="static/css/brachybot-data-export.css?v=2">
@@ -1484,7 +1484,8 @@
                         <label>Op</label>
                         <input type="range" min="0" max="100" value="60" id="labelOp3d" oninput="updateLabelImage('3d')">
                     </div>
-                    <div class="loading-overlay" id="loading3D" role="status" aria-live="polite" aria-hidden="true">
+                    <div class="loading-overlay" id="loading3D" role="status" aria-live="polite" aria-atomic="true"
+                         aria-hidden="true" data-interaction-mode="passthrough">
                         <div class="spinner-ring"></div>
                         <div class="loading-text">Rendering...</div>
                     </div>
@@ -1526,7 +1527,7 @@
 <script src="static/js/brachybot-ui-api.js?v=50"></script>
 <script src="static/js/brachybot-auth.js?v=10"></script>
 <script src="static/js/brachybot-viewer-volume.js?v=44"></script>
-<script src="static/js/brachybot-viewer-layout.js?v=35"></script>
+<script src="static/js/brachybot-viewer-layout.js?v=36"></script>
 <script src="static/js/brachybot-3d-manual.js?v=70"></script>
 <script src="static/js/brachybot-manual-annotation.js?v=18"></script>
 <script src="static/js/brachybot-surgical-guide.js?v=13"></script>
