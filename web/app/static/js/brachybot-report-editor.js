@@ -918,7 +918,7 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
      * an unusually large capture to the configured long-edge limit. It never
      * crops or stretches the screenshot to force a page aspect ratio.
      */
-    function _captureReportCanvasFit(canvas, maxOutputEdge = 1200) {
+    function _captureReportCanvasFit(canvas, maxOutputEdge = 1200, afterDraw = null) {
         if (!canvas || canvas.width < 1 || canvas.height < 1) return null;
         const sourceLongEdge = Math.max(canvas.width, canvas.height);
         const requestedLongEdge = Number(maxOutputEdge);
@@ -936,7 +936,112 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
             0, 0, canvas.width, canvas.height,
             0, 0, output.width, output.height,
         );
+        // Report-only annotations (for example the 3D dose scale) are drawn
+        // after the source canvas has been fitted. This keeps the source
+        // viewer untouched and makes the annotation scale with the exported
+        // image rather than with the live WebGL viewport.
+        if (typeof afterDraw === 'function') {
+            afterDraw(ctx, output.width, output.height);
+        }
         return output.toDataURL('image/png');
+    }
+
+    /**
+     * Draw the 3D dose scale into a publication capture.
+     *
+     * The live 3D colorbar is a DOM overlay above the WebGL canvas, so
+     * renderer.domElement.toDataURL() cannot include it. Figure 2(d) is an
+     * image artifact, not a live viewer screenshot; recreate the scale from
+     * the same three-dimensional dose configuration and color mapping used
+     * by update3DColorbar(). This is deliberately report-local and does not
+     * mutate the operator's viewer or Data Tree state.
+     */
+    function _drawReport3DDoseColorbar(ctx, width, height) {
+        if (!ctx || width < 180 || height < 120) return;
+        const configured = typeof getDoseColorbarConfig === 'function'
+            ? getDoseColorbarConfig('threeD') : null;
+        const configuredMin = Number(configured?.minGy);
+        const configuredMax = Number(configured?.maxGy);
+        const minGy = Number.isFinite(configuredMin) ? configuredMin : 0;
+        const maxGy = Number.isFinite(configuredMax) && configuredMax > minGy
+            ? configuredMax : Math.max(minGy + 1, 600);
+
+        const pad = Math.max(10, Math.round(width * 0.014));
+        const panelWidth = Math.min(
+            Math.max(112, Math.round(width * 0.16)),
+            width - pad * 2,
+        );
+        const panelHeight = Math.min(
+            Math.max(180, Math.round(height * 0.84)),
+            height - pad * 2,
+        );
+        if (panelWidth < 92 || panelHeight < 120) return;
+
+        const panelX = width - panelWidth - pad;
+        const panelY = Math.round((height - panelHeight) / 2);
+        const titleSize = Math.max(11, Math.min(22, Math.round(width * 0.014)));
+        const barWidth = Math.max(16, Math.min(34, Math.round(panelWidth * 0.18)));
+        const barX = panelX + Math.max(10, Math.round(panelWidth * 0.10));
+        const barY = panelY + titleSize + 16;
+        const barHeight = Math.max(70, panelHeight - titleSize - 34);
+        const labelX = barX + barWidth + Math.max(10, Math.round(panelWidth * 0.08));
+        const labelSize = Math.max(10, Math.min(20, Math.round(width * 0.011)));
+
+        ctx.save();
+        ctx.fillStyle = 'rgba(2, 6, 23, 0.88)';
+        ctx.strokeStyle = 'rgba(226, 232, 240, 0.58)';
+        ctx.lineWidth = 1;
+        ctx.fillRect(panelX, panelY, panelWidth, panelHeight);
+        ctx.strokeRect(panelX + 0.5, panelY + 0.5, panelWidth - 1, panelHeight - 1);
+
+        ctx.fillStyle = '#f8fafc';
+        ctx.font = `bold ${titleSize}px Inter, Arial, sans-serif`;
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'alphabetic';
+        ctx.fillText('Dose (Gy)', panelX + 8, panelY + titleSize + 2);
+
+        const gradientCanvas = document.createElement('canvas');
+        gradientCanvas.width = barWidth;
+        gradientCanvas.height = barHeight;
+        const gradientCtx = gradientCanvas.getContext('2d');
+        if (gradientCtx) {
+            for (let y = 0; y < barHeight; y += 1) {
+                const value = 1 - y / Math.max(1, barHeight - 1);
+                const rgb = typeof _doseColorFromScope === 'function'
+                    ? _doseColorFromScope('threeD', value) : [220, 38, 127];
+                const r = Number(rgb?.[0]) || 0;
+                const g = Number(rgb?.[1]) || 0;
+                const b = Number(rgb?.[2]) || 0;
+                gradientCtx.fillStyle = `rgb(${r},${g},${b})`;
+                gradientCtx.fillRect(0, y, barWidth, 1);
+            }
+            ctx.drawImage(gradientCanvas, barX, barY);
+        }
+        ctx.strokeStyle = 'rgba(226, 232, 240, 0.78)';
+        ctx.strokeRect(barX + 0.5, barY + 0.5, barWidth - 1, barHeight - 1);
+
+        const ticks = [
+            { pct: 0, value: maxGy },
+            { pct: 20, value: minGy + (maxGy - minGy) * 0.8 },
+            { pct: 40, value: minGy + (maxGy - minGy) * 0.6 },
+            { pct: 60, value: minGy + (maxGy - minGy) * 0.4 },
+            { pct: 80, value: minGy + (maxGy - minGy) * 0.2 },
+            { pct: 100, value: minGy },
+        ];
+        ctx.font = `${labelSize}px Inter, Arial, sans-serif`;
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        ticks.forEach(tick => {
+            const y = barY + (barHeight - 1) * (tick.pct / 100);
+            ctx.strokeStyle = 'rgba(226, 232, 240, 0.82)';
+            ctx.beginPath();
+            ctx.moveTo(barX + barWidth + 3, y);
+            ctx.lineTo(labelX - 3, y);
+            ctx.stroke();
+            ctx.fillStyle = '#f8fafc';
+            ctx.fillText(`${tick.value.toFixed(0)} Gy`, labelX, y);
+        });
+        ctx.restore();
     }
 
     const reportReferenceDirection = _reportReferenceViewDirection();
@@ -1187,7 +1292,11 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
                     // The overview needs enough surrounding anatomy to make
                     // the full implant geometry intelligible in a report.
                     // The close-up remains intentionally tight around CTV.
-                    margin: mode === 'detail' ? 1.10 : 1.30,
+                    // Keep a small safety border so the complete treatment
+                    // geometry remains in frame, while avoiding the old
+                    // 10-30% zoom-out that made the report objects appear
+                    // distant on an A4 page.
+                    margin: mode === 'detail' ? 1.04 : 1.08,
                 });
             }
 
@@ -1659,7 +1768,17 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
                                     return null;
                                 }
                             }
-                            const url = _captureReportCanvasFit(canvas, REPORT_FIGURE_LONG_EDGE);
+                            const url = _captureReportCanvasFit(
+                                canvas,
+                                REPORT_FIGURE_LONG_EDGE,
+                                (captureCtx, outputWidth, outputHeight) => {
+                                    _drawReport3DDoseColorbar(
+                                        captureCtx,
+                                        outputWidth,
+                                        outputHeight,
+                                    );
+                                },
+                            );
                             if (!url || url.length < 5000) return null;
                             uiDebugLog('[Report] 3D dose-surface capture', label, ':', Math.round(url.length / 1024), 'KB');
                             return url;
