@@ -1940,6 +1940,18 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
         if pending is not None:
             return pending
 
+        # Derived meshes are restart-safe only when their disk cache is scoped
+        # to the authenticated case. Resolve this once for the request; cache
+        # failures remain non-fatal because the in-memory/clinical data path is
+        # authoritative.
+        cache_root = None
+        case_session_id = ""
+        try:
+            store, user, case_session_id = request_case_context()
+            cache_root = store.workspace_root(user["id"], case_session_id, create=False)
+        except Exception as exc:
+            logger.debug("Segmentation mesh persistent cache unavailable: %s", exc)
+
         data = request.get_json() or {}
         label_id = data.get("label_id")
         source = data.get("source", "oar")  # "oar" or "ctv"

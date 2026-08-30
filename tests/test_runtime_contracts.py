@@ -515,7 +515,7 @@ def test_viewer_script_dependency_contract_is_cache_busted_and_syntax_safe():
     # 3D bundle can coexist with a new UI action bundle and hide its parse
     # failure as a missing global helper.
     assert 'brachybot-ui-api.js?v=50' in index
-    assert 'brachybot-3d-manual.js?v=70' in index
+    assert 'brachybot-3d-manual.js?v=71' in index
     assert "window._normalizeTrajectoryId = function _normalizeTrajectoryId" in ui_api
 
     # This exact malformed expression previously prevented the entire 3D
