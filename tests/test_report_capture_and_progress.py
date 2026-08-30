@@ -17,13 +17,25 @@ def test_figure_one_detail_view_keeps_the_complete_ctv_in_frame():
     assert "halfHeight / Math.tan(halfFovY)" in source
     assert "halfWidth / Math.tan(halfFovX)" in source
     assert "halfDepth + planarDistance" in source
-    assert "margin: mode === 'detail' ? 1.10 : 1.30" in source
+    # Keep a small framing safety border while bringing both report views
+    # materially closer to the treatment geometry.
+    assert "margin: mode === 'detail' ? 1.04 : 1.08" in source
     assert "targetAspect: REPORT_FIGURE_ASPECT" in source
     assert "id === 'skin_surface'" in source
     assert "guide_skin_surface" in source
     assert "includeOars: true, includeNeedles: true" in source
     assert "REPORT_FIGURE_LONG_EDGE = 2400" in source
     assert "_captureReportCanvasFit(c, maxOutputEdge)" in source
+
+
+def test_figure_two_dose_surface_capture_embeds_the_3d_dose_colorbar():
+    source = _read("web/app/static/js/brachybot-report-editor.js")
+
+    assert "function _drawReport3DDoseColorbar" in source
+    assert "getDoseColorbarConfig('threeD')" in source
+    assert "_doseColorFromScope('threeD', value)" in source
+    assert "_drawReport3DDoseColorbar(" in source
+    assert "Report-only annotations" in source
 
 
 def test_report_figures_are_native_subfigures_and_peak_dose_capture_is_ready():
