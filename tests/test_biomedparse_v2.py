@@ -328,7 +328,7 @@ def test_unavailable_liver_ctv_fails_closed_without_biomedparse_fallback(monkeyp
     monkeypatch.setattr(
         sat3d,
         "_availability",
-        lambda: {"available": False, "missing": ["checkpoint"]},
+        lambda **_kwargs: {"available": False, "missing": ["checkpoint"]},
     )
     image = sitk.GetImageFromArray(np.zeros((4, 4, 4), dtype=np.int16))
     result = CTVSegmentationTool().execute(image=image, tumor_type="liver")
