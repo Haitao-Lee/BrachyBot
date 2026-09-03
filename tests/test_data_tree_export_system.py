@@ -217,6 +217,27 @@ def _case(tmp_path):
     return store, user, session, agent
 
 
+def test_export_catalog_recovers_guide_from_active_planning_snapshot(tmp_path):
+    """A restart gap in the legacy alias must not hide a saved guide."""
+    store, user, session, agent = _case(tmp_path)
+    guide = dict(agent.memory.retrieve("surgical_guide"))
+    agent.memory.planning_results.pop("surgical_guide", None)
+    agent.memory.store("active_planning_id", "planning-7")
+    agent.memory.store("planning_run_id", "planning-7")
+    agent.memory.store("planning_run:planning-7", {
+        "planning_id": "planning-7",
+        "surgical_guide": guide,
+    })
+
+    catalog = {
+        item.object_id: item
+        for item in ExportService(store).catalog(user["id"], session.id, agent)
+    }
+
+    assert "surgical_guide:active" in catalog
+    assert catalog["surgical_guide:active"].metadata["status"] == "ready"
+
+
 def test_query_metrics_accepts_numpy_seed_positions_and_reports_oar_metrics():
     """The agent bridge must not evaluate a NumPy array as a boolean."""
     from tool_factory.viewer_command.query_metrics import QueryMetricsTool
