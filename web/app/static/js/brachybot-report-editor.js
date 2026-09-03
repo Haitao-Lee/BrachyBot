@@ -624,7 +624,7 @@ window.reportCaptureUiState = {
 // report page makes the axes nearly invisible and shrinks the legend/font.
 // Keep a separate, off-screen Plotly instance for the report so the operator
 // can continue using the live chart without a relayout/flicker side effect.
-const REPORT_DVH_CAPTURE_CONTRACT = 'dvh-readable-report-v2';
+const REPORT_DVH_CAPTURE_CONTRACT = 'dvh-readable-report-v3';
 const REPORT_DVH_CAPTURE_WIDTH = 2400;
 const REPORT_DVH_CAPTURE_HEIGHT = 1500;
 window.REPORT_DVH_CAPTURE_CONTRACT = REPORT_DVH_CAPTURE_CONTRACT;
@@ -882,8 +882,27 @@ window.captureReportDvhFigure = captureReportDvhFigure;
 // operator's current camera. Persisting the contract lets a later hydration
 // path identify a legacy capture and regenerate the intended global/detail
 // pair instead of silently preserving a semantically swapped image.
-const REPORT_FIGURE_ONE_CAPTURE_CONTRACT = 'figure1-global-overview-target-detail-v5-thin-needles';
+const REPORT_FIGURE_ONE_CAPTURE_CONTRACT = 'figure1-global-overview-target-detail-v6-thin-needles';
 window.REPORT_FIGURE_ONE_CAPTURE_CONTRACT = REPORT_FIGURE_ONE_CAPTURE_CONTRACT;
+
+// Every report slot has a semantic capture contract.  The contract is part
+// of the durable figure row, so a restart can distinguish a valid image from
+// an older/partial capture even when both files have a stable-looking name.
+const REPORT_FIGURE_CAPTURE_CONTRACTS = Object.freeze({
+    report_fig1_global: REPORT_FIGURE_ONE_CAPTURE_CONTRACT,
+    report_fig1_closeup: REPORT_FIGURE_ONE_CAPTURE_CONTRACT,
+    report_fig2_axial: 'figure2-peak-dose-axial-v2',
+    report_fig2_sagittal: 'figure2-peak-dose-sagittal-v2',
+    report_fig2_coronal: 'figure2-peak-dose-coronal-v2',
+    report_fig2_dose_surface: 'figure2-dose-surface-v3',
+    report_fig2_dvh: REPORT_DVH_CAPTURE_CONTRACT,
+});
+window.REPORT_FIGURE_CAPTURE_CONTRACTS = REPORT_FIGURE_CAPTURE_CONTRACTS;
+
+function reportFigureCaptureContractForAxis(axis) {
+    return String(REPORT_FIGURE_CAPTURE_CONTRACTS[String(axis || '')] || '');
+}
+window.reportFigureCaptureContractForAxis = reportFigureCaptureContractForAxis;
 
 function _currentReportCaptureSessionId() {
     const value = (typeof _activeApiSessionId === 'function' && _activeApiSessionId())
@@ -891,6 +910,14 @@ function _currentReportCaptureSessionId() {
         || window.state?.sessionId
         || '';
     return String(value || '');
+}
+
+function _currentReportCapturePlanningId() {
+    const value = (typeof activeReportPlanningId === 'function' && activeReportPlanningId())
+        || (typeof dataTreeState !== 'undefined' && dataTreeState?.planning?.activePlanningId)
+        || window.__reportWorkspaceActivePlanningId
+        || '__unassigned__';
+    return String(value || '__unassigned__');
 }
 
 function invalidateReportCapture() {
@@ -904,14 +931,17 @@ window.invalidateReportCapture = invalidateReportCapture;
 // leave the 3D renderer in the partially hidden state used by Figure 1.
 async function autoCaptureReportFigures(options = {}) {
     const requestedSessionId = String(options.sessionId || _currentReportCaptureSessionId());
+    const requestedPlanningId = String(options.planningId || _currentReportCapturePlanningId());
     if (_reportCapturePromise) {
         await _reportCapturePromise;
-        if (requestedSessionId !== _currentReportCaptureSessionId()) return { stale: true };
+        if (requestedSessionId !== _currentReportCaptureSessionId()
+            || requestedPlanningId !== _currentReportCapturePlanningId()) return { stale: true };
         return autoCaptureReportFigures(options);
     }
     const context = {
         generation: _reportCaptureGeneration,
         sessionId: requestedSessionId,
+        planningId: requestedPlanningId,
         reportForm: window.reportForm,
     };
     const promise = _autoCaptureReportFiguresImpl(context);
@@ -940,13 +970,18 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
     uiDebugLog('[Report] autoCaptureReportFigures called');
     if (!window.reportForm) { console.warn('[Report] No reportForm, skipping'); return; }
     const captureSessionId = String(captureContext.sessionId || _currentReportCaptureSessionId());
+    const capturePlanningId = String(captureContext.planningId || _currentReportCapturePlanningId());
     const captureGeneration = Number(captureContext.generation ?? _reportCaptureGeneration);
     const captureForm = captureContext.reportForm || window.reportForm;
     const isCurrentCapture = () => captureGeneration === _reportCaptureGeneration
         && captureSessionId === _currentReportCaptureSessionId()
+        && capturePlanningId === _currentReportCapturePlanningId()
         && captureForm === window.reportForm;
     if (!isCurrentCapture()) return { stale: true };
     if (!window.reportForm.figures) window.reportForm.figures = [];
+    if (window.reportForm.planningId !== capturePlanningId) {
+        window.reportForm.planningId = capturePlanningId;
+    }
 
     // Drop stale auto-captured figures (user-uploads are kept).
     // Also drop incomplete auto-captures (missing DVH or dose).
@@ -1064,6 +1099,10 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
         const figure = {
             type: 'screenshot', title, dataUrl, axis: stableAxis,
             sliceIdx: null, caption, capturedAt: _ts(), ...extra,
+            planningId: capturePlanningId,
+            captureContract: String(
+                extra?.captureContract || reportFigureCaptureContractForAxis(stableAxis) || '',
+            ),
             ...(imageSize ? {
                 pixelWidth: imageSize.width,
                 pixelHeight: imageSize.height,
@@ -2411,8 +2450,18 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
                     const isCtv = id === 'ctv' || id.startsWith('ctv_') || mesh?.userData?.type === 'ctv';
                     const isSeed = id.startsWith('seed_') || mesh?.userData?.type === 'seed';
                     const isNeedle = id.startsWith('needle_') || mesh?.userData?.type === 'needle';
-                    mesh.visible = isCtv || isSeed || isNeedle;
+                    const isDoseSurface = id.startsWith('dose_iso_')
+                        || mesh?.userData?.type === 'dose_isosurface';
+                    // Fig 2(d) is specifically the dose-surface evidence
+                    // slot.  Hiding dose_iso_* here produced a valid PNG of
+                    // only needles/seeds, which was later mistaken for a
+                    // swapped Fig 1(b) after restore.
+                    mesh.visible = isCtv || isSeed || isNeedle || isDoseSurface;
                     if (isCtv) applyMeshOpacity(mesh, 0.92, true);
+                    if (isDoseSurface) {
+                        const opacity = Number(mesh.material?.opacity);
+                        applyMeshOpacity(mesh, Number.isFinite(opacity) && opacity > 0 ? opacity : 0.30, true);
+                    }
                 }
                 // Keep the dose-surface panel focused on the treatment region.
                 // Whole-body OAR meshes can be very large, so including every
@@ -2423,7 +2472,13 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
                 const box = new THREE.Box3();
                 const ctvBox = new THREE.Box3();
                 Object.entries(scene3D.meshes || {}).forEach(([id, mesh]) => {
-                    if (!mesh || id.startsWith('dose_iso_')) return;
+                    if (!mesh) return;
+                    const isDoseSurface = id.startsWith('dose_iso_')
+                        || mesh?.userData?.type === 'dose_isosurface';
+                    if (isDoseSurface) {
+                        mesh.visible = true;
+                        return;
+                    }
                     const isCtv = id === 'ctv' || id.startsWith('ctv_') || mesh?.userData?.type === 'ctv';
                     const isSeed = id.startsWith('seed_') || mesh?.userData?.type === 'seed';
                     // Needles remain visible, but their long external shafts do
@@ -2440,15 +2495,18 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
                     const ctvSize = ctvBox.getSize(new THREE.Vector3());
                     const context = ctvBox.clone().expandByScalar(Math.max(18, ctvSize.length() * 0.6));
                     Object.entries(scene3D.meshes || {}).forEach(([id, mesh]) => {
-                        if (!mesh || typeof _isDoseTexturableMesh !== 'function'
-                            || !_isDoseTexturableMesh(id, mesh)) return;
+                        if (!mesh) return;
+                        const isDoseSurface = id.startsWith('dose_iso_')
+                            || mesh?.userData?.type === 'dose_isosurface';
+                        if (!isDoseSurface && (typeof _isDoseTexturableMesh !== 'function'
+                            || !_isDoseTexturableMesh(id, mesh))) return;
                         if (id === 'ctv' || id.startsWith('ctv_')) return;
                         const candidate = new THREE.Box3();
                         try { candidate.expandByObject(mesh); } catch (_) { return; }
                         if (!candidate.intersectsBox(context)) return;
                         const appearance = typeof window.getDataTreeAppearanceForMesh === 'function'
                             ? window.getDataTreeAppearanceForMesh(id, mesh) : null;
-                        mesh.visible = appearance?.visible !== false;
+                        mesh.visible = isDoseSurface || appearance?.visible !== false;
                         const localCandidate = candidate.clone().intersect(context);
                         if (mesh.visible && !localCandidate.isEmpty()) box.union(localCandidate);
                     });

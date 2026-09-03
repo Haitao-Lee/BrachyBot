@@ -13,7 +13,7 @@ def _read(relative: str) -> str:
 def test_report_dvh_capture_is_independent_from_the_dark_live_chart():
     source = _read("web/app/static/js/brachybot-report-editor.js")
 
-    assert "const REPORT_DVH_CAPTURE_CONTRACT = 'dvh-readable-report-v2';" in source
+    assert "const REPORT_DVH_CAPTURE_CONTRACT = 'dvh-readable-report-v3';" in source
     assert "async function captureReportDvhFigure" in source
     assert "const REPORT_DVH_CAPTURE_WIDTH = 2400;" in source
     assert "const REPORT_DVH_CAPTURE_HEIGHT = 1500;" in source
@@ -41,4 +41,4 @@ def test_all_report_dvh_paths_use_the_readable_exporter():
     assert "width: 2400, height: 800" not in editor
     assert "width: 900, height: 450" not in planning
     assert "await window.captureReportDvhFigure(dvhEl)" in planning
-    assert "captureContract: window.REPORT_DVH_CAPTURE_CONTRACT || 'dvh-readable-report-v2'" in planning
+    assert "captureContract: window.REPORT_DVH_CAPTURE_CONTRACT || 'dvh-readable-report-v3'" in planning

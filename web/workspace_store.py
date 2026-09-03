@@ -700,11 +700,13 @@ def _attachment_semantic_key(record: Any) -> str:
     """Return a replay-stable identity for one logical screenshot.
 
     Attachment IDs are transport identities and may change after an SSE
-    reconnect.  URLs are preferred, but a newly uploaded replay can also
-    receive a new URL.  Report figures therefore use their persisted figure
-    identity; ordinary multi-view captures use the parent request plus view
-    index.  We intentionally do not collapse two single-view captures from
-    different requests merely because they target the same viewer.
+    reconnect.  A replay can receive a new URL when the same report role is
+    recaptured, for example when a cache-busting content version changes
+    after a restart. Report figures therefore use their persisted figure
+    identity before the URL; ordinary multi-view captures use the parent
+    request plus view index. We intentionally do not collapse two single-view
+    captures from different requests merely because they target the same
+    viewer.
     """
     if not isinstance(record, Mapping):
         return ""
@@ -744,8 +746,19 @@ def _attachment_semantic_key(record: Any) -> str:
 
 
 def _attachment_record_key(record: Any) -> str:
-    """Use URL first, then a stable semantic key, for attachment merging."""
+    """Use semantic identity before URL for replay-safe attachment merging.
+
+    Report uploads keep one deterministic attachment identity per
+    ``(Planning, figure role)`` but their URL carries a content digest. URL
+    first ordering would retain both old and new versions; the normalizer
+    would then select the first (stale) row after a restart. Prefer the
+    semantic key whenever it exists, while retaining URL identity for legacy
+    screenshots that have no role metadata.
+    """
     if isinstance(record, Mapping):
+        semantic = _attachment_semantic_key(record)
+        if semantic:
+            return "semantic:" + semantic
         url = str(
             record.get("url")
             or record.get("src")
@@ -757,9 +770,6 @@ def _attachment_record_key(record: Any) -> str:
         ).strip()
         if url:
             return "url:" + url
-        semantic = _attachment_semantic_key(record)
-        if semantic:
-            return "semantic:" + semantic
     return _chat_record_key(record)
 
 

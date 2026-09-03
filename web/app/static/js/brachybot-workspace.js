@@ -696,15 +696,24 @@
         };
     }
 
-    function queueServerReportFigureUpload(figure, sessionId) {
+    function queueServerReportFigureUpload(figure, sessionId, planningId) {
         if (!figure || !figure.dataUrl || figure._serverUrl || figure._serverUploadPromise) return;
         if (!/^data:image\/png;base64,/i.test(String(figure.dataUrl))) return;
         const source = String(figure.dataUrl);
-        figure._serverUploadPromise = fetch('/api/screenshot', {
+        // Capture ownership once, before the asynchronous request starts.
+        // Reading the active Planning inside the body made a fast Planning
+        // switch upload the old image into the new Planning's deterministic
+        // artifact slot.
+        const ownerSessionId = String(sessionId || '');
+        const ownerPlanningId = String(planningId || activeReportPlanningId());
+        const uploadKey = `${ownerSessionId}:${ownerPlanningId}:${String(figure.axis || figure.id || 'image')}`;
+        window.__reportFigureUploadChains = window.__reportFigureUploadChains || {};
+        const previousUpload = window.__reportFigureUploadChains[uploadKey] || Promise.resolve();
+        const uploadRequest = previousUpload.catch(() => {}).then(() => fetch('/api/screenshot', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'X-BrachyBot-Session': String(sessionId || ''),
+                'X-BrachyBot-Session': ownerSessionId,
             },
             body: JSON.stringify({
                 image: source,
@@ -712,8 +721,8 @@
                 mode: 'report',
                 description: String(figure.title || figure.axis || 'report figure'),
                 title: String(figure.title || ''),
-                planning_id: activeReportPlanningId(),
-                attachment_id: `report-figure-${activeReportPlanningId()}-${String(figure.axis || figure.id || 'image')}`,
+                planning_id: ownerPlanningId,
+                attachment_id: `report-figure-${ownerPlanningId}-${String(figure.axis || figure.id || 'image')}`,
                 view_metadata: {
                     axis: String(figure.axis || ''),
                     figure_group: String(figure.figureGroup || ''),
@@ -726,7 +735,8 @@
                     peak_voxel: figure.peakVoxel || null,
                 },
             }),
-        }).then(response => response.ok ? response.json() : null).then(payload => {
+        }));
+        figure._serverUploadPromise = uploadRequest.then(response => response.ok ? response.json() : null).then(payload => {
             const url = payload?.screenshot_url || payload?.url || '';
             // Do not overwrite a newer figure captured while the upload was
             // in flight. The URL is an authenticated, case-owned artifact.
@@ -734,11 +744,14 @@
                 figure.dataUrl = url;
                 figure._serverUrl = url;
                 delete figure._cacheKey;
-                if (String(sessionId || '') === String(activeSessionId || '')
+                if (ownerSessionId === String(activeSessionId || '')
+                    && ownerPlanningId === String(activeReportPlanningId() || '')
                     && typeof scheduleWorkspaceSave === 'function') {
                     scheduleWorkspaceSave('report.figure.persisted');
                 }
-                if (typeof hydrateDataTreeArtifactCatalog === 'function') {
+                if (ownerSessionId === String(activeSessionId || '')
+                    && ownerPlanningId === String(activeReportPlanningId() || '')
+                    && typeof hydrateDataTreeArtifactCatalog === 'function') {
                     void hydrateDataTreeArtifactCatalog({ force: true });
                 }
             }
@@ -749,6 +762,10 @@
         }).finally(() => {
             delete figure._serverUploadPromise;
         });
+        // Keep same-axis uploads ordered. A fast recapture must be written
+        // after the previous capture, otherwise an old response can win the
+        // deterministic filename race and resurrect stale pixels.
+        window.__reportFigureUploadChains[uploadKey] = figure._serverUploadPromise;
     }
 
     function activeReportPlanningId() {
@@ -770,42 +787,49 @@
         report_fig1_global: {
             figureGroup: 'figure1', figureNumber: 1, subfigure: 'a', sortOrder: 1,
             captureRole: 'planning_overview',
+            captureContract: 'figure1-global-overview-target-detail-v6-thin-needles',
             title: 'Reference-direction plan overview',
             caption: 'Global view along the needle reference direction, showing the CTV, selected OARs, needle paths, and seeds.',
         },
         report_fig1_closeup: {
             figureGroup: 'figure1', figureNumber: 1, subfigure: 'b', sortOrder: 2,
             captureRole: 'planning_closeup',
+            captureContract: 'figure1-global-overview-target-detail-v6-thin-needles',
             title: 'CTV seed-distribution close-up',
             caption: 'Target close-up with the CTV made translucent to show seed distribution and needle paths.',
         },
         report_fig2_axial: {
             figureGroup: 'figure2', figureNumber: 2, subfigure: 'a', sortOrder: 1,
             captureRole: 'peak_dose_axial',
+            captureContract: 'figure2-peak-dose-axial-v2',
             title: 'Peak-dose axial view',
             caption: 'Axial CT slice through the peak-dose location with dose overlay and planning projections.',
         },
         report_fig2_sagittal: {
             figureGroup: 'figure2', figureNumber: 2, subfigure: 'b', sortOrder: 2,
             captureRole: 'peak_dose_sagittal',
+            captureContract: 'figure2-peak-dose-sagittal-v2',
             title: 'Peak-dose sagittal view',
             caption: 'Sagittal CT slice through the peak-dose location with dose overlay and planning projections.',
         },
         report_fig2_coronal: {
             figureGroup: 'figure2', figureNumber: 2, subfigure: 'c', sortOrder: 3,
             captureRole: 'peak_dose_coronal',
+            captureContract: 'figure2-peak-dose-coronal-v2',
             title: 'Peak-dose coronal view',
             caption: 'Coronal CT slice through the peak-dose location with dose overlay and planning projections.',
         },
         report_fig2_dose_surface: {
             figureGroup: 'figure2', figureNumber: 2, subfigure: 'd', sortOrder: 4,
             captureRole: 'dose_surface_3d',
+            captureContract: 'figure2-dose-surface-v3',
             title: 'CTV and dose-isosurface overview',
             caption: 'Three-dimensional view of the CTV and relevant dose isosurfaces.',
         },
         report_fig2_dvh: {
             figureGroup: 'figure2', figureNumber: 2, subfigure: 'e', sortOrder: 5,
             captureRole: 'dvh',
+            captureContract: 'dvh-readable-report-v3',
             title: 'Dose-volume histogram',
             caption: 'Dose-volume curves for the CTV and available OAR structures in the current Planning run.',
         },
@@ -915,6 +939,42 @@
         return definition ? { title: definition.title, caption: definition.caption } : null;
     };
 
+    function reportFigureExpectedCaptureContract(axis) {
+        const key = String(axis || '');
+        return String(
+            (typeof window.reportFigureCaptureContractForAxis === 'function'
+                ? window.reportFigureCaptureContractForAxis(key) : '')
+            || REPORT_FIGURE_DEFINITIONS[key]?.captureContract
+            || '',
+        );
+    }
+
+    // A complete seven-row array is not sufficient evidence that a report is
+    // healthy: a legacy capture can have the right filename while containing
+    // the wrong scene, and a row can belong to a different Planning run. Use
+    // the semantic contract and owner when deciding whether a cold restore
+    // needs one canonical recapture.
+    function reportFiguresNeedCapture(form = window.reportForm, planningId = '') {
+        const requiredAxes = [
+            'report_fig1_global', 'report_fig1_closeup',
+            'report_fig2_axial', 'report_fig2_sagittal', 'report_fig2_coronal',
+            'report_fig2_dose_surface', 'report_fig2_dvh',
+        ];
+        if (!form || !Array.isArray(form.figures)) return true;
+        const expectedPlanning = String(planningId || '');
+        const formPlanning = String(form.planningId || form.planning_id || '');
+        if (expectedPlanning && formPlanning !== expectedPlanning) return true;
+        const figures = normalizeReportFigures(form.figures, { language: form.language });
+        return requiredAxes.some(axis => {
+            const figure = figures.find(candidate => reportFigureAxis(candidate) === axis);
+            if (!figure || !(figure.dataUrl || figure._serverUrl || figure._cacheKey)) return true;
+            const figurePlanning = figure.planningId || figure.planning_id || '';
+            if (expectedPlanning && String(figurePlanning || '__unassigned__') !== expectedPlanning) return true;
+            return String(figure.captureContract || '') !== reportFigureExpectedCaptureContract(axis);
+        });
+    }
+    window.reportFiguresNeedCapture = reportFiguresNeedCapture;
+
     function reportSectionSessionId(section) {
         const form = section?.form && typeof section.form === 'object'
             ? section.form : section;
@@ -944,6 +1004,9 @@
             window.syncReportQualityAssessment(window.reportForm, { preserveStored: true });
         }
         const planningId = activeReportPlanningId();
+        // Stamp the owner on the form itself.  This is needed when a legacy
+        // snapshot is restored without the surrounding by-planning wrapper.
+        window.reportForm.planningId = planningId;
         if (Array.isArray(window.reportForm.figures)) {
             window.reportForm.figures = normalizeReportFigures(window.reportForm.figures, {
                 language: window.reportForm.language,
@@ -955,12 +1018,13 @@
         if (Array.isArray(window.reportForm.figures) && sessionId) {
             window.reportForm.figures.forEach(figure => {
                 if (figure?.dataUrl && figure.dataUrl.length > 10000) {
-                    queueServerReportFigureUpload(figure, sessionId);
+                    queueServerReportFigureUpload(figure, sessionId, planningId);
                 }
             });
         }
         const form = jsonClone(window.reportForm);
         if (form && sessionId) form.sessionId = sessionId;
+        if (form) form.planningId = planningId;
         // Offload large base64 figure data URLs into IndexedDB so they
         // don't bloat every persistWorkspace payload (200 KB – 1 MB).
         if (form && Array.isArray(form.figures) && window.SessionCache && sessionId) {
@@ -1047,7 +1111,7 @@
     // Normalize both shapes before restoring; otherwise a legacy report can
     // keep its cached figures but silently lose every text field on a switch.
     const REPORT_FORM_KEYS = new Set([
-        'version', 'language', 'templateKey', 'sessionId', 'updatedAt', 'updated_at',
+        'version', 'language', 'templateKey', 'sessionId', 'planningId', 'planning_id', 'updatedAt', 'updated_at',
         'hospital', 'patient', 'study', 'case', 'imaging', 'segmentation',
         'planning', 'metrics', 'qualityAssessment', 'oarDose', 'interpretation', 'safety', 'qaNotes',
         'references', 'figures', 'signature', 'editedFields',
@@ -1081,6 +1145,16 @@
     function _preservePopulatedReport(current, saved, options) {
         if (!options?.preserveClinicalData || !current || !saved) return false;
         if (current.sessionId && String(current.sessionId) !== String(activeSessionId || '')) return false;
+        const expectedPlanningId = String(options.targetPlanningId || '');
+        const currentPlanningId = String(
+            options.currentReportPlanningId || current.planningId || current.planning_id || '',
+        );
+        // Narrative/figures are clinical evidence for one immutable Planning
+        // run.  Never preserve a populated form merely because it is newer
+        // when the workspace is switching to another run; that is how an old
+        // Fig 1(b) can remain attached to the new Fig 2(d) page.
+        if (expectedPlanningId && expectedPlanningId !== '__unassigned__'
+            && currentPlanningId !== expectedPlanningId) return false;
         const currentUpdated = Number(current.updatedAt || current.updated_at || 0);
         const savedUpdated = Number(saved.updatedAt || saved.updated_at || 0);
         if (currentUpdated > savedUpdated && _reportContentScore(current) >= _reportContentScore(saved)) return true;
@@ -1684,6 +1758,20 @@
     function hydrateReportFigureAssets(snapshot, sessionId, restoreGeneration, attempt = 0, targetForm = null) {
         const report = targetForm || reportFormFromSnapshot(snapshot?.report);
         if (!report || !Array.isArray(report.figures)) return;
+        const expectedPlanningId = String(
+            report.planningId || report.planning_id || '__unassigned__',
+        );
+        const isCurrentReport = () => {
+            if (String(activeSessionId || '') !== String(sessionId || '')
+                || restoreGeneration !== workspaceRestoreGeneration
+                || targetForm && targetForm !== window.reportForm) return false;
+            const currentPlanningId = String(
+                window.reportForm?.planningId || window.reportForm?.planning_id || '__unassigned__',
+            );
+            if (currentPlanningId !== expectedPlanningId) return false;
+            return expectedPlanningId === '__unassigned__'
+                || String(window.__reportWorkspaceActivePlanningId || '') === expectedPlanningId;
+        };
         const pending = report.figures.filter(f => f && f._cacheKey && !f.dataUrl);
         if (!pending.length) return;
         // SessionCache is loaded as a separate script and IndexedDB may still
@@ -1707,8 +1795,7 @@
             } catch (_) {}
             return null;
         })).then(results => {
-            if (String(activeSessionId || '') !== String(sessionId || '')
-                || restoreGeneration !== workspaceRestoreGeneration) return;
+            if (!isCurrentReport()) return;
             results.forEach(result => {
                 if (!result) return;
                 result.figure.dataUrl = result.dataUrl;
@@ -1731,29 +1818,46 @@
         restoreGeneration,
     ) {
         if (!targetForm || !Array.isArray(targetForm.figures)) return 0;
-        const existingFigures = normalizeReportFigures(targetForm.figures, {
-            language: targetForm.language,
-        });
+        const expectedPlanningId = String(
+            planningId || targetForm.planningId || targetForm.planning_id || '__unassigned__',
+        );
+        const isCurrentReport = () => {
+            if (String(activeSessionId || '') !== String(sessionId || '')
+                || restoreGeneration !== workspaceRestoreGeneration
+                || targetForm !== window.reportForm) return false;
+            const currentPlanningId = String(
+                targetForm.planningId || targetForm.planning_id || '__unassigned__',
+            );
+            if (currentPlanningId !== expectedPlanningId) return false;
+            return expectedPlanningId === '__unassigned__'
+                || String(window.__reportWorkspaceActivePlanningId || '') === expectedPlanningId;
+        };
+        if (!isCurrentReport()) return 0;
         let artifacts = typeof dataTreeState !== 'undefined'
             && Array.isArray(dataTreeState?.exportArtifacts)
             ? dataTreeState.exportArtifacts : [];
         if (!artifacts.length && typeof hydrateDataTreeArtifactCatalog === 'function') {
             try { artifacts = await hydrateDataTreeArtifactCatalog(); } catch (_) { artifacts = []; }
         }
-        if (String(activeSessionId || '') !== String(sessionId || '')
-            || restoreGeneration !== workspaceRestoreGeneration) return 0;
+        if (!isCurrentReport()) return 0;
         const screenshots = artifacts.filter(item => {
             const dataType = String(item?.dataType || item?.type || '');
             const objectId = String(item?.objectId || '');
             const filename = objectId.includes(':') ? objectId.split(':').slice(1).join(':') : objectId;
-            const ownerPlanning = String(item?.planningId || '');
+            const ownerPlanning = String(item?.planningId || item?.planning_id || '');
             return ['screenshot', 'report_figure'].includes(dataType)
                 && /^report_screenshot_[^/\\]+\.png$/i.test(filename)
-                && (!ownerPlanning || !planningId || ownerPlanning === String(planningId));
+                // An owner-less legacy artifact is not safe to associate with
+                // a known Planning: accepting it here can import another
+                // run's deterministic axis into the current report.
+                && (!planningId || ownerPlanning === String(planningId));
         });
         if (!screenshots.length) {
-            targetForm.figures = existingFigures;
-            return existingFigures.length;
+            const currentFigures = normalizeReportFigures(targetForm.figures, {
+                language: targetForm.language,
+            });
+            targetForm.figures = currentFigures;
+            return currentFigures.length;
         }
         const recoveredFigureMetadata = (axis, viewMetadata = {}) => {
             const map = {
@@ -1784,23 +1888,52 @@
             const title = typeof _t === 'function'
                 ? _t(`报告图 ${index + 1}`, `Report Figure ${index + 1}`)
                 : `Report Figure ${index + 1}`;
+            const baseUrl = `/api/sessions/${encodeURIComponent(sessionId)}/screenshots/${encodeURIComponent(filename)}`;
+            const contentVersion = String(
+                item?.sha256
+                || item?.metadata?.sha256
+                || item?.viewMetadata?.sha256
+                || item?.view_metadata?.sha256
+                || '',
+            ).trim().slice(0, 32);
+            const catalogUrl = String(item?.url || item?.screenshot_url || '').trim();
+            const catalogUrlMatchesOwner = (() => {
+                const match = catalogUrl.match(/^\/api\/sessions\/([^/]+)\/screenshots\/[A-Za-z0-9_.-]+\.png(?:\?[^#]*)?$/i);
+                try {
+                    return !!match && decodeURIComponent(match[1]) === String(sessionId || '');
+                } catch (_) {
+                    return false;
+                }
+            })();
+            const serverUrl = catalogUrlMatchesOwner
+                ? catalogUrl
+                : (contentVersion ? `${baseUrl}?v=${encodeURIComponent(contentVersion)}` : baseUrl);
             return {
                 id: `restored-report-${filename.replace(/[^a-zA-Z0-9_-]/g, '_')}`,
                 type: 'screenshot',
                 title,
                 axis,
                 caption: '',
+                planningId: String(planningId || '__unassigned__'),
                 _artifactFallback: true,
-                dataUrl: `/api/sessions/${encodeURIComponent(sessionId)}/screenshots/${encodeURIComponent(filename)}`,
-                _serverUrl: `/api/sessions/${encodeURIComponent(sessionId)}/screenshots/${encodeURIComponent(filename)}`,
+                dataUrl: serverUrl,
+                _serverUrl: serverUrl,
                 ...figureMetadata,
             };
         });
         // Merge, rather than append, catalog artifacts. A workspace snapshot
         // wins for an already-known role; catalog files only fill genuinely
         // missing roles and old UUID copies collapse to one stable subfigure.
+        // Re-read the live array after the asynchronous catalog hydration.
+        // SessionCache hydration may have filled a dataUrl while we were
+        // awaiting the catalog. Reusing a pre-await snapshot could replace
+        // that populated object and make Fig 1(b) disappear or appear in
+        // another slot after a restart.
+        const currentFigures = normalizeReportFigures(targetForm.figures, {
+            language: targetForm.language,
+        });
         targetForm.figures = normalizeReportFigures(
-            [...existingFigures, ...recoveredFigures],
+            [...currentFigures, ...recoveredFigures],
             { language: targetForm.language },
         );
         try { renderReportEditor(); } catch (_) {}
@@ -1811,6 +1944,7 @@
 
     function restoreReportForPlanning(planningId, options = {}) {
         const target = String(planningId || '');
+        try { window.invalidateReportCapture?.(); } catch (_) {}
         const byPlanning = window.__reportWorkspaceByPlanning
             && typeof window.__reportWorkspaceByPlanning === 'object'
             ? window.__reportWorkspaceByPlanning
@@ -1821,6 +1955,7 @@
             const restored = jsonClone(report);
             restored.editedFields = new Set(restored.editedFields || []);
             restored.sessionId = String(activeSessionId || restored.sessionId || '');
+            restored.planningId = target || restored.planningId || '__unassigned__';
             if (Array.isArray(restored.figures)) {
                 restored.figures = normalizeReportFigures(restored.figures, {
                     language: restored.language,
@@ -1855,6 +1990,7 @@
             // previous run's text visible next to the new dose/needle set.
             window.reportForm = _newEmptyReportForm();
             window.reportForm.sessionId = String(activeSessionId || '');
+            window.reportForm.planningId = target || '__unassigned__';
             window.__reportWorkspaceActivePlanningId = target || null;
             window.__reportWorkspaceAudit = [];
             window.__reportWorkspaceSnapshots = [];
@@ -1870,6 +2006,9 @@
         if (!snapshot) return;
         const sessionId = workspaceSnapshotSessionId(snapshot);
         if (!sessionId || sessionId !== String(activeSessionId || '')) return false;
+        const currentReportPlanningId = String(
+            window.reportForm?.planningId || window.__reportWorkspaceActivePlanningId || '',
+        );
         let qualityAssessmentNeedsPersist = false;
         let reportOwnershipNeedsPersist = false;
         rememberWorkspaceRevision(snapshot);
@@ -2004,7 +2143,7 @@
                 reportSection?.active_planning_id || '',
             );
             const legacyReportOwner = reportSectionSessionId(reportSection);
-            if (targetPlanningId && !reportMap[targetPlanningId]
+            if (targetPlanningId && !rawReportMap && !reportMap[targetPlanningId]
                 && reportFormFromSnapshot(reportSection)
                 && (!declaredReportPlanningId || declaredReportPlanningId === targetPlanningId)
                 && (!legacyReportOwner || legacyReportOwner === sessionId)) {
@@ -2018,6 +2157,9 @@
             window.__reportWorkspaceByPlanning = reportMap;
             window.__reportWorkspaceActivePlanningId = targetPlanningId || null;
             window.__reportWorkspaceSessionId = sessionId;
+            // A report capture in flight belongs to the previous owner.  Its
+            // late frames/uploads must not mutate this restored Planning.
+            try { window.invalidateReportCapture?.(); } catch (_) {}
             const boundedReportSection = reportSection ? {
                 ...reportSection,
                 active_planning_id: targetPlanningId || null,
@@ -2026,13 +2168,23 @@
             const selectedReportSection = reportSectionForPlanning(boundedReportSection, targetPlanningId);
             const report = reportFormFromSnapshot(selectedReportSection);
             if (report && typeof report === 'object') {
-                const keepCurrentReport = _preservePopulatedReport(window.reportForm, report, options);
+                const keepCurrentReport = _preservePopulatedReport(
+                    window.reportForm,
+                    report,
+                    {
+                        ...options,
+                        targetPlanningId,
+                        currentReportPlanningId,
+                    },
+                );
                 if (!keepCurrentReport) {
                     report.editedFields = new Set(report.editedFields || []);
                     report.sessionId = sessionId;
+                    report.planningId = targetPlanningId || report.planningId || '__unassigned__';
                     window.reportForm = report;
                 }
                 const targetReport = keepCurrentReport ? window.reportForm : report;
+                if (targetReport && targetPlanningId) targetReport.planningId = targetPlanningId;
                 if (keepCurrentReport) {
                     // The current form may already contain hydrated narrative
                     // text, while the control-plane snapshot is the authority

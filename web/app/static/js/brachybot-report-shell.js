@@ -514,6 +514,13 @@ window.Report = (function () {
                 return { success: false, error: 'The report form is unavailable.', applied: 0 };
             }
             const expectedSessionId = _activeReportSessionId(opts.sessionId);
+            const expectedPlanningId = String(
+                window.__reportWorkspaceActivePlanningId
+                || f.planningId
+                || f.planning_id
+                || (typeof dataTreeState !== 'undefined' && dataTreeState?.planning?.activePlanningId)
+                || '__unassigned__',
+            );
             const isCurrent = () => _reportSessionIsCurrent(expectedSessionId, f);
             // 1. DICOM
             try {
@@ -570,7 +577,10 @@ window.Report = (function () {
                     // the text and tables. Awaiting capture also prevents the
                     // chat reply from claiming completion while only old image
                     // attachments have been persisted.
-                    await autoCaptureReportFigures({ sessionId: expectedSessionId });
+                    await autoCaptureReportFigures({
+                        sessionId: expectedSessionId,
+                        planningId: expectedPlanningId,
+                    });
                 }
             } catch (e) {
                 console.warn('Report figure capture failed during auto-fill:', e);

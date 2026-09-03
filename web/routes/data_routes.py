@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import logging
 from pathlib import Path
 from typing import Any, Callable, Dict, Mapping, Optional
@@ -11,7 +12,11 @@ from flask import jsonify, request, send_file, session as flask_session
 from web.auth import current_user
 from web.export_service import ExportError, ExportJobManager, ExportService, _planning_snapshot
 from web.planning_runs import publish_active_planning_state
-from web.server_support import rate_limit, require_api_key
+from web.server_support import (
+    _make_session_screenshot_url,
+    rate_limit,
+    require_api_key,
+)
 from web.structure_service import (
     StructureError,
     _batch_memory_update,
@@ -27,6 +32,56 @@ from web.workspace_store import WorkspaceError, WorkspaceStore
 
 
 logger = logging.getLogger(__name__)
+
+
+def _add_durable_screenshot_urls(
+    catalog: Dict[str, Any],
+    store: WorkspaceStore,
+    user_id: str,
+    session_id: str,
+) -> None:
+    """Attach case-bound URLs to screenshot rows in the public catalog.
+
+    The catalog is the recovery source when a report form or its IndexedDB
+    payload is missing after a restart. Rebuilding a bare
+    ``/api/sessions/...`` path is not sufficient in API-key deployments:
+    browser image requests cannot send the API-key header and therefore need
+    the same durable signature that the original upload response returned.
+    The content digest is also included as a cache key so a replacement
+    capture cannot be served from a previous browser cache entry.
+    """
+    if not isinstance(catalog, Mapping):
+        return
+    for row in catalog.get("objects") or []:
+        if not isinstance(row, dict):
+            continue
+        data_type = str(row.get("data_type") or "").lower()
+        if data_type not in {"screenshot", "report_figure"}:
+            continue
+        object_id = str(row.get("object_id") or "")
+        filename = object_id.split(":", 1)[1] if ":" in object_id else object_id
+        if not filename.lower().endswith(".png") or "/" in filename or "\\" in filename:
+            continue
+        try:
+            path = store.session_artifact_path(user_id, session_id, "screenshots", filename)
+            if not path.is_file():
+                continue
+            digest = hashlib.sha256()
+            with path.open("rb") as handle:
+                for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                    digest.update(chunk)
+            content_sha256 = digest.hexdigest()
+            row["sha256"] = content_sha256
+            row["url"] = _make_session_screenshot_url(
+                session_id,
+                filename,
+                version=content_sha256[:16],
+            )
+        except (OSError, ValueError):
+            # A catalog row remains exportable even if URL enrichment loses a
+            # race with artifact pruning. The UI will wait for the next
+            # catalog refresh instead of receiving a guessed URL.
+            continue
 
 
 def _generic_mask_object_id(value: Any) -> str:
@@ -156,6 +211,7 @@ def register_data_routes(
             user, session_id, agent = context()
             service = ExportService(store)
             catalog = service.public_catalog(user["id"], session_id, agent)
+            _add_durable_screenshot_urls(catalog, store, user["id"], session_id)
             return jsonify({
                 "success": True,
                 **catalog,

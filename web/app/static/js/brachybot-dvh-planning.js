@@ -1139,6 +1139,9 @@ async function refreshPlanningUI(options = {}) {
                     };
                     return resolve(refreshOutcome);
                 }
+                const expectedPlanningId = String(
+                    data.planning_id || data.active_planning_id || '__unassigned__',
+                );
                 const responseSeedCount = Array.isArray(data.seeds)
                     ? data.seeds.length : Number(data.total_seeds || 0);
                 const responseNeedleCount = Array.isArray(data.needles)
@@ -1667,11 +1670,18 @@ async function refreshPlanningUI(options = {}) {
                 );
                 const hasCompleteReportFigureSet = [...requiredReportAxes]
                     .every(axis => capturedReportAxes.has(axis));
-                if (options.preserveReport !== true
-                    && data.dose_stale !== true
-                    && !hasCompleteReportFigureSet
+                const needsReportFigureRepair = typeof window.reportFiguresNeedCapture === 'function'
+                    ? window.reportFiguresNeedCapture(window.reportForm, expectedPlanningId)
+                    : !hasCompleteReportFigureSet;
+                if (data.dose_stale !== true
+                    && needsReportFigureRepair
                     && typeof autoCaptureReportFigures === 'function') {
-                    try { await autoCaptureReportFigures({ sessionId: expectedSessionId }); } catch (error) {
+                    try {
+                        await autoCaptureReportFigures({
+                            sessionId: expectedSessionId,
+                            planningId: expectedPlanningId,
+                        });
+                    } catch (error) {
                         console.warn('[3D auto-load] background report capture:', error);
                     }
                 }
@@ -1736,8 +1746,7 @@ async function refreshPlanningUI(options = {}) {
             console.warn('[3D auto-load] camera fit guard:', error);
         }
         try {
-            if (options.preserveReport !== true
-                && data.dose_stale !== true
+            if (data.dose_stale !== true
                 && typeof reportAutoFill === 'function') {
                 await reportAutoFill({ sessionId: expectedSessionId });
             }
@@ -1753,10 +1762,16 @@ async function refreshPlanningUI(options = {}) {
         // the Figure 1(a)/(b) slots with semantically reversed images.
         try {
             if (!isCurrentCase()) return resolve();
-            if (options.preserveReport !== true
-                && data.dose_stale !== true
+            const needsReportFigureRepair = typeof window.reportFiguresNeedCapture === 'function'
+                ? window.reportFiguresNeedCapture(window.reportForm, expectedPlanningId)
+                : true;
+            if (data.dose_stale !== true
+                && needsReportFigureRepair
                 && typeof autoCaptureReportFigures === 'function') {
-                await autoCaptureReportFigures({ sessionId: expectedSessionId });
+                await autoCaptureReportFigures({
+                    sessionId: expectedSessionId,
+                    planningId: expectedPlanningId,
+                });
             }
             if (!isCurrentCase()) return resolve();
             // Raw canvas recovery is deliberately opt-in for one-off
@@ -1948,9 +1963,11 @@ async function refreshPlanningUI(options = {}) {
             try { loadAllSlices(); } catch (e) { console.warn('loadAllSlices (post-dose) failed:', e); }
         }
 
-        // 6b. Re-capture 2D dose figures at peak dose voxel after dose
-        //     overlay is loaded (autoCaptureReportFigures may have run
-        //     before dose data was available).
+        // 6b. Legacy 2D/DVH recovery is diagnostic-only.  The canonical
+        // autoCaptureReportFigures() above owns all seven report slots;
+        // leaving this path active during normal hydration allowed an
+        // unscoped late canvas write to overwrite a correct figure.
+        if (options.allowLegacyReportFigureRecovery === true) {
         if (state.doseOverlay && state.doseOverlay.visible && window.reportForm && window.reportForm.figures) {
             try {
                 const lang = (typeof window._i18nLang === 'string') ? window._i18nLang : 'en';
@@ -2028,7 +2045,7 @@ async function refreshPlanningUI(options = {}) {
                             caption: lang === 'zh' ? 'CTV 及各 OAR 的剂量-体积曲线' : 'Dose–volume curves for CTV and all OARs',
                             capturedAt: new Date().toISOString(), figureGroup: 'figure2',
                             figureNumber: 2, subfigure: 'e', sortOrder: 5, captureRole: 'dvh',
-                            captureContract: window.REPORT_DVH_CAPTURE_CONTRACT || 'dvh-readable-report-v2',
+                            captureContract: window.REPORT_DVH_CAPTURE_CONTRACT || 'dvh-readable-report-v3',
                         };
                         if (dvhIdx >= 0) {
                             Object.assign(window.reportForm.figures[dvhIdx], dvhEntry);
@@ -2041,6 +2058,7 @@ async function refreshPlanningUI(options = {}) {
                 if (typeof renderReportEditor === 'function') renderReportEditor();
                 if (typeof _updateReportPreview === 'function') _updateReportPreview();
             } catch (e) { console.warn('[Report] 2D/DVH re-capture failed:', e); }
+        }
         }
         // Figure replacement happens outside the report editor's input
         // handlers. Persist the final planning figures together with the
@@ -2102,8 +2120,16 @@ async function refreshPlanningUI(options = {}) {
         } catch (_) {}
         try {
             if (!isCurrentCase()) return resolve();
-            if (options.preserveReport !== true && typeof autoCaptureReportFigures === 'function') {
-                await autoCaptureReportFigures();
+            const needsReportFigureRepair = typeof window.reportFiguresNeedCapture === 'function'
+                ? window.reportFiguresNeedCapture(window.reportForm, expectedPlanningId)
+                : true;
+            if (data.dose_stale !== true
+                && needsReportFigureRepair
+                && typeof autoCaptureReportFigures === 'function') {
+                await autoCaptureReportFigures({
+                    sessionId: expectedSessionId,
+                    planningId: expectedPlanningId,
+                });
             }
         } catch (_) {}
 

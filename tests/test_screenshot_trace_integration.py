@@ -958,7 +958,7 @@ def test_report_generation_executes_and_persists_the_full_report_transaction():
 
     # Text, tables, canonical figures, and the durable workspace snapshot are
     # one awaited transaction before the final assistant reply is rendered.
-    assert "await autoCaptureReportFigures({ sessionId: expectedSessionId })" in shell
+    assert "planningId: expectedPlanningId" in shell
     assert "persist.flush();" in shell
     assert "await window.persistWorkspace('report.autofill.completed')" in shell
     assert "success: true" in shell
