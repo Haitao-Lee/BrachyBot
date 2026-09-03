@@ -365,7 +365,7 @@ def _is_interrogative(message: str) -> bool:
     if re.search(r"[?？吗呢]$", text.rstrip('!！')):
         return True
     if re.search(
-        r'(?:是不是|有没有|能不能|可不可以|是否|怎么样|如何|怎么|为什么|为何|什么|谁|哪次|哪个|哪一个|'
+        r'(?:是不是|有没有|能不能|可不可以|是否|怎么样|如何|怎么|为什么|为何|什么|谁|哪里|哪儿|在哪|哪次|哪个|哪一个|'
         r'完成.*[了没]|做了[没吗]|好了[没吗]|分割.*[了没]|规划.*[了没])',
         lower,
     ):
@@ -382,6 +382,113 @@ def _is_interrogative(message: str) -> bool:
         r'(?:查看|看看|检查|确认|告诉)', lower,
     ):
         return True
+    return False
+
+
+def _is_location_question(message: str) -> bool:
+    """Return whether a message asks where an existing UI/case object is.
+
+    Location questions are a read-only presentation intent.  They must be
+    distinguished from generation/help questions such as ``where can I
+    generate a guide`` and from geometry-edit commands.  This helper only
+    identifies the linguistic shape; the resource resolver below still has
+    to map the message to a known Session-owned resource family.
+    """
+    text = re.sub(r"\s+", " ", str(message or "").strip().lower())
+    if not text:
+        return False
+    chinese_location = bool(re.search(
+        r"(?:哪里|哪儿|在哪(?:里)?|哪个(?:面板|窗口|视图|地方)|怎么找|如何找|找到|找得到)",
+        text,
+    ))
+    english_location = bool(re.search(
+        r"\b(?:where|located|location|locate|find|position)\b",
+        text,
+        flags=re.IGNORECASE,
+    ))
+    # ``位置``/``定位`` alone can describe an edit (for example, "调整针道
+    # 位置"). Treat them as a question only when the sentence is explicitly
+    # interrogative; direct where/find forms above are already unambiguous.
+    positional_question = bool(re.search(
+        r"(?:位置|定位)", text,
+    )) and bool(re.search(
+        r"[?？]|请问|是否|怎么样|如何|怎么|为什么|\b(?:what|which|where|how)\b",
+        text,
+        flags=re.IGNORECASE,
+    ))
+    return chinese_location or english_location or positional_question
+
+
+def _has_explicit_guide_generation_command(message: str) -> bool:
+    """Return whether guide generation is explicitly requested as an action.
+
+    The negative lookahead after the Chinese verb is important: ``生成的手术
+    导板在哪里`` describes an already generated object and must not be
+    rewritten as a generation command merely because it contains ``生成``.
+    """
+    text = re.sub(r"\s+", " ", str(message or "").strip().lower())
+    if not text:
+        return False
+    if re.search(
+        r"\b(?:please\s+)?(?:re-?generate|rebuild|create|generate|make|update|refresh)"
+        r"\s+(?:the\s+)?(?:surgical|puncture|guide)\s+guide\b",
+        text,
+        flags=re.IGNORECASE,
+    ):
+        return True
+    return bool(re.search(
+        r"(?:^|[\s,;:：，；。])"
+        r"(?:请|帮我|需要|想|我想|现在|立即|马上|重新|再次|再|重做|重建)?\s*"
+        r"(?:重新生成|再生成|生成|重建|重做|制作|创建|更新|刷新)\s*"
+        r"(?:一个|一份|新的|当前)?\s*(?:手术|穿刺)?导板(?!的)",
+        text,
+        flags=re.IGNORECASE,
+    ))
+
+
+def _is_guide_generation_help_query(message: str) -> bool:
+    """Return whether a guide location phrase asks where to create one.
+
+    This prevents ``手术导板在哪里生成`` from becoming either a screenshot
+    of a nonexistent object or an unintended clinical mutation.  A phrase
+    that explicitly refers to a completed result (``已生成的手术导板在哪里``)
+    remains a location query and is handled by the visual evidence route.
+    """
+    text = re.sub(r"\s+", " ", str(message or "").strip().lower())
+    if not text or not _is_location_question(text):
+        return False
+    if not _contains_any(text, (
+        "surgical guide", "puncture guide", "guide mesh", "guide stl",
+        "手术导板", "穿刺导板", "手术刀板", "导板",
+    )):
+        return False
+    if not _contains_any(text, (
+        "generate", "regenerate", "re-generate", "rebuild", "create", "make",
+        "生成", "重新生成", "再生成", "重建", "重做", "制作", "创建", "更新", "刷新",
+    )):
+        return False
+    # Past/result modifiers bind the noun to an existing artifact rather than
+    # to a generation workflow.
+    if _contains_any(text, (
+        "generated", "already generated", "existing", "saved", "completed",
+        "生成的", "已生成", "已经生成", "已有", "现有", "完成的",
+    )):
+        return False
+    # The location-to-generation ordering is the decisive signal for a help
+    # question ("where can I generate..." / "在哪里生成..."). Check it
+    # before the generic imperative matcher below, because the same sentence
+    # necessarily contains the words "generate ... guide".
+    if re.search(
+        r"(?:哪里|哪儿|在哪|位置|定位|where|located|location|locate|find).{0,40}"
+        r"(?:生成|重建|制作|创建|更新|刷新|generate|re-?generate|rebuild|create|make)",
+        text,
+        flags=re.IGNORECASE,
+    ):
+        return True
+    # A real imperative compound ("generate it and tell me where") belongs to
+    # semantic action planning, not to this read-only help boundary.
+    if _has_explicit_guide_generation_command(text):
+        return False
     return False
 
 
@@ -841,6 +948,16 @@ def is_surgical_guide_generation_request(message: str) -> bool:
     if not any(term in text for term in guide_terms):
         return False
 
+    # A location question is a read-only request.  In particular, the noun
+    # phrase ``生成的手术导板在哪里`` contains the character ``生成`` but asks
+    # for the already persisted artifact, so it must never authorize a new
+    # guide operation.  Generation-help questions are also non-mutating; the
+    # primary LLM can explain the UI/workflow without starting a run.
+    if _is_guide_generation_help_query(text):
+        return False
+    if _is_location_question(text) and not _has_explicit_guide_generation_command(text):
+        return False
+
     # Match an explicit generation verb, not a passive status/error report.
     english_action = bool(re.search(
         r"\b(?:generate|regenerate|re-generate|rebuild|create|make|update|refresh)\b",
@@ -953,7 +1070,10 @@ def resolve_session_content_target(message: str) -> Optional[str]:
         return None
     presentation_terms = (
         "show", "view", "open", "display", "look", "see", "check",
+        "where", "located", "location", "locate", "find", "position",
         "\u67e5\u770b", "\u770b\u770b", "\u663e\u793a", "\u6253\u5f00", "\u5c55\u793a", "\u5448\u73b0",
+        "\u54ea\u91cc", "\u54ea\u513f", "\u5728\u54ea", "\u4f4d\u7f6e", "\u5b9a\u4f4d", "\u627e\u5230", "\u627e\u5f97\u5230",
+        "\u600e\u4e48\u627e", "\u5982\u4f55\u627e", "\u54ea\u4e2a\u9762\u677f", "\u54ea\u4e2a\u7a97\u53e3", "\u54ea\u4e2a\u89c6\u56fe",
     )
     if not any(term in text for term in presentation_terms):
         return None
@@ -992,6 +1112,41 @@ def resolve_session_content_target(message: str) -> Optional[str]:
         return "ct"
     if any(term in text for term in ("session", "case", "workspace", "\u672c\u75c5\u4f8b", "\u5f53\u524d\u4f1a\u8bdd", "\u5f53\u524d\u6848\u4f8b", "\u5168\u90e8\u5185\u5bb9")):
         return "session_summary"
+    return None
+
+
+def resolve_session_visual_location_target(message: str) -> Optional[str]:
+    """Resolve a request to locate a live Session object visually.
+
+    This is deliberately separate from ``resolve_session_content_target``:
+    persisted report figures/attachments are read directly, while a question
+    such as ``请问手术导板在哪里`` requires fresh, grounded Viewer/Data Tree
+    evidence.  The returned value is a resource capability, not a canned
+    answer; the browser validates the stable identity, visibility, freshness,
+    and current Session before capturing or annotating anything.
+    """
+    text = re.sub(r"\s+", " ", str(message or "").strip().lower())
+    if not text or not _is_location_question(text):
+        return None
+    # "肿瘤在哪里/有多大" is a patient-specific image-analysis request,
+    # not a request to locate a UI/Data Tree object. Keep it on the existing
+    # CTV/measurement path; otherwise the generic word "where" would steal
+    # the request before the segmentation boundary can inspect the CT.
+    if _is_image_tumor_measurement_request(text):
+        return None
+    # A request that explicitly starts a guide-generation action may also ask
+    # for its eventual location. It is a compound clinical turn, not a
+    # read-only screenshot capability; leave it for semantic action planning.
+    if _has_explicit_guide_generation_command(text):
+        return None
+    if _is_guide_generation_help_query(text):
+        return None
+    target = resolve_session_content_target(text)
+    if target in {
+        "surgical_guide", "planning", "structures", "data_tree", "artifact",
+        "dose", "dvh", "ct", "metrics",
+    }:
+        return target
     return None
 
 
@@ -1107,6 +1262,20 @@ def classify_local_turn(message: str, pending_tumor_site: bool = False) -> Local
             ),
         )
 
+    # "Where can I generate a guide?" asks for workflow/UI guidance, not for
+    # a new guide and not for the location of an existing artifact. Keep this
+    # as a safe knowledge turn so the model can explain the current controls
+    # without receiving a clinical mutation capability.
+    if _is_guide_generation_help_query(text):
+        return LocalTurnPolicy(
+            "knowledge_query",
+            "low",
+            False,
+            False,
+            False,
+            KNOWLEDGE_TOOLS,
+        )
+
     # Displaying an already persisted planning result is a deterministic,
     # read-only browser operation. Resolve it before the generic Session
     # content branch so ``...planning result in Viewer`` does not become a
@@ -1157,6 +1326,27 @@ def classify_local_turn(message: str, pending_tumor_site: bool = False) -> Local
     # even though they are phrased as questions rather than commands.
     if _is_image_tumor_measurement_request(text):
         return _semantic_action_policy(complexity="medium", review=True)
+
+    # A location question about an existing case object needs live, grounded
+    # visual evidence. Keep it read-only and route directly to one structured
+    # screenshot plan; the browser will resolve the current stable identity
+    # and the hidden multimodal child will explain only what is actually
+    # visible. This branch precedes guide generation and generic interrogative
+    # handling so ``手术导板在哪里`` cannot become
+    # ``surgical_guide(action=generate)`` while image-grounded tumor
+    # measurement questions above retain their analytical route.
+    visual_location_target = resolve_session_visual_location_target(text)
+    if visual_location_target:
+        return LocalTurnPolicy(
+            "session_visual_location_query",
+            "low",
+            False,
+            False,
+            False,
+            frozenset({"ui_screenshot"}),
+            direct_execution=True,
+            execution_grants=frozenset({"ui_screenshot"}),
+        )
 
     if is_report_generation_request(text):
         if _requires_semantic_resolution(text):

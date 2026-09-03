@@ -10,9 +10,11 @@ from agent_runtime.response_tools import ResponseToolMixin
 from agent_runtime.turn_policy import (
     classify_local_turn,
     is_report_generation_request,
+    is_surgical_guide_generation_request,
     resolve_report_request_action,
     resolve_session_content_presentation,
     resolve_session_content_target,
+    resolve_session_visual_location_target,
     visual_analysis_policy,
 )
 from agent_runtime.visual_evidence import (
@@ -355,6 +357,88 @@ def test_selected_data_tree_object_uses_generic_artifact_focus_without_name_matc
     assert resolve_session_content_target(message) == "artifact"
     assert resolve_session_content_presentation(message, "artifact") == "open"
     assert classify_local_turn(message).intent == "session_content_query"
+
+
+def test_existing_guide_location_question_is_read_only_grounded_screenshot():
+    message = "\u8bf7\u95ee\u624b\u672f\u5bfc\u677f\u5728\u54ea\u91cc"
+
+    assert is_surgical_guide_generation_request(message) is False
+    assert resolve_session_content_target(message) == "surgical_guide"
+    assert resolve_session_visual_location_target(message) == "surgical_guide"
+
+    policy = classify_local_turn(message)
+    assert policy.intent == "session_visual_location_query"
+    assert policy.direct_execution is True
+    assert policy.use_completeness is False
+    assert policy.execution_grants == frozenset({"ui_screenshot"})
+
+    calls = ResponseToolMixin()._detect_tool_request(message)
+    assert calls and len(calls) == 1
+    assert calls[0]["tool"] == "ui_screenshot"
+    params = calls[0]["params"]
+    assert params["views"] == ["viewer-3d", "data-tree"]
+    assert params["target_refs"] == ["surgical_guide:active"]
+    assert params["object_ids"] == ["surgical_guide:active"]
+    assert params["data_tree_node_ids"] == ["surgical_guide:active"]
+    assert params["highlight_object_ids"] == ["surgical_guide:active"]
+    assert params["visual_purpose"] == "locate"
+    assert params["annotation_policy"] == "required"
+    assert params["analysis_required"] is True
+    assert params["hide_unrelated"] is True
+    assert params["focus"]["kind"] == "close-up"
+
+
+@pytest.mark.parametrize(
+    ("message", "is_generation", "visual_target"),
+    [
+        ("\u751f\u6210\u7684\u624b\u672f\u5bfc\u677f\u5728\u54ea\u91cc", False, "surgical_guide"),
+        ("\u5df2\u751f\u6210\u7684\u624b\u672f\u5bfc\u677f\u5728\u54ea\u91cc", False, "surgical_guide"),
+        ("\u624b\u672f\u5bfc\u677f\u5728\u54ea\u91cc\u751f\u6210", False, None),
+        ("where can I generate a surgical guide", False, None),
+        ("\u8bf7\u751f\u6210\u624b\u672f\u5bfc\u677f", True, None),
+    ],
+)
+def test_guide_generation_and_location_help_are_not_conflated(
+    message, is_generation, visual_target
+):
+    assert is_surgical_guide_generation_request(message) is is_generation
+    assert resolve_session_visual_location_target(message) == visual_target
+
+
+def test_compound_generation_request_is_not_downgraded_to_location_capture():
+    message = "\u8bf7\u751f\u6210\u624b\u672f\u5bfc\u677f\uff0c\u5e76\u544a\u8bc9\u6211\u5728\u54ea\u91cc"
+
+    assert resolve_session_visual_location_target(message) is None
+    assert classify_local_turn(message).intent == "semantic_action"
+
+
+def test_visual_location_policy_rejects_provider_mutations_at_normalization_boundary():
+    normalizer = ResponseToolMixin()
+    normalizer._active_turn_policy = classify_local_turn("\u8bf7\u95ee\u624b\u672f\u5bfc\u677f\u5728\u54ea\u91cc")
+
+    calls = normalizer._normalize_tool_params(
+        [
+            {"tool": "surgical_guide", "params": {"action": "generate"}},
+            {
+                "tool": "ui_screenshot",
+                "params": {
+                    "question": "\u8bf7\u95ee\u624b\u672f\u5bfc\u677f\u5728\u54ea\u91cc",
+                    "views": ["viewer-3d", "data-tree"],
+                },
+            },
+        ]
+    )
+
+    assert calls
+    assert all(call["tool"] == "ui_screenshot" for call in calls)
+
+
+def test_guide_generation_help_is_safe_knowledge_turn():
+    policy = classify_local_turn("\u624b\u672f\u5bfc\u677f\u5728\u54ea\u91cc\u751f\u6210")
+
+    assert policy.intent == "knowledge_query"
+    assert policy.direct_execution is False
+    assert "surgical_guide" not in (policy.allow_tools or frozenset())
 
 
 def test_persisted_report_figure_request_uses_session_content_not_live_capture():
