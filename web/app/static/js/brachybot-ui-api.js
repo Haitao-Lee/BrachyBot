@@ -3189,12 +3189,77 @@ async function _restoreActiveSessionWorkspace(options = {}) {
     });
     return status;
 }
+function _workspaceVisualReadinessStore() {
+    if (!window.__workspaceVisualReadiness
+        || typeof window.__workspaceVisualReadiness !== 'object') {
+        window.__workspaceVisualReadiness = Object.create(null);
+    }
+    return window.__workspaceVisualReadiness;
+}
+
+function _workspaceVisualReadinessSleep(delayMs) {
+    return new Promise(resolve => setTimeout(resolve, Math.max(0, Number(delayMs) || 0)));
+}
+
+// A screenshot is a read of the restored case, not a read of whichever
+// temporary Data Tree happened to be painted first.  Expose the true visual
+// restore barrier to screenshot/report code while keeping the loading notice
+// non-blocking for ordinary interaction.
+window.awaitWorkspaceVisualReady = async function awaitWorkspaceVisualReady(
+    sessionId,
+    options = {},
+) {
+    const requestedSession = String(sessionId || _activeApiSessionId() || '');
+    const rawTimeout = Number(options.timeoutMs ?? 300000);
+    const timeoutMs = Math.max(0, Math.min(600000, Number.isFinite(rawTimeout) ? rawTimeout : 300000));
+    const startedAt = Date.now();
+    const deadline = startedAt + timeoutMs;
+    if (!requestedSession) return { ready: true, reason: 'no_session' };
+
+    const store = _workspaceVisualReadinessStore();
+    let entry = store[requestedSession] || null;
+    while (!entry) {
+        const scheduledSession = String(window.__workspaceRestoreScheduledSessionId || '');
+        const hydrationRun = Number(window.__workspaceHydrationRunId || 0);
+        if (scheduledSession !== requestedSession || !hydrationRun) {
+            return { ready: true, sessionId: requestedSession, reason: 'no_pending_restore' };
+        }
+        if (Date.now() >= deadline) {
+            return {
+                ready: false,
+                timed_out: true,
+                session_id: requestedSession,
+                reason: 'visual_restore_barrier_not_registered',
+            };
+        }
+        await _workspaceVisualReadinessSleep(Math.min(50, Math.max(1, deadline - Date.now())));
+        entry = store[requestedSession] || null;
+    }
+
+    let timer = null;
+    const timeout = new Promise(resolve => {
+        timer = setTimeout(() => resolve({
+            ready: false,
+            timed_out: true,
+            session_id: requestedSession,
+            reason: 'visual_restore_timeout',
+        }), timeoutMs);
+    });
+    try {
+        const result = await Promise.race([entry.promise, timeout]);
+        return Object.assign({ ready: true, session_id: requestedSession }, result || {});
+    } finally {
+        if (timer) clearTimeout(timer);
+    }
+};
+
 async function restoreActiveSessionWorkspace(options = {}) {
     const sessionAtStart = String(_activeApiSessionId() || '');
     window.__workspaceHydrationRunId = (window.__workspaceHydrationRunId || 0) + 1;
     const hydrationRunId = window.__workspaceHydrationRunId;
     const hydrationScope = { sessionId: sessionAtStart, runId: hydrationRunId };
     const backgroundTasks = [];
+    const backgroundTaskFailures = new Set();
     const pendingBackgroundKinds = new Map();
     let backgroundTaskSequence = 0;
     let backgroundNoticeTransferred = false;
@@ -3203,7 +3268,10 @@ async function restoreActiveSessionWorkspace(options = {}) {
         const token = ++backgroundTaskSequence;
         const kind = String(metadata?.kind || 'viewer_3d');
         pendingBackgroundKinds.set(token, kind);
-        const tracked = Promise.resolve(task).finally(() => {
+        const tracked = Promise.resolve(task).catch(error => {
+            backgroundTaskFailures.add(token);
+            throw error;
+        }).finally(() => {
             pendingBackgroundKinds.delete(token);
             if (!backgroundNoticeTransferred || pendingBackgroundKinds.size === 0) return;
             const genericPending = [...pendingBackgroundKinds.values()].includes('generic_masks');
@@ -3236,9 +3304,46 @@ async function restoreActiveSessionWorkspace(options = {}) {
             hydrationScope,
         );
     };
+    const readinessStore = _workspaceVisualReadinessStore();
+    const readinessKey = sessionAtStart || '__no_session__';
+    const previousReadiness = readinessStore[readinessKey];
+    if (previousReadiness?.resolveReady && !previousReadiness.settled) {
+        previousReadiness.resolveReady({
+            ready: false,
+            cancelled: true,
+            session_id: sessionAtStart,
+            reason: 'restore_replaced',
+        });
+    }
+    let resolveVisualReady;
+    const visualReadyPromise = new Promise(resolve => {
+        resolveVisualReady = resolve;
+    });
+    const readinessEntry = {
+        sessionId: sessionAtStart,
+        hydrationRunId,
+        startedAt: Date.now(),
+        state: 'restoring',
+        settled: false,
+        promise: visualReadyPromise,
+        resolveReady: null,
+    };
+    const settleVisualReady = result => {
+        if (readinessEntry.settled) return;
+        readinessEntry.settled = true;
+        readinessEntry.state = result?.ready === false ? 'failed' : 'ready';
+        readinessEntry.result = Object.assign(
+            { session_id: sessionAtStart, hydration_run_id: hydrationRunId },
+            result || {},
+        );
+        resolveVisualReady(readinessEntry.result);
+    };
+    readinessEntry.resolveReady = settleVisualReady;
+    readinessStore[readinessKey] = readinessEntry;
     const authoritativeWorkspace = options.workspace || window._activeWorkspaceSnapshot || null;
     if (authoritativeWorkspace && !_workspaceNeedsClinicalRestore(authoritativeWorkspace, options.status)) {
         console.debug('[session restore] skipped empty case', authoritativeWorkspace.session_id || authoritativeWorkspace.session?.id);
+        settleVisualReady({ ready: true, reason: 'empty_case' });
         window.setWorkspaceHydrationState?.(false, '', hydrationScope);
         return options.status || null;
     }
@@ -3285,15 +3390,36 @@ async function restoreActiveSessionWorkspace(options = {}) {
             updateHydrationProgress({ phase: genericPending ? 'generic_masks' : 'viewer' });
             // Return essential CT/2D/planning readiness immediately while the
             // same scoped notice remains owned by the real 3D completion
-            // boundary. Promise.allSettled guarantees a failed surface cannot
-            // leave the progress notice stuck forever.
+            // boundary. The promise is also the screenshot read barrier:
+            // callers may interact with the UI during this phase, but a
+            // location/annotation capture waits until every registered visual
+            // producer has settled.
             Promise.allSettled(backgroundTasks).finally(() => {
+                const failedCount = backgroundTaskFailures.size;
+                settleVisualReady({
+                    ready: true,
+                    partial: failedCount > 0,
+                    failed_tasks: failedCount,
+                    reason: failedCount ? 'visual_restore_partial' : 'visual_restore_complete',
+                });
                 if (String(_activeApiSessionId() || '') !== sessionAtStart
                     || window.__workspaceHydrationRunId !== hydrationRunId) return;
                 window.setWorkspaceHydrationState?.(false, '', hydrationScope);
             });
+        } else if (String(_activeApiSessionId() || '') === sessionAtStart
+            && window.__workspaceHydrationRunId === hydrationRunId) {
+            settleVisualReady({ ready: true, reason: 'visual_restore_complete' });
+        } else {
+            settleVisualReady({ ready: false, cancelled: true, reason: 'case_changed' });
         }
         return result;
+    } catch (error) {
+        settleVisualReady({
+            ready: false,
+            reason: 'visual_restore_failed',
+            error: error?.message || String(error),
+        });
+        throw error;
     } finally {
         clearTimeout(slowNoticeTimer);
         if (!backgroundNoticeTransferred) {
@@ -5413,10 +5539,19 @@ function _dataTreeEvidenceRows(plan = {}) {
     };
 }
 
-function _captureDataTreeEvidenceBundle(plan = {}) {
-    if (typeof html2canvas === 'undefined') return Promise.resolve({ dataUrl: null, groundingManifest: null });
+async function _captureDataTreeEvidenceBundle(plan = {}) {
+    if (typeof html2canvas === 'undefined') return { dataUrl: null, groundingManifest: null };
+    if (typeof window.awaitWorkspaceVisualReady === 'function') {
+        const readiness = await window.awaitWorkspaceVisualReady(
+            plan.session_id || plan.sessionId || _activeApiSessionId(),
+            { timeoutMs: 300000, reason: 'data-tree-screenshot' },
+        );
+        if (readiness?.ready === false) {
+            throw new Error('workspace_visual_restore_incomplete');
+        }
+    }
     const body = document.querySelector('#dataTreeBody');
-    if (!body) return Promise.resolve({ dataUrl: null, groundingManifest: null });
+    if (!body) return { dataUrl: null, groundingManifest: null };
     const evidence = _dataTreeEvidenceRows(plan);
     const language = _screenshotLanguage(
         plan.session_id || plan.sessionId || _activeApiSessionId(),
@@ -7848,6 +7983,12 @@ function _screenshotFailureMessage(galleryContext, errorCode) {
     const context = galleryContext || {};
     const language = _screenshotLanguage(context.sessionId, context.responseLanguage);
     const reportUnavailable = String(errorCode || '').includes('report_figures_unavailable');
+    const visualRestoreIncomplete = String(errorCode || '').includes('workspace_visual_restore_incomplete');
+    if (visualRestoreIncomplete) {
+        return language === 'zh'
+            ? '当前病例的 Viewer/Data Tree 仍在恢复，尚未达到可核验的截图状态；本次没有保存不完整证据，请稍后重试。'
+            : 'The case Viewer/Data Tree is still restoring and has not reached a verifiable screenshot state. No incomplete evidence was saved; please try again shortly.';
+    }
     return reportUnavailable
         ? (language === 'zh'
             ? '\u5f53\u524d\u62a5\u544a\u5c1a\u672a\u751f\u6210\u53ef\u5c55\u793a\u7684\u622a\u56fe\u3002\u8bf7\u5148\u751f\u6210\u6216\u66f4\u65b0\u62a5\u544a\u540e\u518d\u67e5\u770b\u3002'
@@ -7878,6 +8019,27 @@ async function _interceptScreenshot(target, question, galleryContext, options = 
     const ownerStillActive = () => ownerSessionId === String(_activeApiSessionId())
         && (!options.monitorOnly || trainingMonitorState.active);
     if (!ownerStillActive()) return { success: false, stale: true, error: 'case_changed' };
+
+    // The loading notice intentionally remains non-blocking for ordinary UI
+    // work, but a screenshot is a serialized evidence read.  Wait for the
+    // case-owned visual restore transaction before reading the Data Tree or
+    // Viewer so a restart cannot capture temporary ``not_generated`` rows or
+    // frame a mesh before it has been restored.
+    const visualReadiness = typeof window.awaitWorkspaceVisualReady === 'function'
+        ? await window.awaitWorkspaceVisualReady(ownerSessionId, {
+            timeoutMs: 300000,
+            reason: 'screenshot-capture',
+        })
+        : { ready: true, legacy: true };
+    if (visualReadiness?.ready === false) {
+        return {
+            success: false,
+            error: 'workspace_visual_restore_incomplete',
+            userMessage: _screenshotFailureMessage(context, 'workspace_visual_restore_incomplete'),
+            attachments: [],
+            plan,
+        };
+    }
 
     const reportViews = plan.views.filter(view => String(view?.target || '') === 'report');
     const captureViews = plan.views.filter(view => String(view?.target || '') !== 'report');

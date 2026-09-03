@@ -419,6 +419,94 @@ def _is_location_question(message: str) -> bool:
     return chinese_location or english_location or positional_question
 
 
+def _has_visual_annotation_request(message: str) -> bool:
+    """Return whether the user explicitly asks for a visual locating mark.
+
+    This is a capability/routing signal, not a response whitelist.  The
+    actual target, coordinates, visibility, and final wording still come from
+    the structured screenshot plan, the browser grounding manifest, and the
+    linked multimodal answer editor.
+    """
+    text = re.sub(r"\s+", " ", str(message or "").strip().lower())
+    if not text:
+        return False
+    return bool(re.search(
+        r"(?:圈出来|圈出|框出来|框出|标出来|标出|标注|高亮|指出|指给我看|用箭头|用方框|画箭头|画框|"
+        r"\b(?:circle|box|outline|mark|annotate|highlight|point out|show me|draw an arrow|arrow to)\b)",
+        text,
+        flags=re.IGNORECASE,
+    ))
+
+
+def _visual_target_from_text(message: str) -> Optional[str]:
+    """Find a live visual resource family from target words alone.
+
+    ``resolve_session_content_target`` intentionally requires presentation
+    wording and therefore returns ``None`` for a phrase such as ``圈出哪个是
+    导板``.  Annotation requests need the same stable target resolution while
+    retaining the content resolver's conservative behaviour for ordinary
+    conversation.
+    """
+    text = re.sub(r"\s+", " ", str(message or "").strip().lower())
+    if not text:
+        return None
+    target = resolve_session_content_target(text)
+    if target in {
+        "surgical_guide", "planning", "structures", "data_tree", "artifact",
+        "dose", "dvh", "ct", "metrics",
+    }:
+        return target
+    if any(term in text for term in (
+        "surgical guide", "puncture guide", "guide mesh", "手术导板", "穿刺导板", "导板",
+    )):
+        return "surgical_guide"
+    if any(term in text for term in ("data tree", "数据树")):
+        return "data_tree"
+    if any(term in text for term in ("dvh", "dose-volume histogram", "剂量体积直方图")):
+        return "dvh"
+    if any(term in text for term in ("metric", "metrics", "指标")):
+        return "metrics"
+    if any(term in text for term in ("dose", "剂量")):
+        return "dose"
+    if any(term in text for term in ("planning", "needles", "seeds", "规划", "穿刺针", "粒子")):
+        return "planning"
+    if any(term in text for term in ("ct", "image", "scan", "影像", "图像")):
+        return "ct"
+    if any(term in text for term in ("structure", "structures", "segmentation", "mask", "ctv", "oar", "结构", "分割", "掩膜", "面具")):
+        return "structures"
+    return None
+
+
+def _recent_user_visual_target(conversation: Optional[Iterable[object]]) -> Optional[str]:
+    """Resolve the nearest explicit visual target from recent user turns.
+
+    A short, user-only context window lets ``截图给我在哪里`` follow a
+    previous ``导板`` question without allowing an assistant fallback, tool
+    output, or an old unrelated case to steer the new request.  This is
+    context resolution, not a canned answer.
+    """
+    if not conversation:
+        return None
+    try:
+        items = list(conversation)
+    except TypeError:
+        return None
+    for item in reversed(items[-12:]):
+        if not isinstance(item, dict) or str(item.get("role") or "").lower() != "user":
+            continue
+        content = item.get("content", item.get("message", ""))
+        if isinstance(content, (list, tuple)):
+            content = " ".join(
+                str(part.get("text") or part.get("content") or "")
+                if isinstance(part, dict) else str(part or "")
+                for part in content
+            )
+        candidate = _visual_target_from_text(str(content or ""))
+        if candidate:
+            return candidate
+    return None
+
+
 def _has_explicit_guide_generation_command(message: str) -> bool:
     """Return whether guide generation is explicitly requested as an action.
 
@@ -1115,7 +1203,10 @@ def resolve_session_content_target(message: str) -> Optional[str]:
     return None
 
 
-def resolve_session_visual_location_target(message: str) -> Optional[str]:
+def resolve_session_visual_location_target(
+    message: str,
+    conversation: Optional[Iterable[object]] = None,
+) -> Optional[str]:
     """Resolve a request to locate a live Session object visually.
 
     This is deliberately separate from ``resolve_session_content_target``:
@@ -1126,7 +1217,7 @@ def resolve_session_visual_location_target(message: str) -> Optional[str]:
     and current Session before capturing or annotating anything.
     """
     text = re.sub(r"\s+", " ", str(message or "").strip().lower())
-    if not text or not _is_location_question(text):
+    if not text or not (_is_location_question(text) or _has_visual_annotation_request(text)):
         return None
     # "肿瘤在哪里/有多大" is a patient-specific image-analysis request,
     # not a request to locate a UI/Data Tree object. Keep it on the existing
@@ -1141,13 +1232,14 @@ def resolve_session_visual_location_target(message: str) -> Optional[str]:
         return None
     if _is_guide_generation_help_query(text):
         return None
-    target = resolve_session_content_target(text)
-    if target in {
-        "surgical_guide", "planning", "structures", "data_tree", "artifact",
-        "dose", "dvh", "ct", "metrics",
-    }:
+    target = _visual_target_from_text(text)
+    if target:
         return target
-    return None
+    # ``截图给我在哪里`` is intentionally target-agnostic on its own.  If a
+    # nearby user turn identified the object, carry only that stable resource
+    # family into the screenshot capability; otherwise let the normal LLM ask
+    # for clarification instead of making an ungrounded capture.
+    return _recent_user_visual_target(conversation)
 
 
 def resolve_session_content_presentation(message: str, target: Optional[str] = None) -> str:
@@ -1169,7 +1261,11 @@ def resolve_session_content_presentation(message: str, target: Optional[str] = N
     return "open" if resolved_target == "artifact" and explicit_selected else "auto"
 
 
-def classify_local_turn(message: str, pending_tumor_site: bool = False) -> LocalTurnPolicy:
+def classify_local_turn(
+    message: str,
+    pending_tumor_site: bool = False,
+    conversation: Optional[Iterable[object]] = None,
+) -> LocalTurnPolicy:
     """Classify a turn without an LLM, using conservative intent boundaries."""
     text = str(message or "").strip()
     lower = text.lower()
@@ -1335,7 +1431,7 @@ def classify_local_turn(message: str, pending_tumor_site: bool = False) -> Local
     # handling so ``手术导板在哪里`` cannot become
     # ``surgical_guide(action=generate)`` while image-grounded tumor
     # measurement questions above retain their analytical route.
-    visual_location_target = resolve_session_visual_location_target(text)
+    visual_location_target = resolve_session_visual_location_target(text, conversation=conversation)
     if visual_location_target:
         return LocalTurnPolicy(
             "session_visual_location_query",

@@ -2580,7 +2580,7 @@ async function sendChat(prefill, options) {
                     : _chatUserVisibleFailure(turnSessionId, 'request'))
                 : '';
             const visualAttachments = (presentation.attachments || []).filter(item =>
-                item && item.visual_analysis === true && item.url
+                item && item.url && _visualAttachmentRequiresAnalysis(item)
             );
             const visualAnalysisContinuation = !isInternalFollowup && visualAttachments.length > 0;
             const reply = uiFailure
@@ -3418,7 +3418,7 @@ async function sendChat(prefill, options) {
             presentationAttachments.push(item);
         });
         const visualContentResults = sessionContentResults.filter(item =>
-            item && item.visual_analysis === true && item.url
+            item && item.url && _visualAttachmentRequiresAnalysis(item)
         );
 
         // A screenshot requested for explanation is visual context, not the
@@ -3597,6 +3597,23 @@ async function sendChat(prefill, options) {
                 renderedFinalText,
                 opts.visualAttachmentLabels || [],
             );
+            // A hidden child is the only stage allowed to supply visible
+            // prose for a visual-evidence turn. If the provider returns an
+            // empty response, a transport acknowledgement, or the legacy
+            // canned capture sentence, replace it with a truthful typed
+            // failure message instead of leaving a blank bubble or repeating
+            // the mechanical sentence the user never asked to see.
+            const normalizedVisualChildText = String(renderedFinalText || '')
+                .replace(/\s+/g, ' ')
+                .trim();
+            const legacyVisualAck = /^(?:我已按当前问题准备了 Viewer\/Data Tree 的对应证据，截图会附在本条回复中。文字结论以当前 Session 中实际保存并返回的结果为准。|I prepared the relevant Viewer\/Data Tree evidence for the current question; the screenshot will be attached to this reply\. The textual conclusion is limited to results actually saved and returned for the current Session\.)$/i;
+            if (!normalizedVisualChildText || genericFinalResponse.test(normalizedVisualChildText)
+                || legacyVisualAck.test(normalizedVisualChildText)) {
+                renderedFinalText = _visualAnalysisUnavailableMessage(
+                    turnSessionId,
+                    turnIdentity.responseLanguage,
+                );
+            }
             // Merge the child answer into the original screenshot reply. The
             // child has its own server task/request ID, but no visible user
             // bubble, Trace, footer, or standalone assistant message.

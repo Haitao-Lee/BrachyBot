@@ -1953,6 +1953,10 @@ def register_planning_routes(
                                 "focus",
                                 "slice_indices",
                                 "overlays",
+                                "visual_purpose",
+                                "analysis_required",
+                                "annotation_policy",
+                                "target_refs",
                             )
                             if plan.get(key) not in (None, "", [], {})
                         }
@@ -2576,6 +2580,11 @@ def register_planning_routes(
                 # Keep the compact Planning registry useful during the
                 # metadata-only window.  Only the active row is adjusted from
                 # the source-backed status; historical rows remain immutable.
+                # An empty lightweight memory is not authoritative while the
+                # full workspace is still hydrating.  Overriding a durable
+                # ``has_guide=true`` row with that temporary absence was the
+                # source of the post-restart ``not_generated`` screenshot.
+                guide_persistence_known = active_guide_status.get("persistence_known") is not False
                 runs = [
                     (
                         {
@@ -2586,7 +2595,8 @@ def register_planning_routes(
                                 "surgical_guide": active_guide_status.get("state"),
                             },
                         }
-                        if str(run.get("planning_id") or "") == active_id
+                        if guide_persistence_known
+                        and str(run.get("planning_id") or "") == active_id
                         else run
                     )
                     for run in runs
@@ -7159,6 +7169,38 @@ def register_planning_routes(
         view_metadata = data.get("view_metadata")
         if not isinstance(view_metadata, dict):
             view_metadata = {}
+        # Keep the visual-analysis contract at the attachment root as well as
+        # inside view_metadata.  The browser needs the root fields while the
+        # chat/task replay path is rebuilding a reply after restart; relying
+        # only on an in-memory plan made a screenshot look like a passive
+        # image and silently skipped the multimodal child.
+        raw_analysis_required = view_metadata.get(
+            "analysis_required",
+            data.get("analysis_required", data.get("visual_analysis", True)),
+        )
+        analysis_required = raw_analysis_required is not False
+        raw_visual_purpose = str(
+            view_metadata.get("visual_purpose")
+            or data.get("visual_purpose")
+            or "explain"
+        ).strip().lower()
+        if raw_visual_purpose not in {
+            "overview", "locate", "explain", "compare", "verify", "document",
+        }:
+            raw_visual_purpose = "explain"
+        raw_annotation_policy = str(
+            view_metadata.get("annotation_policy")
+            or data.get("annotation_policy")
+            or "auto"
+        ).strip().lower()
+        if raw_annotation_policy not in {"none", "auto", "required"}:
+            raw_annotation_policy = "auto"
+        # Store normalized values in the nested metadata too, so old clients
+        # and new replay code observe one identical contract.
+        view_metadata = dict(view_metadata)
+        view_metadata["analysis_required"] = analysis_required
+        view_metadata["visual_purpose"] = raw_visual_purpose
+        view_metadata["annotation_policy"] = raw_annotation_policy
 
         if not image_data:
             return jsonify({"error": "No image data provided"}), 400
@@ -7223,6 +7265,10 @@ def register_planning_routes(
                 "sha256": content_sha256,
                 "created_at": time.time(),
                 "view_metadata": view_metadata,
+                "visual_analysis": analysis_required,
+                "analysis_required": analysis_required,
+                "annotation_policy": raw_annotation_policy,
+                "visual_purpose": raw_visual_purpose,
             }
 
             # Persist the attachment independently from the long-running chat

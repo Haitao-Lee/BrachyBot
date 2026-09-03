@@ -22,6 +22,7 @@ from agent_runtime.turn_policy import (
     resolve_report_request_action,
     resolve_session_content_target,
     resolve_session_visual_location_target,
+    _has_visual_annotation_request,
 )
 from plans.dose_pre.model_loader import resolve_prescription_gy
 
@@ -421,7 +422,7 @@ print(json.dumps(result))
             focus = {"kind": "auto", "padding": 0.35}
             overlays = {}
             hide_unrelated = False
-            annotation_policy = "auto"
+            annotation_policy = "required" if _has_visual_annotation_request(text) else "auto"
         elif target in {"dvh", "metrics"}:
             views = [target]
             title = "当前结果位置" if is_zh else "Current result location"
@@ -429,7 +430,7 @@ print(json.dumps(result))
             focus = {"kind": "current-view"}
             overlays = {}
             hide_unrelated = False
-            annotation_policy = "auto"
+            annotation_policy = "required" if _has_visual_annotation_request(text) else "auto"
         elif target == "dose":
             views = ["viewer-axial", "viewer-sagittal", "viewer-coronal", "dvh"]
             title = "剂量结果位置" if is_zh else "Dose result location"
@@ -437,7 +438,7 @@ print(json.dumps(result))
             focus = {"kind": "auto", "padding": 0.35}
             overlays = {"dose": True, "dose_contours": True}
             hide_unrelated = False
-            annotation_policy = "auto"
+            annotation_policy = "required" if _has_visual_annotation_request(text) else "auto"
         elif target == "ct":
             views = ["viewer-axial", "viewer-sagittal", "viewer-coronal"]
             title = "CT影像位置" if is_zh else "CT image location"
@@ -445,7 +446,7 @@ print(json.dumps(result))
             focus = {"kind": "current-view"}
             overlays = {}
             hide_unrelated = False
-            annotation_policy = "auto"
+            annotation_policy = "required" if _has_visual_annotation_request(text) else "auto"
         else:
             views = ["viewer-3d", "data-tree"]
             title = "规划对象位置" if is_zh else "Planning object location"
@@ -453,7 +454,7 @@ print(json.dumps(result))
             focus = {"kind": "close-up" if stable_refs else "auto", "padding": 0.35}
             overlays = {}
             hide_unrelated = bool(stable_refs)
-            annotation_policy = "auto"
+            annotation_policy = "required" if _has_visual_annotation_request(text) else "auto"
 
         return {
             "mode": "chat",
@@ -514,7 +515,10 @@ print(json.dumps(result))
         # one state-safe screenshot plan before the generic clinical/action
         # scan so a provider cannot turn "where is the guide?" into a
         # mutating surgical_guide(action=generate) call.
-        visual_location_target = resolve_session_visual_location_target(message)
+        visual_location_target = resolve_session_visual_location_target(
+            message,
+            conversation=getattr(getattr(self, "memory", None), "conversation", None),
+        )
         if visual_location_target:
             return [{
                 "id": "tool_direct_session_visual_location",
@@ -1046,6 +1050,11 @@ print(json.dumps(result))
             == "session_visual_location_query"
             and direct_tool_names == {"ui_screenshot"}
         ):
+            # This is a typed two-stage presentation turn. The browser owns
+            # the capture and will launch one hidden multimodal child for the
+            # actual user-facing explanation; do not let the parent response
+            # be mistaken for that explanation by streaming or replay code.
+            self._visual_analysis_pending = True
             # Keep the visible parent response useful without invoking a
             # second text-only synthesis call. The browser owns the grounded
             # screenshot and the hidden multimodal child owns the explanation.

@@ -100,6 +100,22 @@
     }
 
     function cancelBackgroundWorkspaceRestore() {
+        // Wake any screenshot/report capture that is waiting on the previous
+        // case's visual restore barrier.  Without this, a session switch
+        // could leave a hidden awaiter blocked until its five-minute timeout.
+        const readiness = window.__workspaceVisualReadiness;
+        if (readiness && typeof readiness === 'object') {
+            Object.keys(readiness).forEach(key => {
+                const entry = readiness[key];
+                if (!entry || entry.settled || typeof entry.resolveReady !== 'function') return;
+                entry.resolveReady({
+                    ready: false,
+                    cancelled: true,
+                    session_id: entry.sessionId || key,
+                    reason: 'restore_cancelled',
+                });
+            });
+        }
         backgroundRestoreGeneration += 1;
         // Invalidate the clinical restore wrapper as well as this module's
         // scheduling generation. A new/selected case must never inherit the
@@ -331,6 +347,17 @@
                         // the heavier CT/mesh resources hydrate.
                         skipClientClear: true,
                     });
+                }
+                // The wrapper returns as soon as essential data is usable so
+                // normal interaction remains responsive.  Do not mark this
+                // restore complete, resume a dependent task, or clear the
+                // scheduler's completion marker until the case-owned visual
+                // producers (meshes, guide, and their reconciliation) settle.
+                const visualReady = typeof window.awaitWorkspaceVisualReady === 'function'
+                    ? await window.awaitWorkspaceVisualReady(String(sessionId), { timeoutMs: 300000 })
+                    : { ready: true, legacy: true };
+                if (visualReady?.ready === false) {
+                    throw new Error(visualReady.reason || 'visual_restore_incomplete');
                 }
                 // Resource hydration deliberately skips chat state so it
                 // cannot erase a live replay. Reconcile once more after the

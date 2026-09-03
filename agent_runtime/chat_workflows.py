@@ -2327,6 +2327,11 @@ class ChatWorkflowMixin:
             self._active_turn_token = self._turn_generation
             self._cancel_requested = False
             token = self._active_turn_token
+        # A screenshot/location turn has a two-stage response: the browser
+        # first captures grounded evidence and a hidden multimodal child then
+        # writes the user-facing explanation. Reset this per-turn marker so a
+        # previous capture can never suppress the next ordinary reply.
+        self._visual_analysis_pending = False
         local = getattr(self, "_turn_local", None)
         if local is None:
             local = threading.local()
@@ -2653,6 +2658,7 @@ class ChatWorkflowMixin:
             else classify_local_turn(
                 message,
                 pending_tumor_site=self._pending_tumor_site_clarification(),
+                conversation=getattr(self.memory, "conversation", None),
             )
         )
         self._activate_turn_policy(local_policy)
@@ -2824,6 +2830,7 @@ class ChatWorkflowMixin:
             else classify_local_turn(
                 message,
                 pending_tumor_site=self._pending_tumor_site_clarification(),
+                conversation=getattr(self.memory, "conversation", None),
             )
         )
         self._activate_turn_policy(local_policy)
@@ -3067,6 +3074,9 @@ class ChatWorkflowMixin:
                 else:
                     response = _result
                     llm_meta = {"usage": {}, "latency_ms": 0, "llm_calls": 0}
+                if getattr(self, "_visual_analysis_pending", False):
+                    llm_meta = dict(llm_meta or {})
+                    llm_meta["visual_analysis_pending"] = True
             except Exception as e:
                 import traceback as _tb
                 logger.error(f"LLM function calling failed: {e}\n{_tb.format_exc()}")
@@ -3503,7 +3513,10 @@ class ChatWorkflowMixin:
             turn_is_internal_followup = bool(
                 (getattr(self, "_active_turn_context", {}) or {}).get("internal_followup")
             )
-            if not answer and not turn_is_internal_followup:
+            visual_analysis_pending = bool(
+                normalized_meta.get("visual_analysis_pending") is True
+            )
+            if not answer and not turn_is_internal_followup and not visual_analysis_pending:
                 tool_names = [
                     step.get("tool")
                     for step in (normalized_payload.get("steps") or steps or [])
@@ -3623,6 +3636,7 @@ class ChatWorkflowMixin:
             else classify_local_turn(
                 message,
                 pending_tumor_site=self._pending_tumor_site_clarification(),
+                conversation=getattr(self.memory, "conversation", None),
             )
         )
         self._activate_turn_policy(local_policy)
@@ -4257,16 +4271,14 @@ class ChatWorkflowMixin:
                 local_policy.intent == "session_visual_location_query"
                 and _direct_tool_names == {"ui_screenshot"}
             ):
-                # The screenshot result is an internal browser plan. Do not
-                # spend another visible-turn LLM call synthesizing a generic
-                # acknowledgement; the frontend attaches the grounded image
-                # and starts one hidden multimodal explanation child. This
-                # fallback remains non-empty if that child is unavailable.
-                response = presentation_fallback_message(
-                    _lang,
-                    message,
-                    ("ui_screenshot",),
-                )
+                # The screenshot result is an internal browser plan. The
+                # browser attaches the grounded image and starts exactly one
+                # hidden multimodal explanation child. Keep the parent
+                # response empty and typed instead of displaying a canned
+                # acknowledgement; the child (or its explicit failure
+                # message) becomes the only user-facing prose.
+                response = ""
+                llm_meta["visual_analysis_pending"] = True
             elif local_policy.intent == "viewer_display" and _direct_tool_names == {"ui_controller"}:
                 # Viewer refresh is a deterministic browser operation. A
                 # synthesis call here would reintroduce the exact provider
@@ -4287,7 +4299,12 @@ class ChatWorkflowMixin:
             _synthesis_step["status"] = "done"
             _synthesis_step["content"] = "Response prepared"
             yield yield_event("step", _synthesis_step)
-            self.memory.add_message("assistant", response)
+            # Do not persist an empty transport placeholder as an assistant
+            # answer. The linked visual child is merged into the owning
+            # browser reply after capture and remains the durable user-facing
+            # message.
+            if response:
+                self.memory.add_message("assistant", response)
 
             # Quality review DISABLED (2026-06-22): the review triggered
             # a mysterious "Review Feedback" retry that generated a brief
