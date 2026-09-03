@@ -80,7 +80,7 @@ def test_late_viewer_hydration_delegates_to_canonical_report_capture():
     start = source.index("4f-2. Re-capture report figures only through the canonical report")
     block = source[start:source.index("// 5. Data tree badges", start)]
 
-    assert "await autoCaptureReportFigures({ sessionId: expectedSessionId });" in block
+    assert "sessionId: expectedSessionId,\n                    planningId: expectedPlanningId," in block
     assert "options.allowLegacyReportFigureRecovery === true" in block
     assert block.index("options.allowLegacyReportFigureRecovery === true") < block.index("const _replaceOrCreate =")
     assert "Object.assign(window.reportForm.figures[idx], entry)" not in block
@@ -93,7 +93,7 @@ def test_figure_one_capture_contract_survives_report_artifact_round_trip():
     api = _read("web/app/static/js/brachybot-ui-api.js")
     export_service = _read("web/export_service.py")
 
-    assert "REPORT_FIGURE_ONE_CAPTURE_CONTRACT = 'figure1-global-overview-target-detail-v5-thin-needles'" in editor
+    assert "REPORT_FIGURE_ONE_CAPTURE_CONTRACT = 'figure1-global-overview-target-detail-v6-thin-needles'" in editor
     assert editor.count("captureContract: REPORT_FIGURE_ONE_CAPTURE_CONTRACT") == 2
     assert "const _isFigureOneOar = (id, mesh)" in editor
     assert "mesh.visible = !_isFigureOneOar(id, mesh)" in editor
@@ -105,6 +105,7 @@ def test_figure_one_capture_contract_survives_report_artifact_round_trip():
     assert "capture_contract: String(figure.captureContract || '')" in api
     assert "viewMetadata: item.metadata?.view_metadata || item.metadata || {}" in viewer
     assert '"capture_contract": figure.get("captureContract")' in export_service
+    assert "captureContract: 'figure1-global-overview-target-detail-v6-thin-needles'" in workspace
 
 
 def test_figure_one_b_uses_report_only_thin_needles_and_restores_live_geometry():
@@ -217,12 +218,38 @@ def test_report_restore_and_export_deduplicate_by_stable_subfigure_role():
     api = _read("web/app/static/js/brachybot-ui-api.js")
 
     assert "reportFigureIdentity" in workspace
-    assert "[...existingFigures, ...recoveredFigures]" in workspace
+    assert "[...currentFigures, ...recoveredFigures]" in workspace
     assert "function _reportFigureStableIdentity" in export
     assert "const seen = new Set();" in export
     assert "${figureNumber}(${escHtml(headingSubfigure)})" in export
     assert "function _reportFigureStableKey" in api
     assert "seenFigureKeys.has(stableKey)" in api
+
+
+def test_report_attachment_registry_prefers_new_content_version_for_same_role():
+    from web.workspace_store import _merge_attachment_list
+
+    old = {
+        "id": "report-figure-planning-1-report_fig1_closeup",
+        "url": "/api/sessions/session/screenshots/report_screenshot_report_fig1_closeup_old.png?v=old",
+        "planning_id": "planning-1",
+        "view_metadata": {
+            "figure_group": "figure1",
+            "figure_number": 1,
+            "subfigure": "b",
+            "capture_role": "planning_closeup",
+        },
+    }
+    fresh = {
+        **old,
+        "url": "/api/sessions/session/screenshots/report_screenshot_report_fig1_closeup_new.png?v=fresh",
+        "sha256": "fresh",
+    }
+
+    merged = _merge_attachment_list([old], [fresh])
+    assert len(merged) == 1
+    assert merged[0]["url"].endswith("?v=fresh")
+    assert merged[0]["sha256"] == "fresh"
 
 
 def test_figure_two_rejects_black_webgl_capture_and_retries():

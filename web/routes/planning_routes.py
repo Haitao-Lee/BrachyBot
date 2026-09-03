@@ -7128,6 +7128,7 @@ def register_planning_routes(
 
         try:
             img_bytes = _decode_png_data_url(image_data)
+            content_sha256 = hashlib.sha256(img_bytes).hexdigest()
 
             # Report figures need a recoverable identity even if an older or
             # partially written workspace snapshot loses the figure array.
@@ -7162,7 +7163,7 @@ def register_planning_routes(
             # deployments, persist a short-lived case-bound signed URL rather
             # than publishing an unauthenticated session screenshot path.
             url = _server_support._make_session_screenshot_url(
-                session_id, filename
+                session_id, filename, version=content_sha256[:16]
             )
             logger.info(f"Screenshot saved: {filepath} ({len(img_bytes)} bytes)")
 
@@ -7182,7 +7183,7 @@ def register_planning_routes(
                 "message_id": message_id or None,
                 "request_id": request_id or None,
                 "data_version": data_version or None,
-                "sha256": hashlib.sha256(img_bytes).hexdigest(),
+                "sha256": content_sha256,
                 "created_at": time.time(),
                 "view_metadata": view_metadata,
             }
@@ -7387,7 +7388,7 @@ def register_planning_routes(
                 user["id"], session_id, annotated_filename, annotated_bytes
             )
             annotated_url = _server_support._make_session_screenshot_url(
-                session_id, annotated_filename
+                session_id, annotated_filename, version=annotation_sha256[:16]
             )
         except (OSError, WorkspaceError, WorkspaceQuotaExceeded) as exc:
             return jsonify({"error": str(exc)}), 500
@@ -7459,7 +7460,7 @@ def register_planning_routes(
         if not os.path.exists(filepath):
             return jsonify({"error": "File not found"}), 404
         response = send_file(filepath, mimetype="image/png")
-        response.headers["Cache-Control"] = "private, max-age=300"
+        response.headers["Cache-Control"] = "private, no-store, max-age=0, must-revalidate"
         return response
 
     @app.route("/api/screenshots/<filename>")
@@ -7483,5 +7484,5 @@ def register_planning_routes(
         if not os.path.exists(filepath):
             return jsonify({"error": "File not found"}), 404
         response = send_file(filepath, mimetype="image/png")
-        response.headers["Cache-Control"] = "private, max-age=300"
+        response.headers["Cache-Control"] = "private, no-store, max-age=0, must-revalidate"
         return response

@@ -708,7 +708,7 @@ def test_dose_overlay_opacity_is_invariant_during_slice_scrubbing():
     assert "_composite2DViewerCanvas(cfg.ax, { doseOpacity: 0.75 })" in report_editor
     assert "_composite2DViewerCanvas(cfg.ax, { doseOpacity: 0.75 })" in dvh_planning
     assert "_composite2DViewerCanvas(a.ax, { doseOpacity: 0.7 })" in ui_api
-    assert "brachybot-viewer-volume.js?v=48" in index
+    assert "brachybot-viewer-volume.js?v=50" in index
     assert "brachybot-3d-manual.js?v=80" in index
     assert "brachybot-manual-annotation.js?v=21" in index
 

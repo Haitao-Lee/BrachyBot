@@ -104,7 +104,7 @@ class Round9RegressionTests(unittest.TestCase):
         # URLs into image blocks (the old "[Screenshot captured: ...]" context
         # literal was removed when follow-up isolation landed).
         self.assertIn("_queueVisualAnalysisFollowUp", chat)
-        self.assertIn("_isVisualAnalysisRequest", chat)
+        self.assertIn("_visualAttachmentRequiresAnalysis", chat)
         self.assertIn("visual_screenshot_analysis", workflow)
         self.assertIn("_screenshot_called_this_turn = set()", runtime)
         self.assertIn('all(tc.get("tool") in {"ui_screenshot", "ui_content"}', runtime)
@@ -297,7 +297,7 @@ class Round9RegressionTests(unittest.TestCase):
         )
         self.assertIn("_drawReport3DDoseColorbar(", report)
         self.assertIn("candidate.clone().intersect(context)", report)
-        self.assertIn("brachybot-report-editor.js?v=30", index)
+        self.assertIn("brachybot-report-editor.js?v=31", index)
 
 
 if __name__ == "__main__":

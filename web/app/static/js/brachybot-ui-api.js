@@ -6030,7 +6030,7 @@ function _safePersistedReportFigureUrl(candidate, ownerSessionId) {
     if (/^data:image\/(?:png|jpe?g|webp);base64,[a-z0-9+/=\s]+$/i.test(value)) {
         return value;
     }
-    const match = value.match(/^\/api\/sessions\/([^/]+)\/screenshots\/(report_screenshot_[A-Za-z0-9_.-]+\.png)$/i);
+    const match = value.match(/^\/api\/sessions\/([^/]+)\/screenshots\/(report_screenshot_[A-Za-z0-9_.-]+\.png)(?:\?[^#]*)?$/i);
     if (!match) return '';
     try {
         return decodeURIComponent(match[1]) === String(ownerSessionId || '') ? value : '';
@@ -6076,7 +6076,7 @@ function _reportFiguresFromArtifactCatalog(ownerSessionId, activePlanningId) {
         const ownerPlanningId = String(item?.planningId || item?.planning_id || '');
         if (!['screenshot', 'report_figure'].includes(dataType)
             || !/^report_screenshot_[^/\\]+\.png$/i.test(filename)
-            || (activePlanningId && ownerPlanningId && ownerPlanningId !== activePlanningId)) {
+            || (activePlanningId && ownerPlanningId !== activePlanningId)) {
             return null;
         }
         const metadata = _reportFigureMetadataFromArtifactFilename(filename, index);
@@ -6086,13 +6086,26 @@ function _reportFiguresFromArtifactCatalog(ownerSessionId, activePlanningId) {
         if (!metadata.figureGroup) return null;
         const display = typeof window.describeReportFigure === 'function'
             ? window.describeReportFigure(metadata.axis) : null;
+        const baseUrl = `/api/sessions/${encodeURIComponent(ownerSessionId)}/screenshots/${encodeURIComponent(filename)}`;
+        const contentVersion = String(
+            item?.sha256
+            || item?.metadata?.sha256
+            || item?.metadata?.view_metadata?.sha256
+            || item?.viewMetadata?.sha256
+            || '',
+        ).trim().slice(0, 32);
+        const catalogUrl = String(item?.url || item?.screenshot_url || '').trim();
+        const serverUrl = /^\/api\/sessions\/[^/]+\/screenshots\/[A-Za-z0-9_.-]+\.(?:png|jpe?g|webp)(?:\?[^#]*)?$/i.test(catalogUrl)
+            ? catalogUrl
+            : (contentVersion ? `${baseUrl}?v=${encodeURIComponent(contentVersion)}` : baseUrl);
         return Object.assign({
             id: `report-artifact-${filename.replace(/[^A-Za-z0-9_-]/g, '_')}`,
             type: 'screenshot',
             title: display?.title || '',
             caption: display?.caption || '',
+            planningId: ownerPlanningId || activePlanningId || '__unassigned__',
             _artifactFallback: true,
-            _serverUrl: `/api/sessions/${encodeURIComponent(ownerSessionId)}/screenshots/${encodeURIComponent(filename)}`,
+            _serverUrl: serverUrl,
         }, metadata);
     }).filter(Boolean);
 }
@@ -6269,7 +6282,7 @@ function _safeSessionScreenshotUrl(candidate, ownerSessionId) {
     if (/^data:image\/(?:png|jpe?g|webp);base64,[a-z0-9+/=\s]+$/i.test(value)) {
         return value;
     }
-    const match = value.match(/^\/api\/sessions\/([^/]+)\/screenshots\/([A-Za-z0-9_.-]+\.(?:png|jpe?g|webp))$/i);
+    const match = value.match(/^\/api\/sessions\/([^/]+)\/screenshots\/([A-Za-z0-9_.-]+\.(?:png|jpe?g|webp))(?:\?[^#]*)?$/i);
     if (!match) return '';
     try {
         return decodeURIComponent(match[1]) === String(ownerSessionId || '') ? value : '';
@@ -6298,7 +6311,7 @@ function _sessionScreenshotArtifacts(ownerSessionId, activePlanningId, options =
         const isScreenshot = ['screenshot', 'report_figure'].includes(dataType);
         const isReport = /^report_screenshot_[^/\\]+\.(?:png|jpe?g|webp)$/i.test(filename);
         if (!isScreenshot || !filename || (includeReportOnly && !isReport)) return null;
-        if (activePlanningId && ownerPlanningId && ownerPlanningId !== String(activePlanningId)) return null;
+        if (activePlanningId && ownerPlanningId !== String(activePlanningId)) return null;
         return {
             id: `session-artifact-${filename.replace(/[^A-Za-z0-9_-]/g, '_')}`,
             objectId: `${isReport ? 'figure' : 'screenshot'}:${filename}`,
@@ -6308,7 +6321,17 @@ function _sessionScreenshotArtifacts(ownerSessionId, activePlanningId, options =
             dataType,
             index,
             isReport,
-            url: `/api/sessions/${encodeURIComponent(ownerSessionId)}/screenshots/${encodeURIComponent(filename)}`,
+            url: String(item?.url || item?.screenshot_url || '') || (() => {
+                const base = `/api/sessions/${encodeURIComponent(ownerSessionId)}/screenshots/${encodeURIComponent(filename)}`;
+                const version = String(
+                    item?.sha256
+                    || item?.metadata?.sha256
+                    || item?.metadata?.view_metadata?.sha256
+                    || item?.viewMetadata?.sha256
+                    || '',
+                ).trim().slice(0, 32);
+                return version ? `${base}?v=${encodeURIComponent(version)}` : base;
+            })(),
         };
     }).filter(Boolean);
 }

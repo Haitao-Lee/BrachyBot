@@ -3110,7 +3110,11 @@ def _session_screenshot_signature(session_id: str, filename: str) -> str:
     return hmac.new(API_KEY.encode("utf-8"), payload, hashlib.sha256).hexdigest()
 
 
-def _make_session_screenshot_url(session_id: str, filename: str) -> str:
+def _make_session_screenshot_url(
+    session_id: str,
+    filename: str,
+    version: Optional[str] = None,
+) -> str:
     """Return a durable browser URL inside the configured API-key boundary.
 
     Unlike the legacy shared screenshot directory, this route also requires
@@ -3120,10 +3124,16 @@ def _make_session_screenshot_url(session_id: str, filename: str) -> str:
     invalidates every previously issued signature.
     """
     base = f"/api/sessions/{session_id}/screenshots/{filename}"
-    if not _API_KEY_REQUIRED or not API_KEY:
-        return base
-    sig = _session_screenshot_signature(session_id, filename)
-    return f"{base}?sig={sig}"
+    query = []
+    if _API_KEY_REQUIRED and API_KEY:
+        query.append(f"sig={_session_screenshot_signature(session_id, filename)}")
+    # The report filename is intentionally deterministic per Planning/axis.
+    # Add the content digest as a cache key so a replacement capture cannot be
+    # served from a browser cache under the same URL during a refresh.
+    safe_version = re.sub(r"[^A-Za-z0-9_-]", "", str(version or ""))[:64]
+    if safe_version:
+        query.append(f"v={safe_version}")
+    return f"{base}?{'&'.join(query)}" if query else base
 
 
 def _valid_session_screenshot_request(session_id: str, filename: str) -> bool:

@@ -238,6 +238,56 @@ def test_missing_report_figure_metadata_is_rebuilt_from_durable_artifacts():
     assert "_serverUrl" in workspace
 
 
+def test_report_catalog_recovery_keeps_case_bound_signed_urls():
+    """A catalog fallback must work when browser requests cannot send API keys."""
+    from web.routes.data_routes import _add_durable_screenshot_urls
+    from web import server_support
+
+    image = ROOT / "__report_catalog_url_test.png"
+    image.write_bytes(b"report-capture")
+
+    class Store:
+        def session_artifact_path(self, user_id, session_id, category, filename):
+            assert user_id == "user-1"
+            assert session_id == "session-1"
+            assert category == "screenshots"
+            assert filename == image.name
+            return image
+
+    previous_key = server_support.API_KEY
+    previous_required = server_support._API_KEY_REQUIRED
+    try:
+        server_support.API_KEY = "catalog-test-key"
+        server_support._API_KEY_REQUIRED = True
+        catalog = {
+            "objects": [{
+                "object_id": f"figure:{image.name}",
+                "data_type": "report_figure",
+            }],
+        }
+        _add_durable_screenshot_urls(catalog, Store(), "user-1", "session-1")
+        url = catalog["objects"][0]["url"]
+        assert "/api/sessions/session-1/screenshots/" in url
+        assert "sig=" in url
+        assert "v=" in url
+        assert catalog["objects"][0]["sha256"]
+    finally:
+        image.unlink(missing_ok=True)
+        server_support.API_KEY = previous_key
+        server_support._API_KEY_REQUIRED = previous_required
+
+
+def test_report_figure_restore_and_chat_accept_versioned_catalog_urls():
+    workspace = read("web/app/static/js/brachybot-workspace.js")
+    viewer = read("web/app/static/js/brachybot-viewer-volume.js")
+    ui_api = read("web/app/static/js/brachybot-ui-api.js")
+    assert "catalogUrlMatchesOwner" in workspace
+    assert "item?.url || item?.screenshot_url" in workspace
+    assert "url: String(item.url || item.screenshot_url || '')" in viewer
+    assert "(?:\\?[^#]*)?$" in ui_api
+    assert "item?.url || item?.screenshot_url" in ui_api
+
+
 def test_report_quality_columns_are_persisted_and_auto_fill_is_awaited():
     workspace = read("web/app/static/js/brachybot-workspace.js")
     report = read("web/app/static/js/brachybot-report-export.js")
@@ -447,9 +497,9 @@ def test_workspace_transitions_publish_measurable_first_paint_and_restore_stages
     assert "restore.fully_interactive" in ui_api
     # Versioned URLs are intentional cache invalidation points. Keep this
     # assertion aligned with the workspace/report artifact restore contract.
-    assert "brachybot-workspace.js?v=38" in index
-    assert "brachybot-ui-api.js?v=56" in index
-    assert "brachybot-viewer-volume.js?v=48" in index
+    assert "brachybot-workspace.js?v=40" in index
+    assert "brachybot-ui-api.js?v=58" in index
+    assert "brachybot-viewer-volume.js?v=50" in index
     assert "brachybot-manual-annotation.js?v=21" in index
 
 

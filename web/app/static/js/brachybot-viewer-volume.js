@@ -2849,6 +2849,8 @@ async function hydrateDataTreeArtifactCatalog({ force = false } = {}) {
                         ? '#38bdf8' : '#a78bfa',
                     planningId: item.planning_id,
                     dataVersion: item.data_version,
+                    sha256: item.sha256 || item.metadata?.sha256 || item.metadata?.view_metadata?.sha256 || null,
+                    url: String(item.url || item.screenshot_url || ''),
                     status: item.status || 'ready',
                     error: item.error || null,
                     // Report recovery needs the capture contract in addition
