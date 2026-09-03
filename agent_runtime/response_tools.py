@@ -12,6 +12,7 @@ from typing import Dict, List, Optional
 
 
 from agent_runtime.core import ToolResultPipeline
+from agent_runtime.response_contract import presentation_fallback_message
 from agent_runtime.turn_policy import (
     is_current_case_dose_recompute_request,
     is_planning_reexecution_request,
@@ -20,6 +21,7 @@ from agent_runtime.turn_policy import (
     requires_planning_before_guide,
     resolve_report_request_action,
     resolve_session_content_target,
+    resolve_session_visual_location_target,
 )
 from plans.dose_pre.model_loader import resolve_prescription_gy
 
@@ -373,6 +375,105 @@ result = {{
 print(json.dumps(result))
 """
 
+    @staticmethod
+    def _session_visual_location_screenshot_params(message: str, target: str) -> Dict:
+        """Build a grounded screenshot plan for a live location question.
+
+        The route deliberately produces a structured evidence request rather
+        than a textual location answer.  Stable IDs are passed to the browser,
+        which verifies that the object belongs to the active Session and is
+        actually loaded/visible before it frames or annotates it.
+        """
+        text = str(message or "").strip()
+        target = str(target or "").strip().lower()
+        is_zh = bool(re.search(r"[\u3400-\u4dbf\u4e00-\u9fff]", text))
+
+        stable_refs: List[str] = []
+        for raw in re.findall(
+            r"\b(?:needle|seed|trajectory|planning)[_-][a-z0-9][a-z0-9_-]*\b",
+            text.lower(),
+            flags=re.IGNORECASE,
+        ):
+            prefix, _, _ = raw.partition("_")
+            if not _:
+                prefix, _, _ = raw.partition("-")
+            ref = f"{prefix}:{raw}"
+            if ref not in stable_refs:
+                stable_refs.append(ref)
+
+        if target == "surgical_guide":
+            views = ["viewer-3d", "data-tree"]
+            stable_refs = ["surgical_guide:active"]
+            title = "手术导板位置" if is_zh else "Surgical guide location"
+            description = (
+                "定位当前已保存且实际可见的手术导板；仅在 Viewer/Data Tree 中验证后标注。"
+                if is_zh
+                else "Locate the saved surgical guide and annotate it only after it is verified visible in the Viewer and Data Tree."
+            )
+            focus = {"kind": "close-up", "padding": 0.35}
+            overlays = {"surgical_guide": True}
+            hide_unrelated = True
+            annotation_policy = "required"
+        elif target == "data_tree":
+            views = ["data-tree"]
+            title = "数据树位置" if is_zh else "Data Tree location"
+            description = "定位当前数据树对象。" if is_zh else "Locate the current Data Tree object."
+            focus = {"kind": "auto", "padding": 0.35}
+            overlays = {}
+            hide_unrelated = False
+            annotation_policy = "auto"
+        elif target in {"dvh", "metrics"}:
+            views = [target]
+            title = "当前结果位置" if is_zh else "Current result location"
+            description = "定位当前结果。" if is_zh else "Locate the current result."
+            focus = {"kind": "current-view"}
+            overlays = {}
+            hide_unrelated = False
+            annotation_policy = "auto"
+        elif target == "dose":
+            views = ["viewer-axial", "viewer-sagittal", "viewer-coronal", "dvh"]
+            title = "剂量结果位置" if is_zh else "Dose result location"
+            description = "定位当前剂量结果。" if is_zh else "Locate the current dose result."
+            focus = {"kind": "auto", "padding": 0.35}
+            overlays = {"dose": True, "dose_contours": True}
+            hide_unrelated = False
+            annotation_policy = "auto"
+        elif target == "ct":
+            views = ["viewer-axial", "viewer-sagittal", "viewer-coronal"]
+            title = "CT影像位置" if is_zh else "CT image location"
+            description = "定位当前CT影像。" if is_zh else "Locate the current CT image."
+            focus = {"kind": "current-view"}
+            overlays = {}
+            hide_unrelated = False
+            annotation_policy = "auto"
+        else:
+            views = ["viewer-3d", "data-tree"]
+            title = "规划对象位置" if is_zh else "Planning object location"
+            description = "定位当前规划对象。" if is_zh else "Locate the current planning object."
+            focus = {"kind": "close-up" if stable_refs else "auto", "padding": 0.35}
+            overlays = {}
+            hide_unrelated = bool(stable_refs)
+            annotation_policy = "auto"
+
+        return {
+            "mode": "chat",
+            "views": views,
+            "layout": "side-by-side" if len(views) == 2 else "auto",
+            "question": text,
+            "title": title,
+            "description": description,
+            "object_ids": list(stable_refs),
+            "data_tree_node_ids": list(stable_refs),
+            "highlight_object_ids": list(stable_refs),
+            "hide_unrelated": hide_unrelated,
+            "focus": focus,
+            "overlays": overlays,
+            "visual_purpose": "locate",
+            "analysis_required": True,
+            "annotation_policy": annotation_policy,
+            "target_refs": list(stable_refs),
+        }
+
     def _detect_tool_request(self, message: str) -> Optional[List[Dict]]:
         """Detect explicit tool requests. Returns tool calls in user-specified order, or None.
 
@@ -407,6 +508,21 @@ print(json.dumps(result))
                         "command": "run",
                     }],
                 },
+            }]
+
+        # A location question is not a guide-generation request.  Materialize
+        # one state-safe screenshot plan before the generic clinical/action
+        # scan so a provider cannot turn "where is the guide?" into a
+        # mutating surgical_guide(action=generate) call.
+        visual_location_target = resolve_session_visual_location_target(message)
+        if visual_location_target:
+            return [{
+                "id": "tool_direct_session_visual_location",
+                "tool": "ui_screenshot",
+                "params": self._session_visual_location_screenshot_params(
+                    message,
+                    visual_location_target,
+                ),
             }]
 
         msg = message.strip().lower()
@@ -903,7 +1019,14 @@ print(json.dumps(result))
         user_msg = ""
         for msg in reversed(self.memory.conversation):
             if msg.get("role") == "user":
-                user_msg = msg.get("content", "")
+                candidate = str(msg.get("content", "") or "")
+                # Tool results are persisted as synthetic user records for
+                # context continuity. They are not the user's question and
+                # must not become the language/response-contract input for
+                # the visible parent reply.
+                if candidate.startswith("[Tool result:"):
+                    continue
+                user_msg = candidate
                 break
         query_type = self._classify_query_type(user_msg)
         direct_tool_names = {
@@ -918,6 +1041,19 @@ print(json.dumps(result))
         # path because they may contain richer multi-tool context.
         if direct_tool_names == {"dose_recompute"}:
             response = raw_results
+        elif (
+            getattr(getattr(self, "_active_turn_policy", None), "intent", None)
+            == "session_visual_location_query"
+            and direct_tool_names == {"ui_screenshot"}
+        ):
+            # Keep the visible parent response useful without invoking a
+            # second text-only synthesis call. The browser owns the grounded
+            # screenshot and the hidden multimodal child owns the explanation.
+            response = presentation_fallback_message(
+                _lang,
+                user_msg,
+                ("ui_screenshot",),
+            )
         else:
             response = self._synthesize_with_llm(raw_results, steps, _lang, user_msg, query_type)
 
@@ -2083,6 +2219,23 @@ Output (JSON array of strings):"""
         active_policy = getattr(self, "_active_turn_policy", None)
         get_action_plan = getattr(self, "_current_action_plan", None)
         action_plan = get_action_plan() if callable(get_action_plan) else None
+        if getattr(active_policy, "intent", None) == "session_visual_location_query":
+            # This turn has a typed read-only visual contract. Even if a
+            # provider unexpectedly emits extra function calls, do not let a
+            # location question reach a mutating clinical tool. The canonical
+            # direct route already supplies the complete screenshot plan;
+            # this is a last-line authorization boundary, not an answer list.
+            visual_calls = [
+                call for call in (tool_calls or [])
+                if str(call.get("tool") or "") == "ui_screenshot"
+            ]
+            if not visual_calls:
+                logger.error(
+                    "Rejected non-visual provider calls for a session visual "
+                    "location turn"
+                )
+                return []
+            tool_calls = visual_calls
         if (
             getattr(active_policy, "intent", None) == "surgical_guide_generation"
             and not (

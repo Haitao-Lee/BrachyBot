@@ -4055,6 +4055,7 @@ class ChatWorkflowMixin:
                     "surgical_guide_generation",
                     "dose_recompute",
                     "viewer_display",
+                    "session_visual_location_query",
                 )
             )
             or _has_explicit_planning_action_plan
@@ -4252,6 +4253,20 @@ class ChatWorkflowMixin:
                 # and contains the before/after consistency result. Avoid a
                 # second synthesis call for this focused operation.
                 response = raw_response
+            elif (
+                local_policy.intent == "session_visual_location_query"
+                and _direct_tool_names == {"ui_screenshot"}
+            ):
+                # The screenshot result is an internal browser plan. Do not
+                # spend another visible-turn LLM call synthesizing a generic
+                # acknowledgement; the frontend attaches the grounded image
+                # and starts one hidden multimodal explanation child. This
+                # fallback remains non-empty if that child is unavailable.
+                response = presentation_fallback_message(
+                    _lang,
+                    message,
+                    ("ui_screenshot",),
+                )
             elif local_policy.intent == "viewer_display" and _direct_tool_names == {"ui_controller"}:
                 # Viewer refresh is a deterministic browser operation. A
                 # synthesis call here would reintroduce the exact provider

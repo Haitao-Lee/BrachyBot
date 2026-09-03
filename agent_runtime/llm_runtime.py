@@ -877,6 +877,7 @@ class LLMRuntimeMixin:
                         "clinical_planning",
                         "surgical_guide_generation",
                         "dose_recompute",
+                        "session_visual_location_query",
                     )
                 )
                 or _has_explicit_planning_action_plan
