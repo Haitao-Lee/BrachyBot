@@ -304,8 +304,17 @@ def register_surgical_guide_routes(app, get_agent):
         try:
             store, user, session_id = request_case_context()
             agent = get_agent()
-            state = current_guide(agent, (request.get_json(silent=True) or {}).get("version"))
-            if not state or state.get("status") != "ready":
+            requested_version = (request.get_json(silent=True) or {}).get("version")
+            pending = workspace_data_pending(agent)
+            if pending is not None:
+                return pending
+            state = current_guide(agent, requested_version)
+            status = guide_status_payload(agent, requested_version)
+            if not state or status.get("state") != "ready" or not status.get("mesh_loaded"):
+                if status.get("state") in {"restoring", "persisted_not_loaded", "generating"}:
+                    raise SurgicalGuideError(
+                        "The Surgical Guide is still being restored; retry after its mesh is loaded"
+                    )
                 raise SurgicalGuideError("Generate a current puncture guide before export")
             if not guide_bore_quality_ready(state):
                 raise SurgicalGuideError(

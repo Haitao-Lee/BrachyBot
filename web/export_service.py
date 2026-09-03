@@ -52,6 +52,58 @@ def _safe_name(value: Any, fallback: str = "data") -> str:
     return text[:64] or fallback
 
 
+def _resolved_surgical_guide(agent: Any) -> tuple[Dict[str, Any], Dict[str, Any]]:
+    """Resolve the active guide through the hydration-safe status contract.
+
+    The export catalog is another Data Tree consumer. Reading only the
+    mutable ``surgical_guide`` alias here made a valid guide disappear from
+    the catalog during a restart/session switch, even though the active
+    namespaced Planning snapshot already contained it. Keep this boundary
+    source-backed and return both the full mesh state and its compact status.
+    """
+    if agent is None or not hasattr(agent, "memory"):
+        return {}, {
+            "state": "unavailable",
+            "available": False,
+            "mesh_loaded": False,
+            "persistence_known": False,
+        }
+    try:
+        from web.surgical_guide import guide_state_for_version, guide_status_payload
+
+        status = guide_status_payload(agent)
+        state = guide_state_for_version(agent)
+        return (
+            dict(state) if isinstance(state, Mapping) else {},
+            dict(status) if isinstance(status, Mapping) else {},
+        )
+    except Exception:
+        # Preserve compatibility for lightweight export tests/agents that do
+        # not load the guide module. This fallback is intentionally only used
+        # when the resolver itself is unavailable; a normal runtime always
+        # takes the source-backed path above.
+        legacy = agent.memory.retrieve("surgical_guide")
+        def nonempty(value: Any) -> bool:
+            if isinstance(value, np.ndarray):
+                return value.size > 0
+            try:
+                return len(value) > 0
+            except (TypeError, AttributeError):
+                return bool(value)
+        return (
+            dict(legacy) if isinstance(legacy, Mapping) else {},
+            {
+                "state": str(legacy.get("status") or "unavailable").lower()
+                if isinstance(legacy, Mapping) else "unavailable",
+                "available": isinstance(legacy, Mapping),
+                "mesh_loaded": isinstance(legacy, Mapping)
+                and nonempty(legacy.get("vertices"))
+                and nonempty(legacy.get("faces")),
+                "persistence_known": True,
+            },
+        )
+
+
 def _reference_image(memory: Any, shape: Optional[tuple[int, int, int]] = None) -> sitk.Image:
     reference = memory.retrieve("ct_image")
     if reference is None:
@@ -497,12 +549,23 @@ class ExportService:
                 ),
             ))
 
-        guide = memory.retrieve("surgical_guide")
-        if isinstance(guide, Mapping) and guide.get("status") == "ready":
+        guide, guide_status = _resolved_surgical_guide(agent)
+        guide_lifecycle = str(guide_status.get("state") or "").lower()
+        if (
+            isinstance(guide, Mapping)
+            and guide_status.get("mesh_loaded")
+            and guide_lifecycle in {"ready", "stale"}
+        ):
             objects.append(ExportObject(
                 "surgical_guide:active", "group:surgical_guide",
                 "Surgical guide", "surgical_guide", "SurgicalGuide",
-                (STL,), "stl", {"version": int(guide.get("version") or 1)},
+                (STL,), "stl", {
+                    "version": int(guide.get("version") or 1),
+                    "status": guide_lifecycle,
+                    "planning_id": guide_status.get("planning_id")
+                    or guide_status.get("active_planning_id"),
+                    "persistence_known": guide_status.get("persistence_known"),
+                },
             ))
 
         snapshot = self.store.load_snapshot(user_id, session_id)
@@ -785,7 +848,16 @@ class ExportService:
         elif item.data_type == "dvh_curve":
             self._write_dvh_png(path, self._dvh_payload(memory))
         elif item.data_type == "surgical_guide":
-            guide = memory.retrieve("surgical_guide") or {}
+            guide, guide_status = _resolved_surgical_guide(agent)
+            guide_lifecycle = str(guide_status.get("state") or "").lower()
+            if guide_lifecycle in {"restoring", "persisted_not_loaded", "generating", "unavailable"}:
+                raise ExportError(
+                    "The Surgical Guide is still being restored; retry after its mesh is loaded"
+                )
+            if guide_lifecycle != "ready":
+                raise ExportError(
+                    "The Surgical Guide is stale or not current; regenerate it before export"
+                )
             raw_vertices = guide.get("vertices")
             raw_faces = guide.get("faces")
             vertices = np.asarray([] if raw_vertices is None else raw_vertices, dtype=float)
