@@ -168,18 +168,18 @@ def presentation_fallback_message(
     if is_zh:
         if has_visual and contract.act in {"question", "mixed"}:
             return (
-                "我已按当前问题准备了 Viewer/Data Tree 的对应证据，截图会附在本条回复中。"
-                "文字结论以当前 Session 中实际保存并返回的结果为准。"
+                "对应的 Viewer/Data Tree 截图已保留在本条回复中，但当前没有得到可验证的图像解读，"
+                "因此没有盲目标注。若需要定位具体对象，请直接告诉我对象名称，我会基于当前可见状态重新核对。"
             )
         if has_visual:
-            return "已按当前请求准备 Viewer/Data Tree 的可用证据，截图会附在本条回复中。"
+            return "截图已保留在本条回复中；当前没有生成额外的文字解读。"
         return "本轮没有生成可展示的文字回复；当前病例和规划未因此被修改，请重试。"
     if has_visual and contract.act in {"question", "mixed"}:
         return (
-            "I prepared the relevant Viewer/Data Tree evidence for the current question; "
-            "the screenshot will be attached to this reply. The textual conclusion is "
-            "limited to results actually saved and returned for the current Session."
+            "The relevant Viewer/Data Tree screenshot is preserved in this reply, but no "
+            "verified visual interpretation was returned, so I did not annotate it blindly. "
+            "Name the object you want located and I will re-check the currently visible state."
         )
     if has_visual:
-        return "I prepared the available Viewer/Data Tree evidence for this request; the screenshot will be attached to this reply."
+        return "The screenshot is preserved in this reply; no additional textual interpretation was generated."
     return "No user-facing text was generated in this turn; the case and Planning were not changed. Please retry."

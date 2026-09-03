@@ -388,6 +388,53 @@ def test_existing_guide_location_question_is_read_only_grounded_screenshot():
     assert params["focus"]["kind"] == "close-up"
 
 
+def test_explicit_annotation_wording_routes_to_the_same_grounded_guide_capture():
+    """"Circle the guide" is a visual capability request, not generation."""
+    message = "圈出来哪个是导板"
+
+    assert is_surgical_guide_generation_request(message) is False
+    assert resolve_session_visual_location_target(message) == "surgical_guide"
+    policy = classify_local_turn(message)
+    assert policy.intent == "session_visual_location_query"
+    assert policy.direct_execution is True
+
+    calls = ResponseToolMixin()._detect_tool_request(message)
+    assert calls and calls[0]["tool"] == "ui_screenshot"
+    params = calls[0]["params"]
+    assert params["target_refs"] == ["surgical_guide:active"]
+    assert params["visual_purpose"] == "locate"
+    assert params["annotation_policy"] == "required"
+    assert params["analysis_required"] is True
+
+
+def test_visual_capture_parent_uses_a_typed_pending_contract_not_a_canned_reply():
+    """The screenshot parent must wait for the linked multimodal answer."""
+    workflow = _source("agent_runtime/chat_workflows.py")
+    response_tools = _source("agent_runtime/response_tools.py")
+    contract = _source("agent_runtime/response_contract.py")
+    chat = _source("web/app/static/js/brachybot-chat-todo.js")
+
+    assert 'response = ""' in workflow
+    assert 'llm_meta["visual_analysis_pending"] = True' in workflow
+    assert "not visual_analysis_pending" in workflow
+    assert "self._visual_analysis_pending = True" in response_tools
+    assert "legacyVisualAck" in chat
+    assert "没有得到可验证的图像解读" in contract
+    assert "我已按当前问题准备了 Viewer/Data Tree 的对应证据" not in contract
+
+
+def test_target_agnostic_screenshot_can_follow_only_a_recent_user_target():
+    """Context resolves the object family without trusting assistant prose."""
+    conversation = [
+        {"role": "user", "content": "请问手术导板在哪里"},
+        {"role": "assistant", "content": "手术导板尚未生成。"},
+    ]
+    assert resolve_session_visual_location_target("截图给我在哪里", conversation) == "surgical_guide"
+    assert classify_local_turn("截图给我在哪里", conversation=conversation).intent == "session_visual_location_query"
+    assistant_only = [{"role": "assistant", "content": "手术导板在三维查看器中。"}]
+    assert resolve_session_visual_location_target("截图给我在哪里", assistant_only) is None
+
+
 @pytest.mark.parametrize(
     ("message", "is_generation", "visual_target"),
     [
@@ -812,6 +859,23 @@ def test_chat_images_survive_out_of_order_capture_and_session_restore():
     assert "renderAssistantAttachments(" in core
     assert "user-supplied" in core
     assert "response_language: context.responseLanguage || ''" in ui_api
+
+
+def test_screenshot_replay_preserves_visual_contract_and_waits_for_restore_barrier():
+    routes = _source("web/routes/planning_routes.py")
+    ui_api = _source("web/app/static/js/brachybot-ui-api.js")
+    workspace = _source("web/app/static/js/brachybot-workspace.js")
+    chat = _source("web/app/static/js/brachybot-chat-todo.js")
+
+    assert '"visual_analysis": analysis_required' in routes
+    assert '"analysis_required": analysis_required' in routes
+    assert '"annotation_policy": raw_annotation_policy' in routes
+    assert '"visual_purpose": raw_visual_purpose' in routes
+    assert "window.awaitWorkspaceVisualReady" in ui_api
+    assert "workspace_visual_restore_incomplete" in ui_api
+    assert "awaitWorkspaceVisualReady(ownerSessionId" in ui_api
+    assert "awaitWorkspaceVisualReady(String(sessionId)" in workspace
+    assert "_visualAttachmentRequiresAnalysis(item)" in chat
 
 
 def test_screenshot_failure_returns_to_the_owning_reply_without_creating_a_new_message():
