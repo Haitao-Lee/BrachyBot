@@ -943,6 +943,16 @@ def _current_guide_record(agent: Any) -> Optional[Dict[str, Any]]:
         record for record in _guide_records(agent)
         if _guide_matches_active_planning(record["state"], active_id)
     ]
+    if active_id:
+        # A legacy history entry may lack ``planning_id``. It is safe for
+        # version browsing, but it must not outrank the active alias/snapshot
+        # and make an older guide look like the current run after restart.
+        active_candidates = [
+            record for record in candidates
+            if record.get("current")
+            or str(record["state"].get("planning_id") or "") == active_id
+        ]
+        candidates = active_candidates
     if not candidates:
         return None
 
@@ -1068,7 +1078,13 @@ def guide_status_payload(agent: Any, version: Optional[Any] = None) -> Dict[str,
     plan_matches: Optional[bool] = None
     if state and active_id:
         stored_id = str(state.get("planning_id") or "")
-        plan_matches = not stored_id or stored_id == active_id
+        if stored_id:
+            plan_matches = stored_id == active_id
+        elif record and record.get("current"):
+            # A legacy active alias/snapshot can predate the explicit
+            # Planning ID. Treat it as the active run only because its source
+            # is current; an anonymous history entry remains unknown.
+            plan_matches = True
     # Planning identity alone is not enough: a guide may have been persisted
     # under the same run and then become stale after a needle edit.  Compare
     # signatures only when the current geometry has actually been restored;

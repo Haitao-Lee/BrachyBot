@@ -644,6 +644,34 @@ def test_guide_status_recovers_from_active_planning_snapshot_when_alias_is_missi
     assert guide_state_for_version(agent)["version"] == 3
 
 
+def test_current_guide_does_not_promote_anonymous_old_history_after_restart():
+    """An unidentified historical mesh must not become the active guide."""
+    agent = _Agent({
+        "active_planning_id": "planning-active",
+        "surgical_guide": None,
+        "surgical_guide_versions": [{
+            "status": "ready",
+            "version": 99,
+            "vertices": np.zeros((3, 3), dtype=np.float32),
+            "faces": np.zeros((1, 3), dtype=np.int32),
+        }],
+        "planning_run:planning-active": {
+            "surgical_guide": {
+                "status": "ready",
+                "version": 3,
+                "planning_id": "planning-active",
+                "vertices": np.zeros((3, 3), dtype=np.float32),
+                "faces": np.zeros((1, 3), dtype=np.int32),
+            },
+        },
+    })
+
+    status = guide_status_payload(agent)
+
+    assert status["version"] == 3
+    assert status["source"] == "active_planning_snapshot"
+
+
 def test_guide_status_distinguishes_metadata_shell_from_not_generated():
     """Decoded metadata with pending arrays is a persisted guide, not absence."""
     agent = _Agent({
@@ -1608,4 +1636,3 @@ def test_bore_wall_projection_never_recloses_a_crossing_primary_channel():
 
     assert np.allclose(projected, vertices)
     assert sum(item["cross_bore_protected_vertex_count"] for item in qa["primary"]) >= 1
-
