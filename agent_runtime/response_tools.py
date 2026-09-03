@@ -6,6 +6,7 @@ API remains compatible while the monolithic implementation is easier to review.
 
 import json
 import logging
+import math
 import re
 from typing import Dict, List, Optional
 
@@ -64,6 +65,120 @@ class ResponseToolMixin:
             return "ctv"
         previous = self.memory.retrieve("last_segmentation_target")
         return previous if previous in {"ctv", "oar", "all"} else "all"
+
+    @staticmethod
+    def _full_oar_scope_requested(message: str) -> bool:
+        """Return whether the user explicitly asked for a complete OAR set.
+
+        This is intentionally narrower than merely mentioning an organ. It
+        prevents the request-scope guard from turning a genuine planning/full
+        OAR request into a partial anatomy result.
+        """
+        text = str(message or "").lower()
+        return bool(re.search(
+            r"(?:\b(?:all|every|whole|full|complete|total)\b|全部|所有|全套|完整|全身).{0,16}"
+            r"(?:\boar\b|\borgans?\b|危及器官|器官)"
+            r"|(?:\boar\b|\borgans?\b|危及器官|器官).{0,16}"
+            r"(?:\b(?:all|every|whole|full|complete|total)\b|全部|所有|全套|完整|全身)",
+            text,
+            re.IGNORECASE,
+        ))
+
+    def _requested_oar_organs(self, message: str) -> List[str]:
+        """Resolve named OAR entities from a focused user request.
+
+        This is not a response whitelist and does not decide whether an OAR
+        tool should run. The LLM/policy still owns the action decision. Once
+        it has selected an OAR tool, this entity scope stops that tool from
+        broadening a request such as ``肝脏和肿瘤`` into a full structure set.
+        """
+        if self._full_oar_scope_requested(message):
+            return []
+        try:
+            from tool_factory.OAR_seg.totalsegmentator_oar import (
+                extract_totalseg_organ_filter_from_text,
+            )
+            return extract_totalseg_organ_filter_from_text(message)
+        except Exception as exc:
+            # Scope resolution must never make the clinical tool unavailable.
+            # The tool boundary still validates an explicit organ_filter.
+            logger.debug("Unable to resolve focused OAR entities: %s", exc)
+            return []
+
+    def _explicit_organ_plus_tumor_scope(self, message: str) -> List[str]:
+        """Return named organs only for an explicit anatomy-plus-tumor ask.
+
+        A tumor site alone (for example ``分割肝癌``) is a CTV request. A
+        coordinated request (``分割肝脏和肿瘤``) authorizes both the tumor CTV
+        and the named anatomy mask. This avoids inventing a broad OAR action
+        from a cancer-site name while still honoring the user's two objects.
+        """
+        organs = self._requested_oar_organs(message)
+        if not organs:
+            return []
+        text = str(message or "").lower()
+        has_tumor = bool(re.search(
+            r"\b(?:tumou?r|lesion|cancer)\b|肿瘤|肿块|病灶|癌",
+            text,
+            re.IGNORECASE,
+        ))
+        has_coordinating_connector = bool(re.search(
+            r"\b(?:and|with)\b|和|与|及|以及|、|,|，",
+            text,
+            re.IGNORECASE,
+        ))
+        return organs if has_tumor and has_coordinating_connector else []
+
+    def _normalize_oar_tool_params(self, params: Dict, message: str = "") -> Dict:
+        """Normalize and cap named OAR calls at the execution contract.
+
+        The caller may use friendly aliases, but a current-turn explicit
+        anatomy scope always wins over a provider's omitted or overly broad
+        filter. An unknown explicit value is preserved for the OAR tool to
+        reject rather than silently expanding to every organ.
+        """
+        normalized = dict(params or {})
+        raw_filter = None
+        for alias in (
+            "organ_filter", "organs", "target_organs", "requested_organs",
+            "requested_structures", "structures",
+        ):
+            if alias not in normalized:
+                continue
+            value = normalized.get(alias)
+            if value is not None and value != "":
+                raw_filter = value
+                break
+        for alias in (
+            "organs", "target_organs", "requested_organs",
+            "requested_structures", "structures",
+        ):
+            normalized.pop(alias, None)
+
+        if message and self._full_oar_scope_requested(message):
+            normalized.pop("organ_filter", None)
+            return normalized
+
+        message_scope = self._requested_oar_organs(message) if message else []
+        # The user's named structures are the outer boundary for this turn;
+        # do not let an LLM-provided generic/full OAR choice widen it.
+        if message_scope:
+            raw_filter = message_scope
+        if raw_filter is None:
+            normalized.pop("organ_filter", None)
+            return normalized
+
+        try:
+            from tool_factory.OAR_seg.totalsegmentator_oar import (
+                normalize_totalseg_organ_filter,
+            )
+            normalized["organ_filter"] = normalize_totalseg_organ_filter(raw_filter)
+        except Exception:
+            # Preserve the explicit invalid payload. OARSegmentationTool will
+            # return an actionable validation error instead of running a full
+            # TotalSegmentator job as an unsafe fallback.
+            normalized["organ_filter"] = raw_filter
+        return normalized
 
     @staticmethod
     def _open_segmentation_target(message: str) -> Optional[str]:
@@ -320,6 +435,14 @@ print(json.dumps(result))
                 params["tumor_type"] = tumor_type
             return params
 
+        focused_oar_organs = self._explicit_organ_plus_tumor_scope(message)
+
+        def oar_params():
+            params = {"image_path": ct_path}
+            if focused_oar_organs:
+                params["organ_filter"] = list(focused_oar_organs)
+            return params
+
         force_reexecution = self._force_reexecution_requested(message=message)
         segmentation_scope = self._segmentation_scope(message)
 
@@ -553,6 +676,15 @@ print(json.dumps(result))
             elif has_oar and not has_ctv:
                 if re.search(r'(ctv|靶区|临床靶区)', msg, re.IGNORECASE):
                     ordered_actions.append('segment_ctv')
+            # A coordinated request such as "分割肝脏和肿瘤" explicitly
+            # names an anatomy mask plus a CTV candidate. Add only the named
+            # OAR action; the OAR params below retain that same subset.
+            if (
+                focused_oar_organs
+                and 'segment_ctv' in ordered_actions
+                and 'segment_oar' not in ordered_actions
+            ):
+                ordered_actions.append('segment_oar')
 
         if not ordered_actions:
             # A clarification reply such as "pancreas" has no action verb.
@@ -631,7 +763,7 @@ print(json.dumps(result))
                     params["force_reexecution"] = True
                 tools.append({"id": "tool_direct_ctv", "tool": "ctv_segmentation", "params": params})
             elif action == 'segment_oar' and ct_path:
-                params = {"image_path": ct_path}
+                params = oar_params()
                 if force_reexecution:
                     params["force_reexecution"] = True
                 tools.append({"id": "tool_direct_oar", "tool": "oar_segmentation", "params": params})
@@ -647,7 +779,7 @@ print(json.dumps(result))
                 })
             elif action == 'segment_all' and ct_path:
                 ctv_call = ctv_params()
-                oar_call = {"image_path": ct_path}
+                oar_call = oar_params()
                 if force_reexecution:
                     ctv_call["force_reexecution"] = True
                     oar_call["force_reexecution"] = True
@@ -1082,6 +1214,91 @@ print(json.dumps(result))
             density = total_seeds / ctv_vol_cm3
             lines.append(f"- **{L('粒子密度', 'Seed density')}**: {density:.2f} {L('颗 / cm³', 'seeds/cm³')}")
         lines.append(f"- **{L('规划模式', 'Planning mode')}**: rule_based")
+
+        # RL execution telemetry is distinct from the effective plan mode.
+        # A rule-based fallback can be the final plan while the user still
+        # needs to know whether RL reached its target, timed out, or exhausted
+        # a bounded search budget.  Render only compact, persisted scalars so
+        # this section remains useful after a restart and cannot leak arrays.
+        rl_status = plan_config.get("rl_status")
+        if not isinstance(rl_status, dict):
+            rl_status = self.memory.retrieve("rl_status") or {}
+        if isinstance(rl_status, dict) and rl_status:
+            execution_labels = {
+                "completed": L("已完成", "completed"),
+                "interrupted": L("已中断", "interrupted"),
+                "failed": L("失败", "failed"),
+            }
+            reason_labels = {
+                "target_reached": L("达到目标覆盖率", "target reached"),
+                "wall_clock_budget": L("达到墙钟时间预算", "wall-clock budget reached"),
+                "dose_inference_deadline": L("达到剂量推理截止时间", "dose-inference deadline reached"),
+                "episode_budget_exhausted": L("回合预算耗尽", "episode budget exhausted"),
+                "no_valid_dense_trajectory": L("没有有效的密集针道候选", "no valid dense trajectory"),
+                "no_available_action": L("没有可用动作", "no available action"),
+                "internal_exception": L("内部异常", "internal exception"),
+                "completed_without_target": L("完成但未达到目标", "completed without target"),
+            }
+
+            def _rl_number(key, default="—"):
+                value = rl_status.get(key, default)
+                return default if value is None else value
+
+            def _rl_float(key, default=0.0):
+                try:
+                    value = float(rl_status.get(key, default))
+                except (TypeError, ValueError):
+                    return default
+                return value if math.isfinite(value) else default
+
+            execution = str(rl_status.get("execution") or "").strip()
+            stop_reason = str(rl_status.get("stop_reason") or "").strip()
+            execution_text = execution_labels.get(execution, execution or "—")
+            reason_text = reason_labels.get(stop_reason, stop_reason or "—")
+            lines.append("")
+            lines.append(f"### {L('RL 执行诊断', 'RL execution diagnostics')}")
+            lines.append(
+                f"- **{L('执行状态', 'Execution')}**: {execution_text}"
+                f" ({execution or '—'})"
+            )
+            lines.append(
+                f"- **{L('停止原因', 'Stop reason')}**: {reason_text}"
+                f" ({stop_reason or '—'})"
+            )
+            lines.append(
+                f"- **{L('目标覆盖率 / 最佳覆盖率', 'Target / best coverage')}**: "
+                f"{_rl_float('target_coverage'):.1%} / "
+                f"{_rl_float('best_coverage'):.1%}"
+            )
+            best_reward = rl_status.get("best_reward")
+            try:
+                reward_value = float(best_reward)
+            except (TypeError, ValueError):
+                reward_value = None
+            reward_text = (
+                "—"
+                if reward_value is None or not math.isfinite(reward_value)
+                else f"{reward_value:.4f}"
+            )
+            lines.append(f"- **{L('最佳奖励', 'Best reward')}**: {reward_text}")
+            lines.append(
+                f"- **{L('回合数（总 / 高层 / 低层）', 'Episodes (total / high / low)')}**: "
+                f"{_rl_number('episodes_completed')} / "
+                f"{_rl_number('high_level_episodes')} / "
+                f"{_rl_number('low_level_episodes')}"
+            )
+            lines.append(
+                f"- **{L('动作数 / 密集针道 / 密集粒子候选', 'Actions / dense trajectories / dense seed candidates')}**: "
+                f"{_rl_number('actions_taken')} / "
+                f"{_rl_number('dense_trajectories_completed')} / "
+                f"{_rl_number('dense_seed_candidates')}"
+            )
+            lines.append(
+                f"- **{L('耗时 / 剂量缓存命中 / 未命中', 'Elapsed / dose-cache hits / misses')}**: "
+                f"{_rl_float('elapsed_seconds'):.3f} s / "
+                f"{_rl_number('dose_cache_hits')} / "
+                f"{_rl_number('dose_cache_misses')}"
+            )
         if guide_summary:
             lines.append(f"- **{L('手术导板', 'Surgical guide')}**: {guide_summary}")
         lines.append("")

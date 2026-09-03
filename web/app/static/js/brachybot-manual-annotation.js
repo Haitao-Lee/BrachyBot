@@ -1910,10 +1910,6 @@ function _showSeed2DContextMenu(event, seed) {
         if (typeof hideContextMenu === 'function') hideContextMenu();
         if (typeof deleteSeed3D === 'function') deleteSeed3D(seed.id);
     });
-    setTimeout(() => {
-        document.addEventListener('click', hideContextMenu, { once: true });
-        document.addEventListener('contextmenu', hideContextMenu, { once: true });
-    }, 0);
 }
 
 function _ensureSeed2DInteraction(sliceCanvas, view) {
@@ -2127,6 +2123,480 @@ function renderSeedsOverlay(axis, sliceIndex) {
 
     _drawSurgicalGuideSliceProjection(ctx, axisIdx, sliceIndex, orientIdx, toDisplay);
 }
+
+// ==================== SCREENSHOT 2D AUTO-FRAMING ====================
+// Screenshot prompts name stable objects, never pixels.  Resolve those
+// identities against the same label volumes and world geometry used by the
+// live MPR renderer, choose the slice with the largest target cross-section,
+// and publish capture-space bounds for the annotation pipeline.  This code is
+// intentionally read-only: it never changes Data Tree visibility or creates a
+// synthetic object just to satisfy a screenshot request.
+const _SCREENSHOT_2D_BLOCKED_STATUSES = new Set([
+    'loading', 'error', 'stale', 'expired', 'not_generated',
+    'not-generated', 'unresolved', 'missing', 'deleted',
+]);
+const _screenshot2DVolumeStatsCache = new WeakMap();
+
+function _screenshot2DStatus(node) {
+    return String(node?.status || (node?.loaded === false ? 'not_generated' : 'ready')).toLowerCase();
+}
+
+function _screenshot2DNodeVisible(node, family) {
+    const treeVisible = node
+        ? (typeof window.isDataTreeNodeVisible2D === 'function'
+            ? window.isDataTreeNodeVisible2D(node)
+            : node.visible !== false && node.visible2D !== false)
+        : false;
+    if (!treeVisible || Number(node?.opacity ?? 1) <= 0.001) return false;
+    if (family === 'ctv') {
+        return dataTreeState?.ctv?.visible !== false && state?.viewerSettings?.showCTV !== false;
+    }
+    if (family === 'oar') {
+        return dataTreeState?.oar?.visible !== false && state?.viewerSettings?.showOAR !== false;
+    }
+    if (family === 'dose') return !!state?.doseOverlay?.visible;
+    if (family === 'seed' || family === 'needle' || family === 'trajectory') {
+        return !!state?.seedsOverlay;
+    }
+    return true;
+}
+
+function _screenshot2DIdentities(node, aliases = []) {
+    return new Set([
+        node?.id, node?.nodeId, node?.node_id, node?.objectId, node?.object_id,
+        ...aliases,
+    ].map(value => String(value || '').trim()).filter(Boolean));
+}
+
+function _screenshot2DMatches(targetRef, node, aliases = []) {
+    return _screenshot2DIdentities(node, aliases).has(String(targetRef || '').trim());
+}
+
+function _newScreenshot2DStats(shape) {
+    const [Z, Y, X] = shape;
+    const axis = (length, maxA, maxB) => ({
+        counts: new Uint32Array(length),
+        minA: new Int32Array(length).fill(maxA),
+        maxA: new Int32Array(length).fill(-1),
+        minB: new Int32Array(length).fill(maxB),
+        maxB: new Int32Array(length).fill(-1),
+    });
+    return {
+        shape: [Z, Y, X],
+        count: 0,
+        sum: [0, 0, 0],
+        axes: {
+            axial: axis(Z, X, Y),       // slice Z; display X by Y
+            sagittal: axis(X, Y, Z),    // slice X; display Y by Z
+            coronal: axis(Y, X, Z),     // slice Y; display X by Z
+        },
+        best: { axial: 0, sagittal: 0, coronal: 0 },
+    };
+}
+
+function _addScreenshot2DVoxel(stats, zValue, yValue, xValue) {
+    const [Z, Y, X] = stats.shape;
+    const z = Math.max(0, Math.min(Z - 1, Math.round(Number(zValue))));
+    const y = Math.max(0, Math.min(Y - 1, Math.round(Number(yValue))));
+    const x = Math.max(0, Math.min(X - 1, Math.round(Number(xValue))));
+    if (![z, y, x].every(Number.isFinite)) return;
+    const update = (record, index, a, b) => {
+        record.counts[index] += 1;
+        record.minA[index] = Math.min(record.minA[index], a);
+        record.maxA[index] = Math.max(record.maxA[index], a);
+        record.minB[index] = Math.min(record.minB[index], b);
+        record.maxB[index] = Math.max(record.maxB[index], b);
+    };
+    update(stats.axes.axial, z, x, y);
+    update(stats.axes.sagittal, x, y, z);
+    update(stats.axes.coronal, y, x, z);
+    stats.count += 1;
+    stats.sum[0] += x;
+    stats.sum[1] += y;
+    stats.sum[2] += z;
+}
+
+function _finishScreenshot2DStats(stats) {
+    Object.keys(stats.axes).forEach(axis => {
+        const counts = stats.axes[axis].counts;
+        let best = 0;
+        for (let index = 1; index < counts.length; index += 1) {
+            if (counts[index] > counts[best]) best = index;
+        }
+        stats.best[axis] = best;
+    });
+    stats.center_voxel = stats.count
+        ? stats.sum.map(value => value / stats.count)
+        : null;
+    return stats;
+}
+
+function _screenshot2DVolumeStats(data, cacheKey, predicate) {
+    const shape = volumeShape || state?.ctShape;
+    if (!data || !Array.isArray(shape) || shape.length !== 3) return null;
+    const [Z, Y, X] = shape.map(Number);
+    if (!Z || !Y || !X || data.length < Z * Y * X) return null;
+    let cache = _screenshot2DVolumeStatsCache.get(data);
+    if (!cache) {
+        cache = new Map();
+        _screenshot2DVolumeStatsCache.set(data, cache);
+    }
+    if (cache.has(cacheKey)) return cache.get(cacheKey);
+    const stats = _newScreenshot2DStats([Z, Y, X]);
+    const sliceSize = Y * X;
+    for (let flat = 0; flat < Z * sliceSize; flat += 1) {
+        if (!predicate(data[flat])) continue;
+        const z = Math.floor(flat / sliceSize);
+        const remainder = flat - z * sliceSize;
+        const y = Math.floor(remainder / X);
+        _addScreenshot2DVoxel(stats, z, y, remainder - y * X);
+    }
+    _finishScreenshot2DStats(stats);
+    cache.set(cacheKey, stats);
+    return stats;
+}
+
+function _screenshot2DWorldLineStats(lines) {
+    const shape = volumeShape || state?.ctShape;
+    if (!Array.isArray(shape) || shape.length !== 3) return null;
+    const stats = _newScreenshot2DStats(shape.map(Number));
+    (Array.isArray(lines) ? lines : []).forEach(points => {
+        const indexed = (Array.isArray(points) ? points : []).map(point => {
+            if (!Array.isArray(point) || point.length < 3) return null;
+            return _worldToIndex(Number(point[0]), Number(point[1]), Number(point[2]));
+        }).filter(Boolean);
+        if (indexed.length === 1) _addScreenshot2DVoxel(stats, ...indexed[0]);
+        for (let pointIndex = 0; pointIndex < indexed.length - 1; pointIndex += 1) {
+            const a = indexed[pointIndex], b = indexed[pointIndex + 1];
+            const steps = Math.max(1, Math.ceil(Math.max(
+                Math.abs(b[0] - a[0]), Math.abs(b[1] - a[1]), Math.abs(b[2] - a[2]),
+            )));
+            for (let step = 0; step <= steps; step += 1) {
+                const t = step / steps;
+                _addScreenshot2DVoxel(
+                    stats,
+                    a[0] + (b[0] - a[0]) * t,
+                    a[1] + (b[1] - a[1]) * t,
+                    a[2] + (b[2] - a[2]) * t,
+                );
+            }
+        }
+    });
+    return _finishScreenshot2DStats(stats);
+}
+
+function _screenshot2DMeshStats(mesh) {
+    const position = mesh?.geometry?.attributes?.position;
+    if (!position || typeof THREE === 'undefined') return null;
+    const shape = volumeShape || state?.ctShape;
+    if (!Array.isArray(shape) || shape.length !== 3) return null;
+    const stats = _newScreenshot2DStats(shape.map(Number));
+    mesh.updateMatrixWorld?.(true);
+    const stride = Math.max(1, Math.ceil(position.count / 30000));
+    for (let index = 0; index < position.count; index += stride) {
+        const point = new THREE.Vector3().fromBufferAttribute(position, index)
+            .applyMatrix4(mesh.matrixWorld);
+        const voxel = _worldToIndex(point.x, point.y, point.z);
+        if (voxel) _addScreenshot2DVoxel(stats, ...voxel);
+    }
+    return _finishScreenshot2DStats(stats);
+}
+
+function _screenshot2DMaskStats(mask) {
+    const generic = genericMaskVolumeData?.[mask?.id];
+    if (generic?.data) {
+        return _screenshot2DVolumeStats(generic.data, 'positive', value => Number(value) > 0);
+    }
+    if (mask?.kind === 'threshold' && volumeData && Number.isFinite(Number(mask.threshold))) {
+        const threshold = Number(mask.threshold);
+        return _screenshot2DVolumeStats(
+            volumeData,
+            `threshold:${threshold}`,
+            value => Number(value) > threshold,
+        );
+    }
+    if (!mask?.voxels || typeof mask.voxels[Symbol.iterator] !== 'function') return null;
+    const shape = volumeShape || state?.ctShape;
+    if (!Array.isArray(shape) || shape.length !== 3) return null;
+    const stats = _newScreenshot2DStats(shape.map(Number));
+    for (const key of mask.voxels) {
+        const parts = _maskKeyParts(key);
+        if (parts) _addScreenshot2DVoxel(stats, parts.z, parts.y, parts.x);
+    }
+    return _finishScreenshot2DStats(stats);
+}
+
+function _screenshot2DTargetDescriptor(targetRef) {
+    const ref = String(targetRef || '').trim();
+    if (!ref) return null;
+    const make = (node, family, source, stats, label = '') => ({
+        target_ref: ref,
+        node,
+        family,
+        source,
+        stats,
+        label: String(label || node?.label || node?.name || ref),
+        status: _screenshot2DStatus(node),
+        tree_visible: _screenshot2DNodeVisible(node, family),
+    });
+
+    const ctvMatch = ref.match(/^(?:structure:ctv:|ctv_)(\d+)$/);
+    if (ctvMatch || ref === 'ctv') {
+        const labelId = ctvMatch ? Number(ctvMatch[1]) : null;
+        const node = labelId == null
+            ? dataTreeState?.ctv
+            : (dataTreeState?.ctvLabels?.[`ctv_${labelId}`] || dataTreeState?.ctv);
+        const stats = _screenshot2DVolumeStats(
+            ctvLabelData,
+            labelId == null ? 'positive' : `label:${labelId}`,
+            value => labelId == null ? Number(value) > 0 : Number(value) === labelId,
+        );
+        return make(node, 'ctv', 'ctv-label-volume', stats);
+    }
+    for (const node of Object.values(dataTreeState?.ctvLabels || {})) {
+        const labelId = Number(node?.labelId ?? node?.label_id);
+        if (!_screenshot2DMatches(ref, node, [`structure:ctv:${labelId}`])) continue;
+        return make(node, 'ctv', 'ctv-label-volume', _screenshot2DVolumeStats(
+            ctvLabelData, `label:${labelId}`, value => Number(value) === labelId,
+        ));
+    }
+
+    const oarMatch = ref.match(/^(?:structure:oar:|organ_)(\d+)$/);
+    const organ = (dataTreeState?.organs || []).find(node => {
+        const labelId = Number(node?.labelId ?? node?.label_id);
+        return (oarMatch && labelId === Number(oarMatch[1]))
+            || _screenshot2DMatches(ref, node, [`structure:oar:${labelId}`]);
+    });
+    if (organ) {
+        const labelId = Number(organ.labelId ?? organ.label_id);
+        return make(organ, 'oar', 'oar-label-volume', _screenshot2DVolumeStats(
+            oarLabelData, `label:${labelId}`, value => Number(value) === labelId,
+        ));
+    }
+
+    if (ref === 'skin_surface:guide' || ref === 'skin_surface') {
+        return make(dataTreeState?.skin, 'skin', 'skin-label-volume', _screenshot2DVolumeStats(
+            skinSurfaceData, 'positive', value => Number(value) > 0,
+        ));
+    }
+
+    for (const [id, mask] of Object.entries(state?.maskLabels || {})) {
+        if (!_screenshot2DMatches(ref, mask, [id, `mask:${id}`])) continue;
+        return make(mask, 'mask', 'mask-volume', _screenshot2DMaskStats(mask));
+    }
+
+    const seeds = dataTreeState?.planning?.seeds || [];
+    const seed = seeds.find(node => _screenshot2DMatches(ref, node, [`seed:${node?.id}`]));
+    if (seed) {
+        const position = seed.position || seed.pos;
+        return make(seed, 'seed', 'seed-world-geometry', _screenshot2DWorldLineStats([[position]]));
+    }
+    if (ref === 'seeds' || ref === 'group:planning:seeds') {
+        const visibleSeeds = seeds.filter(node => _screenshot2DNodeVisible(node, 'seed'));
+        return make(
+            dataTreeState?.seeds,
+            'seed',
+            'seed-world-geometry',
+            _screenshot2DWorldLineStats(visibleSeeds.map(node => [node.position || node.pos])),
+            dataTreeState?.seeds?.label || 'Seeds',
+        );
+    }
+
+    const needles = dataTreeState?.planning?.needles || [];
+    const needle = needles.find(node => _screenshot2DMatches(ref, node, [`needle:${node?.id}`]));
+    if (needle) {
+        return make(needle, 'needle', 'needle-world-geometry', _screenshot2DWorldLineStats([needle.points]));
+    }
+    if (ref === 'needles' || ref === 'group:planning:needles') {
+        const visibleNeedles = needles.filter(node => _screenshot2DNodeVisible(node, 'needle'));
+        return make(
+            dataTreeState?.needles,
+            'needle',
+            'needle-world-geometry',
+            _screenshot2DWorldLineStats(visibleNeedles.map(node => node.points)),
+            dataTreeState?.needles?.label || 'Needles',
+        );
+    }
+
+    const trajectories = dataTreeState?.planning?.trajectories || [];
+    const trajectory = trajectories.find(node => _screenshot2DMatches(
+        ref, node, [`trajectory:${node?.id}`],
+    ));
+    if (trajectory) {
+        const trajectoryId = _overlayTrajectoryKey(trajectory.id ?? trajectory.index);
+        const ownedNeedles = needles.filter(node =>
+            _overlayTrajectoryKey(node?.trajectory_id) === trajectoryId
+        );
+        return make(
+            trajectory,
+            'trajectory',
+            'trajectory-world-geometry',
+            _screenshot2DWorldLineStats(ownedNeedles.map(node => node.points)),
+        );
+    }
+
+    if (['dose:volume', 'dose', 'dose_overlay'].includes(ref)) {
+        const peak = state?.doseOverlay?.peakVoxel;
+        const point = peak ? [Number(peak.raw_z ?? peak.z), Number(peak.y), Number(peak.x)] : null;
+        const shape = volumeShape || state?.ctShape;
+        const stats = Array.isArray(point) && Array.isArray(shape)
+            ? _finishScreenshot2DStats((() => {
+                const value = _newScreenshot2DStats(shape.map(Number));
+                _addScreenshot2DVoxel(value, ...point);
+                return value;
+            })())
+            : null;
+        return make(dataTreeState?.planning?.doseOverlay || dataTreeState?.dose, 'dose', 'dose-peak', stats);
+    }
+
+    const meshEntries = dataTreeState?.planning?.meshes || [];
+    const meshNode = meshEntries.find(node => {
+        const aliases = String(node?.source || '').toLowerCase() === 'surgical_guide'
+            ? ['surgical_guide:active'] : [];
+        return _screenshot2DMatches(ref, node, aliases);
+    });
+    if (meshNode) {
+        const mesh = scene3D?.meshes?.[meshNode.id];
+        return make(meshNode, 'mesh', 'mesh-world-geometry', _screenshot2DMeshStats(mesh));
+    }
+    return null;
+}
+
+function _screenshot2DDisplaySlice(axis, volumeSlice, shape) {
+    return axis === 'axial' ? (shape[0] - 1) - volumeSlice : volumeSlice;
+}
+
+function _screenshot2DBoundsAt(stats, axis, displaySlice) {
+    if (!stats?.count || !stats.axes?.[axis]) return null;
+    const [Z, Y, X] = stats.shape;
+    const volumeSlice = axis === 'axial' ? (Z - 1) - Number(displaySlice) : Number(displaySlice);
+    const record = stats.axes[axis];
+    const index = Math.round(volumeSlice);
+    if (index < 0 || index >= record.counts.length || record.counts[index] < 1) return null;
+    let width, height, left, top, right, bottom;
+    if (axis === 'axial') {
+        width = X; height = Y;
+        left = record.minA[index]; right = record.maxA[index] + 1;
+        top = record.minB[index]; bottom = record.maxB[index] + 1;
+    } else {
+        const geom = _getMprGeometry(axis, stats.shape, volumeSpacing || state?.ctSpacing || [1, 1, 1]);
+        width = axis === 'sagittal' ? Y : X;
+        height = geom.height;
+        left = record.minA[index]; right = record.maxA[index] + 1;
+        top = _volumeZToDisplayY(record.minB[index], geom.resampleRatio);
+        bottom = _volumeZToDisplayY(record.maxB[index] + 1, geom.resampleRatio);
+    }
+    const padX = Math.max(2, width * 0.012);
+    const padY = Math.max(2, height * 0.012);
+    left = Math.max(0, left - padX);
+    top = Math.max(0, top - padY);
+    right = Math.min(width, right + padX);
+    bottom = Math.min(height, bottom + padY);
+    if (right <= left || bottom <= top) return null;
+    return [left / width, top / height, (right - left) / width, (bottom - top) / height]
+        .map(value => Number(value.toFixed(6)));
+}
+
+function resolve2DScreenshotFocus(axis, targetRefs = [], options = {}) {
+    if (!['axial', 'sagittal', 'coronal'].includes(axis)) {
+        return { version: 1, status: 'unresolved', reason: 'unsupported_axis', axis };
+    }
+    const refs = [...new Set((Array.isArray(targetRefs) ? targetRefs : [])
+        .map(value => String(value || '').trim()).filter(Boolean))].slice(0, 32);
+    const descriptors = refs.map(_screenshot2DTargetDescriptor).filter(Boolean);
+    const primary = descriptors.find(item =>
+        item.tree_visible
+        && !_SCREENSHOT_2D_BLOCKED_STATUSES.has(item.status)
+        && item.stats?.count > 0
+    );
+    if (!primary) {
+        return {
+            version: 1,
+            status: 'unresolved',
+            reason: descriptors.length ? 'target_hidden_stale_or_empty' : 'target_not_loaded',
+            axis,
+            requested_target_refs: refs,
+        };
+    }
+    const volumeSlice = Number(primary.stats.best[axis]);
+    const sliceIndex = Math.round(_screenshot2DDisplaySlice(axis, volumeSlice, primary.stats.shape));
+    const bounds = _screenshot2DBoundsAt(primary.stats, axis, sliceIndex);
+    return {
+        version: 1,
+        status: bounds ? 'resolved' : 'unresolved',
+        reason: bounds ? '' : 'target_has_no_pixels_on_selected_slice',
+        method: 'deterministic-largest-cross-section',
+        axis,
+        target_ref: primary.target_ref,
+        source: primary.source,
+        slice_index: sliceIndex,
+        center_voxel: primary.stats.center_voxel,
+        target_sample_count: primary.stats.count,
+        normalized_bounds: bounds,
+        requested_target_refs: refs,
+        focus_kind: String(options.focusKind || 'auto'),
+    };
+}
+
+function get2DScreenshotGroundingManifest(axis, targetRefs = [], options = {}) {
+    const refs = [...new Set((Array.isArray(targetRefs) ? targetRefs : [])
+        .map(value => String(value || '').trim()).filter(Boolean))].slice(0, 32);
+    const sliceIndex = Number(state?.slices?.[axis]);
+    const targets = refs.map(targetRef => {
+        const item = _screenshot2DTargetDescriptor(targetRef);
+        if (!item) {
+            return {
+                target_ref: targetRef,
+                kind: 'viewer-object-2d',
+                locator: 'stable-id-to-mpr',
+                visible: false,
+                scene_visible: false,
+                data_tree_visible: false,
+                in_view: false,
+                annotatable: false,
+                status: 'unresolved',
+                reason: 'object_not_loaded_in_2d_viewer',
+                normalized_bounds: null,
+            };
+        }
+        const current = !_SCREENSHOT_2D_BLOCKED_STATUSES.has(item.status);
+        const bounds = item.tree_visible && current
+            ? _screenshot2DBoundsAt(item.stats, axis, sliceIndex)
+            : null;
+        let reason = '';
+        if (!item.tree_visible) reason = 'hidden_in_data_tree_or_2d_view';
+        else if (!current) reason = `status_${item.status}`;
+        else if (!item.stats?.count) reason = 'target_geometry_unavailable';
+        else if (!bounds) reason = 'outside_captured_slice';
+        return {
+            target_ref: targetRef,
+            label: item.label,
+            kind: 'viewer-object-2d',
+            locator: item.source,
+            visible: item.tree_visible,
+            scene_visible: item.tree_visible,
+            data_tree_visible: item.tree_visible,
+            in_view: !!bounds,
+            annotatable: !!bounds && item.tree_visible && current,
+            status: item.status,
+            reason,
+            axis,
+            slice_index: sliceIndex,
+            normalized_bounds: bounds,
+        };
+    });
+    return {
+        version: 1,
+        target: `viewer-${axis}`,
+        axis,
+        slice_index: sliceIndex,
+        focus_result: options.focusResult || null,
+        targets,
+    };
+}
+
+window.resolve2DScreenshotFocus = resolve2DScreenshotFocus;
+window.get2DScreenshotGroundingManifest = get2DScreenshotGroundingManifest;
 
 function syncAnnotationCanvasSize(axis) {
     const sliceCanvas = getSliceCanvas(axis);

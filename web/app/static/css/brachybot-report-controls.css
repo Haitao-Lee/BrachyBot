@@ -902,6 +902,55 @@
     box-sizing: border-box;
 }
 
+/* Planning geometry is sampled into a read-only WebGL layer.  This compact
+   label explains the changing objects without intercepting orbit, pan, zoom,
+   context-menu, or wheel input intended for the renderer underneath. */
+.planning-preview-status {
+    position: absolute;
+    left: 50%;
+    top: 0.65rem;
+    transform: translateX(-50%);
+    z-index: 9;
+    max-width: calc(100% - 1.5rem);
+    padding: 0.38rem 0.68rem;
+    border: 1px solid rgba(89, 214, 255, 0.48);
+    border-radius: 999px;
+    background: rgba(7, 15, 29, 0.78);
+    box-shadow: 0 5px 18px rgba(0, 0, 0, 0.24);
+    color: rgba(225, 247, 255, 0.96);
+    font-size: 0.65rem;
+    font-weight: 600;
+    line-height: 1.2;
+    text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    pointer-events: none;
+    user-select: none;
+}
+
+.planning-preview-status::before {
+    content: '';
+    display: inline-block;
+    width: 0.42rem;
+    height: 0.42rem;
+    margin-right: 0.42rem;
+    border-radius: 50%;
+    background: #58d8ff;
+    box-shadow: 0 0 0 0 rgba(88, 216, 255, 0.36);
+    animation: planning-preview-pulse 1.4s ease-out infinite;
+    vertical-align: 0.02rem;
+}
+
+@keyframes planning-preview-pulse {
+    0% { box-shadow: 0 0 0 0 rgba(88, 216, 255, 0.38); }
+    70%, 100% { box-shadow: 0 0 0 0.42rem rgba(88, 216, 255, 0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .planning-preview-status::before { animation: none; }
+}
+
 .loading-overlay {
     position: absolute;
     top: 2.25rem;
@@ -1358,6 +1407,61 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
     background: var(--bg-1);
     display: flex; flex-direction: column;
 }
+.rp-layout-splitter {
+    display: none;
+    position: relative;
+    align-items: stretch;
+    justify-content: center;
+    width: 12px;
+    min-width: 12px;
+    min-height: 0;
+    background: transparent;
+    border: 0;
+    cursor: col-resize;
+    touch-action: none;
+    user-select: none;
+    z-index: 3;
+}
+.rp-layout-splitter::before {
+    content: '';
+    position: absolute;
+    inset: 0 4px;
+    border-left: 1px solid var(--border-hairline);
+    border-right: 1px solid transparent;
+    transition: background var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease);
+}
+.rp-layout-splitter-grip {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 4px;
+    height: 42px;
+    transform: translate(-50%, -50%);
+    border-radius: 999px;
+    background: var(--border-emphasis);
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--bg-3) 75%, transparent);
+    opacity: 0.78;
+    transition: height var(--t-fast) var(--ease), width var(--t-fast) var(--ease), opacity var(--t-fast) var(--ease), background var(--t-fast) var(--ease);
+    pointer-events: none;
+}
+.rp-layout-splitter:hover::before,
+.rp-layout-splitter.dragging::before,
+.rp-layout-splitter:focus-visible::before {
+    background: var(--primary-soft);
+    border-left-color: var(--primary);
+}
+.rp-layout-splitter:hover .rp-layout-splitter-grip,
+.rp-layout-splitter.dragging .rp-layout-splitter-grip,
+.rp-layout-splitter:focus-visible .rp-layout-splitter-grip {
+    width: 5px;
+    height: 58px;
+    background: var(--primary);
+    opacity: 1;
+}
+.rp-layout-splitter:focus-visible {
+    outline: 2px solid var(--primary);
+    outline-offset: -2px;
+}
 .rp-edit-area {
     flex: 0 0 auto;
     padding: 12px 18px;
@@ -1621,6 +1725,91 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 }
 @keyframes rp-modal-breathe { 0%, 100% { opacity: 0.55; } 50% { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { .rp-modal-loading { animation: none; } }
+
+/*
+ * Report figure capture is a real asynchronous Viewer operation, not a
+ * modal. Keep the notice visible while the capture temporarily changes the
+ * camera, meshes, slices, or dose surface, but let pointer input pass through
+ * so it never becomes another interaction-blocking overlay.
+ */
+.report-capture-status {
+    position: fixed;
+    right: 18px;
+    bottom: 116px;
+    z-index: 1197;
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    width: min(390px, calc(100vw - 36px));
+    box-sizing: border-box;
+    padding: 10px 13px;
+    border: 1px solid color-mix(in srgb, var(--primary) 62%, var(--border-emphasis));
+    border-radius: 12px;
+    background: color-mix(in srgb, var(--bg-card) 96%, transparent);
+    box-shadow: var(--shadow-md);
+    color: var(--text);
+    font-size: 12px;
+    line-height: 1.4;
+    pointer-events: none;
+    opacity: 0;
+    transform: translateY(7px) scale(.985);
+    transition: opacity 180ms ease, transform 180ms ease, border-color 180ms ease;
+    backdrop-filter: var(--blur-md);
+    -webkit-backdrop-filter: var(--blur-md);
+}
+.report-capture-status:not([hidden]) { opacity: 1; transform: translateY(0) scale(1); }
+.report-capture-status[hidden] { display: none; }
+.report-capture-status-spinner {
+    width: 17px;
+    height: 17px;
+    flex: 0 0 auto;
+    margin-top: 1px;
+    border: 2.5px solid var(--border-hairline);
+    border-top-color: var(--primary);
+    border-radius: 50%;
+    animation: reportCaptureSpin .85s linear infinite;
+}
+.report-capture-status-copy { min-width: 0; display: grid; gap: 3px; }
+.report-capture-status-title { color: var(--text); font-weight: 700; }
+.report-capture-status-detail { color: var(--text-secondary); overflow-wrap: anywhere; }
+.report-capture-status-track {
+    display: block;
+    width: 100%;
+    height: 3px;
+    margin-top: 3px;
+    overflow: hidden;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--primary) 16%, var(--bg-3));
+}
+.report-capture-status-fill {
+    display: block;
+    width: 0;
+    height: 100%;
+    border-radius: inherit;
+    background: var(--primary);
+    transition: width 180ms ease;
+}
+.report-capture-status.is-complete { border-color: color-mix(in srgb, var(--success) 64%, var(--border-emphasis)); }
+.report-capture-status.is-complete .report-capture-status-spinner {
+    animation: none;
+    border-top-color: var(--success);
+}
+.report-capture-status.is-complete .report-capture-status-fill { background: var(--success); }
+.report-capture-status.is-warning { border-color: color-mix(in srgb, var(--warning) 64%, var(--border-emphasis)); }
+.report-capture-status.is-warning .report-capture-status-spinner { animation: none; border-top-color: var(--warning); }
+.report-capture-status.is-warning .report-capture-status-fill { background: var(--warning); }
+.report-capture-status.is-error { border-color: color-mix(in srgb, var(--danger) 64%, var(--border-emphasis)); }
+.report-capture-status.is-error .report-capture-status-spinner { animation: none; border-top-color: var(--danger); }
+.report-capture-status.is-error .report-capture-status-fill { background: var(--danger); }
+.report-capture-status.is-cancelled { border-color: var(--border-emphasis); }
+@keyframes reportCaptureSpin { to { transform: rotate(360deg); } }
+@media (max-width: 640px) {
+    .report-capture-status { right: 12px; bottom: 106px; width: min(390px, calc(100vw - 24px)); }
+}
+@media (prefers-reduced-motion: reduce) {
+    .report-capture-status { transition: none; }
+    .report-capture-status-spinner, .report-capture-status-fill { animation: none; transition: none; }
+}
 
 /*
  * 3D resource progress is represented by the shared bottom-right workspace

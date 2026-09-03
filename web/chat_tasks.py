@@ -72,6 +72,10 @@ class ChatTask:
     parent_assistant_message_id: str = ""
     internal_followup: bool = False
     response_language: str = ""
+    # The global UI locale is a fallback for a new/ambiguous dialogue turn;
+    # it is deliberately kept separate from response_language so a Chinese
+    # user message in an English UI remains a Chinese chat/trace turn.
+    ui_language: str = ""
     created_at: float = field(default_factory=time.time)
     status: str = "running"
     finished_at: Optional[float] = None
@@ -278,6 +282,7 @@ class ChatTask:
                 "parent_assistant_message_id": self.parent_assistant_message_id or None,
                 "internal_followup": bool(self.internal_followup),
                 "response_language": self.response_language or None,
+                "ui_language": self.ui_language or None,
                 "session_id": self.session_id,
                 "status": self.status,
                 "phase": (
@@ -375,6 +380,7 @@ class ChatTaskManager:
         parent_assistant_message_id: str = "",
         internal_followup: bool = False,
         response_language: str = "",
+        ui_language: str = "",
     ) -> ChatTask:
         """Start one worker, rejecting concurrent turns in the same case.
 
@@ -475,6 +481,7 @@ class ChatTaskManager:
                 parent_assistant_message_id=str(parent_assistant_message_id or ""),
                 internal_followup=bool(internal_followup),
                 response_language=str(response_language or ""),
+                ui_language=str(ui_language or ""),
             )
             self._tasks[task.task_id] = task
 
@@ -495,15 +502,22 @@ class ChatTaskManager:
                 # browser session cookie. The task's owner/case is explicit.
                 with app.app_context():
                     if task.agent is None and agent_supplier is not None:
+                        trace_zh = str(
+                            task.response_language or task.ui_language or ""
+                        ).lower().startswith("zh")
                         task.publish(task.encode_event(
                             "step",
                             {
                                 "id": f"workspace-hydration-{task.task_id}",
                                 "type": "tool",
                                 "tool": "workspace_hydration",
-                                "title": "Loading case resources",
+                                "title": "加载病例资源" if trace_zh else "Loading case resources",
                                 "status": "pending",
-                                "content": "Restoring the case before starting this chat turn.",
+                                "content": (
+                                    "开始本次对话前正在恢复病例资源。"
+                                    if trace_zh
+                                    else "Restoring the case before starting this chat turn."
+                                ),
                             },
                         ))
                         task.agent = agent_supplier()
@@ -517,9 +531,9 @@ class ChatTaskManager:
                                 "id": f"workspace-hydration-{task.task_id}",
                                 "type": "tool",
                                 "tool": "workspace_hydration",
-                                "title": "Loading case resources",
+                                "title": "加载病例资源" if trace_zh else "Loading case resources",
                                 "status": "done",
-                                "content": "Case resources restored.",
+                                "content": "病例资源已恢复。" if trace_zh else "Case resources restored.",
                             },
                         ))
                     if task.agent is None:
@@ -538,6 +552,7 @@ class ChatTaskManager:
                         # child must not fall back to the next turn's or the
                         # global UI language while it is being rendered.
                         "response_language": task.response_language,
+                        "ui_language": task.ui_language,
                     }
                     turn_stream = None
                     try:

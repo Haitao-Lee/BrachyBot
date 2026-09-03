@@ -739,6 +739,12 @@ var manualPlanningState = {
     planningId: null,
     planningVersion: 0,
     artifactStatus: {},
+    // An unsafe seed edit is never implicit. This flag is set only after the
+    // operator explicitly chooses "keep edit" in the spacing warning dialog;
+    // it is then carried into the next explicit dose recomputation.
+    safetyOverride: false,
+    safetyWarning: null,
+    safetyInterference: null,
     doseEngine: 'dose_unet_spacing1mm',
     // Keep the last accepted geometry separate from the live drag preview.
     lastDoseNeedles: [],
@@ -753,6 +759,7 @@ var manualPlanningState = {
     doseRecomputeSequence: 0,
     _doseRecomputePromise: null,
     _doseRecomputeJob: null,
+    _doseAbortController: null,
 };
 
 function _activeApiSessionId() {
@@ -813,6 +820,13 @@ async function reportUIEvent(type, label, detail = {}, options = {}) {
                 type,
                 label,
                 detail,
+                // Clinical mutations are recorded exactly once by their
+                // authoritative backend endpoint.  The browser may still ask
+                // Monitor to evaluate that committed event, but it must not
+                // append a second copy or count an optimistic preview as a
+                // successful edit.
+                already_recorded: options.alreadyRecorded === true,
+                committed_event: options.committedEvent || null,
                 language,
                 monitor_run_id: ownerRunId,
                 ui_state: (typeof collectUIState === 'function') ? collectUIState() : {},
@@ -929,9 +943,10 @@ async function reportUIEvent(type, label, detail = {}, options = {}) {
                             'Captured visual evidence for the current planning checkpoint.',
                             ownerSessionId,
                         );
-                        const attachments = Array.isArray(result.attachments) && result.attachments.length
+                        const capturedAttachments = Array.isArray(result.attachments) && result.attachments.length
                             ? result.attachments
                             : (monitorScreenshotContext.items || []);
+                        if (!capturedAttachments.length) return;
                         addChat(
                             'bot-response',
                             `**${title}**\n\n${evidenceCaption}`,
@@ -944,7 +959,12 @@ async function reportUIEvent(type, label, detail = {}, options = {}) {
                                 messageId: monitorScreenshotContext.messageId,
                                 messageKind: 'monitor_evidence',
                                 responseLanguage: language,
-                                attachments,
+                                // _interceptScreenshot already rendered and
+                                // persisted these attachments into the same
+                                // message shell. Passing them through addChat
+                                // a second time produced duplicate captions
+                                // such as "3D viewer / 3D viewer".
+                                attachments: [],
                             },
                         );
                     }).catch(error => {
@@ -2016,6 +2036,10 @@ function clearClientWorkspace(options = {}) {
     try { window.clearManualDoseProgressPresentation?.(); } catch (_) {}
     try { window.clearManualWorkflowProgressPresentation?.(); } catch (_) {}
     try { window.cancelScheduledManualDoseRecompute?.(); } catch (_) {}
+    // Planning previews are case-owned, non-persistent scene children. Clear
+    // their identity as well as their GPU objects before a late event from the
+    // old Session can reach the newly selected case.
+    try { window.clearPlanningPreview?.('workspace-transition'); } catch (_) {}
     // Invalidate asynchronous 3D mesh fetches before removing current-case
     // objects. A late response from the previous session may still complete,
     // but it is no longer allowed to add geometry to the new case.
@@ -4160,7 +4184,15 @@ function _confirmAction(msgZh, msgEn, options = {}) {
         }
         overlay.querySelector('#_confirmYes').onclick = () => { overlay.remove(); resolve(true); };
         overlay.querySelector('#_confirmNo').onclick = () => { overlay.remove(); resolve(false); };
-        overlay.onclick = (e) => { if (e.target === overlay) { overlay.remove(); resolve(false); } };
+        overlay.onclick = (e) => {
+            if (e.target === overlay) {
+                overlay.remove();
+                // Safety-sensitive callers can make dismissing the modal take
+                // the conservative path without changing the normal dialog
+                // semantics used by other UI actions.
+                resolve(options.dismissAsYes === true);
+            }
+        };
     });
 }
 
@@ -5035,37 +5067,19 @@ async function _captureScreenshot(view) {
     // Normalize legacy short names to full target names
     const ALIAS = { 'axial': 'viewer-axial', 'sagittal': 'viewer-sagittal',
                     'coronal': 'viewer-coronal', '3d': 'viewer-3d', 'dvh': 'dvh',
-                    'dose': 'dose-overview', 'dose-overview': 'dose-overview' };
+                    'dose': 'dose-overview', 'dose-overview': 'dose-overview',
+                    'data': 'data-tree', 'tree': 'data-tree' };
     const target = ALIAS[view] || view;
     const preparedEl = await _prepareScreenshotTarget(target);
-    if (target === 'dose-overview' || target === 'dvh') {
-        const dataUrl = await _captureScreenshotDataUrl(target, preparedEl);
-        if (dataUrl) {
-            const link = document.createElement('a');
-            link.download = `brachybot_${view}_${Date.now()}.png`;
-            link.href = dataUrl;
-            link.click();
-        }
-        return;
-    }
-    const el = preparedEl;
-    if (!el) { console.warn('[screenshot] Target not found:', view); return; }
-    if (typeof html2canvas !== 'undefined') {
-        const canvas = await html2canvas(el);
+    const dataUrl = await _captureScreenshotDataUrl(target, preparedEl);
+    if (dataUrl) {
         const link = document.createElement('a');
         link.download = `brachybot_${view}_${Date.now()}.png`;
-        link.href = canvas.toDataURL();
+        link.href = dataUrl;
         link.click();
-    } else {
-        // Fallback: just capture the 3D canvas
-        const canvas = el.querySelector('canvas') || el;
-        if (canvas.toDataURL) {
-            const link = document.createElement('a');
-            link.download = `brachybot_${view}_${Date.now()}.png`;
-            link.href = canvas.toDataURL();
-            link.click();
-        }
+        return;
     }
+    if (!preparedEl) console.warn('[screenshot] Target not found:', view);
 }
 
 // ── Unified screenshot target resolver ──
@@ -5250,7 +5264,9 @@ async function _captureDoseOverviewDataUrl() {
         const dvhEl = document.getElementById('dvhChart');
         if (dvhEl && typeof Plotly !== 'undefined' && typeof Plotly.toImage === 'function') {
             try {
-                dvhUrl = await Plotly.toImage(dvhEl, { format: 'png', width: 1180, height: 340 });
+                dvhUrl = typeof window.captureReportDvhFigure === 'function'
+                    ? await window.captureReportDvhFigure(dvhEl, { width: 2000, height: 1250 })
+                    : await Plotly.toImage(dvhEl, { format: 'png', width: 1180, height: 340 });
             } catch (e) { console.warn('[screenshot] DVH export for dose overview failed:', e); }
         }
 
@@ -5303,8 +5319,296 @@ async function _captureDoseOverviewDataUrl() {
     }
 }
 
-async function _captureScreenshotDataUrl(target, el) {
+function _dataTreeEvidenceRows(plan = {}) {
+    const body = document.querySelector('#dataTreeBody');
+    if (!body) return { rows: [], groupLabel: '', requested: [] };
+    const requested = [
+        ...(Array.isArray(plan.target_refs) ? plan.target_refs : []),
+        ...(Array.isArray(plan.data_tree_node_ids) ? plan.data_tree_node_ids : []),
+        ...(Array.isArray(plan.object_ids) ? plan.object_ids : []),
+    ].map(value => String(value || '').trim()).filter(Boolean);
+    const normalize = value => String(value || '').trim().toLowerCase();
+    const requestedKeys = new Set(requested.map(normalize));
+    const rows = Array.from(body.querySelectorAll('.tree-item'));
+    const rowText = row => String(row?.textContent || '').replace(/\s+/g, ' ').trim();
+    const rowIdentities = row => [
+        row?.dataset?.nodeId,
+        row?.dataset?.item,
+        row?.dataset?.objectId,
+        row?.dataset?.organId,
+    ].map(normalize).filter(Boolean);
+    const requestedMatch = row => {
+        const identities = rowIdentities(row);
+        if (!identities.length || !requestedKeys.size) return false;
+        return identities.some(identity => requestedKeys.has(identity)
+            || [...requestedKeys].some(key => key.length >= 4
+                && (identity.endsWith(key) || key.endsWith(identity))));
+    };
+    const guideMatch = row => {
+        const haystack = [
+            row?.dataset?.nodeType,
+            row?.dataset?.artifactKey,
+            row?.dataset?.source,
+            rowText(row),
+        ].map(normalize).join(' ');
+        return /surgical[_\s-]?guide|puncture[_\s-]?guide|手术导板|穿刺导板|导板/.test(haystack);
+    };
+    const groupFor = row => row?.closest?.('.tree-group') || null;
+    const groupLabelFor = group => {
+        const header = group?.querySelector?.('.tree-group-header');
+        return String(header?.textContent || '').replace(/\s+/g, ' ').trim();
+    };
+    const requestedRows = rows.filter(requestedMatch);
+    const guideRows = rows.filter(guideMatch);
+    let selectedRows = requestedRows;
+    let groupLabel = '';
+    if (requestedRows.length) {
+        const requestedGroup = groupFor(requestedRows[0]);
+        const groupRows = requestedGroup
+            ? Array.from(requestedGroup.querySelectorAll('.tree-item'))
+            : requestedRows;
+        selectedRows = groupRows.length ? groupRows : requestedRows;
+        groupLabel = groupLabelFor(requestedGroup);
+    } else if (!requestedKeys.size && guideRows.length) {
+        // Legacy callers did not carry target_refs. Retain one compatibility
+        // fallback for old persisted guide questions, but current decisions
+        // are stable-ID first and do not depend on translated labels.
+        // Keep the complete small artifact group around the matched guide so
+        // the screenshot shows its location in the hierarchy, not only an
+        // isolated label. The guide itself is still highlighted separately.
+        const guideGroup = groupFor(guideRows[0]);
+        const groupRows = guideGroup
+            ? Array.from(guideGroup.querySelectorAll('.tree-item'))
+            : guideRows;
+        selectedRows = groupRows.length ? groupRows : guideRows;
+        groupLabel = groupLabelFor(guideGroup);
+    } else if (!selectedRows.length) {
+        const artifactsGroup = body.querySelector('.tree-group[data-group="planning_meshes"]')
+            || body.querySelector('.tree-group.planning-active-run');
+        if (artifactsGroup) {
+            selectedRows = Array.from(artifactsGroup.querySelectorAll('.tree-item'));
+            groupLabel = groupLabelFor(artifactsGroup);
+        }
+    }
+    if (!selectedRows.length) {
+        selectedRows = rows.filter(row => row.classList.contains('selected')).slice(0, 18);
+    }
+    if (!selectedRows.length) selectedRows = rows.slice(0, 18);
+
+    // Avoid turning a very large OAR tree into a tiny unreadable poster. Keep
+    // requested/guide rows first, then a short amount of hierarchy context.
+    const prioritized = [...selectedRows].sort((left, right) => {
+        const rank = row => (requestedMatch(row) ? 0 : (guideMatch(row) ? 1 : 2));
+        return rank(left) - rank(right) || rows.indexOf(left) - rows.indexOf(right);
+    });
+    return {
+        rows: prioritized.slice(0, 20),
+        groupLabel,
+        requested,
+        requestedRows,
+        guideRows,
+        rowText,
+        requestedMatch,
+        guideMatch,
+    };
+}
+
+function _captureDataTreeEvidenceBundle(plan = {}) {
+    if (typeof html2canvas === 'undefined') return Promise.resolve({ dataUrl: null, groundingManifest: null });
+    const body = document.querySelector('#dataTreeBody');
+    if (!body) return Promise.resolve({ dataUrl: null, groundingManifest: null });
+    const evidence = _dataTreeEvidenceRows(plan);
+    const language = _screenshotLanguage(
+        plan.session_id || plan.sessionId || _activeApiSessionId(),
+        plan.response_language || plan.responseLanguage || '',
+    );
+    const zh = language === 'zh';
+    const card = document.createElement('section');
+    card.className = 'data-tree-evidence-capture';
+    card.setAttribute('aria-hidden', 'true');
+    card.style.cssText = [
+        'position:absolute',
+        'left:-100000px',
+        'top:0',
+        'width:1080px',
+        'box-sizing:border-box',
+        'padding:32px 36px 36px',
+        'background:#0b1220',
+        'color:#f8fafc',
+        'font-family:Inter,Segoe UI,Arial,sans-serif',
+        'font-size:17px',
+        'line-height:1.45',
+        'letter-spacing:.01em',
+        'pointer-events:none',
+        'z-index:-1000',
+        'border:1px solid #334155',
+        'border-radius:14px',
+    ].join(';');
+
+    const make = (tag, text, css) => {
+        const element = document.createElement(tag);
+        if (text !== undefined) element.textContent = String(text || '');
+        if (css) element.style.cssText = css;
+        return element;
+    };
+    const heading = make(
+        'div',
+        zh ? '数据树证据 · 规划产物定位' : 'Data Tree Evidence · Planning Artifact Location',
+        'font-size:28px;font-weight:700;color:#ffffff;margin:0 0 8px;',
+    );
+    card.appendChild(heading);
+    const subtitleParts = [];
+    if (evidence.groupLabel) subtitleParts.push(evidence.groupLabel);
+    const activeRun = body.querySelector('.tree-group.planning-active-run .tree-group-header')
+        || body.querySelector('.tree-group[data-group="planning_run_active"] .tree-group-header');
+    const activeRunText = String(activeRun?.textContent || '').replace(/\s+/g, ' ').trim();
+    if (activeRunText && !subtitleParts.includes(activeRunText)) subtitleParts.push(activeRunText);
+    card.appendChild(make(
+        'div',
+        subtitleParts.join('  /  ') || (zh ? '当前 Session 的可用节点' : 'Available nodes in the current Session'),
+        'font-size:17px;color:#cbd5e1;margin-bottom:22px;',
+    ));
+
+    const intro = make(
+        'div',
+        evidence.guideRows.length
+            ? (zh ? '已自动定位到手术导板相关节点：' : 'Surgical-guide-related nodes were located automatically:')
+            : (evidence.requestedRows.length
+                ? (zh ? '已定位到请求的 Data Tree 节点：' : 'The requested Data Tree nodes were located:')
+                : (zh ? '当前 Data Tree 中可用于定位的节点：' : 'Data Tree nodes available for locating the result:')),
+        'font-size:16px;color:#94a3b8;margin-bottom:10px;',
+    );
+    card.appendChild(intro);
+
+    const list = make('div', undefined, 'display:flex;flex-direction:column;gap:9px;');
+    const captureRows = [];
+    const nodeSnapshots = typeof window.getDataTreeNodeSnapshot === 'function'
+        ? window.getDataTreeNodeSnapshot()
+        : [];
+    const snapshotForRow = row => {
+        const identities = [row?.dataset?.objectId, row?.dataset?.nodeId, row?.dataset?.item]
+            .map(value => String(value || '')).filter(Boolean);
+        return nodeSnapshots.find(node => identities.includes(String(node?.objectId || ''))
+            || identities.includes(String(node?.nodeId || ''))
+            || identities.includes(String(node?.id || ''))) || null;
+    };
+    evidence.rows.forEach(row => {
+        const isGuide = evidence.guideMatch(row);
+        const isRequested = evidence.requestedMatch(row);
+        const label = String(row.querySelector('.item-label')?.textContent || '').replace(/\s+/g, ' ').trim()
+            || String(row.dataset.nodeId || row.dataset.item || '').trim()
+            || (zh ? '未命名节点' : 'Unnamed node');
+        const info = String(row.querySelector('.item-info')?.textContent || '').replace(/\s+/g, ' ').trim();
+        const status = String(row.querySelector('.item-status')?.textContent || row.dataset.status || '')
+            .replace(/\s+/g, ' ').trim();
+        const item = make('div', undefined, [
+            'display:flex',
+            'align-items:center',
+            'gap:14px',
+            'min-height:46px',
+            'padding:8px 14px',
+            'box-sizing:border-box',
+            'border-radius:9px',
+            `border:1px solid ${isGuide ? '#38bdf8' : '#334155'}`,
+            `background:${isGuide ? '#12304a' : '#111c2f'}`,
+            `box-shadow:${isGuide ? '0 0 0 1px rgba(56,189,248,.22)' : 'none'}`,
+        ].join(';'));
+        item.appendChild(make('span', isGuide ? '◆' : '●', `flex:0 0 19px;text-align:center;font-size:16px;color:${isGuide ? '#38bdf8' : (isRequested ? '#fbbf24' : '#94a3b8')};`));
+        const textBlock = make('div', undefined, 'min-width:0;flex:1;');
+        textBlock.appendChild(make('div', label, `font-size:18px;font-weight:${isGuide || isRequested ? '700' : '600'};color:${isGuide ? '#f0f9ff' : '#f8fafc'};white-space:normal;word-break:break-word;`));
+        const detail = [info, status].filter(Boolean).join('  ·  ');
+        if (detail) textBlock.appendChild(make('div', detail, `font-size:15px;color:${status && status.toLowerCase() !== 'ready' ? '#fbbf24' : '#cbd5e1'};margin-top:2px;`));
+        item.appendChild(textBlock);
+        list.appendChild(item);
+        const node = snapshotForRow(row);
+        const targetRef = String(
+            row?.dataset?.objectId
+            || node?.objectId
+            || row?.dataset?.nodeId
+            || node?.nodeId
+            || row?.dataset?.item
+            || node?.id
+            || label
+        );
+        item.dataset.targetRef = targetRef;
+        captureRows.push({ item, row, node, targetRef, label });
+    });
+    if (!evidence.rows.length) {
+        list.appendChild(make(
+            'div',
+            zh ? '当前页面没有找到匹配节点；未对原始 Data Tree 做任何修改。' : 'No matching node was found in the current page; the original Data Tree was not modified.',
+            'padding:18px 14px;color:#fbbf24;border:1px solid #92400e;border-radius:9px;background:#29180b;font-size:16px;',
+        ));
+    }
+    card.appendChild(list);
+    card.appendChild(make(
+        'div',
+        zh ? '截图为证据视图：仅用于说明节点位置，不改变当前 Data Tree 的展开、选择或滚动状态。' : 'Evidence view only: the capture does not change the Data Tree expansion, selection, or scroll state.',
+        'margin-top:20px;font-size:14px;color:#94a3b8;',
+    ));
+    document.body.appendChild(card);
+    return _waitScreenshotFrames(2).then(async () => {
+        try {
+            const canvas = await html2canvas(card, {
+                backgroundColor: '#0b1220',
+                scale: 2,
+                useCORS: true,
+                allowTaint: true,
+                logging: false,
+            });
+            const cardRect = card.getBoundingClientRect();
+            const targets = captureRows.map(entry => {
+                const rect = entry.item.getBoundingClientRect();
+                const left = Math.max(0, rect.left - cardRect.left) / Math.max(1, cardRect.width);
+                const top = Math.max(0, rect.top - cardRect.top) / Math.max(1, cardRect.height);
+                const width = Math.min(rect.width, cardRect.right - rect.left) / Math.max(1, cardRect.width);
+                const height = Math.min(rect.height, cardRect.bottom - rect.top) / Math.max(1, cardRect.height);
+                const node = entry.node || {};
+                const sceneVisible = typeof window.isDataTreeNodeVisible3D === 'function'
+                    ? window.isDataTreeNodeVisible3D(node)
+                    : node.visible !== false && node.visible3D !== false;
+                return {
+                    target_ref: entry.targetRef,
+                    label: entry.label,
+                    kind: 'data-tree-row',
+                    locator: 'data-tree-card',
+                    visible: true,
+                    scene_visible: sceneVisible,
+                    data_tree_visible: true,
+                    in_view: width > 0 && height > 0,
+                    annotatable: width > 0 && height > 0,
+                    status: String(node.status || entry.row?.dataset?.status || 'ready'),
+                    reason: sceneVisible ? '' : 'scene_hidden_by_data_tree',
+                    normalized_bounds: [left, top, width, height].map(value => Number(value.toFixed(6))),
+                };
+            });
+            return {
+                dataUrl: canvas.toDataURL('image/png'),
+                groundingManifest: {
+                    version: 1,
+                    target: 'data-tree',
+                    image_width: canvas.width,
+                    image_height: canvas.height,
+                    targets,
+                },
+            };
+        } finally {
+            card.remove();
+        }
+    }, error => {
+        card.remove();
+        throw error;
+    });
+}
+
+async function _captureDataTreeEvidenceDataUrl(plan = {}) {
+    const bundle = await _captureDataTreeEvidenceBundle(plan);
+    return bundle?.dataUrl || null;
+}
+
+async function _captureScreenshotDataUrl(target, el, plan = {}) {
     if (target === 'dose-overview') return _captureDoseOverviewDataUrl();
+    if (target === 'data-tree') return _captureDataTreeEvidenceDataUrl(plan);
     if (target === 'viewer-axial' || target === 'viewer-sagittal' || target === 'viewer-coronal') {
         const axis = target.replace('viewer-', '');
         const composite = _composite2DViewerCanvas(axis);
@@ -5315,6 +5619,9 @@ async function _captureScreenshotDataUrl(target, el) {
         if (dvhEl && typeof Plotly !== 'undefined' && typeof Plotly.toImage === 'function') {
             try {
                 await _waitScreenshotFrames(2);
+                if (typeof window.captureReportDvhFigure === 'function') {
+                    return await window.captureReportDvhFigure(dvhEl, { width: 2000, height: 1250 });
+                }
                 return await Plotly.toImage(dvhEl, {
                     format: 'png',
                     width: Math.max(900, dvhEl.clientWidth || 900),
@@ -5329,6 +5636,145 @@ async function _captureScreenshotDataUrl(target, el) {
     if (!targetEl || typeof html2canvas === 'undefined') return null;
     const canvas = await html2canvas(targetEl, { useCORS: true, allowTaint: true, scale: 1 });
     return canvas.toDataURL('image/png');
+}
+
+function _screenshotTargetRefs(plan = {}) {
+    return [...new Set([
+        ...(Array.isArray(plan.target_refs) ? plan.target_refs : []),
+        ...(Array.isArray(plan.object_ids) ? plan.object_ids : []),
+        ...(Array.isArray(plan.data_tree_node_ids) ? plan.data_tree_node_ids : []),
+        ...(Array.isArray(plan.highlight_object_ids) ? plan.highlight_object_ids : []),
+    ].map(value => String(value || '').trim()).filter(Boolean))].slice(0, 32);
+}
+
+function _screenshotImageDimensions(dataUrl) {
+    return new Promise(resolve => {
+        const image = new Image();
+        image.onload = () => resolve({ width: image.naturalWidth || image.width, height: image.naturalHeight || image.height });
+        image.onerror = () => resolve({ width: 0, height: 0 });
+        image.src = dataUrl;
+    });
+}
+
+function _screenshotAttributeEscape(value) {
+    return String(value || '').replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+}
+
+function _findScreenshotGroundingElement(targetRef, captureRoot) {
+    const ref = String(targetRef || '').trim();
+    if (!ref) return null;
+    const escapedAttribute = _screenshotAttributeEscape(ref);
+    const selectors = [];
+    if (typeof CSS !== 'undefined' && typeof CSS.escape === 'function') selectors.push(`#${CSS.escape(ref)}`);
+    ['data-ui-target', 'data-action', 'data-target', 'data-node-id', 'data-object-id', 'data-item', 'name', 'aria-label']
+        .forEach(attribute => selectors.push(`[${attribute}="${escapedAttribute}"]`));
+    for (const selector of selectors) {
+        let element = null;
+        try { element = document.querySelector(selector); } catch (_) { element = null; }
+        if (!element) continue;
+        if (!captureRoot || captureRoot === document.body || captureRoot === element || captureRoot.contains(element)) {
+            return element;
+        }
+    }
+    return null;
+}
+
+function _domScreenshotGroundingManifest(target, captureRoot, plan, imageDimensions) {
+    const rootRect = captureRoot?.getBoundingClientRect?.();
+    const targets = _screenshotTargetRefs(plan).map(targetRef => {
+        const element = _findScreenshotGroundingElement(targetRef, captureRoot);
+        if (!element || !rootRect || rootRect.width <= 0 || rootRect.height <= 0) {
+            return {
+                target_ref: targetRef,
+                kind: 'ui-element',
+                locator: 'dom',
+                visible: false,
+                scene_visible: false,
+                data_tree_visible: false,
+                in_view: false,
+                annotatable: false,
+                status: 'unresolved',
+                reason: 'element_not_found_in_capture',
+                normalized_bounds: null,
+            };
+        }
+        const rect = element.getBoundingClientRect();
+        const style = window.getComputedStyle ? window.getComputedStyle(element) : null;
+        const rendered = style?.display !== 'none' && style?.visibility !== 'hidden'
+            && Number(style?.opacity ?? 1) > 0.01 && rect.width > 0 && rect.height > 0;
+        const leftPx = Math.max(rootRect.left, rect.left);
+        const topPx = Math.max(rootRect.top, rect.top);
+        const rightPx = Math.min(rootRect.right, rect.right);
+        const bottomPx = Math.min(rootRect.bottom, rect.bottom);
+        const inView = rendered && rightPx > leftPx && bottomPx > topPx;
+        const bounds = inView ? [
+            (leftPx - rootRect.left) / rootRect.width,
+            (topPx - rootRect.top) / rootRect.height,
+            (rightPx - leftPx) / rootRect.width,
+            (bottomPx - topPx) / rootRect.height,
+        ].map(value => Number(Math.max(0, Math.min(1, value)).toFixed(6))) : null;
+        return {
+            target_ref: targetRef,
+            label: String(element.getAttribute('aria-label') || element.title || element.textContent || targetRef)
+                .replace(/\s+/g, ' ').trim().slice(0, 160),
+            kind: element.classList?.contains('tree-item') ? 'data-tree-row' : 'ui-element',
+            locator: 'dom',
+            visible: rendered,
+            scene_visible: true,
+            data_tree_visible: true,
+            in_view: inView,
+            annotatable: inView && !!bounds,
+            status: rendered ? 'ready' : 'hidden',
+            reason: rendered ? (inView ? '' : 'outside_captured_view') : 'element_hidden',
+            normalized_bounds: bounds,
+        };
+    });
+    return {
+        version: 1,
+        target,
+        image_width: Number(imageDimensions?.width || 0),
+        image_height: Number(imageDimensions?.height || 0),
+        targets,
+    };
+}
+
+async function _captureScreenshotEvidenceBundle(target, element, plan = {}) {
+    if (target === 'data-tree') {
+        return _captureDataTreeEvidenceBundle(plan);
+    }
+    const dataUrl = await _captureScreenshotDataUrl(target, element, plan);
+    if (!dataUrl) return { dataUrl: null, groundingManifest: null };
+    const imageDimensions = await _screenshotImageDimensions(dataUrl);
+    let groundingManifest;
+    if (target === 'viewer-3d' && typeof window.get3DScreenshotGroundingManifest === 'function') {
+        groundingManifest = window.get3DScreenshotGroundingManifest(_screenshotTargetRefs(plan));
+        groundingManifest.image_width = imageDimensions.width;
+        groundingManifest.image_height = imageDimensions.height;
+        groundingManifest.focus_result = plan.__focusResult || null;
+    } else if (/^viewer-(axial|sagittal|coronal)$/.test(target)
+        && typeof window.get2DScreenshotGroundingManifest === 'function') {
+        const axis = target.replace('viewer-', '');
+        groundingManifest = window.get2DScreenshotGroundingManifest(
+            axis,
+            _screenshotTargetRefs(plan),
+            { focusResult: plan.__focusResult || null },
+        );
+        groundingManifest.image_width = imageDimensions.width;
+        groundingManifest.image_height = imageDimensions.height;
+    } else {
+        groundingManifest = _domScreenshotGroundingManifest(target, element, plan, imageDimensions);
+    }
+    const framingStatus = String(plan.__focusResult?.status || '').toLowerCase();
+    if (['unresolved', 'unverified'].includes(framingStatus)
+        && Array.isArray(groundingManifest?.targets)) {
+        const requested = new Set(_screenshotTargetRefs(plan));
+        groundingManifest.targets.forEach(item => {
+            if (!requested.has(String(item?.target_ref || ''))) return;
+            item.annotatable = false;
+            item.reason = plan.__focusResult?.reason || 'automatic_framing_not_verified';
+        });
+    }
+    return { dataUrl, groundingManifest };
 }
 
 function _openScreenshotModal(url, label, index = 0, total = 1) {
@@ -5477,9 +5923,15 @@ async function _interceptScreenshotLegacy(target, question, galleryContext, opti
 // implementation remains above for compatibility with old bundles, but this
 // declaration intentionally supersedes it. Report figures continue to use the
 // report subsystem and its fixed composition.
-function _openScreenshotModal(url, label, index = 0, total = 1) {
+function _openScreenshotModal(url, label, index = 0, total = 1, options = {}) {
     document.querySelector('.image-modal-overlay')?.remove();
-    const language = _screenshotLanguage(_activeApiSessionId());
+    const language = _screenshotLanguage(
+        _activeApiSessionId(),
+        options.responseLanguage || options.response_language || '',
+    );
+    const originalUrl = String(options.originalUrl || options.original_url || url || '');
+    const annotatedUrl = String(options.annotatedUrl || options.annotated_url || '');
+    let showingAnnotated = !!annotatedUrl && String(url || '') === annotatedUrl;
     const overlay = document.createElement('div');
     overlay.className = 'image-modal-overlay';
     overlay.addEventListener('click', event => {
@@ -5492,7 +5944,7 @@ function _openScreenshotModal(url, label, index = 0, total = 1) {
     close.title = language === 'zh' ? '\u5173\u95ed\u56fe\u7247' : 'Close image';
     close.addEventListener('click', () => overlay.remove());
     const image = document.createElement('img');
-    image.src = url;
+    image.src = showingAnnotated ? annotatedUrl : originalUrl;
     image.alt = label || (language === 'zh' ? '\u622a\u56fe' : 'Screenshot');
     image.addEventListener('click', event => event.stopPropagation());
     const info = document.createElement('div');
@@ -5502,6 +5954,25 @@ function _openScreenshotModal(url, label, index = 0, total = 1) {
         ? `${label || fallback} \u00b7 ${index + 1}/${total}`
         : (label || fallback);
     overlay.append(close, image, info);
+    if (annotatedUrl && originalUrl) {
+        const toggle = document.createElement('button');
+        toggle.type = 'button';
+        toggle.className = 'image-modal-variant-toggle';
+        const updateToggle = () => {
+            toggle.textContent = showingAnnotated
+                ? (language === 'zh' ? '\u67e5\u770b\u539f\u56fe' : 'View original')
+                : (language === 'zh' ? '\u67e5\u770b\u6807\u6ce8\u56fe' : 'View annotation');
+            toggle.setAttribute('aria-pressed', showingAnnotated ? 'true' : 'false');
+            image.src = showingAnnotated ? annotatedUrl : originalUrl;
+        };
+        toggle.addEventListener('click', event => {
+            event.stopPropagation();
+            showingAnnotated = !showingAnnotated;
+            updateToggle();
+        });
+        updateToggle();
+        overlay.appendChild(toggle);
+    }
     document.body.appendChild(overlay);
     const onKey = event => {
         if (event.key !== 'Escape') return;
@@ -6886,6 +7357,8 @@ function _normalizeStructuredScreenshotPlan(target, question, options = {}) {
             dose: 'dose-overview',
             dose_distribution: 'dose-overview',
             'dvh-chart': 'dvh',
+            data: 'data-tree',
+            tree: 'data-tree',
         })[view.target] || view.target || 'full';
         if (normalizedTarget === 'dose-overview' && mode !== 'report') {
             ['viewer-axial', 'viewer-sagittal', 'viewer-coronal', 'dvh'].forEach(item => {
@@ -6895,14 +7368,25 @@ function _normalizeStructuredScreenshotPlan(target, question, options = {}) {
             expanded.push(Object.assign({}, view, { target: normalizedTarget }));
         }
     });
+    const visualPurpose = ['overview', 'locate', 'explain', 'compare', 'verify', 'document']
+        .includes(String(supplied.visual_purpose || supplied.visualPurpose || '').toLowerCase())
+        ? String(supplied.visual_purpose || supplied.visualPurpose).toLowerCase()
+        : 'explain';
+    const annotationPolicy = ['none', 'auto', 'required']
+        .includes(String(supplied.annotation_policy || supplied.annotationPolicy || '').toLowerCase())
+        ? String(supplied.annotation_policy || supplied.annotationPolicy).toLowerCase()
+        : 'auto';
     return Object.assign({}, supplied, {
-        version: Number(supplied.version || 2),
+        version: Math.max(4, Number(supplied.version || 4)),
         mode,
         question: supplied.question || question || '',
         layout: supplied.layout || options.layout || 'auto',
         views: expanded.slice(0, 8),
         object_ids: objectIds,
-        data_tree_node_ids: Array.isArray(supplied.data_tree_node_ids) ? supplied.data_tree_node_ids : [],
+        data_tree_node_ids: [...new Set([
+            ...(Array.isArray(supplied.data_tree_node_ids) ? supplied.data_tree_node_ids : []),
+            ...(Array.isArray(options.dataTreeNodeIds) ? options.dataTreeNodeIds : []),
+        ].map(value => String(value || '').trim()).filter(Boolean))],
         highlight_object_ids: Array.isArray(supplied.highlight_object_ids)
             ? supplied.highlight_object_ids
             : [],
@@ -6911,7 +7395,53 @@ function _normalizeStructuredScreenshotPlan(target, question, options = {}) {
             ? supplied.slice_indices
             : {},
         overlays: supplied.overlays && typeof supplied.overlays === 'object' ? supplied.overlays : {},
+        visual_purpose: visualPurpose,
+        analysis_required: supplied.analysis_required ?? supplied.analysisRequired ?? true,
+        annotation_policy: annotationPolicy,
+        target_refs: [...new Set([
+            ...(Array.isArray(supplied.target_refs) ? supplied.target_refs : []),
+            ...(Array.isArray(supplied.targetRefs) ? supplied.targetRefs : []),
+        ].map(value => String(value || '').trim()).filter(Boolean))].slice(0, 32),
     });
+}
+
+function _snapshotDataTreeUiState() {
+    const body = document.querySelector('#dataTreeBody');
+    if (!body) return null;
+    return {
+        scrollTop: Number(body.scrollTop || 0),
+        selectedNodeIds: Array.from(body.querySelectorAll('.tree-item.selected')).map(row => String(
+            row.dataset.nodeId || row.dataset.item || '',
+        )).filter(Boolean),
+        groups: Array.from(body.querySelectorAll('.tree-group[data-group]')).map(group => ({
+            key: String(group.dataset.group || ''),
+            expanded: group.dataset.expanded !== 'false'
+                && !group.querySelector(':scope > .tree-group-items')?.classList.contains('collapsed'),
+        })).filter(item => item.key),
+    };
+}
+
+function _restoreDataTreeUiState(snapshot) {
+    if (!snapshot) return;
+    const body = document.querySelector('#dataTreeBody');
+    if (!body) return;
+    const groupState = new Map((snapshot.groups || []).map(item => [String(item.key), !!item.expanded]));
+    body.querySelectorAll('.tree-group[data-group]').forEach(group => {
+        const key = String(group.dataset.group || '');
+        if (!groupState.has(key)) return;
+        const expanded = groupState.get(key);
+        const items = group.querySelector(':scope > .tree-group-items');
+        const arrow = group.querySelector(':scope > .tree-group-header .arrow');
+        if (items) items.classList.toggle('collapsed', !expanded);
+        if (arrow) arrow.classList.toggle('collapsed', !expanded);
+        group.dataset.expanded = expanded ? 'true' : 'false';
+    });
+    const selected = new Set((snapshot.selectedNodeIds || []).map(String));
+    body.querySelectorAll('.tree-item').forEach(row => {
+        const identity = String(row.dataset.nodeId || row.dataset.item || '');
+        row.classList.toggle('selected', selected.has(identity));
+    });
+    body.scrollTop = Number(snapshot.scrollTop || 0);
 }
 
 function _snapshotScreenshotViewerState() {
@@ -6935,6 +7465,7 @@ function _snapshotScreenshotViewerState() {
             visible: !!viewerState.doseOverlay.visible,
             opacity: viewerState.doseOverlay.opacity,
         } : null,
+        dataTree: _snapshotDataTreeUiState(),
     };
 }
 
@@ -6970,23 +7501,36 @@ async function _restoreScreenshotViewerState(snapshot, restoreFocus) {
         _restoreScreenshotPanel(snapshot.panel);
     }
     await _waitScreenshotFrames(3);
+    _restoreDataTreeUiState(snapshot.dataTree);
 }
 
-async function _applyStructuredScreenshotPlan(plan) {
-    const viewerState = typeof state !== 'undefined' && state ? state : {};
-    Object.entries(plan.slice_indices || {}).forEach(([axis, value]) => {
-        if (['axial', 'sagittal', 'coronal'].includes(axis)
-            && Number.isFinite(Number(value))
-            && typeof updateSlice === 'function') {
-            updateSlice(axis, Math.round(Number(value)));
-        }
-    });
-    const centerVoxel = plan.focus?.center_voxel;
-    if (Array.isArray(centerVoxel) && centerVoxel.length === 3 && typeof updateSlice === 'function') {
-        updateSlice('sagittal', Math.round(Number(centerVoxel[0])));
-        updateSlice('coronal', Math.round(Number(centerVoxel[1])));
-        updateSlice('axial', Math.round(Number(centerVoxel[2])));
+async function _wait2DScreenshotSliceStable(axis, sliceIndex, timeoutMs = 8000) {
+    const cap = axis.charAt(0).toUpperCase() + axis.slice(1);
+    const expected = String(Math.round(Number(sliceIndex)));
+    const startedAt = performance.now();
+    while (performance.now() - startedAt < timeoutMs) {
+        const base = document.getElementById(`sliceCanvas${cap}`);
+        const baseReady = !!base
+            && base.dataset?.requestedSlice === expected
+            && base.dataset?.renderedSlice === expected
+            && Number(state?.slices?.[axis]) === Number(sliceIndex);
+        const dose = document.getElementById(`doseOverlayCanvas${cap}`);
+        const doseRequired = !!state?.doseOverlay?.visible
+            && !!dose && dose.style?.display !== 'none';
+        const doseReady = !doseRequired || (
+            dose?.dataset?.requestedSlice === expected
+            && dose?.dataset?.renderedSlice === expected
+            && dose?.dataset?.dosePending !== 'true'
+        );
+        if (baseReady && doseReady) return true;
+        await _waitScreenshotFrames(1);
     }
+    console.warn(`[screenshot] timed out waiting for ${axis} slice ${expected}`);
+    return false;
+}
+
+function _applyScreenshotOverlayPlan(plan) {
+    const viewerState = typeof state !== 'undefined' && state ? state : {};
     [['overlayCTV', plan.overlays?.ctv], ['overlayOAR', plan.overlays?.oar]].forEach(([id, value]) => {
         const element = document.getElementById(id);
         if (!element || typeof value !== 'boolean' || element.checked === value) return;
@@ -7003,21 +7547,138 @@ async function _applyStructuredScreenshotPlan(plan) {
             );
         }
     }
-    const focusIds = [...new Set([
-        ...(plan.object_ids || []),
-        ...(plan.highlight_object_ids || []),
-    ].map(String).filter(Boolean))];
-    if (focusIds.length && typeof window.focusPlanningObjectsForScreenshot === 'function') {
-        return window.focusPlanningObjectsForScreenshot(focusIds, {
-            hideUnrelated: !!plan.hide_unrelated,
+}
+
+function _screenshotAutoFrameEnabled(plan, targetRefs) {
+    const focusKind = String(plan.focus?.kind || '').trim().toLowerCase();
+    if (focusKind === 'current-view' || focusKind === 'overview') return false;
+    if (focusKind === 'auto' || focusKind === 'close-up') return true;
+    // Backward-compatible default: supplying stable object identities has
+    // always meant "show these objects".  Locate/required-annotation plans
+    // additionally opt in even when they use target_refs only.
+    return targetRefs.length > 0 && (
+        (plan.object_ids || []).length > 0
+        || (plan.highlight_object_ids || []).length > 0
+        || plan.visual_purpose === 'locate'
+        || plan.annotation_policy === 'required'
+    );
+}
+
+async function _applyStructuredScreenshotPlan(plan, viewTarget) {
+    _applyScreenshotOverlayPlan(plan);
+    const targetRefs = _screenshotTargetRefs(plan);
+    const autoFrame = _screenshotAutoFrameEnabled(plan, targetRefs);
+    const axisMatch = String(viewTarget || '').match(/^viewer-(axial|sagittal|coronal)$/);
+    if (axisMatch && typeof updateSlice === 'function') {
+        const axis = axisMatch[1];
+        let sliceIndex = Number(plan.slice_indices?.[axis]);
+        let focusResult = null;
+        if (!Number.isFinite(sliceIndex)) {
+            const centerVoxel = plan.focus?.center_voxel;
+            if (Array.isArray(centerVoxel) && centerVoxel.length === 3) {
+                const [x, y, z] = centerVoxel.map(Number);
+                const zCount = Number(state?.ctShape?.[0] || 0);
+                sliceIndex = axis === 'sagittal' ? x
+                    : axis === 'coronal' ? y
+                    : (zCount > 0 ? (zCount - 1) - z : z);
+                focusResult = {
+                    version: 1,
+                    status: Number.isFinite(sliceIndex) ? 'resolved' : 'unresolved',
+                    method: 'explicit-center-voxel',
+                    axis,
+                    slice_index: Number.isFinite(sliceIndex) ? Math.round(sliceIndex) : null,
+                };
+            }
+        }
+        if (!Number.isFinite(sliceIndex) && autoFrame
+            && typeof window.resolve2DScreenshotFocus === 'function') {
+            focusResult = window.resolve2DScreenshotFocus(axis, targetRefs, {
+                focusKind: plan.focus?.kind || 'auto',
+            });
+            sliceIndex = Number(focusResult?.slice_index);
+        }
+        if (Number.isFinite(sliceIndex)) {
+            sliceIndex = Math.round(sliceIndex);
+            updateSlice(axis, sliceIndex);
+            const renderStable = await _wait2DScreenshotSliceStable(axis, sliceIndex);
+            focusResult = Object.assign({
+                version: 1,
+                status: 'resolved',
+                method: 'explicit-slice-index',
+                axis,
+                slice_index: sliceIndex,
+            }, focusResult || {}, { render_stable: renderStable });
+            if (!renderStable) {
+                focusResult.status = 'unverified';
+                focusResult.reason = 'slice_render_did_not_stabilize_before_timeout';
+            }
+        } else if (!focusResult) {
+            focusResult = {
+                version: 1,
+                status: autoFrame ? 'unresolved' : 'not_requested',
+                reason: autoFrame ? 'target_hidden_stale_or_unavailable' : '',
+                axis,
+            };
+        }
+        return { restoreFocus: null, focusResult };
+    }
+
+    if (viewTarget === 'viewer-3d' && autoFrame && targetRefs.length
+        && typeof window.focusPlanningObjectsForScreenshot === 'function') {
+        // A user who explicitly asks us to locate and mark an object needs a
+        // screenshot in which that object cannot be hidden behind another
+        // anatomical surface. Isolate only this strict locate transaction;
+        // overview/explanation captures retain their surrounding context.
+        const isolateTargetForStrictLocate = plan.visual_purpose === 'locate'
+            && plan.annotation_policy === 'required';
+        const restoreFocus = window.focusPlanningObjectsForScreenshot(targetRefs, {
+            hideUnrelated: !!plan.hide_unrelated || isolateTargetForStrictLocate,
             highlightObjectIds: plan.highlight_object_ids || [],
             padding: Number(plan.focus?.padding || 0.35),
         });
+        if (typeof restoreFocus === 'function') {
+            await _waitScreenshotFrames(3);
+            return {
+                restoreFocus,
+                focusResult: restoreFocus.focusResult || {
+                    version: 1,
+                    status: 'resolved',
+                    method: 'stable-id-scene-focus',
+                },
+            };
+        }
+        return {
+            restoreFocus: null,
+            focusResult: {
+                version: 1,
+                status: 'unresolved',
+                reason: 'target_hidden_stale_or_unavailable',
+                method: 'stable-id-scene-focus',
+                target_refs: targetRefs,
+            },
+        };
     }
-    if (focusIds.length && typeof window.focusPlanningSeedsForScreenshot === 'function') {
-        return window.focusPlanningSeedsForScreenshot(focusIds);
+    if (viewTarget === 'viewer-3d' && autoFrame && targetRefs.length
+        && typeof window.focusPlanningSeedsForScreenshot === 'function') {
+        const restoreFocus = window.focusPlanningSeedsForScreenshot(targetRefs);
+        return {
+            restoreFocus: typeof restoreFocus === 'function' ? restoreFocus : null,
+            focusResult: {
+                version: 1,
+                status: typeof restoreFocus === 'function' ? 'resolved' : 'unresolved',
+                method: 'legacy-seed-scene-focus',
+                target_refs: targetRefs,
+            },
+        };
     }
-    return null;
+    return {
+        restoreFocus: null,
+        focusResult: {
+            version: 1,
+            status: 'not_requested',
+            method: 'current-view',
+        },
+    };
 }
 
 function _validateScreenshotDataUrl(dataUrl) {
@@ -7092,7 +7753,7 @@ async function _interceptScreenshot(target, question, galleryContext, options = 
     const reportViews = plan.views.filter(view => String(view?.target || '') === 'report');
     const captureViews = plan.views.filter(view => String(view?.target || '') !== 'report');
     const snapshot = captureViews.length ? _snapshotScreenshotViewerState() : null;
-    let restoreFocus = null;
+    let activeViewRestore = null;
     const attachments = [];
     try {
         if (reportViews.length) {
@@ -7100,22 +7761,64 @@ async function _interceptScreenshot(target, question, galleryContext, options = 
             if (!reportAttachments.length) throw new Error('report_figures_unavailable');
             attachments.push(...reportAttachments);
         }
-        if (captureViews.length) {
-            const capturePlan = Object.assign({}, plan, { views: captureViews });
-            restoreFocus = await _applyStructuredScreenshotPlan(capturePlan);
-        }
         for (let index = 0; index < captureViews.length; index += 1) {
-            if (!ownerStillActive()) return { success: false, stale: true, error: 'case_changed' };
-            const view = captureViews[index];
-            const viewTarget = String(view.target || 'full');
-            const element = viewTarget === 'dose-overview'
-                ? document.body
-                : await _prepareScreenshotTarget(viewTarget);
-            if (!element) throw new Error(`target_not_found:${viewTarget}`);
-            const dataUrl = await _captureScreenshotDataUrl(viewTarget, element);
+            try {
+                if (!ownerStillActive()) return { success: false, stale: true, error: 'case_changed' };
+                const view = captureViews[index];
+                const viewTarget = String(view.target || 'full');
+                const captureSpec = Object.assign({}, plan, view);
+                const element = viewTarget === 'dose-overview'
+                    ? document.body
+                    : await _prepareScreenshotTarget(viewTarget, captureSpec);
+                if (!element) throw new Error(`target_not_found:${viewTarget}`);
+                // Each attachment owns its own temporary view transaction.
+                // A 2D target chooses the best slice for that plane; a 3D
+                // target frames only after its canvas has a real aspect.  The
+                // previous implementation applied one global camera change
+                // before panel layout and reused it for unrelated captures.
+                const viewTransaction = await _applyStructuredScreenshotPlan(captureSpec, viewTarget);
+                activeViewRestore = viewTransaction?.restoreFocus || null;
+                captureSpec.__focusResult = viewTransaction?.focusResult || null;
+                if (viewTarget !== 'dose-overview') {
+                    await _prepareScreenshotTarget(viewTarget, captureSpec);
+                }
+            const evidenceBundle = await _captureScreenshotEvidenceBundle(
+                viewTarget,
+                element,
+                captureSpec,
+            );
+            const dataUrl = evidenceBundle?.dataUrl || null;
             if (!await _validateScreenshotDataUrl(dataUrl)) {
                 throw new Error(`blank_or_invalid:${viewTarget}`);
             }
+            const currentPlanningId = String(
+                plan.planning_id
+                || (typeof dataTreeState !== 'undefined'
+                    ? (dataTreeState?.planning?.activePlanningId || dataTreeState?.planning?.id)
+                    : '')
+                || ''
+            );
+            const currentDataVersion = String(
+                plan.data_version
+                || (typeof dataTreeState !== 'undefined'
+                    ? (dataTreeState?.planning?.dataVersion
+                        ?? dataTreeState?.planning?.data_version
+                        ?? dataTreeState?.planning?.version)
+                    : '')
+                || ''
+            );
+            const groundingManifest = Object.assign(
+                { version: 1, target: viewTarget, targets: [] },
+                evidenceBundle?.groundingManifest || {},
+                {
+                    capture_state: {
+                        session_id: ownerSessionId,
+                        planning_id: currentPlanningId,
+                        data_version: currentDataVersion,
+                        captured_at: new Date().toISOString(),
+                    },
+                },
+            );
             const attachmentId = String(
                 view.attachment_id
                 || `${context.requestId || 'request'}-${viewTarget}-${index}`
@@ -7147,9 +7850,9 @@ async function _interceptScreenshot(target, question, galleryContext, options = 
                     request_id: context.requestId,
                     message_id: context.messageId,
                     attachment_id: attachmentId,
-                    planning_id: plan.planning_id || '',
+                    planning_id: currentPlanningId,
                     case_id: plan.case_id || ownerSessionId,
-                    data_version: plan.data_version || '',
+                    data_version: currentDataVersion,
                     question: plan.question || '',
                     response_language: context.responseLanguage || '',
                     view_metadata: {
@@ -7158,6 +7861,12 @@ async function _interceptScreenshot(target, question, galleryContext, options = 
                         object_ids: plan.object_ids || [],
                         data_tree_node_ids: plan.data_tree_node_ids || [],
                         overlays: plan.overlays || {},
+                        target_refs: _screenshotTargetRefs(captureSpec),
+                        visual_purpose: plan.visual_purpose || 'explain',
+                        analysis_required: plan.analysis_required !== false,
+                        annotation_policy: plan.annotation_policy || 'auto',
+                        focus_result: captureSpec.__focusResult || null,
+                        grounding_manifest: groundingManifest,
                     },
                 }),
             });
@@ -7174,9 +7883,9 @@ async function _interceptScreenshot(target, question, galleryContext, options = 
                     id: payload.attachment?.id || attachmentId,
                     mode: payload.attachment?.mode || plan.mode,
                     target: payload.attachment?.target || viewTarget,
-                    planning_id: payload.attachment?.planning_id || plan.planning_id || '',
+                    planning_id: payload.attachment?.planning_id || currentPlanningId,
                     case_id: payload.attachment?.case_id || plan.case_id || ownerSessionId,
-                    data_version: payload.attachment?.data_version || plan.data_version || '',
+                    data_version: payload.attachment?.data_version || currentDataVersion,
                     request_id: payload.attachment?.request_id || context.requestId,
                     message_id: payload.attachment?.message_id || context.messageId,
                     session_id: payload.attachment?.session_id || ownerSessionId,
@@ -7193,12 +7902,22 @@ async function _interceptScreenshot(target, question, galleryContext, options = 
                             capture_role: view.capture_role || view.captureRole || '',
                             mode: plan.mode || 'chat',
                             target: viewTarget,
-                            planning_id: plan.planning_id || '',
+                            planning_id: currentPlanningId,
                             case_id: plan.case_id || ownerSessionId,
-                            data_version: plan.data_version || '',
+                            data_version: currentDataVersion,
                             request_id: context.requestId || '',
+                            target_refs: _screenshotTargetRefs(captureSpec),
+                            visual_purpose: plan.visual_purpose || 'explain',
+                            analysis_required: plan.analysis_required !== false,
+                            annotation_policy: plan.annotation_policy || 'auto',
+                            focus_result: captureSpec.__focusResult || null,
+                            grounding_manifest: groundingManifest,
                         },
                     ),
+                    visual_analysis: plan.analysis_required !== false,
+                    analysis_required: plan.analysis_required !== false,
+                    annotation_policy: plan.annotation_policy || 'auto',
+                    visual_purpose: plan.visual_purpose || 'explain',
                 },
             );
             const attachment = _appendScreenshotToGallery(
@@ -7209,6 +7928,14 @@ async function _interceptScreenshot(target, question, galleryContext, options = 
                 uploadedAttachment,
             );
             if (attachment) attachments.push(attachment);
+            } finally {
+                if (typeof activeViewRestore === 'function') {
+                    try { activeViewRestore(); } catch (error) {
+                        console.debug('[screenshot] per-view focus restore skipped:', error);
+                    }
+                }
+                activeViewRestore = null;
+            }
         }
         return {
             success: attachments.length > 0,
@@ -7229,7 +7956,7 @@ async function _interceptScreenshot(target, question, galleryContext, options = 
             plan,
         };
     } finally {
-        await _restoreScreenshotViewerState(snapshot, restoreFocus);
+        await _restoreScreenshotViewerState(snapshot, activeViewRestore);
     }
 }
 

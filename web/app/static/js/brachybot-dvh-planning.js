@@ -330,7 +330,39 @@ function _clampDvhVolume(v) {
     return Math.max(0, Math.min(100, n));
 }
 
+function _volumeMetricPercent(value, units) {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return null;
+    const normalized = String(units || 'fraction').trim().toLowerCase();
+    const isPercent = normalized === 'percent'
+        || normalized === '%'
+        || normalized === 'percentage';
+    return _clampDvhVolume(isPercent ? n : n * 100);
+}
+
+function _metricPrescriptionGyForDvh() {
+    const metrics = state?.metrics || {};
+    const explicitGy = Number(metrics.prescription_gy);
+    if (Number.isFinite(explicitGy) && explicitGy > 0) return explicitGy;
+
+    const stored = Number(metrics.prescribed_dose);
+    if (Number.isFinite(stored) && stored > 0) {
+        // Current payloads persist physical Gy. Historical payloads stored the
+        // prescription multiplier (1.0 == the default prescription) without a
+        // unit marker, so retain the bounded compatibility conversion here.
+        const defaultGy = typeof DEFAULT_PRESCRIPTION_GY === 'number'
+            ? DEFAULT_PRESCRIPTION_GY : 120;
+        return stored <= 5 ? stored * defaultGy : stored;
+    }
+    return null;
+}
+
 function _getCurrentPrescriptionGyForDvh() {
+    // DVH is a view of the active plan, not of an editable report draft. Use
+    // the plan's persisted physical Rx first; otherwise a report-form edit
+    // could move the marker while the V100 card still describes another dose.
+    const metricGy = _metricPrescriptionGyForDvh();
+    if (Number.isFinite(metricGy) && metricGy > 0) return metricGy;
     return typeof _getCurrentPrescriptionGy === 'function'
         ? _getCurrentPrescriptionGy()
         : 120;
@@ -372,6 +404,54 @@ function _interpolateDvhAtDose(xs, ys, dose) {
         }
     }
     return pairs[pairs.length - 1][1];
+}
+
+function _withDvhAnchor(doseBins, volPcts, anchorDose, anchorVolume) {
+    const dose = Number(anchorDose);
+    const volume = Number(anchorVolume);
+    if (!Number.isFinite(dose) || !Number.isFinite(volume)) {
+        return { doseBins: doseBins || [], volumePcts: volPcts || [] };
+    }
+    const pairs = [];
+    const n = Math.min(
+        Array.isArray(doseBins) ? doseBins.length : 0,
+        Array.isArray(volPcts) ? volPcts.length : 0,
+    );
+    let anchorInserted = false;
+    for (let i = 0; i < n; i++) {
+        const x = Number(doseBins[i]);
+        const y = Number(volPcts[i]);
+        if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+        // Replace a legacy sampled point at the same threshold rather than
+        // leaving two x values for interpolation to choose between.
+        if (Math.abs(x - dose) <= 1e-7) {
+            if (!anchorInserted) {
+                pairs.push([dose, _clampDvhVolume(volume)]);
+                anchorInserted = true;
+            }
+            continue;
+        }
+        pairs.push([x, _clampDvhVolume(y)]);
+    }
+    if (!anchorInserted) pairs.push([dose, _clampDvhVolume(volume)]);
+    pairs.sort((a, b) => a[0] - b[0]);
+    return {
+        doseBins: pairs.map(pair => pair[0]),
+        volumePcts: pairs.map(pair => pair[1]),
+    };
+}
+
+function _authoritativeCTVV100Percent(rxGy) {
+    const metricRx = _metricPrescriptionGyForDvh();
+    const coverage = _volumeMetricPercent(
+        state?.metrics?.v100,
+        state?.metrics?.volume_metric_units,
+    );
+    if (metricRx === null || coverage === null) return null;
+    // The marker is V100 by definition: the volume receiving the active
+    // plan's prescription dose. Do not substitute a value interpolated from
+    // a legacy binned curve when the direct metric is available.
+    return Math.abs(Number(rxGy) - metricRx) <= 1e-6 ? coverage : null;
 }
 
 function _smoothDvhCurveForDisplay(doseBins, volPcts, maxSmoothDose = DVH_DEFAULT_X_MAX) {
@@ -456,6 +536,7 @@ function drawDVH() {
     const ctvFirst = sorted.find(([n]) => /^(CTV|PTV|GTV)$/i.test(n));
     const ctvName = ctvFirst ? ctvFirst[0] : null;
     const ctvEntry = ctvFirst;
+    const authoritativeCTVV100 = _authoritativeCTVV100Percent(rxGy);
     const topOthers = sorted.filter(([n]) => !/^(CTV|PTV|GTV)$/i.test(n));
     const picked = ctvFirst ? [ctvFirst, ...topOthers] : topOthers;
 
@@ -472,8 +553,13 @@ function drawDVH() {
     ];
     let i = 0;
     for (const [name, dvh] of picked) {
-        const doseBins = dvh.dose_bins || [];
-        const volPcts = dvh.volume_pcts || [];
+        let doseBins = dvh.dose_bins || [];
+        let volPcts = dvh.volume_pcts || [];
+        if (name === ctvName && authoritativeCTVV100 !== null) {
+            const anchored = _withDvhAnchor(doseBins, volPcts, rxGy, authoritativeCTVV100);
+            doseBins = anchored.doseBins;
+            volPcts = anchored.volumePcts;
+        }
         // Use the SAME color as the data tree (and OAR Dose Metrics
         // table) so the user can visually trace an OAR across panels.
         const treeColor = _getOrganColor(name);
@@ -530,16 +616,15 @@ function drawDVH() {
     // data point for brachytherapy QA — it tells the user "if 120 Gy
     // is your prescription, 97.6% of the CTV is covered".
     //
-    // Source: reportForm.planning.prescriptionGy (user-editable in
-    // the Report panel) or the physical-Gy planning metrics. Legacy
-    // multiplier metrics are migrated by _getCurrentPrescriptionGy. The fallback
-    // order is: explicit report form > metrics > 120 Gy default.
-    // Compute CTV coverage at Rx on the same displayed curve used by
-    // the tooltip, so the fixed Rx marker and hover values agree.
-    let ctvRxCoverage = null;
-    if (ctvDisplayTrace) {
+    // Source: the active planning metrics in physical Gy, with legacy
+    // multiplier metrics migrated by _metricPrescriptionGyForDvh. Only when
+    // the plan payload has no prescription does the report-form value provide
+    // a compatibility fallback. Compute CTV coverage at Rx from the same
+    // authoritative point used by the curve and tooltip.
+    let ctvRxCoverage = authoritativeCTVV100;
+    if (ctvRxCoverage === null && ctvDisplayTrace) {
         ctvRxCoverage = _interpolateDvhAtDose(ctvDisplayTrace.x, ctvDisplayTrace.y, rxGy);
-    } else if (ctvEntry && Array.isArray(ctvEntry[1].dose_bins) && Array.isArray(ctvEntry[1].volume_pcts)) {
+    } else if (ctvRxCoverage === null && ctvEntry && Array.isArray(ctvEntry[1].dose_bins) && Array.isArray(ctvEntry[1].volume_pcts)) {
         ctvRxCoverage = _interpolateDvhAtDose(ctvEntry[1].dose_bins, ctvEntry[1].volume_pcts, rxGy);
     }
     // Build the shapes/annotations arrays. The vertical line is a
@@ -580,7 +665,7 @@ function drawDVH() {
             annotations.push({
                 x: rxGy, y: ctvRxCoverage,
                 xref: 'x', yref: 'y',
-                text: `CTV V${rxGy.toFixed(0)} = ${ctvRxCoverage.toFixed(1)}%`,
+                text: `CTV V100 @ ${rxGy.toFixed(0)} Gy = ${ctvRxCoverage.toFixed(1)}%`,
                 showarrow: true, arrowhead: 2, arrowcolor: '#facc15', arrowwidth: 1,
                 ax: 18, ay: -22,
                 font: { color: '#facc15', size: 10, family: 'Inter, sans-serif' },
@@ -1092,6 +1177,7 @@ async function refreshPlanningUI(options = {}) {
                 if (typeof manualPlanningState !== 'undefined') {
                     manualPlanningState.planningId = data.planning_id || manualPlanningState.planningId || null;
                     manualPlanningState.artifactStatus = { ...(data.artifact_status || {}) };
+                    if (typeof _syncManualSafetyState === 'function') _syncManualSafetyState(data);
                 }
                 // The registry is compact and independent from the clinical
                 // result payload.  Refresh it in parallel so the Data Tree
@@ -1923,10 +2009,17 @@ async function refreshPlanningUI(options = {}) {
                     await new Promise(r => setTimeout(r, 100));
                 }
 
-                // Also re-capture DVH if available
+                // Also re-capture DVH if available.  This compatibility path
+                // used to overwrite the canonical report image with a
+                // 900x450 export of the dark live chart, which made Fig 2(e)
+                // look blank/washed out and unreadable.  Reuse the same
+                // report-only white, axis-labelled exporter as the canonical
+                // report capture instead.
                 const dvhEl = document.getElementById('dvhChart');
                 if (dvhEl && typeof Plotly !== 'undefined' && typeof Plotly.toImage === 'function') {
-                    const imgData = await Plotly.toImage(dvhEl, { format: 'png', width: 900, height: 450 });
+                    const imgData = typeof window.captureReportDvhFigure === 'function'
+                        ? await window.captureReportDvhFigure(dvhEl)
+                        : await Plotly.toImage(dvhEl, { format: 'png', width: 2400, height: 1500, scale: 1 });
                     if (imgData && imgData.length > 1000) {
                         const dvhIdx = window.reportForm.figures.findIndex(f => f && f.axis === 'report_fig2_dvh');
                         const dvhEntry = {
@@ -1935,6 +2028,7 @@ async function refreshPlanningUI(options = {}) {
                             caption: lang === 'zh' ? 'CTV 及各 OAR 的剂量-体积曲线' : 'Dose–volume curves for CTV and all OARs',
                             capturedAt: new Date().toISOString(), figureGroup: 'figure2',
                             figureNumber: 2, subfigure: 'e', sortOrder: 5, captureRole: 'dvh',
+                            captureContract: window.REPORT_DVH_CAPTURE_CONTRACT || 'dvh-readable-report-v2',
                         };
                         if (dvhIdx >= 0) {
                             Object.assign(window.reportForm.figures[dvhIdx], dvhEntry);
@@ -2069,9 +2163,12 @@ function updateMetrics(metrics) {
     // Reference: Zhiyuan BrachyPlan metrics.
     // Pass the raw value (don't `|| 0` first) so setMetric can detect
     // "no data" via undefined/NaN and render "--" instead of "0%".
-    setMetric('V100', m.v100 !== undefined ? m.v100 * 100 : undefined, 100, '%');
-    setMetric('V150', m.v150 !== undefined ? m.v150 * 100 : undefined, 100, '%');
-    setMetric('V200', m.v200 !== undefined ? m.v200 * 100 : undefined, 100, '%');
+    const v100Pct = _volumeMetricPercent(m.v100, m.volume_metric_units);
+    const v150Pct = _volumeMetricPercent(m.v150, m.volume_metric_units);
+    const v200Pct = _volumeMetricPercent(m.v200, m.volume_metric_units);
+    setMetric('V100', v100Pct, 100, '%');
+    setMetric('V150', v150Pct, 100, '%');
+    setMetric('V200', v200Pct, 100, '%');
     const fallbackDoseScale = typeof DEFAULT_DOSE_SCALE_GY === 'number' ? DEFAULT_DOSE_SCALE_GY : 1;
     const doseDisplayMax = Math.max(1, (typeof _getDoseScaleGy === 'function' ? _getDoseScaleGy() : fallbackDoseScale) * 2);
     setMetric('D90', m.d90, doseDisplayMax, ' Gy');
@@ -2084,7 +2181,7 @@ function updateMetrics(metrics) {
     const ctvVolumeCm3 = m.ctv_volume_mm3 != null ? Number(m.ctv_volume_mm3) / 1000 : NaN;
     document.getElementById('sumCTV').textContent = Number.isFinite(ctvVolumeCm3) ? ctvVolumeCm3.toFixed(1) + ' cm³' : '--';
     document.getElementById('sumD90').textContent = m.d90 != null ? Number(m.d90).toFixed(1) + ' Gy' : '--';
-    document.getElementById('sumV100').textContent = m.v100 != null ? (Number(m.v100) * 100).toFixed(1) + '%' : '--';
+    document.getElementById('sumV100').textContent = v100Pct !== null ? v100Pct.toFixed(1) + '%' : '--';
 }
 
 // Look up the data-tree color for an organ by name. Falls back to a
@@ -2239,6 +2336,9 @@ function updateClinicalEvaluation() {
     const metrics = state.metrics || {};
     const oarMetrics = metrics.oar_metrics || {};
     const rxGy = _getCurrentPrescriptionGyForDvh();
+    const v100Pct = _volumeMetricPercent(metrics.v100, metrics.volume_metric_units);
+    const v150Pct = _volumeMetricPercent(metrics.v150, metrics.volume_metric_units);
+    const v200Pct = _volumeMetricPercent(metrics.v200, metrics.volume_metric_units);
     const ui = (zh, en) => typeof window._t === 'function'
         ? window._t(zh, en)
         : (effectiveUiLanguage() === 'zh' ? zh : en);
@@ -2258,9 +2358,9 @@ function updateClinicalEvaluation() {
     const headline = [
         [ui('计划评分', 'Plan Score'), metrics.plan_score != null ? `${Number(metrics.plan_score).toFixed(0)} / 100` : '--'],
         ['D90', metrics.d90 != null ? `${Number(metrics.d90).toFixed(2)} Gy` : '--'],
-        ['V100', metrics.v100 != null ? `${(Number(metrics.v100) * 100).toFixed(1)} %` : '--'],
-        ['V150', metrics.v150 != null ? `${(Number(metrics.v150) * 100).toFixed(1)} %` : '--'],
-        ['V200', metrics.v200 != null ? `${(Number(metrics.v200) * 100).toFixed(1)} %` : '--'],
+        ['V100', v100Pct !== null ? `${v100Pct.toFixed(1)} %` : '--'],
+        ['V150', v150Pct !== null ? `${v150Pct.toFixed(1)} %` : '--'],
+        ['V200', v200Pct !== null ? `${v200Pct.toFixed(1)} %` : '--'],
         [ui('D2（最大剂量）', 'D2 (max)'), metrics.d2 != null ? `${Number(metrics.d2).toFixed(2)} Gy` : '--'],
         [ui('平均剂量', 'Dmean'), metrics.dmean != null ? `${Number(metrics.dmean).toFixed(2)} Gy` : '--'],
         [ui('适形指数', 'CI'), metrics.ci != null ? Number(metrics.ci).toFixed(2) : '--'],
@@ -2270,17 +2370,17 @@ function updateClinicalEvaluation() {
     ];
 
     const observations = [];
-    if (metrics.v100 != null) observations.push(ui(
-        `CTV V100 当前为 ${(Number(metrics.v100) * 100).toFixed(1)}%。请与该肿瘤部位的有来源依据的标准进行比较。`,
-        `CTV V100 observed at ${(Number(metrics.v100) * 100).toFixed(1)}%. Compare against source-backed criteria for this tumor site.`,
+    if (v100Pct !== null) observations.push(ui(
+        `CTV V100 当前为 ${v100Pct.toFixed(1)}%。请与该肿瘤部位的有来源依据的标准进行比较。`,
+        `CTV V100 observed at ${v100Pct.toFixed(1)}%. Compare against source-backed criteria for this tumor site.`,
     ));
     if (metrics.d90 != null) observations.push(ui(
-        `CTV D90 当前为 ${Number(metrics.d90).toFixed(2)} Gy；当前报告处方剂量为 ${Number(rxGy).toFixed(0)} Gy。`,
-        `CTV D90 observed at ${Number(metrics.d90).toFixed(2)} Gy. Current report prescription is ${Number(rxGy).toFixed(0)} Gy.`,
+        `CTV D90 当前为 ${Number(metrics.d90).toFixed(2)} Gy；当前计划处方剂量为 ${Number(rxGy).toFixed(0)} Gy。`,
+        `CTV D90 observed at ${Number(metrics.d90).toFixed(2)} Gy. Active plan prescription is ${Number(rxGy).toFixed(0)} Gy.`,
     ));
-    if (metrics.v200 != null) observations.push(ui(
-        `CTV V200 当前为 ${(Number(metrics.v200) * 100).toFixed(1)}%。调整粒子前请先在 2D/3D 中检查对应的热点位置。`,
-        `CTV V200 observed at ${(Number(metrics.v200) * 100).toFixed(1)}%. Inspect corresponding hot spots in 2D/3D before changing seeds.`,
+    if (v200Pct !== null) observations.push(ui(
+        `CTV V200 当前为 ${v200Pct.toFixed(1)}%。调整粒子前请先在 2D/3D 中检查对应的热点位置。`,
+        `CTV V200 observed at ${v200Pct.toFixed(1)}%. Inspect corresponding hot spots in 2D/3D before changing seeds.`,
     ));
     if (metrics.plan_score != null) observations.push(ui(
         `计划评分为 ${Number(metrics.plan_score).toFixed(0)}/100。该分数仅用于质量排序和复核提示，不代表临床批准。`,

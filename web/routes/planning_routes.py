@@ -24,6 +24,7 @@ from plans.dose_pre.model_loader import (
     resolve_dose_scale_gy,
     resolve_prescription_gy,
 )
+from memory.language import detect as detect_language, normalize_language
 from web.auth import current_user
 from web.chat_tasks import ChatTask, ChatTaskManager
 from web.workspace_store import WorkspaceError, WorkspaceQuotaExceeded, WorkspaceNotFound
@@ -520,6 +521,173 @@ _valid_screenshot_request = _server_support._valid_screenshot_request
 _validate_path = _server_support._validate_path
 _oar_display_name_map = _server_support._oar_display_name_map
 
+_ANNOTATION_BLOCKED_STATUSES = frozenset({
+    "loading",
+    "error",
+    "stale",
+    "expired",
+    "not_generated",
+    "not-generated",
+    "unresolved",
+    "missing",
+    "deleted",
+})
+_ANNOTATION_SHAPES = frozenset({"box", "arrow", "ellipse", "point"})
+
+
+def _snapshot_annotation_planning_state(snapshot: Mapping[str, Any]) -> tuple[str, str]:
+    """Read the active Planning identity/generation from durable state.
+
+    Screenshot annotation is finalized after a multimodal round-trip. During
+    that interval the browser can switch Planning runs or edit manual geometry.
+    The persisted agent snapshot is therefore the server-side authority; an
+    absent value means "cannot verify" and never invents a mismatch.
+    """
+    agent = snapshot.get("agent") if isinstance(snapshot, Mapping) else None
+    results = agent.get("planning_results") if isinstance(agent, Mapping) else None
+    if not isinstance(results, Mapping):
+        return "", ""
+    planning_id = str(
+        results.get("active_planning_id")
+        or results.get("planning_run_id")
+        or ""
+    ).strip()
+    version: Any = None
+    runs = results.get("planning_runs")
+    if planning_id and isinstance(runs, list):
+        active_run = next((
+            run for run in runs
+            if isinstance(run, Mapping)
+            and str(run.get("planning_id") or run.get("id") or "").strip() == planning_id
+        ), None)
+        if isinstance(active_run, Mapping):
+            version = active_run.get("data_version")
+    if planning_id and (version is None or str(version).strip() == ""):
+        run_snapshot = results.get(f"planning_run:{planning_id}")
+        if isinstance(run_snapshot, Mapping):
+            version = run_snapshot.get("data_version")
+            if version is None or str(version).strip() == "":
+                version = run_snapshot.get("manual_plan_version")
+    if version is None or str(version).strip() == "":
+        version = results.get("manual_plan_version")
+    return planning_id, str(version).strip() if version is not None else ""
+
+
+def _annotation_grounding_manifest(attachment: Mapping[str, Any]) -> Mapping[str, Any]:
+    metadata = attachment.get("view_metadata")
+    if not isinstance(metadata, Mapping):
+        metadata = attachment.get("viewMetadata")
+    metadata = metadata if isinstance(metadata, Mapping) else {}
+    manifest = (
+        metadata.get("grounding_manifest")
+        or metadata.get("groundingManifest")
+        or attachment.get("grounding_manifest")
+        or attachment.get("groundingManifest")
+    )
+    return manifest if isinstance(manifest, Mapping) else {}
+
+
+def _validate_screenshot_annotation_marks(
+    source_attachment: Mapping[str, Any],
+    raw_marks: Any,
+) -> list[Dict[str, str]]:
+    """Fail closed unless every requested mark is capture-grounded.
+
+    Pixel rendering stays in the browser, but the server independently checks
+    the immutable capture manifest before accepting the derived image. In
+    particular, a scene object must have been visible in both the THREE scene
+    and Data Tree at capture time. A Data Tree evidence-card row may still be
+    marked when its corresponding 3D object is hidden, because the mark points
+    to the row itself rather than to an invented location in the Viewer.
+    """
+    metadata = source_attachment.get("view_metadata")
+    if not isinstance(metadata, Mapping):
+        metadata = source_attachment.get("viewMetadata")
+    metadata = metadata if isinstance(metadata, Mapping) else {}
+    policy = str(
+        source_attachment.get("annotation_policy")
+        or source_attachment.get("annotationPolicy")
+        or metadata.get("annotation_policy")
+        or metadata.get("annotationPolicy")
+        or "auto"
+    ).strip().lower()
+    if policy == "none":
+        raise ValueError("Annotation is disabled for this screenshot")
+    if not isinstance(raw_marks, list) or not raw_marks:
+        raise ValueError("At least one grounded annotation mark is required")
+
+    manifest = _annotation_grounding_manifest(source_attachment)
+    targets = manifest.get("targets")
+    if not isinstance(targets, list):
+        raise ValueError("The source screenshot has no grounding manifest")
+    indexed_targets = {
+        str(target.get("target_ref") or target.get("targetRef") or "").strip(): target
+        for target in targets[:64]
+        if isinstance(target, Mapping)
+        and str(target.get("target_ref") or target.get("targetRef") or "").strip()
+    }
+
+    safe_marks: list[Dict[str, str]] = []
+    for raw_mark in raw_marks[:12]:
+        if not isinstance(raw_mark, Mapping):
+            raise ValueError("Annotation mark must be an object")
+        target_ref = str(
+            raw_mark.get("target_ref") or raw_mark.get("targetRef") or ""
+        ).strip()[:220]
+        target = indexed_targets.get(target_ref)
+        if not target:
+            raise ValueError("Annotation target is not present in the source manifest")
+        bounds = (
+            target.get("normalized_bounds")
+            or target.get("normalizedBounds")
+            or target.get("bounds")
+        )
+        try:
+            numeric_bounds = [float(value) for value in bounds]
+        except (TypeError, ValueError):
+            numeric_bounds = []
+        valid_bounds = (
+            len(numeric_bounds) == 4
+            and all(np.isfinite(value) for value in numeric_bounds)
+            and numeric_bounds[0] >= 0
+            and numeric_bounds[1] >= 0
+            and numeric_bounds[2] > 0
+            and numeric_bounds[3] > 0
+            and numeric_bounds[0] + numeric_bounds[2] <= 1.000001
+            and numeric_bounds[1] + numeric_bounds[3] <= 1.000001
+        )
+        in_view = target.get("in_view", target.get("inView")) is True
+        if not (
+            target.get("annotatable") is True
+            and target.get("visible") is True
+            and in_view
+            and valid_bounds
+        ):
+            raise ValueError("Annotation target was not visible in the source screenshot")
+        status = str(target.get("status") or "ready").strip().lower()
+        if status in _ANNOTATION_BLOCKED_STATUSES:
+            raise ValueError("Annotation target was stale or unavailable at capture time")
+        kind = str(target.get("kind") or "").strip().lower()
+        if kind == "scene-object" and not (
+            target.get("scene_visible", target.get("sceneVisible")) is True
+            and target.get("data_tree_visible", target.get("dataTreeVisible")) is True
+        ):
+            raise ValueError("A hidden 3D object cannot be annotated")
+        shape = str(raw_mark.get("shape") or "box").strip().lower()
+        if shape not in _ANNOTATION_SHAPES:
+            raise ValueError("Unsupported annotation shape")
+        if kind in {"ui-element", "data-tree-row"} and shape != "box":
+            raise ValueError("UI and Data Tree targets must use a box annotation")
+        safe_marks.append({
+            "target_ref": target_ref,
+            "shape": shape,
+            "label": str(raw_mark.get("label") or "")[:160],
+            "locator": str(raw_mark.get("locator") or target.get("locator") or "")[:48],
+        })
+    if not safe_marks:
+        raise ValueError("No valid annotation marks were supplied")
+    return safe_marks
+
 # UI events can arrive in bursts while a viewer is being dragged or a
 # training monitor is active.  Persisting every event synchronously used to
 # serialize a snapshot and scan large case artifacts on the request thread.
@@ -853,6 +1021,39 @@ def _current_planning_snapshot(agent):
     return {"seeds": [], "needles": []}
 
 
+def _restore_failed_manual_mutation(
+    agent,
+    *,
+    planning_id: Optional[str],
+    previous_planning_id: Optional[str],
+    created_new_planning: bool,
+    error: Exception,
+) -> Dict[str, list]:
+    """Restore the last committed Planning after any failed manual mutation.
+
+    A manual dose request invalidates dependent aliases before expensive model
+    inference.  When inference or safety validation failed inside an existing
+    draft, the old implementation restored only newly-forked children; the
+    active draft was left without dose and a stale browser job could keep
+    replaying rejected geometry.  Every mutation now rolls back to the active
+    run snapshot that existed at request entry, regardless of whether a child
+    had to be forked for this request.
+    """
+    try:
+        if created_new_planning and planning_id:
+            mark_planning_run(agent, planning_id, "failed", error=str(error))
+        elif previous_planning_id:
+            activate_planning_run(agent, str(previous_planning_id))
+    except Exception:
+        logger.warning(
+            "Unable to restore Planning after failed manual mutation planning=%s previous=%s",
+            planning_id,
+            previous_planning_id,
+            exc_info=True,
+        )
+    return _current_planning_snapshot(agent)
+
+
 def _manual_seed_geometry_settings(memory) -> Dict[str, float]:
     """Return the physical seed constraints used by planning and interaction."""
     plan_config = memory.retrieve("plan_config") or {}
@@ -970,6 +1171,80 @@ def _mark_manual_dependents_stale(memory, *, reason: str, planning_version: int)
     }
     memory.store("manual_artifact_status", status)
     return status
+
+
+def _manual_safety_override_requested(data: Mapping[str, Any]) -> bool:
+    """Return true only for the explicit UI-confirmed safety override.
+
+    The normal manual mutation path remains fail-closed.  ``allow_unsafe`` by
+    itself is intentionally insufficient: callers must also send the stable
+    marker produced by the restore/keep decision dialog.  This keeps retries,
+    stale browser payloads, and generic API clients from silently converting a
+    safety rejection into an accepted clinical geometry.
+    """
+    return (
+        isinstance(data, Mapping)
+        and data.get("allow_unsafe") is True
+        and str(data.get("safety_override") or "").strip() == "user_confirmed"
+    )
+
+
+def _manual_seed_creation_requested(data: Mapping[str, Any], reason: str) -> bool:
+    """Return true for the narrow, intentional Add Seed draft mutation.
+
+    Adding a seed is different from accepting a final treatment geometry. The
+    operator needs to see and refine the newly inserted seed, so temporary
+    spacing interference must not make the insertion disappear. This marker
+    is accepted only for the ``add`` mutation and only with the explicit draft
+    mode sent by the Add Seed UI; it does not bypass the structural checks in
+    ``_normalize_manual_seed_records``.
+    """
+    return (
+        isinstance(data, Mapping)
+        and str(reason or "").strip() == "add"
+        and data.get("allow_unsafe_creation") is True
+        and str(data.get("seed_creation_mode") or "").strip() == "draft"
+    )
+
+
+def _annotate_manual_safety_status(
+    memory,
+    status: Optional[Mapping[str, Any]],
+    interference: Optional[Mapping[str, Any]],
+) -> Dict[str, Any]:
+    """Persist an explicit operator override without hiding its warning."""
+    annotated = dict(status or {})
+    annotated["safety_override"] = True
+    annotated["requires_safety_review"] = True
+    annotated["safety_warning"] = (
+        "Seed geometry was explicitly retained after a spacing warning; "
+        "review the geometry before clinical use."
+    )
+    annotated["safety_interference"] = copy.deepcopy(dict(interference or {}))
+    memory.store("manual_artifact_status", annotated)
+    return annotated
+
+
+def _annotate_manual_seed_creation_status(
+    memory,
+    status: Optional[Mapping[str, Any]],
+    interference: Optional[Mapping[str, Any]],
+) -> Dict[str, Any]:
+    """Persist a non-blocking warning for an unsafe Add Seed draft.
+
+    This is intentionally not a safety override. The geometry is retained as
+    an editable draft, all dependent clinical artifacts remain stale, and the
+    strict move/dose paths still require correction or explicit confirmation.
+    """
+    annotated = dict(status or {})
+    annotated["requires_safety_review"] = True
+    annotated["safety_warning"] = (
+        "A seed was added as an editable draft despite a spacing warning; "
+        "correct its position before dose recomputation or clinical use."
+    )
+    annotated["safety_interference"] = copy.deepcopy(dict(interference or {}))
+    memory.store("manual_artifact_status", annotated)
+    return annotated
 
 
 def _serialize_manual_plan(needles, seeds):
@@ -4060,12 +4335,27 @@ def register_planning_routes(
                 except Exception as exc:
                     logger.warning("Failed to persist UI state to agent memory: %s", exc)
 
-        event = _append_ui_event(session_id, {
-            "type": data.get("type", "ui.event"),
-            "label": data.get("label", ""),
-            "detail": data.get("detail", {}),
-            "language": language,
-        })
+        committed_event = data.get("committed_event")
+        already_recorded = bool(data.get("already_recorded")) and isinstance(
+            committed_event, dict
+        )
+        if already_recorded:
+            # Mutation endpoints append their event at the authoritative
+            # commit boundary.  Reuse that exact record for live feedback;
+            # appending it again here doubled monitor counts/screenshots and
+            # made failed optimistic previews look like successful edits.
+            event = dict(committed_event)
+            event.setdefault("type", data.get("type", "ui.event"))
+            event.setdefault("label", data.get("label", ""))
+            event.setdefault("detail", data.get("detail", {}))
+            event.setdefault("language", language)
+        else:
+            event = _append_ui_event(session_id, {
+                "type": data.get("type", "ui.event"),
+                "label": data.get("label", ""),
+                "detail": data.get("detail", {}),
+                "language": language,
+            })
         # The deterministic monitor checks are intentionally allowed to run
         # without a cached Agent.  A cold session must not make Monitor look
         # dead, and these helpers already degrade to event-focused guidance
@@ -4085,7 +4375,10 @@ def register_planning_routes(
                 if training.get("active"):
                     training.setdefault("feedback", []).append({"ts": time.time(), "message": feedback})
                     training["feedback"] = training["feedback"][-100:]
-        checkpoint_ui_bridge(session_id, "ui.event_saved")
+        checkpoint_ui_bridge(
+            session_id,
+            "ui.event_feedback" if already_recorded else "ui.event_saved",
+        )
         return jsonify({
             "success": True,
             "event": event,
@@ -4337,13 +4630,17 @@ def register_planning_routes(
         previous_needles = data.get("previous_needles") or []
         previous_seeds = data.get("previous_seeds") if "previous_seeds" in data else None
         reproject_seeds = bool(data.get("reproject_seeds")) or reason in {"needle_drag", "manual_replan"}
+        safety_override = _manual_safety_override_requested(data)
+        preserve_geometry_on_failure = (
+            safety_override and data.get("preserve_geometry_on_failure") is True
+        )
         # ``update_seeds`` normally owns this validation, but callers can use
         # the Dose endpoint directly (older browsers, retries, or API users).
         # Never let such a path launch expensive dose inference for a geometry
         # that the manual-edit contract would have rejected. The check occurs
         # before forking a Planning child or invalidating any current result.
         interference = _seed_interference_report(agent, seeds, needles)
-        if interference.get("status") == "attention":
+        if interference.get("status") == "attention" and not safety_override:
             current = _current_planning_snapshot(agent)
             return jsonify({
                 "success": False,
@@ -4355,8 +4652,16 @@ def register_planning_routes(
                 "seeds": list(current.get("seeds") or []),
                 "needles": list(current.get("needles") or []),
                 "interference": interference,
+                "requires_user_decision": True,
+                "can_override": True,
+                "safety_warning": "Dose update requires an explicit decision about the unsafe seed geometry.",
                 "artifact_status": agent.memory.retrieve("manual_artifact_status") or {},
             }), 422
+        if safety_override and interference.get("status") == "attention":
+            logger.warning(
+                "Retaining seed geometry after explicit safety override during dose update session=%s",
+                session_id,
+            )
         previous_planning_id = active_planning_id(agent.memory)
         previous_dose = None
         if previous_seeds is not None and not reproject_seeds:
@@ -4399,6 +4704,28 @@ def register_planning_routes(
                 previous_dose=previous_dose,
                 reproject_seeds=reproject_seeds,
             )
+            safety_override_applied = safety_override and interference.get("status") == "attention"
+            if safety_override_applied:
+                result["artifact_status"] = _annotate_manual_safety_status(
+                    agent.memory,
+                    result.get("artifact_status") or agent.memory.retrieve("manual_artifact_status") or {},
+                    interference,
+                )
+                result["safety_override"] = True
+                result["requires_safety_review"] = True
+                result["safety_warning"] = result["artifact_status"]["safety_warning"]
+                result["interference"] = interference
+            mutation_event = None
+            if reason == "needle_drag":
+                mutation_event = _append_ui_event(session_id, {
+                    "type": "manual.needle.drag",
+                    "label": reason,
+                    "detail": {
+                        "needle_count": len(result.get("needles") or needles),
+                        "seed_count": result.get("total_seeds", len(seeds)),
+                        "dose_recomputed": True,
+                    },
+                })
             event = _append_ui_event(session_id, {
                 "type": "manual.dose",
                 "label": reason,
@@ -4407,9 +4734,16 @@ def register_planning_routes(
                     "trajectories": result.get("num_trajectories", 0),
                     "manual_preview": True,
                     "dose_engine": "dose_unet_spacing1mm",
+                    "safety_override": bool(safety_override_applied),
+                    "requires_safety_review": bool(safety_override_applied),
+                    "safety_warning": (
+                        result.get("safety_warning") if safety_override_applied else None
+                    ),
+                    "interference": interference if safety_override_applied else None,
                 },
             })
             result["event"] = event
+            result["events"] = [item for item in (mutation_event, event) if item]
             result["advice"] = _build_plan_advice(agent, session_id)
             result["planning_id"] = planning_id
             publish_planning_run(agent, result, status="completed")
@@ -4421,11 +4755,45 @@ def register_planning_routes(
             )
             return jsonify(result)
         except Exception as e:
-            if created_new_planning:
+            geometry_preserved = bool(preserve_geometry_on_failure)
+            if geometry_preserved:
+                # The operator already confirmed that the current seed
+                # geometry should be retained. A downstream DoseUNet failure
+                # is therefore not permission to activate the parent run or
+                # erase the current seeds/needles. Clear any partial derived
+                # aliases, retain the active draft geometry, and expose a
+                # complete stale-artifact status instead.
                 try:
-                    mark_planning_run(agent, planning_id, "failed", error=str(e))
+                    invalidate_planning_dependents(
+                        agent.memory,
+                        reason=f"{reason} dose recomputation failed; geometry retained",
+                    )
                 except Exception:
-                    logger.warning("Unable to roll back failed manual planning run %s", planning_id, exc_info=True)
+                    logger.warning("Unable to clear partial dose artifacts after preserved geometry failure", exc_info=True)
+                restored = _current_planning_snapshot(agent)
+                preserved_status = _mark_manual_dependents_stale(
+                    agent.memory,
+                    reason=f"{reason} dose recomputation failed; geometry retained",
+                    planning_version=int(agent.memory.retrieve("manual_plan_version") or 0),
+                )
+                if interference.get("status") == "attention":
+                    preserved_status = _annotate_manual_safety_status(
+                        agent.memory,
+                        preserved_status,
+                        interference,
+                    )
+                try:
+                    publish_planning_run(agent, None, status="draft")
+                except Exception:
+                    logger.warning("Unable to persist retained manual geometry after dose failure", exc_info=True)
+            else:
+                restored = _restore_failed_manual_mutation(
+                    agent,
+                    planning_id=planning_id,
+                    previous_planning_id=previous_planning_id,
+                    created_new_planning=created_new_planning,
+                    error=e,
+                )
             checkpoint_operation(
                 agent,
                 "interrupted",
@@ -4436,11 +4804,28 @@ def register_planning_routes(
             import traceback
             logger.error(traceback.format_exc())
             error_code = getattr(e, "code", None)
-            response = {"success": False, "error": str(e)}
-            if error_code:
-                response["code"] = error_code
+            response = {
+                "success": False,
+                "error": str(e),
+                "planning_id": active_planning_id(agent.memory),
+                "planning_version": agent.memory.retrieve("manual_plan_version") or 0,
+                "seeds": list(restored.get("seeds") or []),
+                "needles": list(restored.get("needles") or []),
+                "artifact_status": agent.memory.retrieve("manual_artifact_status") or {},
+                "geometry_preserved": geometry_preserved,
+                "safety_override": bool(safety_override),
+                "safety_warning": (
+                    (agent.memory.retrieve("manual_artifact_status") or {}).get("safety_warning")
+                    if geometry_preserved else None
+                ),
+                "interference": interference if geometry_preserved else None,
+            }
+            if error_code or geometry_preserved:
+                response["code"] = error_code or "manual_dose_geometry_preserved"
                 response["rejected_needle_ids"] = getattr(e, "rejected_needle_ids", [])
-            return jsonify(response), 422 if error_code == "manual_needle_intersects_obstacle" else 500
+            return jsonify(response), 422 if (
+                geometry_preserved or error_code == "manual_needle_intersects_obstacle"
+            ) else 500
 
     @app.route("/api/manual_planning/update_geometry", methods=["POST"])
     @require_api_key
@@ -4460,6 +4845,10 @@ def register_planning_routes(
 
         planning_id = None
         created_new_planning = False
+        memory = agent.memory
+        current = _current_planning_snapshot(agent)
+        current_version = int(memory.retrieve("manual_plan_version") or 0)
+        previous_planning_id = active_planning_id(memory)
 
         raw_needles = data.get("needles")
         if raw_needles is None:
@@ -4493,9 +4882,6 @@ def register_planning_routes(
             if repaired_needle_ids:
                 logger.warning("Repairing duplicate submitted needle IDs: %s", repaired_needle_ids)
 
-            memory = agent.memory
-            current = _current_planning_snapshot(agent)
-            current_version = int(memory.retrieve("manual_plan_version") or 0)
             expected_version = data.get("expected_version")
             if expected_version is not None:
                 try:
@@ -4572,7 +4958,6 @@ def register_planning_routes(
                 raise ValueError("A seed requires an owning needle")
             # Only fork after all validation/projection has succeeded. A
             # rejected drag must not leave an empty draft Planning selected.
-            previous_planning_id = active_planning_id(memory)
             planning_id = fork_planning_run(agent, reason=str(data.get("reason") or "needle_position_only"))
             created_new_planning = str(planning_id) != str(previous_planning_id or "")
             invalidate_planning_dependents(
@@ -4633,7 +5018,13 @@ def register_planning_routes(
                 pass
             publish_planning_run(agent, None, status="draft")
             event = _append_ui_event(session_id, {
-                "type": "manual.needle.position_only",
+                "type": (
+                    "manual.needle.add"
+                    if reason == "needle_add"
+                    else "manual.needle.drag"
+                    if reason == "needle_drag"
+                    else "manual.needle.position_only"
+                ),
                 "label": reason,
                 "detail": {
                     "needle_count": len(normalized_needles),
@@ -4668,26 +5059,43 @@ def register_planning_routes(
                 "event": event,
             })
         except _server_support.ManualNeedleSafetyError as exc:
-            if created_new_planning:
-                try:
-                    mark_planning_run(agent, planning_id, "failed", error=str(exc))
-                except Exception:
-                    logger.warning("Unable to roll back rejected manual planning run %s", planning_id, exc_info=True)
+            restored = _restore_failed_manual_mutation(
+                agent,
+                planning_id=planning_id,
+                previous_planning_id=previous_planning_id,
+                created_new_planning=created_new_planning,
+                error=exc,
+            )
             logger.warning("Position-only needle update rejected: %s", exc)
             return jsonify({
                 "success": False,
                 "error": str(exc),
                 "code": exc.code,
                 "rejected_needle_ids": exc.rejected_needle_ids,
+                "planning_id": active_planning_id(agent.memory),
+                "planning_version": agent.memory.retrieve("manual_plan_version") or 0,
+                "seeds": list(restored.get("seeds") or []),
+                "needles": list(restored.get("needles") or []),
+                "artifact_status": agent.memory.retrieve("manual_artifact_status") or {},
             }), 422
         except Exception as exc:
-            if created_new_planning:
-                try:
-                    mark_planning_run(agent, planning_id, "failed", error=str(exc))
-                except Exception:
-                    logger.warning("Unable to roll back failed manual planning run %s", planning_id, exc_info=True)
+            restored = _restore_failed_manual_mutation(
+                agent,
+                planning_id=planning_id,
+                previous_planning_id=previous_planning_id,
+                created_new_planning=created_new_planning,
+                error=exc,
+            )
             logger.exception("Position-only needle update failed")
-            return jsonify({"success": False, "error": str(exc)}), 422
+            return jsonify({
+                "success": False,
+                "error": str(exc),
+                "planning_id": active_planning_id(agent.memory),
+                "planning_version": agent.memory.retrieve("manual_plan_version") or 0,
+                "seeds": list(restored.get("seeds") or []),
+                "needles": list(restored.get("needles") or []),
+                "artifact_status": agent.memory.retrieve("manual_artifact_status") or {},
+            }), 422
 
     @app.route("/api/manual_planning/delete_needle", methods=["POST"])
     @require_api_key
@@ -4892,6 +5300,8 @@ def register_planning_routes(
                 }), 409
 
         reason = str(data.get("reason") or "seed_geometry")
+        safety_override = _manual_safety_override_requested(data)
+        seed_creation_mode = _manual_seed_creation_requested(data, reason)
         previous_planning_id = active_planning_id(memory)
         planning_id = None
         created_new_planning = False
@@ -4901,10 +5311,17 @@ def register_planning_routes(
                 logger.warning("Repairing duplicate submitted seed IDs: %s", repaired_seed_ids)
             normalized_seeds = _normalize_manual_seed_records(memory, raw_seeds, needles)
             interference = _seed_interference_report(agent, normalized_seeds, needles)
-            if interference.get("status") == "attention":
-                # Reject before fork/invalidate/store. The previous Planning,
-                # its dose, and its guide therefore remain usable and the
-                # browser can restore the pre-drag snapshot verbatim.
+            if (
+                interference.get("status") == "attention"
+                and not safety_override
+                and not seed_creation_mode
+            ):
+                # Reject a move/delete-style geometry edit before
+                # fork/invalidate/store. The previous Planning, its dose, and
+                # its guide therefore remain usable and the browser can
+                # restore the pre-drag snapshot verbatim. Add Seed is the one
+                # deliberate exception: it is an editable draft insertion,
+                # not a final safety acceptance.
                 return jsonify({
                     "success": False,
                     "code": "manual_seed_interference",
@@ -4915,8 +5332,24 @@ def register_planning_routes(
                     "seeds": list(current.get("seeds") or []),
                     "needles": list(current.get("needles") or []),
                     "interference": interference,
+                    "requires_user_decision": True,
+                    "can_override": True,
+                    "proposed_geometry_not_committed": True,
+                    "safety_warning": "Seed geometry requires an explicit decision before it can be retained.",
                     "artifact_status": memory.retrieve("manual_artifact_status") or {},
                 }), 422
+            if safety_override and interference.get("status") == "attention":
+                logger.warning(
+                    "Retaining seed geometry after explicit safety override session=%s seed_count=%s",
+                    session_id,
+                    len(normalized_seeds),
+                )
+            if seed_creation_mode and interference.get("status") == "attention":
+                logger.info(
+                    "Retaining seed geometry as an editable Add Seed draft despite spacing warning session=%s seed_count=%s",
+                    session_id,
+                    len(normalized_seeds),
+                )
             planning_id = fork_planning_run(agent, reason=reason)
             created_new_planning = str(planning_id) != str(previous_planning_id or "")
             invalidate_planning_dependents(memory, reason=reason)
@@ -4965,20 +5398,48 @@ def register_planning_routes(
                 reason=reason,
                 planning_version=next_version,
             )
+            safety_override_applied = safety_override and interference.get("status") == "attention"
+            creation_warning_applied = seed_creation_mode and interference.get("status") == "attention"
+            if safety_override_applied:
+                artifact_status = _annotate_manual_safety_status(
+                    memory,
+                    artifact_status,
+                    interference,
+                )
+            elif creation_warning_applied:
+                artifact_status = _annotate_manual_seed_creation_status(
+                    memory,
+                    artifact_status,
+                    interference,
+                )
             try:
                 from web.surgical_guide import invalidate_surgical_guides
                 invalidate_surgical_guides(agent, f"seed geometry updated: {reason}")
             except ImportError:
                 pass
             publish_planning_run(agent, None, status="draft")
+            seed_event_type = {
+                "add": "manual.seed.add",
+                "move": "manual.seed.drag",
+                "delete": "manual.seed.delete",
+            }.get(reason, f"manual.seed.{reason}")
             event = _append_ui_event(session_id, {
-                "type": f"manual.seed.{reason}",
+                "type": seed_event_type,
                 "label": reason,
                 "detail": {
                     "seed_count": len(normalized_seeds),
                     "planning_id": planning_id,
                     "planning_version": next_version,
                     "artifacts_stale": True,
+                    "safety_override": bool(safety_override_applied),
+                    "seed_creation_mode": "draft" if seed_creation_mode else None,
+                    "requires_safety_review": bool(safety_override_applied or creation_warning_applied),
+                    "safety_warning": (
+                        artifact_status.get("safety_warning")
+                        if (safety_override_applied or creation_warning_applied)
+                        else None
+                    ),
+                    "interference": interference if (safety_override_applied or creation_warning_applied) else None,
                 },
             })
             return jsonify({
@@ -4991,16 +5452,39 @@ def register_planning_routes(
                 "needles": needles,
                 "seed_geometry": _manual_seed_geometry_settings(memory),
                 "artifact_status": artifact_status,
+                "seed_creation_mode": "draft" if seed_creation_mode else None,
+                "safety_override": bool(safety_override_applied),
+                "requires_safety_review": bool(safety_override_applied or creation_warning_applied),
+                "safety_warning": (
+                    artifact_status.get("safety_warning")
+                    if (safety_override_applied or creation_warning_applied)
+                    else None
+                ),
+                "interference": (
+                    interference
+                    if (safety_override_applied or creation_warning_applied)
+                    else None
+                ),
                 "event": event,
             })
         except Exception as exc:
-            if created_new_planning and planning_id:
-                try:
-                    mark_planning_run(agent, planning_id, "failed", error=str(exc))
-                except Exception:
-                    logger.warning("Unable to roll back failed seed planning run %s", planning_id, exc_info=True)
+            restored = _restore_failed_manual_mutation(
+                agent,
+                planning_id=planning_id,
+                previous_planning_id=previous_planning_id,
+                created_new_planning=created_new_planning,
+                error=exc,
+            )
             logger.warning("Manual seed geometry update rejected: %s", exc)
-            return jsonify({"success": False, "error": str(exc)}), 422
+            return jsonify({
+                "success": False,
+                "error": str(exc),
+                "planning_id": active_planning_id(agent.memory),
+                "planning_version": agent.memory.retrieve("manual_plan_version") or 0,
+                "seeds": list(restored.get("seeds") or []),
+                "needles": list(restored.get("needles") or []),
+                "artifact_status": agent.memory.retrieve("manual_artifact_status") or {},
+            }), 422
 
     @app.route("/api/manual_planning/restore_needle", methods=["POST"])
     @require_api_key
@@ -5834,11 +6318,12 @@ def register_planning_routes(
     def api_chat():
         """Natural language chat interface with execution trace."""
         data = request.get_json() or {}
-        message = data.get("message", "")
+        message = str(data.get("message") or "")
         ui_state = data.get("ui_state", {})
         stream = data.get("stream", True)  # Default to streaming
         image_path = data.get("image_path", None)  # Optional image path
         clear_context = data.get("clear_context", False)  # Optional: clear conversation history
+        ui_language = normalize_language(data.get("ui_language"), default="en") or "en"
         request_id = re.sub(
             r"[^A-Za-z0-9_.:-]",
             "",
@@ -5870,7 +6355,21 @@ def register_planning_routes(
             str(data.get("parent_assistant_message_id") or ""),
         )[:160]
         internal_followup = bool(data.get("internal_followup", False))
-        response_language = str(data.get("response_language") or "")[:8]
+        response_language_hint = normalize_language(
+            data.get("response_language"), default=""
+        )
+        # For a normal turn, the latest message is authoritative whenever it
+        # contains a recognizable script. The browser hint is retained only
+        # as the ambiguity fallback (for example, a number-only confirmation).
+        # A hidden visual child is different: its generated prompt is mostly
+        # English transport text, so it must inherit the visible parent hint.
+        if internal_followup:
+            response_language = response_language_hint or ui_language
+        else:
+            response_language = detect_language(
+                message,
+                fallback=response_language_hint or ui_language,
+            ).get("code") or ui_language
         visual_context_payload = data.get("visual_context")
         if visual_context_payload is not None and not internal_followup:
             # Evidence envelopes are a private continuation protocol.  A
@@ -5947,7 +6446,9 @@ def register_planning_routes(
 
         # If image provided but no message, use default prompt
         if image_path and not message:
-            message = "Please analyze this image"
+            message = "请分析这张图像" if ui_language == "zh" else "Please analyze this image"
+            if not internal_followup:
+                response_language = ui_language
 
         # Include image path in message if provided. A validated visual child
         # uses its own short-lived prompt; its generic browser message is not
@@ -6013,6 +6514,7 @@ def register_planning_routes(
                     parent_assistant_message_id=parent_assistant_message_id,
                     internal_followup=internal_followup,
                     response_language=response_language,
+                    ui_language=ui_language,
                 )
             except RuntimeError as exc:
                 return jsonify({
@@ -6052,9 +6554,17 @@ def register_planning_routes(
                     operation = {
                         "state": "running",
                         "message": (
-                            "Chat response is in progress"
-                            if agent is not None
-                            else "Case resources are loading; chat is queued."
+                            (
+                                "聊天回复进行中"
+                                if agent is not None
+                                else "病例资源正在加载，聊天请求已排队。"
+                            )
+                            if str(getattr(task, "response_language", "") or getattr(task, "ui_language", "")).lower().startswith("zh")
+                            else (
+                                "Chat response is in progress"
+                                if agent is not None
+                                else "Case resources are loading; chat is queued."
+                            )
                         ),
                         "updated_at": now,
                         "started_at": now,
@@ -6182,14 +6692,38 @@ def register_planning_routes(
             return resp
         else:
             try:
+                operation_message = (
+                    "聊天回复进行中"
+                    if response_language == "zh"
+                    else "Chat response is in progress"
+                )
                 checkpoint_operation(
                     agent,
                     "running",
-                    "Chat response is in progress",
+                    operation_message,
                     checkpoint={"kind": "chat", "user_message": message[:500]},
                 )
                 agent.memory.set_ui_state(ui_state)
-                result = agent.chat_with_trace(full_message)
+                previous_turn_context = getattr(agent, "_active_turn_context", None)
+                agent._active_turn_context = {
+                    "internal_followup": internal_followup,
+                    "request_id": request_id,
+                    "parent_request_id": parent_request_id,
+                    "parent_user_message_id": parent_user_message_id,
+                    "parent_assistant_message_id": parent_assistant_message_id,
+                    "response_language": response_language,
+                    "ui_language": ui_language,
+                }
+                try:
+                    result = agent.chat_with_trace(full_message)
+                finally:
+                    if previous_turn_context is None:
+                        try:
+                            delattr(agent, "_active_turn_context")
+                        except AttributeError:
+                            pass
+                    else:
+                        agent._active_turn_context = previous_turn_context
 
                 # Sanitize result to make it JSON-serializable (remove numpy arrays, etc.)
                 def _sanitize_for_json(obj):
@@ -6648,6 +7182,7 @@ def register_planning_routes(
                 "message_id": message_id or None,
                 "request_id": request_id or None,
                 "data_version": data_version or None,
+                "sha256": hashlib.sha256(img_bytes).hexdigest(),
                 "created_at": time.time(),
                 "view_metadata": view_metadata,
             }
@@ -6723,6 +7258,185 @@ def register_planning_routes(
         except Exception as e:
             logger.error(f"Screenshot save failed: {e}")
             return jsonify({"error": str(e)}), 500
+
+    @app.route("/api/screenshot/annotation", methods=["POST"])
+    @require_api_key
+    @rate_limit
+    def api_screenshot_annotation():
+        """Persist a derived annotation without replacing its source image.
+
+        The browser renders marks from a capture-time grounding manifest. The
+        server still revalidates ownership, source identity, and source bytes
+        before attaching the derived PNG to the original assistant message.
+        """
+        data = request.get_json() or {}
+        source_attachment_id = re.sub(
+            r"[^A-Za-z0-9_.:-]", "", str(data.get("source_attachment_id") or "")
+        )[:160]
+        source_url = str(data.get("source_url") or "")[:800]
+        source_sha256 = re.sub(
+            r"[^a-fA-F0-9]", "", str(data.get("source_sha256") or "")
+        )[:64].lower()
+        if not source_attachment_id or not source_url:
+            return jsonify({"error": "source_attachment_id and source_url are required"}), 400
+
+        try:
+            store, user, session_id = request_case_context()
+        except WorkspaceError:
+            return jsonify({"error": "Authentication required"}), 401
+
+        source_path = source_url.split("?", 1)[0]
+        source_match = re.fullmatch(
+            r"/api/sessions/([a-f0-9]{32})/screenshots/([^/?#]+)",
+            source_path,
+            re.IGNORECASE,
+        )
+        if source_match is None or source_match.group(1).lower() != session_id.lower():
+            return jsonify({"error": "The source screenshot does not belong to the active Session"}), 403
+        source_filename = source_match.group(2)
+        if source_filename != os.path.basename(source_filename) or not source_filename.lower().endswith(".png"):
+            return jsonify({"error": "Invalid source screenshot filename"}), 400
+
+        snapshot = store.load_snapshot(user["id"], session_id)
+        chat = snapshot.get("chat") if isinstance(snapshot.get("chat"), dict) else {}
+        registry = list(chat.get("attachments") or [])
+        messages = list(chat.get("messages") or [])
+        source_attachment = next((
+            item for item in registry
+            if isinstance(item, dict) and (
+                str(item.get("id") or "") == source_attachment_id
+                or str(item.get("url") or "").split("?", 1)[0] == source_path
+            )
+        ), None)
+        if source_attachment is None:
+            for message in messages:
+                if not isinstance(message, dict):
+                    continue
+                source_attachment = next((
+                    item for item in (message.get("attachments") or [])
+                    if isinstance(item, dict) and (
+                        str(item.get("id") or "") == source_attachment_id
+                        or str(item.get("url") or "").split("?", 1)[0] == source_path
+                    )
+                ), None)
+                if source_attachment is not None:
+                    break
+        if source_attachment is None:
+            return jsonify({"error": "Source screenshot attachment was not found"}), 404
+        if str(source_attachment.get("session_id") or session_id) != session_id:
+            return jsonify({"error": "Source screenshot ownership mismatch"}), 403
+
+        try:
+            source_file = store.session_artifact_path(
+                user["id"], session_id, "screenshots", source_filename
+            )
+            with open(source_file, "rb") as handle:
+                authoritative_source_sha256 = hashlib.sha256(handle.read()).hexdigest()
+        except (OSError, WorkspaceError) as exc:
+            return jsonify({"error": f"Source screenshot is unavailable: {exc}"}), 404
+        persisted_source_sha256 = str(source_attachment.get("sha256") or "").lower()
+        if persisted_source_sha256 and persisted_source_sha256 != authoritative_source_sha256:
+            return jsonify({"error": "Source screenshot integrity check failed"}), 409
+        if source_sha256 and source_sha256 != authoritative_source_sha256:
+            return jsonify({"error": "Source screenshot changed before annotation"}), 409
+
+        request_planning_id = str(data.get("planning_id") or "")[:160]
+        request_data_version = str(data.get("data_version") or "")[:160]
+        persisted_planning_id = str(source_attachment.get("planning_id") or "")
+        persisted_data_version = str(source_attachment.get("data_version") or "")
+        if request_planning_id and persisted_planning_id and request_planning_id != persisted_planning_id:
+            return jsonify({"error": "Planning changed before annotation"}), 409
+        if request_data_version and persisted_data_version and request_data_version != persisted_data_version:
+            return jsonify({"error": "Viewer data changed before annotation"}), 409
+
+        authoritative_planning_id, authoritative_data_version = (
+            _snapshot_annotation_planning_state(snapshot)
+        )
+        submitted_planning_id = request_planning_id or persisted_planning_id
+        submitted_data_version = request_data_version or persisted_data_version
+        if (
+            submitted_planning_id
+            and authoritative_planning_id
+            and submitted_planning_id != authoritative_planning_id
+        ):
+            return jsonify({"error": "The active Planning changed before annotation"}), 409
+        if (
+            submitted_data_version
+            and authoritative_data_version
+            and submitted_data_version != authoritative_data_version
+        ):
+            return jsonify({"error": "The active Planning data changed before annotation"}), 409
+
+        try:
+            safe_marks = _validate_screenshot_annotation_marks(
+                source_attachment,
+                data.get("marks"),
+            )
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 409
+
+        try:
+            annotated_bytes = _decode_png_data_url(str(data.get("image") or ""))
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        annotation_sha256 = hashlib.sha256(annotated_bytes).hexdigest()
+        stem = re.sub(r"[^A-Za-z0-9_-]", "_", os.path.splitext(source_filename)[0])[:100]
+        annotated_filename = f"annotated_{stem}_{annotation_sha256[:12]}.png"
+        try:
+            store.write_screenshot(
+                user["id"], session_id, annotated_filename, annotated_bytes
+            )
+            annotated_url = _server_support._make_session_screenshot_url(
+                session_id, annotated_filename
+            )
+        except (OSError, WorkspaceError, WorkspaceQuotaExceeded) as exc:
+            return jsonify({"error": str(exc)}), 500
+
+        updated_attachment = copy.deepcopy(source_attachment)
+        updated_attachment.update({
+            "url": str(source_attachment.get("url") or source_url),
+            "original_url": str(source_attachment.get("url") or source_url),
+            "annotated_url": annotated_url,
+            "annotation_sha256": annotation_sha256,
+            "annotation": {
+                "version": 1,
+                "source_sha256": authoritative_source_sha256,
+                "marks": safe_marks,
+                "count": len(safe_marks),
+                "created_at": time.time(),
+            },
+        })
+
+        for message in messages:
+            if not isinstance(message, dict):
+                continue
+            attachments = message.get("attachments")
+            if not isinstance(attachments, list):
+                continue
+            for index, item in enumerate(attachments):
+                if not isinstance(item, dict):
+                    continue
+                if (str(item.get("id") or "") == source_attachment_id
+                        or str(item.get("url") or "").split("?", 1)[0] == source_path):
+                    attachments[index] = updated_attachment
+        store.save_snapshot_patch(
+            user["id"],
+            session_id,
+            {"chat": {"attachments": [updated_attachment], "messages": messages}},
+            expected_revision=None,
+            reason="chat.screenshot.annotated",
+        )
+        logger.info(
+            "Screenshot annotation saved session=%s source=%s marks=%s",
+            session_id,
+            source_attachment_id,
+            len(safe_marks),
+        )
+        return jsonify({
+            "success": True,
+            "annotated_url": annotated_url,
+            "attachment": updated_attachment,
+        })
 
     @app.route("/api/sessions/<session_id>/screenshots/<filename>")
     @rate_limit

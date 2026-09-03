@@ -463,12 +463,426 @@ function removeReportFigure(idx) {
 //   Bottom: DVH curve (CTV + OARs)
 let _reportCapturePromise = null;
 let _reportCaptureGeneration = 0;
+const REPORT_CAPTURE_STEP_TOTAL = 7;
+const _reportCaptureUiState = {
+    nextRunId: 0,
+    activeRunId: 0,
+    language: 'en',
+    total: REPORT_CAPTURE_STEP_TOTAL,
+    hideTimer: null,
+};
+
+function _reportCaptureUiElement() {
+    if (typeof document === 'undefined') return null;
+    let host = document.getElementById('reportCaptureStatus');
+    // Keep the feature safe across a mixed-cache tab where the new index.html
+    // has not arrived yet. The fallback has the same semantic DOM contract as
+    // the static node and is still presentation-only.
+    if (!host && document.body) {
+        host = document.createElement('div');
+        host.id = 'reportCaptureStatus';
+        host.className = 'report-capture-status';
+        host.hidden = true;
+        host.setAttribute('role', 'status');
+        host.setAttribute('aria-live', 'polite');
+        host.setAttribute('aria-atomic', 'true');
+        host.setAttribute('aria-busy', 'false');
+        host.innerHTML = `
+            <span class="report-capture-status-spinner" aria-hidden="true"></span>
+            <span class="report-capture-status-copy">
+                <strong class="report-capture-status-title"></strong>
+                <span class="report-capture-status-detail"></span>
+                <span class="report-capture-status-track" aria-hidden="true"><span class="report-capture-status-fill"></span></span>
+            </span>`;
+        document.body.appendChild(host);
+    }
+    return host;
+}
+
+function _reportCaptureUiText(language, zh, en) {
+    return language === 'zh' ? zh : en;
+}
+
+function _reportCaptureUiStart(total = REPORT_CAPTURE_STEP_TOTAL, language = 'en') {
+    const runId = ++_reportCaptureUiState.nextRunId;
+    _reportCaptureUiState.activeRunId = runId;
+    _reportCaptureUiState.language = language === 'zh' ? 'zh' : 'en';
+    _reportCaptureUiState.total = Math.max(1, Number(total) || REPORT_CAPTURE_STEP_TOTAL);
+    if (_reportCaptureUiState.hideTimer) {
+        clearTimeout(_reportCaptureUiState.hideTimer);
+        _reportCaptureUiState.hideTimer = null;
+    }
+    const host = _reportCaptureUiElement();
+    if (!host) return runId;
+    host.hidden = false;
+    host.classList.remove('is-complete', 'is-warning', 'is-error', 'is-cancelled');
+    host.setAttribute('aria-busy', 'true');
+    host.dataset.runId = String(runId);
+    host.dataset.current = '0';
+    host.dataset.total = String(_reportCaptureUiState.total);
+    const title = host.querySelector('.report-capture-status-title');
+    const detail = host.querySelector('.report-capture-status-detail');
+    const fill = host.querySelector('.report-capture-status-fill');
+    if (title) title.textContent = _reportCaptureUiText(
+        _reportCaptureUiState.language,
+        '正在生成报告截图',
+        'Capturing report figures',
+    );
+    if (detail) detail.textContent = _reportCaptureUiText(
+        _reportCaptureUiState.language,
+        `正在准备 ${_reportCaptureUiState.total} 张图；Viewer 画面会临时切换，完成后自动恢复。`,
+        `Preparing ${_reportCaptureUiState.total} figures. Viewer views may switch temporarily and will be restored automatically.`,
+    );
+    if (fill) fill.style.width = '0%';
+    return runId;
+}
+
+function _reportCaptureUiUpdate(runId, { current = 0, label = '', state = 'active' } = {}) {
+    if (runId == null || runId !== _reportCaptureUiState.activeRunId) return;
+    const host = _reportCaptureUiElement();
+    if (!host) return;
+    const total = _reportCaptureUiState.total;
+    const step = Math.max(0, Math.min(total, Number(current) || 0));
+    const language = _reportCaptureUiState.language;
+    const title = host.querySelector('.report-capture-status-title');
+    const detail = host.querySelector('.report-capture-status-detail');
+    const fill = host.querySelector('.report-capture-status-fill');
+    host.hidden = false;
+    host.dataset.current = String(step);
+    host.dataset.total = String(total);
+    host.classList.toggle('is-warning', state === 'warning');
+    if (title) title.textContent = _reportCaptureUiText(
+        language,
+        state === 'warning' ? '报告截图部分跳过' : '正在生成报告截图',
+        state === 'warning' ? 'Some report figures were skipped' : 'Capturing report figures',
+    );
+    if (detail) {
+        const safeLabel = String(label || '').trim();
+        detail.textContent = safeLabel
+            ? _reportCaptureUiText(language, `第 ${step}/${total} 张 · ${safeLabel}`, `Figure ${step}/${total} · ${safeLabel}`)
+            : _reportCaptureUiText(language, `第 ${step}/${total} 张`, `Figure ${step}/${total}`);
+    }
+    if (fill) fill.style.width = `${Math.round((step / total) * 100)}%`;
+}
+
+function _reportCaptureUiFinish(runId, { failed = false, stale = false, captured = 0 } = {}) {
+    if (runId == null || runId !== _reportCaptureUiState.activeRunId) return;
+    const host = _reportCaptureUiElement();
+    if (!host) return;
+    const total = _reportCaptureUiState.total;
+    const language = _reportCaptureUiState.language;
+    const count = Math.max(0, Number(captured) || 0);
+    const complete = !failed && !stale && count >= total;
+    const partial = !failed && !stale && !complete;
+    const title = host.querySelector('.report-capture-status-title');
+    const detail = host.querySelector('.report-capture-status-detail');
+    const fill = host.querySelector('.report-capture-status-fill');
+    host.hidden = false;
+    host.setAttribute('aria-busy', 'false');
+    host.classList.remove('is-warning', 'is-error', 'is-cancelled');
+    host.classList.add(complete ? 'is-complete' : (failed ? 'is-error' : (stale ? 'is-cancelled' : 'is-warning')));
+    if (title) title.textContent = failed
+        ? _reportCaptureUiText(language, '报告截图生成失败', 'Report figure capture failed')
+        : stale
+            ? _reportCaptureUiText(language, '报告截图已取消', 'Report figure capture cancelled')
+            : complete
+                ? _reportCaptureUiText(language, '报告截图生成完成', 'Report figures captured')
+                : _reportCaptureUiText(language, '报告截图部分完成', 'Report figure capture partially completed');
+    if (detail) detail.textContent = failed
+        ? _reportCaptureUiText(language, 'Viewer 状态已进入恢复流程，请重试报告生成。', 'The Viewer is being restored. Please retry report generation.')
+        : stale
+            ? _reportCaptureUiText(language, '当前病例或规划已切换，本次截图不会写入报告。', 'The case or planning changed; these figures were not written to the report.')
+            : partial
+                ? _reportCaptureUiText(language, `已生成 ${count}/${total} 张；缺失数据的图不会伪造写入。`, `${count}/${total} figures captured; unavailable data was not fabricated.`)
+                : _reportCaptureUiText(language, `已生成 ${count} 张，Viewer 状态已恢复。`, `${count} figures captured; Viewer state restored.`);
+    if (fill) fill.style.width = `${Math.round(((complete ? total : count) / total) * 100)}%`;
+    const hideAfterMs = failed ? 6500 : (stale ? 2200 : 3500);
+    _reportCaptureUiState.hideTimer = setTimeout(() => {
+        if (_reportCaptureUiState.activeRunId !== runId) return;
+        host.hidden = true;
+        host.setAttribute('aria-busy', 'false');
+        _reportCaptureUiState.hideTimer = null;
+    }, hideAfterMs);
+}
+
+function _reportCaptureUiNextPaint() {
+    return new Promise(resolve => {
+        if (typeof requestAnimationFrame === 'function') requestAnimationFrame(() => resolve());
+        else setTimeout(resolve, 0);
+    });
+}
+
+window.reportCaptureUiState = {
+    start: _reportCaptureUiStart,
+    update: _reportCaptureUiUpdate,
+    finish: _reportCaptureUiFinish,
+};
+
+// Report DVH images are publication artifacts, not screenshots of the dark
+// interactive metrics panel.  The live chart intentionally uses light text
+// and a compact right-side legend; exporting that SVG directly onto a white
+// report page makes the axes nearly invisible and shrinks the legend/font.
+// Keep a separate, off-screen Plotly instance for the report so the operator
+// can continue using the live chart without a relayout/flicker side effect.
+const REPORT_DVH_CAPTURE_CONTRACT = 'dvh-readable-report-v2';
+const REPORT_DVH_CAPTURE_WIDTH = 2400;
+const REPORT_DVH_CAPTURE_HEIGHT = 1500;
+window.REPORT_DVH_CAPTURE_CONTRACT = REPORT_DVH_CAPTURE_CONTRACT;
+
+function _cloneReportDvhValue(value, seen = new WeakMap()) {
+    if (value === null || typeof value !== 'object') return value;
+    if (typeof ArrayBuffer !== 'undefined' && ArrayBuffer.isView(value)) {
+        return Array.from(value);
+    }
+    if (typeof ArrayBuffer !== 'undefined' && value instanceof ArrayBuffer) {
+        return value.slice(0);
+    }
+    if (seen.has(value)) return seen.get(value);
+    if (Array.isArray(value)) {
+        const result = [];
+        seen.set(value, result);
+        value.forEach(item => result.push(_cloneReportDvhValue(item, seen)));
+        return result;
+    }
+    const result = {};
+    seen.set(value, result);
+    Object.entries(value).forEach(([key, item]) => {
+        // Plotly's layout can contain callbacks in some versions.  They are
+        // not serializable and are not meaningful in a static report image.
+        if (typeof item === 'function') return;
+        try { result[key] = _cloneReportDvhValue(item, seen); } catch (_) {}
+    });
+    return result;
+}
+
+function _reportDvhWaitForPaint() {
+    return new Promise(resolve => {
+        if (typeof requestAnimationFrame === 'function') {
+            requestAnimationFrame(() => requestAnimationFrame(resolve));
+        } else {
+            setTimeout(resolve, 0);
+        }
+    });
+}
+
+/**
+ * Export the current DVH as a readable report figure.
+ *
+ * The source chart remains untouched.  A detached Plotly chart is rendered
+ * with an opaque white background, dark axes, a generous portrait-report
+ * margin, and a wrapped horizontal legend below the curves.  This prevents
+ * the old dark-theme SVG and the small 900x450 recovery export from leaking
+ * into Fig 2(e).  The source traces/visibility are preserved, so no clinical
+ * curve is silently dropped during the presentation-only re-layout.
+ */
+async function captureReportDvhFigure(dvhEl = null, options = {}) {
+    if (typeof document === 'undefined') return null;
+    const source = dvhEl || document.getElementById('dvhChart');
+    if (!source || !Array.isArray(source.data) || source.data.length === 0) return null;
+    if (typeof Plotly === 'undefined' || typeof Plotly.toImage !== 'function') return null;
+
+    const width = Math.max(1600, Number(options.width) || REPORT_DVH_CAPTURE_WIDTH);
+    const height = Math.max(1000, Number(options.height) || REPORT_DVH_CAPTURE_HEIGHT);
+    const host = document.createElement('div');
+    host.className = 'report-dvh-capture-host';
+    host.dataset.captureContract = REPORT_DVH_CAPTURE_CONTRACT;
+    host.setAttribute('aria-hidden', 'true');
+    // Plotly needs real layout dimensions.  Keep the chart outside the
+    // viewport instead of display:none, while opacity/pointer-events ensure
+    // it never flashes or intercepts operator input.
+    host.style.cssText = [
+        'position:fixed', 'left:-100000px', 'top:0',
+        `width:${width}px`, `height:${height}px`,
+        'opacity:0', 'pointer-events:none', 'overflow:hidden',
+        'background:#ffffff', 'z-index:-1',
+    ].join(';');
+    document.body.appendChild(host);
+
+    try {
+        const traces = source.data.map(trace => {
+            const copy = _cloneReportDvhValue(trace);
+            const name = String(copy?.name || '').toLowerCase();
+            const line = copy && typeof copy.line === 'object' ? copy.line : {};
+            if (copy && typeof copy === 'object') {
+                copy.line = {
+                    ...line,
+                    width: name === 'ctv' || name === 'ptv' || name === 'gtv'
+                        ? Math.max(4, Number(line.width) || 0)
+                        : Math.max(2.4, Number(line.width) || 0),
+                };
+            }
+            return copy;
+        });
+        const sourceLayout = _cloneReportDvhValue(source.layout || {});
+        const safeLayout = sourceLayout && typeof sourceLayout === 'object' ? sourceLayout : {};
+        // A dark Plotly template or responsive dimensions would reintroduce
+        // the exact contrast/cropping problem this report-only chart solves.
+        delete safeLayout.template;
+        delete safeLayout.width;
+        delete safeLayout.height;
+        delete safeLayout.autosize;
+
+        const axisFont = {
+            family: 'Arial, Helvetica, sans-serif',
+            size: 30,
+            color: '#0f172a',
+        };
+        const tickFont = {
+            family: 'Arial, Helvetica, sans-serif',
+            size: 26,
+            color: '#334155',
+        };
+        const sourceXaxis = safeLayout.xaxis && typeof safeLayout.xaxis === 'object'
+            ? safeLayout.xaxis : {};
+        const sourceYaxis = safeLayout.yaxis && typeof safeLayout.yaxis === 'object'
+            ? safeLayout.yaxis : {};
+        const sourceLegend = safeLayout.legend && typeof safeLayout.legend === 'object'
+            ? safeLayout.legend : {};
+        const sourceXtitle = sourceXaxis.title && typeof sourceXaxis.title === 'object'
+            ? sourceXaxis.title : {};
+        const sourceYtitle = sourceYaxis.title && typeof sourceYaxis.title === 'object'
+            ? sourceYaxis.title : {};
+        const reportAnnotations = Array.isArray(safeLayout.annotations)
+            ? safeLayout.annotations.map(annotation => ({
+                ...annotation,
+                font: {
+                    ...(annotation?.font || {}),
+                    family: 'Arial, Helvetica, sans-serif',
+                    size: 24,
+                    color: '#7c2d12',
+                },
+                bgcolor: '#fff7ed',
+                bordercolor: '#d97706',
+                borderwidth: 1,
+                borderpad: 5,
+            }))
+            : [];
+        const reportShapes = Array.isArray(safeLayout.shapes)
+            ? safeLayout.shapes.map(shape => ({
+                ...shape,
+                line: {
+                    ...(shape?.line || {}),
+                    color: shape?.line?.color === '#facc15'
+                        ? '#b45309' : (shape?.line?.color || '#64748b'),
+                    width: Math.max(1.5, Number(shape?.line?.width) || 0),
+                },
+            }))
+            : [];
+
+        const reportLayout = {
+            ...safeLayout,
+            width, height, autosize: false,
+            paper_bgcolor: '#ffffff',
+            plot_bgcolor: '#ffffff',
+            font: {
+                ...(safeLayout.font || {}),
+                family: 'Arial, Helvetica, sans-serif',
+                size: 24,
+                color: '#0f172a',
+            },
+            margin: { l: 150, r: 65, t: 70, b: 360 },
+            xaxis: {
+                ...sourceXaxis,
+                title: {
+                    ...sourceXtitle,
+                    text: 'Dose (Gy)',
+                    font: { ...(sourceXtitle.font || {}), ...axisFont },
+                },
+                titlefont: { ...(sourceXaxis.titlefont || {}), ...axisFont },
+                tickfont: { ...(sourceXaxis.tickfont || {}), ...tickFont },
+                gridcolor: '#cbd5e1',
+                linecolor: '#334155',
+                tickcolor: '#334155',
+                showline: true,
+                mirror: true,
+                zeroline: false,
+                range: [0, 400],
+                autorange: false,
+                rangemode: 'tozero',
+                dtick: 20,
+                tick0: 0,
+                ticks: 'outside',
+                ticklen: 8,
+                automargin: true,
+            },
+            yaxis: {
+                ...sourceYaxis,
+                title: {
+                    ...sourceYtitle,
+                    text: 'Volume (%)',
+                    font: { ...(sourceYtitle.font || {}), ...axisFont },
+                },
+                titlefont: { ...(sourceYaxis.titlefont || {}), ...axisFont },
+                tickfont: { ...(sourceYaxis.tickfont || {}), ...tickFont },
+                gridcolor: '#cbd5e1',
+                linecolor: '#334155',
+                tickcolor: '#334155',
+                showline: true,
+                mirror: true,
+                zeroline: false,
+                range: [0, 100],
+                autorange: false,
+                rangemode: 'tozero',
+                dtick: 10,
+                tick0: 0,
+                ticks: 'outside',
+                ticklen: 8,
+                automargin: true,
+            },
+            showlegend: true,
+            legend: {
+                ...sourceLegend,
+                orientation: 'h',
+                x: 0.5,
+                y: -0.24,
+                xanchor: 'center',
+                yanchor: 'top',
+                bgcolor: '#ffffff',
+                bordercolor: '#94a3b8',
+                borderwidth: 1,
+                font: {
+                    ...(sourceLegend.font || {}),
+                    family: 'Arial, Helvetica, sans-serif',
+                    size: 23,
+                    color: '#0f172a',
+                },
+                tracegroupgap: 8,
+                itemsizing: 'constant',
+                entrywidthmode: 'pixels',
+                entrywidth: 260,
+            },
+            annotations: reportAnnotations,
+            shapes: reportShapes,
+        };
+
+        if (typeof Plotly.newPlot === 'function') {
+            await Plotly.newPlot(host, traces, reportLayout, {
+                staticPlot: true,
+                responsive: false,
+                displayModeBar: false,
+                displaylogo: false,
+            });
+            await _reportDvhWaitForPaint();
+            return await Plotly.toImage(host, { format: 'png', width, height, scale: 1 });
+        }
+        // Compatibility fallback for a partially loaded Plotly bundle.  The
+        // normal application always has newPlot, but still preserve a useful
+        // high-resolution image rather than silently returning nothing.
+        return await Plotly.toImage(source, { format: 'png', width, height, scale: 1 });
+    } finally {
+        if (typeof Plotly !== 'undefined' && typeof Plotly.purge === 'function') {
+            try { Plotly.purge(host); } catch (_) {}
+        }
+        host.remove();
+    }
+}
+window.captureReportDvhFigure = captureReportDvhFigure;
 
 // Figure 1 is a clinical evidence contract rather than a snapshot of the
 // operator's current camera. Persisting the contract lets a later hydration
 // path identify a legacy capture and regenerate the intended global/detail
 // pair instead of silently preserving a semantically swapped image.
-const REPORT_FIGURE_ONE_CAPTURE_CONTRACT = 'figure1-global-overview-target-detail-v3-no-oar-closeup';
+const REPORT_FIGURE_ONE_CAPTURE_CONTRACT = 'figure1-global-overview-target-detail-v5-thin-needles';
 window.REPORT_FIGURE_ONE_CAPTURE_CONTRACT = REPORT_FIGURE_ONE_CAPTURE_CONTRACT;
 
 function _currentReportCaptureSessionId() {
@@ -502,10 +916,23 @@ async function autoCaptureReportFigures(options = {}) {
     };
     const promise = _autoCaptureReportFiguresImpl(context);
     _reportCapturePromise = promise;
+    let captureResult = null;
+    let captureError = null;
     try {
-        return await promise;
+        captureResult = await promise;
+        return captureResult;
+    } catch (error) {
+        captureError = error;
+        throw error;
     } finally {
-        if (_reportCapturePromise === promise) _reportCapturePromise = null;
+        if (_reportCapturePromise === promise) {
+            _reportCaptureUiFinish(context.reportCaptureUiRunId, {
+                failed: !!captureError,
+                stale: captureResult?.stale === true,
+                captured: context.reportCaptureUiCaptured,
+            });
+            _reportCapturePromise = null;
+        }
     }
 }
 
@@ -588,6 +1015,22 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
         capDvh: 'Dose-volume curves for the CTV and OARs in the current Planning run.',
     };
 
+    // Make the report-only Viewer mutations observable before the first
+    // camera/visibility change. The next-paint yield gives the browser one
+    // frame to paint this non-blocking status, so the scene never appears to
+    // change “by itself” without an explanation.
+    const reportCaptureUiRunId = _reportCaptureUiStart(REPORT_CAPTURE_STEP_TOTAL, lang);
+    captureContext.reportCaptureUiRunId = reportCaptureUiRunId;
+    await _reportCaptureUiNextPaint();
+    if (!isCurrentCapture()) return { stale: true };
+    const reportCaptureStep = (current, zh, en, state = 'active') => {
+        _reportCaptureUiUpdate(reportCaptureUiRunId, {
+            current,
+            label: lang === 'zh' ? zh : en,
+            state,
+        });
+    };
+
     const _ts = () => new Date().toISOString();
     function _pngDataUrlSize(dataUrl) {
         if (typeof dataUrl !== 'string' || !dataUrl.startsWith('data:image/png;base64,')) return null;
@@ -634,6 +1077,7 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
         ));
         if (existingIndex >= 0) figures.splice(existingIndex, 1, figure);
         else figures.push(figure);
+        captureContext.reportCaptureUiCaptured = Number(captureContext.reportCaptureUiCaptured || 0) + 1;
         uiDebugLog('[Report] Figure captured:', title, Math.round(dataUrl.length / 1024), 'KB');
     };
 
@@ -889,7 +1333,14 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
         });
         const fov = (Number(scene3D.camera.fov) || 45) * Math.PI / 180;
         const halfFovY = Math.max(0.05, fov / 2);
-        const aspect = Math.max(0.2, Number(targetAspect) || 1);
+        // Fit to the narrower of the requested report composition and the
+        // actual WebGL canvas. The camera cannot be rendered at the report
+        // aspect without stretching the live canvas; using the narrower
+        // frustum keeps every projected box corner available for the later
+        // safe crop.
+        const requestedAspect = Math.max(0.2, Number(targetAspect) || 1);
+        const sourceAspect = Math.max(0.2, Number(scene3D.camera.aspect) || 1);
+        const aspect = Math.min(requestedAspect, sourceAspect);
         const halfFovX = Math.atan(Math.tan(halfFovY) * aspect);
         const planarDistance = Math.max(
             halfHeight / Math.tan(halfFovY),
@@ -944,6 +1395,121 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
             afterDraw(ctx, output.width, output.height);
         }
         return output.toDataURL('image/png');
+    }
+
+    /**
+     * Capture a report view around a clinically selected world-space box.
+     *
+     * The live 3D canvas is deliberately wider than the portrait A4 evidence
+     * slot. A full-canvas capture therefore contains a large transparent
+     * border even when the camera is correctly aimed. Cropping by the
+     * projected focus box removes only that presentation border; it does not
+     * alter the scene, planning geometry, or viewer state. The crop is
+     * expanded before drawing so every box corner remains visible with a
+     * deterministic safety margin.
+     */
+    function _captureReportCanvasFocus(canvas, focusBox, maxOutputEdge = 1200, {
+        padding = 0.12,
+        minAspect = 1.25,
+    } = {}) {
+        if (!canvas || canvas.width < 1 || canvas.height < 1
+            || !(focusBox && !focusBox.isEmpty()) || !scene3D.camera) {
+            return _captureReportCanvasFit(canvas, maxOutputEdge);
+        }
+
+        try {
+            scene3D.scene?.updateMatrixWorld?.(true);
+            scene3D.camera.updateMatrixWorld?.(true);
+            scene3D.camera.updateProjectionMatrix?.();
+            const corners = [];
+            for (const x of [focusBox.min.x, focusBox.max.x]) {
+                for (const y of [focusBox.min.y, focusBox.max.y]) {
+                    for (const z of [focusBox.min.z, focusBox.max.z]) {
+                        corners.push(new THREE.Vector3(x, y, z).project(scene3D.camera));
+                    }
+                }
+            }
+            const finite = corners.filter(point =>
+                Number.isFinite(point.x) && Number.isFinite(point.y) && Number.isFinite(point.z));
+            if (finite.length !== corners.length || finite.length < 1) {
+                return _captureReportCanvasFit(canvas, maxOutputEdge);
+            }
+
+            const width = canvas.width;
+            const height = canvas.height;
+            const projectedMinX = Math.min(...finite.map(point => point.x));
+            const projectedMaxX = Math.max(...finite.map(point => point.x));
+            const projectedMinY = Math.min(...finite.map(point => point.y));
+            const projectedMaxY = Math.max(...finite.map(point => point.y));
+            const boxLeft = ((projectedMinX + 1) / 2) * width;
+            const boxRight = ((projectedMaxX + 1) / 2) * width;
+            const boxTop = ((1 - projectedMaxY) / 2) * height;
+            const boxBottom = ((1 - projectedMinY) / 2) * height;
+            const boxWidth = Math.max(2, boxRight - boxLeft);
+            const boxHeight = Math.max(2, boxBottom - boxTop);
+            if (![boxLeft, boxRight, boxTop, boxBottom, boxWidth, boxHeight]
+                .every(Number.isFinite)) {
+                return _captureReportCanvasFit(canvas, maxOutputEdge);
+            }
+
+            const safePadding = Math.max(0.04, Math.min(0.30, Number(padding) || 0.12));
+            let cropWidth = boxWidth * (1 + safePadding * 2);
+            let cropHeight = boxHeight * (1 + safePadding * 2);
+            // A modestly wide output is easier to place in the existing A4
+            // evidence slot. Never reduce the crop below the projected box
+            // aspect: preserving that invariant prevents data loss.
+            const cropAspect = Math.max(
+                1.05,
+                Number(minAspect) || 1.25,
+                cropWidth / Math.max(1, cropHeight),
+            );
+            if (cropWidth / Math.max(1, cropHeight) < cropAspect) {
+                cropWidth = cropHeight * cropAspect;
+            }
+            cropWidth = Math.min(width, Math.max(2, cropWidth));
+            cropHeight = Math.min(height, Math.max(2, cropHeight));
+
+            const focusCenterX = (boxLeft + boxRight) / 2;
+            const focusCenterY = (boxTop + boxBottom) / 2;
+            let sx = focusCenterX - cropWidth / 2;
+            let sy = focusCenterY - cropHeight / 2;
+            // Shift the crop into the source canvas without changing its size;
+            // this matters when a valid projected box is close to an edge.
+            sx = Math.max(0, Math.min(width - cropWidth, sx));
+            sy = Math.max(0, Math.min(height - cropHeight, sy));
+            const sw = Math.max(1, Math.min(width - sx, cropWidth));
+            const sh = Math.max(1, Math.min(height - sy, cropHeight));
+            // Never trade clinical content for a larger-looking image.  The
+            // crop is allowed to remove presentation whitespace only when the
+            // complete projected focus box is still inside it.  If an unusual
+            // camera/viewport combination violates that invariant, preserve
+            // the original full canvas and let the report's contain layout
+            // handle the scaling.
+            const cropContainsFocus = sx <= boxLeft + 0.5
+                && sy <= boxTop + 0.5
+                && sx + sw >= boxRight - 0.5
+                && sy + sh >= boxBottom - 0.5;
+            if (!cropContainsFocus) {
+                console.warn('[Report] Focused crop would exclude projected plan content; preserving full capture');
+                return _captureReportCanvasFit(canvas, maxOutputEdge);
+            }
+            const sourceLongEdge = Math.max(sw, sh);
+            const requestedLongEdge = Number(maxOutputEdge);
+            const scale = Number.isFinite(requestedLongEdge) && requestedLongEdge > 0
+                ? Math.min(1, requestedLongEdge / sourceLongEdge)
+                : 1;
+            const output = document.createElement('canvas');
+            output.width = Math.max(1, Math.round(sw * scale));
+            output.height = Math.max(1, Math.round(sh * scale));
+            const ctx = output.getContext('2d');
+            ctx.imageSmoothingEnabled = true;
+            ctx.imageSmoothingQuality = 'high';
+            ctx.drawImage(canvas, sx, sy, sw, sh, 0, 0, output.width, output.height);
+            return output.toDataURL('image/png');
+        } catch (error) {
+            console.warn('[Report] Focused 3D crop failed; preserving full capture:', error);
+            return _captureReportCanvasFit(canvas, maxOutputEdge);
+        }
     }
 
     /**
@@ -1086,10 +1652,12 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
         const _meshCount = Object.keys(scene3D.meshes).length;
         if (scene3D.camera && scene3D.controls && scene3D.renderer && _meshCount > 0) {
             uiDebugLog('[Report] Figure 1: starting 3D capture, meshes:', _meshCount);
+            reportCaptureStep(1, '规划全景图（Fig 1a）', 'Planning overview (Fig 1a)');
 
             // Save all visibility and opacity states
             const _saved = {};
             const _savedMaterials = {};
+            const _savedNeedleGeometries = {};
             const _savedHandleObjects = [];
             const _savedSkin = scene3D.skinMesh ? {
                 mesh: scene3D.skinMesh,
@@ -1099,6 +1667,21 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
             for (const [id, mesh] of Object.entries(scene3D.meshes)) {
                 if (!mesh) continue;
                 _saved[id] = { mesh, visible: mesh.visible };
+                // Figure 1(b) temporarily swaps only the visual shaft geometry
+                // to make seeds readable. Keep the original geometry, transform,
+                // and metadata so a failed/aborted capture cannot alter the live
+                // viewer or any planning coordinates.
+                if (mesh.userData?.type === 'needle') {
+                    _savedNeedleGeometries[id] = {
+                        mesh,
+                        geometry: mesh.geometry,
+                        position: mesh.position?.clone?.(),
+                        quaternion: mesh.quaternion?.clone?.(),
+                        rotation: mesh.rotation?.clone?.(),
+                        scale: mesh.scale?.clone?.(),
+                        userData: { ...(mesh.userData || {}) },
+                    };
+                }
                 const surface = (typeof getMeshSurface === 'function') ? getMeshSurface(mesh) : mesh;
                 if (surface) {
                     const materials = [];
@@ -1171,6 +1754,21 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
                         target.needsUpdate = true;
                     });
                 }
+                for (const saved of Object.values(_savedNeedleGeometries)) {
+                    const mesh = saved?.mesh;
+                    if (!mesh) continue;
+                    const currentGeometry = mesh.geometry;
+                    if (currentGeometry && currentGeometry !== saved.geometry) {
+                        try { currentGeometry.dispose?.(); } catch (_) {}
+                    }
+                    if (saved.geometry) mesh.geometry = saved.geometry;
+                    if (saved.position && mesh.position?.copy) mesh.position.copy(saved.position);
+                    if (saved.quaternion && mesh.quaternion?.copy) mesh.quaternion.copy(saved.quaternion);
+                    if (saved.rotation && mesh.rotation?.copy) mesh.rotation.copy(saved.rotation);
+                    if (saved.scale && mesh.scale?.copy) mesh.scale.copy(saved.scale);
+                    mesh.userData = { ...(saved.userData || {}) };
+                    mesh.updateMatrixWorld?.(true);
+                }
                 if (_savedSkin?.mesh) {
                     _savedSkin.mesh.visible = _savedSkin.visible;
                     _savedSkin.mesh.material = _savedSkin.material;
@@ -1233,6 +1831,7 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
                 // added in a second pass only when they overlap the local
                 // planning context around the target.
                 const coreBox = new THREE.Box3();
+                const targetBox = new THREE.Box3();
                 const expand = (box, mesh) => {
                     if (!mesh || !mesh.visible) return;
                     try { box.expandByObject(mesh); } catch (_) {}
@@ -1253,13 +1852,19 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
                         || mesh === scene3D.skinMesh
                         || ['skin', 'skin_surface', 'guide_skin_surface'].includes(String(mesh?.userData?.type || ''));
                     const isOar = !isCtv && !isSeed && !isNeedle && !isDose && !isSkin;
-                    if (isCtv || isSeed || (includeNeedles && isNeedle)) expand(coreBox, mesh);
+                    if (isCtv || isSeed) {
+                        expand(targetBox, mesh);
+                        expand(coreBox, mesh);
+                    } else if (includeNeedles && isNeedle) {
+                        expand(coreBox, mesh);
+                    }
                 }
                 if (!(coreBox.min.x < coreBox.max.x)) return _computeSceneBox();
                 const box = coreBox.clone();
                 if (includeOars) {
-                    const size = coreBox.getSize(new THREE.Vector3());
-                    const localContext = coreBox.clone().expandByScalar(Math.max(20, size.length() * 0.4));
+                    const size = targetBox.getSize(new THREE.Vector3());
+                    const contextPadding = Math.max(8, Math.min(18, size.length() * 0.16));
+                    const localContext = targetBox.clone().expandByScalar(contextPadding);
                     for (const [id, mesh] of Object.entries(scene3D.meshes)) {
                         if (!mesh) continue;
                         const isCtv = id === 'ctv' || id.startsWith('ctv_') || mesh?.userData?.source === 'ctv' || mesh?.userData?.type === 'ctv';
@@ -1292,16 +1897,16 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
                     // The overview needs enough surrounding anatomy to make
                     // the full implant geometry intelligible in a report.
                     // The close-up remains intentionally tight around CTV.
-                    // Keep a small safety border so the complete treatment
-                    // geometry remains in frame, while avoiding the old
-                    // 10-30% zoom-out that made the report objects appear
-                    // distant on an A4 page.
-                    margin: mode === 'detail' ? 1.04 : 1.08,
+                    // Keep only a small geometric safety border. The report
+                    // capture then removes the remaining transparent canvas
+                    // border around this box, so the object occupies the A4
+                    // evidence slot instead of appearing distant on the page.
+                    margin: mode === 'detail' ? 1.02 : 1.04,
                 });
             }
 
             // Helper: render and capture 3D canvas
-            async function _capture3D(label, maxOutputEdge = REPORT_FIGURE_LONG_EDGE) {
+            async function _capture3D(label, maxOutputEdge = REPORT_FIGURE_LONG_EDGE, focusBox = null, focusOptions = {}) {
                 if (!isCurrentCapture()) return null;
                 await _waitFrames(3);
                 if (!isCurrentCapture()) return null;
@@ -1345,7 +1950,9 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
                             return null;
                         }
                     }
-                    const url = _captureReportCanvasFit(c, maxOutputEdge);
+                    const url = focusBox
+                        ? _captureReportCanvasFocus(c, focusBox, maxOutputEdge, focusOptions)
+                        : _captureReportCanvasFit(c, maxOutputEdge);
                     if (!url || url.length < 5000) {
                         console.warn('[Report] 3D capture appears blank for', label);
                         return null;
@@ -1404,6 +2011,104 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
                 });
             };
 
+            // The automatic plan uses a physically meaningful seed radius of
+            // about 0.4 mm, while the previous needle shaft radius (0.28 mm)
+            // was visually too close to it at report scale. Figure 1(b) is a
+            // publication/detail image, so narrow only the temporary report
+            // shaft to 0.12 mm and leave the seed geometry unchanged. This is
+            // a display-only operation; the live Viewer and planning data are
+            // restored by _restoreFigure1State() in both success and failure.
+            const REPORT_FIGURE_ONE_NEEDLE_RADIUS = 0.12;
+            const _reportPoint = value => {
+                if (Array.isArray(value) && value.length >= 3) {
+                    const point = value.slice(0, 3).map(Number);
+                    return point.every(Number.isFinite) ? point : null;
+                }
+                if (value && [value.x, value.y, value.z].every(Number.isFinite)) {
+                    return [Number(value.x), Number(value.y), Number(value.z)];
+                }
+                return null;
+            };
+            const _reportNeedlePoints = mesh => {
+                const stored = Array.isArray(mesh?.userData?.displayPoints)
+                    ? mesh.userData.displayPoints.map(_reportPoint).filter(Boolean)
+                    : [];
+                if (stored.length >= 2) return stored.map(point => new THREE.Vector3(...point));
+
+                // Compatibility fallback for meshes created before displayPoints
+                // was persisted. TubeGeometry retains its source path; a simple
+                // cylinder can be reconstructed from its current pose.
+                const parameters = mesh?.geometry?.parameters || {};
+                const path = parameters.path;
+                const pathPoints = Array.isArray(path?.points)
+                    ? path.points.map(_reportPoint).filter(Boolean)
+                    : (path && typeof path.getPoints === 'function'
+                        ? path.getPoints(Number(parameters.tubularSegments) || 32).map(_reportPoint).filter(Boolean)
+                        : []);
+                if (pathPoints.length >= 2) return pathPoints.map(point => new THREE.Vector3(...point));
+                const height = Number(parameters.height);
+                if (Number.isFinite(height) && height > 0 && mesh?.position && mesh?.quaternion) {
+                    const direction = new THREE.Vector3(0, 1, 0)
+                        .applyQuaternion(mesh.quaternion).normalize()
+                        .multiplyScalar(height / 2);
+                    return [mesh.position.clone().add(direction), mesh.position.clone().sub(direction)];
+                }
+                return [];
+            };
+            const _makeReportNeedleGeometry = points => {
+                if (!Array.isArray(points) || points.length < 2) return null;
+                if (points.length === 2) {
+                    const direction = new THREE.Vector3().subVectors(points[1], points[0]);
+                    const length = direction.length();
+                    if (!Number.isFinite(length) || length < 0.1) return null;
+                    return {
+                        geometry: new THREE.CylinderGeometry(
+                            REPORT_FIGURE_ONE_NEEDLE_RADIUS,
+                            REPORT_FIGURE_ONE_NEEDLE_RADIUS,
+                            length,
+                            10,
+                        ),
+                        center: null,
+                    };
+                }
+                const geometry = new THREE.TubeGeometry(
+                    new THREE.CatmullRomCurve3(points),
+                    32,
+                    REPORT_FIGURE_ONE_NEEDLE_RADIUS,
+                    10,
+                    false,
+                );
+                geometry.computeBoundingBox?.();
+                const center = geometry.boundingBox?.getCenter(new THREE.Vector3()) || new THREE.Vector3();
+                geometry.translate(-center.x, -center.y, -center.z);
+                geometry.computeBoundingBox?.();
+                geometry.computeBoundingSphere?.();
+                return { geometry, center };
+            };
+            const _applyFigureOneNeedleStyle = (id, mesh) => {
+                if (!mesh || !_savedNeedleGeometries[id]) return false;
+                const replacement = _makeReportNeedleGeometry(_reportNeedlePoints(mesh));
+                if (!replacement?.geometry) return false;
+                const previousGeometry = mesh.geometry;
+                mesh.geometry = replacement.geometry;
+                if (replacement.center) {
+                    mesh.position.copy(replacement.center);
+                    mesh.quaternion.identity();
+                    mesh.rotation.set(0, 0, 0);
+                    mesh.scale.set(1, 1, 1);
+                    mesh.userData = {
+                        ...(mesh.userData || {}),
+                        worldGeometryCentered: true,
+                        worldGeometryCenter: [replacement.center.x, replacement.center.y, replacement.center.z],
+                    };
+                }
+                mesh.geometry.computeBoundingBox?.();
+                mesh.geometry.computeBoundingSphere?.();
+                // Do not dispose the original: _restoreFigure1State owns it.
+                if (previousGeometry === replacement.geometry) return false;
+                return true;
+            };
+
             // The guide-fit skin surface is useful in the interactive viewer,
             // but it is a CT-wide envelope rather than planning evidence. Keep
             // it out of Figure 1(a) so the global plan is not framed or hidden
@@ -1426,18 +2131,26 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
 
             // Figure 1(a) is the global plan. Include the full planned needle
             // geometry, but omit the CT-wide skin envelope from the framing.
-            _frameCameraToBox(_computeFocusedPlanBox({ includeOars: true, includeNeedles: true }), 'overview');
+            const overviewBox = _computeFocusedPlanBox({ includeOars: true, includeNeedles: true });
+            _frameCameraToBox(overviewBox, 'overview');
             await _waitFrames(2);
             if (!isCurrentCapture()) return { stale: true };
-            let imgA = await _capture3D('View A (front+OARs)');
+            let imgA = await _capture3D('View A (front+OARs)', REPORT_FIGURE_LONG_EDGE, overviewBox, {
+                padding: 0.10,
+                minAspect: 1.25,
+            });
             if (!imgA) {
                 forceRender3DViewer();
                 await _waitFrames(4);
                 if (!isCurrentCapture()) return { stale: true };
-                imgA = await _capture3D('View A (front+OARs retry)');
+                imgA = await _capture3D('View A (front+OARs retry)', REPORT_FIGURE_LONG_EDGE, overviewBox, {
+                    padding: 0.10,
+                    minAspect: 1.25,
+                });
             }
 
             // ── View B: Translucent tumor, seeds visible inside ──
+            reportCaptureStep(2, '靶区粒子特写（Fig 1b）', 'Target/seed close-up (Fig 1b)');
             // Figure 1(b) is an explicit allow-list: CTV/tumor, seeds, and
             // needle paths only. In particular, hide every OAR even if a
             // restored mesh carries an ambiguous or stale CTV source tag.
@@ -1455,9 +2168,15 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
             for (const [id, mesh] of Object.entries(scene3D.meshes)) {
                 if (_isFigureOneSeed(id, mesh)) _setFigureOneOpacity(mesh, 1.0);
             }
-            // Needles visible but thin
+            // Needles visible but genuinely thinner than the seeds. The
+            // geometry replacement is temporary and report-only; changing
+            // opacity alone was not enough because the old shaft diameter was
+            // close to the seed diameter and visually swallowed inner seeds.
             for (const [id, mesh] of Object.entries(scene3D.meshes)) {
-                if (_isFigureOneNeedle(id, mesh)) _setFigureOneOpacity(mesh, 0.8);
+                if (_isFigureOneNeedle(id, mesh)) {
+                    _applyFigureOneNeedleStyle(id, mesh);
+                    _setFigureOneOpacity(mesh, 0.8);
+                }
             }
 
             // The CTV is translucent, but depth testing can still hide a
@@ -1489,15 +2208,22 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
 
             // Excluding the full needle shaft keeps the right panel a true
             // target close-up when a needle extends far outside the CTV.
-            _frameCameraToBox(_computeFocusedPlanBox({ includeOars: false, includeNeedles: false }), 'detail');
+            const detailBox = _computeFocusedPlanBox({ includeOars: false, includeNeedles: false });
+            _frameCameraToBox(detailBox, 'detail');
             await _waitFrames(2);
             if (!isCurrentCapture()) return { stale: true };
-            let imgB = await _capture3D('View B (translucent tumor)');
+            let imgB = await _capture3D('View B (translucent tumor)', REPORT_FIGURE_LONG_EDGE, detailBox, {
+                padding: 0.16,
+                minAspect: 1.25,
+            });
             if (!imgB) {
                 forceRender3DViewer();
                 await _waitFrames(4);
                 if (!isCurrentCapture()) return { stale: true };
-                imgB = await _capture3D('View B (translucent tumor retry)');
+                imgB = await _capture3D('View B (translucent tumor retry)', REPORT_FIGURE_LONG_EDGE, detailBox, {
+                    padding: 0.16,
+                    minAspect: 1.25,
+                });
             }
 
             // Figure 1 is a semantic group, not a pre-composed bitmap. The
@@ -1594,6 +2320,7 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
 
             // Capture all 3 views
             for (const cfg of axesCfg) {
+                reportCaptureStep(2 + cfg.order, `${cfg.title}剂量截图（Fig 2${cfg.subfigure}）`, `${cfg.title} dose figure (Fig 2${cfg.subfigure})`);
                 const composite = _composite2DViewerCanvas(cfg.ax, { doseOpacity: 0.75 });
                 if (composite) {
                     _push(cfg.title, cfg.caption, composite, cfg.axis, {
@@ -1606,6 +2333,7 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
                 }
             }
 
+            reportCaptureStep(6, '三维剂量面（Fig 2d）', '3D dose surface (Fig 2d)');
             let doseSurfaceDataUrl = null;
             let restoreDoseSurfaceState = null;
             try {
@@ -1817,25 +2545,29 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
             await _waitFrames(2);
             if (!isCurrentCapture()) return { stale: true };
 
-            // Capture DVH chart — try Plotly.toImage first, fallback to html2canvas
+            // Capture a report-specific DVH image.  The live chart remains
+            // dark/interactive; the report helper renders an isolated white
+            // chart with explicit axes and a readable wrapped legend.
+            reportCaptureStep(7, 'DVH 曲线（Fig 2e）', 'DVH curve (Fig 2e)');
             let dvhDataUrl = null;
             const dvhEl = document.getElementById('dvhChart');
             if (dvhEl) {
-                // Try Plotly export (vector-quality)
-                if (typeof Plotly !== 'undefined' && typeof Plotly.toImage === 'function') {
+                if (typeof window.captureReportDvhFigure === 'function') {
                     try {
                         await new Promise(r => setTimeout(r, 500)); // let Plotly finish rendering
                         if (!isCurrentCapture()) return { stale: true };
-                        dvhDataUrl = await Plotly.toImage(dvhEl, { format: 'png', width: 2400, height: 800 });
-                        uiDebugLog('[Report] DVH captured via Plotly:', Math.round(dvhDataUrl.length / 1024), 'KB');
+                        dvhDataUrl = await window.captureReportDvhFigure(dvhEl);
+                        uiDebugLog('[Report] DVH captured with report layout:', Math.round((dvhDataUrl || '').length / 1024), 'KB');
                     } catch (e) {
-                        console.warn('[Report] Plotly.toImage failed:', e);
+                        console.warn('[Report] Readable DVH capture failed:', e);
                     }
                 }
                 // Fallback: html2canvas
                 if (!dvhDataUrl && typeof html2canvas !== 'undefined') {
                     try {
-                        const canvas = await html2canvas(dvhEl, { useCORS: true, scale: 2 });
+                        const canvas = await html2canvas(dvhEl, {
+                            useCORS: true, scale: 2, backgroundColor: '#ffffff',
+                        });
                         dvhDataUrl = canvas.toDataURL('image/png');
                         uiDebugLog('[Report] DVH captured via html2canvas:', Math.round(dvhDataUrl.length / 1024), 'KB');
                     } catch (e) {
@@ -1853,9 +2585,10 @@ async function _autoCaptureReportFiguresImpl(captureContext = {}) {
             );
             if (dvhDataUrl) _push(labels.lblDvh, labels.capDvh, dvhDataUrl, 'report_fig2_dvh', {
                 figureGroup: 'figure2', figureNumber: 2, subfigure: 'e', sortOrder: 5,
-                captureRole: 'dvh',
+                captureRole: 'dvh', captureContract: REPORT_DVH_CAPTURE_CONTRACT,
             });
         } else {
+            reportCaptureStep(7, '剂量数据不可用，跳过剂量截图', 'Dose data unavailable; dose figures skipped', 'warning');
             console.warn('[Report] Figure 2 skipped: no dose overlay data', {
                 hasOverlay: !!state.doseOverlay,
                 hasPeakVoxel: !!(state.doseOverlay && state.doseOverlay.peakVoxel),

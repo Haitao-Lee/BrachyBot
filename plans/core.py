@@ -10,6 +10,9 @@ from scipy.ndimage import distance_transform_edt
 from . import visualizer
 import copy
 import traceback as _tb
+import time
+
+from .planning_preview import safe_preview
 
 try:
     import slicer
@@ -27,7 +30,7 @@ _mock_progress = _MockProgressDialog()
 
 def init_plan(dose_image, radiation_volume, ref_direc, direc_resolution, extract_angle,
               target_value, background_value, obstacle_value, maximum_candidate_trajectories, progressDialog=None,
-              min_depth=2):
+              min_depth=2, preview_callback=None):
     """
     Generate an initial set of candidate needle/catheter trajectories within a 3-D radiation volume.
 
@@ -102,6 +105,7 @@ def init_plan(dose_image, radiation_volume, ref_direc, direc_resolution, extract
 
     # ---- 3.  Initialise trajectories with depth filter ----
     init_trajectories = []
+    last_preview_at = 0.0
     for i, direc in enumerate(candidate_dirs):
         progressDialog.setValue(45)
         progressDialog.setLabelText("Initial Planning...")
@@ -111,6 +115,26 @@ def init_plan(dose_image, radiation_volume, ref_direc, direc_resolution, extract
         )
         init_trajectories += traj_list
 
+        now = time.monotonic()
+        if preview_callback is not None and now - last_preview_at >= 0.20:
+            last_preview_at = now
+            safe_preview(preview_callback, {
+                "phase": "candidate_generation",
+                "current": i + 1,
+                "total": len(candidate_dirs),
+                "trajectories": init_trajectories,
+                "detail": f"{len(init_trajectories)} candidate paths",
+            })
+
+    safe_preview(preview_callback, {
+        "phase": "candidate_generation",
+        "current": len(candidate_dirs),
+        "total": len(candidate_dirs),
+        "trajectories": init_trajectories,
+        "detail": f"{len(init_trajectories)} candidate paths",
+        "force": True,
+    })
+
     return init_trajectories
 
 
@@ -118,7 +142,7 @@ def optimal_plan(init_trajectories, radiation_volume, dose_image, dose_cal_model
                  target_value, background_value, obstacle_value, infer_img_size, in_lowest_dose, out_highest_dose,
                  DVH_rate, seed_info, iter_rate, image_normalize_min, image_normalize_max, image_normalize_scale,
                  progressDialog=None, parallel_min_distance_mm=None,
-                 parallel_angle_tolerance_deg=None):
+                 parallel_angle_tolerance_deg=None, preview_callback=None):
     """
     Generate an optimized radiation treatment plan by selecting seed trajectories, placing seeds, and refining the plan
     to ensure effective tumor coverage while minimizing radiation exposure to healthy tissues.
@@ -141,6 +165,22 @@ def optimal_plan(init_trajectories, radiation_volume, dose_image, dose_cal_model
     dose_context = utilizations.DoseImageContext(
         dose_image, image_normalize_min, image_normalize_max, dose_cal_model
     )
+    last_preview_at = 0.0
+
+    def _emit_plan_preview(plan, phase, iteration, coverage=None, force=False):
+        nonlocal last_preview_at
+        now = time.monotonic()
+        if not force and now - last_preview_at < 0.20:
+            return
+        last_preview_at = now
+        safe_preview(preview_callback, {
+            "phase": phase,
+            "iteration": iteration,
+            "coverage": coverage,
+            "coordinate_space": "voxel",
+            "plan": plan,
+            "force": bool(force),
+        })
 
     # --- Stage 1: Trajectory Selection and Initial Planning ---
     selected_indices = []
@@ -200,6 +240,12 @@ def optimal_plan(init_trajectories, radiation_volume, dose_image, dose_cal_model
 
         init_planned_res.append([optimal_trajectory, optimal_seeds, cur_single_seed_radiations])
         cur_radiation += np.sum(cur_single_seed_radiations, axis=0)
+        _emit_plan_preview(
+            init_planned_res,
+            "trajectory_and_seed_addition",
+            stage1_count,
+            cur_DVH_rate,
+        )
 
     # --- Stage 2: Plan Refinement ---
     minus_res = copy.copy(init_planned_res)
@@ -254,6 +300,12 @@ def optimal_plan(init_trajectories, radiation_volume, dose_image, dose_cal_model
             break
         if sign:
             cur_DVH_rate = updated_DVH_rate
+            _emit_plan_preview(
+                minus_res,
+                "coverage_refinement",
+                stage2_iterations,
+                cur_DVH_rate,
+            )
             if cur_DVH_rate <= previous_DVH_rate + 1e-6:
                 _logger.warning(
                     "[optimal_plan] Stage 2 stopped after no measurable DVH "
@@ -322,6 +374,12 @@ def optimal_plan(init_trajectories, radiation_volume, dose_image, dose_cal_model
             opti_res = add_res
             opti_radiation = add_radiation
             consecutive_no_improvement = 0
+            _emit_plan_preview(
+                opti_res,
+                "seed_position_refinement",
+                iter_count + 1,
+                force=False,
+            )
         else:
             consecutive_no_improvement += 1
 
@@ -335,6 +393,12 @@ def optimal_plan(init_trajectories, radiation_volume, dose_image, dose_cal_model
             break
 
     # Transform seeds from voxel to world coordinates
+    _emit_plan_preview(
+        opti_res,
+        "seed_position_refinement",
+        iter_count,
+        force=True,
+    )
     final_res = []
     for res in opti_res:
         final_seeds = []
@@ -375,6 +439,8 @@ def optimal_plan_rf(
     progressDialog=None,
     parallel_min_distance_mm=None,
     parallel_angle_tolerance_deg=None,
+    diagnostics=None,
+    preview_callback=None,
 ):
     """
     Hierarchical reinforcement-learning pipeline for prostate/LDR brachytherapy.
@@ -387,26 +453,34 @@ def optimal_plan_rf(
     progressDialog.setValue(50)
     progressDialog.setLabelText("Initial Planning...")
 
-    optimal_res, _ = utilizations.hierarchical_planning_rf(
-        candidate_trajectories=copy.deepcopy(init_trajectories),
-        seed_info=seed_info,
-        interval_rate=interval_rate,
-        rf_params=rf_params,
-        radiation_volume=radiation_volume,
-        dose_image=dose_image,
-        dose_cal_model=dose_cal_model,
-        infer_img_size=infer_img_size,
-        target_value=target_value,
-        in_lowest_dose=in_lowest_dose,
-        out_highest_dose=out_highest_dose,
-        DVH_rate=DVH_rate,
-        distance_map=distance_map,
-        image_normalize_min=image_normalize_min,
-        image_normalize_max=image_normalize_max,
-        image_normalize_scale=image_normalize_scale,
-        progressDialog=progressDialog,
-        parallel_min_distance_mm=parallel_min_distance_mm,
-        parallel_angle_tolerance_deg=parallel_angle_tolerance_deg,
-    )
+    planning_kwargs = {
+        "candidate_trajectories": copy.deepcopy(init_trajectories),
+        "seed_info": seed_info,
+        "interval_rate": interval_rate,
+        "rf_params": rf_params,
+        "radiation_volume": radiation_volume,
+        "dose_image": dose_image,
+        "dose_cal_model": dose_cal_model,
+        "infer_img_size": infer_img_size,
+        "target_value": target_value,
+        "in_lowest_dose": in_lowest_dose,
+        "out_highest_dose": out_highest_dose,
+        "DVH_rate": DVH_rate,
+        "distance_map": distance_map,
+        "image_normalize_min": image_normalize_min,
+        "image_normalize_max": image_normalize_max,
+        "image_normalize_scale": image_normalize_scale,
+        "progressDialog": progressDialog,
+        "parallel_min_distance_mm": parallel_min_distance_mm,
+        "parallel_angle_tolerance_deg": parallel_angle_tolerance_deg,
+    }
+    # Keep the public return value backward compatible for legacy callers,
+    # while allowing the planning pipeline to receive structured execution
+    # telemetry from the same bounded RL invocation.
+    if diagnostics is not None:
+        planning_kwargs["diagnostics"] = diagnostics
+    if preview_callback is not None:
+        planning_kwargs["preview_callback"] = preview_callback
+    optimal_res, _ = utilizations.hierarchical_planning_rf(**planning_kwargs)
 
     return optimal_res

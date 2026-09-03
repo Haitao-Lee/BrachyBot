@@ -18,6 +18,7 @@ from .dx_metrics import DxMetricsTool
 from .absolute_dose_metrics import AbsoluteDoseMetricsTool
 from .dvh_calculation import DVHCalculationTool
 from .comprehensive_dose_evaluation import ComprehensiveDoseEvaluationTool
+from .dvh_utils import build_cumulative_dvh
 
 
 TOOL_REGISTRY = {
@@ -199,6 +200,7 @@ __all__ = [
     "AbsoluteDoseMetricsTool",
     "DVHCalculationTool",
     "ComprehensiveDoseEvaluationTool",
+    "build_cumulative_dvh",
     "DoseEvaluationTool",
     "get_tool",
     "list_tools",

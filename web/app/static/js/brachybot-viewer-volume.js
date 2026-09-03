@@ -269,6 +269,7 @@ let organMetaFromServer = {};  // {label_id: {name, color, voxels}}
 // binary volume needed for 2D compositing.
 let genericMaskVolumeData = Object.create(null);
 let genericMaskCatalogGeneration = 0;
+let genericMaskCatalogSessionId = '';
 let viewerDataLoadGeneration = 0;
 const viewerDataAbortControllers = new Set();
 
@@ -745,6 +746,11 @@ async function loadLabelVolumes(options = {}) {
     hasOAR = !!(oarLabelData && oarLabelData.length
         && oarLabelData.some(value => Number(value) > 0));
 
+    // A forced reload after a Data Tree mutation is authoritative.  Without
+    // this guard, a slower pre-delete response could finish after the fresh
+    // response and restore the just-deleted CTV/OAR nodes and overlays.
+    if (!_viewerDataScopeIsCurrent(scope)) return false;
+
     uiDebugLog(`Label volumes loaded: CTV=${hasCTV}, OAR=${hasOAR}, ${Object.keys(labelColorLUT).length} labels`);
 
     // Update data tree with organ metadata.  Uploaded OAR masks intentionally
@@ -797,15 +803,29 @@ async function loadLabelVolumes(options = {}) {
         // very first response from /viewer/label_volume) left the
         // tree with .loaded = false.
         if (typeof dataTreeState !== 'undefined' && dataTreeState.ctv) {
+            dataTreeState.ctv.loaded = hasCTV;
             if (hasCTV) {
-                dataTreeState.ctv.loaded = true;
                 dataTreeState.ctv.visible = true;
+            } else {
+                // A removed final CTV label used to leave its old child node
+                // and mesh in the browser even though the server returned an
+                // empty label volume.  Clear the derived presentation only;
+                // the server remains the source for the next load.
+                Object.keys(dataTreeState.ctvLabels || {}).forEach(id => _disposeSceneMesh(id));
+                dataTreeState.ctvLabels = {};
+                window._ctvObjectMap = {};
+                window._ctvLabelMap = {};
+                _disposeSceneMesh('ctv');
             }
         }
         if (typeof dataTreeState !== 'undefined' && dataTreeState.oar) {
+            dataTreeState.oar.loaded = hasOAR;
             if (hasOAR) {
-                dataTreeState.oar.loaded = true;
                 if (!state?.viewerSettings?.userConfigured) dataTreeState.oar.visible = true;
+            } else {
+                (dataTreeState.organs || []).forEach(organ => _disposeSceneMesh(organ.id));
+                dataTreeState.organs = [];
+                organMetaFromServer = {};
             }
         }
         // Force a re-render of the data tree regardless of metadata.
@@ -866,10 +886,17 @@ async function loadLabelVolumes(options = {}) {
  */
 async function hydrateGenericMasksFromServer(scope, retryAttempt = 0) {
     if (!scope || !_viewerDataScopeIsCurrent(scope)) return false;
-    if (genericMaskCatalogGeneration !== scope.dataGeneration) {
+    const scopeSessionId = String(scope.sessionId || '');
+    // A case switch must never reuse another case's binary masks.  A same-case
+    // data mutation, however, should retain the volumes of unaffected open
+    // masks while the authoritative catalogue removes or replaces only the
+    // changed entries.  Clearing the complete cache on every mutation made a
+    // Delete action briefly erase unrelated masks and amplified race windows.
+    if (genericMaskCatalogSessionId !== scopeSessionId) {
         genericMaskVolumeData = Object.create(null);
-        genericMaskCatalogGeneration = scope.dataGeneration;
+        genericMaskCatalogSessionId = scopeSessionId;
     }
+    genericMaskCatalogGeneration = scope.dataGeneration;
     try {
         const request = typeof window.fetchViewerJsonWithRetry === 'function'
             ? await window.fetchViewerJsonWithRetry(
@@ -899,10 +926,17 @@ async function hydrateGenericMasksFromServer(scope, retryAttempt = 0) {
         });
 
         const jobs = entries.map(async metadata => {
+            // A Data Tree mutation can finish after this catalogue request but
+            // before this per-mask task starts.  Do not recreate a deleted
+            // row from that stale catalogue response.
+            if (!_viewerDataScopeIsCurrent(scope)) return false;
             const id = String(metadata.mask_id || '').trim();
             if (!id) return false;
             const existing = state.maskLabels[id] || {};
-            state.maskLabels[id] = {
+            const serverClassification = String(
+                metadata.classification || metadata.moved_to || '',
+            ).trim().toLowerCase();
+            const nextMask = {
                 ...existing,
                 ...metadata,
                 id,
@@ -910,8 +944,12 @@ async function hydrateGenericMasksFromServer(scope, retryAttempt = 0) {
                 serverMaskId: id,
                 objectId: metadata.object_id || existing.objectId || `mask:${id}`,
                 nodeId: metadata.data_tree_node_id || existing.nodeId || id,
-                movedTo: existing.movedTo || metadata.moved_to || null,
-                classification: metadata.classification || existing.classification || 'unclassified',
+                // Server classification is authoritative.  Retaining a
+                // browser-side CTV/OAR value here could make an already
+                // removed or reclassified mask reappear under the wrong
+                // parent after a delayed hydration callback.
+                movedTo: serverClassification || null,
+                classification: serverClassification || 'unclassified',
                 source: metadata.source || existing.source || 'biomedparse_v2',
                 kind: metadata.kind || existing.kind || 'generic_segmentation',
                 name: metadata.name || metadata.label || metadata.target || id,
@@ -928,6 +966,33 @@ async function hydrateGenericMasksFromServer(scope, retryAttempt = 0) {
                     : (metadata.kind === 'uploaded_mask_label' ? 0.6 : 0.42),
                 color: existing.color || '#f08a5d',
             };
+            state.maskLabels[id] = nextMask;
+
+            // Promoted masks are rendered through the authoritative CTV/OAR
+            // label volume.  Fetching their standalone binary volume creates
+            // a duplicate asynchronous source and, when they are deleted,
+            // used to turn the old Data Tree row into a misleading Error row.
+            if (!_isOpenGenericMask(nextMask)) {
+                delete genericMaskVolumeData[id];
+                nextMask.loaded = true;
+                nextMask.loading = false;
+                nextMask.status = 'ready';
+                nextMask.error = null;
+                return true;
+            }
+
+            const sourceVersion = String(
+                metadata.data_version ?? metadata.dataVersion ?? '',
+            );
+            const cachedVolume = genericMaskVolumeData[id];
+            if (cachedVolume && String(cachedVolume.dataVersion ?? '') === sourceVersion) {
+                nextMask.loaded = true;
+                nextMask.loading = false;
+                nextMask.status = 'ready';
+                nextMask.error = null;
+                nextMask.voxelCount = Number(metadata.voxel_count || nextMask.voxelCount || 0);
+                return true;
+            }
             try {
                 const volumeRequest = typeof window.fetchViewerJsonWithRetry === 'function'
                     ? await window.fetchViewerJsonWithRetry(
@@ -969,6 +1034,7 @@ async function hydrateGenericMasksFromServer(scope, retryAttempt = 0) {
                     spacing: parseHeader('X-Spacing', metadata.spacing || [1, 1, 1]),
                     origin: parseHeader('X-Origin', metadata.origin || [0, 0, 0]),
                     direction: parseHeader('X-Direction', metadata.direction || [1, 0, 0, 0, 1, 0, 0, 0, 1]),
+                    dataVersion: sourceVersion,
                 };
                 const current = state.maskLabels[id];
                 if (current) {
@@ -980,6 +1046,10 @@ async function hydrateGenericMasksFromServer(scope, retryAttempt = 0) {
                 }
                 return true;
             } catch (error) {
+                // Ignore an aborted/stale request.  It belongs to the old
+                // catalogue and must not turn a post-delete node into an
+                // error badge in the current tree.
+                if (!_viewerDataScopeIsCurrent(scope)) return false;
                 const current = state.maskLabels[id];
                 if (current) {
                     current.loaded = false;
@@ -3236,13 +3306,28 @@ function positionBrachyContextMenu(menu, anchorX, anchorY) {
 window.positionBrachyContextMenu = positionBrachyContextMenu;
 
 // Context menus are transient UI, not state. A single capture-phase boundary
-// closes them for clicks, touch/pointer presses, Escape, scrolling, and case
-// switches. The old one-shot bubble listeners were bypassed by canvas and
-// stopPropagation handlers, leaving some endpoint menus stuck on screen.
+// closes them for clicks, touch/pointer presses, right-clicks on another
+// target, Escape, scrolling, and case switches. Keeping this lifecycle in one
+// place is important: the old one-shot bubble listeners installed by each menu
+// could run after a new menu had been created and immediately close that new
+// menu, making a second right-click appear to do nothing.
 if (!window.__brachyContextMenuDismissalBound) {
     window.__brachyContextMenuDismissalBound = true;
     document.addEventListener('pointerdown', event => {
         const menu = activeContextMenu || window.__brachyContextMenuElement;
+        if (!menu || menu.contains(event.target)) return;
+        hideContextMenu();
+    }, true);
+    document.addEventListener('click', event => {
+        const menu = activeContextMenu || window.__brachyContextMenuElement;
+        if (!menu || menu.contains(event.target)) return;
+        hideContextMenu();
+    }, true);
+    document.addEventListener('contextmenu', event => {
+        const menu = activeContextMenu || window.__brachyContextMenuElement;
+        // Capture-phase dismissal runs before the target's inline handler. It
+        // removes the previous menu, then lets the target open its replacement
+        // without a delayed document listener closing it again.
         if (!menu || menu.contains(event.target)) return;
         hideContextMenu();
     }, true);
@@ -3261,6 +3346,11 @@ if (!window.__brachyContextMenuDismissalBound) {
 // Multi-select state (like Windows Explorer)
 const selectedItems = new Set();  // Set of organ IDs (e.g., 'organ_1', 'ctv')
 let lastClickedId = null;  // For shift+click range selection
+// Deletion can trigger a label-volume refresh that takes longer than the
+// request itself.  Keep a per-object lock across that whole transaction so a
+// second right-click cannot submit a duplicate request against a row that is
+// already being removed.
+const pendingDataTreeDeleteIds = new Set();
 
 function getSelectableIds() {
     // Return every real leaf node in tree order. Group headers are routed to
@@ -3684,7 +3774,7 @@ function renderDataTree() {
 
     // === Image group ===
     html += `<div class="tree-group" data-group="image">
-        <div class="tree-group-header" onclick="toggleTreeGroup(this)" oncontextmenu="event.preventDefault();showGroupContextMenu(event.clientX,event.clientY,'image')">
+        <div class="tree-group-header" onclick="toggleTreeGroup(this)" oncontextmenu="handleTreeItemRightClick('image', event)">
             <span class="arrow">&#9660;</span>
             <span>Image</span>
         </div>
@@ -3700,6 +3790,16 @@ function renderDataTree() {
         uniqueLabels.forEach(l => { if (l > 0) ctvLabels.push(l); });
         ctvLabels.sort((a, b) => a - b);
     }
+    // CTV subnodes are derived entirely from the current authoritative label
+    // volume.  Prune labels that disappeared after a Delete or reclassification
+    // so an old browser object cannot remain selectable and issue a second
+    // "Structure was not found" deletion request.
+    const liveCtvNodeIds = new Set(ctvLabels.map(labelId => `ctv_${labelId}`));
+    Object.keys(dataTreeState.ctvLabels || {}).forEach(id => {
+        if (liveCtvNodeIds.has(id)) return;
+        _disposeSceneMesh(id);
+        delete dataTreeState.ctvLabels[id];
+    });
     const hasMultiLabelCtv = ctvLabels.length > 1;
 
     const hasOpenGenericMask = Object.values(state.maskLabels || {})
@@ -3715,7 +3815,7 @@ function renderDataTree() {
         .length;
     const segCount = hasMultiLabelCtv ? ctvLabels.length : (dataTreeState.ctv.loaded ? 1 : 0);
     html += `<div class="tree-group" data-group="segmentation">
-        <div class="tree-group-header" onclick="toggleTreeGroup(this)" oncontextmenu="event.preventDefault();showGroupContextMenu(event.clientX,event.clientY,'segmentation')">
+        <div class="tree-group-header" onclick="toggleTreeGroup(this)" oncontextmenu="handleTreeItemRightClick('segmentation', event)">
             <span class="arrow">&#9660;</span>
             <span>Segmentation ${hasSeg ? `(${dataTreeState.organs.length + segCount + maskCount + (dataTreeState.skin.loaded ? 1 : 0)})` : ''}</span>
         </div>
@@ -3817,7 +3917,7 @@ function renderDataTree() {
         const ctvOp = dataTreeState.ctv.opacity ?? 0.7;
         const ctvGroupLabel = dataTreeState.ctv.label || 'CTV';
         html += `<div class="tree-group" data-group="ctv">
-            <div class="tree-group-header" onclick="toggleTreeGroup(this)" oncontextmenu="event.preventDefault();handleTreeItemRightClick('ctv', event)">
+            <div class="tree-group-header" onclick="toggleTreeGroup(this)" oncontextmenu="handleTreeItemRightClick('ctv', event)">
                 <span class="arrow">&#9660;</span>
                 <button class="eye-btn ${ctvVis ? '' : 'hidden'}" onclick="event.stopPropagation();toggleDataVisibility('ctv')">${ctvVis ? '&#128065;' : '&#128064;'}</button>
                 <span>${escHtml(ctvGroupLabel)}</span>
@@ -3919,7 +4019,7 @@ function renderDataTree() {
         const visible = entries.some(([, mask]) => mask.visible !== false);
         const opacity = entries[0]?.[1]?.opacity ?? 0.6;
         let groupHtml = `<div class="tree-group" data-group="${groupId}">
-            <div class="tree-group-header" onclick="toggleTreeGroup(this)" oncontextmenu="event.preventDefault();handleTreeItemRightClick('${groupId}', event)">
+            <div class="tree-group-header" onclick="toggleTreeGroup(this)" oncontextmenu="handleTreeItemRightClick('${groupId}', event)">
                 <span class="arrow">&#9660;</span>
                 <button class="eye-btn ${visible ? '' : 'hidden'}" onclick="event.stopPropagation();setGroupVisibility('${groupId}', ${!visible})" title="Toggle ${label}">${visible ? '&#128065;' : '&#128064;'}</button>
                 <span>${label} (${entries.length})</span>
@@ -3967,7 +4067,7 @@ function renderDataTree() {
         ? dataTreeState.organs.reduce((sum, o) => sum + (o.opacity ?? 0.5), 0) / dataTreeState.organs.length
         : 0.5;
     html += `<div class="tree-group" data-group="oar">
-        <div class="tree-group-header" data-node-id="${escHtml(dataTreeState.oar.nodeId || 'oar')}" data-node-type="segmentation" data-status="${escHtml(dataTreeState.oar.status || 'not_generated')}" onclick="toggleTreeGroup(this)" oncontextmenu="event.preventDefault();handleTreeItemRightClick('oar', event)">
+        <div class="tree-group-header" data-node-id="${escHtml(dataTreeState.oar.nodeId || 'oar')}" data-node-type="segmentation" data-status="${escHtml(dataTreeState.oar.status || 'not_generated')}" onclick="toggleTreeGroup(this)" oncontextmenu="handleTreeItemRightClick('oar', event)">
             <span class="arrow">&#9660;</span>
             <button class="eye-btn ${oarVis ? '' : 'hidden'}" onclick="event.stopPropagation();setGroupVisibility('oar', ${!oarVis})" title="Toggle">${oarVis ? '&#128065;' : '&#128064;'}</button>
             <span>OAR (${dataTreeState.organs.length})</span>
@@ -3993,7 +4093,7 @@ function renderDataTree() {
         const gVis = nonTrav.some(o => o.visible);
         const gOp = nonTrav[0]?.opacity ?? 0.5;
         html += `<div class="tree-group" data-group="non_traversable">
-            <div class="tree-group-header" onclick="toggleTreeGroup(this)" oncontextmenu="event.preventDefault();showGroupContextMenu(event.clientX,event.clientY,'non_traversable')">
+            <div class="tree-group-header" onclick="toggleTreeGroup(this)" oncontextmenu="handleTreeItemRightClick('non_traversable', event)">
                 <span class="arrow">&#9660;</span>
                 <span style="color:rgba(249,115,22,0.7);">&#9679; Non-traversable (${nonTrav.length})</span>
                 <span style="margin-left:auto;display:flex;align-items:center;gap:4px;">
@@ -4015,7 +4115,7 @@ function renderDataTree() {
         const gVis = trav.some(o => o.visible);
         const gOp = trav[0]?.opacity ?? 0.5;
         html += `<div class="tree-group" data-group="traversable">
-            <div class="tree-group-header" onclick="toggleTreeGroup(this)" oncontextmenu="event.preventDefault();showGroupContextMenu(event.clientX,event.clientY,'traversable')">
+            <div class="tree-group-header" onclick="toggleTreeGroup(this)" oncontextmenu="handleTreeItemRightClick('traversable', event)">
                 <span class="arrow">&#9660;</span>
                 <span style="color:rgba(34,197,94,0.7);">&#9679; Traversable (${trav.length})</span>
                 <span style="margin-left:auto;display:flex;align-items:center;gap:4px;">
@@ -4046,7 +4146,7 @@ function renderDataTree() {
         const maskVis = masks.some(([, m]) => m.visible !== false);
         const maskOp = masks[0]?.[1]?.opacity ?? 0.6;
         html += `<div class="tree-group" data-group="masks">
-            <div class="tree-group-header" onclick="toggleTreeGroup(this)" oncontextmenu="event.preventDefault();handleTreeItemRightClick('masks', event)">
+        <div class="tree-group-header" onclick="toggleTreeGroup(this)" oncontextmenu="handleTreeItemRightClick('masks', event)">
                 <span class="arrow">&#9660;</span>
                 <button class="eye-btn ${maskVis ? '' : 'hidden'}" onclick="event.stopPropagation();setGroupVisibility('masks', ${!maskVis})" title="Toggle all masks">${maskVis ? '&#128065;' : '&#128064;'}</button>
                 <span>Masks (${masks.length})</span>
@@ -4137,7 +4237,7 @@ function renderDataTree() {
         : 0.7;
 
     html += `<div class="tree-group" data-group="planning">
-        <div class="tree-group-header" onclick="toggleTreeGroup(this)" oncontextmenu="event.preventDefault();showGroupContextMenu(event.clientX,event.clientY,'planning')">
+        <div class="tree-group-header" onclick="toggleTreeGroup(this)" oncontextmenu="handleTreeItemRightClick('planning', event)">
             <span class="arrow">&#9660;</span>
             <button class="eye-btn ${planningVis ? '' : 'hidden'}" onclick="event.stopPropagation();setGroupVisibility('planning', ${!planningVis})" title="Toggle all planning objects">${planningVis ? '&#128065;' : '&#128064;'}</button>
             <span>Planning ${planningRuns.length ? `(${planningRuns.length})` : (hasPlanning ? `(${planningEntries.length})` : '')}</span>
@@ -4266,7 +4366,7 @@ function renderDataTree() {
         const trajVis = planningMasterVisible && planningTrajectories.some(t => t.visible);
         const trajOp = planningTrajectories[0]?.opacity ?? 0.8;
         html += `<div class="tree-group" data-group="planning_trajectories">
-            <div class="tree-group-header" onclick="toggleTreeGroup(this)" oncontextmenu="event.preventDefault();handleTreeItemRightClick('planning_trajectories', event)">
+        <div class="tree-group-header" onclick="toggleTreeGroup(this)" oncontextmenu="handleTreeItemRightClick('planning_trajectories', event)">
                 <span class="arrow">&#9660;</span>
                 <button class="eye-btn ${trajVis ? '' : 'hidden'}" onclick="event.stopPropagation();setGroupVisibility('planning_trajectories', ${!trajVis})" title="Toggle">${trajVis ? '&#128065;' : '&#128064;'}</button>
                 <span>Trajectories (${planningTrajectories.length})</span>
@@ -4282,7 +4382,7 @@ function renderDataTree() {
             const childSeeds = traj.seeds || [];
             const childHeader = childSeeds.length > 0 ? ` (${childSeeds.length} seeds)` : '';
             html += `<div class="tree-group" data-group="${trajId}">
-                <div class="tree-group-header" onclick="toggleTreeGroup(this)" oncontextmenu="event.preventDefault();handleTreeItemRightClick('${trajId}', event)" style="padding-left:1.2rem;">
+            <div class="tree-group-header" onclick="toggleTreeGroup(this)" oncontextmenu="handleTreeItemRightClick('${trajId}', event)" style="padding-left:1.2rem;">
                     <span class="arrow">&#9660;</span>
                     <button class="eye-btn ${planningMasterVisible && traj.visible !== false ? '' : 'hidden'}" onclick="event.stopPropagation();toggleDataVisibility('${trajId}')">${planningMasterVisible && traj.visible !== false ? '&#128065;' : '&#128064;'}</button>
                     <span style="color:#88ccff;">➤</span>
@@ -4302,7 +4402,7 @@ function renderDataTree() {
         const seedsVis = planningMasterVisible && planningSeeds.some(s => s.visible !== false);
         const seedsOp = planningSeeds[0]?.opacity ?? 1.0;
         html += `<div class="tree-group" data-group="planning_seeds">
-            <div class="tree-group-header" onclick="toggleTreeGroup(this)" oncontextmenu="event.preventDefault();handleTreeItemRightClick('planning_seeds', event)">
+        <div class="tree-group-header" onclick="toggleTreeGroup(this)" oncontextmenu="handleTreeItemRightClick('planning_seeds', event)">
                 <span class="arrow">&#9660;</span>
                 <button class="eye-btn ${seedsVis ? '' : 'hidden'}" onclick="event.stopPropagation();setGroupVisibility('planning_seeds', ${!seedsVis})" title="Toggle">${seedsVis ? '&#128065;' : '&#128064;'}</button>
                 <span>Seeds (${planningSeeds.length})</span>
@@ -4323,7 +4423,7 @@ function renderDataTree() {
         const needlesVis = planningMasterVisible && planningNeedles.some(n => n.visible !== false);
         const needlesOp = planningNeedles[0]?.opacity ?? 0.8;
         html += `<div class="tree-group" data-group="planning_needles">
-            <div class="tree-group-header" onclick="toggleTreeGroup(this)" oncontextmenu="event.preventDefault();handleTreeItemRightClick('planning_needles', event)">
+        <div class="tree-group-header" onclick="toggleTreeGroup(this)" oncontextmenu="handleTreeItemRightClick('planning_needles', event)">
                 <span class="arrow">&#9660;</span>
                 <button class="eye-btn ${needlesVis ? '' : 'hidden'}" onclick="event.stopPropagation();setGroupVisibility('planning_needles', ${!needlesVis})" title="Toggle">${needlesVis ? '&#128065;' : '&#128064;'}</button>
                 <span>Needles (${planningNeedles.length})</span>
@@ -4346,7 +4446,7 @@ function renderDataTree() {
         );
         const doseOp = doseLevels[0]?.opacity ?? 0.3;
         html += `<div class="tree-group" data-group="dose_isosurfaces">
-            <div class="tree-group-header" onclick="toggleTreeGroup(this)" oncontextmenu="event.preventDefault();handleTreeItemRightClick('dose_isosurfaces', event)">
+        <div class="tree-group-header" onclick="toggleTreeGroup(this)" oncontextmenu="handleTreeItemRightClick('dose_isosurfaces', event)">
                 <span class="arrow">&#9660;</span>
                 <button class="eye-btn ${doseVis ? '' : 'hidden'}" onclick="event.stopPropagation();setGroupVisibility('dose_isosurfaces', ${!doseVis})" title="Toggle">${doseVis ? '&#128065;' : '&#128064;'}</button>
                 <span>Dose Isosurfaces (${doseLevels.length})</span>
@@ -4436,7 +4536,7 @@ function renderDataTree() {
             (sum, mesh) => sum + Number(mesh.opacity ?? 0.75), 0,
         ) / independentPlanningMeshes.length;
         html += `<div class="tree-group" data-group="planning_meshes">
-            <div class="tree-group-header" onclick="toggleTreeGroup(this)" oncontextmenu="event.preventDefault();showGroupContextMenu(event.clientX,event.clientY,'planning_meshes')">
+        <div class="tree-group-header" onclick="toggleTreeGroup(this)" oncontextmenu="handleTreeItemRightClick('planning_meshes', event)">
                 <span class="arrow">&#9660;</span>
                 <button class="eye-btn ${artifactsVisible ? '' : 'hidden'}" onclick="event.stopPropagation();setGroupVisibility('planning_meshes', ${!artifactsVisible})" title="Toggle planning artifacts">${artifactsVisible ? '&#128065;' : '&#128064;'}</button>
                 <span data-i18n-zh="规划产物" data-i18n-en="Planning Artifacts">Planning Artifacts</span>
@@ -4471,7 +4571,7 @@ function renderDataTree() {
     const exportArtifacts = dataTreeState.exportArtifacts || [];
     if (annotations.length || exportArtifacts.length) {
         html += `<div class="tree-group" data-group="artifacts">
-            <div class="tree-group-header" onclick="toggleTreeGroup(this)" oncontextmenu="event.preventDefault();showGroupContextMenu(event.clientX,event.clientY,'artifacts')">
+        <div class="tree-group-header" onclick="toggleTreeGroup(this)" oncontextmenu="handleTreeItemRightClick('artifacts', event)">
                 <span class="arrow">&#9660;</span>
                 <span>${_dtText('工件与标注', 'Artifacts & Annotations')}</span>
                 <span>(${annotations.length + exportArtifacts.length})</span>
@@ -4545,7 +4645,7 @@ function renderTreeItem(id, itemState, info) {
     const statusLabel = itemState.status && itemState.status !== 'ready'
         ? `<span class="item-status item-status-${itemState.status}" title="${escHtml(itemState.error || itemState.status)}">${escHtml(_dtStatusText(itemState.status))}</span>`
         : '';
-    return `<div class="tree-item ${isCt ? 'tree-item--ct' : ''} ${selectedClass}" data-node-id="${escHtml(itemState.nodeId || id)}" data-node-type="${escHtml(itemState.type || 'visual') }" data-status="${escHtml(itemState.status || 'ready')}" ${loadedClass} ${indent} ${dataAttr}
+    return `<div class="tree-item ${isCt ? 'tree-item--ct' : ''} ${selectedClass}" data-node-id="${escHtml(itemState.nodeId || id)}" data-object-id="${escHtml(itemState.objectId || id)}" data-node-type="${escHtml(itemState.type || 'visual') }" data-status="${escHtml(itemState.status || 'ready')}" data-visible="${itemState.visible !== false}" data-visible-2d="${itemState.visible2D !== false}" data-visible-3d="${itemState.visible3D !== false}" ${loadedClass} ${indent} ${dataAttr}
         onclick="handleTreeItemClick('${id}', event)"
         oncontextmenu="event.preventDefault();event.stopPropagation();handleTreeItemRightClick('${id}', event)">
         <button class="eye-btn ${eyeClass}" onclick="event.stopPropagation();toggleDataVisibility('${id}')" ${disabledAttr}>${eyeIcon}</button>
@@ -4566,7 +4666,7 @@ function renderArtifactTreeItem(itemState) {
     const typeLabel = itemState.dataType === 'screenshot'
         ? _dtText('截图', 'Screenshot')
         : _dtText('报告', 'Report');
-    return `<div class="tree-item ${selectedClass}" data-node-id="${escHtml(itemState.nodeId || id)}" data-node-type="${escHtml(itemState.type || 'artifact')}" data-status="${escHtml(itemState.status || 'ready')}"
+    return `<div class="tree-item ${selectedClass}" data-node-id="${escHtml(itemState.nodeId || id)}" data-object-id="${escHtml(itemState.objectId || id)}" data-node-type="${escHtml(itemState.type || 'artifact')}" data-status="${escHtml(itemState.status || 'ready')}" data-visible="${itemState.visible !== false}" data-visible-2d="${itemState.visible2D !== false}" data-visible-3d="${itemState.visible3D !== false}"
         onclick="handleTreeItemClick('${id}', event)"
         oncontextmenu="event.preventDefault();event.stopPropagation();handleTreeItemRightClick('${id}', event)">
         <span class="color-swatch" style="background:${itemState.color};pointer-events:none;"></span>
@@ -4929,10 +5029,10 @@ function handleTreeItemRightClick(id, event) {
     // Group headers must open the group menu directly. Routing a group id
     // through the item menu leaves no selected organ and appears unresponsive.
     const groupIds = new Set([
-        'ctv', 'oar', 'non_traversable', 'traversable',
+        'image', 'segmentation', 'ctv', 'oar', 'non_traversable', 'traversable',
         'planning', 'planning_trajectories', 'planning_seeds',
         'planning_needles', 'dose_isosurfaces', 'planning_meshes',
-        'masks', 'generic_masks', 'upload_masks',
+        'masks', 'generic_masks', 'upload_masks', 'artifacts',
     ]);
     if (groupIds.has(id)) {
         selectedItems.clear();
@@ -5110,10 +5210,6 @@ function showGroupContextMenu(x, y, category) {
 
     positionBrachyContextMenu(menu, x, y);
 
-    setTimeout(() => {
-        document.addEventListener('click', hideContextMenu, { once: true });
-        document.addEventListener('contextmenu', hideContextMenu, { once: true });
-    }, 0);
     activeContextMenu = menu;
 }
 
@@ -5424,6 +5520,56 @@ function _disposeSceneMesh(id) {
     delete scene3D.meshes[id];
 }
 
+function _canonicalDataTreeObjectId(value) {
+    const raw = String(value || '').trim();
+    if (raw.startsWith('mask_')) return `mask:${raw.slice(5)}`;
+    return raw;
+}
+
+function _purgeDeletedDataTreePresentation(objectIds) {
+    const targets = new Set(
+        (objectIds || []).map(_canonicalDataTreeObjectId).filter(Boolean),
+    );
+    if (!targets.size) return;
+    const matches = node => targets.has(_canonicalDataTreeObjectId(
+        node?.objectId || node?.object_id || node?.id,
+    ));
+
+    // Generic masks use a durable `mask:*` object ID even when they are
+    // displayed as a CTV/OAR label.  Remove every local representation before
+    // the fresh server hydration starts, so a user cannot act on a ghost row.
+    Object.entries(state.maskLabels || {}).forEach(([id, mask]) => {
+        if (!matches(mask)) return;
+        _disposeSceneMesh(_maskSceneMeshId(id));
+        _disposeSceneMesh(id);
+        delete state.maskLabels[id];
+        delete genericMaskVolumeData[id];
+    });
+
+    Object.entries(dataTreeState.ctvLabels || {}).forEach(([id, label]) => {
+        if (!matches(label)) return;
+        _disposeSceneMesh(id);
+        delete dataTreeState.ctvLabels[id];
+    });
+    dataTreeState.organs = (dataTreeState.organs || []).filter(organ => {
+        if (!matches(organ)) return true;
+        _disposeSceneMesh(organ.id);
+        return false;
+    });
+
+    if (window._ctvObjectMap && typeof window._ctvObjectMap === 'object') {
+        Object.entries(window._ctvObjectMap).forEach(([labelId, objectId]) => {
+            if (targets.has(_canonicalDataTreeObjectId(objectId))) {
+                delete window._ctvObjectMap[labelId];
+            }
+        });
+    }
+    [...selectedItems].forEach(id => {
+        const objectId = _canonicalDataTreeObjectId(_dataTreeObjectId(id, 'delete'));
+        if (targets.has(objectId)) selectedItems.delete(id);
+    });
+}
+
 function _clearInvalidatedPlanningPresentation(invalidated = []) {
     const flags = new Set(invalidated || []);
     if (flags.has('all_case_data') || flags.has('planning')) {
@@ -5478,6 +5624,16 @@ async function _refreshAfterDataMutation(
             || id.startsWith('trajectory_')
         ));
 
+    // Server confirmation is the mutation boundary.  Cancel earlier
+    // label/mask requests before they can write an old catalogue back into the
+    // tree, and remove the confirmed rows locally while the fresh payload is
+    // loading.  This applies to every structural Data Tree delete/move, not
+    // just the original CTV upload case.
+    if (structureMutation || genericMaskMutation) {
+        _purgeDeletedDataTreePresentation(objectIds);
+        invalidateViewerDataLoads();
+    }
+
     if (allCaseData) {
         if (typeof clearClientWorkspace === 'function') {
             clearClientWorkspace({ clearReport: true, deferDisposal: true });
@@ -5525,6 +5681,15 @@ async function _refreshAfterDataMutation(
                 startSegmentationMeshPrewarm('oar', { force: true, batchSize: 3 });
             }
         } catch (_) {}
+    }
+
+    // A generic mask that remains an independent Segmentation row does not
+    // require a CTV/OAR label-volume reload.  Still reconcile its catalogue
+    // after a backend mutation; the prior implementation left open masks in
+    // the client until a later unrelated viewer refresh.
+    if (genericMaskMutation && !structureMutation) {
+        await hydrateGenericMasksFromServer(_captureViewerDataScope(expectedSessionId));
+        if (String(expectedSessionId) !== _viewerDataSessionId()) return false;
     }
 
     if (planningMutation && typeof refreshPlanningUI === 'function') {
@@ -5579,6 +5744,9 @@ async function _refreshAfterDataMutation(
     }
     if (payload?.artifact_status) {
         dataTreeState.planning.artifactStatus = payload.artifact_status;
+        if (typeof _syncManualSafetyState === 'function') {
+            _syncManualSafetyState({ artifact_status: payload.artifact_status });
+        }
     }
     reconcileSegmentationViewerState({
         sessionId: expectedSessionId,
@@ -5726,31 +5894,50 @@ async function deleteSelectedDataTreeItems(objectIds = null, options = {}) {
         )
         : false;
     if (!confirmed) return false;
-    const response = await fetch(API + '/data/objects/batch-delete', {
-        method: 'POST',
-        headers: {
-            ..._viewerDataHeaders(expectedSessionId),
-            'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-            session_id: expectedSessionId,
-            object_ids: ids,
-            recursive_groups: options.recursiveGroups === true,
-        }),
-    });
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok || payload.success === false) {
-        throw new Error(payload.error || _dtText('删除失败', 'Delete failed'));
+    const mutationKeys = ids.map(_canonicalDataTreeObjectId).filter(Boolean);
+    if (mutationKeys.some(id => pendingDataTreeDeleteIds.has(id))) {
+        addChat('system', _dtText(
+            '所选数据正在删除中，请等待当前操作完成。',
+            'The selected data is already being deleted. Please wait for the current operation to finish.',
+        ));
+        return false;
     }
-    await _refreshAfterDataMutation(payload, appearance, expectedSessionId, {
-        objectIds: ids,
-    });
-    selectedItems.clear();
-    addChat('system', _dtText(
-        `已删除 ${ids.length} 项数据。`,
-        `${ids.length} data item(s) deleted.`,
-    ));
-    return true;
+    mutationKeys.forEach(id => pendingDataTreeDeleteIds.add(id));
+    try {
+        const response = await fetch(API + '/data/objects/batch-delete', {
+            method: 'POST',
+            headers: {
+                ..._viewerDataHeaders(expectedSessionId),
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                session_id: expectedSessionId,
+                object_ids: ids,
+                recursive_groups: options.recursiveGroups === true,
+            }),
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || payload.success === false) {
+            throw new Error(payload.error || _dtText('删除失败', 'Delete failed'));
+        }
+        const returnedIds = (payload.results || [])
+            .map(result => String(result?.object_id || ''))
+            .filter(Boolean);
+        await _refreshAfterDataMutation(payload, appearance, expectedSessionId, {
+            // Prefer server-canonical IDs when available.  This is essential
+            // for a promoted upload whose visual CTV label is `ctv_1` but its
+            // durable object identity is `mask:<upload-label-id>`.
+            objectIds: [...new Set([...ids, ...returnedIds])],
+        });
+        selectedItems.clear();
+        addChat('system', _dtText(
+            `已删除 ${ids.length} 项数据。`,
+            `${ids.length} data item(s) deleted.`,
+        ));
+        return true;
+    } finally {
+        mutationKeys.forEach(id => pendingDataTreeDeleteIds.delete(id));
+    }
 }
 
 async function deleteDataTreeGroup(category) {
@@ -5766,14 +5953,62 @@ async function moveDataTreeGroup(category, classification) {
     return moveSelectedStructures(classification, _dataTreeGroupObjectIds(category));
 }
 
-function _runDataTreeAction(action) {
-    Promise.resolve(action).catch(error => {
-        console.error('[data-tree] action failed', error);
-        addChat('error', _dtText(
-            `数据操作失败：${error.message}`,
-            `Data operation failed: ${error.message}`,
-        ));
+async function _refreshDataTreeAfterMissingObject(expectedSessionId) {
+    if (String(expectedSessionId || '') !== _viewerDataSessionId()) return false;
+    // An item may have been removed by a concurrent browser tab or a prior
+    // request whose visual refresh was interrupted.  Treat a known 404 as a
+    // reconciliation event, not as a clinical-operation failure.
+    invalidateViewerDataLoads();
+    const refreshes = [
+        loadLabelVolumes({
+            sessionId: expectedSessionId,
+            forceFresh: true,
+            preserveViewerState: true,
+        }),
+        hydrateDataTreeArtifactCatalog({ force: true }),
+    ];
+    if (typeof refreshPlanningUI === 'function') {
+        refreshes.push(refreshPlanningUI({
+            sessionId: expectedSessionId,
+            skipLabelLoad: true,
+            preserveViewerState: true,
+            switchToViewers: false,
+            backgroundRestore: true,
+            autoGenerateGuide: false,
+        }));
+    }
+    await Promise.allSettled(refreshes);
+    if (String(expectedSessionId || '') !== _viewerDataSessionId()) return false;
+    reconcileSegmentationViewerState({
+        sessionId: expectedSessionId,
+        reason: 'data-tree-missing-object-reconcile',
     });
+    renderDataTree();
+    return true;
+}
+
+async function _runDataTreeAction(action) {
+    try {
+        return await Promise.resolve(action);
+    } catch (error) {
+        console.error('[data-tree] action failed', error);
+        const message = String(error?.message || error || '');
+        if (/not found|no longer exists|missing/i.test(message)) {
+            const reconciled = await _refreshDataTreeAfterMissingObject(_viewerDataSessionId());
+            if (reconciled) {
+                addChat('system', _dtText(
+                    '该数据已不在服务器中，已按最新状态刷新 Data Tree 和查看器。',
+                    'This data no longer exists on the server. The Data Tree and viewers were refreshed to the latest state.',
+                ));
+                return false;
+            }
+        }
+        addChat('error', _dtText(
+            `数据操作失败：${message}`,
+            `Data operation failed: ${message}`,
+        ));
+        return false;
+    }
 }
 
 function showContextMenu(x, y) {
@@ -5850,6 +6085,15 @@ function showContextMenu(x, y) {
         items += `<div class="ctx-menu-item" onclick="hideContextMenu();reconstructDoseIsosurface3D('${firstId}')">
             <span class="ctx-icon">&#9638;</span> 3D Reconstruct</div>`;
         items += `<div class="ctx-menu-sep"></div>`;
+    }
+
+    if (isSingle && (
+        firstId.startsWith('needle_')
+        || firstId.startsWith('traj_')
+        || firstId.startsWith('trajectory_')
+    )) {
+        items += `<div class="ctx-menu-item" onclick="hideContextMenu();addManualSeedToPlanningNode('${firstId}', {source:'data_tree_context'})">
+            <span class="ctx-icon">&#10133;</span> ${_dtText('在此针道添加粒子', 'Add seed to this needle')}</div>`;
     }
 
     if (isSingle && firstId.startsWith('needle_')) {
@@ -6007,11 +6251,6 @@ function showContextMenu(x, y) {
     document.body.appendChild(menu);
 
     positionBrachyContextMenu(menu, x, y);
-
-    setTimeout(() => {
-        document.addEventListener('click', hideContextMenu, { once: true });
-        document.addEventListener('contextmenu', hideContextMenu, { once: true });
-    }, 0);
 
     activeContextMenu = menu;
 }

@@ -12,16 +12,22 @@ window.effectiveUiLanguage = effectiveUiLanguage;
 function detectConversationLanguage(text) {
     const value = String(text || '').trim();
     if (!value) return null;
-    return /[\u3400-\u9fff]/.test(value) ? 'zh' : 'en';
+    // A number-only/emoji-only confirmation carries no language signal. Do
+    // not turn it into English merely because it is non-empty; the caller can
+    // then inherit the previous conversation language or the global UI locale.
+    if (/[\u3400-\u9fff]/.test(value)) return 'zh';
+    if (/[A-Za-z]/.test(value)) return 'en';
+    return null;
 }
 window.detectConversationLanguage = detectConversationLanguage;
 
 function conversationLanguageForSession(sessionId = activeSessionId) {
     const id = String(sessionId || '');
     const session = (typeof sessions === 'object' && sessions) ? sessions[id] : null;
-    if (session && (session.conversationLanguage === 'zh' || session.conversationLanguage === 'en')) {
-        return session.conversationLanguage;
-    }
+    // Read the latest visible user message first. The persisted summary field
+    // can legitimately lag one turn behind after an SSE reconnect or a case
+    // switch, and using it first makes a new Chinese/English request inherit
+    // the old language.
     const messages = Array.isArray(session?.messages) ? session.messages : [];
     for (let index = messages.length - 1; index >= 0; index -= 1) {
         const message = messages[index];
@@ -32,7 +38,11 @@ function conversationLanguageForSession(sessionId = activeSessionId) {
     const liveDetected = detectConversationLanguage(
         id === String(activeSessionId || '') ? window._lastUserMessage : ''
     );
-    return liveDetected || effectiveUiLanguage();
+    if (liveDetected) return liveDetected;
+    if (session && (session.conversationLanguage === 'zh' || session.conversationLanguage === 'en')) {
+        return session.conversationLanguage;
+    }
+    return effectiveUiLanguage();
 }
 window.conversationLanguageForSession = conversationLanguageForSession;
 
@@ -1384,6 +1394,86 @@ function ensureAssistantReplyContainer(requestId, messageId, timestamp = null, m
 }
 window.ensureAssistantReplyContainer = ensureAssistantReplyContainer;
 
+function _chatAttachmentLanguage(attachment, sessionId) {
+    const raw = attachment?.response_language || attachment?.responseLanguage
+        || (typeof window.conversationLanguageForSession === 'function'
+            ? window.conversationLanguageForSession(sessionId || activeSessionId)
+            : '')
+        || window._responseLanguage || window._i18nLang || 'en';
+    return String(raw || 'en').toLowerCase().startsWith('zh') ? 'zh' : 'en';
+}
+
+function _chatAttachmentOriginalUrl(attachment) {
+    return String(attachment?.original_url || attachment?.originalUrl || attachment?.url || '');
+}
+
+function _chatAttachmentDisplayUrl(attachment) {
+    return String(attachment?.annotated_url || attachment?.annotatedUrl
+        || _chatAttachmentOriginalUrl(attachment));
+}
+
+function _chatAttachmentMatches(left, right) {
+    if (!left || !right) return false;
+    const leftId = String(left.id || left.attachment_id || left.attachmentId || '');
+    const rightId = String(right.id || right.attachment_id || right.attachmentId || '');
+    if (leftId && rightId && leftId === rightId) return true;
+    const urls = item => new Set([
+        item.url,
+        item.original_url,
+        item.originalUrl,
+    ].map(value => String(value || '')).filter(Boolean));
+    const leftUrls = urls(left);
+    return [...urls(right)].some(url => leftUrls.has(url));
+}
+
+function _renderAssistantAttachmentButton(button, attachment, index, total, sessionId) {
+    const attachmentId = String(attachment.id || attachment.url);
+    const originalUrl = _chatAttachmentOriginalUrl(attachment);
+    const annotatedUrl = String(attachment.annotated_url || attachment.annotatedUrl || '');
+    const displayUrl = _chatAttachmentDisplayUrl(attachment);
+    const language = _chatAttachmentLanguage(attachment, sessionId);
+    const title = attachment.title || attachment.label || attachment.target
+        || (language === 'zh' ? '\u622a\u56fe' : 'Screenshot');
+    button.type = 'button';
+    button.className = 'chat-image-container chat-gallery-item';
+    button.dataset.attachmentId = attachmentId;
+    button.dataset.attachmentUrl = originalUrl;
+    button.dataset.displayUrl = displayUrl;
+    button.dataset.annotatedUrl = annotatedUrl;
+    button.setAttribute('aria-label', annotatedUrl
+        ? `${title} · ${language === 'zh' ? '\u5df2\u6807\u6ce8' : 'Annotated'}`
+        : title);
+
+    const image = document.createElement('img');
+    image.className = 'chat-screenshot';
+    image.src = displayUrl;
+    const fallback = String(attachment.fallback_url || attachment.fallbackUrl || originalUrl || '');
+    if (fallback && fallback !== displayUrl) {
+        image.addEventListener('error', () => {
+            if (image.src !== fallback) image.src = fallback;
+        }, { once: true });
+    }
+    image.alt = title;
+    const caption = document.createElement('span');
+    caption.className = 'chat-image-caption';
+    caption.textContent = title;
+    button.replaceChildren(image, caption);
+    if (annotatedUrl) {
+        const badge = document.createElement('span');
+        badge.className = 'chat-image-annotation-badge';
+        badge.textContent = language === 'zh' ? '\u5df2\u6807\u6ce8' : 'Annotated';
+        button.appendChild(badge);
+    }
+    button.onclick = () => {
+        if (typeof _openScreenshotModal !== 'function') return;
+        _openScreenshotModal(displayUrl, title, index, total, {
+            originalUrl,
+            annotatedUrl,
+            responseLanguage: attachment.response_language || attachment.responseLanguage || '',
+        });
+    };
+}
+
 function renderAssistantAttachments(shell, attachments, layout = 'auto') {
     if (!shell || !shell.attachments || !Array.isArray(attachments)) return;
     const gallery = shell.attachments;
@@ -1395,47 +1485,69 @@ function renderAssistantAttachments(shell, attachments, layout = 'auto') {
         );
         if (!attachment || !attachment.url) return;
         const attachmentId = String(attachment.id || attachment.url);
-        const attachmentUrl = String(attachment.url || '');
-        if (Array.from(gallery.children).some(item =>
+        const attachmentUrl = _chatAttachmentOriginalUrl(attachment);
+        const existing = Array.from(gallery.children).find(item =>
             String(item.dataset.attachmentId || '') === attachmentId
             || String(item.dataset.attachmentUrl || '') === attachmentUrl
-        )) return;
-        const button = document.createElement('button');
-        button.type = 'button';
-        button.className = 'chat-image-container chat-gallery-item';
-        button.dataset.attachmentId = attachmentId;
-        button.dataset.attachmentUrl = attachmentUrl;
-        const image = document.createElement('img');
-        image.className = 'chat-screenshot';
-        image.src = attachment.url;
-        if (attachment.fallback_url || attachment.fallbackUrl) {
-            image.addEventListener('error', () => {
-                const fallback = String(attachment.fallback_url || attachment.fallbackUrl || '');
-                if (fallback && image.src !== fallback) image.src = fallback;
-            }, { once: true });
-        }
-        image.alt = attachment.title || attachment.description || attachment.target || 'Screenshot';
-        const caption = document.createElement('span');
-        caption.className = 'chat-image-caption';
-        caption.textContent = attachment.title || attachment.label || attachment.target || (
-            effectiveUiLanguage() === 'zh' ? '\u622a\u56fe' : 'Screenshot'
         );
-        button.append(image, caption);
-        button.addEventListener('click', () => {
-            if (typeof _openScreenshotModal === 'function') {
-                _openScreenshotModal(
-                    attachment.url,
-                    caption.textContent,
-                    index,
-                    attachments.length,
-                );
-            }
-        });
-        gallery.appendChild(button);
+        const button = existing || document.createElement('button');
+        _renderAssistantAttachmentButton(
+            button,
+            attachment,
+            index,
+            Math.max(attachments.length, gallery.children.length || 0),
+            shell.sessionId || activeSessionId,
+        );
+        if (!existing) gallery.appendChild(button);
     });
     gallery.hidden = gallery.children.length === 0;
 }
 window.renderAssistantAttachments = renderAssistantAttachments;
+
+function updateAssistantAttachmentVariant(rawAttachment, sessionId = activeSessionId) {
+    const ownerSessionId = String(sessionId || rawAttachment?.session_id || rawAttachment?.sessionId || '');
+    const attachment = normalizeChatAttachment(ownerSessionId, rawAttachment);
+    if (!attachment) return null;
+    const session = sessions?.[ownerSessionId];
+    if (session && Array.isArray(session.messages)) {
+        session.messages.forEach(message => {
+            if (!Array.isArray(message?.attachments)) return;
+            message.attachments = message.attachments.map(current => {
+                if (!_chatAttachmentMatches(current, attachment)) return current;
+                return Object.assign({}, current, attachment, {
+                    view_metadata: Object.assign(
+                        {},
+                        current?.view_metadata || current?.viewMetadata || {},
+                        attachment?.view_metadata || attachment?.viewMetadata || {},
+                    ),
+                });
+            });
+        });
+        try { saveSessions(); } catch (_) {}
+        if (ownerSessionId === String(activeSessionId || '')
+            && window.__serverWorkspaceReady
+            && typeof window.scheduleWorkspaceSave === 'function') {
+            window.scheduleWorkspaceSave('chat.attachment.annotated');
+        }
+    }
+    if (ownerSessionId === String(activeSessionId || '')) {
+        document.querySelectorAll('.chat-image-gallery').forEach(gallery => {
+            const matching = Array.from(gallery.children).some(item =>
+                String(item.dataset.attachmentId || '') === String(attachment.id || '')
+                || String(item.dataset.attachmentUrl || '') === _chatAttachmentOriginalUrl(attachment)
+            );
+            if (matching) {
+                renderAssistantAttachments(
+                    { attachments: gallery, sessionId: ownerSessionId },
+                    [attachment],
+                    gallery.dataset.layout || 'auto',
+                );
+            }
+        });
+    }
+    return attachment;
+}
+window.updateAssistantAttachmentVariant = updateAssistantAttachmentVariant;
 
 function addChat(type, content, scroll, timestamp, fromSession, sessionId = activeSessionId, meta = null) {
     try {
@@ -1981,12 +2093,12 @@ function renderMarkdown(text) {
    GLOBAL I18N SYSTEM (2026-06-16)
    --------------------------------------------------------------------
    The user requested a global EN/中 toggle placed in the top-right
-   header (next to "Connected" / "Brain online"). This affects ALL UI
-   labels — header, tab names, button text, status text, placeholders,
-   tooltips, panel titles — but NOT LLM input/output language
-   detection (which is server-side, based on the user's typed text and
-   is intentionally independent of UI display language so a user with
-   a Chinese UI can still ask the agent in English and vice versa).
+   header (next to "Connected" / "Brain online"). This affects ALL
+   non-dialogue UI labels — header, tab names, button text, status text,
+   placeholders, tooltips, panel titles, reports, and viewers — but not
+   the language of a chat turn. A chat turn follows the latest
+   language-bearing user input; before the first such input, or for an
+   ambiguous number/emoji-only input, the global locale is the fallback.
 
    Architecture:
      - `window._I18N` is a flat key→{zh,en} dictionary, grouped by

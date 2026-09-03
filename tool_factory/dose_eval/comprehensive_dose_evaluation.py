@@ -18,6 +18,7 @@ import numpy as np
 from typing import Dict, List
 from tool_factory.plan_quality.clinical_standards import get_oar_standard, get_target_standard
 from agents.clinical_metrics import match_constraint_name
+from .dvh_utils import build_cumulative_dvh
 
 
 class ComprehensiveDoseEvaluationTool(BaseTool):
@@ -166,16 +167,20 @@ class ComprehensiveDoseEvaluationTool(BaseTool):
             struct_metrics["Dmin"] = float(np.min(struct_doses))
             struct_metrics["Dmedian"] = float(np.median(struct_doses))
 
-            hist, bin_edges = np.histogram(struct_doses, bins=num_bins)
-            dose_centers = ((bin_edges[:-1] + bin_edges[1:]) / 2).tolist()
-            cumulative_pcts = []
-            for dose_threshold in dose_centers:
-                cumulative_pcts.append(float(np.sum(struct_doses >= dose_threshold) / total_voxels * 100.0))
-
-            struct_metrics["dvh"] = {
-                "dose_bins": dose_centers,
-                "volume_pcts": cumulative_pcts,
-            }
+            # The scalar Vx metrics use direct ``>= threshold`` voxel counts.
+            # Keep those exact thresholds in the cumulative curve as anchors;
+            # otherwise a histogram centre can fall on neither side of Rx and
+            # a plotted V100 can disagree with the authoritative V100 card.
+            struct_metrics["dvh"] = build_cumulative_dvh(
+                struct_doses,
+                dose_min=float(np.min(struct_doses)),
+                dose_max=float(np.max(struct_doses)),
+                num_bins=num_bins,
+                anchor_doses=(
+                    (vx / 100.0) * prescribed_dose
+                    for vx in vx_values
+                ),
+            )
 
             struct_metrics["total_voxels"] = total_voxels
             struct_metrics["volume_cc"] = total_voxels * voxel_volume_cc

@@ -2135,6 +2135,10 @@ function _makeNeedleMesh(needle) {
         type: 'needle',
         id: needle.id,
         trajectoryId: _normalizeTrajectoryId(needle.trajectory_id),
+        // Report capture can rebuild a thinner temporary shaft from the same
+        // world-space display points; the planning geometry itself is not
+        // modified.
+        displayPoints: points.map(point => [point.x, point.y, point.z]),
         depthWriteWhenTransparent: false,
         renderRole: 'planning_needle',
     };

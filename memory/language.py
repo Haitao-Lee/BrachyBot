@@ -16,8 +16,10 @@ simple and deterministic — no model call, no API roundtrip —
 because it runs on every chat turn and has to be fast.
 
 Detection rules (in priority order):
-1. If the caller passes an explicit `lang` (e.g. the frontend's
-   user-preference toggle), honor it.
+1. If the caller passes an explicit conversation language, honor it.
+   The web layer deliberately does not use the global UI toggle as this
+   argument for an ordinary user turn; the toggle is only a fallback when
+   there is no language-bearing user input yet.
 2. Otherwise, count characters in the message:
      - CJK Unified Ideographs (U+4E00..U+9FFF)        → Chinese
      - CJK Unified Ideographs Extension A (U+3400..U+4DBF) → Chinese
@@ -27,8 +29,10 @@ Detection rules (in priority order):
      - Arabic (U+0600..U+06FF)                          → Arabic
    The dominant script wins (the one with the most characters
    in the message). Ties default to English.
-3. If the message is too short to tell (< 4 characters), fall
-   back to the most recent non-ambiguous language from memory.
+3. If the message contains no recognized language script (for example, a
+   number-only confirmation), use the caller-provided fallback. In the web
+   application that fallback is the latest persisted conversation language,
+   then the global UI locale.
 4. If all else fails, default to English.
 
 The output is a 2-letter ISO code ('en', 'zh', 'ja', 'ko',
@@ -81,7 +85,44 @@ _LANG_DISPLAY = {
 }
 
 
-def detect(text: str, explicit: Optional[str] = None) -> Dict[str, str]:
+def normalize_language(value: Optional[str], default: str = "en") -> str:
+    """Return a supported language code from a locale-like value.
+
+    Browser payloads and persisted snapshots may contain values such as
+    ``zh-CN`` or ``en_US``.  Keeping normalization here gives every backend
+    entry point the same contract and, importantly, lets callers distinguish
+    an invalid/absent value by passing ``default=""``.
+    """
+    raw = str(value or "").strip().lower().replace("_", "-")
+    if raw:
+        if raw in _LANG_DISPLAY:
+            return raw
+        for code in _LANG_DISPLAY:
+            if raw.startswith(f"{code}-"):
+                return code
+
+    fallback = str(default or "").strip().lower().replace("_", "-")
+    if fallback in _LANG_DISPLAY:
+        return fallback
+    for code in _LANG_DISPLAY:
+        if fallback.startswith(f"{code}-"):
+            return code
+    return ""
+
+
+def _language_info(code: str, source: str) -> Dict[str, str]:
+    return {
+        "code": code,
+        "name": _LANG_DISPLAY[code],
+        "source": source,
+    }
+
+
+def detect(
+    text: str,
+    explicit: Optional[str] = None,
+    fallback: Optional[str] = None,
+) -> Dict[str, str]:
     """Detect the language of `text`.
 
     Returns a dict:
@@ -89,14 +130,22 @@ def detect(text: str, explicit: Optional[str] = None) -> Dict[str, str]:
          "name": "English"|"中文 (Chinese)"|...,
          "source": "explicit"|"detected"|"memory"|"default"}
 
-    The `explicit` arg wins over detection — it's the way the
-    frontend forces a language via a user-preference toggle.
+    The `explicit` arg wins over detection. ``fallback`` is consulted only
+    when the input has no recognizable script, so a new Chinese or English
+    turn always wins over a stale session/UI locale.
     """
-    if explicit and explicit in _LANG_DISPLAY:
-        return {"code": explicit, "name": _LANG_DISPLAY[explicit], "source": "explicit"}
+    explicit_code = normalize_language(explicit, default="")
+    if explicit_code:
+        return _language_info(explicit_code, "explicit")
+
+    fallback_code = normalize_language(fallback, default="")
 
     if not text or not text.strip():
-        return {"code": "en", "name": _LANG_DISPLAY["en"], "source": "default"}
+        return (
+            _language_info(fallback_code, "fallback")
+            if fallback_code
+            else _language_info("en", "default")
+        )
 
     # Strip whitespace and emoji so they don't count as characters
     cleaned = text.strip()
@@ -109,11 +158,20 @@ def detect(text: str, explicit: Optional[str] = None) -> Dict[str, str]:
 
     if not counts:
         # No recognized script (e.g. all emoji, all numbers, all punct)
-        return {"code": "en", "name": _LANG_DISPLAY["en"], "source": "default"}
+        return (
+            _language_info(fallback_code, "fallback")
+            if fallback_code
+            else _language_info("en", "default")
+        )
 
-    # Pick the dominant script
-    best_code = max(counts, key=counts.get)
-    return {"code": best_code, "name": _LANG_DISPLAY[best_code], "source": "detected"}
+    # Pick the dominant script.  A tie is intentionally language-neutral:
+    # English is the documented fallback and avoids dictionary insertion
+    # order making a mixed Chinese/Latin (or other mixed-script) message
+    # appear to change language nondeterministically across entry points.
+    best_count = max(counts.values())
+    winners = [code for code, count in counts.items() if count == best_count]
+    best_code = "en" if len(winners) > 1 and "en" in winners else winners[0]
+    return _language_info(best_code, "detected")
 
 
 def system_prompt_clause(lang_info: Dict[str, str]) -> str:
@@ -140,12 +198,39 @@ def system_prompt_clause(lang_info: Dict[str, str]) -> str:
     )
 
 
-def session_language_store(agent_memory) -> None:
+def session_language_store(
+    agent_memory,
+    lang_info: Optional[Dict[str, str]] = None,
+) -> None:
     """Helper to keep `session_language` updated in agent memory.
     Called by the chat entry points after detection, so subsequent
     short messages (like a "yes" or "do it") don't get
     re-classified as English."""
-    pass  # Implemented in the agent — see AgenticSys chat() entry
+    if agent_memory is None or not hasattr(agent_memory, "store"):
+        return
+    info = lang_info
+    if not isinstance(info, dict):
+        info = getattr(agent_memory, "_active_turn_language_info", None)
+    if not isinstance(info, dict):
+        try:
+            info = agent_memory.retrieve("session_language") or {}
+        except Exception:
+            info = {}
+    code = normalize_language(info.get("code"), default="")
+    if not code:
+        return
+    payload = _language_info(code, str(info.get("source") or "memory"))
+    try:
+        previous = agent_memory.retrieve("session_language") or {}
+        if (
+            isinstance(previous, dict)
+            and previous.get("code") == payload["code"]
+            and previous.get("name") == payload["name"]
+        ):
+            return
+        agent_memory.store("session_language", payload)
+    except Exception as exc:
+        logger.debug("Could not persist session language: %s", exc)
 
 
 def get_session_language(agent_memory) -> Dict[str, str]:
@@ -153,8 +238,9 @@ def get_session_language(agent_memory) -> Dict[str, str]:
     Used as the fallback for very short messages."""
     try:
         prev = agent_memory.retrieve("session_language") or {}
-        if prev.get("code") in _LANG_DISPLAY:
-            return prev
+        code = normalize_language(prev.get("code"), default="") if isinstance(prev, dict) else ""
+        if code:
+            return _language_info(code, str(prev.get("source") or "memory"))
     except Exception as exc:
         logger.debug("Could not read session language from agent memory: %s", exc)
     return {"code": "en", "name": _LANG_DISPLAY["en"], "source": "default"}

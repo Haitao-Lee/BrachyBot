@@ -19,6 +19,11 @@ from config.prompts import SYSTEM_PROMPT_TEMPLATE, get_prompt_modules
 from agent_runtime.core import AgentMemory, ToolResultPipeline
 from agent_runtime.action_plan import ActionPlan
 from agent_runtime.turn_policy import filter_tool_schemas
+from agent_runtime.response_contract import (
+    build_response_contract,
+    presentation_fallback_message,
+    response_presentation_instruction,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -110,6 +115,7 @@ def _tool_fallback_message(
     lang: str,
     has_failures: bool = False,
     failure_notes: Optional[List[str]] = None,
+    user_message: str = "",
 ) -> str:
     """Return a safe fallback that still explains a recoverable UI failure.
 
@@ -119,17 +125,47 @@ def _tool_fallback_message(
     are never interpolated here.
     """
     detail = next((str(item).strip() for item in (failure_notes or []) if str(item).strip()), "")
+    current_request = re.sub(r"\s+", " ", str(user_message or "")).strip()
+    if len(current_request) > 100:
+        current_request = current_request[:97] + "..."
+    viewer_question = bool(re.search(
+        r"viewer|data\s*tree|3d|2d|\u67e5\u770b\u5668|\u7c92\u5b50|\u9488\u9053|\u6d88\u5931|\u663e\u793a",
+        current_request,
+        re.IGNORECASE,
+    ))
     if lang == "zh":
         if has_failures:
             if detail:
                 return f"{detail}\n\n这次操作没有完成。请根据上面的可用控件说明重新发出请求。"
             return "部分处理步骤未完成，且当前没有生成可展示的正式回复。请查看执行追踪中的错误，并重试或调整请求。"
-        return "相关检索或处理步骤已结束，但当前没有生成可展示的综合回复。请重新提问，或提供更明确的分析目标。"
+        if viewer_question:
+            return (
+                "我理解你在询问当前 Viewer/Data Tree 中的规划对象为何没有显示，"
+                "但本轮没有获得可核验的界面状态，也没有执行任何删除、恢复或重算操作。"
+                "因此我不能把‘未显示’误判为‘数据已删除’；请重试当前请求，让系统先读取并刷新当前 Planning 的显示状态。"
+            )
+        if current_request:
+            return (
+                f"我理解你当前的问题是“{current_request}”，但本轮模型没有返回有效答复，"
+                "也没有执行任何操作。系统没有因此修改病例或规划；请直接重试同一问题。"
+            )
+        return "本轮模型没有返回有效答复，也没有执行任何操作。系统没有修改病例或规划；请重试。"
     if has_failures:
         if detail:
             return f"{detail}\n\nThe action was not completed. Retry using the capability described above."
         return "Some processing steps did not complete, and no user-facing answer was generated. Review the execution trace and retry or refine the request."
-    return "The requested retrieval or processing steps finished, but no user-facing synthesis was generated. Please retry with a more specific question."
+    if viewer_question:
+        return (
+            "I understand that you are asking why planning objects are not visible in the Viewer/Data Tree, "
+            "but this turn did not obtain verifiable UI state and performed no delete, restore, or recompute action. "
+            "I cannot equate hidden content with deleted data; retry the request so the current Planning display can be inspected and refreshed."
+        )
+    if current_request:
+        return (
+            f'I understand the current request as "{current_request}", but the model returned no valid answer '
+            "and no operation was executed. The case and Planning were not changed; retry the same request."
+        )
+    return "The model returned no valid answer and no operation was executed. The case and Planning were not changed; please retry."
 
 
 def _visual_analysis_unavailable_message(lang: str) -> str:
@@ -410,6 +446,84 @@ def _upsert_runtime_context(messages: List[Dict], content: str) -> None:
                     {"role": "user", "content": content})
 
 
+def _bound_followup_messages(
+    messages: List[Dict],
+    base_message_count: int,
+    *,
+    max_tool_rounds: int = 2,
+    max_tool_chars: int = 2400,
+    max_instruction_chars: int = 1800,
+) -> List[Dict]:
+    """Bound dynamic tool protocol messages without breaking call pairs.
+
+    ``ContextPackBuilder`` bounds the historical prompt before the first
+    provider call.  Subsequent rounds used to append every assistant/tool
+    pair indefinitely, so a model that kept returning an empty answer sent an
+    ever-growing prompt back to the provider.  Keep the already-packed base
+    prompt and only the most recent complete tool rounds.  An assistant tool
+    call and its matching tool result are always retained or dropped
+    together, which keeps OpenAI-compatible and Anthropic adapters valid.
+    """
+    if not isinstance(messages, list) or base_message_count <= 0:
+        return messages
+    if len(messages) <= base_message_count:
+        return messages
+
+    prefix = list(messages[:base_message_count])
+    dynamic = messages[base_message_count:]
+    groups: List[List[Dict]] = []
+    loose: List[Dict] = []
+    current: Optional[List[Dict]] = None
+
+    for item in dynamic:
+        if not isinstance(item, dict):
+            continue
+        has_tool_call = item.get("role") == "assistant" and bool(item.get("tool_calls"))
+        if has_tool_call:
+            if current:
+                groups.append(current)
+            current = [item]
+            continue
+        if current is None:
+            loose.append(item)
+        else:
+            current.append(item)
+
+    if current:
+        groups.append(current)
+
+    kept: List[Dict] = []
+    if loose:
+        # Loose retry/synthesis instructions have no active tool-call pair;
+        # retain only the latest one and cap its text.
+        item = dict(loose[-1])
+        if item.get("role") == "user" and isinstance(item.get("content"), str):
+            item["content"] = item["content"][:max_instruction_chars]
+        kept.append(item)
+
+    for group in groups[-max(1, int(max_tool_rounds)):]:
+        normalized: List[Dict] = []
+        for item in group:
+            copy_item = dict(item)
+            role = copy_item.get("role")
+            if role == "tool" and isinstance(copy_item.get("content"), str):
+                copy_item["content"] = copy_item["content"][:max_tool_chars]
+            elif role == "user" and isinstance(copy_item.get("content"), str):
+                copy_item["content"] = copy_item["content"][:max_instruction_chars]
+            normalized.append(copy_item)
+        kept.extend(normalized)
+
+    # ``loose`` messages are only pre-group retries.  Preserve chronological
+    # order relative to the selected protocol groups by placing them before
+    # the groups; the base prompt remains untouched.
+    return prefix + kept
+
+
+def _tool_call_signature(tool_name: str, params: Dict) -> str:
+    """Return a stable per-turn identity for duplicate tool-call detection."""
+    return f"{str(tool_name or '').strip()}:{json.dumps(params or {}, sort_keys=True, ensure_ascii=False, default=str)}"
+
+
 class LLMRuntimeMixin:
     def _record_ordered_action_plan(self, tool_calls, *, source: str = "llm") -> None:
         """Persist provider-selected tool order for this isolated chat turn."""
@@ -488,6 +602,10 @@ class LLMRuntimeMixin:
         """
         turn_context = getattr(self, "_active_turn_context", {}) or {}
         internal_followup = bool(turn_context.get("internal_followup"))
+        response_contract = build_response_contract(
+            message,
+            internal_followup=internal_followup,
+        )
         inherited_language = (
             _internal_followup_language(turn_context)
             if internal_followup
@@ -516,38 +634,42 @@ class LLMRuntimeMixin:
         _no_files_loaded = not AgentMemory.is_ct_loaded(ui_state_for_override) and not _ct_in_memory
 
         # === LANGUAGE DIRECTIVE (top-level) ===
-        # The user complained that they typed English but the agent
-        # replied in Chinese — a "top-level issue". We now
-        # detect the user's input language and prepend a HIGH-PRIORITY
-        # language clause to the system prompt so the LLM is never in
-        # doubt about which language to reply in. The detector handles
-        # Chinese, English, Japanese, Korean, Russian, Arabic, and
-        # falls back to the most recent session language for very
-        # short messages (yes / no / do it). See memory/language.py
-        # for the full detection rules.
+        # Resolve this once at the turn boundary whenever possible.  The
+        # global UI locale is only an ambiguity fallback; a language-bearing
+        # user message must win so a Chinese request in an English UI (or the
+        # reverse) cannot be translated back by the provider loop.
+        # UI locale is presentation state, not an instruction to translate the
+        # latest user message. The turn resolver has already selected the
+        # conversation language; this block only injects that decision.
         try:
-            from memory.language import detect as _lang_detect, system_prompt_clause as _lang_clause
-            # UI locale is presentation state, not an instruction to translate
-            # the clinical conversation. Keep the LLM reply in the language
-            # of the current user message while Report/static UI remain global.
-            _lang_info = (
-                {
-                    "code": inherited_language,
-                    "name": "Chinese" if inherited_language == "zh" else "English",
-                    "source": "parent_turn",
-                }
-                if inherited_language
-                else _lang_detect(message)
+            from memory.language import (
+                detect as _lang_detect,
+                get_session_language as _get_session_language,
+                normalize_language as _normalize_language,
+                session_language_store as _session_language_store,
+                system_prompt_clause as _lang_clause,
             )
+            _lang_info = getattr(self, "_active_turn_language_info", None)
+            if not isinstance(_lang_info, dict):
+                _stored = _get_session_language(self.memory)
+                _stored_code = (
+                    _normalize_language(_stored.get("code"), default="")
+                    if isinstance(_stored, dict) and _stored.get("source") != "default"
+                    else ""
+                )
+                _fallback_code = (
+                    _stored_code
+                    or _normalize_language(turn_context.get("response_language"), default="")
+                    or _normalize_language(turn_context.get("ui_language"), default="")
+                    or "en"
+                )
+                _lang_info = _lang_detect(
+                    message,
+                    fallback=_fallback_code,
+                )
             enhanced_context += "\n" + _lang_clause(_lang_info) + "\n"
-            # Persist for next-turn fallback (short messages like
-            # "yes" / "do it" inherit the previous language instead
-            # of being re-classified as English).
             if not internal_followup:
-                try:
-                    self.memory.store("session_language", _lang_info)
-                except Exception as exc:
-                    logger.debug("Could not persist session language: %s", exc)
+                _session_language_store(self.memory, _lang_info)
         except Exception as _e:
             logger.debug(f"language detection failed: {_e}")
         if internal_followup:
@@ -863,14 +985,17 @@ class LLMRuntimeMixin:
             messages.insert(0, {"role": "system", "content": system_prompt})
         _upsert_runtime_context(messages, runtime_context)
         messages = self._pack_context_for_provider(messages, message)
+        base_message_count = len(messages)
 
         # See streaming path: cap knowledge/external-project turns at 3 to
         # avoid the 8-round × (LLM + FactChecker) spiral.
         _turn_policy_intent = getattr(self._active_turn_policy, "intent", None)
         if _turn_policy_intent in ("knowledge_query", "external_project_query", "clinical_knowledge"):
             max_iterations = 3
+        elif _turn_policy_intent == "semantic_action":
+            max_iterations = 5
         else:
-            max_iterations = 8
+            max_iterations = 6
         iteration = 0
         final_response = ""
         tools_executed = False
@@ -886,6 +1011,14 @@ class LLMRuntimeMixin:
         # this set inside the LLM loop allowed a second round to request the
         # same browser capture again before the frontend could upload it.
         _screenshot_called_this_turn = set()
+        _empty_response_retries = 0
+        _executed_successful_tool_keys = set()
+        # Trace prose is part of the visible dialogue turn.  Keep it aligned
+        # with the language resolved by ChatWorkflowMixin instead of letting
+        # the provider-loop's historical English literals leak into a
+        # Chinese turn.  Tool identifiers and JSON payload keys remain stable
+        # machine-readable values.
+        _trace_zh = getattr(self, "_active_trace_language", "en") == "zh"
 
         _turn_token = self._current_turn_token()
 
@@ -898,8 +1031,12 @@ class LLMRuntimeMixin:
                 cancel_step = {
                     "id": step_id_ref[0],
                     "type": "system",
-                    "title": "Stopped",
-                    "content": "User stopped this response before the next LLM/tool step.",
+                    "title": "已停止" if _trace_zh else "Stopped",
+                    "content": (
+                        "用户在下一个 AI/工具步骤前停止了本次响应。"
+                        if _trace_zh
+                        else "User stopped this response before the next LLM/tool step."
+                    ),
                     "status": "done",
                 }
                 steps.append(cancel_step)
@@ -918,6 +1055,7 @@ class LLMRuntimeMixin:
                     self.memory.get_clean_context(),
                 ),
             )
+            messages = _bound_followup_messages(messages, base_message_count)
 
             try:
                 response = _chat_messages_with_retry(
@@ -1004,6 +1142,28 @@ class LLMRuntimeMixin:
                     final_response = self._clean_response_text(content)
                     if not final_response:
                         final_response = content
+                    if _is_placeholder_tool_response(final_response):
+                        final_response = ""
+                    if not final_response.strip():
+                        if _empty_response_retries < 1:
+                            _empty_response_retries += 1
+                            logger.warning(
+                                "[LLM loop] Empty/placeholder response; one bounded synthesis retry turn=%s iteration=%s",
+                                _turn_policy_intent, iteration,
+                            )
+                            messages.append({
+                                "role": "user",
+                                "content": (
+                                    "The previous provider response was empty or only a transport placeholder. "
+                                    "Answer the CURRENT USER request directly now. Do not call tools unless a missing "
+                                    "fact is essential; do not output a capabilities menu."
+                                ),
+                            })
+                            continue
+                        logger.error(
+                            "[LLM loop] Stopping after repeated empty/placeholder responses turn=%s iterations=%s",
+                            _turn_policy_intent, iteration,
+                        )
                 break
 
             # Filter out tool calls with empty required params, normalize param names
@@ -1075,30 +1235,40 @@ class LLMRuntimeMixin:
                 tools_executed = True
                 break
             tools_executed = True  # Mark that tools are being executed
-
+            _new_tool_call_executed = False
             for tc in tool_calls:
                 tool_name = tc.get("tool", "")
                 params = tc.get("params", {})
                 if tool_name == "ctv_segmentation":
                     params = self._normalize_ctv_tool_params(params, message=message)
                     tc["params"] = params
+                elif tool_name == "oar_segmentation":
+                    params = self._normalize_oar_tool_params(params, message=message)
+                    tc["params"] = params
                 tool_id = tc.get("id", f"tool_{step_id_ref[0]}")
                 tool_succeeded = True
                 tool_result = None
                 _direct_candidate_for_tool = None
 
-                # Skip duplicate tool calls that already failed (returned 0/empty)
-                _tool_key = f"{tool_name}:{json.dumps(params, sort_keys=True, default=str)[:100]}"
+                # Skip duplicate tool calls that already failed or already
+                # succeeded in this turn.  The latter closes the loop where
+                # a provider keeps selecting the same read tools after their
+                # results were already appended to the prompt.
+                _tool_key = _tool_call_signature(tool_name, params)
                 if _tool_key in _failed_tools:
                     logger.info(f"Skipping duplicate failed tool call: {tool_name}")
                     continue
+                if _tool_key in _executed_successful_tool_keys:
+                    logger.warning("Skipping duplicate successful tool call: %s", tool_name)
+                    continue
+                _new_tool_call_executed = True
 
                 step_id_ref[0] += 1
                 trace_params = ToolResultPipeline.trace_params(tool_name, params)
                 steps.append({
                     "id": step_id_ref[0],
                     "type": "tool",
-                    "title": f"Calling {tool_name}",
+                    "title": f"调用 {tool_name}" if _trace_zh else f"Calling {tool_name}",
                     "content": json.dumps(trace_params, default=str)[:200],
                     "status": "pending",
                     "tool": tool_name,
@@ -1184,6 +1354,8 @@ class LLMRuntimeMixin:
                 step_status = "done" if tool_succeeded else "error"
                 steps[-1]["status"] = step_status
                 steps[-1]["result"] = result_text[:200]
+                if tool_succeeded:
+                    _executed_successful_tool_keys.add(_tool_key)
 
                 # If a critical prerequisite tool fails, stop executing
                 # remaining tool calls in this batch so the LLM can ask
@@ -1238,6 +1410,13 @@ class LLMRuntimeMixin:
 
                 if _direct_candidate_for_tool and len(tool_calls) == 1:
                     _direct_read_candidate = _direct_candidate_for_tool
+
+            if not _new_tool_call_executed:
+                logger.warning(
+                    "[LLM loop] All selected tool calls were duplicates; stopping turn=%s iteration=%s",
+                    _turn_policy_intent, iteration,
+                )
+                break
 
             # Browser screenshots are captured and uploaded after the SSE
             # turn. A server-side follow-up round cannot see that image yet,
@@ -1320,6 +1499,7 @@ class LLMRuntimeMixin:
                 _fail_summary = _failed_steps_summary(steps)
                 if _fail_summary:
                     _present_instruction = _HONEST_FAILURE_PROMPT.format(failures=_fail_summary)
+                _present_instruction += response_presentation_instruction(response_contract)
                 messages.append({"role": "user", "content": _present_instruction})
 
         # Clean response - no summarization
@@ -1370,10 +1550,28 @@ class LLMRuntimeMixin:
                 )
             elif tools_executed:
                 _fallback_lang = "zh" if str(getattr(self.memory, "user_lang", "en") or "en").lower().startswith("zh") else "en"
+                _presentation_steps = [
+                    s for s in steps
+                    if s.get("type") == "tool"
+                    and _fallback_tool_name(s) in {"ui_screenshot", "ui_content"}
+                ]
+                _tool_steps = [s for s in steps if s.get("type") == "tool"]
+                if (
+                    _presentation_steps
+                    and len(_presentation_steps) == len(_tool_steps)
+                    and all(s.get("status") == "done" for s in _presentation_steps)
+                ):
+                    final_response = presentation_fallback_message(
+                        _fallback_lang,
+                        message,
+                        (_fallback_tool_name(s) for s in _presentation_steps),
+                    )
                 tool_results_text, failure_notes = _collect_tool_fallback_text(
                     steps, messages, _fallback_lang
                 )
-                if tool_results_text:
+                if final_response:
+                    pass
+                elif tool_results_text:
                     prefix = "基于当前病例结果：\n\n" if _fallback_lang == "zh" else "Based on the current case results:\n\n"
                     final_response = prefix + "\n\n".join(tool_results_text)
                 elif accumulated_text and len(accumulated_text) > 10:
@@ -1384,20 +1582,20 @@ class LLMRuntimeMixin:
                         final_response = accumulated_text
                         logger.info(f"Using accumulated_text as fallback: {len(final_response)} chars")
                     else:
-                        final_response = _tool_fallback_message(_fallback_lang, bool(failure_notes), failure_notes)
+                        final_response = _tool_fallback_message(_fallback_lang, bool(failure_notes), failure_notes, message)
                 elif failure_notes:
-                    final_response = _tool_fallback_message(_fallback_lang, True, failure_notes)
+                    final_response = _tool_fallback_message(_fallback_lang, True, failure_notes, message)
                 else:
-                    final_response = _tool_fallback_message(_fallback_lang)
+                    final_response = _tool_fallback_message(_fallback_lang, user_message=message)
                     logger.warning(f"Tool result fallback: no results found in {len(messages)} messages")
             else:
-                final_response = "No response generated."
+                final_response = "未生成回复。" if _trace_zh else "No response generated."
 
         step_id_ref[0] += 1
         steps.append({
             "id": step_id_ref[0],
             "type": "assistant",
-            "title": "AI Response",
+            "title": "AI 回复" if _trace_zh else "AI Response",
             "content": final_response,
             "status": "done",
         })
@@ -1407,6 +1605,7 @@ class LLMRuntimeMixin:
             "latency_ms": round(total_latency_ms, 1),
             "llm_calls": llm_calls,
             "phase_timings_ms": dict(getattr(self, "_turn_timings", {}) or {}),
+            "response_contract": response_contract.as_dict(),
         }
 
     @staticmethod
@@ -1721,6 +1920,10 @@ class LLMRuntimeMixin:
         _turn_token = self._current_turn_token()
         turn_context = getattr(self, "_active_turn_context", {}) or {}
         internal_followup = bool(turn_context.get("internal_followup"))
+        response_contract = build_response_contract(
+            message,
+            internal_followup=internal_followup,
+        )
         inherited_language = (
             _internal_followup_language(turn_context)
             if internal_followup
@@ -1729,27 +1932,6 @@ class LLMRuntimeMixin:
 
         def _cancelled():
             return self._is_turn_cancelled(_turn_token)
-
-        def _ui_screenshot_turn_response() -> Optional[str]:
-            """Suppress model-only screenshot acknowledgements.
-
-            The browser attaches the capture to this turn and, when analysis
-            was requested, starts one hidden visual follow-up under the same
-            request/message IDs. Returning any transport text here would leak
-            an internal acknowledgement into the normal chat stream.
-            """
-            tool_steps = [s for s in steps if s.get("type") == "tool"]
-            if not tool_steps:
-                return None
-            if any(s.get("tool") not in {"ui_screenshot", "ui_content"} for s in tool_steps if s.get("tool")):
-                return None
-            presentation_steps = [
-                s for s in tool_steps
-                if s.get("tool") in {"ui_screenshot", "ui_content"}
-            ]
-            if not presentation_steps:
-                return None
-            return ""
 
         # Auto-compact conversation history if too long
         if self.memory.needs_compaction():
@@ -1773,33 +1955,39 @@ class LLMRuntimeMixin:
         _no_files_loaded = not AgentMemory.is_ct_loaded(ui_state_for_override) and not _ct_in_memory
 
         # === LANGUAGE DIRECTIVE (top-level) ===
-        # Detect user input language and inject a HIGH-PRIORITY
-        # language clause into the system prompt. The user's complaint
-        # was that they typed English and got Chinese back — we now
-        # detect the language and tell the LLM explicitly to reply in
-        # the same language. See memory/language.py for the full
-        # detection rules.
+        # Reuse the turn-boundary decision.  The global UI locale is only a
+        # fallback for a new/ambiguous conversation, never a reason to override
+        # the latest language-bearing user input.
         try:
-            from memory.language import detect as _lang_detect, system_prompt_clause as _lang_clause
-            # Do not let the global UI language override the language of this
-            # chat turn. The request remains the source of truth for assistant
-            # prose and Execution Trace summaries.
-            _lang_info = (
-                {
-                    "code": inherited_language,
-                    "name": "Chinese" if inherited_language == "zh" else "English",
-                    "source": "parent_turn",
-                }
-                if inherited_language
-                else _lang_detect(message)
+            from memory.language import (
+                detect as _lang_detect,
+                get_session_language as _get_session_language,
+                normalize_language as _normalize_language,
+                session_language_store as _session_language_store,
+                system_prompt_clause as _lang_clause,
             )
+            _lang_info = getattr(self, "_active_turn_language_info", None)
+            if not isinstance(_lang_info, dict):
+                _stored = _get_session_language(self.memory)
+                _stored_code = (
+                    _normalize_language(_stored.get("code"), default="")
+                    if isinstance(_stored, dict) and _stored.get("source") != "default"
+                    else ""
+                )
+                _fallback_code = (
+                    _stored_code
+                    or _normalize_language(turn_context.get("response_language"), default="")
+                    or _normalize_language(turn_context.get("ui_language"), default="")
+                    or "en"
+                )
+                _lang_info = _lang_detect(
+                    message,
+                    fallback=_fallback_code,
+                )
             logger.info(f"[LANG] Detected: {_lang_info['code']} (source={_lang_info['source']}), msg='{message[:50]}'")
             enhanced_context += "\n" + _lang_clause(_lang_info) + "\n"
             if not internal_followup:
-                try:
-                    self.memory.store("session_language", _lang_info)
-                except Exception as exc:
-                    logger.debug("Could not persist session language: %s", exc)
+                _session_language_store(self.memory, _lang_info)
         except Exception as _e:
             logger.debug(f"language detection failed: {_e}")
         if internal_followup:
@@ -2069,6 +2257,8 @@ class LLMRuntimeMixin:
         _upsert_runtime_context(messages, runtime_context)
         messages = self._pack_context_for_provider(messages, message)
 
+        base_message_count = len(messages)
+
         # Knowledge / external-project queries don't need the full 8-round
         # tool-calling budget. Capping at 3 keeps 1 web_search + 1 web_fetch
         # + 1 synthesis round, which is enough to answer most named-project
@@ -2077,8 +2267,10 @@ class LLMRuntimeMixin:
         _turn_policy_intent = getattr(self._active_turn_policy, "intent", None)
         if _turn_policy_intent in ("knowledge_query", "external_project_query", "clinical_knowledge"):
             max_iterations = 3
+        elif _turn_policy_intent == "semantic_action":
+            max_iterations = 5
         else:
-            max_iterations = 8
+            max_iterations = 6
         iteration = 0
         final_response = ""
         tools_executed = False
@@ -2092,6 +2284,11 @@ class LLMRuntimeMixin:
         # Screenshot de-duplication must live for the complete streaming
         # turn, not inside an individual LLM/tool iteration.
         _screenshot_called_this_turn = set()
+        _empty_response_retries = 0
+        _executed_successful_tool_keys = set()
+        # Keep provider-loop trace prose in the language selected at the turn
+        # boundary. Tool names and JSON keys remain stable identifiers.
+        _trace_zh = getattr(self, "_active_trace_language", "en") == "zh"
 
         while iteration < max_iterations:
             iteration += 1
@@ -2106,6 +2303,7 @@ class LLMRuntimeMixin:
                     self.memory.get_clean_context(),
                 ),
             )
+            messages = _bound_followup_messages(messages, base_message_count)
 
             # Stream cancel check: unlike the non-streaming path, the streaming
             # loop processes one LLM round at a time and can hang between rounds
@@ -2121,8 +2319,8 @@ class LLMRuntimeMixin:
             thinking_step = {
                 "id": step_id_ref[0],
                 "type": "thinking",
-                "title": f"LLM Call {iteration}",
-                "content": "Waiting for AI response...",
+                "title": f"LLM 调用 {iteration}" if _trace_zh else f"LLM Call {iteration}",
+                "content": "等待 AI 回复..." if _trace_zh else "Waiting for AI response...",
                 "status": "pending",
             }
             steps.append(thinking_step)
@@ -2288,7 +2486,7 @@ class LLMRuntimeMixin:
                 thinking_step["status"] = "error"
                 thinking_step["content"] = (
                     "AI 语言服务暂时不可用"
-                    if getattr(self.memory, "user_lang", "en") == "zh"
+                    if _trace_zh
                     else "AI language service unavailable"
                 )
                 yield yield_event("step", thinking_step)
@@ -2298,7 +2496,7 @@ class LLMRuntimeMixin:
                     if callable(unavailable)
                     else "The AI language service is temporarily unavailable."
                 )
-                yield {"type": "_result", "response": response, "llm_meta": {"usage": total_usage, "latency_ms": 0, "llm_calls": llm_calls, "phase_timings_ms": dict(getattr(self, "_turn_timings", {}) or {})}}
+                yield {"type": "_result", "response": response, "llm_meta": {"usage": total_usage, "latency_ms": 0, "llm_calls": llm_calls, "phase_timings_ms": dict(getattr(self, "_turn_timings", {}) or {}), "response_contract": response_contract.as_dict()}}
                 return
 
             content = full_content
@@ -2326,9 +2524,25 @@ class LLMRuntimeMixin:
             if not tool_calls:
                 # Check for incomplete tool call markers — LLM generated [TOOL_CALL] without JSON
                 if re.search(r'\[TOOL_CALL\]\s*$', content.strip()) or re.search(r'```tool_call\s*$', content.strip()):
-                    logger.info(f"[LLM loop] Incomplete tool call detected, retrying iteration={iteration}")
-                    messages.append({"role": "user", "content": "Your tool call was incomplete. Please call the next tool in the workflow (e.g., oar_segmentation, planning_pipeline). Use the proper tool call format."})
-                    continue  # Retry without breaking
+                    if _empty_response_retries < 1:
+                        _empty_response_retries += 1
+                        logger.warning(
+                            "[LLM loop] Incomplete tool call; one bounded retry iteration=%s",
+                            iteration,
+                        )
+                        messages.append({
+                            "role": "user",
+                            "content": (
+                                "The previous tool call was incomplete. Either provide a valid tool call for the "
+                                "CURRENT request or answer the CURRENT request directly; do not output a partial tool tag."
+                            ),
+                        })
+                        continue
+                    logger.error(
+                        "[LLM loop] Stopping after repeated incomplete tool calls iteration=%s",
+                        iteration,
+                    )
+                    break
 
                 # BUG FIX 2026-06-17 (LLM response still brief):
                 # the LLM keeps producing a 5-row summary table even
@@ -2360,14 +2574,32 @@ class LLMRuntimeMixin:
                     final_response = accumulated_text or self._clean_response_text(content)
                     if not final_response:
                         final_response = content  # Fallback to raw if cleaning removed everything
+                    if _is_placeholder_tool_response(final_response):
+                        final_response = ""
                     # If STILL empty (LLM generated no text and no tools),
                     # retry once with an explicit "just answer" prompt.
                     if not final_response or not final_response.strip():
-                        logger.info(f"[LLM loop] Empty response, retrying with explicit prompt")
-                        messages.append({"role": "user", "content": "Please respond directly to the user's message in their language. Do not call any tools — just answer based on your knowledge."})
-                        continue
+                        if _empty_response_retries < 1:
+                            _empty_response_retries += 1
+                            logger.warning(
+                                "[LLM loop] Empty/placeholder response; one bounded synthesis retry turn=%s iteration=%s",
+                                _turn_policy_intent, iteration,
+                            )
+                            messages.append({
+                                "role": "user",
+                                "content": (
+                                    "The previous provider response was empty or only a transport placeholder. "
+                                    "Answer the CURRENT USER request directly now. Do not call tools unless a missing "
+                                    "fact is essential; do not output a capabilities menu."
+                                ),
+                            })
+                            continue
+                        logger.error(
+                            "[LLM loop] Stopping after repeated empty/placeholder responses turn=%s iterations=%s",
+                            _turn_policy_intent, iteration,
+                        )
                 thinking_step["status"] = "done"
-                thinking_step["content"] = "Response generated"
+                thinking_step["content"] = "已生成回复" if _trace_zh else "Response generated"
                 logger.info(f"[LLM loop] No tool calls found. Iteration={iteration}, content_len={len(content)}, cleaned_len={len(final_response)}, tools_executed={tools_executed}")
                 logger.info(f"[LLM loop] Raw content (first 500): {content[:500]}")
                 yield yield_event("step", thinking_step)
@@ -2375,7 +2607,11 @@ class LLMRuntimeMixin:
 
             # Update thinking step
             thinking_step["status"] = "done"
-            thinking_step["content"] = f"Found {len(tool_calls)} tool call(s)"
+            thinking_step["content"] = (
+                f"已识别 {len(tool_calls)} 个工具调用"
+                if _trace_zh
+                else f"Found {len(tool_calls)} tool call(s)"
+            )
             yield yield_event("step", thinking_step)
 
             # Filter out tool calls with empty required params, normalize param names
@@ -2425,7 +2661,13 @@ class LLMRuntimeMixin:
                     logger.info(f"[HARD-BLOCK] Skipping redundant ctv_segmentation")
                     continue
                 if _tn == "oar_segmentation" and self.memory.retrieve("oar_array") is not None:
-                    if bool(self.memory.retrieve("oar_is_full")) and not _explicit_reexecution:
+                    _focused_oar_request = self._requested_oar_organs(message)
+                    if (
+                        bool(self.memory.retrieve("oar_is_full"))
+                        and not _explicit_reexecution
+                        and not (tc.get("params") or {}).get("organ_filter")
+                        and not _focused_oar_request
+                    ):
                         logger.info(f"[HARD-BLOCK] Skipping redundant oar_segmentation")
                         continue
                 if _explicit_reexecution and _tn in ("ctv_segmentation", "oar_segmentation"):
@@ -2468,26 +2710,41 @@ class LLMRuntimeMixin:
                 tools_executed = True
                 break
 
+            _new_tool_call_executed = False
             for tc in tool_calls:
                 if _cancelled():
                     step_id_ref[0] += 1
                     cancel_step = {
                         "id": step_id_ref[0],
                         "type": "system",
-                        "title": "Stopped",
-                        "content": "User stopped this response before running the next tool.",
+                        "title": "已停止" if _trace_zh else "Stopped",
+                        "content": (
+                            "用户在运行下一个工具前停止了本次响应。"
+                            if _trace_zh
+                            else "User stopped this response before running the next tool."
+                        ),
                         "status": "done",
                     }
                     steps.append(cancel_step)
                     yield yield_event("step", cancel_step)
                     yield {
                         "type": "_result",
-                        "response": "已停止本次响应。请修改输入后重新发送，我会按新的请求重新执行。",
-                        "llm_meta": {"usage": total_usage, "latency_ms": total_latency_ms, "llm_calls": llm_calls, "phase_timings_ms": dict(getattr(self, "_turn_timings", {}) or {})},
+                        "response": (
+                            "已停止本次响应。请修改输入后重新发送，我会按新的请求重新执行。"
+                            if _trace_zh
+                            else "This response was stopped. Edit the request and send it again to run a new turn."
+                        ),
+                        "llm_meta": {"usage": total_usage, "latency_ms": total_latency_ms, "llm_calls": llm_calls, "phase_timings_ms": dict(getattr(self, "_turn_timings", {}) or {}), "response_contract": response_contract.as_dict()},
                     }
                     return
                 tool_name = tc.get("tool", "")
                 params = tc.get("params", {})
+
+                _tool_key = _tool_call_signature(tool_name, params)
+                if _tool_key in _executed_successful_tool_keys:
+                    logger.warning("Skipping duplicate successful tool call: %s", tool_name)
+                    continue
+                _new_tool_call_executed = True
 
                 # Skip duplicate ui_screenshot calls
                 if tool_name == "ui_screenshot":
@@ -2497,8 +2754,12 @@ class LLMRuntimeMixin:
                         skip_step = {
                             "id": step_id_ref[0],
                             "type": "tool",
-                            "title": f"Skipped: {tool_name}",
-                            "content": "Screenshot already requested. Wait for the image.",
+                            "title": f"已跳过：{tool_name}" if _trace_zh else f"Skipped: {tool_name}",
+                            "content": (
+                                "已请求截图，请等待图像。"
+                                if _trace_zh
+                                else "Screenshot already requested. Wait for the image."
+                            ),
                             "status": "done",
                             "tool": tool_name,
                             "params": params,
@@ -2515,7 +2776,7 @@ class LLMRuntimeMixin:
                 tool_step = {
                     "id": step_id_ref[0],
                     "type": "tool",
-                    "title": f"Calling {tool_name}",
+                    "title": f"调用 {tool_name}" if _trace_zh else f"Calling {tool_name}",
                     "content": json.dumps(trace_params, default=str)[:200],
                     "status": "pending",
                     "tool": tool_name,
@@ -2554,7 +2815,36 @@ class LLMRuntimeMixin:
                     if _cancelled():
                         return
                     with callback_events_lock:
+                        # Geometry frames are complete sampled snapshots, not
+                        # an ordered clinical transaction log.  Keep only the
+                        # newest queued frame for the same run/stage while
+                        # preserving start/complete/cleanup lifecycle events.
+                        # This bounds memory and network work when the planning
+                        # loop is faster than the SSE/browser render cadence.
+                        if (
+                            event_type == "planning_preview"
+                            and isinstance(event_data, dict)
+                            and event_data.get("action") == "frame"
+                        ):
+                            run_id = str(event_data.get("run_id") or "")
+                            stage = str(event_data.get("stage") or "")
+                            callback_events[:] = [
+                                item for item in callback_events
+                                if not (
+                                    item[0] == "planning_preview"
+                                    and isinstance(item[1], dict)
+                                    and item[1].get("action") == "frame"
+                                    and str(item[1].get("run_id") or "") == run_id
+                                    and str(item[1].get("stage") or "") == stage
+                                )
+                            ]
                         callback_events.append((event_type, event_data))
+
+                def take_callback_events():
+                    with callback_events_lock:
+                        pending = list(callback_events)
+                        callback_events.clear()
+                    return pending
 
                 def tool_progress_callback(message, percent):
                     append_callback_event(
@@ -2635,9 +2925,20 @@ class LLMRuntimeMixin:
                             steps.append(substep_step)
                             append_callback_event("step", substep_step)
 
+                def tool_planning_preview_callback(payload):
+                    if not isinstance(payload, dict):
+                        return
+                    event = dict(payload)
+                    event.setdefault("tool", tool_name)
+                    event.setdefault("type", "planning_preview")
+                    append_callback_event("planning_preview", event)
+
                 tool_result = None  # Track result for metadata
                 if tool_name == "ctv_segmentation":
                     params = self._normalize_ctv_tool_params(params, message=message)
+                    steps[-1]["params"] = params
+                elif tool_name == "oar_segmentation":
+                    params = self._normalize_oar_tool_params(params, message=message)
                     steps[-1]["params"] = params
                 # Pre-execution check: if ctv_segmentation is called without
                 # tumor_type, intercept and ask instead of running and failing.
@@ -2704,14 +3005,24 @@ class LLMRuntimeMixin:
                                     tool_name, params,
                                     progress_callback=tool_progress_callback,
                                     step_callback=tool_step_callback,
+                                    preview_callback=tool_planning_preview_callback,
                                 )
                             except Exception as _te:
                                 _tool_exc_box[0] = _te
                         _tool_thread = _thr.Thread(target=_run_tool, daemon=True)
                         _tool_thread.start()
                         _hb_count = 0
+                        import time as _tool_clock
+                        _tool_started_at = _tool_clock.monotonic()
                         while _tool_thread.is_alive():
-                            _tool_thread.join(timeout=1)
+                            # Poll faster than the preview frame limit so a
+                            # real algorithm update reaches the Viewer while
+                            # the tool is still running.  This does not add
+                            # planning work; it only drains an in-memory queue.
+                            _tool_thread.join(timeout=0.25)
+                            live_events = take_callback_events()
+                            for _evt_type, _evt_data in live_events:
+                                yield yield_event(_evt_type, _evt_data)
                             if _cancelled():
                                 tool_step["status"] = "error"
                                 tool_step["content"] = f"{tool_name} cancelled by user."
@@ -2720,13 +3031,17 @@ class LLMRuntimeMixin:
                                 yield {
                                     "type": "_result",
                                     "response": "已停止本次响应。当前长耗时工具若已经进入底层推理，可能会在后台自然结束，但不会继续触发后续规划步骤。",
-                                    "llm_meta": {"usage": total_usage, "latency_ms": total_latency_ms, "llm_calls": llm_calls, "phase_timings_ms": dict(getattr(self, "_turn_timings", {}) or {})},
+                                    "llm_meta": {"usage": total_usage, "latency_ms": total_latency_ms, "llm_calls": llm_calls, "phase_timings_ms": dict(getattr(self, "_turn_timings", {}) or {}), "response_contract": response_contract.as_dict()},
                                 }
                                 return
                             if _tool_thread.is_alive():
-                                _hb_count += 1
-                                tool_step["content"] = f"{tool_name} running... ({_hb_count}s)"
-                                yield yield_event("step", tool_step)
+                                elapsed_seconds = int(
+                                    _tool_clock.monotonic() - _tool_started_at
+                                )
+                                if elapsed_seconds > _hb_count:
+                                    _hb_count = elapsed_seconds
+                                    tool_step["content"] = f"{tool_name} running... ({_hb_count}s)"
+                                    yield yield_event("step", tool_step)
                         if _tool_exc_box[0] is not None:
                             raise _tool_exc_box[0]
                         result = _tool_result_box[0]
@@ -2751,9 +3066,7 @@ class LLMRuntimeMixin:
                         # and now we flush that list into the SSE
                         # stream. THIS is what makes the todo list
                         # tick through 5 sub-steps in real time.
-                        with callback_events_lock:
-                            pending_events = list(callback_events)
-                            callback_events.clear()
+                        pending_events = take_callback_events()
                         if pending_events:
                             logger.info(f"[DRAIN-1] Flushing {len(pending_events)} pending events for {tool_name}")
                         for _evt_type, _evt_data in pending_events:
@@ -2894,6 +3207,8 @@ class LLMRuntimeMixin:
                     # Unknown tools and raised exceptions have no ToolResult.
                     step_status = "error"
                 _metadata = getattr(tool_result, "metadata", {}) or {}
+                if tool_result is not None and tool_result.success:
+                    _executed_successful_tool_keys.add(_tool_key)
                 if tool_result is not None and not tool_result.success and _metadata.get("clarification_required"):
                     if getattr(self, "run_ledger", None) is not None:
                         from agent_runtime.contracts import RunStatus
@@ -3030,6 +3345,13 @@ class LLMRuntimeMixin:
                 self.memory.add_message("assistant", f"[Called {tool_name}]")
                 self.memory.add_message("user", f"[Tool result: {_fc_text[:500]}]")
 
+            if not _new_tool_call_executed:
+                logger.warning(
+                    "[LLM loop] All selected tool calls were duplicates; stopping turn=%s iteration=%s",
+                    _turn_policy_intent, iteration,
+                )
+                break
+
             # The browser captures/uploads screenshots after the SSE turn.
             # Continuing server-side can only repeat the same capture because
             # the image is not available to this loop yet.
@@ -3109,6 +3431,7 @@ class LLMRuntimeMixin:
                 _fail_summary = _failed_steps_summary(steps)
                 if _fail_summary:
                     _present_instruction = _HONEST_FAILURE_PROMPT.format(failures=_fail_summary)
+                _present_instruction += response_presentation_instruction(response_contract)
                 messages.append({"role": "user", "content": _present_instruction})
 
         # No summarization - use LLM response directly
@@ -3149,22 +3472,36 @@ class LLMRuntimeMixin:
             elif accumulated_text and not tools_executed and _is_safe_accumulated_text(accumulated_text):
                 final_response = accumulated_text
             elif tools_executed:
-                tool_results_text, failure_notes = _collect_tool_fallback_text(
-                    steps, messages, _fb_lang
-                )
-                if tool_results_text:
-                    prefix = ("基于当前病例结果：\n\n" if _fb_lang == "zh" else "Based on the current case results:\n\n")
-                    final_response = prefix + "\n\n".join(tool_results_text)
-                elif failure_notes:
-                    final_response = _tool_fallback_message(_fb_lang, True, failure_notes)
+                _tool_steps = [s for s in steps if s.get("type") == "tool"]
+                _presentation_steps = [
+                    s for s in _tool_steps
+                    if _fallback_tool_name(s) in {"ui_screenshot", "ui_content"}
+                ]
+                if (
+                    _presentation_steps
+                    and len(_presentation_steps) == len(_tool_steps)
+                    and all(s.get("status") == "done" for s in _presentation_steps)
+                ):
+                    final_response = presentation_fallback_message(
+                        _fb_lang,
+                        message,
+                        (_fallback_tool_name(s) for s in _presentation_steps),
+                    )
+                if final_response:
+                    pass
                 else:
-                    final_response = _tool_fallback_message(_fb_lang)
+                    tool_results_text, failure_notes = _collect_tool_fallback_text(
+                        steps, messages, _fb_lang
+                    )
+                    if tool_results_text:
+                        prefix = ("基于当前病例结果：\n\n" if _fb_lang == "zh" else "Based on the current case results:\n\n")
+                        final_response = prefix + "\n\n".join(tool_results_text)
+                    elif failure_notes:
+                        final_response = _tool_fallback_message(_fb_lang, True, failure_notes, message)
+                    else:
+                        final_response = _tool_fallback_message(_fb_lang, user_message=message)
             else:
-                final_response = _tool_fallback_message(_fb_lang)
-
-        ui_screenshot_response = None if internal_followup else _ui_screenshot_turn_response()
-        if ui_screenshot_response is not None:
-            final_response = ui_screenshot_response
+                final_response = _tool_fallback_message(_fb_lang, user_message=message)
 
         # Verify response against search results to detect fabrication
         if final_response and tools_executed:
@@ -3185,5 +3522,6 @@ class LLMRuntimeMixin:
             "latency_ms": round(total_latency_ms, 1),
             "llm_calls": llm_calls,
             "phase_timings_ms": dict(getattr(self, "_turn_timings", {}) or {}),
+            "response_contract": response_contract.as_dict(),
         }}
         return

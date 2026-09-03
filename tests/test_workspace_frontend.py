@@ -316,6 +316,39 @@ def test_planning_completion_refresh_is_not_tied_to_one_trace_shape():
     assert "reconcileDataTreeVisualNodes" in planning
 
 
+def test_chat_guide_completion_hydrates_the_persisted_mesh_without_starting_a_plan_refresh():
+    """Chat guide generation must reach the same mesh/Data Tree path as the button."""
+    chat = read("web/app/static/js/brachybot-chat-todo.js")
+    guide = read("web/app/static/js/brachybot-surgical-guide.js")
+
+    assert "const GUIDE_EVENT_TOOLS = new Set(['surgical_guide']);" in chat
+    assert "const isCompletedGuideEvent = eventData =>" in chat
+    assert "_scheduleCaseSurgicalGuideRefresh(turnSessionId, 0)" in chat
+    assert "reason: 'surgical-guide-tool-complete'" in chat
+    assert "window.loadSurgicalGuideMesh" in chat
+    assert "source: 'surgical_guide'" in guide
+    # Guide generation is a persisted artifact update, not a new Planning
+    # run. It must not be folded into the dose-invalidating planning set.
+    planning_set = chat.split("const PLANNING_EVENT_TOOLS = new Set", 1)[1].split("]);", 1)[0]
+    assert "surgical_guide" not in planning_set
+
+
+def test_execution_trace_folds_only_after_the_final_reply_is_painted():
+    """A protocol assistant marker must not collapse the trace prematurely."""
+    chat = read("web/app/static/js/brachybot-chat-todo.js")
+
+    assert "function _waitForFinalReplyPaint()" in chat
+    assert "await _waitForFinalReplyPaint();" in chat
+    assert chat.index("finalizeStreamingResponse") < chat.index("await _waitForFinalReplyPaint();")
+    assert "const traceTerminal = !reconnectNeeded" in chat
+
+    marker_start = chat.index("_todoUpdateFromStep(todo, data);")
+    marker_end = chat.index("// MARK FOR RETRY", marker_start)
+    assistant_marker_block = chat[marker_start:marker_end]
+    assert "todo.fold()" not in assistant_marker_block
+    assert "querySelector('.thinking-toggle')" not in assistant_marker_block
+
+
 def test_geometry_only_planning_runs_are_restored_after_restart():
     """A draft without dose keys still enters the cold-restore planning path."""
     ui_api = read("web/app/static/js/brachybot-ui-api.js")
@@ -415,9 +448,9 @@ def test_workspace_transitions_publish_measurable_first_paint_and_restore_stages
     # Versioned URLs are intentional cache invalidation points. Keep this
     # assertion aligned with the workspace/report artifact restore contract.
     assert "brachybot-workspace.js?v=38" in index
-    assert "brachybot-ui-api.js?v=50" in index
-    assert "brachybot-viewer-volume.js?v=45" in index
-    assert "brachybot-manual-annotation.js?v=19" in index
+    assert "brachybot-ui-api.js?v=56" in index
+    assert "brachybot-viewer-volume.js?v=48" in index
+    assert "brachybot-manual-annotation.js?v=21" in index
 
 
 def test_case_owned_api_requests_never_use_presentation_placeholders():
@@ -657,7 +690,7 @@ def test_chat_connection_placeholder_does_not_claim_a_router_execution():
     assert "title: zh ? '\\u8bf7\\u6c42\\u5206\\u6790' : 'Request analysis'" in chat_todo
     assert "Determining execution path..." in chat_todo
     assert "title: zh ? '\\u591a\\u667a\\u80fd\\u4f53\\u8def\\u7531' : 'Multi-Agent Router'" not in chat_todo
-    assert 'static/js/brachybot-chat-todo.js?v=21' in index
+    assert 'static/js/brachybot-chat-todo.js?v=24' in index
 
 
 def test_task_replay_is_deduplicated_and_bound_to_the_original_case():
@@ -1014,6 +1047,27 @@ def test_workspace_notices_are_explicitly_dismissible_without_changing_state():
     assert 'id="workspaceLockTakeover"' in read("web/app/index.html")
     assert "takeover: true" in auth
     assert "function takeoverLease(sessionId = currentLeaseSessionId())" in auth
+
+
+def test_task_recovery_notice_is_anchored_to_chat_composer_not_global_panel():
+    """Restart recovery feedback must stay in the chat column beside its input."""
+    index = read("web/app/index.html")
+    css = read("web/app/static/css/brachybot-auth.css")
+
+    recovery_pos = index.index('id="workspaceRecoveryNotice"')
+    composer_pos = index.index('class="chat-input-area"')
+    hydration_pos = index.index('id="workspaceHydrationNotice"')
+    assert composer_pos < recovery_pos
+    assert recovery_pos > hydration_pos
+
+    recovery_css = css.split(".workspace-recovery-notice {", 1)[1].split("}", 1)[0]
+    assert "position: absolute" in recovery_css
+    assert "right: 12px" in recovery_css
+    assert "bottom: calc(100% + 10px)" in recovery_css
+    assert "left: auto" in recovery_css
+    assert "width: min(360px, calc(100% - 24px))" in recovery_css
+    assert "left: 50%" not in recovery_css
+    assert "workspaceRecoveryIn" in css
 
 
 def test_lease_release_does_not_depend_on_fetch_wrapper_side_effects():

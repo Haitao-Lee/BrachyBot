@@ -7,6 +7,10 @@ from web.routes.planning_routes import (
     _deduplicate_manual_needle_records,
     _deduplicate_manual_seed_records,
     _manual_seed_geometry_settings,
+    _manual_seed_creation_requested,
+    _annotate_manual_safety_status,
+    _annotate_manual_seed_creation_status,
+    _manual_safety_override_requested,
     _normalize_manual_seed_records,
     _remove_manual_needle,
     _serialize_manual_plan,
@@ -100,6 +104,78 @@ def test_seed_interference_uses_finite_cylinder_clearance_and_trajectory_owner()
     assert report["close_pairs"][0]["first_needle_id"] == "traj_1"
     assert report["close_pairs"][0]["axis_distance_mm"] == 0.2
     assert report["close_pairs"][0]["risk"] == "overlap"
+
+
+def test_seed_safety_override_requires_the_exact_explicit_confirmation_marker():
+    assert not _manual_safety_override_requested({"allow_unsafe": True})
+    assert not _manual_safety_override_requested({
+        "allow_unsafe": True,
+        "safety_override": "true",
+    })
+    assert _manual_safety_override_requested({
+        "allow_unsafe": True,
+        "safety_override": "user_confirmed",
+    })
+
+
+def test_add_seed_draft_mode_is_narrow_and_does_not_bypass_structural_validation():
+    assert _manual_seed_creation_requested({
+        "allow_unsafe_creation": True,
+        "seed_creation_mode": "draft",
+    }, "add")
+    assert not _manual_seed_creation_requested({
+        "allow_unsafe_creation": True,
+        "seed_creation_mode": "draft",
+    }, "move")
+    assert not _manual_seed_creation_requested({
+        "allow_unsafe_creation": True,
+        "seed_creation_mode": "draft",
+    }, "add_seed")
+    assert not _manual_seed_creation_requested({
+        "allow_unsafe_creation": True,
+        "seed_creation_mode": "final",
+    }, "add")
+
+
+def test_add_seed_spacing_warning_is_non_blocking_but_persisted_for_review():
+    memory = Memory()
+    status = _annotate_manual_seed_creation_status(
+        memory,
+        {
+            "dose": "stale",
+            "dvh": "stale",
+            "report": "stale",
+            "quality_check": "stale",
+            "surgical_guide": "stale",
+        },
+        {"status": "attention", "close_pairs": [{"first_id": "seed_a", "second_id": "seed_new"}]},
+    )
+
+    assert status["requires_safety_review"] is True
+    assert "editable draft" in status["safety_warning"]
+    assert status["safety_interference"]["status"] == "attention"
+    assert memory.retrieve("manual_artifact_status") == status
+    assert status.get("safety_override") is not True
+
+
+def test_explicit_seed_override_keeps_warning_and_stales_all_dependents():
+    memory = Memory()
+    status = _annotate_manual_safety_status(
+        memory,
+        {
+            "dose": "stale",
+            "dvh": "stale",
+            "report": "stale",
+            "quality_check": "stale",
+            "surgical_guide": "stale",
+        },
+        {"status": "attention", "close_pairs": [{"first_id": "seed_a", "second_id": "seed_b"}]},
+    )
+
+    assert status["safety_override"] is True
+    assert status["requires_safety_review"] is True
+    assert status["safety_interference"]["status"] == "attention"
+    assert memory.retrieve("manual_artifact_status") == status
 
 
 def test_empty_manual_seed_list_remains_authoritative_after_last_delete():
@@ -369,6 +445,26 @@ def test_seed_drag_rejects_interference_before_dose_and_restores_authoritative_s
     assert "incrementalSeedEdit ? 600000 : 900000" in manual
 
 
+def test_seed_interference_offers_restore_or_keep_and_preserves_geometry_on_dose_failure():
+    root = __import__("pathlib").Path(__file__).resolve().parents[1]
+    manual = (root / "web/app/static/js/brachybot-3d-manual.js").read_text(encoding="utf-8")
+    ui_api = (root / "web/app/static/js/brachybot-ui-api.js").read_text(encoding="utf-8")
+    routes = (root / "web/routes/planning_routes.py").read_text(encoding="utf-8")
+
+    assert "async function _confirmSeedSafetyConflict" in manual
+    assert "恢复编辑前位置" in manual
+    assert "忽略并保留编辑" in manual
+    assert "allowUnsafe: true" in manual
+    assert "preserve_geometry_on_failure" in manual
+    assert "geometryPreserved" in manual
+    assert "All seeds and needles were kept" in manual
+    assert "dismissAsYes: true" in manual
+    assert "resolve(options.dismissAsYes === true)" in ui_api
+    assert "_manual_safety_override_requested" in routes
+    assert "geometry_preserved" in routes
+    assert "_annotate_manual_safety_status" in routes
+
+
 def test_active_manual_plan_is_the_only_seed_source_for_3d_reloads():
     """A Viewer reload must not redraw immutable automatic geometry after a drag."""
     root = __import__("pathlib").Path(__file__).resolve().parents[1]
@@ -379,3 +475,57 @@ def test_active_manual_plan_is_the_only_seed_source_for_3d_reloads():
     assert "plan_source = manual_plan_serialized or seed_plan_serialized" in viewer
     assert "manual_plan_active" in viewer
     assert 'else f"seed_{i + 1}_{j + 1}"' in viewer
+
+
+def test_add_seed_can_target_a_specific_needle_without_silently_creating_one():
+    root = __import__("pathlib").Path(__file__).resolve().parents[1]
+    manual = (root / "web/app/static/js/brachybot-3d-manual.js").read_text(encoding="utf-8")
+    tree = (root / "web/app/static/js/brachybot-viewer-volume.js").read_text(encoding="utf-8")
+
+    add_start = manual.index("async function addManualSeed(targetNeedleId = null, options = {})")
+    add_end = manual.index("function _setManualDoseProgress", add_start)
+    add_block = manual[add_start:add_end]
+    assert "_resolveManualNeedleTarget(explicitTarget)" in add_block
+    assert "needle = await addManualNeedle()" not in add_block
+    assert "_commitManualSeeds('add', rollbackSeeds, null, {" in add_block
+    assert "allowUnsafeCreation: true" in add_block
+    assert "seedCreationMode: 'draft'" in add_block
+    assert "if (!spacingWarning) scheduleManualDoseRecompute('seed_add')" in add_block
+    assert "The current spacing needs attention, but the new seed was kept." in add_block
+    assert "addManualSeedToPlanningNode('${firstId}'" in tree
+    assert "addManualSeed('${needleId}', {source:'3d_context'})" in manual
+
+
+def test_add_seed_spacing_exception_is_narrow_and_keeps_later_edits_strict():
+    root = __import__("pathlib").Path(__file__).resolve().parents[1]
+    manual = (root / "web/app/static/js/brachybot-3d-manual.js").read_text(encoding="utf-8")
+    routes = (root / "web/routes/planning_routes.py").read_text(encoding="utf-8")
+
+    update_start = routes.index("def api_manual_planning_update_seeds")
+    next_route = routes.find("\n@app.route(", update_start + 1)
+    update_route = routes[update_start:next_route if next_route != -1 else None]
+
+    # Only the deliberate Add Seed draft path may retain a temporary spacing
+    # warning. Move/delete and generic dose validation must stay strict.
+    assert "seed_creation_mode = _manual_seed_creation_requested(data, reason)" in update_route
+    assert "and not seed_creation_mode" in update_route
+    assert "if seed_creation_mode and interference.get(\"status\") == \"attention\"" in update_route
+    assert "_annotate_manual_seed_creation_status" in update_route
+    assert '"seed_creation_mode": "draft" if seed_creation_mode else None' in update_route
+    assert '"requires_user_decision": True' in update_route
+    assert "if (!slot.ok)" not in manual[manual.index("async function addManualSeed("):manual.index("function _setManualDoseProgress")]
+
+
+def test_manual_monitor_events_are_reported_only_after_authoritative_commit():
+    root = __import__("pathlib").Path(__file__).resolve().parents[1]
+    manual = (root / "web/app/static/js/brachybot-3d-manual.js").read_text(encoding="utf-8")
+    ui_api = (root / "web/app/static/js/brachybot-ui-api.js").read_text(encoding="utf-8")
+    routes = (root / "web/routes/planning_routes.py").read_text(encoding="utf-8")
+
+    assert "function _reportCommittedManualEvent" in manual
+    assert "commit_status: 'committed'" in manual
+    assert "already_recorded: options.alreadyRecorded === true" in ui_api
+    assert "if already_recorded:" in routes
+    assert "event = dict(committed_event)" in routes
+    assert "_cancelStaleManualDoseWork(`manual_seed_${reason}_rejected`)" in manual
+    assert "queuedJob.cancelled = true" in manual

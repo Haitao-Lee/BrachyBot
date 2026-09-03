@@ -13,13 +13,14 @@ import subprocess
 import json
 import signal
 import threading
+import re
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from tool_factory import BaseTool, ToolResult
 import numpy as np
 import SimpleITK as sitk
-from typing import Dict
+from typing import Dict, Iterable, List, Optional, Tuple
 
 
 logger = logging.getLogger(__name__)
@@ -177,6 +178,175 @@ TOTALSEG_LABEL_MAPPING = {
 }
 
 
+def _normalise_organ_filter_token(value: object) -> str:
+    """Return a stable token for an OAR name supplied by a user or an LLM."""
+    return re.sub(r"[\s\-]+", "_", str(value or "").strip().lower())
+
+
+def _build_totalseg_organ_filter_aliases() -> Dict[str, Tuple[str, ...]]:
+    """Build the supported named-structure vocabulary from the label map.
+
+    The canonical TotalSegmentator labels remain the source of truth.  The
+    aliases merely let the conversational layer preserve a user's explicit
+    Chinese/English anatomy scope without having to maintain a second label
+    ontology.  Group aliases deliberately expand only to their documented
+    canonical members (for example ``kidney`` -> left + right kidney).
+    """
+    known = set(TOTALSEG_LABEL_MAPPING.values())
+    aliases: Dict[str, Tuple[str, ...]] = {}
+
+    def add(targets: Iterable[str], *names: str) -> None:
+        resolved = tuple(name for name in targets if name in known)
+        if not resolved:
+            return
+        for name in names:
+            token = _normalise_organ_filter_token(name)
+            if token:
+                aliases[token] = resolved
+
+    # Every canonical TotalSegmentator name is accepted in both underscore
+    # and space-separated form. This keeps future label-map additions usable
+    # without changing the conversation router.
+    for canonical in sorted(known):
+        add((canonical,), canonical, canonical.replace("_", " "))
+
+    lungs = tuple(name for name in known if name.startswith("lung_"))
+    ribs = tuple(name for name in known if name.startswith("rib_"))
+    vertebrae = tuple(name for name in known if name.startswith("vertebrae_"))
+    kidneys = tuple(name for name in ("kidney_left", "kidney_right") if name in known)
+    adrenal_glands = tuple(
+        name for name in ("adrenal_gland_left", "adrenal_gland_right") if name in known
+    )
+
+    add(("liver",), "hepatic", "liver", "肝", "肝脏")
+    add(("pancreas",), "pancreatic", "pancreas", "胰", "胰腺")
+    add(kidneys, "kidney", "kidneys", "renal", "肾", "肾脏", "双肾")
+    add(("kidney_left",), "left kidney", "left renal", "左肾", "左肾脏")
+    add(("kidney_right",), "right kidney", "right renal", "右肾", "右肾脏")
+    add(lungs, "lung", "lungs", "pulmonary", "肺", "肺脏", "双肺")
+    add(
+        tuple(name for name in lungs if name.endswith("_left")),
+        "left lung", "左肺",
+    )
+    add(
+        tuple(name for name in lungs if name.endswith("_right")),
+        "right lung", "右肺",
+    )
+    add(("spleen",), "spleen", "脾", "脾脏")
+    add(("stomach",), "stomach", "胃", "胃部")
+    add(("gallbladder",), "gallbladder", "胆囊")
+    add(("small_bowel",), "small bowel", "small intestine", "小肠")
+    add(("duodenum",), "duodenum", "十二指肠")
+    add(("colon",), "colon", "large bowel", "large intestine", "结肠", "大肠")
+    add(("heart",), "heart", "cardiac", "心", "心脏")
+    add(("aorta",), "aorta", "主动脉")
+    add(("spinal_cord",), "spinal cord", "脊髓")
+    add(("prostate",), "prostate", "前列腺")
+    add(("urinary_bladder",), "urinary bladder", "bladder", "膀胱")
+    add(("esophagus",), "esophagus", "oesophagus", "食管")
+    add(("trachea",), "trachea", "气管")
+    add(("thyroid_gland",), "thyroid", "thyroid gland", "甲状腺")
+    add(("brain",), "brain", "脑", "大脑")
+    add(("skull",), "skull", "颅骨")
+    add(("inferior_vena_cava",), "inferior vena cava", "ivc", "下腔静脉")
+    add(("superior_vena_cava",), "superior vena cava", "svc", "上腔静脉")
+    add(
+        ("portal_vein_and_splenic_vein",),
+        "portal vein", "splenic vein", "portal and splenic vein", "门静脉", "脾静脉",
+    )
+    add(adrenal_glands, "adrenal", "adrenal gland", "肾上腺")
+    add(("adrenal_gland_left",), "left adrenal", "left adrenal gland", "左肾上腺")
+    add(("adrenal_gland_right",), "right adrenal", "right adrenal gland", "右肾上腺")
+    add(vertebrae, "vertebra", "vertebrae", "spine", "脊椎", "椎体")
+    add(ribs, "rib", "ribs", "肋骨")
+    return aliases
+
+
+TOTALSEG_ORGAN_FILTER_ALIASES = _build_totalseg_organ_filter_aliases()
+TOTALSEG_SUPPORTED_ORGAN_NAMES = frozenset(TOTALSEG_LABEL_MAPPING.values())
+
+
+def normalize_totalseg_organ_filter(organ_filter: object) -> Optional[List[str]]:
+    """Resolve a requested OAR subset to canonical TotalSegmentator names.
+
+    ``None`` means a full OAR result. An explicit but unknown value is an
+    error instead of silently falling back to all organs; broadening a
+    focused segmentation request is clinically and UX-wise unsafe.
+    """
+    if organ_filter is None:
+        return None
+    if isinstance(organ_filter, str):
+        values = [part.strip() for part in organ_filter.split(",") if part.strip()]
+    elif isinstance(organ_filter, (list, tuple, set, frozenset)):
+        values = [str(value).strip() for value in organ_filter if str(value).strip()]
+    else:
+        raise ValueError("organ_filter must be a string or a list of organ names")
+    if not values:
+        raise ValueError("organ_filter must name at least one structure when provided")
+
+    resolved: List[str] = []
+    unknown: List[str] = []
+    for value in values:
+        token = _normalise_organ_filter_token(value)
+        targets = TOTALSEG_ORGAN_FILTER_ALIASES.get(token)
+        if not targets:
+            unknown.append(value)
+            continue
+        for target in targets:
+            if target not in resolved:
+                resolved.append(target)
+    if unknown:
+        raise ValueError(
+            "Unsupported TotalSegmentator organ_filter value(s): "
+            + ", ".join(unknown)
+        )
+    return resolved
+
+
+def extract_totalseg_organ_filter_from_text(text: object) -> List[str]:
+    """Return named TotalSegmentator structures explicitly mentioned in text.
+
+    This is an entity-resolution helper, not an action router: it never
+    decides whether to run OAR segmentation. It is used only to prevent a
+    chosen OAR tool call from persisting structures outside a named request.
+    """
+    raw_text = str(text or "").strip().lower()
+    if not raw_text:
+        return []
+    compact = _normalise_organ_filter_token(raw_text)
+    resolved: List[str] = []
+    selected = set()
+    generic_groups = {
+        "kidney", "kidneys", "renal", "肾", "肾脏", "双肾",
+        "lung", "lungs", "pulmonary", "肺", "肺脏", "双肺",
+        "adrenal", "adrenal_gland", "肾上腺",
+    }
+
+    # Longer aliases win ("left kidney" before "kidney"). Re-check each
+    # candidate against both source text and normalized text so Chinese and
+    # punctuated English requests are handled consistently.
+    for alias, targets in sorted(
+        TOTALSEG_ORGAN_FILTER_ALIASES.items(), key=lambda item: len(item[0]), reverse=True
+    ):
+        if alias.isascii() and any(char.isalpha() for char in alias):
+            source_match = re.search(
+                rf"(?<![a-z0-9]){re.escape(alias.replace('_', ' '))}(?![a-z0-9])",
+                raw_text,
+            )
+            match = bool(source_match) or alias in compact
+        else:
+            match = alias in raw_text or alias in compact
+        if not match:
+            continue
+        if alias in generic_groups and any(target in selected for target in targets):
+            continue
+        for target in targets:
+            if target not in selected:
+                selected.add(target)
+                resolved.append(target)
+    return resolved
+
+
 class TotalSegmentatorOARTool(BaseTool):
     """
     Tool for segmenting all Organs At Risk (OAR) from CT images using TotalSegmentator.
@@ -262,9 +432,23 @@ class TotalSegmentatorOARTool(BaseTool):
     def _execute(self, **kwargs) -> ToolResult:
         image = kwargs.get("image")
         image_path = kwargs.get("image_path")
-        organ_filter = kwargs.get("organ_filter")
+        raw_organ_filter = kwargs.get("organ_filter")
         dose_constraints = kwargs.get("dose_constraints", {})
         fast_mode = kwargs.get("fast_mode", False)
+
+        try:
+            organ_filter = normalize_totalseg_organ_filter(raw_organ_filter)
+        except ValueError as exc:
+            return ToolResult(
+                success=False,
+                error=str(exc),
+                message=f"OAR segmentation rejected: {exc}",
+                metadata={
+                    "oar_is_full": False,
+                    "requested_organs": raw_organ_filter,
+                    "oar_scope": "focused",
+                },
+            )
 
         if image is None and image_path is not None:
             image = sitk.ReadImage(image_path)
@@ -305,10 +489,19 @@ class TotalSegmentatorOARTool(BaseTool):
         oar_mask.CopyInformation(image)
 
         num_organs = len(organ_volumes)
+        is_full_oar = organ_filter is None
+        scope = "full" if is_full_oar else "focused"
         return ToolResult(
             success=True,
             data=oar_mask,
-            message=f"OAR segmentation completed using {method}. Found {num_organs} organ(s).",
+            message=(
+                f"OAR segmentation completed using {method}. Found {num_organs} organ(s)."
+                if is_full_oar
+                else (
+                    f"Focused OAR segmentation completed using {method}. "
+                    f"Retained {num_organs} requested organ(s): {', '.join(organ_filter)}."
+                )
+            ),
             metadata={
                 "oar_mask": oar_mask,
                 "oar_array": oar_array_ordered,  # Use (Z,Y,X) order for consistency with sitk
@@ -318,7 +511,9 @@ class TotalSegmentatorOARTool(BaseTool):
                 "dose_constraints": dose_constraints,
                 "method": method,
                 "oar_source": "totalsegmentator",
-                "oar_is_full": True,
+                "oar_is_full": is_full_oar,
+                "oar_scope": scope,
+                "requested_organs": list(organ_filter or []),
             },
         )
 

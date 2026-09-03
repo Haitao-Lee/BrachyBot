@@ -242,12 +242,16 @@ def test_monitor_maps_manual_stages_to_their_own_viewer_checkpoint():
     cold_needle_event = {
         "type": "manual.needle.add",
         "label": "Needle added",
-        "detail": {},
+        "detail": {"commit_status": "committed"},
         "language": "en",
     }
     cold_feedback = _training_feedback_for_event(None, None, cold_needle_event)
     assert cold_feedback and "Needle edit recorded" in cold_feedback
     assert _training_screenshot_for_event(None, None, cold_needle_event, cold_feedback)["target"] == "viewer-3d"
+    assert _training_feedback_for_event(None, None, {
+        **cold_needle_event,
+        "detail": {"commit_status": "preview"},
+    }) is None
 
     class Memory:
         def __init__(self):
@@ -285,7 +289,7 @@ def test_monitor_maps_manual_stages_to_their_own_viewer_checkpoint():
     close_seed_event = {
         "type": "manual.seed.drag",
         "label": "Seed moved",
-        "detail": {},
+        "detail": {"commit_status": "committed"},
         "language": "en",
     }
     close_seed_screenshot = _training_screenshot_for_event(
@@ -315,3 +319,25 @@ def test_monitor_maps_manual_stages_to_their_own_viewer_checkpoint():
     )
     assert "\u89c4\u5212\u76d1\u6d4b\u603b\u7ed3" in zh_summary
     assert "CTV V100 \u4e3a 91.0%" in zh_summary
+
+    concise_summary = _format_training_summary(
+        [cold_needle_event],
+        {"ui.click": 19, "ui.panel": 12, "manual.needle.add": 1},
+        {"strengths": [], "issues": [], "advice": []},
+        "zh",
+    )
+    assert "\u624b\u52a8\u6dfb\u52a0\u9488\u9053: 1" in concise_summary
+    assert "\u70b9\u51fb\u64cd\u4f5c" not in concise_summary
+    assert "\u9762\u677f\u64cd\u4f5c" not in concise_summary
+
+
+def test_empty_llm_reply_fallback_keeps_the_current_viewer_question_and_language():
+    from agent_runtime.llm_runtime import _tool_fallback_message
+
+    response = _tool_fallback_message(
+        "zh",
+        user_message="\u7c92\u5b50\u5462\uff0c\u600e\u4e48\u6d88\u5931\u4e86",
+    )
+    assert "Viewer/Data Tree" in response
+    assert "\u6ca1\u6709\u6267\u884c\u4efb\u4f55\u5220\u9664" in response
+    assert "\u63d0\u4f9b\u66f4\u660e\u786e\u7684\u5206\u6790\u76ee\u6807" not in response

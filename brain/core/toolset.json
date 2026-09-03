@@ -53,9 +53,9 @@
             "type": "segmentation",
             "category": "oar",
             "name": "totalsegmentator_oar",
-            "description": "Segment all OARs using TotalSegmentator",
-            "input": "ct_path: str, output_dir: str",
-            "output": "OAR segmentation masks"
+            "description": "Segment a requested OAR subset or the full safety OAR set using TotalSegmentator",
+            "input": "ct_path: str, organ_filter: list[str] (optional; omit only for full OAR), output_dir: str",
+            "output": "Scoped OAR segmentation masks"
         },
         {
             "id": 11,

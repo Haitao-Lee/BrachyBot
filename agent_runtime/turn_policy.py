@@ -611,6 +611,72 @@ def is_current_planning_assessment_query(message: str) -> bool:
     return True
 
 
+def is_case_state_question(message: str) -> bool:
+    """Identify a read-only question about persisted case state.
+
+    This is a semantic boundary, not a phrase-to-answer map.  Questions such
+    as ``why are the two plans identical after I changed parameters?`` need a
+    compact snapshot of the active run *and* its planning history so the main
+    LLM can select and explain the relevant evidence.  They must not enter the
+    broad function-calling loop, where a model can choose unrelated tools such
+    as ``query_metrics`` or ``case_memory`` and then lose the actual question.
+
+    Explicit mutations, standards questions, external-project questions, and
+    the narrower provenance/assessment/dose predicates are resolved elsewhere
+    in :func:`classify_local_turn` before this boundary is evaluated.
+    """
+    text = re.sub(r"\s+", " ", str(message or "").strip().lower())
+    if not text or not _is_interrogative(text):
+        return False
+
+    # A question may mention an operation while asking for an explanation of
+    # its result.  An imperative/re-execution frame is still a mutation and
+    # must remain on the clinical action path.
+    if is_planning_reexecution_request(text) or is_current_case_dose_recompute_request(text):
+        return False
+    # The generic planning-action detector intentionally accepts noun phrases
+    # (for dependency enforcement), so it is too broad for this read boundary:
+    # ``为什么规划结果...`` contains two planning terms but is not a command.
+    # Only an unambiguous command-position form is excluded here; less clear
+    # cases remain semantic questions and are answered from persisted facts.
+    if _is_canonical_execution_command(text, operation="planning"):
+        return False
+
+    if _contains_any(text, (
+        "guideline", "guidelines", "standard", "standards", "constraint", "limit",
+        "tolerance", "recommendation", "clinical evidence", "指南", "标准",
+        "限值", "耐受", "推荐", "临床依据", "文献",
+    )):
+        return False
+    if _contains_any(text, (
+        "github", "gitlab", "repository", "repo", "external project", "source code",
+        "github", "开源项目", "外部项目", "项目源码",
+    )):
+        return False
+
+    state_objects = (
+        "planning", "plan", "treatment plan", "planning result", "parameters",
+        "parameter", "setting", "settings", "result", "dose", "dvh", "v100",
+        "d90", "seed", "needle", "ctv", "oar", "viewer", "data tree", "session",
+        "rl", "reinforcement learning", "reinforcement", "episode", "stop reason",
+        "规划", "计划", "方案", "规划结果", "参数", "设置", "结果", "剂量",
+        "粒子", "针道", "靶区", "危及器官", "查看器", "数据树", "会话",
+        "强化学习", "回合", "停止原因",
+    )
+    relation_markers = (
+        "why", "how come", "because", "cause", "reason", "same", "identical",
+        "different", "change", "changed", "unchanged", "compare", "comparison",
+        "difference", "missing", "disappear", "disappeared", "show", "visible",
+        "failed", "failure", "fail", "interrupted", "stopped", "stop", "budget",
+        "target", "not reached", "without target", "episode", "reason",
+        "一样", "相同", "不一样", "不同", "改了", "修改", "变化", "变了", "比较",
+        "对比", "差异", "原因", "为什么", "为何", "怎么", "消失", "不见", "显示",
+        "可见", "丢失", "恢复", "还在", "是否", "失败", "未达", "未达到", "中断",
+        "停止", "预算", "目标", "回合",
+    )
+    return _contains_any(text, state_objects) and _contains_any(text, relation_markers)
+
+
 def is_current_oar_count_query(message: str) -> bool:
     """Identify a question about the OAR structures loaded in this case."""
     text = re.sub(r"\s+", " ", str(message or "").strip().lower())
@@ -986,6 +1052,21 @@ def classify_local_turn(message: str, pending_tumor_site: bool = False) -> Local
     if is_current_planning_assessment_query(text):
         return LocalTurnPolicy(
             "planning_assessment_query",
+            "low",
+            False,
+            False,
+            False,
+            frozenset(),
+        )
+
+    # Other questions about persisted case state (for example, why two
+    # Planning results look identical after a parameter change) need a
+    # history-aware evidence packet.  Resolve them before UI/action and
+    # generic interrogative branches so they never enter an open-ended tool
+    # loop or get answered by the current-dose-only formatter.
+    if is_case_state_question(text):
+        return LocalTurnPolicy(
+            "case_state_question",
             "low",
             False,
             False,
