@@ -953,6 +953,16 @@ class ToolResultPipeline:
         if not result.success:
             return f"Error: {result.error}" if lang == "en" else f"错误: {result.error}"
 
+        # Surgical-guide status is a structured clinical read.  Do not pass
+        # the old generic "status retrieved" sentence to the synthesizer:
+        # after a cold Session restore it contains no fact about whether the
+        # guide exists, is persisted, or is merely waiting for its mesh.  The
+        # capability itself supplies a state contract; this formatter exposes
+        # that contract in the user's language while leaving the final prose
+        # to the normal LLM synthesis path.
+        if tool_name == "surgical_guide" and isinstance(meta.get("guide_status"), dict):
+            return ToolResultPipeline._format_surgical_guide(result, meta, lang)
+
         # 1. Use tool's own display if set
         if result.display:
             return result.display
@@ -991,6 +1001,79 @@ class ToolResultPipeline:
             msg = msg.replace("File info for ", "文件信息: ")
             msg = msg.replace("Filesystem browse failed: ", "文件浏览失败: ")
         return msg
+
+    @staticmethod
+    def _format_surgical_guide(result, meta: dict, lang: str) -> str:
+        """Render the hydration-safe guide status as bounded LLM evidence."""
+        status = meta.get("guide_status") or {}
+        state = str(status.get("state") or "unavailable")
+        version = status.get("version")
+        version_text = f"v{version}" if version not in (None, "") else ""
+        needle_count = len(status.get("selected_needle_ids") or [])
+        planning_id = str(status.get("planning_id") or status.get("active_planning_id") or "")
+        mesh_loaded = bool(status.get("mesh_loaded"))
+        persisted = bool(status.get("persisted"))
+
+        if lang == "zh":
+            state_labels = {
+                "ready": "已生成并已加载",
+                "persisted_not_loaded": "已持久化但网格尚未完成加载",
+                "restoring": "病例资源仍在恢复",
+                "generating": "正在生成",
+                "stale": "已生成但已过期或与当前规划不一致",
+                "failed": "生成失败",
+                "not_generated": "当前规划未生成",
+                "unavailable": "暂不可用",
+            }
+            lines = [
+                "## 手术导板状态",
+                "",
+                f"- 状态：{state_labels.get(state, state)}",
+                f"- 持久化记录：{'是' if persisted else '未找到可确认记录'}",
+                f"- 导板网格：{'已加载' if mesh_loaded else '尚未加载'}",
+            ]
+            if version_text:
+                lines.append(f"- 版本：{version_text}")
+            if needle_count:
+                lines.append(f"- 计划针道：{needle_count} 条")
+            if planning_id:
+                lines.append(f"- 规划 ID：{planning_id}")
+            reason = str(status.get("reason") or "")
+            if reason and state not in {"ready", "not_generated"}:
+                lines.append(f"- 说明：{reason}")
+            if state in {"restoring", "persisted_not_loaded"}:
+                lines.extend(["", "不要将当前加载间隔判断为导板未生成；应等待资源恢复后再确认 Viewer 呈现。"])
+            return "\n".join(lines)
+
+        state_labels = {
+            "ready": "generated and loaded",
+            "persisted_not_loaded": "persisted but mesh is not fully loaded",
+            "restoring": "case resources are still restoring",
+            "generating": "generation in progress",
+            "stale": "generated but stale or mismatched with the current Planning",
+            "failed": "generation failed",
+            "not_generated": "not generated for the current Planning",
+            "unavailable": "temporarily unavailable",
+        }
+        lines = [
+            "## Puncture-guide status",
+            "",
+            f"- State: {state_labels.get(state, state)}",
+            f"- Persisted record: {'yes' if persisted else 'no confirmed record'}",
+            f"- Guide mesh: {'loaded' if mesh_loaded else 'not loaded'}",
+        ]
+        if version_text:
+            lines.append(f"- Version: {version_text}")
+        if needle_count:
+            lines.append(f"- Planned needle paths: {needle_count}")
+        if planning_id:
+            lines.append(f"- Planning ID: {planning_id}")
+        reason = str(status.get("reason") or "")
+        if reason and state not in {"ready", "not_generated"}:
+            lines.append(f"- Detail: {reason}")
+        if state in {"restoring", "persisted_not_loaded"}:
+            lines.extend(["", "Do not interpret this loading interval as guide absence; wait for restoration before judging Viewer presentation."])
+        return "\n".join(lines)
 
     @staticmethod
     def direct_read_contract(result) -> Optional[dict]:

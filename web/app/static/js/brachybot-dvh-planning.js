@@ -1002,6 +1002,7 @@ async function activatePlanningRun(planningId, options = {}) {
             dataTreeState.planning.id = target;
             dataTreeState.planning.activePlanningId = target;
             dataTreeState.planning.artifactStatus = {};
+            dataTreeState.planning.guideStatus = null;
         }
         if (typeof window.restoreReportForPlanning === 'function') {
             window.restoreReportForPlanning(target, { persist: false });
@@ -1169,6 +1170,7 @@ async function refreshPlanningUI(options = {}) {
                     dataTreeState.planning.status = data.planning_status || null;
                     dataTreeState.planning.dataVersion = Number(data.planning_data_version || 0);
                     dataTreeState.planning.artifactStatus = data.artifact_status || {};
+                    dataTreeState.planning.guideStatus = data.guide_status || null;
                     dataTreeState.planning.doseReference = data.dose_stale === true
                         ? {
                             source: data.dose_source || 'algorithm_plan_reference',

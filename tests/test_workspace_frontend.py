@@ -1823,6 +1823,27 @@ def test_surgical_guide_restore_waits_for_hydration_and_publishes_tool_results()
     assert "Older persisted guides may not have bore_quality metadata" in guide
 
 
+def test_surgical_guide_restore_keeps_identity_and_mesh_reads_separate_from_empty_geometry():
+    routes = read("web/routes/surgical_guide_routes.py")
+    guide_routes = read("web/routes/surgical_guide_routes.py")
+    guide = read("web/app/static/js/brachybot-surgical-guide.js")
+    assert "algorithm_snapshot = _algorithm_planning_snapshot(agent)" in routes
+    assert "guide_matches_current_plan = None" in routes
+    assert "guide_can_be_read" in guide_routes
+    assert "statusPlanMatches === true" in guide
+    assert "empty signature" in guide
+
+
+def test_session_content_guide_status_uses_durable_endpoint_before_claiming_absence():
+    ui_api = read("web/app/static/js/brachybot-ui-api.js")
+    assert "_readSurgicalGuideStatusForPresentation" in ui_api
+    assert "cache: 'no-store'" in ui_api
+    assert "persistence_known: false" in ui_api
+    assert "this does not mean it was not generated" in ui_api
+    assert "guide_status: guideStatus" in ui_api
+    assert "No persisted Surgical Guide was found for the current Planning." in ui_api
+
+
 def test_restore_time_3d_camera_guard_reframes_stale_hydration_targets_without_touching_user_pan():
     viewer = read("web/app/static/js/brachybot-3d-manual.js")
     workspace = read("web/app/static/js/brachybot-workspace.js")

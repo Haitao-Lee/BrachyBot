@@ -17,6 +17,7 @@ from web.surgical_guide import (
     guide_public_payload,
     guide_bore_quality_ready,
     guide_state_for_version,
+    guide_status_payload,
     guide_version_summaries,
     mesh_to_ascii_stl,
     normalize_guide_parameters,
@@ -58,8 +59,20 @@ def register_surgical_guide_routes(app, get_agent):
 
     def workspace_data_pending(agent):
         """Keep a cold-session restore from being mistaken for no guide."""
+        guide_status = None
+        if agent is not None:
+            try:
+                guide_status = guide_status_payload(agent)
+            except Exception:
+                logger.debug("Guide status unavailable while workspace is pending", exc_info=True)
+
+        def response_payload(payload):
+            if guide_status is not None:
+                payload["guide_status"] = guide_status
+            return jsonify(payload)
+
         if agent is None:
-            return jsonify({
+            return response_payload({
                 "success": False,
                 "pending": True,
                 "code": "workspace_agent_initializing",
@@ -67,8 +80,19 @@ def register_surgical_guide_routes(app, get_agent):
                 "retry_after_ms": 250,
             }), 202
         hydration_error = str(getattr(agent, "_workspace_hydration_error", "") or "")
+        guide_can_be_read = bool(
+            guide_status
+            and guide_status.get("available")
+            and guide_status.get("mesh_loaded")
+            and guide_status.get("state") in {"ready", "stale"}
+        )
         if hydration_error:
-            return jsonify({
+            # A guide mesh can be independently decoded before another case
+            # artifact fails. Do not block a truthful guide read in that case;
+            # only reject it when the guide itself is not readable.
+            if guide_can_be_read:
+                return None
+            return response_payload({
                 "success": False,
                 "pending": False,
                 "code": "workspace_hydration_failed",
@@ -76,7 +100,11 @@ def register_surgical_guide_routes(app, get_agent):
                 "error": hydration_error,
             }), 409
         if not getattr(agent, "_workspace_data_ready", True):
-            return jsonify({
+            # Metadata/CT hydration is allowed to continue in the background
+            # while an already decoded guide is served to the Viewer.
+            if guide_can_be_read:
+                return None
+            return response_payload({
                 "success": False,
                 "pending": True,
                 "code": "workspace_hydration_pending",
@@ -92,17 +120,36 @@ def register_surgical_guide_routes(app, get_agent):
 
         needles = available_guide_needles(agent)
         current = current_guide(agent)
+        current_status = guide_status_payload(agent)
         # Guide validity is judged against the immutable automatic planning
         # baseline, not the display snapshot. Adding or editing a manual
         # needle/seed changes the display snapshot's signature and would make
         # an otherwise-valid guide (which covers the algorithm needle paths)
         # silently disappear and its regenerate button lose its enabled state.
-        signature = planning_signature(_algorithm_planning_snapshot(agent))
+        algorithm_snapshot = _algorithm_planning_snapshot(agent)
+        # The empty planning shape has a perfectly valid hash, but it is not
+        # evidence that the current run has been restored.  Keep the
+        # signature unknown during the metadata-only restore window so the
+        # Viewer can use the explicit planning identity without mistaking an
+        # empty snapshot for a geometry mismatch.
+        signature = (
+            planning_signature(algorithm_snapshot)
+            if algorithm_snapshot.get("seeds") or algorithm_snapshot.get("needles")
+            else ""
+        )
         current_signature = (
             str(current.get("source_plan_signature") or "")
             if isinstance(current, dict) else ""
         )
         quality_ready = guide_bore_quality_ready(current)
+        guide_matches_current_plan = None
+        if current:
+            if current_signature and signature:
+                guide_matches_current_plan = current_signature == signature and quality_ready
+            elif current_status.get("plan_matches_current") is not False:
+                # The active Planning ID is already source-backed even when
+                # its large geometry arrays are still being decoded.
+                guide_matches_current_plan = True
         return {
             "versions": guide_version_summaries(agent),
             "active_planning_id": active_planning_id(agent.memory),
@@ -118,12 +165,8 @@ def register_surgical_guide_routes(app, get_agent):
             # an otherwise valid guide. Signature equality is the real validity
             # signal; `status == "ready"` was dropped from this check because
             # stale guides with matching geometry must still be displayed.
-            "guide_matches_current_plan": bool(
-                current
-                and current_signature
-                and current_signature == signature
-                and quality_ready
-            ),
+            "guide_matches_current_plan": guide_matches_current_plan,
+            "guide_status": current_status,
             "skin_surface": skin_surface_public_payload(agent),
         }
 
@@ -168,7 +211,8 @@ def register_surgical_guide_routes(app, get_agent):
             pending = workspace_data_pending(agent)
             if pending is not None:
                 return pending
-            return jsonify({"success": True, **guide_public_payload(current_guide(agent)), **guide_metadata(agent)})
+            metadata = guide_metadata(agent)
+            return jsonify({"success": True, **guide_public_payload(current_guide(agent)), **metadata})
         except Exception as exc:
             return jsonify({"success": False, "error": str(exc)}), 400
 
@@ -182,8 +226,14 @@ def register_surgical_guide_routes(app, get_agent):
             pending = workspace_data_pending(agent)
             if pending is not None:
                 return pending
-            state = current_guide(agent, request.args.get("version"))
-            return jsonify({"success": True, **guide_public_payload(state, include_mesh=True), **guide_metadata(agent)})
+            requested_version = request.args.get("version")
+            state = current_guide(agent, requested_version)
+            metadata = guide_metadata(agent)
+            # The version selector may intentionally request an older guide;
+            # expose its status alongside the selected mesh rather than
+            # silently describing the active version as if it were selected.
+            metadata["guide_status"] = guide_status_payload(agent, requested_version)
+            return jsonify({"success": True, **guide_public_payload(state, include_mesh=True), **metadata})
         except Exception as exc:
             return jsonify({"success": False, "error": str(exc)}), 400
 
@@ -224,7 +274,12 @@ def register_surgical_guide_routes(app, get_agent):
                 "checkpoint": {"kind": "surgical_guide", "version": state["version"]},
             })
             logger.info("Generated surgical guide v%s for session %s", state["version"], session_id)
-            return jsonify({"success": True, **guide_public_payload(state, include_mesh=True), **guide_metadata(agent)})
+            return jsonify({
+                "success": True,
+                **guide_public_payload(state, include_mesh=True),
+                **guide_metadata(agent),
+                "guide_status": guide_status_payload(agent),
+            })
         except Exception as exc:
             logger.exception("Surgical guide generation failed")
             try:

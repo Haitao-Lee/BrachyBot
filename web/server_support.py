@@ -866,7 +866,24 @@ def _latest_plan_snapshot(
             logger.warning("Monitor could not validate needle obstacles: %s", exc)
 
     artifact_status = agent.memory.retrieve("manual_artifact_status") or {}
-    guide = agent.memory.retrieve("surgical_guide") or {}
+    # The top-level guide alias is only a compatibility cache.  During a
+    # Session switch/restart it can be empty while the active immutable
+    # Planning snapshot is already present (or can contain metadata without
+    # its mesh sidecars).  Monitor advice must use the same source-backed
+    # contract as the Guide API and chat status tool.
+    try:
+        from web.surgical_guide import guide_status_payload
+
+        guide_status = guide_status_payload(agent)
+    except Exception:
+        logger.debug("Unable to resolve hydration-safe guide status for monitor", exc_info=True)
+        guide_status = {
+            "state": "unavailable",
+            "available": False,
+            "status": None,
+            "planning_id": None,
+            "planning_version": None,
+        }
     return {
         "metrics": metrics if isinstance(metrics, dict) else {},
         "total_seeds": int(total_seeds or 0),
@@ -886,16 +903,24 @@ def _latest_plan_snapshot(
         },
         "artifact_status": artifact_status if isinstance(artifact_status, dict) else {},
         "surgical_guide": {
-            "available": bool(guide),
-            "status": (
-                guide.get("status") if isinstance(guide, dict) else None
-            ) or (
+            "available": bool(guide_status.get("available")),
+            "state": guide_status.get("state") or "unavailable",
+            "generated": bool(guide_status.get("generated")),
+            "persisted": bool(guide_status.get("persisted")),
+            "mesh_loaded": bool(guide_status.get("mesh_loaded")),
+            "status": guide_status.get("status") or (
                 artifact_status.get("surgical_guide")
                 if isinstance(artifact_status, dict)
                 else None
             ) or "not_generated",
+            "reason": guide_status.get("reason"),
+            "planning_id": guide_status.get("planning_id"),
+            "active_planning_id": guide_status.get("active_planning_id"),
+            "hydration_pending": bool(guide_status.get("hydration_pending")),
+            "hydration_phase": guide_status.get("hydration_phase"),
             "planning_version": (
-                guide.get("planning_version") if isinstance(guide, dict) else None
+                (guide_status.get("guide") or {}).get("planning_version")
+                if isinstance(guide_status.get("guide"), dict) else None
             ),
         },
     }
@@ -1098,9 +1123,22 @@ def _build_plan_advice(
             "before finalizing the plan."
         )
     guide = snapshot.get("surgical_guide") or {}
-    if snapshot.get("num_trajectories", 0) > 0 and not guide.get("available"):
+    guide_state = str(guide.get("state") or "").lower()
+    if guide_state in {"restoring", "persisted_not_loaded", "generating"}:
+        advice.append(
+            "The Surgical Guide is persisted or being restored; wait for case resources to finish loading before judging whether it exists."
+        )
+    elif guide_state == "unavailable" and snapshot.get("num_trajectories", 0) > 0:
+        issues.append(
+            "The Surgical Guide status is temporarily unavailable because case resources could not be fully restored."
+        )
+    elif snapshot.get("num_trajectories", 0) > 0 and guide_state == "not_generated":
         issues.append("No Surgical Guide has been generated for the current needle plan.")
-    elif str(guide.get("status") or "").lower() in {"stale", "expired", "outdated"}:
+    elif guide_state == "failed":
+        issues.append(
+            "The Surgical Guide generation failed; inspect the recorded error before retrying."
+        )
+    elif guide_state == "stale" or str(guide.get("status") or "").lower() in {"stale", "expired", "outdated"}:
         issues.append("The Surgical Guide does not match the current planning version.")
 
     if plan_score is not None:
