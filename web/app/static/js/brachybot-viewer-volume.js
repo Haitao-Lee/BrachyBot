@@ -2777,6 +2777,7 @@ const dataTreeState = {
         opacity: 1.0,
         color: '#60a5fa',
         artifactStatus: {},
+        guideStatus: null,
         trajectories: [],       // [{id, index, entry, target, visible, opacity, color, seeds: [seed_id, ...]}]
         trajectoriesLoaded: false,
         seeds: [],       // [{id, position, direction, trajectory_id, visible, opacity, color}]
@@ -2909,7 +2910,10 @@ function ensureDataTreeNodeMetadata(node, type, parentId = null) {
     // the surgical guide carry status 'ready' without a `loaded` field).
     node.status = node.error ? 'error'
         : node.loading ? 'loading'
-        : ['expired', 'stale'].includes(explicitStatus) ? explicitStatus
+        : [
+            'expired', 'stale', 'restoring', 'persisted_not_loaded',
+            'generating', 'unavailable',
+        ].includes(explicitStatus) ? explicitStatus
         : (node.loaded || explicitStatus === 'ready') ? 'ready' : 'not_generated';
     node.contextActions = Array.isArray(node.contextActions)
         ? node.contextActions
@@ -4312,7 +4316,12 @@ function renderDataTree() {
                     : (run?.has_reference_dose ? 'reference' : 'not generated'),
                     artifactState('dose', run?.has_dose || run?.has_reference_dose)],
                 ['dvh', 'DVH / metrics', run?.has_dvh || run?.has_metrics ? 'ready' : 'not generated', artifactState('dvh', run?.has_dvh || run?.has_metrics)],
-                ['guide', 'Surgical Guide', run?.has_guide ? 'ready' : 'not generated', artifactState('guide', run?.has_guide)],
+                ['guide', 'Surgical Guide', (() => {
+                    const lifecycle = artifactState('guide', run?.has_guide);
+                    return ['restoring', 'persisted_not_loaded', 'generating'].includes(lifecycle)
+                        ? 'restoring'
+                        : run?.has_guide ? 'ready' : 'not generated';
+                })(), artifactState('guide', run?.has_guide)],
                 ['skin', 'Guide skin surface', run?.has_skin ? 'ready' : 'not generated', artifactState('skin', run?.has_skin)],
                 ['report', 'Report', hasReport ? 'ready' : 'not generated', artifactState('report', hasReport)],
             ];
@@ -5330,6 +5339,10 @@ function _dtStatusText(status) {
         'stale': _dtText('已过期', 'Stale'),
         'expired': _dtText('已过期', 'Expired'),
         'loading': _dtText('进行中', 'Loading'),
+        'restoring': _dtText('恢复中', 'Restoring'),
+        'persisted_not_loaded': _dtText('已保存，待加载', 'Saved, not loaded'),
+        'generating': _dtText('生成中', 'Generating'),
+        'unavailable': _dtText('暂不可用', 'Temporarily unavailable'),
         'error': _dtText('错误', 'Error'),
     };
     return map[status] || String(status || '').replace('_', ' ');

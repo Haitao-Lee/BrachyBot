@@ -50,6 +50,12 @@ from web.planning_runs import (
     publish_planning_run,
 )
 
+from web.surgical_guide import (
+    guide_public_payload,
+    guide_state_for_version,
+    guide_status_payload,
+)
+
 try:
     from web.server_support import (
         DOSE_MODEL_SCALE_GY,
@@ -2503,7 +2509,11 @@ def register_planning_routes(
             current_planning_id = active_planning_id(agent.memory)
             active_run = _active_planning_run_metadata(agent)
             artifact_status = agent.memory.retrieve("manual_artifact_status") or {}
-            guide_payload = agent.memory.retrieve("surgical_guide")
+            # Use the active run's durable guide snapshot as a fallback.  The
+            # legacy top-level alias may be absent for a short period after a
+            # Session switch/restart even though the guide is already saved.
+            guide_payload = guide_state_for_version(agent)
+            guide_status = guide_status_payload(agent)
             skin_payload = agent.memory.retrieve("skin_surface")
             has_dvh = bool(isinstance(dvh_data, dict) and dvh_data)
             has_metrics = bool(isinstance(dose_metrics, dict) and dose_metrics)
@@ -2525,7 +2535,9 @@ def register_planning_routes(
                 "has_dvh": has_dvh,
                 "has_metrics": has_metrics,
                 "has_dose": dose_for_stats is not None,
-                "has_guide": bool(active_run.get("has_guide") or isinstance(guide_payload, dict)),
+                "has_guide": bool(guide_status.get("available")),
+                "guide_status": guide_status,
+                "guide": guide_public_payload(guide_payload),
                 "has_skin": bool(active_run.get("has_skin") or skin_payload is not None),
                 "dose_shape": dose_shape,
                 "dose_min": dose_min,
@@ -2555,6 +2567,30 @@ def register_planning_routes(
             # paint stable Planning identities immediately without treating
             # an intermediate 202 response as an empty case.
             runs = list_planning_runs(agent.memory)
+            try:
+                active_guide_status = guide_status_payload(agent)
+            except Exception:
+                active_guide_status = None
+            if isinstance(active_guide_status, dict):
+                active_id = str(active_guide_status.get("active_planning_id") or "")
+                # Keep the compact Planning registry useful during the
+                # metadata-only window.  Only the active row is adjusted from
+                # the source-backed status; historical rows remain immutable.
+                runs = [
+                    (
+                        {
+                            **run,
+                            "has_guide": bool(active_guide_status.get("available")),
+                            "artifact_status": {
+                                **dict(run.get("artifact_status") or {}),
+                                "surgical_guide": active_guide_status.get("state"),
+                            },
+                        }
+                        if str(run.get("planning_id") or "") == active_id
+                        else run
+                    )
+                    for run in runs
+                ]
             pending = workspace_data_pending(agent)
             pending_status = (
                 pending[1]
@@ -2566,6 +2602,7 @@ def register_planning_routes(
                 "success": True,
                 "active_planning_id": active_planning_id(agent.memory),
                 "runs": runs,
+                "guide_status": active_guide_status,
                 "hydration_pending": hydration_pending,
                 "hydration_phase": getattr(agent, "_workspace_hydration_phase", "ready"),
                 "retry_after_ms": 250 if hydration_pending else 0,

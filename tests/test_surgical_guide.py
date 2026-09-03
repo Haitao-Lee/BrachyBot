@@ -5,7 +5,9 @@ from __future__ import annotations
 import numpy as np
 import pytest
 import SimpleITK as sitk
+from types import SimpleNamespace
 
+from agent_runtime.core import ToolResultPipeline
 from tool_factory.surgical_guide import SurgicalGuideTool
 from web.surgical_guide import (
     BORE_WALL_POLICY,
@@ -23,6 +25,7 @@ from web.surgical_guide import (
     _subtract_cylinder_specs_from_mask,
     generate_surgical_guide,
     guide_bore_quality_ready,
+    guide_status_payload,
     _filter_components,
     _remove_truncated_cap_backed_voxels,
     _resample_mask_to_local_grid,
@@ -613,6 +616,128 @@ def test_guide_versions_preserve_parameters_and_stale_as_a_group():
     assert guide_state_for_version(agent, first["version"])["parameters"]["channel_radius_mm"] == 1.0
     assert invalidate_surgical_guides(agent, "needle geometry changed") is True
     assert all(item["status"] == "stale" for item in guide_version_summaries(agent))
+
+
+def test_guide_status_recovers_from_active_planning_snapshot_when_alias_is_missing():
+    """A restart must not turn a durable run guide into a false absence."""
+    agent = _Agent({
+        "active_planning_id": "planning-active",
+        "surgical_guide": None,
+        "planning_run:planning-active": {
+            "surgical_guide": {
+                "status": "ready",
+                "version": 3,
+                "planning_id": "planning-active",
+                "selected_needle_ids": ["needle_1", "needle_2"],
+                "vertices": np.zeros((3, 3), dtype=np.float32),
+                "faces": np.zeros((1, 3), dtype=np.int32),
+            },
+        },
+    })
+
+    status = guide_status_payload(agent)
+
+    assert status["state"] == "ready"
+    assert status["source"] == "active_planning_snapshot"
+    assert status["persisted"] is True
+    assert status["mesh_loaded"] is True
+    assert guide_state_for_version(agent)["version"] == 3
+
+
+def test_guide_status_distinguishes_metadata_shell_from_not_generated():
+    """Decoded metadata with pending arrays is a persisted guide, not absence."""
+    agent = _Agent({
+        "active_planning_id": "planning-active",
+        "surgical_guide": {
+            "status": "ready",
+            "version": 4,
+            "planning_id": "planning-active",
+            "selected_needle_ids": ["needle_1"],
+            "vertices": None,
+            "faces": None,
+        },
+    })
+    agent._workspace_data_ready = False
+    agent._workspace_hydration_in_progress = True
+    agent._workspace_hydration_phase = "artifacts"
+
+    status = guide_status_payload(agent)
+
+    assert status["state"] == "persisted_not_loaded"
+    assert status["persisted"] is True
+    assert status["generated"] is True
+    assert status["mesh_loaded"] is False
+    assert status["state"] != "not_generated"
+
+
+def test_guide_status_reports_restoring_when_no_metadata_has_arrived_yet():
+    agent = _Agent({})
+    agent._workspace_data_ready = False
+    agent._workspace_hydration_in_progress = True
+
+    status = guide_status_payload(agent)
+
+    assert status["state"] == "restoring"
+    assert status["persistence_known"] is False
+    assert status["state"] != "not_generated"
+
+
+def test_guide_status_reports_not_generated_only_after_ready_restore():
+    status = guide_status_payload(_Agent({}))
+
+    assert status["state"] == "not_generated"
+    assert status["persisted"] is False
+
+
+def test_surgical_guide_status_tool_exposes_factual_hydration_contract():
+    agent = _Agent({
+        "active_planning_id": "planning-active",
+        "surgical_guide": None,
+        "planning_run:planning-active": {
+            "surgical_guide": {
+                "status": "ready",
+                "version": 5,
+                "planning_id": "planning-active",
+                "selected_needle_ids": ["needle_1"],
+                "vertices": np.zeros((3, 3), dtype=np.float32),
+                "faces": np.zeros((1, 3), dtype=np.int32),
+            },
+        },
+    })
+    agent.memory.user_lang = "zh"
+
+    result = SurgicalGuideTool(agent).execute(action="status")
+
+    assert result.success is True
+    assert "已生成并已加载" in result.message
+    assert result.metadata["guide_status"]["state"] == "ready"
+    assert result.metadata["guide_status"]["planning_id"] == "planning-active"
+
+
+def test_surgical_guide_status_formatter_exposes_state_to_the_synthesizer():
+    result = SimpleNamespace(
+        success=True,
+        display="",
+        message="Puncture-guide status retrieved",
+        data=None,
+        metadata={
+            "guide_status": {
+                "state": "persisted_not_loaded",
+                "persisted": True,
+                "mesh_loaded": False,
+                "version": 6,
+                "selected_needle_ids": ["needle_1"],
+                "planning_id": "planning-active",
+                "reason": "guide_persisted_but_mesh_not_decoded",
+            },
+        },
+    )
+
+    formatted = ToolResultPipeline.format("surgical_guide", result, "zh")
+
+    assert "已持久化但网格尚未完成加载" in formatted
+    assert "不要将当前加载间隔判断为导板未生成" in formatted
+    assert "status retrieved" not in formatted
 
 
 def test_guide_version_reads_history_after_active_alias_is_replaced():
@@ -1483,7 +1608,4 @@ def test_bore_wall_projection_never_recloses_a_crossing_primary_channel():
 
     assert np.allclose(projected, vertices)
     assert sum(item["cross_bore_protected_vertex_count"] for item in qa["primary"]) >= 1
-
-
-
 

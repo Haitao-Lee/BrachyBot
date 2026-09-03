@@ -798,6 +798,345 @@ def guide_bore_quality_ready(state: Any) -> bool:
     return isinstance(quality, Mapping) and quality.get("wall_policy") == BORE_WALL_POLICY
 
 
+def _guide_payload_present(value: Any) -> bool:
+    """Return whether a guide field contains usable persisted data.
+
+    Workspace hydration deliberately restores JSON metadata before decoding
+    large mesh sidecars.  A truthiness check is unsafe here: NumPy arrays have
+    no scalar truth value, while a metadata shell may contain an empty list or
+    ``None`` for ``vertices``/``faces``.  Keep this predicate local to the
+    guide read boundary so every caller agrees about what "loaded" means.
+    """
+    if value is None:
+        return False
+    if isinstance(value, np.ndarray):
+        return value.size > 0
+    if isinstance(value, (str, bytes, bytearray)):
+        return bool(value)
+    if isinstance(value, (Mapping, list, tuple, set)):
+        return bool(value)
+    return True
+
+
+def guide_mesh_loaded(state: Any) -> bool:
+    """Return whether both persisted mesh arrays are available for display."""
+    return isinstance(state, Mapping) and _guide_payload_present(state.get("vertices")) and _guide_payload_present(state.get("faces"))
+
+
+def _read_active_planning_id(agent: Any) -> str:
+    """Read the active Planning identity without mutating session state.
+
+    Status queries run while a workspace is being restored.  Calling the
+    legacy ``active_planning_id`` migration helper from this read path can
+    create or rewrite registry entries while the authoritative snapshot is
+    still arriving.  Prefer the persisted identity, then infer it only from
+    the already-restored compact registry.
+    """
+    memory = getattr(agent, "memory", None)
+    if memory is None:
+        return ""
+    for key in ("active_planning_id", "planning_run_id"):
+        try:
+            value = memory.retrieve(key)
+        except Exception:
+            value = None
+        if value:
+            return str(value)
+    try:
+        runs = memory.retrieve("planning_runs") or []
+    except Exception:
+        runs = []
+    if not isinstance(runs, list):
+        return ""
+    visible = [item for item in runs if isinstance(item, Mapping) and item.get("visible")]
+    candidates = visible or [item for item in runs if isinstance(item, Mapping)]
+    if not candidates:
+        return ""
+    selected = max(
+        candidates,
+        key=lambda item: (
+            int(item.get("sequence") or 0),
+            float(item.get("updated_at") or item.get("created_at") or 0.0),
+        ),
+    )
+    return str(selected.get("planning_id") or "")
+
+
+def _guide_matches_active_planning(state: Mapping[str, Any], active_planning_id: str) -> bool:
+    """Reject a guide from a different active Planning run.
+
+    Older single-guide checkpoints did not record ``planning_id``.  They are
+    still valid when exposed through the active alias; only an explicit,
+    conflicting identity is disqualifying.
+    """
+    if not active_planning_id:
+        return True
+    stored = str(state.get("planning_id") or "").strip()
+    return not stored or stored == active_planning_id
+
+
+def _guide_records(agent: Any) -> List[Dict[str, Any]]:
+    """Collect guide records from live aliases and the active run snapshot.
+
+    The legacy top-level aliases are convenient for the current Viewer, but
+    the immutable ``planning_run:<id>`` snapshot is the durable source of
+    truth after a restart.  Returning source-labelled candidates lets callers
+    prefer a decoded active alias while still recovering a guide whose alias
+    was omitted by an older or partial checkpoint.
+    """
+    if agent is None or not hasattr(agent, "memory"):
+        return []
+    memory = agent.memory
+    active_id = _read_active_planning_id(agent)
+    records: List[Dict[str, Any]] = []
+    seen: set[tuple[str, str, str]] = set()
+
+    def add(value: Any, source: str, *, current: bool = False) -> None:
+        if not isinstance(value, Mapping):
+            return
+        item = dict(value)
+        planning_id = str(item.get("planning_id") or "")
+        version = str(item.get("version") or "")
+        signature = str(item.get("source_plan_signature") or "")
+        key = (planning_id, version, signature)
+        # Keep duplicate records when one has a decoded mesh and the other is
+        # only metadata; the resolver below can then choose the usable one.
+        if key in seen and not guide_mesh_loaded(item):
+            return
+        if guide_mesh_loaded(item):
+            seen.add(key)
+        records.append({
+            "state": item,
+            "source": source,
+            "current": bool(current),
+            "planning_id": planning_id,
+            "mesh_loaded": guide_mesh_loaded(item),
+        })
+
+    try:
+        add(memory.retrieve("surgical_guide"), "active_alias", current=True)
+        top_history = memory.retrieve("surgical_guide_versions") or []
+    except Exception:
+        top_history = []
+    if isinstance(top_history, list):
+        for item in top_history:
+            add(item, "guide_history")
+
+    if active_id:
+        try:
+            snapshot = memory.retrieve("planning_run:" + active_id)
+        except Exception:
+            snapshot = None
+        if isinstance(snapshot, Mapping):
+            add(snapshot.get("surgical_guide"), "active_planning_snapshot", current=True)
+            snapshot_history = snapshot.get("surgical_guide_versions") or []
+            if isinstance(snapshot_history, list):
+                for item in snapshot_history:
+                    add(item, "active_planning_snapshot_history")
+    return records
+
+
+def _current_guide_record(agent: Any) -> Optional[Dict[str, Any]]:
+    """Resolve the guide belonging to the active Planning, if any."""
+    active_id = _read_active_planning_id(agent)
+    candidates = [
+        record for record in _guide_records(agent)
+        if _guide_matches_active_planning(record["state"], active_id)
+    ]
+    if not candidates:
+        return None
+
+    # A decoded mesh is strictly more useful than a metadata shell.  Among
+    # equally usable records, prefer the live alias over immutable history so
+    # a just-completed generation is visible before the next checkpoint.
+    source_rank = {
+        "active_alias": 4,
+        "active_planning_snapshot": 3,
+        "guide_history": 2,
+        "active_planning_snapshot_history": 1,
+    }
+    return max(
+        candidates,
+        key=lambda record: (
+            1 if record.get("mesh_loaded") else 0,
+            1 if str(record["state"].get("status") or "").lower() in {"ready", "stale", "expired", "outdated"} else 0,
+            source_rank.get(record.get("source"), 0),
+            int(record["state"].get("version") or 0),
+        ),
+    )
+
+
+def _compact_guide_state(state: Any) -> Dict[str, Any]:
+    """Copy guide metadata without exposing large mesh arrays."""
+    if not isinstance(state, Mapping):
+        return {}
+    compact = dict(state)
+    compact.pop("vertices", None)
+    compact.pop("faces", None)
+    return compact
+
+
+def guide_status_payload(agent: Any, version: Optional[Any] = None) -> Dict[str, Any]:
+    """Return a hydration-aware, source-backed guide status contract.
+
+    ``not_generated`` is emitted only after the workspace is fully hydrated
+    and no current or persisted guide exists.  During a cold restore the
+    contract intentionally reports ``restoring`` or
+    ``persisted_not_loaded``—never absence—so the chat, API and Viewer cannot
+    turn a temporary alias/mesh gap into a false clinical conclusion.
+    """
+    if agent is None or not hasattr(agent, "memory"):
+        return {
+            "state": "unavailable",
+            "available": False,
+            "generated": False,
+            "persisted": False,
+            "persistence_known": False,
+            "mesh_loaded": False,
+            "presentation": "unavailable",
+            "source": "none",
+            "active_planning_id": None,
+            "planning_id": None,
+            "version": None,
+            "status": None,
+            "reason": "case_agent_unavailable",
+        }
+
+    requested_record: Optional[Dict[str, Any]] = None
+    if version not in (None, ""):
+        try:
+            requested = int(version)
+        except (TypeError, ValueError) as exc:
+            raise SurgicalGuideError("Guide version must be an integer") from exc
+        requested_record = next(
+            (
+                record for record in _guide_records(agent)
+                if int(record["state"].get("version") or 0) == requested
+            ),
+            None,
+        )
+        if requested_record is None:
+            raise SurgicalGuideError(f"Puncture guide version {requested} does not exist")
+
+    record = requested_record or _current_guide_record(agent)
+    state = record.get("state") if record else {}
+    state = dict(state) if isinstance(state, Mapping) else {}
+    raw_status = str(state.get("status") or "").strip().lower()
+    hydration_error = str(getattr(agent, "_workspace_hydration_error", "") or "").strip()
+    hydration_in_progress = bool(
+        getattr(agent, "_workspace_hydration_in_progress", False)
+        or not getattr(agent, "_workspace_data_ready", True)
+    )
+    active_id = _read_active_planning_id(agent)
+    mesh_loaded = guide_mesh_loaded(state)
+    persisted = bool(record)
+
+    # A workspace-level hydration error does not erase a guide record that is
+    # already present.  Keep reporting that guide (as ready or
+    # persisted-not-loaded according to its own payload) and expose the
+    # hydration error as an auxiliary diagnostic.  Only an error with no guide
+    # record can make the guide status unavailable.
+    if hydration_error and not persisted:
+        lifecycle = "unavailable"
+        reason = "workspace_hydration_failed"
+    elif raw_status in {"running", "generating", "pending", "loading"}:
+        lifecycle = "generating"
+        reason = "guide_generation_in_progress"
+    elif raw_status in {"failed", "error", "rejected"}:
+        lifecycle = "failed"
+        reason = str(state.get("error") or state.get("message") or "guide_generation_failed")
+    elif raw_status in {"stale", "expired", "outdated"}:
+        lifecycle = "stale"
+        reason = str(state.get("stale_reason") or "guide_does_not_match_current_planning")
+    elif persisted:
+        lifecycle = "ready" if mesh_loaded and not hydration_in_progress else "persisted_not_loaded"
+        reason = (
+            "guide_mesh_loaded"
+            if lifecycle == "ready"
+            else "guide_persisted_but_mesh_not_decoded"
+        )
+    elif hydration_in_progress:
+        lifecycle = "restoring"
+        reason = "workspace_hydration_in_progress"
+    else:
+        lifecycle = "not_generated"
+        reason = "no_persisted_guide_for_active_planning"
+
+    # A version explicitly requested from history may belong to an older
+    # Planning.  It remains inspectable, but the current-plan match must be
+    # explicit so the Viewer never promotes it as the active guide.
+    plan_matches: Optional[bool] = None
+    if state and active_id:
+        stored_id = str(state.get("planning_id") or "")
+        plan_matches = not stored_id or stored_id == active_id
+    # Planning identity alone is not enough: a guide may have been persisted
+    # under the same run and then become stale after a needle edit.  Compare
+    # signatures only when the current geometry has actually been restored;
+    # an empty metadata shell must remain ``unknown`` rather than becoming a
+    # false mismatch during the restore window.
+    stored_signature = str(state.get("source_plan_signature") or "") if state else ""
+    current_signature = ""
+    if state and not hydration_in_progress:
+        try:
+            current_geometry = _algorithm_planning_snapshot(agent)
+            if current_geometry.get("seeds") or current_geometry.get("needles"):
+                current_signature = planning_signature(current_geometry)
+        except Exception:
+            current_signature = ""
+    if stored_signature and current_signature:
+        plan_matches = stored_signature == current_signature
+    if plan_matches is False and lifecycle in {"ready", "persisted_not_loaded"}:
+        lifecycle = "stale"
+        reason = (
+            "guide_belongs_to_another_planning_run"
+            if requested_record
+            else "guide_does_not_match_current_planning_geometry"
+        )
+
+    if lifecycle == "ready":
+        presentation = "loaded"
+    elif lifecycle in {"restoring", "persisted_not_loaded", "generating"}:
+        presentation = "restoring"
+    elif persisted and mesh_loaded:
+        presentation = "loaded"
+    elif lifecycle == "not_generated":
+        presentation = "unavailable"
+    else:
+        presentation = "not_presented"
+
+    persistence_known = bool(record) or (
+        not hydration_in_progress and not hydration_error
+    )
+    return {
+        "state": lifecycle,
+        "available": persisted,
+        "generated": bool(persisted and lifecycle not in {"failed", "unavailable", "generating"}),
+        "persisted": persisted,
+        # An empty store during hydration is not evidence that no guide was
+        # persisted.  Keep this explicitly unknown until the restore barrier
+        # has passed; callers may then safely distinguish absence from a
+        # temporary read gap.
+        "persistence_known": persistence_known,
+        "mesh_loaded": mesh_loaded,
+        "presentation": presentation,
+        "source": record.get("source") if record else "none",
+        "active_planning_id": active_id or None,
+        "planning_id": state.get("planning_id") if state else None,
+        "version": state.get("version") if state else None,
+        "status": state.get("status") if state else None,
+        "selected_needle_ids": list(state.get("selected_needle_ids") or []) if state else [],
+        "stale_reason": state.get("stale_reason") if state else None,
+        "plan_matches_current": plan_matches,
+        "source_plan_signature": stored_signature or None,
+        "current_plan_signature": current_signature or None,
+        "hydration_pending": hydration_in_progress,
+        "hydration_phase": getattr(agent, "_workspace_hydration_phase", "ready"),
+        "hydration_error": hydration_error or None,
+        "reason": reason,
+        "guide": _compact_guide_state(state) if state else None,
+    }
+
+
 def invalidate_surgical_guides(agent: Any, reason: str) -> bool:
     """Mark an existing guide stale after a geometry-changing plan mutation."""
     if agent is None or not hasattr(agent, "memory"):
@@ -829,12 +1168,42 @@ def guide_version_summaries(agent: Any) -> List[Dict[str, Any]]:
     """Return compact, session-owned guide history without mesh arrays."""
     if agent is None or not hasattr(agent, "memory"):
         return []
-    versions = agent.memory.retrieve("surgical_guide_versions") or []
-    if not isinstance(versions, list):
-        versions = []
-    if not versions:
-        current = agent.memory.retrieve("surgical_guide")
-        versions = [current] if isinstance(current, Mapping) else []
+    # History was originally stored only in the mutable top-level alias.  A
+    # cold restore can expose the immutable active-run snapshot first, so
+    # merge both locations and de-duplicate by version/planning identity.
+    records = _guide_records(agent)
+    versions: List[Mapping[str, Any]] = []
+    seen: set[tuple[Any, Any]] = set()
+    for record in records:
+        item = record.get("state")
+        if not isinstance(item, Mapping):
+            continue
+        key = (
+            int(item.get("version") or 0),
+            str(item.get("planning_id") or ""),
+        )
+        if key in seen:
+            # Prefer the record with a decoded mesh, which is useful to a
+            # caller selecting a version immediately after hydration.
+            existing_index = next(
+                (
+                    index for index, candidate in enumerate(versions)
+                    if (
+                        int(candidate.get("version") or 0),
+                        str(candidate.get("planning_id") or ""),
+                    ) == key
+                ),
+                None,
+            )
+            if (
+                existing_index is not None
+                and guide_mesh_loaded(item)
+                and not guide_mesh_loaded(versions[existing_index])
+            ):
+                versions[existing_index] = item
+            continue
+        seen.add(key)
+        versions.append(item)
     summaries: List[Dict[str, Any]] = []
     for item in versions:
         if not isinstance(item, Mapping):
@@ -849,12 +1218,13 @@ def guide_version_summaries(agent: Any) -> List[Dict[str, Any]]:
             "created_at": item.get("created_at"),
             "stale_reason": item.get("stale_reason"),
             "stl_artifact": item.get("stl_artifact"),
+            "mesh_loaded": guide_mesh_loaded(item),
         })
     return sorted(summaries, key=lambda item: item["version"], reverse=True)
 
 
 def guide_state_for_version(agent: Any, version: Optional[Any] = None) -> Dict[str, Any]:
-    """Resolve a saved version, falling back only to the active guide."""
+    """Resolve a saved version from the active alias or durable run snapshot."""
     if agent is None or not hasattr(agent, "memory"):
         return {}
     if version not in (None, ""):
@@ -862,12 +1232,15 @@ def guide_state_for_version(agent: Any, version: Optional[Any] = None) -> Dict[s
             requested = int(version)
         except (TypeError, ValueError) as exc:
             raise SurgicalGuideError("Guide version must be an integer") from exc
-        for item in agent.memory.retrieve("surgical_guide_versions") or []:
+        for record in _guide_records(agent):
+            item = record.get("state")
             if isinstance(item, Mapping) and int(item.get("version") or 0) == requested:
                 return dict(item)
         raise SurgicalGuideError(f"Puncture guide version {requested} does not exist")
-    current = agent.memory.retrieve("surgical_guide")
-    return dict(current) if isinstance(current, Mapping) else {}
+    current = _current_guide_record(agent)
+    if current and isinstance(current.get("state"), Mapping):
+        return dict(current["state"])
+    return {}
 
 
 def _guide_history_for_version(agent: Any, previous: Any) -> list[Dict[str, Any]]:
@@ -3348,15 +3721,16 @@ def generate_surgical_guide(
 def guide_public_payload(state: Any, *, include_mesh: bool = False) -> Dict[str, Any]:
     """Convert persisted guide arrays into a browser-safe response."""
     if not isinstance(state, Mapping):
-        return {"available": False, "guide": None}
+        return {"available": False, "mesh_loaded": False, "guide": None}
     guide = dict(state)
     vertices = guide.pop("vertices", None)
     faces = guide.pop("faces", None)
+    mesh_loaded = _guide_payload_present(vertices) and _guide_payload_present(faces)
     guide["available"] = True
     if include_mesh:
         guide["vertices"] = np.asarray(vertices if vertices is not None else [], dtype=np.float32).tolist()
         guide["faces"] = np.asarray(faces if faces is not None else [], dtype=np.int32).tolist()
-    return {"available": True, "guide": guide}
+    return {"available": True, "mesh_loaded": mesh_loaded, "guide": guide}
 
 
 def mesh_to_ascii_stl(vertices: Any, faces: Any, name: str = "brachybot_puncture_guide") -> bytes:

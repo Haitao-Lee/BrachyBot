@@ -1127,7 +1127,17 @@ print(json.dumps(result))
         # back to the persisted guide only when this report is rebuilt after a
         # refresh. This prevents a successful dose plan from being presented
         # as a successful printable guide when guide generation actually failed.
-        guide_state = self.memory.retrieve("surgical_guide") or {}
+        try:
+            from web.surgical_guide import guide_status_payload
+
+            guide_status = guide_status_payload(self)
+            guide_state = guide_status.get("guide") or {}
+        except Exception:
+            # A legacy/lightweight test agent may not expose the new resolver.
+            # In that case rely only on an explicit completed tool step below;
+            # never fabricate a ready guide from an empty alias.
+            guide_status = {}
+            guide_state = {}
         guide_step = None
         if steps:
             for candidate in reversed(steps):
@@ -1143,10 +1153,21 @@ print(json.dumps(result))
             )
         elif (
             (guide_step and guide_step.get("status") == "done")
+            or str(guide_status.get("state") or "") in {
+                "ready", "stale", "persisted_not_loaded",
+            }
             or (isinstance(guide_state, dict) and guide_state.get("status") == "ready")
         ):
-            version = int(guide_state.get("version") or 1) if isinstance(guide_state, dict) else 1
-            needle_count = len(guide_state.get("selected_needle_ids") or []) if isinstance(guide_state, dict) else 0
+            version = int(
+                guide_status.get("version")
+                or (guide_state.get("version") if isinstance(guide_state, dict) else 0)
+                or 1
+            )
+            needle_count = len(
+                guide_status.get("selected_needle_ids")
+                or (guide_state.get("selected_needle_ids") if isinstance(guide_state, dict) else [])
+                or []
+            )
             if needle_count:
                 guide_summary = L(
                     f"\u5df2\u751f\u6210\u7a7f\u523a\u5bfc\u677f v{version}\uff0c\u5305\u542b {needle_count} \u6761\u89c4\u5212\u9488\u9053\u3002",

@@ -6494,6 +6494,58 @@ async function _readPlanningResultsForPresentation(ownerSessionId) {
     return payload || {};
 }
 
+async function _readSurgicalGuideStatusForPresentation(ownerSessionId) {
+    // A Data Tree snapshot is a presentation cache. After a Session switch it
+    // can legitimately lag behind the durable Planning snapshot, so guide
+    // questions must consult the same source-backed status endpoint as the
+    // Viewer instead of inferring absence from `tree.guide`.
+    let response = null;
+    let payload = {};
+    const maxAttempts = 8;
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+        response = await fetch(API + '/surgical-guides', {
+            cache: 'no-store',
+            headers: { 'X-BrachyBot-Session': String(ownerSessionId || '') },
+        });
+        payload = await response.json().catch(() => ({}));
+        const status = payload?.guide_status;
+        const pending = response.status === 202
+            || payload?.pending === true
+            || status?.hydration_pending === true
+            || ['restoring', 'persisted_not_loaded'].includes(String(status?.state || '').toLowerCase());
+        if (!pending || attempt === maxAttempts - 1) break;
+        const retryAfter = Number(response.headers.get('Retry-After-Ms') || 250);
+        await new Promise(resolve => setTimeout(
+            resolve,
+            Math.max(100, Math.min(1000, Number.isFinite(retryAfter) ? retryAfter : 250)),
+        ));
+    }
+    if (!response || (!response.ok && response.status !== 202)) {
+        throw new Error(payload?.error || `surgical_guide_status_unavailable:${response?.status || 'network'}`);
+    }
+    if (payload?.guide_status && typeof payload.guide_status === 'object') return payload;
+    // An agent that is still being created may return a pending response
+    // without the richer contract. Preserve uncertainty rather than allowing
+    // the summary layer to call the guide "not generated".
+    if (response.status === 202 || payload?.pending === true) {
+        return {
+            ...payload,
+            guide_status: {
+                state: 'restoring',
+                available: false,
+                generated: false,
+                persisted: false,
+                persistence_known: false,
+                mesh_loaded: false,
+                presentation: 'restoring',
+                reason: 'workspace_hydration_pending',
+                hydration_pending: true,
+            },
+        };
+    }
+    return payload || {};
+}
+
 function _contentNumber(value, digits = 1) {
     const numeric = Number(value);
     if (!Number.isFinite(numeric)) return '';
@@ -6534,6 +6586,9 @@ function _sessionContentTreeSnapshot() {
         needleCount: Array.isArray(planning.needles) ? planning.needles.length : 0,
         doseLoaded: !!tree.dose?.loaded || !!planning.doseOverlay,
         dvhLoaded: !!planning.dvh?.loaded || !!planning.dvh,
+        // The backend guide status is source-backed; the mesh/node is only a
+        // local presentation cache and may arrive a little later on restart.
+        guideStatus: planning.guideStatus || tree.guideStatus || null,
         guide,
         artifactCount: Array.isArray(tree.exportArtifacts) ? tree.exportArtifacts.length : 0,
     };
@@ -6764,6 +6819,11 @@ function _sessionContentSummary(target, planning, tree, language, command = {}) 
     const d90 = _contentNumber(_contentMetric(metrics, ['D90', 'd90', 'dose_d90']), 2);
     const planningId = String(planning?.planning_id || tree?.planningId || '');
     const prefix = planningId ? ` (${planningId})` : '';
+    const guideStatus = command?.guide_status && typeof command.guide_status === 'object'
+        ? command.guide_status
+        : tree?.guideStatus && typeof tree.guideStatus === 'object'
+            ? tree.guideStatus
+            : null;
     const lines = [];
 
     if (target === 'planning' || target === 'session_summary') {
@@ -6849,10 +6909,33 @@ function _sessionContentSummary(target, planning, tree, language, command = {}) 
             : `Structures: ${tree?.ctvCount || 0} CTV item(s), ${tree?.oarCount || 0} OAR item(s)${tree?.skinLoaded ? ', guide skin surface loaded' : ''}.`);
     }
     if (target === 'surgical_guide' || target === 'session_summary') {
-        if (tree?.guide) {
+        const guideState = String(guideStatus?.state || '').toLowerCase();
+        const version = guideStatus?.version != null ? ` v${guideStatus.version}` : '';
+        const needleCount = Array.isArray(guideStatus?.selected_needle_ids)
+            ? guideStatus.selected_needle_ids.length : 0;
+        if (guideState === 'ready') {
+            const label = tree?.guide?.label || (zh ? '\u7a7f\u523a\u5bfc\u677f' : 'puncture guide');
+            lines.push(zh
+                ? `\u624b\u672f\u5bfc\u677f${version}\u5df2\u751f\u6210${guideStatus?.mesh_loaded ? '\uff0c\u5f53\u524d Session \u8d44\u6e90\u5df2\u5c31\u7eea' : ''}${tree?.guide ? `\uff0c\u5e76\u5df2\u52a0\u8f7d\uff1a${label}` : '\uff0cViewer \u6b63\u5728\u540c\u6b65\u5448\u73b0'}${needleCount ? `\uff0c\u5305\u542b ${needleCount} \u6761\u8ba1\u5212\u9488\u9053` : ''}\u3002`
+                : `Surgical Guide${version} is generated${guideStatus?.mesh_loaded ? ' and its Session resource is ready' : ''}${tree?.guide ? ` and loaded: ${label}` : '; the Viewer is synchronizing its presentation'}${needleCount ? ` for ${needleCount} planned needle path(s)` : ''}.`);
+        } else if (['restoring', 'persisted_not_loaded'].includes(guideState)) {
+            lines.push(zh
+                ? `\u624b\u672f\u5bfc\u677f${version}\u5df2\u4fdd\u5b58\uff0c\u4f46\u5f53\u524d Session \u6b63\u5728\u6062\u590d\u6216\u52a0\u8f7d\u5bfc\u677f\u8d44\u6e90\uff1b\u8fd9\u4e0d\u8868\u793a\u5b83\u672a\u751f\u6210\u3002`
+                : `Surgical Guide${version} is persisted, but this Session is still restoring or loading its resources; this does not mean it was not generated.`);
+        } else if (guideState === 'generating') {
+            lines.push(zh ? '\u624b\u672f\u5bfc\u677f\u6b63\u5728\u751f\u6210\uff0c\u8bf7\u7b49\u5f85\u5f53\u524d\u64cd\u4f5c\u5b8c\u6210\u3002' : 'Surgical Guide generation is in progress; wait for the current operation to finish.');
+        } else if (guideState === 'stale') {
+            lines.push(zh ? `\u624b\u672f\u5bfc\u677f${version}\u5df2\u751f\u6210\uff0c\u4f46\u4e0e\u5f53\u524d\u89c4\u5212\u4e0d\u4e00\u81f4\u6216\u5df2\u8fc7\u671f\uff0c\u9700\u91cd\u65b0\u751f\u6210\u3002` : `Surgical Guide${version} exists, but it is stale or does not match the current Planning and should be regenerated.`);
+        } else if (guideState === 'failed') {
+            lines.push(zh ? `\u624b\u672f\u5bfc\u677f${version}\u751f\u6210\u5931\u8d25\uff1a${guideStatus?.reason || '\u672a\u77e5\u9519\u8bef'}\u3002` : `Surgical Guide${version} generation failed: ${guideStatus?.reason || 'unknown error'}.`);
+        } else if (guideState === 'unavailable') {
+            lines.push(zh ? '\u5f53\u524d\u65e0\u6cd5\u6838\u9a8c\u624b\u672f\u5bfc\u677f\u72b6\u6001\uff0c\u75c5\u4f8b\u8d44\u6e90\u53ef\u80fd\u4ecd\u5728\u6062\u590d\u3002' : 'The Surgical Guide status is temporarily unavailable; case resources may still be recovering.');
+        } else if (guideState === 'not_generated') {
+            lines.push(zh ? '\u5f53\u524d\u89c4\u5212\u5c1a\u672a\u627e\u5230\u5df2\u4fdd\u5b58\u7684\u624b\u672f\u5bfc\u677f\u3002' : 'No persisted Surgical Guide was found for the current Planning.');
+        } else if (tree?.guide) {
             lines.push(zh ? `\u624b\u672f\u5bfc\u677f\u5df2\u52a0\u8f7d\uff1a${tree.guide.label || '\u7a7f\u523a\u5bfc\u677f'}\u3002` : `Surgical Guide is loaded: ${tree.guide.label || 'puncture guide'}.`);
         } else if (target === 'surgical_guide') {
-            lines.push(zh ? '\u5f53\u524d\u89c4\u5212\u5c1a\u65e0\u53ef\u5c55\u793a\u7684\u624b\u672f\u5bfc\u677f\u3002' : 'No Surgical Guide is currently available for presentation.');
+            lines.push(zh ? '\u5f53\u524d\u89c4\u5212\u7684\u624b\u672f\u5bfc\u677f\u72b6\u6001\u6682\u65f6\u65e0\u6cd5\u786e\u8ba4\uff0c\u8bf7\u7b49\u5f85 Session \u52a0\u8f7d\u5b8c\u6210\u540e\u518d\u5224\u65ad\u3002' : 'The current Planning\'s Surgical Guide status cannot yet be confirmed; wait for Session loading to finish before judging whether it exists.');
         }
     }
     if (target === 'report' || target === 'session_summary') {
@@ -7139,6 +7222,27 @@ window.presentSessionContent = async function presentSessionContent(command = {}
         }
         const tree = _sessionContentTreeSnapshot();
         const requestedPlanningId = String(command.planning_id || tree?.planningId || '');
+        let guideStatus = null;
+        if (target === 'surgical_guide' || target === 'session_summary') {
+            try {
+                guideStatus = (await _readSurgicalGuideStatusForPresentation(ownerSessionId))?.guide_status || null;
+            } catch (error) {
+                // A failed status request is uncertainty, never proof of
+                // absence. Keep the response honest while the case is still
+                // switching or its resources are recovering.
+                guideStatus = {
+                    state: 'unavailable',
+                    available: false,
+                    generated: false,
+                    persisted: false,
+                    persistence_known: false,
+                    mesh_loaded: false,
+                    presentation: 'unavailable',
+                    reason: error?.message || 'guide_status_unavailable',
+                    hydration_pending: true,
+                };
+            }
+        }
         const planningTargets = new Set(['planning', 'dose', 'dvh', 'metrics', 'session_summary']);
         const needPlanning = planningTargets.has(target) || target === 'report';
         let planning = null;
@@ -7198,6 +7302,7 @@ window.presentSessionContent = async function presentSessionContent(command = {}
             if (!ownerStillActive()) return { success: false, stale: true, error: 'case_changed' };
         }
         const summary = _sessionContentSummary(target, planning, tree, language, Object.assign({}, command, {
+            guide_status: guideStatus,
             object_ids: command.object_ids?.length ? command.object_ids : focusedObjects.map(item => item.objectId),
             visual_capture_requested: !!visualCapability,
             visual_capture_succeeded: !!visualCapture?.success,
@@ -7249,6 +7354,7 @@ window.presentSessionContent = async function presentSessionContent(command = {}
             attachments,
             target,
             planning_id: requestedPlanningId,
+            guide_status: guideStatus,
             selection,
             analysis: analyze,
         };
