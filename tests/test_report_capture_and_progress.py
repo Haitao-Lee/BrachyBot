@@ -19,11 +19,17 @@ def test_figure_one_detail_view_keeps_the_complete_ctv_in_frame():
     assert "halfDepth + planarDistance" in source
     # Keep a small framing safety border while bringing both report views
     # materially closer to the treatment geometry.
-    assert "margin: mode === 'detail' ? 1.04 : 1.08" in source
+    assert "margin: mode === 'detail' ? 1.02 : 1.04" in source
     assert "targetAspect: REPORT_FIGURE_ASPECT" in source
     assert "id === 'skin_surface'" in source
     assert "guide_skin_surface" in source
     assert "includeOars: true, includeNeedles: true" in source
+    assert "function _captureReportCanvasFocus" in source
+    assert "const cropContainsFocus = sx <= boxLeft + 0.5" in source
+    assert "Focused crop would exclude projected plan content" in source
+    assert "const overviewBox = _computeFocusedPlanBox" in source
+    assert "const detailBox = _computeFocusedPlanBox" in source
+    assert "padding: 0.16" in source
     assert "REPORT_FIGURE_LONG_EDGE = 2400" in source
     assert "_captureReportCanvasFit(c, maxOutputEdge)" in source
 
@@ -87,7 +93,7 @@ def test_figure_one_capture_contract_survives_report_artifact_round_trip():
     api = _read("web/app/static/js/brachybot-ui-api.js")
     export_service = _read("web/export_service.py")
 
-    assert "REPORT_FIGURE_ONE_CAPTURE_CONTRACT = 'figure1-global-overview-target-detail-v3-no-oar-closeup'" in editor
+    assert "REPORT_FIGURE_ONE_CAPTURE_CONTRACT = 'figure1-global-overview-target-detail-v5-thin-needles'" in editor
     assert editor.count("captureContract: REPORT_FIGURE_ONE_CAPTURE_CONTRACT") == 2
     assert "const _isFigureOneOar = (id, mesh)" in editor
     assert "mesh.visible = !_isFigureOneOar(id, mesh)" in editor
@@ -99,6 +105,27 @@ def test_figure_one_capture_contract_survives_report_artifact_round_trip():
     assert "capture_contract: String(figure.captureContract || '')" in api
     assert "viewMetadata: item.metadata?.view_metadata || item.metadata || {}" in viewer
     assert '"capture_contract": figure.get("captureContract")' in export_service
+
+
+def test_figure_one_b_uses_report_only_thin_needles_and_restores_live_geometry():
+    """The close-up must reveal individual seeds without changing the live plan."""
+    editor = _read("web/app/static/js/brachybot-report-editor.js")
+    manual = _read("web/app/static/js/brachybot-3d-manual.js")
+    layout = _read("web/app/static/js/brachybot-viewer-layout.js")
+
+    assert "const _savedNeedleGeometries = {};" in editor
+    assert "const REPORT_FIGURE_ONE_NEEDLE_RADIUS = 0.12;" in editor
+    assert "const _applyFigureOneNeedleStyle = (id, mesh) =>" in editor
+    assert "mesh.geometry = replacement.geometry;" in editor
+    assert "currentGeometry.dispose?.();" in editor
+    assert "if (_isFigureOneNeedle(id, mesh)) {\n                    _applyFigureOneNeedleStyle(id, mesh);" in editor
+    assert "displayPoints: points.map(point => [point.x, point.y, point.z])" in manual
+    assert "displayPoints: points.map(point => [point.x, point.y, point.z])" in layout
+
+    # The report close-up changes presentation geometry only; the seed geometry
+    # remains the configured physical size and is rendered above the shaft.
+    assert "_setFigureOneOpacity(mesh, 1.0)" in editor
+    assert "_setFigureOneOpacity(mesh, 0.8)" in editor
 
 
 def test_report_preview_groups_figures_by_stable_metadata_not_array_position():
@@ -214,7 +241,7 @@ def test_response_trace_exposes_synthesis_and_final_delivery_phases():
     assert '"Response Synthesis"' in source
     assert '"Final Response"' in source
     assert 'yield yield_event("step", _synthesis_step)' in source
-    assert 'yield yield_event("response", payload)' in source
+    assert 'yield yield_event("response", normalized_payload)' in source
     assert 'final_step["status"] = "done"' in source
 
 

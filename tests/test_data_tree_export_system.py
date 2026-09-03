@@ -347,6 +347,77 @@ def test_generic_mask_move_updates_effective_structure_set_and_invalidates_depen
     assert np.all(restored.ctv_array[generic_mask > 0] > 0)
 
 
+def test_delete_promoted_generic_mask_removes_its_source_and_effective_tree_row(tmp_path):
+    """A CTV/OAR row backed by an upload keeps its `mask:*` identity on delete."""
+    store, user, session, agent = _case(tmp_path)
+    memory = agent.memory
+    shape = tuple(memory.retrieve("ctv_array").shape)
+    generic_mask = np.zeros(shape, dtype=np.uint8)
+    generic_mask[1:3, 1:4, 1:4] = 1
+    stable_id = "mask:upload_label_1"
+    memory.store("generic_segmentation_masks", [{
+        "mask_id": "upload_label_1",
+        "object_id": stable_id,
+        "data_tree_node_id": "upload_label_1",
+        "name": "Label 1",
+        "label": "Label 1",
+        "classification": "unclassified",
+        "moved_to": None,
+        "mask_array": generic_mask,
+        "spacing": [0.7, 0.8, 2.5],
+    }])
+
+    reclassify_generic_segmentation_masks(memory, [stable_id], "ctv")
+    before = build_effective_structures(memory)
+    assert any(item["object_id"] == stable_id for item in before.structures)
+
+    result = _delete_object(store, user, session.id, agent, stable_id)
+
+    assert result["object_id"] == stable_id
+    assert memory.retrieve("generic_segmentation_masks") == []
+    assert stable_id in memory.retrieve("structure_deleted_ids")
+    assert all(
+        item["object_id"] != stable_id
+        for item in build_effective_structures(memory).structures
+    )
+    assert all(item["object_id"] != stable_id for item in result["structures"])
+
+
+def test_data_tree_delete_reconciles_canonical_ids_and_stale_hydration():
+    """A confirmed delete must remove ghost rows before a delayed load can restore them."""
+    root = Path(__file__).resolve().parents[1]
+    viewer = (
+        root / "web" / "app" / "static" / "js" / "brachybot-viewer-volume.js"
+    ).read_text(encoding="utf-8")
+
+    assert "const pendingDataTreeDeleteIds = new Set();" in viewer
+    assert "const returnedIds = (payload.results || [])" in viewer
+    assert "objectIds: [...new Set([...ids, ...returnedIds])]" in viewer
+    assert "function _canonicalDataTreeObjectId(value)" in viewer
+    assert "function _purgeDeletedDataTreePresentation(objectIds)" in viewer
+    assert "_purgeDeletedDataTreePresentation(objectIds);" in viewer
+    assert "invalidateViewerDataLoads();" in viewer
+    assert "if (genericMaskMutation && !structureMutation)" in viewer
+    assert "dataTreeState.ctv.loaded = hasCTV;" in viewer
+    assert "dataTreeState.oar.loaded = hasOAR;" in viewer
+    assert "const liveCtvNodeIds = new Set(ctvLabels.map(labelId => `ctv_${labelId}`));" in viewer
+    assert "if (!_viewerDataScopeIsCurrent(scope)) return false;" in viewer
+    assert "if (!_isOpenGenericMask(nextMask))" in viewer
+
+
+def test_missing_data_tree_objects_trigger_authoritative_reconciliation():
+    """A stale node from another tab/request must refresh rather than show a false failure."""
+    root = Path(__file__).resolve().parents[1]
+    viewer = (
+        root / "web" / "app" / "static" / "js" / "brachybot-viewer-volume.js"
+    ).read_text(encoding="utf-8")
+
+    assert "async function _refreshDataTreeAfterMissingObject(expectedSessionId)" in viewer
+    assert "data-tree-missing-object-reconcile" in viewer
+    assert "/not found|no longer exists|missing/i.test(message)" in viewer
+    assert "The Data Tree and viewers were refreshed to the latest state." in viewer
+
+
 def test_model_ctv_anatomy_survives_an_oar_source_refresh():
     """Refreshing OAR must not erase multi-label anatomy from CTV output."""
     memory = _Memory()

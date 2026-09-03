@@ -11,6 +11,7 @@ import os
 import re
 import threading
 import time
+from collections.abc import Mapping
 from types import SimpleNamespace
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -20,13 +21,20 @@ import SimpleITK as sitk
 from agent_runtime.core import PlanningPhase, ToolResultPipeline, resolve_reference_direction_input
 from agent_runtime.contracts import RunStatus
 from agent_runtime.execution_authorization import TurnExecutionAuthorization
-from agent_runtime.visual_evidence import VISUAL_EVIDENCE_PROTOCOL_MARKER
+from agent_runtime.visual_evidence import (
+    LEGACY_VISUAL_EVIDENCE_PROTOCOL_MARKER,
+    VISUAL_EVIDENCE_PROTOCOL_MARKER,
+)
 from agent_runtime.turn_policy import (
     classify_local_turn,
     is_current_oar_count_query,
     resolve_session_content_presentation,
     resolve_session_content_target,
     visual_analysis_policy,
+)
+from agent_runtime.response_contract import (
+    build_response_contract,
+    presentation_fallback_message,
 )
 from plans.dose_pre.model_loader import (
     DEFAULT_PRESCRIPTION_GY,
@@ -78,7 +86,10 @@ class ChatWorkflowMixin:
             r"^\s*(?:assistant|brachybot|助手|机器人|ai)\s*:", re.IGNORECASE,
         )
         user_boundary = re.compile(r"^\s*(?:user|用户)\s*:", re.IGNORECASE)
-        protocol_marker = VISUAL_EVIDENCE_PROTOCOL_MARKER
+        protocol_markers = (
+            VISUAL_EVIDENCE_PROTOCOL_MARKER,
+            LEGACY_VISUAL_EVIDENCE_PROTOCOL_MARKER,
+        )
         terminal_markers = (
             "Analyze the supplied screenshot",
             "Do not request another screenshot",
@@ -103,7 +114,7 @@ class ChatWorkflowMixin:
             starts_with_user = bool(user_boundary.match(lines[index]))
             starts_with_capture = "[Screenshot captured:" in lines[index]
             starts_with_embedded_request = "User request:" in lines[index] or "用户请求：" in lines[index]
-            starts_with_protocol = protocol_marker in lines[index]
+            starts_with_protocol = any(marker in lines[index] for marker in protocol_markers)
             if not (
                 starts_with_capture
                 or starts_with_embedded_request
@@ -130,7 +141,7 @@ class ChatWorkflowMixin:
                         "[Screenshot captured:" in candidate_so_far
                         or "User request:" in candidate_so_far
                         or "用户请求：" in candidate_so_far
-                        or protocol_marker in candidate_so_far
+                        or any(marker in candidate_so_far for marker in protocol_markers)
                     )
                 ):
                     break
@@ -138,7 +149,7 @@ class ChatWorkflowMixin:
             candidate = "\n".join(lines[index:end])
             has_capture = "[Screenshot captured:" in candidate
             has_embedded_request = "User request:" in candidate or "用户请求：" in candidate
-            has_protocol = protocol_marker in candidate
+            has_protocol = any(marker in candidate for marker in protocol_markers)
             has_terminal_instruction = any(marker in candidate for marker in terminal_markers)
             # The second clause repairs summaries already partially cleaned by
             # prior versions, where only the generated request plus terminal
@@ -276,6 +287,90 @@ class ChatWorkflowMixin:
         """Return the normalized language for the current user-visible turn."""
         value = lang or getattr(getattr(self, "memory", None), "user_lang", "en")
         return "zh" if str(value or "").lower().startswith("zh") else "en"
+
+    def _resolve_turn_language(
+        self,
+        message: str,
+        turn_context: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, str]:
+        """Resolve one turn's dialogue language with an explicit precedence.
+
+        The global EN/中 selector is a fallback for a brand-new/ambiguous
+        conversation, not an instruction to translate a language-bearing user
+        message.  Once a user has spoken, a detectable script in the latest
+        message wins; number-only confirmations inherit the latest persisted
+        conversation language.  Hidden visual children inherit their parent
+        language and never re-detect the generated English transport prompt.
+        """
+        context = turn_context or getattr(self, "_active_turn_context", {}) or {}
+        internal_followup = bool(context.get("internal_followup"))
+        try:
+            from memory.language import (
+                _LANG_DISPLAY,
+                detect,
+                get_session_language,
+                normalize_language,
+                session_language_store,
+            )
+        except Exception:  # pragma: no cover - import failure is defensive
+            _LANG_DISPLAY = {"en": "English", "zh": "中文 (Chinese)"}
+            detect = None
+            get_session_language = None
+            normalize_language = lambda value, default="en": (
+                "zh" if str(value or "").lower().startswith("zh")
+                else ("en" if str(value or "").lower().startswith("en") else default)
+            )
+            session_language_store = None
+
+        if internal_followup:
+            inherited = self._internal_followup_language(context)
+            inherited_code = normalize_language(inherited, default="")
+            if not inherited_code:
+                inherited_code = normalize_language(
+                    context.get("response_language"), default="en"
+                )
+            info = {
+                "code": inherited_code or "en",
+                "name": _LANG_DISPLAY.get(inherited_code or "en", "English"),
+                "source": "parent_turn",
+            }
+        else:
+            stored = get_session_language(self.memory) if get_session_language else {}
+            stored_code = ""
+            if isinstance(stored, dict) and stored.get("source") != "default":
+                stored_code = normalize_language(stored.get("code"), default="")
+            response_code = normalize_language(
+                context.get("response_language"), default=""
+            )
+            ui_code = normalize_language(context.get("ui_language"), default="")
+            # A persisted conversation language is stronger than a browser
+            # hint because it survives refreshes and cannot be stale merely
+            # because the UI toggle was changed. The browser response hint is
+            # useful only for a first turn before the worker has a snapshot.
+            fallback_code = stored_code or response_code or ui_code or "en"
+            if callable(detect):
+                info = detect(message, fallback=fallback_code)
+            else:  # pragma: no cover - covered by the normal import path
+                info = {
+                    "code": fallback_code,
+                    "name": _LANG_DISPLAY.get(fallback_code, "English"),
+                    "source": "fallback",
+                }
+
+        code = normalize_language(info.get("code"), default="en")
+        info = {
+            "code": code,
+            "name": _LANG_DISPLAY.get(code, info.get("name") or "English"),
+            "source": str(info.get("source") or "default"),
+        }
+        # Keep the full detector code for the LLM clause. The trace/UI
+        # renderer still intentionally maps its static labels to zh/en.
+        self.memory.user_lang = code
+        self._active_turn_language_info = info
+        self._active_trace_language = "zh" if code == "zh" else "en"
+        if not internal_followup and callable(session_language_store):
+            session_language_store(self.memory, info)
+        return info
 
     @staticmethod
     def _is_explicit_capability_request(message: str) -> bool:
@@ -422,11 +517,12 @@ class ChatWorkflowMixin:
             return
 
         step_id_ref[0] += 1
+        trace_zh = getattr(self, "_active_trace_language", "en") == "zh"
         thinking_step = {
             "id": step_id_ref[0],
             "type": "thinking",
-            "title": "LLM Call 1",
-            "content": "Waiting for AI response...",
+            "title": "LLM 调用 1" if trace_zh else "LLM Call 1",
+            "content": "等待 AI 回复..." if trace_zh else "Waiting for AI response...",
             "status": "pending",
         }
         steps.append(thinking_step)
@@ -437,12 +533,35 @@ class ChatWorkflowMixin:
             # schemas, no clinical context modules, no runtime state injection.
             lang_clause = ""
             try:
-                from memory.language import detect as _lang_detect, system_prompt_clause as _lang_clause
+                from memory.language import (
+                    detect as _lang_detect,
+                    get_session_language as _get_session_language,
+                    normalize_language as _normalize_language,
+                    system_prompt_clause as _lang_clause,
+                )
                 # The global UI locale controls static controls and reports;
                 # it must not override the language of a user conversation.
                 # A Chinese request in an English UI still needs a Chinese
                 # reply and Execution Trace.
-                _lang_info = _lang_detect(message)
+                _turn_context = getattr(self, "_active_turn_context", {}) or {}
+                _stored = _get_session_language(self.memory)
+                _stored_code = (
+                    _normalize_language(_stored.get("code"), default="")
+                    if isinstance(_stored, dict) and _stored.get("source") != "default"
+                    else ""
+                )
+                _fallback_code = (
+                    _stored_code
+                    or _normalize_language(_turn_context.get("response_language"), default="")
+                    or _normalize_language(_turn_context.get("ui_language"), default="")
+                    or "en"
+                )
+                # The turn boundary has already resolved this in normal use.
+                # This fallback keeps standalone callers consistent with the
+                # same persisted-language/UI-locale contract.
+                _lang_info = getattr(self, "_active_turn_language_info", None)
+                if not isinstance(_lang_info, dict):
+                    _lang_info = _lang_detect(message, fallback=_fallback_code)
                 lang_clause = "\n" + _lang_clause(_lang_info) + "\n"
             except Exception as _e:
                 logger.debug("Lightweight language detection skipped: %s", _e)
@@ -482,7 +601,7 @@ class ChatWorkflowMixin:
             else:
                 usage = {}
             thinking_step["status"] = "done"
-            thinking_step["content"] = "Response generated"
+            thinking_step["content"] = "已生成回复" if trace_zh else "Response generated"
             yield yield_event("step", thinking_step)
             # Providers may return a graceful error instead of raising. Keep
             # technical details in logs; raw credentials/endpoints/errors do
@@ -490,7 +609,9 @@ class ChatWorkflowMixin:
             if finish_reason == "error" or content.startswith("Error:"):
                 logger.warning("Lightweight LLM provider failure: %s", content[:500])
                 thinking_step["status"] = "error"
-                thinking_step["content"] = "AI language service unavailable"
+                thinking_step["content"] = (
+                    "AI 语言服务不可用" if trace_zh else "AI language service unavailable"
+                )
                 content = self._current_llm_unavailable_message()
             yield {
                 "type": "_result",
@@ -508,7 +629,9 @@ class ChatWorkflowMixin:
             # reason remains in server logs for operators.
             logger.warning("Lightweight conversation failed: %s", e)
             thinking_step["status"] = "error"
-            thinking_step["content"] = "AI language service unavailable"
+            thinking_step["content"] = (
+                "AI 语言服务不可用" if trace_zh else "AI language service unavailable"
+            )
             yield yield_event("step", thinking_step)
             yield {
                 "type": "_result",
@@ -1060,6 +1183,208 @@ class ChatWorkflowMixin:
         except Exception:
             return default
 
+    @staticmethod
+    def _compact_planning_parameters(value: Any) -> Dict[str, Any]:
+        """Keep only auditable Planning inputs for a comparison prompt.
+
+        Planning snapshots also contain large arrays and input paths.  A
+        state question needs the parameters that can explain a changed plan,
+        never those runtime objects.  This is intentionally a data-shaping
+        boundary, not a response template or an intent whitelist.
+        """
+        if not isinstance(value, Mapping):
+            return {}
+        allowed = (
+            "mode", "requested_mode", "effective_mode", "rl_fallback_used",
+            "rl_target_coverage", "rl_fallback_coverage", "rl_fallback_reason",
+            "planning_fingerprint", "planning_parameters", "DVH_rate",
+            "replan_rate", "max_iter", "iter_rate", "distance_filter",
+            "radiation_array_params", "in_lowest_energy", "out_highest_energy",
+            "in_lowest_dose_gy", "out_highest_dose_gy", "prescription_gy",
+            "dose_scale_gy", "needle_spacing", "seed_info", "ref_direc",
+            "reference_direction",
+        )
+        return {
+            key: ChatWorkflowMixin._local_fact_scalar(value.get(key))
+            for key in allowed
+            if value.get(key) is not None
+        }
+
+    @staticmethod
+    def _compact_rl_status(value: Any) -> Dict[str, Any]:
+        """Keep the public RL audit contract and discard runtime internals.
+
+        RL diagnostics are represented separately from planning tunables. This
+        keeps changing counters out of input/fingerprint comparisons while
+        allowing a grounded answer to explain why an earlier attempt stopped.
+        """
+        if not isinstance(value, Mapping):
+            return {}
+        result: Dict[str, Any] = {}
+        for key in ("schema_version", "execution", "stop_reason"):
+            if value.get(key) is not None:
+                result[key] = ChatWorkflowMixin._local_fact_scalar(value.get(key))
+        for key in (
+            "target_coverage", "best_coverage", "best_reward", "elapsed_seconds",
+        ):
+            if key not in value:
+                continue
+            raw = value.get(key)
+            if raw is None:
+                result[key] = None
+                continue
+            try:
+                numeric = float(raw)
+            except (TypeError, ValueError):
+                continue
+            if np.isfinite(numeric):
+                result[key] = numeric
+        for key in (
+            "episodes_completed", "high_level_episodes", "low_level_episodes",
+            "actions_taken", "dense_trajectories_completed", "dense_seed_candidates",
+            "dose_cache_hits", "dose_cache_misses", "candidate_count", "candidate_limit",
+            "dense_seed_limit", "max_hierarchy_depth", "dense_errors",
+            "max_episodes", "max_actions_per_episode",
+        ):
+            if key not in value:
+                continue
+            try:
+                result[key] = max(0, int(value.get(key) or 0))
+            except (TypeError, ValueError):
+                continue
+        if "hierarchical_optimization" in value:
+            result["hierarchical_optimization"] = bool(value.get("hierarchical_optimization"))
+        return result
+
+    @staticmethod
+    def _planning_algorithm_family(mode: Any) -> str:
+        """Normalize requested/effective mode names for comparison.
+
+        ``rule_based_fallback`` is not a third optimizer.  It is the same
+        deterministic rule-based optimizer selected after an RL attempt did
+        not meet the configured target.  Keeping this equivalence explicit
+        prevents a state answer from treating a requested-mode difference as
+        proof that two different algorithms produced the result.
+        """
+        normalized = re.sub(r"[^a-z0-9]+", "_", str(mode or "").strip().lower()).strip("_")
+        if normalized in {
+            "rule_based", "rule_based_fallback", "rulebased", "rulebased_fallback",
+        }:
+            return "rule_based"
+        if normalized in {"rl", "reinforcement_learning", "reinforcementlearning"}:
+            return "rl"
+        return normalized
+
+    def _planning_history_fact_rows(self) -> List[Dict[str, Any]]:
+        """Build compact, read-only facts for all persisted Planning runs."""
+        raw_runs = self._local_memory_value("planning_runs", []) or []
+        if not isinstance(raw_runs, list):
+            return []
+        try:
+            from web.planning_runs import planning_run_snapshot
+        except Exception:
+            planning_run_snapshot = None
+
+        rows: List[Dict[str, Any]] = []
+        for raw_run in raw_runs:
+            if not isinstance(raw_run, Mapping):
+                continue
+            planning_id = str(raw_run.get("planning_id") or "").strip()
+            if not planning_id:
+                continue
+            snapshot: Mapping[str, Any] = {}
+            if callable(planning_run_snapshot):
+                try:
+                    candidate = planning_run_snapshot(self.memory, planning_id)
+                    if isinstance(candidate, Mapping):
+                        snapshot = candidate
+                except Exception as exc:
+                    logger.debug("Planning snapshot unavailable id=%s: %s", planning_id, exc)
+
+            input_revision = raw_run.get("input_revision")
+            input_revision = input_revision if isinstance(input_revision, Mapping) else {}
+            plan_config = snapshot.get("plan_config")
+            if not isinstance(plan_config, Mapping):
+                plan_config = {}
+            if not plan_config:
+                plan_config = input_revision
+
+            metrics: Mapping[str, Any] = {}
+            for key in ("dose_metrics", "algorithm_plan_dose_metrics", "metrics"):
+                candidate = snapshot.get(key)
+                if isinstance(candidate, Mapping):
+                    metrics = candidate
+                    break
+            if not metrics and isinstance(raw_run.get("metrics_summary"), Mapping):
+                metrics = raw_run.get("metrics_summary")
+
+            metric_values: Dict[str, Any] = {}
+            for key in ("v100", "v150", "v200", "d90", "d95", "dmean", "d2", "dmax", "plan_score"):
+                if metrics.get(key) is not None:
+                    metric_values[key] = self._local_fact_scalar(metrics.get(key))
+
+            def _count(name: str, fallback: Any = 0) -> int:
+                value = snapshot.get(name, raw_run.get(name, fallback))
+                try:
+                    return int(value or 0)
+                except (TypeError, ValueError):
+                    return 0
+
+            parameters = self._compact_planning_parameters(plan_config)
+            if not parameters:
+                parameters = self._compact_planning_parameters(input_revision)
+            rl_status_source = plan_config.get("rl_status")
+            if not isinstance(rl_status_source, Mapping):
+                rl_status_source = snapshot.get("rl_status")
+            if not isinstance(rl_status_source, Mapping):
+                rl_status_source = raw_run.get("rl_status")
+            rl_status = self._compact_rl_status(rl_status_source)
+            # The lifecycle record is authoritative for the run label/status;
+            # the namespaced snapshot is authoritative for plan-owned values.
+            requested_mode = self._local_fact_scalar(
+                parameters.get("requested_mode") or input_revision.get("mode")
+            )
+            effective_mode = self._local_fact_scalar(parameters.get("effective_mode"))
+            fallback_used = self._local_fact_scalar(parameters.get("rl_fallback_used"))
+            # Snapshots written before ``effective_mode`` became mandatory
+            # may still carry only the fallback flag.  Reconstruct the
+            # effective family from that explicit execution fact instead of
+            # labelling the run as pure RL and losing the explanation.
+            if fallback_used and self._planning_algorithm_family(effective_mode) == "rl":
+                effective_mode = "rule_based_fallback"
+            rows.append({
+                "planning_id": planning_id,
+                "label": str(raw_run.get("label") or planning_id),
+                "sequence": self._local_fact_scalar(raw_run.get("sequence")),
+                "status": str(raw_run.get("status") or "unknown"),
+                "visible": bool(raw_run.get("visible", False)),
+                "parent_planning_id": self._local_fact_scalar(raw_run.get("parent_planning_id")),
+                "data_version": self._local_fact_scalar(raw_run.get("data_version")),
+                "requested_mode": requested_mode,
+                "effective_mode": effective_mode,
+                "effective_algorithm_family": self._planning_algorithm_family(
+                    effective_mode or requested_mode
+                ),
+                "planning_fingerprint": self._local_fact_scalar(
+                    parameters.get("planning_fingerprint") or input_revision.get("planning_fingerprint")
+                ),
+                "rl_fallback_used": fallback_used,
+                "rl_fallback_reason": self._local_fact_scalar(parameters.get("rl_fallback_reason")),
+                "rl_status": rl_status,
+                "parameters": parameters,
+                "geometry": {
+                    "seeds": _count("total_seeds"),
+                    "trajectories": _count("num_trajectories"),
+                },
+                "metrics": metric_values,
+                "artifact_status": self._local_fact_scalar(
+                    raw_run.get("artifact_status") if isinstance(raw_run.get("artifact_status"), Mapping)
+                    else snapshot.get("artifact_status", {})
+                ),
+            })
+        rows.sort(key=lambda row: int(row.get("sequence") or 0))
+        return rows[-20:]
+
     def _current_planning_fact_packet(self, intent: str) -> Dict[str, Any]:
         """Build the authoritative, compact fact packet for a local query.
 
@@ -1075,6 +1400,7 @@ class ChatWorkflowMixin:
             "planning_provenance_query",
             "planning_assessment_query",
             "case_dose_query",
+            "case_state_question",
         }:
             try:
                 from web.planning_runs import current_planning_context
@@ -1149,7 +1475,7 @@ class ChatWorkflowMixin:
         # legacy aliases point at another run, current_planning_context() has
         # already selected the immutable active-run snapshot; reading the
         # aliases again here could mix two Plans in one answer.
-        metrics = context.get("metrics") if isinstance(context.get("metrics"), dict) else {}
+        metrics = context.get("metrics") if isinstance(context.get("metrics"), Mapping) else {}
         if not metrics:
             metrics = self._current_dose_metrics()
         dose: Dict[str, Any] = {"available": bool(metrics)}
@@ -1211,20 +1537,20 @@ class ChatWorkflowMixin:
         packet["dose"] = dose
 
         plan_config = context.get("plan_config")
-        if not isinstance(plan_config, dict):
+        if not isinstance(plan_config, Mapping):
             plan_config = self._local_memory_value("plan_config", {})
-        plan_config = plan_config if isinstance(plan_config, dict) else {}
+        plan_config = plan_config if isinstance(plan_config, Mapping) else {}
         try:
             prescription = float(resolve_prescription_gy(plan_config, metrics))
         except Exception:
             prescription = None
-        packet["planning_parameters"] = {
-            key: self._local_fact_scalar(plan_config.get(key))
-            for key in ("mode", "effective_mode", "rl_fallback_used", "DVH_rate", "replan_rate")
-            if plan_config.get(key) is not None
-        }
+        packet["planning_parameters"] = self._compact_planning_parameters(plan_config)
         if prescription is not None and np.isfinite(prescription):
             packet["planning_parameters"]["prescription_gy"] = prescription
+        current_rl_status = context.get("rl_status")
+        if not isinstance(current_rl_status, Mapping):
+            current_rl_status = plan_config.get("rl_status")
+        packet["rl_status"] = self._compact_rl_status(current_rl_status)
 
         ctv_voxels = self._local_memory_value("ctv_voxels", 0) or 0
         ctv_volume_mm3 = self._local_memory_value("ctv_volume_mm3", 0) or 0
@@ -1253,12 +1579,260 @@ class ChatWorkflowMixin:
         packet["artifact_status"] = self._local_fact_scalar(
             artifact_status if isinstance(artifact_status, dict) else {}
         )
+        if intent == "case_state_question":
+            history = self._planning_history_fact_rows()
+            packet["planning_history"] = history
+            packet["comparison"] = {
+                "available": len(history) >= 2,
+                "run_count": len(history),
+                "active_planning_id": planning.get("planning_id"),
+            }
+            packet["answer_boundary"] = (
+                "Answer the exact current case-state question from the persisted Planning history. "
+                "When comparing results, distinguish requested parameters, effective parameters, "
+                "fallback mode, planning fingerprints, geometry, and dose metrics. "
+                "If the snapshots do not prove a cause, say so explicitly; do not answer with only "
+                "the current metrics and do not infer facts from conversation text."
+            )
+            return packet
         packet["answer_boundary"] = (
             "Explain observed current-plan facts and distinguish them from a clinical pass/fail judgment. "
             "Do not call an item abnormal unless the facts contain an applicable threshold. "
             "If no threshold is present, identify it as requiring review against site-specific guidance."
         )
         return packet
+
+    @staticmethod
+    def _is_rl_diagnostic_question(message: str) -> bool:
+        """Recognize a request for RL execution evidence, not a reply map."""
+        text = re.sub(r"\s+", " ", str(message or "").strip().lower())
+        has_rl = any(marker in text for marker in (
+            "rl", "reinforcement learning", "reinforcement", "强化学习", "回合",
+        ))
+        has_diagnostic = any(marker in text for marker in (
+            "why", "reason", "cause", "failed", "failure", "stop", "target",
+            "budget", "interrupted", "原因", "为什么", "失败", "停止", "目标",
+            "预算", "中断", "未达", "未达到", "检测到", "能不能", "是否",
+        ))
+        return has_rl and has_diagnostic
+
+    def _build_case_state_question_response(
+        self, lang: str = "en", message: str = ""
+    ) -> str:
+        """Fallback comparison grounded in persisted Planning snapshots.
+
+        The normal path asks the configured LLM to explain the packet.  This
+        fallback is only for provider failure or a contract-violating answer;
+        it still reports evidence and uncertainty rather than returning a
+        neighboring current-dose template.
+        """
+        packet = self._current_planning_fact_packet("case_state_question")
+        history = packet.get("planning_history") or []
+        is_zh = self._response_language(lang) == "zh"
+        if ChatWorkflowMixin._is_rl_diagnostic_question(message):
+            rl_rows = [
+                row for row in history
+                if isinstance(row, Mapping) and row.get("rl_status")
+            ]
+            current_status = packet.get("rl_status")
+            selected = rl_rows[-1] if rl_rows else None
+            if not selected and isinstance(current_status, Mapping) and current_status:
+                planning = packet.get("planning") or {}
+                planning_parameters = packet.get("planning_parameters") or {}
+                selected = {
+                    "label": planning.get("label") or "current Planning",
+                    "planning_id": planning.get("planning_id"),
+                    "rl_status": current_status,
+                    "effective_mode": planning_parameters.get("effective_mode"),
+                    "rl_fallback_used": planning_parameters.get("rl_fallback_used"),
+                }
+            if not selected:
+                return (
+                    "可以检测，但当前 Session 的持久化 Planning 快照中没有保存 `rl_status`，因此现在不能可靠判断之前 RL 是因为什么停止。"
+                    "请使用包含本次诊断字段的新规划记录，或提供该次规划日志。"
+                    if is_zh else
+                    "It can be detected, but the current Session's persisted Planning snapshots do not contain `rl_status`, so I cannot reliably determine why the earlier RL attempt stopped. Run a Planning version that records this diagnostic contract or provide that run's log."
+                )
+            status = selected.get("rl_status") or {}
+            execution_labels = {
+                "completed": "已完成" if is_zh else "completed",
+                "interrupted": "已中断" if is_zh else "interrupted",
+                "failed": "失败" if is_zh else "failed",
+            }
+            reason_labels = {
+                "target_reached": "达到目标覆盖率" if is_zh else "target reached",
+                "wall_clock_budget": "达到墙钟时间预算" if is_zh else "wall-clock budget reached",
+                "dose_inference_deadline": "达到剂量推理截止时间" if is_zh else "dose-inference deadline reached",
+                "episode_budget_exhausted": "回合预算耗尽" if is_zh else "episode budget exhausted",
+                "no_valid_dense_trajectory": "没有有效的密集针道候选" if is_zh else "no valid dense trajectory",
+                "no_available_action": "没有可用动作" if is_zh else "no available action",
+                "internal_exception": "内部异常" if is_zh else "internal exception",
+                "completed_without_target": "完成但未达到目标" if is_zh else "completed without target",
+            }
+            execution = str(status.get("execution") or "unknown")
+            stop_reason = str(status.get("stop_reason") or "unknown")
+            target = status.get("target_coverage")
+            best = status.get("best_coverage")
+            reward = status.get("best_reward")
+            if is_zh:
+                lines = [
+                    "## RL 执行原因诊断",
+                    "",
+                    f"我读取的是 **{selected.get('label') or selected.get('planning_id') or '目标 Planning'}** 的持久化 RL 状态，而不是根据结果反推。",
+                    f"- 执行状态：{execution_labels.get(execution, execution)} (`{execution}`)",
+                    f"- 停止原因：{reason_labels.get(stop_reason, stop_reason)} (`{stop_reason}`)",
+                    f"- 目标覆盖率 / 最佳覆盖率：{target if target is not None else '未记录'} / {best if best is not None else '未记录'}",
+                    f"- 最佳奖励：{reward if reward is not None else '未记录'}；完成回合：{status.get('episodes_completed', '未记录')}（高层 {status.get('high_level_episodes', '未记录')}，低层 {status.get('low_level_episodes', '未记录')}）",
+                    f"- 动作数 / 密集针道 / 密集粒子候选：{status.get('actions_taken', '未记录')} / {status.get('dense_trajectories_completed', '未记录')} / {status.get('dense_seed_candidates', '未记录')}",
+                    f"- 剂量缓存命中 / 未命中：{status.get('dose_cache_hits', '未记录')} / {status.get('dose_cache_misses', '未记录')}；耗时：{status.get('elapsed_seconds', '未记录')} 秒。",
+                ]
+                if selected.get("rl_fallback_used") or "fallback" in str(selected.get("effective_mode") or "").lower():
+                    lines.append("- 后续处理：RL 未达到目标后进入了规则优化兜底；这说明最终计划可能是规则优化结果，不能只看最终计划反推 RL 已成功。")
+                return "\n".join(lines)
+            lines = [
+                "## RL execution diagnosis",
+                "",
+                f"I read the persisted RL status for **{selected.get('label') or selected.get('planning_id') or 'the target Planning'}**, rather than inferring a cause from the output metrics.",
+                f"- Execution: {execution_labels.get(execution, execution)} (`{execution}`)",
+                f"- Stop reason: {reason_labels.get(stop_reason, stop_reason)} (`{stop_reason}`)",
+                f"- Target / best coverage: {target if target is not None else 'not recorded'} / {best if best is not None else 'not recorded'}",
+                f"- Best reward: {reward if reward is not None else 'not recorded'}; episodes: {status.get('episodes_completed', 'not recorded')} (high {status.get('high_level_episodes', 'not recorded')}, low {status.get('low_level_episodes', 'not recorded')})",
+                f"- Actions / dense trajectories / dense seed candidates: {status.get('actions_taken', 'not recorded')} / {status.get('dense_trajectories_completed', 'not recorded')} / {status.get('dense_seed_candidates', 'not recorded')}",
+                f"- Dose-cache hits / misses: {status.get('dose_cache_hits', 'not recorded')} / {status.get('dose_cache_misses', 'not recorded')}; elapsed: {status.get('elapsed_seconds', 'not recorded')} seconds.",
+            ]
+            if selected.get("rl_fallback_used") or "fallback" in str(selected.get("effective_mode") or "").lower():
+                lines.append("- Follow-up: RL did not reach its target and the rule-based fallback was used; the final plan may therefore be the rule-based result, not evidence that RL succeeded.")
+            return "\n".join(lines)
+        if len(history) < 2:
+            return (
+                "当前 Session 中没有至少两次可比较的持久化 Planning 记录，因此无法可靠确认两次规划是否使用了不同参数，"
+                "也无法解释结果是否因参数变化而变化。请先确认两次规划都已完成并保存。"
+                if is_zh else
+                "The current Session does not contain at least two persisted Planning runs, so I cannot reliably confirm whether the two runs used different parameters or explain their result relationship. Confirm that both runs completed and were saved."
+            )
+
+        older, newer = history[-2], history[-1]
+
+        def _json(value: Any) -> str:
+            return json.dumps(value or {}, ensure_ascii=False, sort_keys=True, default=str)
+
+        old_params = older.get("parameters") or {}
+        new_params = newer.get("parameters") or {}
+
+        def _comparable_parameters(value: Any) -> Any:
+            """Remove algorithm identity fields before comparing tunables."""
+            if isinstance(value, Mapping):
+                ignored = {
+                    "mode", "requested_mode", "effective_mode", "effective_algorithm_family",
+                    "rl_fallback_used", "rl_target_coverage", "rl_fallback_coverage",
+                    "rl_fallback_reason", "planning_fingerprint",
+                }
+                return {
+                    str(key): _comparable_parameters(item)
+                    for key, item in value.items()
+                    if str(key) not in ignored
+                }
+            if isinstance(value, (list, tuple)):
+                return [_comparable_parameters(item) for item in value]
+            return value
+
+        params_differ = _json(_comparable_parameters(old_params)) != _json(
+            _comparable_parameters(new_params)
+        )
+        old_metrics = older.get("metrics") or {}
+        new_metrics = newer.get("metrics") or {}
+        metrics_differ = _json(old_metrics) != _json(new_metrics)
+        old_geometry = older.get("geometry") or {}
+        new_geometry = newer.get("geometry") or {}
+        geometry_differ = _json(old_geometry) != _json(new_geometry)
+        old_fp = older.get("planning_fingerprint")
+        new_fp = newer.get("planning_fingerprint")
+        fingerprint_differ = bool(old_fp and new_fp and old_fp != new_fp)
+        old_family = older.get("effective_algorithm_family") or self._planning_algorithm_family(
+            older.get("effective_mode") or older.get("requested_mode")
+        )
+        new_family = newer.get("effective_algorithm_family") or self._planning_algorithm_family(
+            newer.get("effective_mode") or newer.get("requested_mode")
+        )
+        family_same = bool(old_family and new_family and old_family == new_family)
+        requested_mode_differ = str(older.get("requested_mode") or "") != str(
+            newer.get("requested_mode") or ""
+        )
+        old_label = older.get("label") or older.get("planning_id")
+        new_label = newer.get("label") or newer.get("planning_id")
+
+        def _metric_line(row: Dict[str, Any]) -> str:
+            metrics = row.get("metrics") or {}
+            parts = []
+            for key in ("v100", "v150", "v200", "d90", "plan_score"):
+                if metrics.get(key) is not None:
+                    parts.append(f"{key}={metrics[key]}")
+            return ", ".join(parts) or ("无已保存指标" if is_zh else "no saved metrics")
+
+        if is_zh:
+            lines = [
+                "## 两次 Planning 结果对比",
+                "",
+                "我读取的是当前 Session 中保存的 Planning 快照，而不是只读取当前剂量指标。",
+                f"- {old_label}：请求模式={older.get('requested_mode') or '未记录'}，实际模式={older.get('effective_mode') or '未记录'}，实际算法族={old_family or '未记录'}，指纹={old_fp or '未记录'}；参数={_json(old_params)}。",
+                f"- {new_label}：请求模式={newer.get('requested_mode') or '未记录'}，实际模式={newer.get('effective_mode') or '未记录'}，实际算法族={new_family or '未记录'}，指纹={new_fp or '未记录'}；参数={_json(new_params)}。",
+                f"- 几何：{old_label} 为 {old_geometry.get('trajectories', 0)} 个针道/{old_geometry.get('seeds', 0)} 个粒子；{new_label} 为 {new_geometry.get('trajectories', 0)} 个针道/{new_geometry.get('seeds', 0)} 个粒子。",
+                f"- 指标：{old_label}（{_metric_line(older)}）；{new_label}（{_metric_line(newer)}）。",
+                f"- 对比摘要：请求模式差异={'是' if requested_mode_differ else '否'}，可比参数差异={'是' if params_differ else '否'}，实际算法族相同={'是' if family_same else '否'}，指纹差异={'是' if fingerprint_differ else '否'}。",
+            ]
+            if family_same and not params_differ and not metrics_differ and not geometry_differ:
+                if older.get("rl_fallback_used") or "fallback" in str(older.get("effective_mode") or "").lower():
+                    conclusion = (
+                        f"虽然两次请求模式/指纹不同（请求模式差异={'是' if requested_mode_differ else '否'}，指纹差异={'是' if fingerprint_differ else '否'}），但可比的优化参数相同；前一次 RL 未达到目标后实际使用了规则优化兜底，"
+                        "后一次直接使用规则优化。两次实际算法族相同，保存的几何摘要和指标也相同，因此这是确定性规则优化得到相同结果的预期，"
+                        "现有证据不支持“缓存复用了旧结果”的判断。"
+                    )
+                else:
+                    conclusion = (
+                        "两次可比优化参数和实际算法族相同，保存的几何摘要和指标也相同；这符合确定性优化在相同有效输入下得到相同结果的预期，"
+                        "不能仅凭此判断发生了缓存复用。"
+                    )
+            elif params_differ or fingerprint_differ:
+                if metrics_differ or geometry_differ:
+                    conclusion = "持久化证据显示两次输入或生效配置不同，且保存的几何/指标也不同；因此结果并非相同。"
+                else:
+                    conclusion = "持久化证据显示两次输入或生效配置不同（参数差异=%s，指纹差异=%s），但保存的几何和指标相同。仅凭快照不能证明是缓存、参数未生效还是算法恰好得到相同结果；需要结合本次执行日志核对实际使用的配置。" % ("是" if params_differ else "否", "是" if fingerprint_differ else "否")
+            else:
+                conclusion = "当前保存的两次请求/生效配置没有差异证据；如果你在界面改过参数，说明改动可能没有持久化到本次 Planning 输入，需继续检查参数提交链路。"
+            lines.extend(["", f"结论：{conclusion}"])
+            return "\n".join(lines)
+
+        lines = [
+            "## Planning result comparison",
+            "",
+            "I read the persisted Planning snapshots in the current Session, rather than only the current dose metrics.",
+            f"- {old_label}: requested mode={older.get('requested_mode') or 'not recorded'}, effective mode={older.get('effective_mode') or 'not recorded'}, effective algorithm family={old_family or 'not recorded'}, fingerprint={old_fp or 'not recorded'}; parameters={_json(old_params)}.",
+            f"- {new_label}: requested mode={newer.get('requested_mode') or 'not recorded'}, effective mode={newer.get('effective_mode') or 'not recorded'}, effective algorithm family={new_family or 'not recorded'}, fingerprint={new_fp or 'not recorded'}; parameters={_json(new_params)}.",
+            f"- Geometry: {old_label} has {old_geometry.get('trajectories', 0)} trajectories/{old_geometry.get('seeds', 0)} seeds; {new_label} has {new_geometry.get('trajectories', 0)} trajectories/{new_geometry.get('seeds', 0)} seeds.",
+            f"- Metrics: {old_label} ({_metric_line(older)}); {new_label} ({_metric_line(newer)}).",
+            f"- Comparison summary: requested-mode difference={'yes' if requested_mode_differ else 'no'}, comparable-parameter difference={'yes' if params_differ else 'no'}, same effective algorithm family={'yes' if family_same else 'no'}, fingerprint difference={'yes' if fingerprint_differ else 'no'}.",
+        ]
+        if family_same and not params_differ and not metrics_differ and not geometry_differ:
+            if older.get("rl_fallback_used") or "fallback" in str(older.get("effective_mode") or "").lower():
+                conclusion = (
+                    f"The requested modes/fingerprints differ (requested-mode difference={'yes' if requested_mode_differ else 'no'}, fingerprint difference={'yes' if fingerprint_differ else 'no'}), but the comparable optimization inputs are the same. "
+                    "The first run fell back from RL to the rule-based optimizer, while the second directly used that optimizer. "
+                    "The effective algorithm family, saved geometry summary, and metrics are therefore the same; this is expected for a deterministic optimizer, and the evidence does not support cache reuse."
+                )
+            else:
+                conclusion = (
+                    "The comparable optimization inputs and effective algorithm family are the same, and the saved geometry summary and metrics are also the same. "
+                    "That is consistent with a deterministic optimizer receiving the same effective inputs; the snapshots alone do not establish cache reuse."
+                )
+        elif params_differ or fingerprint_differ:
+            if metrics_differ or geometry_differ:
+                conclusion = "The persisted evidence shows different inputs or effective settings and different saved geometry/metrics, so the outputs are not identical."
+            else:
+                conclusion = "The persisted evidence shows different inputs or effective settings (parameter difference=%s, fingerprint difference=%s), but identical saved geometry and metrics. The snapshots alone cannot prove whether this came from caching, an unapplied setting, or a deterministic identical result; the execution log is needed to verify the configuration actually used." % ("yes" if params_differ else "no", "yes" if fingerprint_differ else "no")
+        else:
+            conclusion = "The persisted records contain no evidence of a difference in the two requested/effective configurations. If the UI setting was changed, that change may not have been persisted into the Planning request; the parameter submission path should be checked."
+        lines.extend(["", f"Conclusion: {conclusion}"])
+        return "\n".join(lines)
 
     def _build_current_planning_assessment_response(self, lang: str = "en") -> str:
         """Safe deterministic fallback for a current-plan assessment query."""
@@ -1357,14 +1931,23 @@ class ChatWorkflowMixin:
     def _local_query_answer_uses_known_planning_refs(
         text: str, facts: Dict[str, Any]
     ) -> bool:
-        """Reject a grounded answer that names another numbered Planning."""
+        """Reject a grounded answer that invents a Planning reference."""
         planning = facts.get("planning") if isinstance(facts, dict) else {}
-        if not isinstance(planning, dict):
-            return True
-        known = {
-            re.sub(r"[^a-z0-9]+", "", str(planning.get(key) or "").lower())
-            for key in ("planning_id", "label")
-        }
+        known = set()
+        if isinstance(planning, Mapping):
+            known.update(
+                re.sub(r"[^a-z0-9]+", "", str(planning.get(key) or "").lower())
+                for key in ("planning_id", "label")
+            )
+        history = facts.get("planning_history") if isinstance(facts, dict) else []
+        if isinstance(history, list):
+            for row in history:
+                if not isinstance(row, Mapping):
+                    continue
+                known.update(
+                    re.sub(r"[^a-z0-9]+", "", str(row.get(key) or "").lower())
+                    for key in ("planning_id", "label")
+                )
         known.discard("")
         if not known:
             return True
@@ -1377,6 +1960,53 @@ class ChatWorkflowMixin:
             re.sub(r"[^a-z0-9]+", "", reference.lower()) in known
             for reference in references
         )
+
+    @staticmethod
+    def _local_query_answer_matches_scope(
+        message: str, intent: str, answer: str
+    ) -> bool:
+        """Require a generic case answer to address the question's focus.
+
+        This is a lightweight output contract, not a canned response.  It
+        prevents a provider from returning a technically valid but irrelevant
+        current-metrics paragraph when the user asked for a comparison or a
+        cause.  The LLM remains responsible for the actual explanation.
+        """
+        if intent != "case_state_question":
+            return True
+        question = str(message or "").lower()
+        text = str(answer or "").lower()
+        comparison_focus = any(marker in question for marker in (
+            "same", "identical", "different", "change", "changed", "compare",
+            "comparison", "difference", "two", "previous", "parameter",
+            "一样", "相同", "不同", "改了", "修改", "变化", "两次", "前一次",
+            "参数", "比较", "对比", "差异",
+        ))
+        if comparison_focus and not any(marker in text for marker in (
+            "same", "identical", "different", "change", "difference", "compare",
+            "parameter", "fingerprint", "mode", "cannot confirm", "unable",
+            "一样", "相同", "不同", "变化", "差异", "参数", "指纹", "模式",
+            "无法确认", "不能确定", "证据", "对比", "比较",
+        )):
+            return False
+        if any(marker in question for marker in ("why", "how come", "reason", "cause", "为什么", "为何", "原因")):
+            if not any(marker in text for marker in (
+                "because", "reason", "cause", "cannot determine", "cannot confirm",
+                "由于", "原因", "无法确定", "不能确认", "不能证明", "无法证明",
+                "不能单独证明", "证据", "仅凭",
+            )):
+                return False
+        if ChatWorkflowMixin._is_rl_diagnostic_question(message):
+            if not any(marker in text for marker in (
+                "rl", "reinforcement", "强化学习", "执行状态", "execution", "stop reason",
+                "停止原因", "目标覆盖率", "target coverage", "回合", "episode",
+                "预算", "budget", "失败", "failed", "中断", "interrupted",
+            )):
+                return False
+        return any(marker in text for marker in (
+            "planning", "plan", "result", "parameter", "mode", "metric", "fingerprint",
+            "规划", "计划", "结果", "参数", "模式", "指标", "指纹", "快照",
+        ))
 
     def _answer_local_read_query(
         self,
@@ -1398,6 +2028,9 @@ class ChatWorkflowMixin:
         fallback_builders = {
             "planning_provenance_query": self._build_current_planning_provenance_response,
             "planning_assessment_query": self._build_current_planning_assessment_response,
+            "case_state_question": lambda resolved_lang: self._build_case_state_question_response(
+                resolved_lang, message
+            ),
             "case_dose_query": self._build_current_dose_response,
             "image_metadata_query": self._build_current_image_metadata_response,
             "current_oar_query": self._build_current_oar_count_response,
@@ -1432,6 +2065,18 @@ class ChatWorkflowMixin:
         is_zh = self._response_language(lang) == "zh"
         language_name = "Chinese" if is_zh else "English"
         language_rule = "只使用中文回答，不要夹带英文解释。" if is_zh else "Answer only in English; do not include Chinese sentences."
+        scope_instruction = ""
+        if intent == "case_state_question":
+            scope_instruction = (
+                "For this case-state question, inspect planning_history and compare the relevant persisted runs. "
+                "Address the user's exact concern about why results are or are not the same. "
+                "Explicitly distinguish requested parameters, effective parameters, fallback mode, fingerprints, "
+                "geometry, and metrics. Do not answer with only the current metrics. If the facts cannot prove a cause, say so. "
+            )
+            if self._is_rl_diagnostic_question(message):
+                scope_instruction += (
+                    "This is specifically an RL execution-diagnosis question. Inspect rl_status in the relevant historical run and explicitly report execution, stop_reason, target_coverage, best_coverage, and the available counters. Do not answer with only the final dose metrics. "
+                )
         system_prompt = (
             "You are BrachyBot's grounded answer editor for a clinical planning UI. "
             "Answer the CURRENT USER QUESTION exactly; do not answer a neighboring question "
@@ -1440,6 +2085,7 @@ class ChatWorkflowMixin:
             "values from clinical judgments, and say when a conclusion cannot be determined. "
             "Do not call tools, start workflows, infer a different Planning from chat history, "
             "or output a generic capabilities menu. "
+            f"{scope_instruction}"
             f"Respond entirely in {language_name}. {language_rule}"
         )
         user_prompt = (
@@ -1484,12 +2130,14 @@ class ChatWorkflowMixin:
             topic_markers = {
                 "planning_provenance_query": ("planning", "plan", "规划", "计划", "依据", "source", "based"),
                 "planning_assessment_query": ("planning", "plan", "规划", "计划", "dose", "剂量", "oar", "器官", "问题"),
+                "case_state_question": ("planning", "plan", "规划", "计划", "result", "结果", "parameter", "参数", "mode", "模式", "same", "different", "一样", "相同", "不同", "比较", "对比", "原因", "证据", "rl", "reinforcement", "execution", "stop reason", "failed", "failure", "失败", "停止原因", "未达", "预算"),
                 "case_dose_query": ("dose", "dvh", "剂量", "指标", "v100", "d90"),
                 "image_metadata_query": ("ct", "image", "metadata", "dimension", "图像", "影像", "元数据", "尺寸"),
                 "current_oar_query": ("oar", "organ", "器官", "危及"),
                 "oar_count_query": ("oar", "organ", "器官", "危及"),
             }
             has_topic = any(marker in content.lower() for marker in topic_markers.get(intent, ()))
+            matches_scope = self._local_query_answer_matches_scope(message, intent, content)
             valid = (
                 finish_reason != "error"
                 and not self._is_llm_provider_error(content)
@@ -1497,6 +2145,7 @@ class ChatWorkflowMixin:
                 and self._local_query_answer_matches_language(content, lang)
                 and self._local_query_answer_uses_known_planning_refs(content, facts)
                 and has_topic
+                and matches_scope
             )
             if valid:
                 meta["route"] = "grounded_local_llm"
@@ -1992,16 +2641,7 @@ class ChatWorkflowMixin:
         # lets a later question inherit the previous screenshot task.
         if not internal_followup:
             self.memory.add_message("user", message)
-        if inherited_language:
-            self.memory.user_lang = inherited_language
-        else:
-            try:
-                from memory.language import detect as _detect_turn_language
-                _language = _detect_turn_language(message)
-                self.memory.user_lang = "zh" if _language.get("code") == "zh" else "en"
-            except Exception:
-                self.memory.user_lang = "zh" if re.search(r'[\u4e00-\u9fff]', message) else "en"
-        self._active_trace_language = self.memory.user_lang
+        self._resolve_turn_language(message, turn_context)
 
         # A current-case result question is a local read-only data query. The
         # Session facts are collected locally, but the user-facing wording is
@@ -2019,6 +2659,7 @@ class ChatWorkflowMixin:
         if local_policy.intent in {
             "planning_provenance_query",
             "planning_assessment_query",
+            "case_state_question",
             "case_dose_query",
             "image_metadata_query",
             "current_oar_query",
@@ -2124,20 +2765,40 @@ class ChatWorkflowMixin:
         self._begin_turn(message)
         if not internal_followup:
             self.memory.add_message("user", message)
-        if inherited_language:
-            self.memory.user_lang = inherited_language
-        else:
-            try:
-                from memory.language import detect as _detect_turn_language
-                _language = _detect_turn_language(message)
-                self.memory.user_lang = "zh" if _language.get("code") == "zh" else "en"
-            except Exception:
-                self.memory.user_lang = "zh" if re.search(r'[一-鿿]', message) else "en"
-        self._active_trace_language = self.memory.user_lang
+        self._resolve_turn_language(message, turn_context)
+        response_contract = build_response_contract(
+            message,
+            internal_followup=internal_followup,
+        ).as_dict()
         steps = []
         step_id = [0]
 
         def add_step(step_type, title, content, status="done", **kwargs):
+            # The non-streaming compatibility endpoint uses this same helper
+            # for the visible Execution Trace.  Localize stable framework
+            # labels here as well, so its output follows the turn language
+            # instead of exposing the English-only legacy labels below.
+            trace_zh = getattr(self, "_active_trace_language", "en") == "zh"
+            if trace_zh:
+                title = {
+                    "User Input": "用户输入",
+                    "Matched SOP": "匹配的 SOP",
+                    "Crystallized Skill": "固化技能",
+                    "Experience Recall": "经验回顾",
+                    "LLM Brain": "AI 大脑",
+                    "Rule Matcher": "规则解析",
+                    "Self-Evolution Status": "自演化状态",
+                    "Auto CTV Segmentation": "自动 CTV 分割",
+                    "Auto OAR Segmentation": "自动 OAR 分割",
+                    "Auto Planning Pipeline": "自动规划流程",
+                    "LLM Unavailable": "AI 服务不可用",
+                }.get(title, title)
+                content = {
+                    "Using AI brain system with function calling...": "正在使用 AI 大脑进行工具调用...",
+                    "No configured model; no canned answer was generated.": "未配置可用模型，未生成机械化回答。",
+                    "Brain unavailable — using rule-based parsing": "AI 大脑不可用，使用规则解析。",
+                    "Auto-executed by workflow enforcer": "已由流程执行器自动执行",
+                }.get(content, content)
             step_id[0] += 1
             steps.append({
                 "id": step_id[0],
@@ -2170,6 +2831,7 @@ class ChatWorkflowMixin:
         local_read_intents = {
             "planning_provenance_query",
             "planning_assessment_query",
+            "case_state_question",
             "case_dose_query",
             "image_metadata_query",
             "current_oar_query",
@@ -2179,6 +2841,7 @@ class ChatWorkflowMixin:
             titles = {
                 "planning_provenance_query": ("本次规划来源", "Current Planning Provenance"),
                 "planning_assessment_query": ("当前规划检查", "Current Planning Assessment"),
+                "case_state_question": ("病例规划问题分析", "Case Planning Analysis"),
                 "case_dose_query": ("当前病例剂量", "Current Case Dose"),
                 "image_metadata_query": ("当前 CT 元数据", "Current CT Metadata"),
                 "current_oar_query": ("当前 OAR 状态", "Current OAR State"),
@@ -2216,10 +2879,12 @@ class ChatWorkflowMixin:
             self.memory.add_message("assistant", response)
             self._record_experience(message, response, steps)
             self._finish_turn(response)
+            local_llm_meta = dict(local_llm_meta or {})
+            local_llm_meta.setdefault("response_contract", response_contract)
             return {
                 "response": response,
                 "steps": steps,
-                "llm_meta": dict(local_llm_meta),
+                "llm_meta": local_llm_meta,
             }
 
         if local_policy.intent == "report_generation" and local_policy.direct_execution:
@@ -2254,7 +2919,13 @@ class ChatWorkflowMixin:
             return {
                 "response": response,
                 "steps": steps,
-                "llm_meta": {"usage": {}, "latency_ms": 0, "llm_calls": 0, "route": "local_report_generation"},
+                "llm_meta": {
+                    "usage": {},
+                    "latency_ms": 0,
+                    "llm_calls": 0,
+                    "route": "local_report_generation",
+                    "response_contract": response_contract,
+                },
             }
 
         if local_policy.intent == "viewer_display" and local_policy.direct_execution:
@@ -2294,7 +2965,13 @@ class ChatWorkflowMixin:
             return {
                 "response": response,
                 "steps": steps,
-                "llm_meta": {"usage": {}, "latency_ms": 0, "llm_calls": 0, "route": "local_viewer_display"},
+                "llm_meta": {
+                    "usage": {},
+                    "latency_ms": 0,
+                    "llm_calls": 0,
+                    "route": "local_viewer_display",
+                    "response_contract": response_contract,
+                },
             }
 
         if not internal_followup and local_policy.intent == "session_content_query":
@@ -2359,7 +3036,13 @@ class ChatWorkflowMixin:
             return {
                 "response": response,
                 "steps": steps,
-                "llm_meta": {"usage": {}, "latency_ms": 0, "llm_calls": 0, "route": "local_session_content"},
+                "llm_meta": {
+                    "usage": {},
+                    "latency_ms": 0,
+                    "llm_calls": 0,
+                    "route": "local_session_content",
+                    "response_contract": response_contract,
+                },
             }
 
         if self.enhanced and not internal_followup:
@@ -2605,6 +3288,8 @@ class ChatWorkflowMixin:
                 logger.debug(f"Completeness check failed: {e}")
 
         self._finish_turn(response)
+        llm_meta = dict(llm_meta or {})
+        llm_meta.setdefault("response_contract", response_contract)
         return {"response": response, "steps": steps, "llm_meta": llm_meta}
 
     def _snapshot_internal_turn_memory(self) -> Dict[str, Any]:
@@ -2704,17 +3389,7 @@ class ChatWorkflowMixin:
         # transport-only evidence owned by the parent assistant reply.
         if not internal_followup:
             self.memory.add_message("user", message)
-        if inherited_language:
-            self.memory.user_lang = inherited_language
-        else:
-            try:
-                from memory.language import detect as _detect_turn_language
-                _language = _detect_turn_language(message)
-                self.memory.user_lang = "zh" if _language.get("code") == "zh" else "en"
-            except Exception:
-                # Trace locale follows this user request, independent of the
-                # application-wide locale used by persistent panels and reports.
-                self.memory.user_lang = "zh" if re.search(r"[\u4e00-\u9fff]", message) else "en"
+        self._resolve_turn_language(message, turn_context)
         steps = []
         step_id = [0]
         response = ""  # Initialize response variable
@@ -2731,6 +3406,17 @@ class ChatWorkflowMixin:
             trace_lang = getattr(self, "_active_trace_language", None)
             if trace_lang == "zh":
                 title = {
+                    "User Input": "用户输入",
+                    "Matched SOP": "匹配的 SOP",
+                    "Crystallized Skill": "固化技能",
+                    "Experience Recall": "经验回顾",
+                    "LLM Brain": "AI 大脑",
+                    "Rule Matcher": "规则解析",
+                    "Self-Evolution Status": "自演化状态",
+                    "Auto CTV Segmentation": "自动 CTV 分割",
+                    "Auto OAR Segmentation": "自动 OAR 分割",
+                    "Auto Planning Pipeline": "自动规划流程",
+                    "LLM Unavailable": "AI 服务不可用",
                     "Final Response": "最终回复",
                     "Response Synthesis": "生成回复",
                     "Completeness Check": "完整性检查",
@@ -2748,6 +3434,10 @@ class ChatWorkflowMixin:
                         "ui_controller": "界面控制",
                     }.get(tool_name, tool_name)
                 content = {
+                    "Using AI brain system with function calling...": "正在使用 AI 大脑进行工具调用...",
+                    "No configured model; no canned answer was generated.": "未配置可用模型，未生成机械化回答。",
+                    "Brain unavailable — using rule-based parsing": "AI 大脑不可用，使用规则解析。",
+                    "Auto-executed by workflow enforcer": "已由流程执行器自动执行",
                     "Preparing the reviewed response...": "正在整理回复...",
                     "Response delivered": "回复已发送",
                     "Preparing the response from the completed tool results...": "正在根据工具结果整理回复...",
@@ -2797,7 +3487,34 @@ class ChatWorkflowMixin:
                 status="pending",
             )
             yield yield_event("step", final_step)
-            answer = str((payload or {}).get("response") or "")
+            normalized_payload = dict(payload or {})
+            normalized_meta = dict(normalized_payload.get("llm_meta") or {})
+            normalized_meta.setdefault(
+                "response_contract",
+                build_response_contract(
+                    message,
+                    internal_followup=bool(
+                        (getattr(self, "_active_turn_context", {}) or {}).get("internal_followup")
+                    ),
+                ).as_dict(),
+            )
+            normalized_payload["llm_meta"] = normalized_meta
+            answer = str(normalized_payload.get("response") or "").strip()
+            turn_is_internal_followup = bool(
+                (getattr(self, "_active_turn_context", {}) or {}).get("internal_followup")
+            )
+            if not answer and not turn_is_internal_followup:
+                tool_names = [
+                    step.get("tool")
+                    for step in (normalized_payload.get("steps") or steps or [])
+                    if isinstance(step, dict) and step.get("type") == "tool"
+                ]
+                answer = presentation_fallback_message(
+                    self.memory.user_lang,
+                    message,
+                    tool_names,
+                )
+                normalized_payload["response"] = answer
             if answer:
                 # Keep chunks large enough for efficient SSE traffic while
                 # making progress visible for both CJK and Latin text.
@@ -2809,7 +3526,7 @@ class ChatWorkflowMixin:
                     )
                     if offset + chunk_size < len(answer):
                         time.sleep(0.008)
-            yield yield_event("response", payload)
+            yield yield_event("response", normalized_payload)
             # Mark delivery complete only after the authoritative response
             # event has been emitted.  The following ``done`` event closes
             # the turn, so the client keeps the breathing pending state while
@@ -2843,31 +3560,18 @@ class ChatWorkflowMixin:
             yield from final_response_events({"response": message_text, "steps": steps, "llm_meta": llm_meta})
             yield yield_event("done", {"cancelled": True, "context": {"ui_state": self.memory.get_ui_state()}})
 
-        # Start
-        # Include the detected language so the frontend can pick
-        # language-aware labels for the todo list, status messages,
-        # and other UI text. The detection uses memory/language.py
-        # which counts character ranges (CJK vs Latin) and falls
-        # back to the previous session's language for ambiguous
-        # short messages. See memory/language.py for the full
-        # detection rules and the rationale for top-level injection.
-        if inherited_language:
-            _lang_info_start = {
-                "code": inherited_language,
-                "name": "Chinese" if inherited_language == "zh" else "English",
-                "source": "parent_turn",
-            }
-        else:
-            try:
-                from memory.language import detect as _lang_detect_start
-                _lang_info_start = _lang_detect_start(message)
-            except Exception:
-                _lang_info_start = {"code": "en", "name": "English", "source": "default"}
+        # Start.  Language was resolved once at the turn boundary above and
+        # is reused here so the start event, trace labels, tool loop, and final
+        # response cannot disagree because they each re-detected the message
+        # with a different fallback.
+        _lang_info_start = getattr(self, "_active_turn_language_info", None)
+        if not isinstance(_lang_info_start, dict):
+            _lang_info_start = self._resolve_turn_language(message, turn_context)
         _trace_lang = "zh" if _lang_info_start.get("code") == "zh" else "en"
         # The request locale is the source of truth for this turn's trace and
         # direct-tool response. Persistent panels/reports deliberately use a
         # separate global UI locale.
-        self.memory.user_lang = _trace_lang
+        self.memory.user_lang = str(_lang_info_start.get("code") or _trace_lang)
         self._active_trace_language = _trace_lang
 
         def _trace_text(zh: str, en: str) -> str:
@@ -2996,6 +3700,7 @@ class ChatWorkflowMixin:
         local_read_intents = {
             "planning_provenance_query",
             "planning_assessment_query",
+            "case_state_question",
             "case_dose_query",
             "image_metadata_query",
             "current_oar_query",
@@ -3005,6 +3710,7 @@ class ChatWorkflowMixin:
             titles = {
                 "planning_provenance_query": ("本次规划来源", "Current Planning Provenance"),
                 "planning_assessment_query": ("当前规划检查", "Current Planning Assessment"),
+                "case_state_question": ("病例规划问题分析", "Case Planning Analysis"),
                 "case_dose_query": ("当前病例剂量", "Current Case Dose"),
                 "image_metadata_query": ("当前 CT 元数据", "Current CT Metadata"),
                 "current_oar_query": ("当前 OAR 状态", "Current OAR State"),
@@ -3199,6 +3905,136 @@ class ChatWorkflowMixin:
             yield yield_event("done", {"context": {"message_count": len(self.memory.conversation)}})
             return
 
+        def _execute_planning_tool_with_events(tool_name, tool_params, parent_step):
+            """Run planning without blocking its ephemeral SSE observations.
+
+            The callback queue is invocation-local and latest-frame bounded.
+            Lifecycle events remain ordered; preview transport failure never
+            participates in the clinical tool result.
+            """
+            if tool_name != "planning_pipeline":
+                return self._execute_tool_with_memory(tool_name, tool_params)
+
+            import threading as _planning_threading
+            callback_lock = _planning_threading.RLock()
+            callback_events = []
+            result_box = [None]
+            error_box = [None]
+            callback_open = [True]
+
+            def _append(event_type, payload):
+                if not callback_open[0]:
+                    return
+                with callback_lock:
+                    if event_type == "planning_preview" and payload.get("action") == "frame":
+                        run_id = str(payload.get("run_id") or "")
+                        stage = str(payload.get("stage") or "")
+                        callback_events[:] = [
+                            item for item in callback_events
+                            if not (
+                                item[0] == "planning_preview"
+                                and item[1].get("action") == "frame"
+                                and str(item[1].get("run_id") or "") == run_id
+                                and str(item[1].get("stage") or "") == stage
+                            )
+                        ]
+                    callback_events.append((event_type, payload))
+
+            def _preview(payload):
+                if isinstance(payload, dict):
+                    _append("planning_preview", dict(payload))
+
+            def _substep(name, status, content=None):
+                _append("planning_substep", {
+                    "name": str(name),
+                    "status": str(status),
+                    "content": str(content or name),
+                })
+
+            def _run():
+                try:
+                    result_box[0] = self._execute_tool_with_memory(
+                        tool_name,
+                        tool_params,
+                        step_callback=_substep,
+                        preview_callback=_preview,
+                    )
+                except Exception as exc:
+                    error_box[0] = exc
+
+            worker = _planning_threading.Thread(target=_run, daemon=True)
+            worker.start()
+            substeps = {}
+            started_at = time.monotonic()
+            heartbeat_second = 0
+
+            while worker.is_alive():
+                worker.join(timeout=0.25)
+                with callback_lock:
+                    pending = list(callback_events)
+                    callback_events.clear()
+                for event_type, payload in pending:
+                    if event_type == "planning_preview":
+                        yield yield_event("planning_preview", payload)
+                        continue
+                    name = payload["name"]
+                    status = payload["status"]
+                    child = substeps.get(name)
+                    if child is None:
+                        child = add_step(
+                            "tool",
+                            f"{name} — {status}",
+                            payload["content"],
+                            status=status,
+                            tool=name,
+                        )
+                        child["parent_tool"] = tool_name
+                        substeps[name] = child
+                    else:
+                        child["status"] = status
+                        child["content"] = payload["content"]
+                        if status in {"done", "error"}:
+                            child["result"] = payload["content"][:200]
+                    yield yield_event("step", child)
+
+                if workflow_cancelled():
+                    callback_open[0] = False
+                    yield from cancelled_workflow_events(parent_step)
+                    return None
+                elapsed = int(time.monotonic() - started_at)
+                if worker.is_alive() and elapsed > heartbeat_second:
+                    heartbeat_second = elapsed
+                    parent_step["content"] = f"{tool_name} running... ({elapsed}s)"
+                    yield yield_event("step", parent_step)
+
+            with callback_lock:
+                pending = list(callback_events)
+                callback_events.clear()
+            for event_type, payload in pending:
+                if event_type == "planning_preview":
+                    yield yield_event("planning_preview", payload)
+                    continue
+                name = payload["name"]
+                status = payload["status"]
+                child = substeps.get(name)
+                if child is None:
+                    child = add_step(
+                        "tool", f"{name} — {status}", payload["content"],
+                        status=status, tool=name,
+                    )
+                    child["parent_tool"] = tool_name
+                    substeps[name] = child
+                else:
+                    child["status"] = status
+                    child["content"] = payload["content"]
+                    if status in {"done", "error"}:
+                        child["result"] = payload["content"][:200]
+                yield yield_event("step", child)
+            callback_open[0] = False
+            if error_box[0] is not None:
+                raise error_box[0]
+            return result_box[0]
+
         # Direct tool execution — only for locally-confirmed actionable intents.
         # Knowledge queries, status checks, and small talk always route through
         # the LLM so it can read the current case state and produce a meaningful
@@ -3257,9 +4093,11 @@ class ChatWorkflowMixin:
                                 logger.warning(f"Failed to pre-load CT image: {_e}")
 
                     if self.registry.get(tc['tool']):
-                        result = self._execute_tool_with_memory(
-                            tc['tool'], dict(tc['params'])
+                        result = yield from _execute_planning_tool_with_events(
+                            tc['tool'], dict(tc['params']), step,
                         )
+                        if result is None and workflow_cancelled():
+                            return
                         step["status"] = "done" if result.success else "error"
                         # Fact checking may perform additional model work.  It
                         # is therefore a first-class trace phase rather than
@@ -4081,32 +4919,13 @@ class ChatWorkflowMixin:
                         yield yield_event("step", planning_step)
                         try:
                             if self.registry.get("planning_pipeline"):
-                                import threading as _thr_p
-                                _plan_rbox = [None]
-                                _plan_ebox = [None]
-                                def _run_plan():
-                                    try:
-                                        _plan_rbox[0] = self._execute_tool_with_memory(
-                                            "planning_pipeline",
-                                            {"ct_image_path": ct_path, "mode": "rule_based", "step": "full"},
-                                        )
-                                    except Exception as _e:
-                                        _plan_ebox[0] = _e
-                                _plan_th = _thr_p.Thread(target=_run_plan, daemon=True)
-                                _plan_th.start()
-                                _plan_hb = 0
-                                while _plan_th.is_alive():
-                                    _plan_th.join(timeout=1)
-                                    if workflow_cancelled():
-                                        yield from cancelled_workflow_events(planning_step)
-                                        return
-                                    if _plan_th.is_alive():
-                                        _plan_hb += 1
-                                        planning_step["content"] = f"Planning pipeline running... ({_plan_hb}s)"
-                                        yield yield_event("step", planning_step)
-                                if _plan_ebox[0] is not None:
-                                    raise _plan_ebox[0]
-                                planning_result = _plan_rbox[0]
+                                planning_result = yield from _execute_planning_tool_with_events(
+                                    "planning_pipeline",
+                                    {"ct_image_path": ct_path, "mode": "rule_based", "step": "full"},
+                                    planning_step,
+                                )
+                                if planning_result is None and workflow_cancelled():
+                                    return
                                 if planning_result and planning_result.success:
                                     logger.info("[WORKFLOW-ENFORCER-STREAM] ✓ Planning completed")
                                     planning_step["status"] = "done"
@@ -4591,11 +5410,19 @@ class ChatWorkflowMixin:
         if ct_image is None:
             self.memory.store("last_segmentation_success", False)
             return "Please provide CT image path first."
-        params = {"image": ct_image, "label_path": oar_path}
+        params = {"image": ct_image}
+        focused_oar_organs = self._requested_oar_organs(message)
+        if focused_oar_organs:
+            # A named anatomy request must run the model and retain only the
+            # requested labels. Do not inject an opaque uploaded OAR mask,
+            # because its integer labels cannot be safely text-filtered.
+            params["organ_filter"] = focused_oar_organs
+        elif oar_path:
+            params["label_path"] = oar_path
         if self._force_reexecution_requested(message=message):
             params["force_reexecution"] = True
         result = self._execute_tool_with_memory("oar_segmentation", params)
-        self.memory.log_tool_call("oar_segmentation", {}, result)
+        self.memory.log_tool_call("oar_segmentation", params, result)
         if result.success:
             self.memory.store("last_segmentation_success", True)
             self.memory.store("oar_array", result.metadata.get("oar_array"))
@@ -4622,7 +5449,17 @@ class ChatWorkflowMixin:
             )
             self.memory.store("label_grid_orientation", result.metadata.get("label_grid_orientation") or "LPI")
             self.memory.store("oar_segmented", True)
-            self.memory.store("oar_is_full", True)
+            oar_is_full = bool(
+                result.metadata.get("oar_is_full", not bool(params.get("organ_filter")))
+            )
+            self.memory.store("oar_is_full", oar_is_full)
+            self.memory.store("oar_scope", result.metadata.get("oar_scope") or (
+                "full" if oar_is_full else "focused"
+            ))
+            self.memory.store(
+                "oar_requested_organs",
+                list(result.metadata.get("requested_organs") or params.get("organ_filter") or []),
+            )
             from web.structure_service import replace_structure_source
             replace_structure_source(self.memory, "oar")
             return result.message

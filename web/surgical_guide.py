@@ -1268,7 +1268,15 @@ def _path_records(
             center = np.mean(np.stack(linked_seeds, axis=0), axis=0)
             candidate = center - entry
             length = float(np.linalg.norm(candidate))
-            if length > 1e-5:
+            # The needle endpoints define the insertion direction.  Seed
+            # positions may refine that direction only when their centroid is
+            # on the patient/inward side of the detected skin entry.  A stale
+            # or manually placed seed behind the entry must never reverse the
+            # sleeve into the body-exterior region: that creates an isolated
+            # sleeve, which is then correctly removed by the post-CSG
+            # component cleanup and looks like a missing guide channel.
+            forward_distance = float(np.dot(candidate, inward))
+            if length > 1e-5 and forward_distance > 1e-5:
                 inward = candidate / length
         paths.append(NeedleGuidePath(
             needle_id=needle_id,
@@ -1627,22 +1635,301 @@ def _auxiliary_hole_support(
     return True, "ready"
 
 
-def _filter_components(mask: np.ndarray, minimum_voxels: int) -> np.ndarray:
+def _retain_largest_printable_component(
+    mask: np.ndarray,
+    minimum_voxels: int,
+) -> Tuple[np.ndarray, Dict[str, Any]]:
+    """Retain the one plate component that can be exported as one guide.
+
+    Boolean CSG around a dense cluster of needle bores can leave islands of
+    material between neighbouring channels.  Those islands are not separate
+    printable guide pieces and must not be passed to marching cubes as if they
+    were part of the guide.  The old implementation filtered only by size,
+    so a several-thousand-voxel island survived and the later single-piece
+    check rejected an otherwise usable guide.
+
+    This helper deliberately keeps the operation auditable.  It reports how
+    many components and voxels were removed, and the caller separately checks
+    that every primary channel still has material support after the cleanup.
+    Thus a real detached needle sleeve cannot be silently lost: it causes a
+    clear geometry error instead of being discarded as a generic small part.
+    """
     from scipy import ndimage
 
-    # Keep only face-connected solids before marching cubes.  Corner-connected
-    # specks can survive a 26-connected filter and create non-manifold edges
-    # when they touch the guide plate only diagonally.
-    labels, count = ndimage.label(
-        mask,
-        structure=ndimage.generate_binary_structure(3, 1),
-    )
+    source = np.asarray(mask, dtype=bool)
+    structure = ndimage.generate_binary_structure(3, 1)
+    labels, count = ndimage.label(source, structure=structure)
+    input_voxels = int(np.count_nonzero(source))
+    metadata: Dict[str, Any] = {
+        "policy": "largest_face_connected_component_after_csg",
+        "minimum_component_voxels": int(minimum_voxels),
+        "input_component_count": int(count),
+        "input_voxel_count": input_voxels,
+        "retained_component_count": 0,
+        "retained_voxel_count": 0,
+        "dropped_component_count": int(count),
+        "dropped_voxel_count": input_voxels,
+    }
     if count == 0:
-        return np.zeros_like(mask, dtype=bool)
+        return np.zeros_like(source, dtype=bool), metadata
+
     sizes = np.bincount(labels.ravel())
-    keep = np.flatnonzero(sizes >= int(minimum_voxels))
-    keep = keep[keep != 0]
-    return np.isin(labels, keep)
+    eligible = np.flatnonzero(sizes >= int(minimum_voxels))
+    eligible = eligible[eligible != 0]
+    if eligible.size == 0:
+        return np.zeros_like(source, dtype=bool), metadata
+
+    # ``eligible`` is label-order stable, so ties are deterministic and do not
+    # make the exported guide change between otherwise identical generations.
+    largest_label = int(eligible[int(np.argmax(sizes[eligible]))])
+    retained = labels == largest_label
+    retained_voxels = int(sizes[largest_label])
+    metadata.update({
+        "retained_component_count": 1,
+        "retained_voxel_count": retained_voxels,
+        "dropped_component_count": int(count - 1),
+        "dropped_voxel_count": int(input_voxels - retained_voxels),
+    })
+    return retained, metadata
+
+
+def _filter_components(mask: np.ndarray, minimum_voxels: int) -> np.ndarray:
+    """Keep one largest face-connected printable component.
+
+    Corner-connected specks can survive a 26-connected filter and create
+    non-manifold edges when they touch the guide plate only diagonally.  More
+    importantly, after bore CSG a dense needle cluster can produce sizeable
+    material islands; a single printable guide must not include those islands
+    as independent solids.  Use the same deterministic policy in the normal
+    and mesh-topology-repair paths.
+    """
+    filtered, _metadata = _retain_largest_printable_component(mask, minimum_voxels)
+    return filtered
+
+
+def _primary_sleeve_support_quality(
+    solid: np.ndarray,
+    ct_image: Any,
+    lower_xyz: np.ndarray,
+    spacing_xyz: Sequence[float],
+    paths: Sequence[NeedleGuidePath],
+    params: Mapping[str, Any],
+) -> Dict[str, Any]:
+    """Verify that largest-component cleanup did not remove a needle sleeve.
+
+    The post-CSG islands seen in dense plans are usually material trapped
+    between overlapping bores, but a generic ``keep largest`` operation must
+    not assume that.  Sample a sparse annulus inside each primary sleeve,
+    between the bore radius and the sleeve outer radius.  The check is
+    intentionally tolerant of shared/overlapping channels: it only requires
+    a small amount of retained wall material along each sleeve, not a full
+    independent ring that the plan geometry itself cannot provide.
+    """
+    if not paths:
+        return {
+            "valid": False,
+            "probe_radius_mm": 0.0,
+            "minimum_ring_samples": 0,
+            "minimum_total_samples": 0,
+            "tested_probe_radii_mm": [],
+            "channels": [],
+            "unsupported_needle_ids": [],
+        }
+
+    bore_radius = _effective_primary_bore_radius_mm(params)
+    sleeve_outer_radius = float(params["sleeve_outer_radius_mm"])
+    resolution = float(params["geometry_resolution_mm"])
+    # Probe beyond the configured minimum printable wall.  A single sparse
+    # ring is not reliable for dense/overlapping channels: a narrow shared
+    # wall can fall between its angular samples and look absent even though it
+    # is present in the CSG volume. Test several radii with enough angular
+    # resolution to make that aliasing unlikely, while never treating material
+    # inside the bore as support.
+    minimum_probe_radius = bore_radius + float(GUIDE_MINIMUM_WALL_MM)
+    maximum_probe_radius = sleeve_outer_radius - 0.25
+    probe_radii = (
+        np.linspace(
+            minimum_probe_radius,
+            maximum_probe_radius,
+            num=5,
+            dtype=np.float64,
+        )
+        if maximum_probe_radius >= minimum_probe_radius
+        else np.array([], dtype=np.float64)
+    )
+    angle_count = 72
+    minimum_ring_samples = 3
+    minimum_total_samples = 12
+    channels: List[Dict[str, Any]] = []
+
+    for path in paths:
+        sleeve_inner, sleeve_outer = _primary_sleeve_segment(path, params)
+        axis_vector = sleeve_outer - sleeve_inner
+        length = float(np.linalg.norm(axis_vector))
+        if length <= 1e-8:
+            channels.append({
+                "needle_id": str(path.needle_id),
+                "valid": False,
+                "sampled_sections": 0,
+                "max_ring_material_samples": 0,
+                "total_ring_material_samples": 0,
+            })
+            continue
+        axis = axis_vector / length
+        radial_a, radial_b = _orthogonal_basis(path.inward_direction)
+        axial_step = max(0.75, min(1.5, 4.0 * resolution))
+        section_count = max(3, min(24, int(math.ceil(length / axial_step)) + 1))
+        axial_positions = np.linspace(
+            min(0.5, length * 0.25),
+            max(length - 0.5, length * 0.75),
+            section_count,
+            dtype=np.float64,
+        )
+        angles = np.linspace(0.0, 2.0 * math.pi, angle_count, endpoint=False)
+        ring_records: List[Dict[str, Any]] = []
+        for probe_radius in probe_radii:
+            points = np.asarray([
+                sleeve_inner
+                + axis * distance
+                + float(probe_radius) * (
+                    math.cos(angle) * radial_a + math.sin(angle) * radial_b
+                )
+                for distance in axial_positions
+                for angle in angles
+            ])
+            values = _sample_mask_at_world_points(
+                solid,
+                ct_image,
+                lower_xyz,
+                spacing_xyz,
+                points,
+            ).reshape(section_count, angle_count)
+            ring_counts = np.count_nonzero(values, axis=1)
+            ring_records.append({
+                "probe_radius_mm": float(probe_radius),
+                "max_ring_material_samples": int(ring_counts.max()) if ring_counts.size else 0,
+                "total_ring_material_samples": int(ring_counts.sum()),
+            })
+        best_ring = max(
+            ring_records,
+            key=lambda item: (
+                int(item["total_ring_material_samples"]),
+                int(item["max_ring_material_samples"]),
+            ),
+            default={
+                "probe_radius_mm": 0.0,
+                "max_ring_material_samples": 0,
+                "total_ring_material_samples": 0,
+            },
+        )
+        probe_radius = float(best_ring["probe_radius_mm"])
+        max_ring = int(best_ring["max_ring_material_samples"])
+        total_ring = int(best_ring["total_ring_material_samples"])
+        channel_valid = bool(
+            max_ring >= minimum_ring_samples
+            and total_ring >= minimum_total_samples
+        )
+        channels.append({
+            "needle_id": str(path.needle_id),
+            "valid": channel_valid,
+            "sampled_sections": int(section_count),
+            "probe_radius_mm": probe_radius,
+            "max_ring_material_samples": max_ring,
+            "total_ring_material_samples": total_ring,
+            "tested_probe_radii_mm": [
+                float(item) for item in probe_radii.tolist()
+            ],
+            "probe_records": ring_records,
+        })
+
+    unsupported = [
+        str(item["needle_id"])
+        for item in channels
+        if not bool(item.get("valid"))
+    ]
+    return {
+        "valid": not unsupported,
+        "probe_radius_mm": float(
+            max(
+                (
+                    float(item.get("probe_radius_mm") or 0.0)
+                    for item in channels
+                    if bool(item.get("valid"))
+                ),
+                default=0.0,
+            )
+        ),
+        "angle_samples_per_section": angle_count,
+        "minimum_ring_samples": minimum_ring_samples,
+        "minimum_total_samples": minimum_total_samples,
+        "minimum_probe_radius_mm": float(minimum_probe_radius),
+        "maximum_probe_radius_mm": float(maximum_probe_radius),
+        "channels": channels,
+        "unsupported_needle_ids": unsupported,
+    }
+
+
+def _needle_spacing_quality(
+    paths: Sequence[NeedleGuidePath],
+    params: Mapping[str, Any],
+) -> Dict[str, Any]:
+    """Audit dense primary channels without rejecting valid fused sleeves.
+
+    Sleeve overlap is expected when several planned channels enter through a
+    compact skin patch, so it is reported rather than treated as an automatic
+    generation failure.  A second count identifies pairs whose final bore
+    circles cannot retain the configured wall.  The actual export is guarded
+    by ``_primary_sleeve_support_quality`` and mesh QA, so this audit informs
+    review without dropping needles or inventing a new trajectory.
+    """
+    bore_radius = _effective_primary_bore_radius_mm(params)
+    sleeve_radius = float(params["sleeve_outer_radius_mm"])
+    minimum_wall = float(GUIDE_MINIMUM_WALL_MM)
+    bore_wall_distance = 2.0 * bore_radius + minimum_wall
+    sleeve_overlap_distance = 2.0 * sleeve_radius
+    pair_records: List[Dict[str, Any]] = []
+    for index, first in enumerate(paths):
+        first_start, first_end = _primary_sleeve_segment(first, params)
+        for second in paths[index + 1:]:
+            second_start, second_end = _primary_sleeve_segment(second, params)
+            distance = _segment_distance_mm(
+                first_start,
+                first_end,
+                second_start,
+                second_end,
+            )
+            pair_records.append({
+                "needle_a": str(first.needle_id),
+                "needle_b": str(second.needle_id),
+                "centerline_distance_mm": float(distance),
+                "bore_wall_conflict": bool(distance + 1e-6 < bore_wall_distance),
+                "sleeve_overlap": bool(distance + 1e-6 < sleeve_overlap_distance),
+            })
+
+    ordered = sorted(
+        pair_records,
+        key=lambda item: (
+            float(item["centerline_distance_mm"]),
+            str(item["needle_a"]),
+            str(item["needle_b"]),
+        ),
+    )
+    bore_conflicts = [item for item in ordered if item["bore_wall_conflict"]]
+    sleeve_overlaps = [item for item in ordered if item["sleeve_overlap"]]
+    return {
+        "status": "warning" if bore_conflicts else "clear",
+        "path_count": int(len(paths)),
+        "pair_count": int(len(pair_records)),
+        "minimum_centerline_distance_mm": (
+            float(ordered[0]["centerline_distance_mm"]) if ordered else None
+        ),
+        "minimum_bore_wall_distance_mm": float(bore_wall_distance),
+        "sleeve_overlap_distance_mm": float(sleeve_overlap_distance),
+        "bore_wall_conflict_pair_count": int(len(bore_conflicts)),
+        "sleeve_overlap_pair_count": int(len(sleeve_overlaps)),
+        "requires_operator_review": bool(bore_conflicts),
+        "closest_pairs": [dict(item) for item in ordered[:12]],
+    }
 
 
 def _face_component_count(mask: np.ndarray) -> int:
@@ -2665,6 +2952,7 @@ def generate_surgical_guide(
     # inside this channel just because the crossing falls beyond the first
     # sleeve's finite outer tip.
     primary_bore_specs = _primary_bore_cutter_specs(paths, params)
+    needle_spacing = _needle_spacing_quality(paths, params)
     _subtract_cylinder_specs_from_mask(
         solid,
         ct_image,
@@ -2709,9 +2997,14 @@ def generate_surgical_guide(
         if trunc_z_max and ct_z_max:
             solid[-boundary_voxels:] = False
     solid &= boundary_safe_mask
-    # A component disconnected from every needle sleeve is a floating fragment
-    # or a plate built on an invalid region; keep only the largest components.
-    solid = _filter_components(solid, int(params["minimum_component_voxels"]))
+    # Dense primary bores can cut out islands of material between neighbouring
+    # channels. They are not separate printable guide parts. Retain one
+    # deterministic main component, but verify that every primary sleeve still
+    # has retained wall material before allowing the guide to continue.
+    solid, component_cleanup = _retain_largest_printable_component(
+        solid,
+        int(params["minimum_component_voxels"]),
+    )
     if not bool(np.any(solid)):
         raise SurgicalGuideError(
             "The CT does not cover enough real skin to support a puncture guide "
@@ -2719,14 +3012,39 @@ def generate_surgical_guide(
             "surface around the target, or move the needle entries away from the "
             "scan boundary."
         )
+    primary_sleeve_support = _primary_sleeve_support_quality(
+        solid,
+        ct_image,
+        lower_xyz,
+        spacing_xyz,
+        paths,
+        params,
+    )
+    if not bool(primary_sleeve_support.get("valid")):
+        unsupported = ", ".join(
+            str(value)
+            for value in primary_sleeve_support.get("unsupported_needle_ids") or []
+        )
+        raise SurgicalGuideError(
+            "Dense primary needle bores removed the printable wall support for "
+            f"{unsupported or 'one or more channels'}; reduce the local needle "
+            "density or revise the affected needle geometry before generating "
+            "a guide"
+        )
     final_solid_component_count = _face_component_count(solid)
     if final_solid_component_count != 1:
         raise SurgicalGuideError(
-            "The guide became disconnected after finite-FOV and bore processing; "
-            "one printable guide cannot be produced safely from the current CT coverage"
+            "The guide remains disconnected after removing CSG material islands; "
+            "one printable guide cannot be produced safely from the current "
+            "needle geometry"
         )
     plate_connectivity["final_component_count"] = final_solid_component_count
     plate_connectivity["single_piece"] = True
+    plate_connectivity["post_csg_component_count"] = int(
+        component_cleanup["input_component_count"]
+    )
+    plate_connectivity["component_cleanup"] = component_cleanup
+    plate_connectivity["primary_sleeve_support"] = primary_sleeve_support
     finish_stage("solid_cleanup", solid_voxels=int(np.count_nonzero(solid)))
     # Marching Cubes is topologically correct for ordinary binary volumes,
     # but a thin plate intersected by several closely spaced bores can still
@@ -2798,7 +3116,7 @@ def generate_surgical_guide(
             spacing_xyz,
             primary_bore_specs,
         )
-        repaired_solid = _filter_components(
+        repaired_solid, repaired_component_cleanup = _retain_largest_printable_component(
             repaired_solid,
             int(params["minimum_component_voxels"]),
         )
@@ -2818,11 +3136,23 @@ def generate_surgical_guide(
                 primary_bore_specs=primary_bore_specs,
             )
             repaired_validation = mesh_validation(repaired_vertices, repaired_faces)
-            if repaired_validation.get("watertight"):
+            repaired_support = _primary_sleeve_support_quality(
+                repaired_solid,
+                ct_image,
+                lower_xyz,
+                spacing_xyz,
+                paths,
+                params,
+            )
+            if repaired_validation.get("watertight") and repaired_support.get("valid"):
                 vertices = repaired_vertices
                 faces = repaired_faces
                 bore_quality = repaired_bore_quality
                 validation = repaired_validation
+                primary_sleeve_support = repaired_support
+                plate_connectivity["component_cleanup_after_mesh_repair"] = (
+                    repaired_component_cleanup
+                )
                 mesh_repair["repaired_open_or_nonmanifold_edges"] = int(
                     validation.get("open_or_nonmanifold_edges") or 0
                 )
@@ -2981,6 +3311,9 @@ def generate_surgical_guide(
             "geometry_resolution_mm": params["geometry_resolution_mm"],
             "stage_timings_seconds": stage_timings,
             "bore_quality": bore_quality,
+            "component_cleanup": component_cleanup,
+            "primary_sleeve_support": primary_sleeve_support,
+            "needle_spacing": needle_spacing,
             # Persist the final cutter spans so a saved guide can be audited:
             # a non-empty crossing list proves the affected primary channel
             # was re-drilled through the neighbouring sleeve wall.

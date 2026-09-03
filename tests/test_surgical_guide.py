@@ -17,6 +17,8 @@ from web.surgical_guide import (
     _cylinder_sdf_in_region,
     _primary_bore_cutter_specs,
     _project_bore_walls,
+    _needle_spacing_quality,
+    _retain_largest_printable_component,
     _sample_mask_at_world_points,
     _subtract_cylinder_specs_from_mask,
     generate_surgical_guide,
@@ -158,6 +160,63 @@ def test_filter_components_removes_diagonal_spurs_before_meshing():
     assert not filtered[7, 7, 7]
     assert not filtered[7, 6, 7]
     assert not filtered[6, 7, 7]
+
+
+def test_filter_components_drops_large_post_bore_material_islands():
+    """A sizeable CSG island must not turn one guide into two printable parts."""
+    mask = np.zeros((24, 24, 24), dtype=bool)
+    mask[2:18, 2:18, 2:18] = True
+    # This island is deliberately larger than the historical speck threshold.
+    # Size-only filtering therefore reproduces the old false failure.
+    mask[19:23, 4:10, 4:10] = True
+
+    filtered, qa = _retain_largest_printable_component(mask, minimum_voxels=24)
+
+    assert filtered[2:18, 2:18, 2:18].all()
+    assert not filtered[19:23, 4:10, 4:10].any()
+    assert qa["input_component_count"] == 2
+    assert qa["retained_component_count"] == 1
+    assert qa["dropped_component_count"] == 1
+    assert qa["dropped_voxel_count"] == 144
+
+
+def test_dense_primary_channels_are_audited_without_rejecting_fused_sleeves():
+    """Close channels are reported for review, not silently removed."""
+    direction = np.array([1.0, 0.0, 0.0], dtype=np.float64)
+    paths = [
+        NeedleGuidePath(
+            needle_id="needle_a",
+            trajectory_id="traj_a",
+            target=np.array([20.0, 20.0, 20.0]),
+            external=np.array([-10.0, 20.0, 20.0]),
+            entry=np.array([10.0, 20.0, 20.0]),
+            inward_direction=direction,
+            seed_count=1,
+        ),
+        NeedleGuidePath(
+            needle_id="needle_b",
+            trajectory_id="traj_b",
+            target=np.array([20.0, 22.0, 20.0]),
+            external=np.array([-10.0, 22.0, 20.0]),
+            entry=np.array([10.0, 22.0, 20.0]),
+            inward_direction=direction,
+            seed_count=1,
+        ),
+    ]
+
+    quality = _needle_spacing_quality(
+        paths,
+        normalize_guide_parameters({"auxiliary_holes_enabled": False}),
+    )
+
+    assert quality["status"] == "warning"
+    assert quality["path_count"] == 2
+    assert quality["bore_wall_conflict_pair_count"] == 1
+    assert quality["requires_operator_review"] is True
+    assert {quality["closest_pairs"][0][key] for key in ("needle_a", "needle_b")} == {
+        "needle_a",
+        "needle_b",
+    }
 
 
 def test_distant_plate_patches_are_joined_on_the_skin_shell():

@@ -11,6 +11,8 @@ from tqdm import tqdm
 from . import utilizations
 from .dose_pre.inference import DoseInferenceDeadlineExceeded
 from .reward_metrics import normalized_oar_damage
+from .rl_status import new_rl_status, set_outcome, update_best
+from .planning_preview import safe_preview
 try:
     from . import _reward_core
 except ImportError:
@@ -893,7 +895,9 @@ def reinforcement_planning(
         DVH_rate,
         progressDialog,
         deadline=None,
-        max_actions_per_episode=None):
+        max_actions_per_episode=None,
+        diagnostics=None,
+        preview_callback=None):
     """
     Hierarchical reinforcement learning driver for a single patient case.
     Logic preserved; internal calls use optimized env and caches.
@@ -902,6 +906,54 @@ def reinforcement_planning(
     # path can always return a valid result instead of masking the root error.
     best_plan = None
     best_reward = -np.inf
+    rl_status = diagnostics if isinstance(diagnostics, dict) else None
+    if rl_status is not None and "schema_version" not in rl_status:
+        initial = new_rl_status(DVH_rate)
+        initial.update(rl_status)
+        rl_status.clear()
+        rl_status.update(initial)
+
+    def _emit_preview(plan, phase, iteration, coverage, reward, force=False):
+        safe_preview(preview_callback, {
+            "phase": phase,
+            "iteration": iteration,
+            "coverage": coverage,
+            "reward": reward,
+            "coordinate_space": "world",
+            "plan": plan or [],
+            "force": bool(force),
+        })
+
+    def _status_counter(key, amount=1):
+        if rl_status is None:
+            return
+        try:
+            rl_status[key] = max(0, int(rl_status.get(key) or 0) + int(amount))
+        except (TypeError, ValueError):
+            rl_status[key] = max(0, int(amount))
+
+    def _record_plan(coverage, reward):
+        update_best(rl_status, coverage, reward)
+        if rl_status is not None and float(coverage or 0.0) >= float(DVH_rate):
+            set_outcome(
+                rl_status,
+                execution="completed",
+                stop_reason="target_reached",
+            )
+
+    def _wall_clock_stop():
+        set_outcome(
+            rl_status,
+            execution="interrupted",
+            stop_reason="wall_clock_budget",
+        )
+
+    if rl_status is not None:
+        rl_status["max_episodes"] = int(rf_params.get("max_episodes", 0) or 0)
+        rl_status["max_actions_per_episode"] = int(max_actions_per_episode or 0)
+        rl_status["hierarchical_optimization"] = bool(
+            rf_params.get("hierarchical_optimization")
+        )
     try:
         device = next(dose_cal_model.parameters()).device
 
@@ -935,6 +987,7 @@ def reinforcement_planning(
         for idx, elem in enumerate(target_level_traj):
             if deadline is not None and time.monotonic() >= deadline:
                 logger.warning("[rl] Baseline trajectory scoring reached its wall-clock budget")
+                _wall_clock_stop()
                 break
             try:
                 progressDialog.setValue(65)
@@ -967,6 +1020,11 @@ def reinforcement_planning(
                     best_low_level_state_space = generate_baseline_state_space(
                         low_level_state_spaces, target_level, idx
                     )
+                    _emit_preview(
+                        best_plan, "rl_baseline_selection", idx + 1,
+                        cur_DVH_rate, cur_reward,
+                    )
+                _record_plan(cur_DVH_rate, cur_reward)
                 del trajs_radiations
             except Exception:
                 logger.debug("Initial RL trajectory evaluation failed", exc_info=True)
@@ -974,6 +1032,11 @@ def reinforcement_planning(
 
         # Guard: if no valid trajectory was found, return early
         if best_low_level_state_space is None or best_plan is None:
+            set_outcome(
+                rl_status,
+                execution="failed",
+                stop_reason="no_available_action",
+            )
             return [], -np.inf
 
         best_low_env = LowLevelEnv(
@@ -983,9 +1046,12 @@ def reinforcement_planning(
         best_low_agent = REINFORCE(n_actions=len(best_low_level_state_space), device=device)
         
         if rf_params['hierarchical_optimization']:
+            high_loop_completed = True
             for _ in range(rf_params['max_episodes'] // 2):
                 if deadline is not None and time.monotonic() >= deadline:
                     logger.warning("[rl] Hierarchical RL episode loop reached its wall-clock budget")
+                    high_loop_completed = False
+                    _wall_clock_stop()
                     break
                 try:
                     progressDialog.setValue(70)
@@ -994,6 +1060,7 @@ def reinforcement_planning(
                     
                     state = env.reset()
                     high_action = high_agent.select_action(state)
+                    _status_counter("actions_taken")
 
                     low_reward, plan, cur_DVH_rate, mask, group_idx, low_level_state_space, low_env, low_agent = env.step(high_action, device=device)
 
@@ -1020,10 +1087,24 @@ def reinforcement_planning(
                             plan_objective,
                             plan_coverage,
                         )
+                        _emit_preview(
+                            best_plan, "rl_trajectory_refinement", _,
+                            plan_coverage, plan_objective,
+                        )
+
+                    _record_plan(plan_coverage, plan_objective)
+                    _status_counter("high_level_episodes")
+                    _status_counter("episodes_completed")
                     
                     low_agent.finish_episode()
                 except DoseInferenceDeadlineExceeded:
                     logger.warning("[rl] Hierarchical RL stopped at the DoseUNet deadline")
+                    high_loop_completed = False
+                    set_outcome(
+                        rl_status,
+                        execution="interrupted",
+                        stop_reason="dose_inference_deadline",
+                    )
                     break
                 except Exception:
                     logger.debug("Hierarchical RL episode failed", exc_info=True)
@@ -1063,9 +1144,12 @@ def reinforcement_planning(
                         img_position = point + update_dir * length
                         pos_cache[(lv, length)] = utilizations.position_transform(dose_image, img_position)[0]
 
+            low_loop_completed = True
             for ep in range(rf_params['max_episodes'] // 2):
                 if deadline is not None and time.monotonic() >= deadline:
                     logger.warning("[rl] Low-level RL episode loop reached its wall-clock budget")
+                    low_loop_completed = False
+                    _wall_clock_stop()
                     break
                 try:
                     progressDialog.setValue(80)
@@ -1082,6 +1166,8 @@ def reinforcement_planning(
                         try:
                             if deadline is not None and time.monotonic() >= deadline:
                                 best_low_env.done = True
+                                low_loop_completed = False
+                                _wall_clock_stop()
                                 break
                             mask = []
                             slicer.app.processEvents()  
@@ -1107,6 +1193,7 @@ def reinforcement_planning(
                             mask &= best_low_env.used_mask
                             if np.any(mask):
                                 a = best_low_agent.select_action(state, mask=mask)
+                                _status_counter("actions_taken")
                                 state, _, _ = best_low_env.step(a)
                                 lv = np.searchsorted(best_cunsum, a, side="right") % target_level
                                 traj, point, direction, update_dir, *_ = traj_cache[lv]
@@ -1131,9 +1218,17 @@ def reinforcement_planning(
                                 if cur_DVH_rate >= DVH_rate:
                                     best_low_env.done = True
                             else:
+                                if not planned_positions[0] and rl_status is not None:
+                                    rl_status["no_action_observed"] = True
                                 best_low_env.done = True
                         except DoseInferenceDeadlineExceeded:
                             logger.warning("[rl] Low-level RL stopped at the DoseUNet deadline")
+                            low_loop_completed = False
+                            set_outcome(
+                                rl_status,
+                                execution="interrupted",
+                                stop_reason="dose_inference_deadline",
+                            )
                             best_low_env.done = True
                             break
                         except Exception:
@@ -1163,11 +1258,25 @@ def reinforcement_planning(
                             plan_objective,
                             plan_coverage,
                         )
+                        _emit_preview(
+                            best_plan, "rl_seed_refinement", ep + 1,
+                            plan_coverage, plan_objective,
+                        )
+
+                    _record_plan(plan_coverage, plan_objective)
+                    _status_counter("low_level_episodes")
+                    _status_counter("episodes_completed")
 
                     del cur_radiation
                     best_low_agent.finish_episode()
                 except DoseInferenceDeadlineExceeded:
                     logger.warning("[rl] Low-level optimization stopped at the DoseUNet deadline")
+                    low_loop_completed = False
+                    set_outcome(
+                        rl_status,
+                        execution="interrupted",
+                        stop_reason="dose_inference_deadline",
+                    )
                     break
                 except Exception:
                     logger.debug("Low-level RL optimization episode failed", exc_info=True)
@@ -1178,9 +1287,12 @@ def reinforcement_planning(
                     continue
 
         else:
+            flat_loop_completed = True
             for ep in range(rf_params['max_episodes']):
                 if deadline is not None and time.monotonic() >= deadline:
                     logger.warning("[rl] Flat RL episode loop reached its wall-clock budget")
+                    flat_loop_completed = False
+                    _wall_clock_stop()
                     break
                 try:
                     progressDialog.setValue(70)
@@ -1189,6 +1301,7 @@ def reinforcement_planning(
                     
                     state = env.reset()
                     high_action = high_agent.select_action(state)
+                    _status_counter("actions_taken")
 
                     low_reward, plan, cur_DVH_rate, mask, group_idx, low_level_state_space, low_env, low_agent = env.step(high_action, device=device)
 
@@ -1211,9 +1324,22 @@ def reinforcement_planning(
                             plan_objective,
                             plan_coverage,
                         )
+                        _emit_preview(
+                            best_plan, "rl_plan_refinement", ep + 1,
+                            plan_coverage, plan_objective,
+                        )
+                    _record_plan(plan_coverage, plan_objective)
+                    _status_counter("high_level_episodes")
+                    _status_counter("episodes_completed")
                     low_agent.finish_episode()
                 except DoseInferenceDeadlineExceeded:
                     logger.warning("[rl] Flat RL stopped at the DoseUNet deadline")
+                    flat_loop_completed = False
+                    set_outcome(
+                        rl_status,
+                        execution="interrupted",
+                        stop_reason="dose_inference_deadline",
+                    )
                     break
                 except Exception:
                     logger.debug("Flat RL optimization episode failed", exc_info=True)
@@ -1228,12 +1354,76 @@ def reinforcement_planning(
             reward_calculator.cache_misses,
             reward_calculator.model_inference_seconds,
         )
+        if rl_status is not None:
+            rl_status["dose_cache_hits"] = int(
+                getattr(reward_calculator, "cache_hits", 0) or 0
+            )
+            rl_status["dose_cache_misses"] = int(
+                getattr(reward_calculator, "cache_misses", 0) or 0
+            )
+            if rl_status.get("_stop_reason") is None:
+                if (rl_status.get("best_coverage", 0.0) or 0.0) >= float(DVH_rate):
+                    set_outcome(
+                        rl_status,
+                        execution="completed",
+                        stop_reason="target_reached",
+                    )
+                else:
+                    if rf_params.get("hierarchical_optimization"):
+                        loops_completed = bool(
+                            high_loop_completed and low_loop_completed
+                        )
+                    else:
+                        loops_completed = bool(flat_loop_completed)
+                    set_outcome(
+                        rl_status,
+                        execution="completed",
+                        stop_reason=(
+                            "episode_budget_exhausted"
+                            if loops_completed and int(rf_params.get("max_episodes", 0) or 0) > 0
+                            else (
+                                "no_available_action"
+                                if rl_status.get("no_action_observed")
+                                else "completed_without_target"
+                            )
+                        ),
+                    )
+        _emit_preview(
+            best_plan,
+            "rl_best_plan",
+            int((rl_status or {}).get("episodes_completed") or 0),
+            float((rl_status or {}).get("best_coverage") or 0.0),
+            best_reward,
+            force=True,
+        )
         return best_plan, best_reward
     except DoseInferenceDeadlineExceeded:
         logger.warning("[rl] Reinforcement planning reached the DoseUNet deadline")
+        set_outcome(
+            rl_status,
+            execution="interrupted",
+            stop_reason="dose_inference_deadline",
+        )
+        if rl_status is not None:
+            rl_status["dose_cache_hits"] = int(
+                getattr(locals().get("reward_calculator"), "cache_hits", 0) or 0
+            )
+            rl_status["dose_cache_misses"] = int(
+                getattr(locals().get("reward_calculator"), "cache_misses", 0) or 0
+            )
+        _emit_preview(
+            best_plan, "rl_interrupted_best", 0,
+            float((rl_status or {}).get("best_coverage") or 0.0),
+            best_reward, force=True,
+        )
         return ([] if best_plan is None else best_plan), best_reward
     except Exception:
         logger.exception("Reinforcement planning failed")
+        set_outcome(
+            rl_status,
+            execution="failed",
+            stop_reason="internal_exception",
+        )
         if best_plan is not None:
             return best_plan, best_reward
         return [], -np.inf

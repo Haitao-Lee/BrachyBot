@@ -34,3 +34,33 @@ def test_all_context_menu_entry_points_use_shared_positioning():
     assert "window.positionBrachyContextMenu(menu, x, y)" in manual_3d
     assert "window.positionBrachyContextMenu(menu, event.clientX, event.clientY)" in annotation
     assert "window.positionBrachyContextMenu(menu, event.clientX, event.clientY)" in export
+
+
+def test_data_tree_group_context_menu_is_unified_and_not_closed_by_a_stale_listener():
+    viewer = _read("web/app/static/js/brachybot-viewer-volume.js")
+    manual_3d = _read("web/app/static/js/brachybot-3d-manual.js")
+    annotation = _read("web/app/static/js/brachybot-manual-annotation.js")
+
+    # Every rendered parent branch, including OAR's two classification
+    # subgroups, must go through the same handler.  That handler prevents and
+    # stops the native event before opening the group menu, so a nested header
+    # cannot fall through to another tree branch.
+    group_ids = (
+        "image", "segmentation", "ctv", "oar", "non_traversable",
+        "traversable", "planning", "planning_meshes", "artifacts",
+    )
+    for group_id in group_ids:
+        assert f"oncontextmenu=\"handleTreeItemRightClick('{group_id}', event)\"" in viewer
+
+    assert "'image', 'segmentation', 'ctv', 'oar', 'non_traversable', 'traversable'," in viewer
+    assert "'masks', 'generic_masks', 'upload_masks', 'artifacts'," in viewer
+    assert "document.addEventListener('contextmenu', event =>" in viewer
+
+    # Per-menu delayed document listeners caused the next right-click to close
+    # the newly-created menu.  Context-menu dismissal is now centralized in the
+    # capture-phase boundary and must not be re-installed by any viewer module.
+    for source in (viewer, manual_3d, annotation):
+        assert "document.addEventListener('contextmenu', hideContextMenu" not in source
+    assert "document.addEventListener('click', hideContextMenu, { once: true })" not in viewer
+    assert "document.addEventListener('click', hideContextMenu, { once: true })" not in manual_3d
+    assert "document.addEventListener('click', hideContextMenu, { once: true })" not in annotation

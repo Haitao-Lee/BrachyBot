@@ -65,6 +65,10 @@ PLANNING_VALUE_KEYS = (
     "total_seeds",
     "num_trajectories",
     "plan_config",
+    # RL execution telemetry is kept separately from the large clinical
+    # arrays so a failed/interrupted attempt remains auditable after the
+    # previous completed plan is restored.
+    "rl_status",
     "dose_units",
     "dose_scale_gy",
     "radiation_volume",
@@ -168,7 +172,7 @@ def _write_runs(memory: Any, runs: Iterable[Mapping[str, Any]], *, reason: str) 
 def _has_current_plan(memory: Any) -> bool:
     return any(memory.retrieve(key) is not None for key in PLANNING_VALUE_KEYS if key not in {
         "manual_plan_active", "manual_geometry_only", "artifact_status",
-        "dose_recompute_provenance",
+        "dose_recompute_provenance", "rl_status",
     })
 
 
@@ -241,6 +245,8 @@ def _run_summary(run: Mapping[str, Any]) -> Dict[str, Any]:
         "metrics_summary": dict(run.get("metrics_summary") or {})
         if isinstance(run.get("metrics_summary"), Mapping) else {},
         "error": run.get("error"),
+        "rl_status": dict(run.get("rl_status") or {})
+        if isinstance(run.get("rl_status"), Mapping) else {},
     }
 
 
@@ -556,6 +562,15 @@ def publish_planning_run(agent: Any, result: Any = None, *, status: str = "compl
         memory.retrieve("algorithm_plan_dose_distribution_gy") is not None
         or memory.retrieve("algorithm_plan_dose_distribution") is not None
     )
+    # RL telemetry is a small, plan-owned audit fact. Keep it in the compact
+    # registry as well as the namespaced snapshot so history queries can still
+    # explain an earlier fallback after the active aliases move to another run.
+    rl_status = memory.retrieve("rl_status")
+    if not isinstance(rl_status, Mapping):
+        current_config = memory.retrieve("plan_config")
+        if isinstance(current_config, Mapping):
+            rl_status = current_config.get("rl_status")
+    rl_status = dict(rl_status) if isinstance(rl_status, Mapping) else {}
     _update_run(
         memory,
         planning_id,
@@ -584,6 +599,7 @@ def publish_planning_run(agent: Any, result: Any = None, *, status: str = "compl
             for key in ("v100", "v150", "v200", "d90", "plan_score")
             if isinstance(metrics, Mapping) and metrics.get(key) is not None
         },
+        rl_status=rl_status,
     )
     if status == "completed":
         # A successful child becomes the only displayed Planning.  Keeping
@@ -632,6 +648,16 @@ def mark_planning_run(agent: Any, planning_id: str, status: str, error: Optional
     changes: Dict[str, Any] = {"status": str(status)}
     if error:
         changes["error"] = str(error)
+    # A failed RL run is often followed by restoration of its previous
+    # completed parent.  Capture the telemetry into the failed run before
+    # activating that parent; otherwise the only evidence of the failure
+    # disappears with the mutable aliases.
+    rl_status = memory.retrieve("rl_status")
+    if isinstance(rl_status, Mapping):
+        changes["rl_status"] = _clone(rl_status)
+        snapshot = _capture_current(memory)
+        if snapshot:
+            _memory_put(memory, PLANNING_RUN_PREFIX + str(planning_id), snapshot)
     updated = _update_run(memory, planning_id, **changes)
     if updated is None:
         return False
@@ -1141,6 +1167,9 @@ def current_planning_context(memory: Any) -> Dict[str, Any]:
     provenance = read("dose_recompute_provenance", default={})
     if not isinstance(provenance, Mapping):
         provenance = {}
+    rl_status = read("rl_status", default=None)
+    if not isinstance(rl_status, Mapping) and isinstance(plan_config, Mapping):
+        rl_status = plan_config.get("rl_status")
     return {
         "planning_id": planning_id or alias_id or None,
         "label": label,
@@ -1151,6 +1180,7 @@ def current_planning_context(memory: Any) -> Dict[str, Any]:
         "data_version": data_version,
         "metrics": dict(metrics) if isinstance(metrics, Mapping) else {},
         "plan_config": dict(plan_config) if isinstance(plan_config, Mapping) else {},
+        "rl_status": dict(rl_status) if isinstance(rl_status, Mapping) else {},
         "tumor_type": str(tumor_type or ""),
         "total_seeds": total_seeds,
         "num_trajectories": num_trajectories,

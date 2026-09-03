@@ -22,6 +22,7 @@ import copy
 import hashlib
 import logging
 import re
+import time
 import numpy as np
 from typing import Dict, List, Optional, Any
 
@@ -40,6 +41,8 @@ from plans.guide_geometry import (
     resolve_parallel_angle_tolerance_deg,
     resolve_parallel_needle_min_distance_mm,
 )
+from plans.rl_status import finish_rl_status, new_rl_status, set_outcome
+from tool_factory.dose_eval.dvh_utils import build_cumulative_dvh
 
 logger = logging.getLogger(__name__)
 
@@ -484,6 +487,132 @@ _PLANNING_PARAM_KEYS = {
     "max_iter", "replan_rate", "distance_filtter", "distance_filter",
     "radiation_array_params", "rf_params",
 }
+
+
+def normalize_planning_mode(value):
+    """Normalize the user-facing planning mode at the tool boundary.
+
+    The planner has two real execution paths.  Keeping this conversion in one
+    place prevents a provider/UI spelling such as ``normal`` or
+    ``rule-based`` from silently falling through to an unintended branch.
+    """
+    if value is None:
+        return "rule_based"
+    normalized = str(value).strip().lower().replace("-", "_").replace(" ", "_")
+    aliases = {
+        "rule_based": "rule_based",
+        "rulebased": "rule_based",
+        "normal": "rule_based",
+        "standard": "rule_based",
+        "rl": "rl",
+        "reinforcement": "rl",
+        "reinforcement_learning": "rl",
+    }
+    try:
+        return aliases[normalized]
+    except KeyError as exc:
+        raise ValueError(
+            "mode must be 'rule_based' or 'rl'"
+        ) from exc
+
+
+def _planning_json_value(value):
+    """Convert planning settings to stable JSON-safe values for provenance."""
+    if isinstance(value, np.ndarray):
+        return [_planning_json_value(item) for item in value.tolist()]
+    if isinstance(value, np.generic):
+        return _planning_json_value(value.item())
+    if isinstance(value, dict):
+        return {
+            str(key): _planning_json_value(item)
+            for key, item in sorted(value.items(), key=lambda item: str(item[0]))
+        }
+    if isinstance(value, (list, tuple)):
+        return [_planning_json_value(item) for item in value]
+    if isinstance(value, float):
+        return value if np.isfinite(value) else None
+    if value is None or isinstance(value, (str, int, bool)):
+        return value
+    return str(value)
+
+
+def build_planning_request_provenance(
+    args,
+    *,
+    mode,
+    reference_direction,
+    input_paths=None,
+):
+    """Build the exact invocation identity used by a planning run.
+
+    A Planning row used to persist only CT/CTV/OAR paths.  That was enough to
+    identify a case, but not enough to prove that a second run used a changed
+    mode or changed optimization settings.  This compact snapshot is also the
+    cache/restart boundary: two requests with different effective settings
+    receive different fingerprints even when their clinical output happens to
+    converge to the same geometry.
+    """
+    distance_filter = getattr(args, "distance_filtter", None)
+    if not isinstance(distance_filter, dict):
+        distance_filter = getattr(args, "distance_filter", {}) or {}
+    parameters = {
+        "mode": str(mode),
+        "seed_info": getattr(args, "seed_info", {}),
+        "in_lowest_dose_gy": getattr(args, "in_lowest_energy", None),
+        "out_highest_dose_gy": getattr(args, "out_highest_energy", None),
+        "DVH_rate": getattr(args, "DVH_rate", None),
+        "iter_rate": getattr(args, "iter_rate", None),
+        "max_iter": getattr(args, "max_iter", None),
+        "replan_rate": getattr(args, "replan_rate", None),
+        "distance_filter": distance_filter,
+        "radiation_array_params": getattr(args, "radiation_array_params", {}),
+        "rf_params": getattr(args, "rf_params", {}),
+        "image_normalize": getattr(args, "image_normalize", None),
+        "infer_img_size": (
+            getattr(args, "radiation_array_params", {}) or {}
+        ).get("infer_img_size"),
+        "dl_params": getattr(args, "dl_params", {}),
+    }
+    payload = {
+        "schema_version": 1,
+        "mode": str(mode),
+        "reference_direction": reference_direction,
+        "input_paths": input_paths or {},
+        "parameters": _planning_json_value(parameters),
+    }
+    payload = _planning_json_value(payload)
+    canonical = json.dumps(
+        payload,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=True,
+    )
+    fingerprint = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+    return payload, fingerprint
+
+
+def rule_based_fallback_is_strictly_better(
+    rl_coverage,
+    fallback_coverage,
+    *,
+    tolerance=1e-6,
+):
+    """Return whether a fallback has a measurable coverage improvement.
+
+    ``>=`` made an equal-coverage fallback replace the actual RL result.  In
+    the common timeout case that made an explicitly selected RL plan appear to
+    be the same plan as a later rule-based run.  A fallback remains available,
+    but it must now provide a strict improvement before it can replace the
+    requested mode's result.
+    """
+    try:
+        rl_value = float(rl_coverage)
+        fallback_value = float(fallback_coverage)
+    except (TypeError, ValueError):
+        return False
+    if not np.isfinite(rl_value) or not np.isfinite(fallback_value):
+        return False
+    return fallback_value > rl_value + float(tolerance)
 
 
 def _finite_number(value, name, *, minimum=None, maximum=None):
@@ -1121,6 +1250,77 @@ def _candidate_world_needle_points(trajectory, planning_image, extension_mm=None
     except Exception:
         logger.exception("[needle_safety] Unable to build candidate world needle segment")
         return None
+
+
+def _sample_preview_items(values, limit):
+    """Sample a long optimizer list across its full range, deterministically."""
+    items = list(values or [])
+    if len(items) <= limit:
+        return list(enumerate(items))
+    indices = np.linspace(0, len(items) - 1, num=limit, dtype=int)
+    return [(int(index), items[int(index)]) for index in indices]
+
+
+def _preview_trajectory_geometry(trajectories, planning_image, *, status="candidate"):
+    geometry = []
+    for original_index, trajectory in _sample_preview_items(trajectories, 64):
+        points = _candidate_world_needle_points(trajectory, planning_image)
+        if points is None:
+            continue
+        geometry.append({
+            "id": f"preview_trajectory_{original_index}",
+            "points": [point.tolist() for point in points],
+            "status": status,
+        })
+    return {"trajectories": geometry, "needles": [], "seeds": []}
+
+
+def _preview_seed_plan_geometry(plan_res, dose_image, *, coordinate_space="voxel"):
+    """Convert a sampled optimizer plan to world geometry for the Viewer only."""
+    from plans import utilizations
+
+    needles = []
+    seeds = []
+    for trajectory_index, entry in _sample_preview_items(plan_res, 32):
+        if not isinstance(entry, (list, tuple)) or len(entry) < 2:
+            continue
+        trajectory = entry[0]
+        points = _candidate_world_needle_points(trajectory, dose_image)
+        if points is not None:
+            needles.append({
+                "id": f"preview_needle_{trajectory_index}",
+                "points": [point.tolist() for point in points],
+                "status": "selected",
+            })
+        for seed_index, seed in enumerate(entry[1] or []):
+            if len(seeds) >= 256 or not isinstance(seed, (list, tuple)) or len(seed) < 2:
+                break
+            try:
+                position = np.asarray(seed[0], dtype=np.float64).reshape(-1)[:3]
+                direction = np.asarray(seed[1], dtype=np.float64).reshape(-1)[:3]
+                if coordinate_space == "voxel":
+                    position = np.asarray(
+                        utilizations.position_transform(dose_image, position)[0],
+                        dtype=np.float64,
+                    ).reshape(-1)[:3]
+                    direction = np.asarray(
+                        utilizations.direction_transform(dose_image, direction),
+                        dtype=np.float64,
+                    ).reshape(-1)[:3]
+                if position.size != 3 or direction.size != 3:
+                    continue
+                if not np.all(np.isfinite(position)) or not np.all(np.isfinite(direction)):
+                    continue
+                seeds.append({
+                    "id": f"preview_seed_{trajectory_index}_{seed_index}",
+                    "trajectory_id": f"preview_needle_{trajectory_index}",
+                    "position": position.tolist(),
+                    "direction": direction.tolist(),
+                    "status": "optimizing",
+                })
+            except Exception:
+                logger.debug("Unable to serialize one planning preview seed", exc_info=True)
+    return {"trajectories": [], "needles": needles, "seeds": seeds}
 
 
 def _seed_plan_entry_needle_points(entry, extension_mm=None):
@@ -1780,6 +1980,9 @@ class PlanningPipelineTool(BaseTool):
         # 5 sub-steps. Internal to this file, NOT exposed in the
         # input_schema (popped before validation).
         step_callback = kwargs.pop("step_callback", None)
+        # Ephemeral viewer observations use a separate callback and never
+        # enter the tool schema, AgentMemory, or an immutable Planning run.
+        preview_callback = kwargs.pop("preview_callback", None)
         reference_direction_user_override = bool(
             kwargs.pop("_reference_direction_user_override", False)
         )
@@ -1925,8 +2128,46 @@ class PlanningPipelineTool(BaseTool):
         # Resolve via the unified helper (handles organ defaults + auto_detect)
         ref_direc = _resolve_ref_direc(ref_direc_input, ct_image, ctv_mask, agent)
 
-        # Get mode
-        mode = kwargs.get("mode", "rule_based")
+        # Get and normalize mode before reserving a Planning run.  The mode is
+        # a clinical execution choice, not a best-effort hint: invalid values
+        # must never silently fall into the rule-based branch.
+        try:
+            mode = normalize_planning_mode(kwargs.get("mode", "rule_based"))
+        except ValueError as exc:
+            return ToolResult(success=False, error=str(exc))
+
+        # Materialize the same effective settings object that the optimization
+        # stage will use.  Persisting this snapshot makes a mode/parameter
+        # change observable after a restart and gives cache/reconciliation
+        # code a complete request identity instead of only a CT path.
+        try:
+            from plans.config import setting
+
+            provenance_args = _apply_planning_overrides(setting(), agent_config)
+        except ValueError as exc:
+            return ToolResult(success=False, error=f"Invalid planning configuration: {exc}")
+        input_paths = {
+            "ct_path": kwargs.get("ct_image_path") or _memory_value(
+                getattr(agent, "memory", None), "ct_path"
+            ),
+            "ctv_path": kwargs.get("ctv_mask_path") or _memory_value(
+                getattr(agent, "memory", None), "ctv_path"
+            ),
+            "oar_path": kwargs.get("oar_mask_path") or _memory_value(
+                getattr(agent, "memory", None), "oar_path"
+            ),
+        }
+        planning_provenance, planning_fingerprint = build_planning_request_provenance(
+            provenance_args,
+            mode=mode,
+            reference_direction=ref_direc,
+            input_paths=input_paths,
+        )
+        # These private keys are invocation-local and are intentionally ignored
+        # by _apply_planning_overrides.  Downstream stages use them only when
+        # writing the immutable plan configuration.
+        agent_config["_planning_provenance"] = planning_provenance
+        agent_config["_planning_fingerprint"] = planning_fingerprint
 
         # Reserve a new immutable planning run before any pipeline stage
         # starts overwriting the legacy active aliases.  ``full`` is always a
@@ -1942,15 +2183,29 @@ class PlanningPipelineTool(BaseTool):
                 step=str(step),
                 force_new=str(step) == "full",
                 input_revision={
-                    "ct_path": kwargs.get("ct_image_path") or agent.memory.retrieve("ct_path"),
-                    "ctv_path": kwargs.get("ctv_mask_path") or agent.memory.retrieve("ctv_path"),
-                    "oar_path": kwargs.get("oar_mask_path") or agent.memory.retrieve("oar_path"),
-                    "tumor_type": agent.memory.retrieve("tumor_type_used"),
-                    "dose_scale_gy": agent.memory.retrieve("dose_scale_gy"),
+                    **input_paths,
+                    "tumor_type": _memory_value(
+                        getattr(agent, "memory", None), "tumor_type_used"
+                    ),
+                    "dose_scale_gy": _memory_value(
+                        getattr(agent, "memory", None), "dose_scale_gy"
+                    ),
+                    "mode": mode,
+                    "planning_fingerprint": planning_fingerprint,
+                    "planning_parameters": planning_provenance.get("parameters", {}),
+                    "reference_direction": planning_provenance.get("reference_direction"),
                 },
             )
         except Exception as exc:
             logger.warning("[planning] unable to reserve planning run: %s", exc)
+
+        from plans.planning_preview import PlanningPreviewEmitter
+
+        preview_emitter = PlanningPreviewEmitter(
+            preview_callback,
+            session_id=str(getattr(getattr(agent, "memory", None), "session_id", "") or ""),
+            planning_id=str(planning_id or "unreserved"),
+        )
 
         # Route to the requested step.  A thrown exception is different from a
         # normal failed ToolResult, but it must have the same Planning lifecycle:
@@ -1959,13 +2214,26 @@ class PlanningPipelineTool(BaseTool):
         result = None
         try:
             if step == "full":
-                result = self._run_full_pipeline(ct_image, ctv_mask, oar_mask, ref_direc, mode, agent_config, agent, step_callback=step_callback)
+                result = self._run_full_pipeline(
+                    ct_image, ctv_mask, oar_mask, ref_direc, mode,
+                    agent_config, agent, step_callback=step_callback,
+                    preview_emitter=preview_emitter,
+                )
             elif step == "trajectory_init":
-                result = self._step_trajectory_init(ct_image, ctv_mask, oar_mask, ref_direc, agent_config, agent)
+                result = self._step_trajectory_init(
+                    ct_image, ctv_mask, oar_mask, ref_direc,
+                    agent_config, agent, preview_emitter=preview_emitter,
+                )
             elif step == "trajectory_refine":
-                result = self._step_trajectory_refine(ct_image, ctv_mask, oar_mask, agent_config, agent)
+                result = self._step_trajectory_refine(
+                    ct_image, ctv_mask, oar_mask, agent_config, agent,
+                    preview_emitter=preview_emitter,
+                )
             elif step == "seed_planning":
-                result = self._step_seed_planning(ct_image, ctv_mask, oar_mask, mode, agent_config, agent)
+                result = self._step_seed_planning(
+                    ct_image, ctv_mask, oar_mask, mode, agent_config, agent,
+                    preview_emitter=preview_emitter,
+                )
             elif step == "dose_calc":
                 result = self._step_dose_calc(ct_image, ctv_mask, oar_mask, agent_config, agent)
             elif step == "dose_eval":
@@ -1973,6 +2241,7 @@ class PlanningPipelineTool(BaseTool):
             else:
                 result = ToolResult(success=False, error=f"Unknown step: '{step}'. Valid steps: trajectory_init, trajectory_refine, seed_planning, dose_calc, dose_eval, full")
         except Exception as exc:
+            preview_emitter.cleanup("exception")
             if planning_id:
                 try:
                     from web.planning_runs import mark_planning_run
@@ -1986,6 +2255,24 @@ class PlanningPipelineTool(BaseTool):
             result.metadata.setdefault("planning_id", planning_id)
             result.metadata.setdefault("planning_label", "")
             result.metadata.setdefault("planning_step", str(step))
+            result.metadata.setdefault("requested_mode", mode)
+            result.metadata.setdefault("planning_fingerprint", planning_fingerprint)
+            current_plan_config = _memory_value(
+                getattr(agent, "memory", None), "plan_config", {}
+            )
+            if isinstance(current_plan_config, dict):
+                result.metadata.setdefault(
+                    "effective_mode",
+                    current_plan_config.get("effective_mode", mode),
+                )
+                result.metadata.setdefault(
+                    "rl_fallback_used",
+                    bool(current_plan_config.get("rl_fallback_used", False)),
+                )
+                if current_plan_config.get("rl_status") is not None:
+                    result.metadata.setdefault(
+                        "rl_status", copy.deepcopy(current_plan_config.get("rl_status"))
+                    )
             if result.success:
                 # The pipeline mutates the legacy active aliases while it
                 # runs.  Reserving a Planning above is not enough: the
@@ -2064,6 +2351,9 @@ class PlanningPipelineTool(BaseTool):
                     )
                 except Exception:
                     logger.warning("[planning] unable to mark failed run %s", planning_id, exc_info=True)
+        preview_emitter.cleanup(
+            "completed" if result is not None and result.success else "failed"
+        )
         return result
 
     # ============================================================
@@ -2261,7 +2551,7 @@ class PlanningPipelineTool(BaseTool):
 
     def _step_trajectory_init(
         self, ct_image, ctv_mask, oar_mask, ref_direc, agent_config, agent,
-        body_mask=None,
+        body_mask=None, preview_emitter=None,
     ):
         """Step 1: Generate candidate trajectories.
 
@@ -2326,6 +2616,29 @@ class PlanningPipelineTool(BaseTool):
         # Run init_plan
         from plans.core import init_plan
         logger.info(f"Running init_plan with: ref_direc={voxel_direc}, direc_resolution={args.direc_resolution}, backlit_angle={args.radiation_array_params['backlit_angle']}, target_value={args.radiation_array_params['target_value']}, obstacle_value={args.radiation_array_params['obstacle_value']}, min_depth={args.radiation_array_params.get('min_depth', 1)}, max_traj={args.radiation_array_params['maximum_candidate_trajectories']}")
+        if preview_emitter is not None:
+            preview_emitter.start(
+                "trajectory_init",
+                phase="candidate_generation",
+                detail="Generating sampled candidate paths",
+            )
+
+        def _trajectory_preview_observer(event):
+            if preview_emitter is None or not isinstance(event, dict):
+                return
+            candidates = event.get("trajectories") or []
+            preview_emitter.frame(
+                _preview_trajectory_geometry(candidates, resampled_ct),
+                stage="trajectory_init",
+                phase=str(event.get("phase") or "candidate_generation"),
+                detail=str(event.get("detail") or ""),
+                progress={
+                    "current": event.get("current"),
+                    "total": event.get("total"),
+                    "candidate_count": len(candidates),
+                },
+                force=bool(event.get("force")),
+            )
         try:
             trajectories = init_plan(
                 resampled_ct,
@@ -2338,6 +2651,7 @@ class PlanningPipelineTool(BaseTool):
                 args.radiation_array_params['obstacle_value'],
                 args.radiation_array_params['maximum_candidate_trajectories'],
                 min_depth=args.radiation_array_params.get('min_depth', 1),
+                preview_callback=_trajectory_preview_observer,
             )
             logger.info(f"init_plan returned {len(trajectories)} trajectories")
         except Exception as e:
@@ -2348,6 +2662,8 @@ class PlanningPipelineTool(BaseTool):
 
         # Check if trajectories were generated
         if not trajectories:
+            if preview_emitter is not None:
+                preview_emitter.complete("trajectory_init", status="error")
             logger.error("init_plan returned 0 trajectories")
             return ToolResult(
                 success=False,
@@ -2371,6 +2687,8 @@ class PlanningPipelineTool(BaseTool):
             body_mask=body_mask,
         )
         if not trajectories:
+            if preview_emitter is not None:
+                preview_emitter.complete("trajectory_init", status="error")
             return ToolResult(
                 success=False,
                 error="[trajectory_init] No trajectories remain after non-traversable obstacle validation.",
@@ -2391,6 +2709,20 @@ class PlanningPipelineTool(BaseTool):
 
         max_depth = max([t[4] for t in trajectories], default=0) if trajectories else 0
 
+        if preview_emitter is not None:
+            preview_emitter.frame(
+                _preview_trajectory_geometry(trajectories, resampled_ct, status="safe"),
+                stage="trajectory_init",
+                phase="safety_filtered",
+                detail=f"{len(trajectories)} safe candidate paths",
+                progress={"candidate_count": len(trajectories)},
+                force=True,
+            )
+            preview_emitter.complete(
+                "trajectory_init",
+                detail=f"{len(trajectories)} candidates",
+            )
+
         return ToolResult(
             success=True,
             data=trajectories,
@@ -2406,7 +2738,7 @@ class PlanningPipelineTool(BaseTool):
 
     def _step_trajectory_refine(
         self, ct_image, ctv_mask, oar_mask, agent_config, agent,
-        body_mask=None,
+        body_mask=None, preview_emitter=None,
     ):
         """Step 2: Refine trajectories (filter by quality).
 
@@ -2432,7 +2764,7 @@ class PlanningPipelineTool(BaseTool):
             init_result = self._step_trajectory_init(
                 ct_image, ctv_mask, oar_mask, ref_direc,
                 agent_config or copy.deepcopy(getattr(agent, "config", {}) or {}), agent,
-                body_mask=body_mask,
+                body_mask=body_mask, preview_emitter=preview_emitter,
             )
             if not init_result.success:
                 return ToolResult(success=False, error=f"[trajectory_refine] Cannot generate trajectories: {init_result.error}")
@@ -2440,6 +2772,13 @@ class PlanningPipelineTool(BaseTool):
 
         if not trajectories:
             return ToolResult(success=False, error="[trajectory_refine] No trajectories generated. Check CTV mask.")
+
+        if preview_emitter is not None:
+            preview_emitter.start(
+                "trajectory_refine",
+                phase="quality_filter",
+                detail=f"Filtering {len(trajectories)} candidate paths",
+            )
 
         # Rebuild from the current Data tree state. Users may move an OAR
         # between parent categories after trajectory initialization.
@@ -2497,6 +2836,8 @@ class PlanningPipelineTool(BaseTool):
         else:
             refined = depth_candidates
         if not refined:
+            if preview_emitter is not None:
+                preview_emitter.complete("trajectory_refine", status="error")
             return ToolResult(
                 success=False,
                 error="[trajectory_refine] No trajectories remain after non-traversable obstacle validation.",
@@ -2504,6 +2845,27 @@ class PlanningPipelineTool(BaseTool):
 
         # Sort by depth (best first)
         refined.sort(key=lambda t: t[4], reverse=True)
+
+        if preview_emitter is not None:
+            preview_emitter.frame(
+                _preview_trajectory_geometry(
+                    refined,
+                    resampled_ct if resampled_ct is not None else ct_image,
+                    status="refined",
+                ),
+                stage="trajectory_refine",
+                phase="ranked",
+                detail=f"{len(refined)} paths retained",
+                progress={
+                    "input_count": len(trajectories),
+                    "retained_count": len(refined),
+                },
+                force=True,
+            )
+            preview_emitter.complete(
+                "trajectory_refine",
+                detail=f"{len(refined)} paths retained",
+            )
 
         if agent:
             agent.memory.store("refined_trajectories", refined)
@@ -2523,7 +2885,7 @@ class PlanningPipelineTool(BaseTool):
 
     def _step_seed_planning(
         self, ct_image, ctv_mask, oar_mask, mode, agent_config, agent,
-        body_mask=None,
+        body_mask=None, preview_emitter=None,
     ):
         """Step 3: Optimize seed placement.
 
@@ -2559,13 +2921,13 @@ class PlanningPipelineTool(BaseTool):
             auto_ref_direc = _resolve_ref_direc(ref_direc_input, ct_image, ctv_mask, agent)
             init_result = self._step_trajectory_init(
                 ct_image, ctv_mask, oar_mask, auto_ref_direc, agent_config, agent,
-                body_mask=body_mask,
+                body_mask=body_mask, preview_emitter=preview_emitter,
             )
             if not init_result.success:
                 return ToolResult(success=False, error=f"[seed_planning] Cannot generate trajectories: {init_result.error}")
             refine_result = self._step_trajectory_refine(
                 ct_image, ctv_mask, oar_mask, agent_config, agent,
-                body_mask=body_mask,
+                body_mask=body_mask, preview_emitter=preview_emitter,
             )
             if not refine_result.success:
                 return ToolResult(success=False, error=f"[seed_planning] Cannot refine trajectories: {refine_result.error}")
@@ -2711,7 +3073,7 @@ class PlanningPipelineTool(BaseTool):
             ref_direc = _resolve_ref_direc(ref_input, ct_image, ctv_mask, agent)
             init_result = self._step_trajectory_init(
                 ct_image, ctv_mask, oar_mask, ref_direc, agent_config, agent,
-                body_mask=body_mask,
+                body_mask=body_mask, preview_emitter=preview_emitter,
             )
             if init_result.success:
                 trajectories = init_result.metadata.get("trajectories", [])
@@ -2726,6 +3088,58 @@ class PlanningPipelineTool(BaseTool):
             resampled_ct, args.image_normalize[0], args.image_normalize[1],
             args.image_normalize[0], args.image_normalize[1]
         )
+
+        if preview_emitter is not None:
+            preview_emitter.start(
+                "seed_planning",
+                phase="rl_optimization" if mode == "rl" else "rule_optimization",
+                detail=f"Optimizing seed placement on {len(trajectories)} paths",
+            )
+
+        def _seed_preview_observer(event):
+            if preview_emitter is None or not isinstance(event, dict):
+                return
+            plan = event.get("plan") or []
+            preview_emitter.frame(
+                _preview_seed_plan_geometry(
+                    plan,
+                    dose_image,
+                    coordinate_space=str(event.get("coordinate_space") or "voxel"),
+                ),
+                stage="seed_planning",
+                phase=str(event.get("phase") or "optimization"),
+                detail=str(event.get("detail") or ""),
+                progress={
+                    "iteration": event.get("iteration"),
+                    "coverage": event.get("coverage"),
+                    "reward": event.get("reward"),
+                    "seed_count": sum(
+                        len(entry[1] or [])
+                        for entry in plan
+                        if isinstance(entry, (list, tuple)) and len(entry) >= 2
+                    ),
+                },
+                force=bool(event.get("force")),
+            )
+
+        rl_status = new_rl_status(args.DVH_rate) if mode == "rl" else None
+        rl_started_at = time.monotonic() if rl_status is not None else None
+
+        def _finalize_rl_status(*, execution=None, stop_reason=None):
+            if rl_status is None:
+                return
+            if execution or stop_reason:
+                set_outcome(
+                    rl_status,
+                    execution=execution,
+                    stop_reason=stop_reason,
+                )
+            finish_rl_status(rl_status, rl_started_at or time.monotonic())
+            if agent:
+                # Keep this independent of the large plan aliases.  A failed
+                # RL attempt may restore the previous completed plan, but its
+                # diagnostic record must remain queryable for provenance.
+                agent.memory.store("rl_status", copy.deepcopy(rl_status))
 
         try:
             if mode == "rl":
@@ -2752,6 +3166,8 @@ class PlanningPipelineTool(BaseTool):
                     _MockProgressDialog(),
                     parallel_min_distance_mm=parallel_min_distance_mm,
                     parallel_angle_tolerance_deg=parallel_angle_tolerance_deg,
+                    diagnostics=rl_status,
+                    preview_callback=_seed_preview_observer,
                 )
             else:
                 plan_res = core.optimal_plan(
@@ -2778,10 +3194,13 @@ class PlanningPipelineTool(BaseTool):
                     _MockProgressDialog(),
                     parallel_min_distance_mm=parallel_min_distance_mm,
                     parallel_angle_tolerance_deg=parallel_angle_tolerance_deg,
+                    preview_callback=_seed_preview_observer,
                 )
             effective_mode = mode
             rl_fallback_used = False
             rl_target_coverage = None
+            rl_fallback_coverage = None
+            rl_fallback_reason = "not_needed"
             if mode == "rl":
                 rl_target_coverage = _plan_target_coverage(
                     plan_res,
@@ -2789,14 +3208,20 @@ class PlanningPipelineTool(BaseTool):
                     args.radiation_array_params['target_value'],
                     in_lowest_model,
                 )
+                if rl_status is not None:
+                    rl_status["best_coverage"] = max(
+                        float(rl_status.get("best_coverage") or 0.0),
+                        float(rl_target_coverage or 0.0),
+                    )
                 rf_params = getattr(args, "rf_params", {}) or {}
                 fallback_enabled = rf_params.get("fallback_to_rule_based", True)
                 if isinstance(fallback_enabled, str):
                     fallback_enabled = fallback_enabled.strip().lower() not in {"0", "false", "no", "off"}
                 if fallback_enabled and rl_target_coverage + 1e-6 < float(args.DVH_rate):
                     logger.warning(
-                        "[rl] Target coverage %.4f is below %.4f; using the same safety-filtered "
-                        "candidate set for deterministic AI-dose rule-based fallback",
+                        "[rl] Target coverage %.4f is below %.4f; evaluating the same "
+                        "safety-filtered candidate set for deterministic AI-dose rule-based "
+                        "fallback (it will replace RL only after a strict coverage improvement)",
                         rl_target_coverage, float(args.DVH_rate),
                     )
                     fallback_plan = core.optimal_plan(
@@ -2823,6 +3248,7 @@ class PlanningPipelineTool(BaseTool):
                         _MockProgressDialog(),
                         parallel_min_distance_mm=parallel_min_distance_mm,
                         parallel_angle_tolerance_deg=parallel_angle_tolerance_deg,
+                        preview_callback=_seed_preview_observer,
                     )
                     fallback_coverage = _plan_target_coverage(
                         fallback_plan,
@@ -2830,11 +3256,33 @@ class PlanningPipelineTool(BaseTool):
                         args.radiation_array_params['target_value'],
                         in_lowest_model,
                     )
-                    if fallback_coverage >= rl_target_coverage:
+                    rl_fallback_coverage = fallback_coverage
+                    if rule_based_fallback_is_strictly_better(
+                        rl_target_coverage,
+                        fallback_coverage,
+                    ):
                         plan_res = fallback_plan
                         effective_mode = "rule_based_fallback"
                         rl_fallback_used = True
+                        rl_fallback_reason = "strict_coverage_improvement"
                         logger.info("[rl] Rule-based fallback coverage=%.4f", fallback_coverage)
+                    else:
+                        # Do not replace an explicitly requested RL plan with
+                        # an equal-coverage deterministic plan.  This was the
+                        # reason a later rule_based run could look like a
+                        # cached/reused RL result even though the first run
+                        # had already timed out and reached its fallback.
+                        rl_fallback_reason = "not_strictly_better"
+                        logger.info(
+                            "[rl] Rule-based fallback coverage %.4f did not strictly improve "
+                            "RL coverage %.4f; retaining the RL result",
+                            fallback_coverage,
+                            rl_target_coverage,
+                        )
+                elif not fallback_enabled:
+                    rl_fallback_reason = "disabled"
+                elif rl_target_coverage + 1e-6 >= float(args.DVH_rate):
+                    rl_fallback_reason = "rl_reached_target"
             # Compute dose distribution
             sum_image = np.zeros_like(radiation_volume, dtype=np.float32)
             for entry in plan_res:
@@ -2845,7 +3293,17 @@ class PlanningPipelineTool(BaseTool):
             logger.error(f"Planning failed: {e}")
             import traceback
             traceback.print_exc()
+            if rl_status is not None:
+                _finalize_rl_status(
+                    execution="failed",
+                    stop_reason="internal_exception",
+                )
+            if preview_emitter is not None:
+                preview_emitter.complete("seed_planning", status="error")
             return ToolResult(success=False, error=f"[seed_planning] Planning algorithm failed: {e}")
+
+        if rl_status is not None:
+            _finalize_rl_status()
 
         verified_needle_geometry, unsafe_needle_indices = _validated_needle_geometry(
             plan_res,
@@ -2863,6 +3321,8 @@ class PlanningPipelineTool(BaseTool):
                 "[needle_safety] Final seed plan failed physical obstacle validation for needles: %s",
                 unsafe_needle_indices,
             )
+            if preview_emitter is not None:
+                preview_emitter.complete("seed_planning", status="error")
             return ToolResult(
                 success=False,
                 error=(
@@ -2936,9 +3396,19 @@ class PlanningPipelineTool(BaseTool):
             # Store actual config used — so reviewer agents can read real thresholds
             agent.memory.store("plan_config", {
                 "mode": mode,
+                "requested_mode": mode,
                 "effective_mode": effective_mode,
                 "rl_fallback_used": bool(rl_fallback_used),
                 "rl_target_coverage": rl_target_coverage,
+                "rl_fallback_coverage": rl_fallback_coverage,
+                "rl_fallback_reason": rl_fallback_reason,
+                "rl_status": copy.deepcopy(rl_status) if rl_status is not None else None,
+                "planning_fingerprint": agent_config.get("_planning_fingerprint"),
+                "planning_parameters": (
+                    agent_config.get("_planning_provenance", {}).get("parameters", {})
+                    if isinstance(agent_config.get("_planning_provenance"), dict)
+                    else {}
+                ),
                 "dose_value_unit": "gy",
                 "in_lowest_energy": float(in_lowest_gy),
                 "out_highest_energy": float(out_highest_gy),
@@ -2972,6 +3442,29 @@ class PlanningPipelineTool(BaseTool):
             f"Mode: {effective_mode}; target coverage: {final_target_coverage:.1%}."
         )
 
+        if preview_emitter is not None:
+            preview_emitter.frame(
+                _preview_seed_plan_geometry(
+                    plan_res, dose_image, coordinate_space="world"
+                ),
+                stage="seed_planning",
+                phase="final_candidate",
+                detail=(
+                    f"{total_seeds} seeds on {num_trajectories} paths; "
+                    f"coverage {final_target_coverage:.1%}"
+                ),
+                progress={
+                    "coverage": final_target_coverage,
+                    "seed_count": total_seeds,
+                    "trajectory_count": num_trajectories,
+                },
+                force=True,
+            )
+            preview_emitter.complete(
+                "seed_planning",
+                detail=f"{total_seeds} seeds",
+            )
+
         return ToolResult(
             success=True,
             data=plan_res,
@@ -2983,10 +3476,15 @@ class PlanningPipelineTool(BaseTool):
                 "total_seeds": total_seeds,
                 "num_trajectories": num_trajectories,
                 "mode": mode,
+                "requested_mode": mode,
                 "effective_mode": effective_mode,
                 "rl_fallback_used": bool(rl_fallback_used),
                 "rl_target_coverage": rl_target_coverage,
+                "rl_fallback_coverage": rl_fallback_coverage,
+                "rl_fallback_reason": rl_fallback_reason,
+                "rl_status": copy.deepcopy(rl_status) if rl_status is not None else None,
                 "target_coverage": final_target_coverage,
+                "planning_fingerprint": agent_config.get("_planning_fingerprint"),
             },
         )
 
@@ -3349,19 +3847,25 @@ class PlanningPipelineTool(BaseTool):
             # (~2 Gy per bin). The data is sent to the frontend as JSON
             # so the ~2x size increase is negligible.
             num_bins = 600
-            dose_bins = np.linspace(0, dose_max_val, num_bins + 1)
-            dose_centers = (dose_bins[:-1] + dose_bins[1:]) / 2.0
-
-            # CTV cumulative DVH
-            ctv_pcts = []
             target_doses_gy = target_doses * DOSE_SCALE
-            for d in dose_centers:
-                pct = min(100.0, max(0.0, float(np.sum(target_doses_gy >= d) / len(target_doses_gy) * 100.0)))
-                ctv_pcts.append(pct)
-            dvh_data["CTV"] = {
-                "dose_bins": dose_centers.tolist(),
-                "volume_pcts": ctv_pcts,
-            }
+            exact_dvh_anchors = (
+                prescription_gy,
+                prescription_gy * 1.5,
+                prescription_gy * 2.0,
+                prescription_gy * 0.5,
+            )
+
+            # CTV cumulative DVH.  The scalar V100/V150/V200 values above are
+            # direct voxel counts at these same thresholds.  Emit the exact
+            # thresholds into the plotted curve so a frontend interpolation
+            # cannot turn (for example) V100=91.2% into a different value.
+            dvh_data["CTV"] = build_cumulative_dvh(
+                target_doses_gy,
+                dose_min=0.0,
+                dose_max=dose_max_val,
+                num_bins=num_bins,
+                anchor_doses=exact_dvh_anchors,
+            )
 
             # OAR cumulative DVH (ALL organs, not just top 3)
             if oar_mask is not None:
@@ -3373,16 +3877,15 @@ class PlanningPipelineTool(BaseTool):
                 for label_val in oar_labels:
                     oar_doses_arr = dose_distribution[oar_mask == label_val] * DOSE_SCALE
                     if len(oar_doses_arr) > 0:
-                        oar_pcts = []
-                        for d in dose_centers:
-                            pct = min(100.0, max(0.0, float(np.sum(oar_doses_arr >= d) / len(oar_doses_arr) * 100.0)))
-                            oar_pcts.append(pct)
                         # Try both int and string keys for organ_names
                         oar_name = _lookup_oar_name(label_val)
-                        dvh_data[oar_name] = {
-                            "dose_bins": dose_centers.tolist(),
-                            "volume_pcts": oar_pcts,
-                        }
+                        dvh_data[oar_name] = build_cumulative_dvh(
+                            oar_doses_arr,
+                            dose_min=0.0,
+                            dose_max=dose_max_val,
+                            num_bins=num_bins,
+                            anchor_doses=exact_dvh_anchors,
+                        )
 
         metrics = {
             # V100/V150/V200 are ratios in the shared planning contract. Keep
@@ -3461,7 +3964,8 @@ class PlanningPipelineTool(BaseTool):
     # ============================================================
 
     def _run_full_pipeline(self, ct_image, ctv_mask, oar_mask, ref_direc,
-                           mode, agent_config, agent, step_callback=None):
+                           mode, agent_config, agent, step_callback=None,
+                           preview_emitter=None):
         """Run the complete planning pipeline.
 
         step_callback (optional): callable(substep_name, status) called at
@@ -3515,7 +4019,7 @@ class PlanningPipelineTool(BaseTool):
         t0 = time.time()
         traj_result = self._step_trajectory_init(
             ct_image, ctv_mask, oar_mask, ref_direc, agent_config, agent,
-            body_mask=body_mask,
+            body_mask=body_mask, preview_emitter=preview_emitter,
         )
         substep_timings["trajectory_init"] = round(time.time() - t0, 2)
         _notify("trajectory_init", "done" if traj_result.success else "error",
@@ -3530,7 +4034,7 @@ class PlanningPipelineTool(BaseTool):
         t0 = time.time()
         refine_result = self._step_trajectory_refine(
             ct_image, ctv_mask, oar_mask, agent_config, agent,
-            body_mask=body_mask,
+            body_mask=body_mask, preview_emitter=preview_emitter,
         )
         substep_timings["trajectory_refine"] = round(time.time() - t0, 2)
         _notify("trajectory_refine", "done" if refine_result.success else "error",
@@ -3545,7 +4049,7 @@ class PlanningPipelineTool(BaseTool):
         t0 = time.time()
         seed_result = self._step_seed_planning(
             ct_image, ctv_mask, oar_mask, mode, agent_config, agent,
-            body_mask=body_mask,
+            body_mask=body_mask, preview_emitter=preview_emitter,
         )
         substep_timings["seed_planning"] = round(time.time() - t0, 2)
         _notify("seed_planning", "done" if seed_result.success else "error",
@@ -3554,6 +4058,23 @@ class PlanningPipelineTool(BaseTool):
             return seed_result
         results["seed_plan"] = seed_result.metadata.get("seed_plan", [])
         results["total_seeds"] = seed_result.metadata.get("total_seeds", 0)
+        # Carry mode provenance through the full-pipeline result as well as
+        # the persisted ``plan_config``.  The full workflow used to expose
+        # only geometry/dose numbers, which made a mode change impossible to
+        # audit from the chat trace alone.
+        for key in (
+            "mode",
+            "requested_mode",
+            "effective_mode",
+            "rl_fallback_used",
+            "rl_target_coverage",
+            "rl_fallback_coverage",
+            "rl_fallback_reason",
+            "rl_status",
+            "planning_fingerprint",
+        ):
+            if key in seed_result.metadata:
+                results[key] = seed_result.metadata[key]
 
         # Step 4: Dose calculation
         logger.info("Step 4/5: Dose calculation...")
@@ -3600,7 +4121,8 @@ class PlanningPipelineTool(BaseTool):
         summary = (
             f"Planning completed: {total_seeds} seeds. "
             f"V100={v100_val:.1%}, D90={d90_val:.2f}, "
-            f"Score={score_val:.0f}/100"
+            f"Score={score_val:.0f}/100, "
+            f"Mode={results.get('effective_mode') or mode}"
         )
 
         return ToolResult(
@@ -3614,6 +4136,15 @@ class PlanningPipelineTool(BaseTool):
                 "dose_metrics": results.get("dose_metrics", {}),
                 "total_seeds": total_seeds,
                 "num_trajectories": num_trajectories,
+                "mode": results.get("mode", mode),
+                "requested_mode": results.get("requested_mode", mode),
+                "effective_mode": results.get("effective_mode", mode),
+                "rl_fallback_used": bool(results.get("rl_fallback_used", False)),
+                "rl_target_coverage": results.get("rl_target_coverage"),
+                "rl_fallback_coverage": results.get("rl_fallback_coverage"),
+                "rl_fallback_reason": results.get("rl_fallback_reason"),
+                "rl_status": results.get("rl_status"),
+                "planning_fingerprint": results.get("planning_fingerprint"),
                 "summary": summary,
                 # Per-substep wall-clock timings in seconds. Used by the
                 # frontend pipeline progress box to show per-step timers

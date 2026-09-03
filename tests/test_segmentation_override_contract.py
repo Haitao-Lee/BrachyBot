@@ -10,6 +10,7 @@ class _Memory:
     def __init__(self, values=None):
         self.values = dict(values or {})
         self.conversation = []
+        self.conversation_state = {"last_tool_calls": []}
 
     def retrieve(self, key, default=None):
         return self.values.get(key, default)
@@ -314,6 +315,171 @@ def test_liver_aliases_use_the_biomedparse_route_before_ctv_validation():
     assert harness._normalize_ctv_tool_params({
         "tumor_type": "biomedparse_v2_liver_tumor",
     })["tumor_type"] == "biomedparse_liver_tumor"
+
+
+def test_named_liver_and_tumor_request_routes_to_ctv_plus_focused_liver_oar():
+    """A two-structure request must not become a full OAR segmentation."""
+    harness = _DirectHarness(_Memory({"ct_path": "/case/liver_ct.nii.gz"}))
+
+    calls = harness._detect_tool_request(
+        "我上传了一名肝癌患者的CT，请帮我分割肝脏和肿瘤"
+    )
+
+    assert [call["tool"] for call in calls] == [
+        "ctv_segmentation",
+        "oar_segmentation",
+    ]
+    assert calls[0]["params"]["tumor_type"] == "biomedparse_liver_tumor"
+    assert calls[1]["params"]["organ_filter"] == ["liver"]
+    assert all(call["tool"] != "planning_pipeline" for call in calls)
+
+
+def test_named_oar_scope_caps_an_llm_omission_without_becoming_a_response_whitelist():
+    harness = _DirectHarness(_Memory())
+
+    normalized = harness._normalize_oar_tool_params(
+        {"organ_type": "general"},
+        message="我上传了一名肝癌患者的CT，请帮我分割肝脏和肿瘤",
+    )
+
+    assert normalized["organ_filter"] == ["liver"]
+    # A real all-OAR request remains unfiltered; this guard only narrows
+    # explicit entities and never decides the natural-language response.
+    full = harness._normalize_oar_tool_params(
+        {"organ_type": "general", "organ_filter": ["liver"]},
+        message="请分割所有 OAR",
+    )
+    assert "organ_filter" not in full
+
+
+def test_agentic_normalizer_caps_llm_oar_calls_but_removes_scope_for_planning():
+    """Diagnostic scope is preserved; a plan always restores full OAR safety."""
+    from AgenticSys import BrachyAgent
+
+    message = "我上传了一名肝癌患者的CT，请帮我分割肝脏和肿瘤"
+    diagnostic_agent = object.__new__(BrachyAgent)
+    diagnostic_agent.memory = _Memory({"ct_path": "/case/liver_ct.nii.gz"})
+    diagnostic = diagnostic_agent._normalize_clinical_tool_calls([{
+        "id": "provider-oar",
+        "tool": "oar_segmentation",
+        "params": {"organ_type": "general"},
+    }], message)
+    assert diagnostic[0]["params"]["organ_filter"] == ["liver"]
+
+    planning_agent = object.__new__(BrachyAgent)
+    planning_agent.memory = _Memory({
+        "ct_path": "/case/liver_ct.nii.gz",
+        "ctv_array": object(),
+        "tumor_type_used": "biomedparse_liver_tumor",
+        "oar_is_full": False,
+    })
+    planning = planning_agent._normalize_clinical_tool_calls([
+        {"id": "provider-oar", "tool": "oar_segmentation", "params": {"organ_filter": ["liver"]}},
+        {"id": "provider-plan", "tool": "planning_pipeline", "params": {"step": "full"}},
+    ], "请执行肝癌的粒子植入规划")
+    oar_call = next(call for call in planning if call["tool"] == "oar_segmentation")
+    assert "organ_filter" not in oar_call["params"]
+
+
+def test_legacy_result_store_preserves_focused_oar_provenance(monkeypatch):
+    """Every OAR persistence path must prevent partial data from passing as full."""
+    import numpy as np
+    from AgenticSys import BrachyAgent
+
+    monkeypatch.setattr(
+        "web.structure_service.replace_structure_source",
+        lambda _memory, _classification: None,
+    )
+    agent = object.__new__(BrachyAgent)
+    agent.memory = _Memory()
+    agent._store_tool_result(
+        "oar_segmentation",
+        ToolResult(
+            success=True,
+            metadata={
+                "oar_array": np.array([[[5]]], dtype=np.uint16),
+                "organ_names": {5: "liver"},
+                "organ_counts": {5: 1},
+                "oar_is_full": False,
+                "oar_scope": "focused",
+                "requested_organs": ["liver"],
+            },
+        ),
+    )
+
+    assert agent.memory.retrieve("oar_is_full") is False
+    assert agent.memory.retrieve("oar_scope") == "focused"
+    assert agent.memory.retrieve("oar_requested_organs") == ["liver"]
+
+
+def test_totalseg_organ_scope_accepts_chinese_aliases_and_rejects_unknown_values():
+    from tool_factory.OAR_seg.totalsegmentator_oar import (
+        extract_totalseg_organ_filter_from_text,
+        normalize_totalseg_organ_filter,
+    )
+
+    assert normalize_totalseg_organ_filter(["肝脏"]) == ["liver"]
+    assert extract_totalseg_organ_filter_from_text("请分割肝脏和肿瘤") == ["liver"]
+
+    from tool_factory.OAR_seg import OARSegmentationTool
+    result = OARSegmentationTool()._execute(organ_filter=["not_a_real_organ"])
+    assert not result.success
+    assert "Unsupported TotalSegmentator organ_filter" in (result.error or "")
+
+
+def test_focused_oar_tool_persists_only_requested_labels(monkeypatch):
+    """The model wrapper is a final no-broaden persistence boundary."""
+    import numpy as np
+    import pytest
+
+    sitk = pytest.importorskip("SimpleITK")
+    from tool_factory.OAR_seg import OARSegmentationTool
+    from tool_factory.OAR_seg.totalsegmentator_oar import TotalSegmentatorOARTool
+
+    image = sitk.GetImageFromArray(np.zeros((3, 4, 5), dtype=np.int16))
+    raw = np.zeros((3, 4, 5), dtype=np.uint16)
+    raw[0, 1, 1] = 5  # liver
+    raw[2, 2, 2] = 1  # spleen; must never reach persistence
+    raw_mask = sitk.GetImageFromArray(raw)
+    raw_mask.CopyInformation(image)
+
+    def fake_totalseg(self, *, image, organ_filter=None, **_kwargs):
+        assert organ_filter == ["liver"]
+        return ToolResult(
+            success=True,
+            data=raw_mask,
+            metadata={
+                "oar_mask": raw_mask,
+                "oar_array": raw,
+                "organ_names": {1: "spleen", 5: "liver"},
+                "oar_is_full": False,
+                "oar_scope": "focused",
+                "requested_organs": ["liver"],
+                "oar_source": "totalsegmentator",
+            },
+        )
+
+    monkeypatch.setattr(TotalSegmentatorOARTool, "_execute", fake_totalseg)
+    result = OARSegmentationTool()._execute(image=image, organ_filter=["liver"])
+
+    assert result.success
+    assert set(np.unique(result.metadata["oar_array"]).tolist()) == {0, 5}
+    assert result.metadata["organ_names"] == {5: "liver"}
+    assert result.metadata["oar_is_full"] is False
+    assert result.metadata["requested_organs"] == ["liver"]
+
+
+def test_segmentation_prompts_match_the_live_biomedparse_liver_route():
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    system_prompt = (root / "config" / "prompts" / "system_prompt.md").read_text(encoding="utf-8")
+    planning_prompt = (root / "config" / "prompts" / "planning_agent.md").read_text(encoding="utf-8")
+
+    for source in (system_prompt, planning_prompt):
+        assert "biomedparse_liver_tumor" in source
+        assert "organ_filter" in source
+        assert "never route this CTV through BiomedParse v2" not in source
 
 
 

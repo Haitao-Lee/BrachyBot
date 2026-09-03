@@ -402,16 +402,29 @@ class SmartContextManager:
         selected = []
         total_tokens = 0
 
-        # Always include the last few messages (recency guarantee)
+        # Always prefer the last few messages (recency guarantee), but never
+        # let that guarantee bypass the token budget.  A single previous
+        # report/tool dump can be much larger than the whole prompt budget;
+        # the old code appended the last three messages unconditionally and
+        # only discovered the overflow while selecting older context.
         recent_messages = self.messages[-3:] if len(self.messages) >= 3 else self.messages
+        selected_ids = set()
         for msg in recent_messages:
-            if msg not in [m for m, _ in selected]:
-                selected.append((msg, 1.0))  # High score for recent messages
-                total_tokens += msg.token_estimate
+            if msg.id in selected_ids:
+                continue
+            remaining = max_tokens - total_tokens
+            candidate = msg
+            if msg.token_estimate > remaining:
+                candidate = self._compress_message(msg, remaining)
+            if candidate is None or candidate.token_estimate > remaining:
+                continue
+            selected.append((candidate, 1.0))  # High score for recent messages
+            selected_ids.add(msg.id)
+            total_tokens += candidate.token_estimate
 
         # Add other relevant messages
         for msg, score in scored_messages:
-            if msg in [m for m, _ in selected]:
+            if msg.id in selected_ids:
                 continue
 
             if total_tokens + msg.token_estimate > max_tokens:
@@ -419,10 +432,15 @@ class SmartContextManager:
                 compressed = self._compress_message(msg, max_tokens - total_tokens)
                 if compressed:
                     selected.append((compressed, score))
+                    selected_ids.add(msg.id)
                     total_tokens += compressed.token_estimate
-                break
+                # A large irrelevant message must not prevent a later,
+                # smaller relevant message from fitting in the remaining
+                # budget.
+                continue
 
             selected.append((msg, score))
+            selected_ids.add(msg.id)
             total_tokens += msg.token_estimate
 
         # Sort by timestamp for chronological order

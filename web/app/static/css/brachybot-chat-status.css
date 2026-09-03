@@ -734,6 +734,7 @@
     cursor: zoom-in;
     text-align: left;
     color: inherit;
+    position: relative;
 }
 .chat-gallery-item img {
     width: 100%;
@@ -748,6 +749,40 @@
     text-overflow: ellipsis;
     white-space: nowrap;
 }
+.chat-image-annotation-badge {
+    position: absolute;
+    top: 0.38rem;
+    right: 0.38rem;
+    display: inline-flex;
+    align-items: center;
+    min-height: 20px;
+    padding: 0.12rem 0.42rem;
+    border: 1px solid rgba(34, 211, 238, 0.62);
+    border-radius: var(--pill-r);
+    background: rgba(6, 24, 36, 0.92);
+    color: #a5f3fc;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.48);
+    font-size: 0.61rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    pointer-events: none;
+}
+.chat-gallery-item.is-annotating::after {
+    content: '';
+    position: absolute;
+    top: 0.45rem;
+    right: 0.45rem;
+    width: 18px;
+    height: 18px;
+    box-sizing: border-box;
+    border: 2px solid rgba(148, 163, 184, 0.36);
+    border-top-color: #22d3ee;
+    border-radius: 50%;
+    background: rgba(2, 6, 23, 0.72);
+    animation: chat-annotation-spin 0.8s linear infinite;
+    pointer-events: none;
+}
+@keyframes chat-annotation-spin { to { transform: rotate(360deg); } }
 
 .image-modal-overlay {
     position: fixed;
@@ -789,6 +824,27 @@
     color: var(--danger);
     border-color: var(--danger-border);
     transform: rotate(90deg);
+}
+.image-modal-variant-toggle {
+    position: absolute;
+    top: 18px;
+    left: 50%;
+    transform: translateX(-50%);
+    min-height: 34px;
+    padding: 0.38rem 0.9rem;
+    border: 1px solid rgba(79, 124, 255, 0.62);
+    border-radius: var(--pill-r);
+    background: rgba(15, 23, 42, 0.94);
+    color: #dbeafe;
+    box-shadow: var(--shadow-floating);
+    font-size: 0.72rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: border-color var(--t-base) var(--ease), background var(--t-base) var(--ease);
+}
+.image-modal-variant-toggle:hover {
+    border-color: #7c9aff;
+    background: rgba(30, 41, 59, 0.98);
 }
 .image-modal-info {
     position: absolute;

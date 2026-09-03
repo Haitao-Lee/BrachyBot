@@ -166,6 +166,25 @@ function _manualPayload(options = {}) {
     if (Object.prototype.hasOwnProperty.call(options, 'previousSeeds')) {
         payload.previous_seeds = _cloneManualSeeds(options.previousSeeds || []);
     }
+    // The safety override is deliberately opt-in and carries a descriptive
+    // marker. A normal edit, or a stale browser retry, cannot silently bypass
+    // the server's seed-interference gate.
+    if (options.allowUnsafe === true) {
+        payload.allow_unsafe = true;
+        payload.safety_override = options.safetyOverride || 'user_confirmed';
+    }
+    // Adding a seed is an intentional draft operation. It may temporarily
+    // violate spacing because the operator is expected to refine the new
+    // seed afterwards. This marker is narrower than the explicit safety
+    // override above: it is accepted only for reason="add" on the backend and
+    // never bypasses ownership, finite-coordinate, or duplicate-ID checks.
+    if (options.allowUnsafeCreation === true) {
+        payload.allow_unsafe_creation = true;
+        payload.seed_creation_mode = options.seedCreationMode || 'draft';
+    }
+    if (options.preserveGeometryOnFailure === true) {
+        payload.preserve_geometry_on_failure = true;
+    }
     return payload;
 }
 
@@ -298,6 +317,128 @@ function _cloneManualNeedles(needles = dataTreeState?.planning?.needles || []) {
 function _manualText(zh, en) {
     if (typeof window._t === 'function') return window._t(zh, en);
     return String(window._i18nLang || '').toLowerCase().startsWith('zh') ? zh : en;
+}
+
+function _syncManualSafetyState(data = {}) {
+    const artifactStatus = data?.artifact_status && typeof data.artifact_status === 'object'
+        ? data.artifact_status
+        : {};
+    const overridden = data?.safety_override === true || artifactStatus.safety_override === true;
+    manualPlanningState.safetyOverride = overridden;
+    manualPlanningState.safetyWarning = data?.safety_warning
+        || artifactStatus.safety_warning
+        || null;
+    manualPlanningState.safetyInterference = data?.interference
+        || artifactStatus.safety_interference
+        || null;
+    if (dataTreeState?.planning) {
+        dataTreeState.planning.safetyOverride = overridden;
+        dataTreeState.planning.requiresSafetyReview = data?.requires_safety_review === true
+            || artifactStatus.requires_safety_review === true;
+        dataTreeState.planning.safetyWarning = manualPlanningState.safetyWarning;
+    }
+}
+
+function _markManualDependentsStaleLocally(reason = 'manual geometry changed') {
+    const status = {
+        ...(manualPlanningState.artifactStatus || {}),
+        dose: 'stale',
+        dvh: 'stale',
+        report: 'stale',
+        quality_check: 'stale',
+        surgical_guide: 'stale',
+        reason,
+        planning_version: Number(manualPlanningState.planningVersion || 0),
+    };
+    manualPlanningState.artifactStatus = status;
+    if (dataTreeState?.planning) dataTreeState.planning.artifactStatus = { ...status };
+    if (typeof renderDataTree === 'function') renderDataTree();
+    return status;
+}
+
+function _reportCommittedManualEvent(data, fallbackType, fallbackLabel, detail = {}) {
+    const serverEvent = data?.event && typeof data.event === 'object'
+        ? data.event
+        : null;
+    if (!serverEvent || typeof reportUIEvent !== 'function') return null;
+    const committedEvent = {
+        ...serverEvent,
+        type: serverEvent.type || fallbackType,
+        label: serverEvent.label || fallbackLabel || '',
+        detail: {
+            ...(serverEvent.detail || {}),
+            ...(detail || {}),
+            commit_status: 'committed',
+        },
+    };
+    return reportUIEvent(
+        committedEvent.type,
+        committedEvent.label,
+        committedEvent.detail,
+        { alreadyRecorded: true, committedEvent },
+    );
+}
+
+function _seedInterferenceDetails(interference = {}) {
+    const pairs = Array.isArray(interference.close_pairs) ? interference.close_pairs : [];
+    const details = pairs.slice(0, 4).map(pair => {
+        const first = pair.first_id || '?';
+        const second = pair.second_id || '?';
+        const clearance = Number(pair.surface_clearance_mm);
+        const center = Number(pair.center_distance_mm);
+        const measured = Number.isFinite(clearance)
+            ? `surface ${clearance.toFixed(2)} mm`
+            : (Number.isFinite(center) ? `centre ${center.toFixed(2)} mm` : 'unsafe spacing');
+        return `${first} / ${second} (${measured})`;
+    });
+    return {
+        zh: details.join('；'),
+        en: details.join('; '),
+    };
+}
+
+async function _confirmSeedSafetyConflict(seedId, error) {
+    // If the confirmation UI is unavailable, fail closed: an unsafe edit is
+    // restored instead of being retained without an explicit operator choice.
+    if (typeof _confirmAction !== 'function') return false;
+    const interference = error?.authoritative?.interference || {};
+    const details = _seedInterferenceDetails(interference);
+    const detailZh = details.zh ? `详情：${details.zh}。` : '';
+    const detailEn = details.en ? `Details: ${details.en}.` : '';
+    const restore = await _confirmAction(
+        `粒子 ${seedId} 的新位置检测到重叠或安全间距不足。${detailZh}`
+            + '请选择：恢复本次编辑前的位置，或忽略警告保留本次编辑。保留后不会删除其他粒子或针道，但 Dose、DVH、质量检查、报告和手术导板将标记为过期。',
+        `The new position for seed ${seedId} violates seed spacing or safety constraints. ${detailEn} Choose whether to restore the pre-edit position or keep this edit. Keeping it will not delete any other seed or needle, but Dose, DVH, quality check, report, and Surgical Guide will be marked stale.`,
+        {
+            yesZh: '恢复编辑前位置',
+            yesEn: 'Restore pre-edit position',
+            noZh: '忽略并保留编辑',
+            noEn: 'Keep edit and continue',
+            titleZh: '粒子位置存在风险',
+            titleEn: 'Seed position safety warning',
+            // Dismissing the modal is equivalent to the recommended restore.
+            dismissAsYes: true,
+        },
+    );
+    return restore !== true;
+}
+
+function _cancelStaleManualDoseWork(reason = 'manual_state_rollback') {
+    // A queued/running dose job owns a payload snapshot. Once a geometry
+    // mutation is rejected, that payload is no longer allowed to repaint the
+    // restored Planning or emit another error for the rejected needle.
+    cancelScheduledManualDoseRecompute();
+    const job = manualPlanningState._doseRecomputeJob;
+    if (job) {
+        job.cancelled = true;
+        job.cancelReason = reason;
+    }
+    manualPlanningState._doseRecomputeJob = null;
+    manualPlanningState.doseRecomputeQueued = false;
+    manualPlanningState.doseRecomputeSequence += 1;
+    const controller = manualPlanningState._doseAbortController;
+    manualPlanningState._doseAbortController = null;
+    try { controller?.abort?.(); } catch (_) {}
 }
 
 function _cloneManualPlanningSnapshot() {
@@ -449,6 +590,7 @@ function _applyAuthoritativeManualSeeds(data) {
     manualPlanningState.planningId = data.planning_id || manualPlanningState.planningId;
     manualPlanningState.planningVersion = Number(data.planning_version ?? manualPlanningState.planningVersion ?? 0);
     manualPlanningState.artifactStatus = { ...(data.artifact_status || {}) };
+    _syncManualSafetyState(data);
     dataTreeState.planning.id = manualPlanningState.planningId;
     dataTreeState.planning.activePlanningId = manualPlanningState.planningId;
     dataTreeState.planning.status = data.planning_status || 'draft';
@@ -464,9 +606,9 @@ function _applyAuthoritativeManualSeeds(data) {
     if (scene3D.requestRender) scene3D.requestRender(3);
 }
 
-async function _commitManualSeeds(reason, rollbackSeeds, rollbackNeedles = null) {
+async function _commitManualSeeds(reason, rollbackSeeds, rollbackNeedles = null, options = {}) {
     const ownerSessionId = _activeApiSessionId();
-    const payload = _manualPayload();
+    const payload = _manualPayload(options);
     const response = await fetch(API + '/manual_planning/update_seeds', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -477,11 +619,16 @@ async function _commitManualSeeds(reason, rollbackSeeds, rollbackNeedles = null)
             seeds: payload.seeds,
             needles: payload.needles,
             reason,
+            allow_unsafe: payload.allow_unsafe === true,
+            safety_override: payload.safety_override,
+            allow_unsafe_creation: payload.allow_unsafe_creation === true,
+            seed_creation_mode: payload.seed_creation_mode,
         }),
     });
     const data = await response.json().catch(() => null);
     const sameSession = ownerSessionId === _activeApiSessionId();
     if (!response.ok || !data || !data.success) {
+        if (sameSession) _cancelStaleManualDoseWork(`manual_seed_${reason}_rejected`);
         if (sameSession && Array.isArray(rollbackSeeds)) {
             // Prefer the server's authoritative snapshot whenever it is
             // available. A rejected drag may race with a later accepted edit,
@@ -584,6 +731,7 @@ async function _persistNeedleGeometryOnly(options = {}) {
     });
     const data = await res.json().catch(() => null);
     if (!res.ok || !data || !data.success) {
+        _cancelStaleManualDoseWork(`${options.reason || 'needle_position_only'}_rejected`);
         if (data && Array.isArray(data.seeds) && Array.isArray(data.needles)) {
             _applyAuthoritativeManualSeeds(data);
         } else if (options.rollbackSnapshot) {
@@ -725,7 +873,7 @@ async function addManualNeedle() {
         // Adding a needle must not change the user's current 3D view. The user
         // can explicitly press Fit/Reset when the new object needs framing.
         if (scene3D.requestRender) scene3D.requestRender(4);
-        await _persistNeedleGeometryOnly({
+        const committed = await _persistNeedleGeometryOnly({
             reason: 'needle_add',
             rollbackNeedles: rollback.needles,
             rollbackSnapshot: rollback,
@@ -744,12 +892,14 @@ async function addManualNeedle() {
             `已添加针道 ${id}。可拖动两个端点调整位置，然后添加粒子或重新计算剂量。`,
             `Needle ${id} added. Drag its endpoints, add seeds, or recompute dose.`,
         ) + (placementNote ? ' ' + placementNote : ''));
-        reportUIEvent('manual.needle.add', id, {
+        _reportCommittedManualEvent(committed, 'manual.needle.add', id, {
+            needle_id: id,
             points: needle.points,
             planning_version: manualPlanningState.planningVersion,
         });
         return dataTreeState.planning.needles.find(item => item.id === id) || needle;
     } catch (error) {
+        _cancelStaleManualDoseWork('needle_add_rejected');
         _restoreManualPlanningSnapshot(rollback);
         _setManualDoseProgress('error', _manualText(
             `新增针道失败：${error.message}`,
@@ -765,51 +915,84 @@ async function addManualNeedle() {
     }
 }
 
-async function addManualSeed() {
+function _resolveManualNeedleTarget(target) {
+    const targetId = String(
+        typeof target === 'object' && target
+            ? (target.id || target.needle_id || target.trajectory_id || '')
+            : (target || ''),
+    ).trim();
+    if (!targetId) return null;
+    return (dataTreeState?.planning?.needles || []).find(needle => (
+        String(needle.id) === targetId
+        || _normalizeTrajectoryId(needle.trajectory_id) === _normalizeTrajectoryId(targetId)
+    )) || null;
+}
+
+function addManualSeedToPlanningNode(nodeId, options = {}) {
+    const needle = _resolveManualNeedleTarget(nodeId);
+    if (!needle) {
+        const message = _manualText(
+            `无法添加粒子：没有找到与 ${nodeId} 对应的针道。`,
+            `Seed cannot be added: no needle matches ${nodeId}.`,
+        );
+        _setManualDoseProgress('error', message);
+        addChat('error', message);
+        return Promise.resolve(null);
+    }
+    manualPlanningState.activeNeedleId = needle.id;
+    return addManualSeed(needle.id, options);
+}
+window.addManualSeedToPlanningNode = addManualSeedToPlanningNode;
+
+async function addManualSeed(targetNeedleId = null, options = {}) {
     if (manualPlanningState.seedMutationRunning) return null;
     manualPlanningState.seedMutationRunning = true;
     _setManualDoseProgress('running', _manualText('正在保存新增粒子…', 'Saving the new seed...'));
     init3DScene();
-    let needle = dataTreeState.planning.needles.find(n => n.id === manualPlanningState.activeNeedleId);
+    const explicitTarget = String(targetNeedleId || '').trim();
+    let needle = explicitTarget
+        ? _resolveManualNeedleTarget(explicitTarget)
+        : _resolveManualNeedleTarget(manualPlanningState.activeNeedleId);
+    if (explicitTarget && !needle) {
+        manualPlanningState.seedMutationRunning = false;
+        const message = _manualText(
+            `无法添加粒子：指定针道 ${explicitTarget} 不存在或已被其他编辑替换。`,
+            `Seed cannot be added: target needle ${explicitTarget} is missing or was replaced by another edit.`,
+        );
+        _setManualDoseProgress('error', message);
+        addChat('error', message);
+        return null;
+    }
     if (!needle && dataTreeState.planning.needles.length > 0) {
         needle = dataTreeState.planning.needles[dataTreeState.planning.needles.length - 1];
         manualPlanningState.activeNeedleId = needle.id;
     }
     if (!needle) {
-        needle = await addManualNeedle();
-        if (!needle) {
-            manualPlanningState.seedMutationRunning = false;
-            _setManualDoseProgress('error', _manualText('无法添加粒子：没有可用的针道。', 'Seed cannot be added: no usable needle is available.'));
-            return null;
-        }
-        needle = dataTreeState.planning.needles.find(item => item.id === manualPlanningState.activeNeedleId) || needle;
+        manualPlanningState.seedMutationRunning = false;
+        const message = _manualText(
+            '无法添加粒子：当前没有可用针道。请先添加针道，或在 Data Tree / 3D viewer 中右键指定针道。',
+            'Seed cannot be added: no needle is available. Add a needle first, or right-click a target needle in the Data Tree / 3D viewer.',
+        );
+        _setManualDoseProgress('error', message);
+        addChat('error', message);
+        return null;
     }
+    manualPlanningState.activeNeedleId = needle.id;
     const p0 = new THREE.Vector3(..._vec3Array(needle.points[0]));
     const p1 = new THREE.Vector3(..._vec3Array(needle.points[1]));
     const dir = new THREE.Vector3().subVectors(p0, p1).normalize();
     // Pick the freest position along the needle instead of a fixed midpoint
     // spread. A completed plan usually fills its needles, so the previous
-    // blind placement regularly collided with planned seeds and forced the
-    // server to reject the edit. If no safe slot exists, fail before any
-    // state mutation with an actionable message instead of a rollback.
+    // blind placement regularly collided with planned seeds. The returned
+    // slot is still usable when its spacing is unsafe: Add Seed is a draft
+    // insertion and must succeed so the operator can immediately drag the
+    // new seed to a better position.
     const slot = _findFreeSeedSlotOnNeedle(needle);
     if (!slot) {
         manualPlanningState.seedMutationRunning = false;
         _setManualDoseProgress('error', _manualText(
             '无法添加粒子：针道几何无效。',
             'Seed cannot be added: the needle geometry is invalid.',
-        ));
-        return null;
-    }
-    if (!slot.ok) {
-        manualPlanningState.seedMutationRunning = false;
-        _setManualDoseProgress('error', _manualText(
-            `无法添加粒子：针道 ${needle.id} 上的粒子已达到安全间距上限（最大可用间隙 ${slot.gap_mm ?? 0} mm）。请选择其他针道或先移除一枚粒子。`,
-            `Seed cannot be added: needle ${needle.id} has no free slot left (largest gap ${slot.gap_mm ?? 0} mm). Use another needle or remove a seed first.`,
-        ));
-        addChat('system', _manualText(
-            `针道 ${needle.id} 已满：粒子间距不足，未添加新粒子。`,
-            `Needle ${needle.id} is full: seed spacing would be unsafe, no seed was added.`,
         ));
         return null;
     }
@@ -832,11 +1015,39 @@ async function addManualSeed() {
     _upsertSceneMesh(seed.id, _makeSeedMesh(seed));
     _syncSeedsOverlayFromDataTree();
     renderDataTree();
-    reportUIEvent('manual.seed.add', seed.id, { position: seed.position, trajectory_id: seed.trajectory_id });
     try {
-        await _commitManualSeeds('add', rollbackSeeds);
-        scheduleManualDoseRecompute('seed_add');
-        return seed;
+        const committed = await _commitManualSeeds('add', rollbackSeeds, null, {
+            allowUnsafeCreation: true,
+            seedCreationMode: 'draft',
+        });
+        _reportCommittedManualEvent(committed, 'manual.seed.add', seed.id, {
+            seed_id: seed.id,
+            needle_id: needle.id,
+            trajectory_id: needle.trajectory_id,
+            source: options.source || 'input_button',
+        });
+        const savedSeed = dataTreeState.planning.seeds.find(item => item.id === seed.id) || seed;
+        const spacingWarning = committed?.seed_creation_mode === 'draft'
+            && committed?.requires_safety_review === true
+            && committed?.interference?.status === 'attention';
+        const creationMessage = _manualText(
+            `已在针道 ${needle.id} 上添加粒子 ${savedSeed.id}；可沿该针道拖动编辑位置。`,
+            `Seed ${savedSeed.id} was added to needle ${needle.id}; drag it along that needle to edit its position.`,
+        );
+        const spacingNote = spacingWarning
+            ? _manualText(
+                `当前间距存在风险，但新增粒子已保留。请先微调位置，修正后再重新计算剂量。`,
+                `The current spacing needs attention, but the new seed was kept. Adjust its position before recalculating dose.`,
+            )
+            : '';
+        _setManualDoseProgress('done', spacingNote ? `${creationMessage} ${spacingNote}` : creationMessage);
+        addChat('system', creationMessage + (spacingNote ? ` ${spacingNote}` : ''));
+        // Do not immediately launch a dose request for a spacing-warning
+        // draft. The dose endpoint intentionally remains strict for every
+        // non-confirmed unsafe geometry, so starting it here would produce a
+        // confusing error immediately after a successful Add Seed.
+        if (!spacingWarning) scheduleManualDoseRecompute('seed_add');
+        return savedSeed;
     } catch (error) {
         _setManualDoseProgress('error', _manualText(
             `新增粒子失败：${error.message}`,
@@ -957,6 +1168,7 @@ function recoverOrphanedManualDoseProgress() {
 setTimeout(recoverOrphanedManualDoseProgress, 0);
 
 async function _runManualDoseJob(job) {
+    if (!job || job.cancelled) return null;
     const { payload, wasDoseTextureEnabled } = job;
     const jobSessionId = String(payload.session_id || '');
     const requestSequence = ++manualPlanningState.doseRecomputeSequence;
@@ -974,6 +1186,7 @@ async function _runManualDoseJob(job) {
         return null;
     }
     const doseController = typeof AbortController === 'function' ? new AbortController() : null;
+    manualPlanningState._doseAbortController = doseController;
     // A full DoseUNet request can legitimately outlive two minutes on a
     // large CT. The former hard 120 s client abort caused
     // "signal is aborted without reason" while the server kept working.
@@ -992,6 +1205,7 @@ async function _runManualDoseJob(job) {
         if (!res.ok || !data || !data.success) {
             const error = new Error((data && data.error) || `HTTP ${res.status}`);
             error.code = data && data.code;
+            error.authoritative = data;
             throw error;
         }
         // This request belongs to the case selected when the drag happened.
@@ -1016,6 +1230,9 @@ async function _runManualDoseJob(job) {
         // Those viewer updates are session-fenced and continue in the
         // background so the user can keep editing the current plan.
         await _refreshManualDoseViews(data, wasDoseTextureEnabled, { background: true });
+        _reportCommittedManualEvent(data, 'manual.dose', payload.reason || 'manual_update', {
+            dose_recomputed: true,
+        });
         const m = data.metrics || {};
         const v100 = Number.isFinite(m.v100) ? `${(m.v100 * 100).toFixed(1)}%` : '--';
         const d90 = Number.isFinite(m.d90) ? `${m.d90.toFixed(1)} Gy` : '--';
@@ -1038,6 +1255,7 @@ async function _runManualDoseJob(job) {
         }
         return data;
     } catch (e) {
+        if (job.cancelled) return null;
         if (jobSessionId !== String(_activeApiSessionId() || '')) return null;
         const abortedWithoutReason = /signal is aborted without reason/i.test(
             String(e?.message || ''),
@@ -1057,21 +1275,58 @@ async function _runManualDoseJob(job) {
                 `Dose recomputation exceeded ${Math.round(doseTimeoutMs / 1000)} seconds; the edit was saved. Retry the dose update when ready.`,
             );
         }
-        if (e && e.code === 'manual_needle_intersects_obstacle' && payload.reproject_seeds) {
-            // The server validates the same world-coordinate segment used for
-            // DoseUNet. Restore the last accepted geometry instead of leaving
-            // an unsafe drag visible after the request is rejected.
-            if (payload.previous_snapshot) _restoreManualPlanningSnapshot(payload.previous_snapshot);
-            else _restoreManualNeedles(payload.previous_needles);
-        }
-        if (e && e.code === 'manual_seed_interference' && e.authoritative) {
-            // Defense in depth for clients that sent the Dose request without
-            // the preceding geometry transaction. Do not leave an unsafe
-            // locally moved Seed visible while the server retained the prior
-            // Planning snapshot.
-            if (Array.isArray(e.authoritative.seeds) && Array.isArray(e.authoritative.needles)) {
+        const geometryPreserved = e?.authoritative?.geometry_preserved === true
+            || (payload.allow_unsafe === true && payload.preserve_geometry_on_failure === true);
+        const geometryRejected = Boolean(e && [
+            'manual_needle_intersects_obstacle',
+            'manual_seed_interference',
+        ].includes(e.code)) || geometryPreserved;
+        if (geometryRejected) {
+            // One rejected geometry invalidates every queued payload derived
+            // from that preview. Otherwise the queue repeats the same error
+            // and can repaint the rejected needle after the authoritative
+            // Planning has already been restored.
+            const queuedJob = manualPlanningState._doseRecomputeJob;
+            if (queuedJob && queuedJob !== job) queuedJob.cancelled = true;
+            manualPlanningState._doseRecomputeJob = null;
+            manualPlanningState.doseRecomputeQueued = false;
+            manualPlanningState.doseRecomputeSequence += 1;
+            const hasAuthoritativeGeometry = Array.isArray(e.authoritative?.seeds)
+                && Array.isArray(e.authoritative?.needles);
+            // An explicit "keep edit" is a committed geometry decision. If a
+            // failure response accidentally carries empty arrays while the
+            // request itself had seeds, do not let that malformed response
+            // erase the visible plan; keep the local committed geometry and
+            // expose the downstream artifacts as stale instead.
+            const emptyAuthoritativeGeometry = geometryPreserved
+                && payload.seeds.length > 0
+                && hasAuthoritativeGeometry
+                && (e.authoritative.seeds.length === 0 || e.authoritative.needles.length === 0);
+            if (hasAuthoritativeGeometry && !emptyAuthoritativeGeometry) {
                 _applyAuthoritativeManualSeeds(e.authoritative);
+            } else if (!geometryPreserved && payload.previous_snapshot) {
+                _restoreManualPlanningSnapshot(payload.previous_snapshot);
+            } else if (!geometryPreserved && payload.reproject_seeds) {
+                _restoreManualNeedles(payload.previous_needles);
             }
+        }
+        if (geometryPreserved) {
+            // The geometry was already committed before this expensive dose
+            // request. A later failure must not erase that operator choice or
+            // restore every seed to an older plan. Only derived artifacts are
+            // stale; the complete current seed/needle geometry remains visible.
+            if (!Array.isArray(e.authoritative?.seeds)
+                || !Array.isArray(e.authoritative?.needles)) {
+                manualPlanningState.safetyOverride = true;
+                _markManualDependentsStaleLocally('dose recomputation failed for retained seed geometry');
+            }
+            const preservedMessage = _manualText(
+                '剂量更新因当前粒子位置问题失败；当前全部粒子和针道已保留。Dose、DVH、质量检查、报告和手术导板已标记为过期，请修正位置后再重算。',
+                'Dose update failed for the retained seed geometry. All seeds and needles were kept; Dose, DVH, quality check, report, and Surgical Guide are stale. Correct the geometry and retry.',
+            );
+            _setManualDoseProgress('error', preservedMessage);
+            addChat('error', preservedMessage);
+            return null;
         }
         if (!manualPlanningState.doseRecomputeQueued) {
             _setManualDoseProgress('error', _manualText(`重新规划失败：${e.message}`, `Replanning failed: ${e.message}`));
@@ -1080,6 +1335,13 @@ async function _runManualDoseJob(job) {
         return null;
     } finally {
         clearTimeout(doseTimeout);
+        if (manualPlanningState._doseAbortController === doseController) {
+            manualPlanningState._doseAbortController = null;
+        }
+        if (manualPlanningState._doseRecomputeJob === job
+            && !manualPlanningState.doseRecomputeQueued) {
+            manualPlanningState._doseRecomputeJob = null;
+        }
     }
 }
 
@@ -1089,7 +1351,17 @@ async function recomputeManualDose(reason = 'manual_update', options = {}) {
         manualPlanningState.doseRecomputeTimer = null;
         manualPlanningState.doseRecomputeOwnerSessionId = null;
     }
-    const payload = _manualPayload(options);
+    const doseOptions = { ...options };
+    // A previous explicit "keep edit" decision authorizes the next explicit
+    // dose update for that retained geometry. New seed edits still go through
+    // the safe commit gate and must open a new warning if they introduce a
+    // new conflict.
+    if (doseOptions.allowUnsafe === undefined && manualPlanningState.safetyOverride) {
+        doseOptions.allowUnsafe = true;
+        doseOptions.safetyOverride = doseOptions.safetyOverride || 'user_confirmed';
+        doseOptions.preserveGeometryOnFailure = true;
+    }
+    const payload = _manualPayload(doseOptions);
     payload.reason = reason;
     if (!payload.seeds.length) {
         addChat('error', _manualText('当前没有可用于重算的手动粒子，请先添加至少一颗粒子。', 'No manual seeds available. Add at least one seed before recomputing dose.'));
@@ -1211,6 +1483,14 @@ function _projectPointOntoNeedle(position, needle) {
 
 async function onManualSeedEdited(seedId, position, rollbackSeeds = null, options = {}) {
     const rollback = Array.isArray(rollbackSeeds) ? rollbackSeeds : _cloneManualSeeds();
+    // Some 3D callers update the mesh/Data Tree optimistically before this
+    // async handler runs. Rebuild the pre-edit snapshot from the explicit
+    // rollback list so the conflict dialog can restore exactly one edit,
+    // without touching unrelated seeds or needles.
+    const preEditSnapshot = _cloneManualPlanningSnapshot();
+    if (Array.isArray(rollbackSeeds)) {
+        preEditSnapshot.seeds = _cloneManualSeeds(rollbackSeeds);
+    }
     const seed = dataTreeState.planning.seeds.find(s => s.id === seedId);
     const needle = seed
         ? dataTreeState.planning.needles.find(n => _normalizeTrajectoryId(n.trajectory_id) === _normalizeTrajectoryId(seed.trajectory_id))
@@ -1229,21 +1509,104 @@ async function onManualSeedEdited(seedId, position, rollbackSeeds = null, option
     }
     _syncSeedsOverlayFromDataTree();
     renderDataTree();
-    await _commitManualSeeds('move', rollback);
+    const proposedSnapshot = _cloneManualPlanningSnapshot();
+    let committed;
+    let safetyOverride = false;
+    try {
+        committed = await _commitManualSeeds('move', rollback);
+    } catch (error) {
+        if (error?.code !== 'manual_seed_interference') throw error;
+
+        const keepEdit = await _confirmSeedSafetyConflict(seedId, error);
+        if (!keepEdit) {
+            // The rejected transaction already applied the server's
+            // authoritative pre-edit geometry. Keep a local fallback for a
+            // legacy response that does not contain the full snapshot.
+            if (!(Array.isArray(error.authoritative?.seeds)
+                && Array.isArray(error.authoritative?.needles))) {
+                _restoreManualPlanningSnapshot(preEditSnapshot);
+            }
+            // The rejection response may contain a transient "decision
+            // required" message. Once the operator restores the edit, do not
+            // leave that warning attached to an otherwise safe geometry.
+            if (!manualPlanningState.safetyOverride) {
+                manualPlanningState.safetyWarning = null;
+                manualPlanningState.safetyInterference = null;
+                if (dataTreeState?.planning) {
+                    dataTreeState.planning.safetyWarning = null;
+                    dataTreeState.planning.requiresSafetyReview = false;
+                }
+            }
+            const restoredMessage = _manualText(
+                `已恢复 ${seedId} 的编辑前位置；其他粒子和针道未改变。`,
+                `Restored ${seedId} to its pre-edit position; all other seeds and needles were unchanged.`,
+            );
+            _setManualDoseProgress('done', restoredMessage);
+            addChat('system', restoredMessage);
+            return null;
+        }
+
+        // The first request restored the authoritative old state in the
+        // browser. Put the proposed edit back, then commit it with a marker
+        // that can only be produced by this explicit confirmation path.
+        _restoreManualPlanningSnapshot(proposedSnapshot);
+        try {
+            committed = await _commitManualSeeds(
+                'move',
+                rollback,
+                null,
+                {
+                    allowUnsafe: true,
+                    safetyOverride: 'user_confirmed',
+                },
+            );
+        } catch (overrideError) {
+            // A second interference rejection means the override transaction
+            // itself could not be committed (for example, another edit won a
+            // version race). Fail closed and leave the server-authoritative
+            // geometry visible; never fall through to a generic whole-plan
+            // disappearance.
+            if (overrideError?.code === 'manual_seed_interference') {
+                if (!(Array.isArray(overrideError.authoritative?.seeds)
+                    && Array.isArray(overrideError.authoritative?.needles))) {
+                    _restoreManualPlanningSnapshot(preEditSnapshot);
+                }
+                const failedMessage = _manualText(
+                    `无法保留 ${seedId} 的风险位置；服务器未接受这次覆盖提交，已恢复权威位置。`,
+                    `Could not keep ${seedId}'s unsafe position because the override commit was rejected; the server-authoritative position was restored.`,
+                );
+                _setManualDoseProgress('error', failedMessage);
+                addChat('error', failedMessage);
+                return null;
+            }
+            throw overrideError;
+        }
+        safetyOverride = true;
+    }
+
+    const warningMessage = safetyOverride
+        ? _manualText(
+            '已按你的选择保留该粒子位置，但它违反了粒子安全间距要求。未删除其他粒子或针道；Dose、DVH、质量检查、报告和手术导板已标记为过期，请修正位置后再使用。',
+            'The seed edit was kept as requested, although it violates the seed safety spacing rule. No other seeds or needles were deleted; Dose, DVH, quality check, report, and Surgical Guide are stale until the geometry is corrected.',
+        )
+        : null;
     addChat(
         'system',
-        _manualText(
-            `\u7C92\u5B50 ${seedId} \u5DF2\u6CBF\u6240\u5C5E\u9488\u9053\u79FB\u52A8\u81F3 [`
+        warningMessage || _manualText(
+            `\u7C92\u5B50 ${seedId} \u5DF2\u6CBF\u6240\u5C5E\u9488\u9053\u79FB动\u81F3 [`
                 + `${projected[0].toFixed(1)}, ${projected[1].toFixed(1)}, ${projected[2].toFixed(1)}]\u3002`,
             `Seed ${seedId} moved along its needle to [`
                 + `${projected[0].toFixed(1)}, ${projected[1].toFixed(1)}, ${projected[2].toFixed(1)}].`,
         ),
     );
     if (typeof scheduleWorkspaceSave === 'function') scheduleWorkspaceSave('manual.seed.position');
-    reportUIEvent('manual.seed.drag', seedId, {
+    _reportCommittedManualEvent(committed, 'manual.seed.drag', seedId, {
+        seed_id: seedId,
         position: projected,
         projected_to_needle: !!needle,
         dose_recomputed: options.skipDoseRecompute !== true,
+        safety_override: safetyOverride,
+        safety_warning: warningMessage,
     });
     // The geometry is committed to a child Draft Planning first.  Recompute
     // is an explicit operator decision, so dragging a seed never silently
@@ -1256,7 +1619,12 @@ async function onManualSeedEdited(seedId, position, rollbackSeeds = null, option
             ? options.doseRecomputeDecision === 'yes'
             : await _confirmSeedReplan(seedId);
         if (shouldReplan) {
-            await recomputeManualDose('seed_drag', { previousSeeds: rollback });
+            await recomputeManualDose('seed_drag', {
+                previousSeeds: rollback,
+                allowUnsafe: safetyOverride ? true : undefined,
+                safetyOverride: safetyOverride ? 'user_confirmed' : undefined,
+                preserveGeometryOnFailure: safetyOverride,
+            });
         } else {
             const message = typeof window._t === 'function'
                 ? window._t(
@@ -1286,14 +1654,19 @@ async function onManualNeedleHandleEdited(handle) {
     _syncNeedleHandles(needle);
     _syncSeedsOverlayFromDataTree();
     renderDataTree();
-    reportUIEvent('manual.needle.drag', needleId, { point_index: pointIndex, points: needle.points });
     const hasSeeds = dataTreeState.planning.seeds.some(s => s.trajectory_id === needle.trajectory_id);
     if (!hasSeeds) {
         try {
-            await _persistNeedleGeometryOnly({
+            const committed = await _persistNeedleGeometryOnly({
                 reason: 'needle_drag',
                 rollbackNeedles: previousNeedles,
                 rollbackSnapshot: previousSnapshot,
+            });
+            _reportCommittedManualEvent(committed, 'manual.needle.drag', needleId, {
+                needle_id: needleId,
+                point_index: pointIndex,
+                points: needle.points,
+                dose_recomputed: false,
             });
             _setManualDoseProgress('done', _manualText(
                 `已保存 ${needleId} 的针道位置；添加粒子后可重新计算剂量。`,
@@ -1326,9 +1699,16 @@ async function onManualNeedleHandleEdited(handle) {
         if (manualPlanningState.needleReplanPrompt !== prompt) return false;
         manualPlanningState.needleReplanPrompt = null;
         if (!shouldReplan) {
-            await _persistNeedleGeometryOnly({
+            const committed = await _persistNeedleGeometryOnly({
+                reason: 'needle_drag',
                 rollbackNeedles: previousNeedles,
                 rollbackSnapshot: previousSnapshot,
+            });
+            _reportCommittedManualEvent(committed, 'manual.needle.drag', needleId, {
+                needle_id: needleId,
+                point_index: pointIndex,
+                points: needle.points,
+                dose_recomputed: false,
             });
             const kept = typeof window._t === 'function'
                 ? window._t(`已保留 ${needleId} 的当前位置，未触发重新规划。`, `Needle ${needleId} position kept. Replanning skipped.`)
@@ -1336,11 +1716,12 @@ async function onManualNeedleHandleEdited(handle) {
             addChat('system', kept);
             return false;
         }
-        await recomputeManualDose('needle_drag', {
+        const result = await recomputeManualDose('needle_drag', {
             reprojectSeeds: true,
             previousNeedles: prompt.previousNeedles,
             previousSnapshot,
         });
+        if (!result) return false;
         return true;
     })().catch(error => {
         if (manualPlanningState.needleReplanPrompt === prompt) manualPlanningState.needleReplanPrompt = null;
@@ -1361,6 +1742,7 @@ async function _refreshManualDoseViews(data, wasDoseTextureEnabled, options = {}
         data?.planning_version ?? manualPlanningState.planningVersion ?? 0,
     );
     manualPlanningState.artifactStatus = { ...(data?.artifact_status || manualPlanningState.artifactStatus || {}) };
+    _syncManualSafetyState(data || {});
     dataTreeState.planning.id = manualPlanningState.planningId;
     dataTreeState.planning.activePlanningId = manualPlanningState.planningId;
     dataTreeState.planning.status = data?.planning_status || 'completed';
@@ -2953,34 +3335,12 @@ function init3DScene() {
                         );
                     } catch (error) {
                         if (error?.code === 'manual_seed_interference') {
-                            const pairs = error.authoritative?.interference?.close_pairs || [];
-                            const details = pairs.slice(0, 4).map(pair => {
-                                const distance = Number(pair.center_distance_mm);
-                                const distanceText = Number.isFinite(distance)
-                                    ? `${distance.toFixed(2)} mm`
-                                    : 'unknown distance';
-                                return `${pair.first_id || '?'} / ${pair.second_id || '?'} (${distanceText})`;
-                            }).join('; ');
                             const message = _manualText(
-                                `\u7c92\u5b50\u79fb\u52a8\u5df2\u88ab\u62d2\u7edd\uff1a\u68c0\u6d4b\u5230\u7c92\u5b50\u5e72\u6d89${details ? `\uff1a${details}` : ''}\u3002\u5df2\u6062\u590d\u62d6\u52a8\u524d\u4f4d\u7f6e\uff0c\u672a\u91cd\u65b0\u8ba1\u7b97\u5242\u91cf\u3002`,
-                                `Seed move rejected: overlapping or unsafe spacing was detected${details ? ` (${details})` : ''}. The pre-drag position was restored and dose recomputation was skipped.`,
+                                '\u7C92\u5B50\u4F4D\u7F6E\u5B89\u5168\u6821\u9A8C\u672A\u901A\u8FC7，已保留服务器的权威\u72B6\u6001；本次\u7F16\u8F91\u672A\u88AB\u63D0\u4EA4。',
+                                'Seed safety validation did not pass; the server-authoritative state was retained and this edit was not committed.',
                             );
                             _setManualDoseProgress('error', message);
                             addChat('error', message);
-                            if (typeof _confirmAction === 'function') {
-                                await _confirmAction(
-                                    message,
-                                    message,
-                                    {
-                                        yesZh: '知道了',
-                                        yesEn: 'Acknowledge',
-                                        noZh: '关闭',
-                                        noEn: 'Close',
-                                        titleZh: '粒子间距冲突',
-                                        titleEn: 'Seed interference',
-                                    },
-                                );
-                            }
                             return;
                         }
                         const message = typeof window._t === 'function'
@@ -3086,11 +3446,9 @@ function init3DScene() {
             </div><div class="ctx-menu-sep"></div>`;
         }
 
-        // Highlight
-        items += `<div class="ctx-menu-item" onclick="hideContextMenu();highlightSeed('${id}')">
-            <span class="ctx-icon">&#127912;</span> Highlight</div>`;
-
         if (type === 'seed') {
+            items += `<div class="ctx-menu-item" onclick="hideContextMenu();highlightSeed('${id}')">
+                <span class="ctx-icon">&#127912;</span> Highlight</div>`;
             // Show dose at seed position
             items += `<div class="ctx-menu-item" onclick="hideContextMenu();showSeedDose('${id}')">
                 <span class="ctx-icon">&#9889;</span> Show Dose</div>`;
@@ -3116,6 +3474,8 @@ function init3DScene() {
         }
 
         if (type === 'needle' || type === 'needle_handle') {
+            items += `<div class="ctx-menu-item" onclick="hideContextMenu();addManualSeed('${needleId}', {source:'3d_context'})">
+                <span class="ctx-icon">&#10133;</span> ${_manualText('在此针道添加粒子', 'Add seed to this needle')}</div>`;
             items += `<div class="ctx-menu-item" onclick="hideContextMenu();restoreNeedleToAlgorithm('${needleId}')">
                 <span class="ctx-icon">&#8634;</span> Restore algorithm position</div>`;
             items += `<div class="ctx-menu-item" onclick="hideContextMenu();setNeedleVisibilityFrom3D('${needleId}', true)">
@@ -3154,10 +3514,6 @@ function init3DScene() {
             if (menuRect.bottom > window.innerHeight) menu.style.top = (y - menuRect.height) + 'px';
         }
 
-        setTimeout(() => {
-            document.addEventListener('click', hideContextMenu, { once: true });
-            document.addEventListener('contextmenu', hideContextMenu, { once: true });
-        }, 0);
     }
 
     function clearSelection() {
@@ -3296,9 +3652,15 @@ function addMeshToScene(meshData) {
     mesh.userData = {
         type: 'mesh',
         id,
+        objectId: meshData.object_id || id,
+        nodeId: meshData.data_tree_node_id || id,
         source,
+        label: meshData.label || id,
         labelId: meshData.label_id,
         organId: id,
+        planningId: meshData.planning_id || null,
+        dataVersion: meshData.data_version || null,
+        status: meshData.status || 'ready',
         depthWriteWhenTransparent,
         renderRole: source === 'surgical_guide' ? 'physical_guide_surface' : source,
     };
@@ -3817,6 +4179,201 @@ function focusPlanningSeedsForScreenshot(seedIds) {
 }
 window.focusPlanningSeedsForScreenshot = focusPlanningSeedsForScreenshot;
 
+function _screenshot3DIdentityFor(id, mesh) {
+    const identities = [
+        String(id || ''),
+        String(mesh?.userData?.id || ''),
+        String(mesh?.userData?.objectId || ''),
+        String(mesh?.userData?.nodeId || ''),
+        String(mesh?.userData?.seedId || ''),
+        String(mesh?.userData?.needleId || ''),
+    ].filter(Boolean);
+    const source = String(mesh?.userData?.source || '').toLowerCase();
+    const type = String(mesh?.userData?.type || '').toLowerCase();
+    if (source === 'surgical_guide' || String(id) === 'patient_specific_puncture_guide') {
+        identities.push('surgical_guide:active');
+    }
+    if (type === 'seed' || String(id).startsWith('seed_')) {
+        identities.push(`seed:${id}`, 'seeds', 'group:planning:seeds');
+    }
+    if ((type === 'needle' || String(id).startsWith('needle_'))
+        && mesh?.userData?.type !== 'needle_handle') {
+        identities.push(`needle:${id}`, 'needles', 'group:planning:needles');
+    }
+    if (String(id).startsWith('ctv_')) identities.push(`structure:ctv:${String(id).replace('ctv_', '')}`);
+    if (String(id).startsWith('organ_')) identities.push(`structure:oar:${String(id).replace('organ_', '')}`);
+    return [...new Set(identities)];
+}
+
+function _screenshot3DVisibility(id, mesh) {
+    let hierarchyVisible = !!mesh;
+    for (let current = mesh; current && hierarchyVisible; current = current.parent) {
+        if (current.visible === false) hierarchyVisible = false;
+    }
+    const descendantHierarchyVisible = child => {
+        for (let current = child; current; current = current.parent) {
+            if (current.visible === false) return false;
+            if (current === mesh) return true;
+        }
+        return false;
+    };
+    let materialVisible = false;
+    mesh?.traverse?.(child => {
+        // THREE.Object3D.traverse also visits grandchildren whose own
+        // `visible` flag is true while an intermediate parent is hidden.
+        // Such a material is not rendered and must not make the target look
+        // annotatable.
+        if (materialVisible || !descendantHierarchyVisible(child) || !child.material) return;
+        const materials = Array.isArray(child.material) ? child.material : [child.material];
+        materialVisible = materials.some(material => material?.visible !== false
+            && Number(material?.opacity ?? 1) > 0.001);
+    });
+    // Objects without a material (for example a group containing visible
+    // meshes) inherit renderability from their descendants above.
+    if (!materialVisible && mesh?.material) {
+        const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+        materialVisible = materials.some(material => material?.visible !== false
+            && Number(material?.opacity ?? 1) > 0.001);
+    }
+    const node = typeof _3dDataTreeNodeForMesh === 'function'
+        ? _3dDataTreeNodeForMesh(String(id || ''))
+        : null;
+    const appearance = typeof window.getDataTreeAppearanceForMesh === 'function'
+        ? window.getDataTreeAppearanceForMesh(String(id || ''), mesh)
+        : null;
+    const dataTreeVisible = node
+        ? (typeof window.isDataTreeNodeVisible3D === 'function'
+            ? window.isDataTreeNodeVisible3D(node)
+            : node.visible !== false && node.visible3D !== false)
+        : (appearance ? appearance.visible !== false : false);
+    const status = String(node?.status || mesh?.userData?.status || 'ready').toLowerCase();
+    const currentStatus = !['loading', 'error', 'stale', 'expired', 'not_generated'].includes(status);
+    const sceneVisible = hierarchyVisible && materialVisible
+        && !!(node || appearance) && appearance?.visible !== false;
+    return {
+        node,
+        status,
+        sceneVisible,
+        dataTreeVisible: dataTreeVisible !== false,
+        currentStatus,
+        annotatable: sceneVisible && dataTreeVisible !== false && currentStatus,
+    };
+}
+
+function _project3DObjectBounds(mesh) {
+    if (!mesh || typeof THREE === 'undefined' || !scene3D?.camera) return null;
+    try {
+        mesh.updateWorldMatrix?.(true, true);
+        scene3D.camera.updateMatrixWorld?.(true);
+        const box = new THREE.Box3().setFromObject(mesh);
+        if (box.isEmpty()) return null;
+        const min = box.min, max = box.max;
+        const corners = [
+            [min.x, min.y, min.z], [min.x, min.y, max.z],
+            [min.x, max.y, min.z], [min.x, max.y, max.z],
+            [max.x, min.y, min.z], [max.x, min.y, max.z],
+            [max.x, max.y, min.z], [max.x, max.y, max.z],
+        ];
+        const projected = [];
+        corners.forEach(values => {
+            const world = new THREE.Vector3(...values);
+            const cameraSpace = world.clone().applyMatrix4(scene3D.camera.matrixWorldInverse);
+            if (scene3D.camera.isPerspectiveCamera && cameraSpace.z >= -scene3D.camera.near) return;
+            const ndc = world.project(scene3D.camera);
+            if (![ndc.x, ndc.y, ndc.z].every(Number.isFinite)) return;
+            projected.push([(ndc.x + 1) / 2, (1 - ndc.y) / 2, ndc.z]);
+        });
+        if (!projected.length) return null;
+        let left = Math.min(...projected.map(point => point[0]));
+        let top = Math.min(...projected.map(point => point[1]));
+        let right = Math.max(...projected.map(point => point[0]));
+        let bottom = Math.max(...projected.map(point => point[1]));
+        if (right <= 0 || bottom <= 0 || left >= 1 || top >= 1) return null;
+        const padding = 0.012;
+        left = Math.max(0, left - padding);
+        top = Math.max(0, top - padding);
+        right = Math.min(1, right + padding);
+        bottom = Math.min(1, bottom + padding);
+        if (right - left < 0.003 || bottom - top < 0.003) return null;
+        return [left, top, right - left, bottom - top].map(value => Number(value.toFixed(6)));
+    } catch (error) {
+        console.debug('[3D screenshot] target projection failed:', error);
+        return null;
+    }
+}
+
+function _unionNormalizedBounds(boundsList) {
+    const valid = (boundsList || []).filter(bounds => Array.isArray(bounds) && bounds.length === 4);
+    if (!valid.length) return null;
+    const left = Math.min(...valid.map(bounds => bounds[0]));
+    const top = Math.min(...valid.map(bounds => bounds[1]));
+    const right = Math.max(...valid.map(bounds => bounds[0] + bounds[2]));
+    const bottom = Math.max(...valid.map(bounds => bounds[1] + bounds[3]));
+    return [left, top, right - left, bottom - top].map(value => Number(value.toFixed(6)));
+}
+
+function get3DScreenshotGroundingManifest(objectIds = []) {
+    const requested = [...new Set((Array.isArray(objectIds) ? objectIds : [])
+        .map(value => String(value || '').trim()).filter(Boolean))].slice(0, 32);
+    const entries = Object.entries(scene3D?.meshes || {});
+    const targets = requested.map(targetRef => {
+        const matched = entries.filter(([id, mesh]) =>
+            mesh && _screenshot3DIdentityFor(id, mesh).includes(targetRef)
+        );
+        if (!matched.length) {
+            return {
+                target_ref: targetRef,
+                kind: 'scene-object',
+                locator: 'scene-projection',
+                visible: false,
+                scene_visible: false,
+                data_tree_visible: false,
+                in_view: false,
+                annotatable: false,
+                status: 'unresolved',
+                reason: 'object_not_loaded_in_scene',
+                normalized_bounds: null,
+            };
+        }
+        const states = matched.map(([id, mesh]) => ({
+            id,
+            mesh,
+            state: _screenshot3DVisibility(id, mesh),
+        }));
+        const eligible = states.filter(entry => entry.state.annotatable);
+        const bounds = _unionNormalizedBounds(eligible.map(entry => _project3DObjectBounds(entry.mesh)));
+        const sceneVisible = states.some(entry => entry.state.sceneVisible);
+        const dataTreeVisible = states.some(entry => entry.state.dataTreeVisible);
+        const status = states.find(entry => entry.state.status !== 'ready')?.state.status || 'ready';
+        const label = String(
+            states.find(entry => entry.state.node?.label)?.state.node?.label
+            || states[0].mesh?.userData?.label
+            || targetRef
+        );
+        let reason = '';
+        if (!dataTreeVisible) reason = 'hidden_in_data_tree';
+        else if (!sceneVisible) reason = 'hidden_in_scene';
+        else if (!eligible.length) reason = `status_${status}`;
+        else if (!bounds) reason = 'outside_captured_view';
+        return {
+            target_ref: targetRef,
+            label,
+            kind: 'scene-object',
+            locator: 'scene-projection',
+            visible: sceneVisible && dataTreeVisible,
+            scene_visible: sceneVisible,
+            data_tree_visible: dataTreeVisible,
+            in_view: !!bounds,
+            annotatable: !!bounds && eligible.length > 0,
+            status,
+            reason,
+            normalized_bounds: bounds,
+        };
+    });
+    return { version: 1, target: 'viewer-3d', targets };
+}
+window.get3DScreenshotGroundingManifest = get3DScreenshotGroundingManifest;
+
 function focusPlanningObjectsForScreenshot(objectIds, options = {}) {
     if (!scene3D?.camera || !scene3D?.controls || !Array.isArray(objectIds) || !objectIds.length) {
         return null;
@@ -3829,18 +4386,18 @@ function focusPlanningObjectsForScreenshot(objectIds, options = {}) {
         ).map(String)
     );
     const entries = Object.entries(scene3D.meshes || {});
-    const identityFor = (id, mesh) => [
-        String(id || ''),
-        String(mesh?.userData?.id || ''),
-        String(mesh?.userData?.objectId || ''),
-        String(mesh?.userData?.nodeId || ''),
-        String(mesh?.userData?.seedId || ''),
-        String(mesh?.userData?.needleId || ''),
-    ].filter(Boolean);
     const targets = entries.filter(([id, mesh]) =>
-        mesh && identityFor(id, mesh).some(identity => wanted.has(identity))
+        mesh && _screenshot3DIdentityFor(id, mesh).some(identity => wanted.has(identity))
     );
     if (!targets.length) return null;
+    // Framing is allowed to move an offscreen camera, but it must never turn
+    // a hidden/stale object back on. The screenshot must describe the user's
+    // real display state; otherwise a later arrow would falsely claim that a
+    // Data Tree-hidden guide is visible in the 3D viewer.
+    const visibleTargets = targets.filter(([id, mesh]) =>
+        _screenshot3DVisibility(id, mesh).annotatable
+    );
+    if (!visibleTargets.length) return null;
 
     const saved = {
         position: scene3D.camera.position.clone(),
@@ -3863,12 +4420,11 @@ function focusPlanningObjectsForScreenshot(objectIds, options = {}) {
     saved.meshes.forEach(meshState => {
         const { id, mesh } = meshState;
         if (!mesh) return;
-        const identities = identityFor(id, mesh);
+        const identities = _screenshot3DIdentityFor(id, mesh);
         const isTarget = identities.some(identity => wanted.has(identity));
         const isHighlighted = identities.some(identity => highlighted.has(identity));
-        if (options.hideUnrelated) mesh.visible = isTarget;
-        if (isTarget) mesh.visible = true;
-        if (!isHighlighted) return;
+        if (options.hideUnrelated) mesh.visible = isTarget && meshState.visible !== false;
+        if (!isHighlighted || !isTarget || meshState.visible === false) return;
         mesh.traverse?.(child => {
             const materials = Array.isArray(child.material) ? child.material : [child.material];
             materials.filter(Boolean).forEach(material => {
@@ -3887,34 +4443,7 @@ function focusPlanningObjectsForScreenshot(objectIds, options = {}) {
         mesh.scale?.multiplyScalar?.(1.2);
     });
 
-    const box = new THREE.Box3();
-    targets.forEach(([, mesh]) => box.expandByObject(mesh));
-    if (box.isEmpty()) {
-        saved.meshes.forEach(meshState => {
-            if (meshState.mesh) meshState.mesh.visible = meshState.visible;
-        });
-        return null;
-    }
-    const center = box.getCenter(new THREE.Vector3());
-    const size = box.getSize(new THREE.Vector3());
-    const maxDim = Math.max(size.x, size.y, size.z, 1);
-    const viewDirection = scene3D.camera.position.clone().sub(scene3D.controls.target);
-    if (viewDirection.lengthSq() < 1e-8) viewDirection.set(0, 0, 1);
-    viewDirection.normalize();
-    const padding = Math.max(0.1, Number(options.padding || 0.35));
-    const distance = maxDim * (2.8 + padding * 2.5);
-    sync3DCameraPose({
-        position: center.clone().add(viewDirection.multiplyScalar(distance)),
-        target: center,
-        up: new THREE.Vector3(0, 1, 0),
-        near: Math.max(0.05, distance / 1000),
-        far: Math.max(saved.far, distance * 20),
-        aspect: saved.aspect,
-        fov: saved.fov,
-        zoom: saved.zoom,
-    });
-
-    return () => {
+    const restoreMeshPresentation = () => {
         saved.meshes.forEach(meshState => {
             const mesh = meshState.mesh;
             if (!mesh) return;
@@ -3929,6 +4458,83 @@ function focusPlanningObjectsForScreenshot(objectIds, options = {}) {
                 savedMaterial.material.needsUpdate = true;
             });
         });
+    };
+
+    const box = new THREE.Box3();
+    visibleTargets.forEach(([, mesh]) => box.expandByObject(mesh));
+    if (box.isEmpty()) {
+        // A malformed/empty target must not leave behind the temporary
+        // highlight, scale, or hide-unrelated presentation.
+        restoreMeshPresentation();
+        return null;
+    }
+    const center = box.getCenter(new THREE.Vector3());
+    const viewDirection = scene3D.camera.position.clone().sub(scene3D.controls.target);
+    if (viewDirection.lengthSq() < 1e-8) viewDirection.set(0, 0, 1);
+    viewDirection.normalize();
+    const padding = Math.max(0.1, Number(options.padding || 0.35));
+    const sphere = box.getBoundingSphere(new THREE.Sphere());
+    const radius = Math.max(Number(sphere.radius || 0), 0.5);
+    const verticalHalfFov = THREE.MathUtils.degToRad(
+        Math.max(1, Number(scene3D.camera.fov || saved.fov || 45)) / 2,
+    );
+    const horizontalHalfFov = Math.atan(
+        Math.tan(verticalHalfFov) * Math.max(0.1, Number(scene3D.camera.aspect || saved.aspect || 1)),
+    );
+    const limitingHalfFov = Math.max(
+        THREE.MathUtils.degToRad(3),
+        Math.min(verticalHalfFov, horizontalHalfFov),
+    );
+    // Fitting the bounding sphere to the limiting FOV gives a deterministic
+    // first pose even for a long oblique needle or a portrait viewer.  The
+    // old max-dimension multiplier could leave an object tiny or clipped when
+    // the canvas aspect changed between captures.
+    let distance = Math.max(
+        radius * 1.05,
+        (radius / Math.sin(limitingHalfFov)) * (1 + padding * 0.45),
+    );
+    const applyPose = () => sync3DCameraPose({
+        position: center.clone().add(viewDirection.clone().multiplyScalar(distance)),
+        target: center,
+        up: saved.up,
+        near: Math.max(0.05, distance / 1000),
+        far: Math.max(saved.far, distance * 20),
+        aspect: saved.aspect,
+        fov: saved.fov,
+        zoom: saved.zoom,
+    });
+    let bounds = null;
+    let verified = false;
+    let attempts = 0;
+    for (; attempts < 5; attempts += 1) {
+        applyPose();
+        bounds = _unionNormalizedBounds(
+            visibleTargets.map(([, mesh]) => _project3DObjectBounds(mesh)),
+        );
+        if (!bounds) {
+            distance *= 1.35;
+            continue;
+        }
+        const [left, top, width, height] = bounds;
+        const right = left + width;
+        const bottom = top + height;
+        const edgeSafe = left >= 0.012 && top >= 0.012 && right <= 0.988 && bottom <= 0.988;
+        const extent = Math.max(width, height);
+        if (!edgeSafe || extent > 0.92) {
+            distance *= 1.22;
+            continue;
+        }
+        if (extent < 0.16) {
+            distance *= Math.max(0.58, extent / 0.30);
+            continue;
+        }
+        verified = true;
+        break;
+    }
+    if (scene3D.requestRender) scene3D.requestRender(3);
+
+    const restore = () => {
+        restoreMeshPresentation();
         sync3DCameraPose({
             position: saved.position,
             target: saved.target,
@@ -3941,6 +4547,19 @@ function focusPlanningObjectsForScreenshot(objectIds, options = {}) {
             zoom: saved.zoom,
         });
     };
+    restore.focusResult = {
+        version: 1,
+        status: verified ? 'resolved' : 'unverified',
+        reason: verified ? '' : (bounds ? 'framing_margin_not_verified' : 'target_projection_unavailable'),
+        method: 'stable-id-bounding-sphere-and-projection-check',
+        target_refs: [...wanted],
+        matched_object_ids: visibleTargets.map(([id]) => String(id)),
+        normalized_bounds: bounds,
+        attempts: Math.min(attempts + 1, 5),
+        occlusion_control: options.hideUnrelated ? 'target-isolated' : 'context-preserved',
+        camera_restored_after_capture: true,
+    };
+    return restore;
 }
 window.focusPlanningObjectsForScreenshot = focusPlanningObjectsForScreenshot;
 
@@ -4378,11 +4997,12 @@ async function _loadSeeds3D(requestScope) {
             data.planning_version ?? manualPlanningState.planningVersion ?? 0,
         );
         manualPlanningState.artifactStatus = { ...(data.artifact_status || {}) };
+        _syncManualSafetyState(data);
         dataTreeState.planning.id = manualPlanningState.planningId;
         dataTreeState.planning.version = manualPlanningState.planningVersion;
         dataTreeState.planning.artifactStatus = { ...manualPlanningState.artifactStatus };
         dataTreeState.planning.safetyCheck = data.safety_check || 'verified';
-        dataTreeState.planning.safetyWarning = data.safety_warning || null;
+        dataTreeState.planning.safetyWarning = manualPlanningState.safetyWarning;
         dataTreeState.planning.needsReplan = data.plan_needs_replan === true;
 
         // Capture the accepted automatic geometry before endpoint dragging
@@ -4446,6 +5066,11 @@ async function _loadSeeds3D(requestScope) {
             mesh.userData = {
                 type: 'seed',
                 id: seed.id,
+                objectId: seed.object_id || seed.id,
+                nodeId: seed.data_tree_node_id || seed.id,
+                planningId: data.planning_id || null,
+                dataVersion: data.planning_version ?? null,
+                status: 'ready',
                 trajectoryId: _normalizeTrajectoryId(seed.trajectory_id),
                 renderRole: 'planning_seed',
             };
@@ -4514,7 +5139,16 @@ async function _loadSeeds3D(requestScope) {
                 tube.userData = {
                     type: 'needle',
                     id: needle.id,
+                    objectId: needle.object_id || needle.id,
+                    nodeId: needle.data_tree_node_id || needle.id,
+                    planningId: data.planning_id || null,
+                    dataVersion: data.planning_version ?? null,
+                    status: 'ready',
                     trajectoryId: _normalizeTrajectoryId(needle.trajectory_id),
+                    // Keep display points with the mesh so report-only styling
+                    // can rebuild a thinner shaft without changing planning
+                    // coordinates or the authoritative needle object.
+                    displayPoints: points.map(point => [point.x, point.y, point.z]),
                     depthWriteWhenTransparent: false,
                     renderRole: 'planning_needle',
                 };
@@ -4541,7 +5175,13 @@ async function _loadSeeds3D(requestScope) {
                 line.userData = {
                     type: 'needle',
                     id: needle.id,
+                    objectId: needle.object_id || needle.id,
+                    nodeId: needle.data_tree_node_id || needle.id,
+                    planningId: data.planning_id || null,
+                    dataVersion: data.planning_version ?? null,
+                    status: 'ready',
                     trajectoryId: _normalizeTrajectoryId(needle.trajectory_id),
+                    displayPoints: points.map(point => [point.x, point.y, point.z]),
                     depthWriteWhenTransparent: false,
                     renderRole: 'planning_needle',
                 };
@@ -6010,6 +6650,350 @@ function clearDoseOverlayRuntime() {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Ephemeral planning preview layer
+// ---------------------------------------------------------------------------
+// This group is intentionally a direct scene child, never a scene3D.meshes
+// entry.  Picking, manual editing, Data Tree synchronization, camera fitting,
+// report capture, and formal planning refreshes therefore cannot mistake a
+// sampled optimizer frame for clinical geometry.
+const _planningPreviewState = {
+    sessionId: '',
+    runId: '',
+    stage: '',
+    closedStage: '',
+    sequence: -1,
+    group: null,
+    trajectoryLine: null,
+    needleLine: null,
+    seedMesh: null,
+    pendingFrame: null,
+    rafId: 0,
+    latestEvent: null,
+};
+
+function _planningPreviewCurrentSession() {
+    return String(
+        (typeof activeSessionId !== 'undefined' && activeSessionId)
+        || state?.sessionId
+        || '',
+    );
+}
+
+function _planningPreviewStatusText(event = _planningPreviewState.latestEvent || {}) {
+    const stage = String(event.stage || _planningPreviewState.stage || 'planning');
+    const progress = event.progress && typeof event.progress === 'object'
+        ? event.progress : {};
+    const current = Number(progress.current);
+    const total = Number(progress.total);
+    const seedCount = Number(progress.seed_count);
+    const retained = Number(progress.retained_count);
+    let detail = '';
+    if (Number.isFinite(current) && Number.isFinite(total) && total > 0) {
+        detail = ` ${Math.max(0, current)}/${Math.max(0, total)}`;
+    } else if (Number.isFinite(seedCount) && seedCount >= 0) {
+        detail = typeof window._t === 'function'
+            ? window._t(` · ${seedCount} 枚粒子`, ` · ${seedCount} seeds`)
+            : ` · ${seedCount} seeds`;
+    } else if (Number.isFinite(retained) && retained >= 0) {
+        detail = typeof window._t === 'function'
+            ? window._t(` · 保留 ${retained} 条`, ` · ${retained} retained`)
+            : ` · ${retained} retained`;
+    }
+    let label;
+    if (stage === 'trajectory_init') {
+        label = typeof window._t === 'function'
+            ? window._t('正在生成候选针道', 'Generating candidate paths')
+            : 'Generating candidate paths';
+    } else if (stage === 'trajectory_refine') {
+        label = typeof window._t === 'function'
+            ? window._t('正在筛选并优化针道', 'Filtering and refining paths')
+            : 'Filtering and refining paths';
+    } else if (stage === 'seed_planning') {
+        label = typeof window._t === 'function'
+            ? window._t('正在优化粒子布局', 'Optimizing seed layout')
+            : 'Optimizing seed layout';
+    } else {
+        label = typeof window._t === 'function'
+            ? window._t('正在可视化规划过程', 'Visualizing planning progress')
+            : 'Visualizing planning progress';
+    }
+    const suffix = typeof window._t === 'function'
+        ? window._t(' · 只读预览', ' · read-only preview')
+        : ' · read-only preview';
+    return `${label}${detail}${suffix}`;
+}
+
+function _showPlanningPreviewStatus(event) {
+    _planningPreviewState.latestEvent = event || _planningPreviewState.latestEvent;
+    const badge = document.getElementById('planningPreviewStatus');
+    if (!badge) return;
+    badge.textContent = _planningPreviewStatusText(_planningPreviewState.latestEvent);
+    badge.hidden = false;
+}
+
+function _hidePlanningPreviewStatus() {
+    const badge = document.getElementById('planningPreviewStatus');
+    if (badge) badge.hidden = true;
+}
+
+function _planningPreviewLine(color, opacity) {
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute([], 3));
+    const material = new THREE.LineBasicMaterial({
+        color,
+        transparent: true,
+        opacity,
+        depthTest: true,
+        depthWrite: false,
+    });
+    const line = new THREE.LineSegments(geometry, material);
+    line.frustumCulled = false;
+    line.renderOrder = 720;
+    line.userData = {
+        ephemeral: true,
+        editable: false,
+        renderRole: 'planning_preview',
+    };
+    return line;
+}
+
+function _ensurePlanningPreviewLayer() {
+    if (typeof THREE === 'undefined') return null;
+    if (typeof init3DScene === 'function') init3DScene();
+    if (!scene3D?.scene) return null;
+    if (_planningPreviewState.group?.parent === scene3D.scene) {
+        _planningPreviewState.group.visible = true;
+        return _planningPreviewState.group;
+    }
+
+    const group = new THREE.Group();
+    group.name = '__planning_preview_ephemeral__';
+    group.userData = {
+        ephemeral: true,
+        editable: false,
+        persistent: false,
+        renderRole: 'planning_preview',
+    };
+    const trajectories = _planningPreviewLine(0x43d8ff, 0.48);
+    const needles = _planningPreviewLine(0xff2f86, 0.9);
+    needles.renderOrder = 721;
+    const seedGeometry = new THREE.CylinderGeometry(0.72, 0.72, 4.5, 8, 1, false);
+    const seedMaterial = new THREE.MeshBasicMaterial({
+        color: 0xffd43b,
+        transparent: true,
+        opacity: 0.96,
+        depthTest: true,
+        depthWrite: false,
+    });
+    const seeds = new THREE.InstancedMesh(seedGeometry, seedMaterial, 256);
+    seeds.count = 0;
+    seeds.frustumCulled = false;
+    seeds.renderOrder = 722;
+    seeds.userData = {
+        ephemeral: true,
+        editable: false,
+        renderRole: 'planning_preview',
+    };
+    group.add(trajectories, needles, seeds);
+    scene3D.scene.add(group);
+    _planningPreviewState.group = group;
+    _planningPreviewState.trajectoryLine = trajectories;
+    _planningPreviewState.needleLine = needles;
+    _planningPreviewState.seedMesh = seeds;
+    return group;
+}
+
+function _setPlanningPreviewLine(line, entries) {
+    if (!line?.geometry) return;
+    const positions = [];
+    (Array.isArray(entries) ? entries : []).forEach(entry => {
+        const points = Array.isArray(entry?.points) ? entry.points : [];
+        for (let index = 1; index < points.length; index += 1) {
+            const from = points[index - 1];
+            const to = points[index];
+            if (!Array.isArray(from) || !Array.isArray(to)) continue;
+            const segment = [...from.slice(0, 3), ...to.slice(0, 3)].map(Number);
+            if (segment.length === 6 && segment.every(Number.isFinite)) {
+                positions.push(...segment);
+            }
+        }
+    });
+    const attribute = new THREE.Float32BufferAttribute(positions, 3);
+    attribute.setUsage(THREE.DynamicDrawUsage);
+    line.geometry.setAttribute('position', attribute);
+    line.geometry.setDrawRange(0, positions.length / 3);
+    line.geometry.computeBoundingSphere();
+    line.visible = positions.length > 0;
+}
+
+function _setPlanningPreviewSeeds(mesh, entries) {
+    if (!mesh) return;
+    const seeds = (Array.isArray(entries) ? entries : []).slice(0, 256);
+    const up = new THREE.Vector3(0, 1, 0);
+    const matrix = new THREE.Matrix4();
+    const quaternion = new THREE.Quaternion();
+    const position = new THREE.Vector3();
+    const scale = new THREE.Vector3(1, 1, 1);
+    let count = 0;
+    seeds.forEach(seed => {
+        const pos = (seed?.position || []).slice(0, 3).map(Number);
+        const dir = (seed?.direction || []).slice(0, 3).map(Number);
+        if (pos.length !== 3 || dir.length !== 3
+            || !pos.every(Number.isFinite) || !dir.every(Number.isFinite)) return;
+        const direction = new THREE.Vector3(...dir);
+        if (direction.lengthSq() < 1e-12) direction.set(0, 0, 1);
+        direction.normalize();
+        quaternion.setFromUnitVectors(up, direction);
+        position.set(...pos);
+        matrix.compose(position, quaternion, scale);
+        mesh.setMatrixAt(count, matrix);
+        count += 1;
+    });
+    mesh.count = count;
+    mesh.instanceMatrix.needsUpdate = true;
+    mesh.visible = count > 0;
+}
+
+function _emptyPlanningPreviewLayer() {
+    const stateRef = _planningPreviewState;
+    _setPlanningPreviewLine(stateRef.trajectoryLine, []);
+    _setPlanningPreviewLine(stateRef.needleLine, []);
+    if (stateRef.seedMesh) {
+        stateRef.seedMesh.count = 0;
+        stateRef.seedMesh.visible = false;
+        stateRef.seedMesh.instanceMatrix.needsUpdate = true;
+    }
+    if (stateRef.group) stateRef.group.visible = false;
+    scene3D?.requestRender?.(2);
+}
+
+function _disposePlanningPreviewLayer() {
+    const group = _planningPreviewState.group;
+    if (group) {
+        try { group.parent?.remove(group); } catch (_) {}
+        group.traverse(object => {
+            try { object.geometry?.dispose?.(); } catch (_) {}
+            const materials = Array.isArray(object.material)
+                ? object.material : [object.material];
+            materials.filter(Boolean).forEach(material => {
+                try { material.dispose?.(); } catch (_) {}
+            });
+        });
+    }
+    _planningPreviewState.group = null;
+    _planningPreviewState.trajectoryLine = null;
+    _planningPreviewState.needleLine = null;
+    _planningPreviewState.seedMesh = null;
+}
+
+function clearPlanningPreview(reason = 'cleared', options = {}) {
+    if (_planningPreviewState.rafId) {
+        cancelAnimationFrame(_planningPreviewState.rafId);
+        _planningPreviewState.rafId = 0;
+    }
+    _planningPreviewState.pendingFrame = null;
+    _emptyPlanningPreviewLayer();
+    _hidePlanningPreviewStatus();
+    if (options.dispose !== false) _disposePlanningPreviewLayer();
+    _planningPreviewState.stage = '';
+    _planningPreviewState.closedStage = '';
+    _planningPreviewState.latestEvent = null;
+    if (options.resetIdentity !== false) {
+        _planningPreviewState.sessionId = '';
+        _planningPreviewState.runId = '';
+        _planningPreviewState.sequence = -1;
+    }
+    if (typeof uiDebugLog === 'function') {
+        uiDebugLog('[planning preview] cleared', reason);
+    }
+    scene3D?.requestRender?.(2);
+}
+
+function _renderPlanningPreviewFrame(event) {
+    const group = _ensurePlanningPreviewLayer();
+    if (!group) return;
+    const geometry = event.geometry && typeof event.geometry === 'object'
+        ? event.geometry : {};
+    group.visible = true;
+    _setPlanningPreviewLine(_planningPreviewState.trajectoryLine, geometry.trajectories);
+    _setPlanningPreviewLine(_planningPreviewState.needleLine, geometry.needles);
+    _setPlanningPreviewSeeds(_planningPreviewState.seedMesh, geometry.seeds);
+    _showPlanningPreviewStatus(event);
+    scene3D?.requestRender?.(2);
+}
+
+function handlePlanningPreviewEvent(event) {
+    if (!event || event.ephemeral !== true || event.editable !== false) return false;
+    const eventSession = String(event.session_id || event.sessionId || '');
+    const currentSession = _planningPreviewCurrentSession();
+    if (eventSession && currentSession && eventSession !== currentSession) return false;
+    const runId = String(event.run_id || event.planning_id || '');
+    const action = String(event.action || 'frame');
+    const sequence = Number(event.sequence);
+
+    if (action === 'start') {
+        if (_planningPreviewState.runId && _planningPreviewState.runId !== runId) {
+            clearPlanningPreview('new-run');
+        }
+        _planningPreviewState.sessionId = eventSession;
+        _planningPreviewState.runId = runId;
+        _planningPreviewState.stage = String(event.stage || 'planning');
+        _planningPreviewState.closedStage = '';
+        _planningPreviewState.sequence = Number.isFinite(sequence)
+            ? sequence : _planningPreviewState.sequence + 1;
+        _ensurePlanningPreviewLayer();
+        if (_planningPreviewState.group) _planningPreviewState.group.visible = true;
+        _showPlanningPreviewStatus(event);
+        return true;
+    }
+
+    if (!_planningPreviewState.runId || _planningPreviewState.runId !== runId) return false;
+    if (Number.isFinite(sequence) && sequence <= _planningPreviewState.sequence) return false;
+    if (Number.isFinite(sequence)) _planningPreviewState.sequence = sequence;
+
+    if (action === 'frame') {
+        if (String(event.stage || '') === _planningPreviewState.closedStage) return false;
+        _planningPreviewState.stage = String(event.stage || _planningPreviewState.stage);
+        _planningPreviewState.pendingFrame = event; // latest-frame queue: capacity 1
+        if (!_planningPreviewState.rafId) {
+            _planningPreviewState.rafId = requestAnimationFrame(() => {
+                _planningPreviewState.rafId = 0;
+                const latest = _planningPreviewState.pendingFrame;
+                _planningPreviewState.pendingFrame = null;
+                if (latest) _renderPlanningPreviewFrame(latest);
+            });
+        }
+        return true;
+    }
+
+    if (action === 'complete') {
+        if (_planningPreviewState.rafId) {
+            cancelAnimationFrame(_planningPreviewState.rafId);
+            _planningPreviewState.rafId = 0;
+        }
+        _planningPreviewState.pendingFrame = null;
+        _planningPreviewState.closedStage = String(event.stage || _planningPreviewState.stage);
+        _emptyPlanningPreviewLayer();
+        _hidePlanningPreviewStatus();
+        _planningPreviewState.latestEvent = null;
+        return true;
+    }
+
+    if (action === 'cleanup') {
+        clearPlanningPreview(String(event.reason || 'run-cleanup'));
+        return true;
+    }
+    return false;
+}
+
+window.handlePlanningPreviewEvent = handlePlanningPreviewEvent;
+window.clearPlanningPreview = clearPlanningPreview;
+window.addEventListener('i18nchange', () => {
+    if (!_planningPreviewState.latestEvent) return;
+    _showPlanningPreviewStatus(_planningPreviewState.latestEvent);
+});
+
 let _planningDoseRefreshPromise = null;
 let _planningDoseRefreshQueued = false;
 
@@ -6093,6 +7077,7 @@ async function _refreshDoseAfterPlanningEvent(detail = {}) {
 if (!window.__brachybotPlanningDoseEventsBound) {
     window.__brachybotPlanningDoseEventsBound = true;
     window.addEventListener('brachybot:planning-run-started', event => {
+        clearPlanningPreview('planning-run-started');
         _invalidateDoseForPlanningRun(event.detail || {});
     });
     window.addEventListener('brachybot:dose-result-updated', event => {
@@ -7532,6 +8517,12 @@ function clearPlanningVisualization() {
     dataTreeState.planning.doseOverlay = null;
     dataTreeState.planning.dvh = null;
     dataTreeState.planning.artifactStatus = {};
+    manualPlanningState.safetyOverride = false;
+    manualPlanningState.safetyWarning = null;
+    manualPlanningState.safetyInterference = null;
+    dataTreeState.planning.safetyOverride = false;
+    dataTreeState.planning.requiresSafetyReview = false;
+    dataTreeState.planning.safetyWarning = null;
     dataTreeState.seeds.loaded = false;
     dataTreeState.needles.loaded = false;
     dataTreeState.dose.loaded = false;
@@ -7596,8 +8587,9 @@ async function deleteSeed3D(seedId) {
     _syncSeedsOverlayFromDataTree();
     renderDataTree();
     try {
-        await _commitManualSeeds('delete', rollbackSeeds);
-        reportUIEvent('manual.seed.delete', seedId, {
+        const committed = await _commitManualSeeds('delete', rollbackSeeds);
+        _reportCommittedManualEvent(committed, 'manual.seed.delete', seedId, {
+            seed_id: seedId,
             trajectory_id: seed.trajectory_id,
             remaining_seeds: dataTreeState.planning.seeds.length,
         });
@@ -7656,7 +8648,8 @@ async function deleteNeedle3D(needleId) {
         const removedSeedCount = Array.isArray(data.removed_seed_ids)
             ? data.removed_seed_ids.length
             : 0;
-        reportUIEvent('manual.needle.delete', requestedNeedleId, {
+        _reportCommittedManualEvent(data, 'manual.needle.delete', requestedNeedleId, {
+            needle_id: requestedNeedleId,
             trajectory_id: trajId,
             remaining_needles: dataTreeState.planning.needles.length,
             remaining_seeds: dataTreeState.planning.seeds.length,
@@ -7790,7 +8783,9 @@ async function restoreNeedleToAlgorithm(needleId) {
             : localize(`${needleId} 已恢复到算法规划位置，相关粒子和剂量已重新计算。`, `${needleId} restored to the algorithm position; associated seeds and dose were recomputed.`);
         _setManualDoseProgress('done', message);
         addChat('system', message);
-        reportUIEvent('manual.needle.restore', needleId, {});
+        _reportCommittedManualEvent(data, 'manual.needle.restore', needleId, {
+            needle_id: needleId,
+        });
         return data;
     } catch (error) {
         if (restoreSessionId !== String(_activeApiSessionId() || '')) return null;

@@ -33,6 +33,8 @@ from .guide_geometry import (
     resolve_parallel_angle_tolerance_deg,
     resolve_parallel_needle_min_distance_mm,
 )
+from .rl_status import finish_rl_status, new_rl_status, set_outcome, update_best
+from .planning_preview import safe_preview
 try:
     from . import reinforcement
 except ImportError:
@@ -3468,6 +3470,8 @@ def hierarchical_planning_rf(
     target_value, in_lowest_dose, out_highest_dose, DVH_rate, distance_map,
     image_normalize_min, image_normalize_max, image_normalize_scale, progressDialog,
     parallel_min_distance_mm=None, parallel_angle_tolerance_deg=None,
+    diagnostics=None,
+    preview_callback=None,
 ):
     """
     Hierarchical reinforcement-learning driver for catheter/needle selection
@@ -3518,6 +3522,40 @@ def hierarchical_planning_rf(
         Best cumulative return achieved.
     """
     rf_params = dict(rf_params or {})
+
+    # ``diagnostics`` is intentionally an in-place, optional argument.  The
+    # legacy API returns only ``(plan, reward)`` and offline callers still
+    # depend on that shape; the interactive pipeline supplies this dict so
+    # the exact stop reason and bounded-work counters survive persistence.
+    rl_started_at = time.monotonic()
+    rl_status = diagnostics if isinstance(diagnostics, dict) else None
+    if rl_status is not None:
+        initial = new_rl_status(DVH_rate)
+        initial.update(rl_status)
+        rl_status.clear()
+        rl_status.update(initial)
+        rl_status.update({
+            "candidate_limit": None,
+            "dense_seed_limit": None,
+            "max_hierarchy_depth": None,
+            "candidate_count": 0,
+            "dense_errors": 0,
+        })
+
+    def _finish(plan, reward, *, execution=None, stop_reason=None):
+        if rl_status is not None:
+            if stop_reason:
+                set_outcome(rl_status, execution=execution, stop_reason=stop_reason)
+            elif execution:
+                set_outcome(rl_status, execution=execution)
+            if (rl_status.get("best_coverage", 0.0) or 0.0) >= float(DVH_rate):
+                set_outcome(
+                    rl_status,
+                    execution="completed",
+                    stop_reason="target_reached",
+                )
+            finish_rl_status(rl_status, rl_started_at)
+        return plan, reward
     
     
     
@@ -3538,6 +3576,10 @@ def hierarchical_planning_rf(
     candidate_limit = _positive_int("candidate_limit", 20)
     dense_seed_limit = _positive_int("dense_seed_limit", 24)
     max_hierarchy_depth = _positive_int("max_hierarchy_depth", 4)
+    if rl_status is not None:
+        rl_status["candidate_limit"] = candidate_limit
+        rl_status["dense_seed_limit"] = dense_seed_limit
+        rl_status["max_hierarchy_depth"] = max_hierarchy_depth
     try:
         max_wall_seconds = float(rf_params.get("max_wall_seconds", 180.0))
     except (TypeError, ValueError):
@@ -3565,12 +3607,18 @@ def hierarchical_planning_rf(
             len(candidate_trajectories), candidate_limit,
         )
         candidate_trajectories = list(candidate_trajectories[:candidate_limit])
+    if rl_status is not None:
+        rl_status["candidate_count"] = len(candidate_trajectories)
 
     # ---- binary target mask & voxel count ----
     mask_volume = (radiation_volume == target_value).astype(float)
     target_v = int(mask_volume.sum())
     if target_v <= 0:
-        return [], -np.inf
+        return _finish(
+            [], -np.inf,
+            execution="failed",
+            stop_reason="no_valid_dense_trajectory",
+        )
     
 
     # ---- 1.  Dense seed evaluation on every candidate trajectory ----
@@ -3590,6 +3638,11 @@ def hierarchical_planning_rf(
             logger.warning(
                 "[rl] Dense trajectory evaluation reached the %.1fs wall-clock budget after %d/%d candidates",
                 max_wall_seconds, idx, len(candidate_trajectories),
+            )
+            set_outcome(
+                rl_status,
+                execution="interrupted",
+                stop_reason="wall_clock_budget",
             )
             break
         try:
@@ -3664,12 +3717,34 @@ def hierarchical_planning_rf(
 
                 traj_with_seeds.append([[[idx, traj, dense_seeds, cur_single_seed_radiations, cur_seeds_radiations]], cur_DVH_rate])
                 total_dense_seeds += len(dense_seeds)
+                safe_preview(preview_callback, {
+                    "phase": "dense_seed_candidates",
+                    "iteration": idx + 1,
+                    "coverage": cur_DVH_rate,
+                    "coordinate_space": "voxel",
+                    "plan": [[traj, dense_seeds, cur_single_seed_radiations]],
+                    "detail": (
+                        f"Dense candidate {idx + 1}/{len(candidate_trajectories)}; "
+                        f"{len(dense_seeds)} seeds"
+                    ),
+                })
+                if rl_status is not None:
+                    rl_status["dense_trajectories_completed"] += 1
+                    rl_status["dense_seed_candidates"] += len(dense_seeds)
+                    update_best(rl_status, cur_DVH_rate, cur_DVH_rate)
                 del radiation, cur_radiation
         except Exception as e:
             from .dose_pre.inference import DoseInferenceDeadlineExceeded
             if isinstance(e, DoseInferenceDeadlineExceeded):
                 logger.warning("[rl] Dense DoseUNet evaluation reached its wall-clock budget")
+                set_outcome(
+                    rl_status,
+                    execution="interrupted",
+                    stop_reason="dose_inference_deadline",
+                )
                 break
+            if rl_status is not None:
+                rl_status["dense_errors"] += 1
             print(f"hierarchical_planning_rf trajectory {idx} error: {str(e)}")
             continue
 
@@ -3677,7 +3752,16 @@ def hierarchical_planning_rf(
 
     if not traj_with_seeds:
         logger.warning("[rl] No trajectory produced a valid dense seed set")
-        return [], -np.inf
+        if rl_status is not None and rl_status.get("_stop_reason") not in {
+            "wall_clock_budget",
+            "dose_inference_deadline",
+        }:
+            set_outcome(
+                rl_status,
+                execution="failed",
+                stop_reason="no_valid_dense_trajectory",
+            )
+        return _finish([], -np.inf)
 
     logger.info(
         "[rl] Dense evaluation retained %d trajectories and %d seed candidates",
@@ -3701,7 +3785,17 @@ def hierarchical_planning_rf(
     else:
         hierarchical_available_traj_with_seeds = traj_with_seeds
 
-    
+    if (
+        not hierarchical_available_traj_with_seeds
+        or not hierarchical_available_traj_with_seeds[-1]
+    ):
+        set_outcome(
+            rl_status,
+            execution="failed",
+            stop_reason="no_available_action",
+        )
+        return _finish([], -np.inf)
+
     target_available_traj_seeds = hierarchical_available_traj_with_seeds[- 1]
     
     target_level = len(target_available_traj_seeds[0][0])
@@ -3760,7 +3854,23 @@ def hierarchical_planning_rf(
         progressDialog,
         deadline=deadline,
         max_actions_per_episode=_positive_int("max_actions_per_episode", 24),
+        diagnostics=rl_status,
+        preview_callback=preview_callback,
     )
+
+    if rl_status is not None:
+        if rl_status.get("_stop_reason") is None:
+            final_coverage = rl_status.get("best_coverage", 0.0) or 0.0
+            set_outcome(
+                rl_status,
+                execution="completed",
+                stop_reason=(
+                    "target_reached"
+                    if final_coverage >= float(DVH_rate)
+                    else "completed_without_target"
+                ),
+            )
+        return _finish(optimal_plan, optimal_reward)
 
     return optimal_plan, optimal_reward
     

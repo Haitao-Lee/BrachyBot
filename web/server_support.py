@@ -33,6 +33,7 @@ from plans.dose_pre.model_loader import (
     dose_gy_to_model,
     resolve_prescription_gy,
 )
+from tool_factory.dose_eval.dvh_utils import build_cumulative_dvh
 
 WEB_DIR = os.path.dirname(os.path.abspath(__file__))
 APP_DIR = os.path.join(WEB_DIR, "app")
@@ -1054,7 +1055,7 @@ def _build_plan_advice(
     elif interference.get("status") == "clear":
         strengths.append(
             f"No seed pair violates the {float(interference.get('minimum_clearance_mm') or 0.5):.1f} mm "
-            "minimum physical surface-clearance rule in the current preview."
+            "minimum physical surface-clearance rule in the current committed plan."
         )
     elif snapshot.get("total_seeds", 0) > 1:
         advice.append("Seed geometry was not available for the monitor; verify seed spacing directly in the 3D viewer.")
@@ -2613,16 +2614,30 @@ def _compute_manual_ai_dose(
                 "ctv_volume_cm3": float(np.sum(ctv_mask > 0) * voxel_vol_cm3),
             })
             dose_max_val = max(600.0, float(np.max(target_doses)) * 1.1, 360.0)
-            centers = np.linspace(0.0, dose_max_val, 601, dtype=np.float32)
-            dvh_data["CTV"] = {
-                "dose_bins": centers.tolist(),
-                "volume_pcts": [float(np.sum(target_doses >= d) / len(target_doses) * 100.0) for d in centers],
-            }
+            exact_dvh_anchors = (
+                prescription_gy,
+                prescription_gy * 1.5,
+                prescription_gy * 2.0,
+                prescription_gy * 0.5,
+            )
+            dvh_data["CTV"] = build_cumulative_dvh(
+                target_doses,
+                dose_min=0.0,
+                dose_max=dose_max_val,
+                num_bins=600,
+                anchor_doses=exact_dvh_anchors,
+            )
 
     oar_metrics: Dict[str, Any] = {}
     if oar_mask is not None:
         labels = [int(v) for v in np.unique(oar_mask) if int(v) > 0]
-        centers = None
+        dose_max_val = max(600.0, float(np.max(dose_gy)) * 1.1, 360.0)
+        exact_dvh_anchors = (
+            prescription_gy,
+            prescription_gy * 1.5,
+            prescription_gy * 2.0,
+            prescription_gy * 0.5,
+        )
         for label in labels:
             mask = oar_mask == label
             od = dose_gy[mask]
@@ -2655,12 +2670,13 @@ def _compute_manual_ai_dose(
                 "volume_cm3": float(np.sum(mask) * voxel_vol_cm3),
                 "volume_voxels": int(np.sum(mask)),
             }
-            if centers is None:
-                centers = np.linspace(0.0, max(600.0, float(np.max(dose_gy)) * 1.1, 360.0), 601, dtype=np.float32)
-            dvh_data[name] = {
-                "dose_bins": centers.tolist(),
-                "volume_pcts": [float(np.sum(od >= d) / len(od) * 100.0) for d in centers],
-            }
+            dvh_data[name] = build_cumulative_dvh(
+                od,
+                dose_min=0.0,
+                dose_max=dose_max_val,
+                num_bins=600,
+                anchor_doses=exact_dvh_anchors,
+            )
     metrics["oar_metrics"] = oar_metrics
     metrics["dvh_data"] = dvh_data
 
@@ -3920,6 +3936,8 @@ def _localize_monitor_text_clean(value: Any, language: str = "en") -> str:
          lambda match: f"CTV V150 \u4e3a {match.group(1)}%\uff0c\u8bf7\u6309\u5f53\u524d\u90e8\u4f4d\u7279\u5f02\u6027\u6807\u51c6\u5224\u65ad\u5747\u5300\u6027\u3002"),
         (r"Plan score is ([0-9.]+)/100; use it as an advisory ranking signal, not approval\.",
          lambda match: f"\u89c4\u5212\u8bc4\u5206\u4e3a {match.group(1)}/100\uff0c\u8be5\u5206\u6570\u4ec5\u7528\u4e8e\u8f85\u52a9\u6392\u5e8f\uff0c\u4e0d\u4ee3\u8868\u4e34\u5e8a\u6279\u51c6\u3002"),
+        (r"No seed pair violates the ([0-9.]+) mm minimum physical surface-clearance rule in the current committed plan\.",
+         lambda match: f"\u5f53\u524d\u5df2\u63d0\u4ea4\u89c4\u5212\u4e2d\u6ca1\u6709\u7c92\u5b50\u5bf9\u8fdd\u53cd {match.group(1)} mm \u7684\u6700\u5c0f\u7269\u7406\u8868\u9762\u95f4\u9699\u8981\u6c42\u3002"),
         (r"(.+) \((.*)\) and (.+) \((.*)\): center distance ([0-9.]+) mm, surface clearance ([0-9.-]+) mm \[(.+)\]\.",
          lambda match: (
              f"\u7c92\u5b50 {match.group(1)}\uff08{match.group(2)}\uff09\u4e0e "
@@ -3985,9 +4003,14 @@ def _format_training_summary_clean(events: list, counts: Dict[str, int], advice:
     else:
         lines = ["## Planning monitoring summary", f"Recorded {len(events)} UI/planning events."]
         headings = ("Activity", "Strengths", "Issues", "Recommendations")
-    if counts:
+    high_value_counts = {
+        key: count for key, count in (counts or {}).items()
+        if key not in {"ui.click", "ui.panel", "ui.change", "ui.slider"}
+    }
+    display_counts = high_value_counts or (counts or {})
+    if display_counts:
         lines.extend(["", f"### {headings[0]}"])
-        for key, count in sorted(counts.items(), key=lambda item: item[1], reverse=True)[:8]:
+        for key, count in sorted(display_counts.items(), key=lambda item: item[1], reverse=True)[:8]:
             lines.append(f"- {_monitor_activity_label_clean(key, language)}: {count}")
     advice = advice or {}
     for heading, key in zip(headings[1:], ("strengths", "issues", "advice")):
@@ -4001,6 +4024,11 @@ def _format_training_summary_clean(events: list, counts: Dict[str, int], advice:
 def _training_feedback_for_event_clean(agent, session_id: Optional[str], event: Dict[str, Any]) -> Optional[str]:
     event_type = str(event.get("type", ""))
     detail = _monitor_event_detail(event)
+    if event_type.startswith("manual.") and detail.get("commit_status") != "committed":
+        # Manual previews can be rejected and rolled back. Monitor only the
+        # server-owned commit event so its advice, screenshot and final counts
+        # can never describe geometry that was not saved.
+        return None
     language = _monitor_language(event.get("language") or detail.get("language"))
     snapshot = _latest_plan_snapshot(agent)
     metrics = snapshot.get("metrics", {}) or {}

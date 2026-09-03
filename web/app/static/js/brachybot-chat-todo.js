@@ -1252,6 +1252,72 @@ function _scheduleCasePlanningRefresh(sessionId, delay = 250) {
     return true;
 }
 
+// A surgical guide is a persisted planning artifact, not a new Planning run.
+// Keep its browser hydration separate from the planning refresh above: the
+// latter deliberately invalidates dose presentation when a new run starts,
+// while generating a guide must leave the already-validated dose untouched.
+// The chat tool path also bypasses the manual HTTP button, so without this
+// case-owned fetch the server can truthfully report a generated guide while
+// the Data Tree and Viewer continue to show the previous scene.
+function _scheduleCaseSurgicalGuideRefresh(sessionId, delay = 0) {
+    const key = String(sessionId || '');
+    if (!key || String(activeSessionId || '') !== key) return false;
+    if (typeof window.loadSurgicalGuideMesh !== 'function'
+        && typeof refreshPlanningUI !== 'function') return false;
+    window._sessionSurgicalGuideRefreshTimers = window._sessionSurgicalGuideRefreshTimers || {};
+    if (window._sessionSurgicalGuideRefreshTimers[key]) return false;
+    window._sessionSurgicalGuideRefreshTimers[key] = setTimeout(async () => {
+        delete window._sessionSurgicalGuideRefreshTimers[key];
+        if (String(activeSessionId || '') !== key) return;
+        try {
+            let loaded = false;
+            // `/surgical-guides/mesh` is the authoritative mesh transport. It
+            // also applies the guide metadata and registers the Data Tree node;
+            // do not send the potentially very large vertex array through the
+            // chat trace itself.
+            if (typeof window.loadSurgicalGuideMesh === 'function') {
+                loaded = await window.loadSurgicalGuideMesh({
+                    sessionId: key,
+                    userInitiated: false,
+                });
+            }
+            // A short publication race can make the mesh request observe the
+            // old alias even though the tool has already yielded its terminal
+            // event. A bounded case refresh retries the same durable source
+            // without auto-generating a second guide or touching report state.
+            if (!loaded && typeof refreshPlanningUI === 'function'
+                && String(activeSessionId || '') === key) {
+                await refreshPlanningUI({
+                    sessionId: key,
+                    retryPending: true,
+                    autoGenerateGuide: false,
+                    preserveViewerState: true,
+                    switchToViewers: false,
+                    preserveReport: true,
+                    reason: 'surgical-guide-tool-complete',
+                });
+            }
+        } catch (error) {
+            console.error('[SSE] surgical guide hydration failed:', error);
+        }
+    }, Math.max(0, Number(delay) || 0));
+    return true;
+}
+
+function _waitForFinalReplyPaint() {
+    return new Promise(resolve => {
+        if (typeof requestAnimationFrame === 'function') {
+            // Let the browser paint the final response bubble first. The
+            // following task then folds the execution trace after the user
+            // has actually seen the answer, rather than merely after the
+            // protocol emitted its Final Response step.
+            requestAnimationFrame(() => setTimeout(resolve, 0));
+        } else {
+            setTimeout(resolve, 0);
+        }
+    });
+}
+
 function _sessionChatQueue(sessionId) {
     const key = String(sessionId || '');
     if (!key) return [];
@@ -1372,28 +1438,38 @@ function _isAdviceRequest(text) {
 window._pendingHiddenChats = window._pendingHiddenChats || [];
 window._hiddenChatFlushRunning = false;
 
-function _isScreenshotAckResponse(text, steps, visualContentResults = []) {
+function _isScreenshotAckResponse(
+    text,
+    steps,
+    visualContentResults = [],
+    responseContract = null,
+    userRequest = '',
+) {
     if (!Array.isArray(steps) || !steps.length) return false;
     const toolSteps = steps.filter(step => step && step.type === 'tool' && step.tool);
     if (!toolSteps.length) return false;
     if (toolSteps.some(step => !['ui_screenshot', 'ui_content'].includes(step.tool))) return false;
     if (toolSteps.some(step => step.status === 'error')) return false;
+    // The server attaches a turn-level contract to the authoritative response
+    // event. A visible question/mixed request must never be reduced to an
+    // attachment-only message, even when the browser also starts a hidden
+    // visual-analysis continuation.
+    if (responseContract && responseContract.text_required === true) return false;
+    const normalized = String(text || '').replace(/\s+/g, ' ').trim().toLowerCase();
+    const transportOnly = !normalized || /^(?:requested screenshot|the screenshot plan|screenshot requested|tools executed|requested ui content|截图计划|已请求截图|已准备截图|正在生成截图)/i.test(normalized);
+    if (!transportOnly) return false;
+    // Legacy responses may not carry a contract. Preserve explanatory text
+    // for a question-shaped request rather than relying on an answer phrase
+    // whitelist. Commands can still use the historical attachment-only UX.
+    if (!responseContract && /(?:[?？]\s*$|(?:吗|呢|是不是|是否|为什么|为何|哪里|哪儿|怎么|如何|什么|哪个|哪些|多少)|\b(?:what|which|where|when|why|who|how|whether|can|could|is|are)\b)/i.test(String(userRequest || '').trim())) {
+        return false;
+    }
     // A persisted visual attachment follows the same two-stage protocol as a
     // live screenshot: the first response only confirms that evidence was
     // collected, and the hidden child supplies the actual interpretation.
     // Never hide a substantive answer from a mixed clinical/tool turn.
     return toolSteps.some(step => step.tool === 'ui_screenshot')
         || (Array.isArray(visualContentResults) && visualContentResults.length > 0);
-}
-
-function _isVisualAnalysisRequest(text) {
-    const value = String(text || '').trim();
-    // Keep the detector ASCII-safe because some legacy bundles were saved
-    // with a mismatched console encoding. Unicode escapes still match the
-    // actual Chinese user input in the browser.
-    if (/(?:\u4ecb\u7ecd|\u5206\u6790|\u89e3\u8bfb|\u8bf4\u660e|\u63cf\u8ff0|\u770b\u5230\u4e86\u4ec0\u4e48|\u770b\u5230\u4ec0\u4e48|\u8bc4\u4ef7|\u8bc4\u4f30|\u5224\u65ad|\u7ed3\u679c\u5982\u4f55|\u6709\u4ec0\u4e48\u95ee\u9898)/.test(value)) return true;
-    return /\b(?:analy[sz]e|describe|interpret|assess|evaluate|what do you see|explain|findings?)\b/i.test(value)
-        || /(?:介绍|分析|解读|说明|描述|看到了什么|看到什么|评价|评估|判断|结果如何|有什么问题)/.test(value);
 }
 
 function _normalizeScreenshotRequestTarget(target, question) {
@@ -1469,11 +1545,67 @@ window._cancelVisualFollowups = _cancelVisualFollowups;
 // analyzed.  The URLs are resolved and converted to image blocks by the
 // server-side LLM runtime, while this browser layer keeps the follow-up hidden
 // from the ordinary chat stream and preserves the owning reply identity.
+function _visualEvidenceDescriptor(item, index = 0, includeAll = false) {
+    if (!item || !item.url) return null;
+    const metadata = item.view_metadata || item.viewMetadata || {};
+    const explicitAnalysis = item.analysis_required ?? item.analysisRequired
+        ?? metadata.analysis_required ?? metadata.analysisRequired;
+    const analysisRequired = explicitAnalysis === true
+        || (explicitAnalysis !== false && (item.visual_analysis === true || includeAll));
+    if (!analysisRequired) return null;
+    const annotationPolicy = String(
+        item.annotation_policy || item.annotationPolicy
+        || metadata.annotation_policy || metadata.annotationPolicy || 'auto'
+    ).toLowerCase();
+    const visualPurpose = String(
+        item.visual_purpose || item.visualPurpose
+        || metadata.visual_purpose || metadata.visualPurpose || 'explain'
+    ).toLowerCase();
+    const manifest = metadata.grounding_manifest || metadata.groundingManifest
+        || item.grounding_manifest || item.groundingManifest || { version: 1, targets: [] };
+    const manifestTargets = Array.isArray(manifest?.targets) ? manifest.targets : [];
+    const annotatableCount = manifestTargets.filter(target => target?.annotatable === true).length;
+    const score = (annotationPolicy === 'required' ? 100 : annotationPolicy === 'auto' ? 20 : 0)
+        + (visualPurpose === 'locate' ? 60 : visualPurpose === 'explain' ? 35 : 10)
+        + Math.min(20, annotatableCount * 5);
+    return {
+        source: item,
+        index,
+        score,
+        attachment_id: String(item.id || item.attachment_id || item.attachmentId || `evidence-${index}`),
+        url: String(item.url || ''),
+        target: String(item.target || metadata.target || ''),
+        title: String(item.title || item.label || metadata.title || metadata.label || ''),
+        annotation_policy: ['none', 'auto', 'required'].includes(annotationPolicy)
+            ? annotationPolicy : 'auto',
+        visual_purpose: ['overview', 'locate', 'explain', 'compare', 'verify', 'document'].includes(visualPurpose)
+            ? visualPurpose : 'explain',
+        analysis_required: true,
+        planning_id: String(item.planning_id || item.planningId || metadata.planning_id || metadata.planningId || ''),
+        data_version: String(item.data_version || item.dataVersion || metadata.data_version || metadata.dataVersion || ''),
+        grounding_manifest: manifest,
+    };
+}
+
+function _visualAttachmentRequiresAnalysis(item) {
+    return !!_visualEvidenceDescriptor(item, 0, false);
+}
+
 function _queueVisualAnalysisFollowUp(attachments, userText, turnIdentity, options = {}) {
-    const visualEvidence = (Array.isArray(attachments) ? attachments : [])
-        .filter(item => item && item.url && (item.visual_analysis === true || options.includeAll === true));
-    const uniqueUrls = [...new Set(visualEvidence.map(item => String(item.url || '')).filter(Boolean))].slice(0, 4);
-    if (!uniqueUrls.length) return false;
+    const candidates = (Array.isArray(attachments) ? attachments : [])
+        .map((item, index) => _visualEvidenceDescriptor(item, index, options.includeAll === true))
+        .filter(Boolean);
+    const byUrl = new Map();
+    candidates.forEach(candidate => {
+        const current = byUrl.get(candidate.url);
+        if (!current || candidate.score > current.score) byUrl.set(candidate.url, candidate);
+    });
+    const selectedEvidence = [...byUrl.values()]
+        .sort((left, right) => right.score - left.score || left.index - right.index)
+        .slice(0, 4);
+    const uniqueUrls = selectedEvidence.map(item => item.url);
+    if (!selectedEvidence.length) return false;
+    const visualEvidence = selectedEvidence.map(item => item.source);
     const visualAttachmentLabels = [...new Set(visualEvidence.flatMap(item => {
         const metadata = item.view_metadata || item.viewMetadata || {};
         const target = String(item.target || metadata.target || '').toLowerCase();
@@ -1520,10 +1652,12 @@ function _queueVisualAnalysisFollowUp(attachments, userText, turnIdentity, optio
     // visual context and reconstructs an ephemeral multimodal prompt only
     // inside the child worker.
     const visualContext = {
-        version: 1,
+        version: 2,
+        evidence: selectedEvidence.map(({ source, index, score, ...descriptor }) => descriptor),
         evidence_urls: uniqueUrls,
         parent_request: String(userText || '').trim(),
         attachment_labels: visualAttachmentLabels,
+        omitted_count: Math.max(0, byUrl.size - selectedEvidence.length),
     };
     const followupRequestId = typeof createChatIdentity === 'function'
         ? createChatIdentity('visual-followup')
@@ -1548,6 +1682,7 @@ function _queueVisualAnalysisFollowUp(attachments, userText, turnIdentity, optio
             responseLanguage: turnIdentity?.responseLanguage || '',
             screenshotMode: options.screenshotMode || 'chat',
             visualAttachmentLabels,
+            visualEvidence,
             visualContext,
             sessionId: ownerSessionId,
         },
@@ -1665,6 +1800,7 @@ async function sendChat(prefill, options) {
     const input = document.getElementById('chatInput');
     const isResumingTask = !!opts.resumeTaskId;
     const isInternalFollowup = !!opts.internalFollowup || !!opts.visualFollowUp;
+    if (!isInternalFollowup) window._lastLLMMeta = null;
     const parentRequestId = String(opts.parentRequestId || opts.parent_request_id || '');
     const parentUserMessageId = String(opts.parentUserMessageId || opts.parent_user_message_id || '');
     const parentAssistantMessageId = String(opts.parentAssistantMessageId || opts.parent_assistant_message_id || '');
@@ -1879,6 +2015,19 @@ async function sendChat(prefill, options) {
     const detectedTurnLanguage = typeof detectConversationLanguage === 'function'
         ? detectConversationLanguage(text)
         : '';
+    const conversationFallbackLanguage = typeof conversationLanguageForSession === 'function'
+        ? conversationLanguageForSession(turnSessionId)
+        : '';
+    // A visible user's latest language-bearing text wins over every persisted
+    // or UI hint. Hidden visual children are the exception: their text is an
+    // internal generated prompt and must keep the parent's language.
+    const turnResponseLanguage = isInternalFollowup
+        ? (opts.responseLanguage || conversationFallbackLanguage || effectiveUiLanguage() || '')
+        : (detectedTurnLanguage
+            || opts.responseLanguage
+            || conversationFallbackLanguage
+            || effectiveUiLanguage()
+            || '');
     const displayRequestId = isInternalFollowup && parentRequestId
         ? parentRequestId : turnRequestId;
     const displayUserMessageId = isInternalFollowup && parentUserMessageId
@@ -1893,14 +2042,7 @@ async function sendChat(prefill, options) {
         userMessageId: displayUserMessageId,
         messageId: displayAssistantMessageId,
         sessionId: turnSessionId,
-        responseLanguage: opts.responseLanguage
-            || detectedTurnLanguage
-            || (typeof conversationLanguageForSession === 'function'
-                ? conversationLanguageForSession(turnSessionId)
-                : '')
-            || window._responseLanguage
-            || window._i18nLang
-            || '',
+        responseLanguage: turnResponseLanguage,
     };
     if (!isInternalFollowup && !opts.hiddenUserMessage && !isResumingTask && typeof addChat === 'function') {
         addChat('user', text, true, Date.now(), false, turnSessionId, {
@@ -2077,9 +2219,25 @@ async function sendChat(prefill, options) {
         'trajectory_refine', 'seed_planning', 'dose_calc', 'dose_eval',
         'manual_planning', 'intraoperative_replan',
     ]);
+    const GUIDE_EVENT_TOOLS = new Set(['surgical_guide']);
+    const GUIDE_TERMINAL_STATUSES = new Set(['done', 'completed', 'ready']);
     let turnSawPlanningWork = false;
+    let turnSawSurgicalGuideWork = false;
     let turnPlanningRunStarted = false;
     const turnDoseEvents = new Set();
+    const isCompletedGuideEvent = eventData => {
+        if (!eventData || typeof eventData !== 'object') return false;
+        const tool = String(
+            eventData.tool || eventData.tool_name || eventData.function_name
+            || eventData.function || eventData.name || eventData.parent_tool
+            || eventData.parentTool || '',
+        ).trim();
+        const status = String(
+            eventData.status || eventData.state || eventData.phase
+            || eventData.result?.status || eventData.metadata?.status || '',
+        ).trim().toLowerCase();
+        return GUIDE_EVENT_TOOLS.has(tool) && GUIDE_TERMINAL_STATUSES.has(status);
+    };
     const markPlanningEvent = (eventData) => {
         if (!eventData || typeof eventData !== 'object') return false;
         // Different server generations use tool, tool_name, function_name,
@@ -2348,6 +2506,10 @@ async function sendChat(prefill, options) {
                         ui_state: uiState,
                         stream: true,
                         clear_context: false,
+                        // Global UI locale is only the backend fallback for a
+                        // new/ambiguous turn. It never overrides the latest
+                        // language-bearing user message.
+                        ui_language: effectiveUiLanguage(),
                         request_id: turnRequestId,
                         user_message_id: turnUserMessageId,
                         assistant_message_id: turnAssistantMessageId,
@@ -2512,11 +2674,36 @@ async function sendChat(prefill, options) {
                     let data = null;
                     try { data = JSON.parse(dataStr); } catch (_) { continue; }
 
+                    if (currentEvent === 'planning_preview' && data) {
+                        // Preview frames are a separate, read-only Viewer
+                        // transport. They never become trace steps, chat text,
+                        // Data Tree rows, or planning-refresh triggers.
+                        if (typeof window.handlePlanningPreviewEvent === 'function') {
+                            window.handlePlanningPreviewEvent({
+                                ...data,
+                                session_id: data.session_id || turnSessionId,
+                                request_id: turnRequestId,
+                            });
+                        }
+                        continue;
+                    }
+
                     // Providers may label the same tool progress as step,
                     // tool, or a compact response event. Record the planning
                     // family before branching on the event name so every
                     // representation reaches the same refresh path.
-                    if (data && typeof data === 'object') markPlanningEvent(data);
+                    if (data && typeof data === 'object') {
+                        markPlanningEvent(data);
+                        // Guide completion is deliberately handled outside
+                        // the `step` branch as well. Providers may emit the
+                        // terminal tool envelope as `tool`, `progress`, or a
+                        // compact event without a trace step; all of them
+                        // must hydrate the persisted mesh.
+                        if (isCompletedGuideEvent(data)) {
+                            turnSawSurgicalGuideWork = true;
+                            _scheduleCaseSurgicalGuideRefresh(turnSessionId, 0);
+                        }
+                    }
 
                     if (currentEvent === 'task_meta' && data) {
                         if (data.task_id && data.session_id) {
@@ -2531,14 +2718,10 @@ async function sendChat(prefill, options) {
                         if (!text && data.message) text = String(data.message);
                     }
                     if (currentEvent === 'start' && data) {
-                        // The server detected the input language and
-                        // sent it in the start event. The frontend
-                        // uses this for the todo list labels,
-                        // status messages, and any other UI text.
-                        // Without this, the user would see English
-                        // user input → Chinese todo entries → Chinese
-                        // LLM reply, which is a top-level consistency
-                        // bug.
+                        // The start event carries the dialogue language for
+                        // this turn. Keep it on the chat/trace identity only;
+                        // the persistent todo dock and every non-dialogue
+                        // panel continue to follow the global EN/中 selector.
                         if (data.language && data.language.code) {
                             window._responseLanguage = data.language.code;
                             turnIdentity.responseLanguage = data.language.code;
@@ -2648,29 +2831,13 @@ async function sendChat(prefill, options) {
                             }
                             if (todo) {
                                 _todoUpdateFromStep(todo, data);
-                                // Fold the todo when the final assistant
-                                // step arrives. The todo remains in its
-                                // dedicated dock; moving it into a message
-                                // row would resize both flex regions during
-                                // streaming and invalidate the bottom anchor.
-                                if (data.type === 'assistant' && data.status === 'done') {
-                                    todo.fold();
-                                    // Also fold the thinking chain RIGHT
-                                    // NOW (not 500ms later) so the chain
-                                    // doesn't visually compete with the
-                                    // final reply bubble. Without this,
-                                    // the user sees the 11 unrolled tool
-                                    // calls for ~500ms before auto-fold.
-                                    if (chainEl) {
-                                        const _t = chainEl.querySelector('.thinking-toggle');
-                                        const _s = chainEl.querySelector('.thinking-steps');
-                                        if (_t) _t.classList.remove('expanded');
-                                        if (_s) {
-                                            _s.classList.remove('expanded');
-                                            _s.querySelectorAll('.step-body').forEach(b => b.classList.remove('expanded'));
-                                        }
-                                    }
-                                }
+                                // `Final Response` is emitted as an assistant
+                                // step before the response bubble is finalized
+                                // in the DOM. It is a protocol milestone, not
+                                // proof that the user can already see the
+                                // answer. Keep both progress surfaces open;
+                                // the fold is performed after the final reply
+                                // and its footer have been committed below.
                             }
                             // MARK FOR RETRY: just record that a
                             // Quality Review reject happened. We do NOT
@@ -2944,6 +3111,13 @@ async function sendChat(prefill, options) {
                                 uiDebugLog('[SSE-STEP] Planning tool/substep done:', data.tool, 'parent_tool:', data.parent_tool, '- scheduling refreshPlanningUI');
                                 _scheduleCasePlanningRefresh(turnSessionId, 300);
                             }
+                            // Chat-driven guide generation does not emit a new
+                            // Planning run. Hydrate its persisted mesh
+                            // explicitly so a successful tool result is also
+                            // visible in the Data Tree, 3D Viewer, and MPR
+                            // projection. Keep this out of isPlanDone: a guide
+                            // refresh must not invalidate the dose overlay or
+                            // start a second guide generation.
                             // SEGMENTATION TOOLS: after CTV/OAR seg completes,
                             // load label volumes so masks appear in viewer + data tree.
                             // Without this, masks are stored server-side but never
@@ -3045,7 +3219,8 @@ async function sendChat(prefill, options) {
                             updateStreamingResponse(responseEl, responseText);
                         }
                         scrollToBottom();
-                    } else if (currentEvent === 'response' && data && data.response) {
+                    } else if (currentEvent === 'response' && data
+                        && Object.prototype.hasOwnProperty.call(data, 'response')) {
                         // The final response event is emitted only after the
                         // required review gate. Create the answer bubble here,
                         // rather than on the first draft chunk.
@@ -3088,8 +3263,17 @@ async function sendChat(prefill, options) {
                             uiDebugLog('[SSE-response] Planning work detected; scheduling result refresh');
                             _scheduleCasePlanningRefresh(turnSessionId, 350);
                         }
+                        if (turnSawSurgicalGuideWork) {
+                            // The tool completion event normally schedules
+                            // this already. Re-arming at the response boundary
+                            // covers a replay/publication race without
+                            // issuing duplicate requests while the first
+                            // case-owned load is still pending.
+                            _scheduleCaseSurgicalGuideRefresh(turnSessionId, 0);
+                        }
                     } else if (currentEvent === 'error' && data && data.message) {
                         turnFailed = true;
+                        try { window.clearPlanningPreview?.('stream-error'); } catch (_) {}
                         _setCaseTaskState(turnSessionId, 'failed', null);
                         console.warn('[chat] SSE request failed', {
                             sessionId: turnSessionId,
@@ -3112,6 +3296,7 @@ async function sendChat(prefill, options) {
                         const terminalStatus = turnCancelled ? 'cancelled' : (turnFailed ? 'failed' : 'completed');
                         _setCaseTaskState(turnSessionId, terminalStatus, null);
                         delete window._detachedChatTasks[turnSessionId];
+                        try { window.clearPlanningPreview?.('stream-complete'); } catch (_) {}
                         if (turnCancelled) {
                             // A replaying browser can receive the terminal
                             // cancellation event without having initiated the
@@ -3140,6 +3325,10 @@ async function sendChat(prefill, options) {
                         if (_planningToolsInSteps.length > 0 || turnSawPlanningWork) {
                             uiDebugLog('[SSE-done] Triggering fallback refreshPlanningUI');
                             _scheduleCasePlanningRefresh(turnSessionId, 500);
+                        }
+                        const _guideToolsInSteps = steps.filter(isCompletedGuideEvent);
+                        if (_guideToolsInSteps.length > 0 || turnSawSurgicalGuideWork) {
+                            _scheduleCaseSurgicalGuideRefresh(turnSessionId, 0);
                         }
                         // Do not wait for a post-terminal chunk.  Flask may
                         // keep the HTTP connection reusable, but the chat
@@ -3237,13 +3426,15 @@ async function sendChat(prefill, options) {
         // captures have uploaded. The hidden request is intentionally not a
         // new screenshot command, so the model must analyze the image and the
         // completeness checker can validate the actual user request.
-        const shouldAnalyzeVisualEvidence = (
-            !isInternalFollowup
-            && ((screenshotResults.length && _isVisualAnalysisRequest(text))
-                || visualContentResults.length > 0)
-        );
+        const allVisualEvidence = screenshotResults.concat(visualContentResults);
+        // The screenshot tool's semantic contract decides whether the image
+        // needs interpretation. Do not infer that decision from a phrase
+        // whitelist in the user's text: the same question can be phrased in
+        // any language, and an imperative capture can explicitly opt out.
+        const shouldAnalyzeVisualEvidence = !isInternalFollowup
+            && allVisualEvidence.some(_visualAttachmentRequiresAnalysis);
         const visualAnalysisQueued = shouldAnalyzeVisualEvidence && _queueVisualAnalysisFollowUp(
-            screenshotResults.concat(visualContentResults),
+            allVisualEvidence,
             text,
             turnIdentity,
             {
@@ -3257,9 +3448,7 @@ async function sendChat(prefill, options) {
         // if the child was already queued by an SSE replay; otherwise an
         // acknowledgement can overwrite the eventual analysis in the same
         // assistant reply.
-        const visualAnalysisContinuation = shouldAnalyzeVisualEvidence && (
-            screenshotResults.length > 0 || visualContentResults.length > 0
-        );
+        const visualAnalysisContinuation = shouldAnalyzeVisualEvidence;
         if (visualAnalysisQueued) {
             uiDebugLog('[visual-followup] queued for parent request:', turnIdentity?.requestId || '');
         }
@@ -3269,13 +3458,11 @@ async function sendChat(prefill, options) {
             if (thinkingEl && typeof removeThinkingIndicator === 'function') removeThinkingIndicator(thinkingEl);
         }
 
-        // SAFETY: fold the todo when the stream ends, even if the
-        // server never sent the final 'assistant' event (e.g.
-        // network drop, timeout, crash). Without this, the todo
-        // stays unfolded with timers running forever.
-        if (todo && typeof todo.fold === 'function') {
-            try { todo.fold(); } catch (_) {}
-        }
+        // Do not fold here. This block runs before the final response bubble
+        // and its usage footer are committed to the DOM. The terminal stream
+        // boundary alone is not a user-visible reply boundary; the fold is
+        // performed after the response/footer below (and on the terminal
+        // error path in finally).
 
         // BUG FIX 2026-06-16 (todo accumulation): if the LLM never
         // called any tool, no todo was created for this turn. Hide
@@ -3320,18 +3507,20 @@ async function sendChat(prefill, options) {
         // capture phase; keep the chat clean and show the later multimodal
         // answer instead. For a pure screenshot request the gallery itself is
         // the answer, matching the existing UI behavior.
+        const responseContract = window._lastLLMMeta?.response_contract || null;
         const suppressScreenshotAck = visualAnalysisContinuation || _isScreenshotAckResponse(
             renderedFinalText,
             steps,
             visualContentResults,
+            responseContract,
+            text,
         );
         if (!suppressScreenshotAck) {
             // The browser is authoritative for persisted Session content. Its
             // result replaces only an empty/internal acknowledgement, never a
             // substantive analysis written by the model.
             if (presentationMessage && (
-                isPresentationOnlyTurn
-                || !renderedFinalText.trim()
+                !renderedFinalText.trim()
                 || genericFinalResponse.test(renderedFinalText.trim())
             )) {
                 renderedFinalText = presentationMessage;
@@ -3373,6 +3562,37 @@ async function sendChat(prefill, options) {
             responseEl = null;
         }
         if (isInternalFollowup) {
+            const visualEnvelope = typeof window.parseVisualResponseEnvelope === 'function'
+                ? window.parseVisualResponseEnvelope(renderedFinalText)
+                : null;
+            if (visualEnvelope) {
+                renderedFinalText = String(
+                    visualEnvelope.answer_text
+                    || _visualAnalysisUnavailableMessage(turnSessionId, turnIdentity.responseLanguage)
+                );
+                if (typeof window.applyVisualResponseAnnotations === 'function') {
+                    try {
+                        const annotationResult = await window.applyVisualResponseAnnotations(
+                            visualEnvelope,
+                            opts.visualEvidence || [],
+                            {
+                                sessionId: turnSessionId,
+                                requestId: turnIdentity.requestId,
+                                messageId: turnIdentity.messageId,
+                                responseLanguage: turnIdentity.responseLanguage,
+                            },
+                        );
+                        if (annotationResult?.notice) {
+                            renderedFinalText = `${renderedFinalText.trim()}\n\n${annotationResult.notice}`.trim();
+                        }
+                    } catch (error) {
+                        // Annotation is a presentation enhancement. The model's
+                        // textual answer and immutable source screenshots must
+                        // still be delivered if drawing or persistence fails.
+                        console.warn('[visual annotation] follow-up rendering failed:', error);
+                    }
+                }
+            }
             renderedFinalText = _stripVisualAttachmentEchoes(
                 renderedFinalText,
                 opts.visualAttachmentLabels || [],
@@ -3436,6 +3656,18 @@ async function sendChat(prefill, options) {
                 }
             } catch (_) { /* footer is best-effort */ }
         }
+
+        // The assistant "Final Response" step is emitted before the browser
+        // finishes rendering the answer. Wait for one paint boundary after
+        // the bubble/footer is in the DOM, then fold the trace. This keeps
+        // the execution history open while the answer is still arriving and
+        // avoids the impression that the request ended early.
+        if (todo && typeof todo.fold === 'function' && !reconnectNeeded && turnCompleted) {
+            await _waitForFinalReplyPaint();
+            if (String(activeSessionId || '') === turnSessionId) {
+                try { todo.fold(); } catch (_) {}
+            }
+        }
     } catch (e) {
         const detached = window._chatDetachRequestedFor === turnSessionId
             || String(activeSessionId || '') !== turnSessionId;
@@ -3472,6 +3704,7 @@ async function sendChat(prefill, options) {
             || /abort|timed out|network|fetch/i.test(String(e?.message || ''));
 
         if (explicitlyStopped) {
+            try { window.clearPlanningPreview?.('explicit-stop'); } catch (_) {}
             cancelTurnUi('Stopped');
             _setCaseTaskState(turnSessionId, 'cancelled', null);
             if (!isInternalFollowup && typeof addChat === 'function') {
@@ -3494,6 +3727,7 @@ async function sendChat(prefill, options) {
                 _addTaskRecoveryNotice(turnSessionId, effectiveTaskId, 'reconnecting');
             } else {
                 turnFailed = true;
+                try { window.clearPlanningPreview?.('stream-recovery-failed'); } catch (_) {}
                 _setCaseTaskState(turnSessionId, 'failed', null);
                 console.warn('[chat] Stream recovery could not locate a task', e);
                 if (typeof addChat === 'function') {
@@ -3503,6 +3737,7 @@ async function sendChat(prefill, options) {
             }
         } else {
             turnFailed = true;
+            try { window.clearPlanningPreview?.('request-failed'); } catch (_) {}
             _setCaseTaskState(turnSessionId, 'failed', null);
             console.warn('[chat] Send failed', e);
             if (typeof addChat === 'function') {
@@ -3549,11 +3784,17 @@ async function sendChat(prefill, options) {
                         s.status = 'done';
                     }
                 }
-                // Collapse the thinking chain when the send button transitions
-                // back to ready state, so the user sees the full response and
-                // footer before the trace folds.
-                if (chainEl && typeof finalizeThinkingChain === 'function') {
+                // Collapse only after a terminal response/error. A reconnect
+                // is still an active server task: leave its trace expanded so
+                // the user can see that recovery is in progress.
+                const traceTerminal = !reconnectNeeded
+                    && (turnCompleted || turnFailed || turnCancelled);
+                if (traceTerminal && chainEl && typeof finalizeThinkingChain === 'function') {
                     finalizeThinkingChain(chainEl, headerEl, steps);
+                }
+                if (traceTerminal && (turnFailed || turnCancelled)
+                    && todo && typeof todo.fold === 'function') {
+                    try { todo.fold(); } catch (_) {}
                 }
                 try {
                     saveSessionMessage('thinking', '', steps, Date.now(), turnSessionId, {

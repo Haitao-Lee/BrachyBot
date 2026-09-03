@@ -1045,14 +1045,39 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
                 "params": allowed_params,
             }]
 
-        if not tool_calls or not self._planning_requested(message, tool_calls):
+        if not tool_calls:
             return tool_calls
+
+        planning_requested = self._planning_requested(message, tool_calls)
+        if not planning_requested:
+            # Preserve an LLM's semantic decision to run OAR segmentation,
+            # but cap the result at structures explicitly named by the user.
+            # This is intentionally a tool-contract normalization rather than
+            # a response shortcut: it applies equally to streamed, normal,
+            # and direct calls before anything can reach persistence.
+            normalized = []
+            for call in tool_calls:
+                if not isinstance(call, dict):
+                    normalized.append(call)
+                    continue
+                normalized_call = dict(call)
+                if str(normalized_call.get("tool") or "") == "oar_segmentation":
+                    normalized_call["params"] = self._normalize_oar_tool_params(
+                        normalized_call.get("params") or {},
+                        message=message,
+                    )
+                normalized.append(normalized_call)
+            return normalized
 
         planning_tools = {"planning_pipeline", "seed_planning", "dose_engine", "dose_evaluation", "dose_calc"}
         ctv_ready = self.memory.retrieve("ctv_array") is not None
-        oar_ready = self.memory.retrieve("oar_array") is not None and (
-            bool(self.memory.retrieve("oar_is_full"))
-            or len(self.memory.retrieve("organ_names") or {}) >= 5
+        # Fullness is authoritative provenance, not a label-count heuristic.
+        # A focused request can legitimately contain many labels (for example
+        # all lung lobes or vertebrae); it must never satisfy the safety
+        # prerequisite for treatment planning merely because it has >= 5 rows.
+        oar_ready = (
+            self.memory.retrieve("oar_array") is not None
+            and bool(self.memory.retrieve("oar_is_full"))
         )
         planning_ready = self._has_completed_planning()
         replan_requested = self._is_replan_request(message)
@@ -1102,6 +1127,16 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
                     guide_call = clone_call(tc)
             else:
                 rest.append(tc)
+
+        # Treatment planning requires the complete safety structure set. A
+        # focused diagnostic segmentation from the same conversational turn
+        # must never leak through to a later planning prerequisite.
+        if "oar_segmentation" in by_tool:
+            for key in (
+                "organ_filter", "organs", "target_organs", "requested_organs",
+                "requested_structures", "structures",
+            ):
+                by_tool["oar_segmentation"]["params"].pop(key, None)
 
         def ensure_call(tool_name, params):
             call = by_tool.get(tool_name)
@@ -1298,7 +1333,14 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
         )
         return candidates, context
 
-    def _execute_tool_with_memory(self, tool_name: str, params: Dict, progress_callback=None, step_callback=None) -> Any:
+    def _execute_tool_with_memory(
+        self,
+        tool_name: str,
+        params: Dict,
+        progress_callback=None,
+        step_callback=None,
+        preview_callback=None,
+    ) -> Any:
         """Execute a tool, automatically injecting memory-stored data.
 
         step_callback (optional): callable(substep_name, status, content)
@@ -1308,6 +1350,11 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
         dose_eval). The streaming wrapper drains these into the SSE
         stream so the todo list ticks through the sub-steps with the
         breathing animation.
+
+        preview_callback (optional): callable(payload) used only by
+        planning_pipeline to publish sampled, read-only geometry observations.
+        It is an invocation-local transport observer and is never stored in
+        AgentMemory or included in a Planning snapshot.
 
         BUG FIX 2026-06-16 (planning_pipeline needs CTV first):
         when the LLM calls planning_pipeline / seed_planning /
@@ -1459,13 +1506,23 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
                 if params["tumor_type"]:
                     self.memory.store("tumor_type_used", params["tumor_type"])
         elif tool_name == "oar_segmentation":
+            # Normalize the public OAR subset contract at the final execution
+            # boundary. Calls arriving from the LLM, deterministic fast path,
+            # or legacy workflow now all use the same canonical labels.
+            normalized_oar_params = self._normalize_oar_tool_params(params)
+            params.clear()
+            params.update(normalized_oar_params)
             # Same: always force-inject LPI-oriented CT
             if ct_image is not None:
                 params["image"] = ct_image
-            if "label_path" not in params:
+            if "label_path" not in params and not params.get("organ_filter"):
                 # Manual OAR uploads use the same durable case workspace as
                 # CTV uploads. Inject the case-owned path so a later chat
                 # command cannot silently fall back to model segmentation.
+                # A named anatomy request is different: an opaque uploaded
+                # label set cannot safely be filtered by an anatomical name,
+                # so it must run the model rather than silently restore every
+                # uploaded OAR to the Data Tree.
                 oar_label_path = self.memory.retrieve("oar_path") or self.memory.retrieve("oar_mask_path")
                 if oar_label_path:
                     params["label_path"] = oar_label_path
@@ -1547,6 +1604,8 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
         # refusing to call the tool.
         if step_callback is not None and tool_name == "planning_pipeline":
             params["step_callback"] = step_callback
+        if preview_callback is not None and tool_name == "planning_pipeline":
+            params["preview_callback"] = preview_callback
         # Pass agent reference so planning_pipeline can access CTV/OAR
         # from memory without relying on _global_agent (which may not
         # be set in all code paths).
@@ -1603,10 +1662,16 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
             _existing_oar = self.memory.retrieve("oar_array")
             _existing_names = self.memory.retrieve("organ_names") or {}
             _existing_path = self.memory.retrieve("ct_path")
+            _requested_oar_filter = params.get("organ_filter")
             # Fullness is an explicit provenance flag. Organ count is not a
             # reliable proxy because model/task variants legitimately expose
             # different label sets.
-            if _existing_oar is not None and bool(self.memory.retrieve("oar_is_full")) and not force_reexecution:
+            if (
+                _existing_oar is not None
+                and bool(self.memory.retrieve("oar_is_full"))
+                and not force_reexecution
+                and not _requested_oar_filter
+            ):
                 _req_path = params.get("image_path", _existing_path)
                 if _req_path in (None, _existing_path):
                     logger.info(
@@ -1629,6 +1694,9 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
                             "organ_names": _existing_names,
                             "organ_counts": self.memory.retrieve("organ_counts") or {},
                             "skipped_duplicate": True,
+                            "oar_is_full": True,
+                            "oar_scope": "full",
+                            "requested_organs": [],
                         },
                     )
                     _skip_tool = True
@@ -1848,7 +1916,17 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
                 )
                 if metadata.get("oar_mask_provenance") is not None:
                     self.memory.store("oar_mask_provenance", metadata["oar_mask_provenance"])
-                self.memory.store("oar_is_full", True)
+                oar_is_full = bool(
+                    metadata.get("oar_is_full", not bool(params.get("organ_filter")))
+                )
+                self.memory.store("oar_is_full", oar_is_full)
+                self.memory.store("oar_scope", metadata.get("oar_scope") or (
+                    "full" if oar_is_full else "focused"
+                ))
+                self.memory.store(
+                    "oar_requested_organs",
+                    list(metadata.get("requested_organs") or params.get("organ_filter") or []),
+                )
                 from web.structure_service import replace_structure_source
                 replace_structure_source(self.memory, "oar")
 
@@ -2196,7 +2274,7 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
         sanitized = {}
         for key, value in params.items():
             # Skip internal parameters that shouldn't be sent to LLM
-            if key in ('_agent', 'step_callback', 'progress_callback'):
+            if key in ('_agent', 'step_callback', 'progress_callback', 'preview_callback'):
                 continue
 
             # Check if value is JSON-serializable
@@ -2443,6 +2521,22 @@ class BrachyAgent(ResponseToolMixin, LLMRuntimeMixin, ChatWorkflowMixin):
             for _path_key in ("oar_path", "oar_mask_path"):
                 if meta.get(_path_key):
                     self.memory.store(_path_key, meta[_path_key])
+            # Keep the same scope provenance as the primary execution path.
+            # This legacy result-storage path is still used by parts of the
+            # agent runtime; treating a focused diagnostic result as a full
+            # OAR set here would let later planning skip its safety prerequisite.
+            raw_oar_is_full = meta.get("oar_is_full")
+            if raw_oar_is_full is None:
+                raw_oar_is_full = not bool(meta.get("requested_organs"))
+            oar_is_full = bool(raw_oar_is_full)
+            self.memory.store("oar_is_full", oar_is_full)
+            self.memory.store("oar_scope", meta.get("oar_scope") or (
+                "full" if oar_is_full else "focused"
+            ))
+            self.memory.store(
+                "oar_requested_organs",
+                list(meta.get("requested_organs") or []),
+            )
             self.memory.store("label_grid_orientation", meta.get("label_grid_orientation") or "LPI")
             from web.structure_service import replace_structure_source
             replace_structure_source(self.memory, "oar")

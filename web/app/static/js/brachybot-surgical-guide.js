@@ -410,7 +410,9 @@
             vertex_count: guide.vertices.length,
             color: previous?.color || '#2dd4bf',
             opacity: typeof previous?.opacity === 'number' ? previous.opacity : 0.82,
-            object_id: GUIDE_ID,
+            // Scene storage keeps GUIDE_ID for compatibility, while every
+            // screenshot/Data Tree/LLM contract uses one canonical identity.
+            object_id: 'surgical_guide:active',
             data_tree_node_id: GUIDE_ID,
             planning_id: guide.planning_id || null,
             data_version: guide.data_version || guide.version || 1,

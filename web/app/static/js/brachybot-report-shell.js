@@ -232,6 +232,10 @@ window.Report = (function () {
                 const cb = document.querySelector('.rp-2col-toggle input[type="checkbox"]');
                 if (cb && cb.checked !== !!on) cb.checked = !!on;
             } catch (_) {}
+            // Apply the split-pane interaction after the class change so the
+            // browser has computed the new grid dimensions before preview
+            // fit-to-panel measurement runs.
+            try { _scheduleReport2colLayout(); } catch (_) {}
         },
     };
 
@@ -1431,44 +1435,246 @@ window.Report = (function () {
         });
     }
 
+    // ---------- 2-col layout and independent pane interaction ----------
+    const _REPORT_SPLIT_STORAGE_KEY = 'brachyplan_report_2col_split_v1';
+    const _REPORT_SPLIT_MIN = 0.30;
+    const _REPORT_SPLIT_MAX = 0.70;
+    const _REPORT_SPLIT_KEYBOARD_STEP = 0.05;
+    let _reportSplitRatio = 0.50;
+    let _reportSplitPersistTimer = 0;
+
+    function _clampReportSplitRatio(value) {
+        const n = Number(value);
+        if (!Number.isFinite(n)) return 0.50;
+        return Math.max(_REPORT_SPLIT_MIN, Math.min(_REPORT_SPLIT_MAX, n));
+    }
+
+    function _readReportSplitRatio() {
+        try {
+            const stored = parseFloat(localStorage.getItem(_REPORT_SPLIT_STORAGE_KEY));
+            if (Number.isFinite(stored)) return _clampReportSplitRatio(stored);
+        } catch (_) {}
+        return 0.50;
+    }
+
+    function _persistReportSplitRatio() {
+        try { localStorage.setItem(_REPORT_SPLIT_STORAGE_KEY, String(_reportSplitRatio)); } catch (_) {}
+    }
+
+    function _queueReportSplitPersist() {
+        if (_reportSplitPersistTimer) window.clearTimeout(_reportSplitPersistTimer);
+        _reportSplitPersistTimer = window.setTimeout(() => {
+            _reportSplitPersistTimer = 0;
+            _persistReportSplitRatio();
+        }, 120);
+    }
+
+    function _setReportSplitRatio(value, { persist = false, refresh = true } = {}) {
+        _reportSplitRatio = _clampReportSplitRatio(value);
+        try {
+            document.body.style.setProperty('--rp-editor-width', `${(_reportSplitRatio * 100).toFixed(2)}%`);
+        } catch (_) {}
+        const splitter = document.getElementById('reportLayoutSplitter');
+        if (splitter) {
+            const percent = Math.round(_reportSplitRatio * 100);
+            splitter.setAttribute('aria-valuenow', String(percent));
+            splitter.setAttribute('aria-valuetext', `${percent}% editor, ${100 - percent}% preview`);
+        }
+        if (persist) _persistReportSplitRatio();
+        else if (refresh) _queueReportSplitPersist();
+        if (refresh) {
+            try {
+                if (typeof preview !== 'undefined' && preview && typeof preview.refresh === 'function') {
+                    preview.refresh();
+                }
+            } catch (_) {}
+        }
+    }
+
+    function _finishReportSplitDrag(splitter) {
+        if (!splitter) return;
+        splitter.classList.remove('dragging');
+        document.body.classList.remove('rp-split-dragging');
+        document.body.style.removeProperty('user-select');
+        document.body.style.removeProperty('-webkit-user-select');
+        _persistReportSplitRatio();
+    }
+
+    function _installReport2colInteraction() {
+        const splitter = document.getElementById('reportLayoutSplitter');
+        if (!splitter) return;
+
+        if (!splitter._rpSplitWired) {
+            let dragging = false;
+            let activePointerId = null;
+
+            splitter.addEventListener('pointerdown', (event) => {
+                if (event.button !== 0) return;
+                const body = document.querySelector('#panelReport .rp-body');
+                if (!body || !document.body.classList.contains('report-2col')) return;
+                dragging = true;
+                activePointerId = event.pointerId;
+                splitter.classList.add('dragging');
+                document.body.classList.add('rp-split-dragging');
+                document.body.style.userSelect = 'none';
+                document.body.style.webkitUserSelect = 'none';
+                try { splitter.setPointerCapture(event.pointerId); } catch (_) {}
+                event.preventDefault();
+            });
+
+            splitter.addEventListener('pointermove', (event) => {
+                if (!dragging || (activePointerId !== null && event.pointerId !== activePointerId)) return;
+                const body = document.querySelector('#panelReport .rp-body');
+                if (!body) return;
+                const rect = body.getBoundingClientRect();
+                if (!rect.width) return;
+                // The pointer is held at the centre of the 12px divider, so
+                // subtract half of that track to keep the divider under the
+                // cursor instead of making it jump by 6px on the first move.
+                const dividerWidth = splitter.getBoundingClientRect().width || 12;
+                _setReportSplitRatio(
+                    (event.clientX - rect.left - dividerWidth / 2) / rect.width,
+                    { refresh: true },
+                );
+                event.preventDefault();
+            });
+
+            const finish = (event) => {
+                if (!dragging) return;
+                if (event && activePointerId !== null && event.pointerId !== activePointerId) return;
+                dragging = false;
+                activePointerId = null;
+                _finishReportSplitDrag(splitter);
+            };
+            splitter.addEventListener('pointerup', finish);
+            splitter.addEventListener('pointercancel', finish);
+            splitter.addEventListener('lostpointercapture', () => {
+                if (dragging) {
+                    dragging = false;
+                    activePointerId = null;
+                    _finishReportSplitDrag(splitter);
+                }
+            });
+
+            // Keyboard support makes the splitter usable without a pointer
+            // and gives the two widths a deterministic, persisted control.
+            splitter.addEventListener('keydown', (event) => {
+                let next = null;
+                if (event.key === 'ArrowLeft' || event.key === 'ArrowDown') {
+                    next = _reportSplitRatio - _REPORT_SPLIT_KEYBOARD_STEP;
+                } else if (event.key === 'ArrowRight' || event.key === 'ArrowUp') {
+                    next = _reportSplitRatio + _REPORT_SPLIT_KEYBOARD_STEP;
+                } else if (event.key === 'Home') {
+                    next = _REPORT_SPLIT_MIN;
+                } else if (event.key === 'End') {
+                    next = _REPORT_SPLIT_MAX;
+                }
+                if (next === null) return;
+                event.preventDefault();
+                _setReportSplitRatio(next, { persist: true, refresh: true });
+            });
+            splitter._rpSplitWired = true;
+        }
+
+        _setReportSplitRatio(_readReportSplitRatio(), { persist: false, refresh: false });
+    }
+
+    function _scheduleReport2colLayout() {
+        const install = () => {
+            _installReport2colInteraction();
+            try {
+                if (typeof preview !== 'undefined' && preview && typeof preview.refresh === 'function') {
+                    preview.refresh();
+                }
+            } catch (_) {}
+        };
+        if (typeof window.requestAnimationFrame === 'function') window.requestAnimationFrame(install);
+        else window.setTimeout(install, 0);
+    }
+
     // ---------- 2-col CSS (P17) ----------
     function _install2colCss() {
         if (document.getElementById('rp-2col-css')) return;
         const s = document.createElement('style');
         s.id = 'rp-2col-css';
         s.textContent = `
-            /* 2-col mode: side-by-side editor + preview */
+            /* 2-col mode: side-by-side, independently scrollable panes */
+            body.report-2col #panelReport {
+                overflow: hidden;
+            }
+            body.report-2col #panelReport > .rp-root {
+                flex: 1 1 auto;
+                height: auto;
+                min-height: 0;
+            }
             body.report-2col #panelReport .rp-body {
-                display: flex;
-                flex-direction: row;
-                align-items: flex-start;
+                display: grid;
+                grid-template-columns: minmax(260px, min(var(--rp-editor-width, 50%), calc(100% - 312px))) 12px minmax(300px, 1fr);
+                grid-template-rows: minmax(0, 1fr);
+                align-items: stretch;
+                min-width: 0;
+                min-height: 0;
+                overflow: hidden;
             }
             body.report-2col #panelReport .rp-edit-area,
             body.report-2col #panelReport #reportEditor {
-                flex: 1 1 50% !important;
+                grid-column: 1;
+                grid-row: 1;
+                width: auto;
+                flex: none !important;
                 min-width: 0;
-                height: auto !important;
+                min-height: 0;
+                height: 100% !important;
                 max-height: none !important;
-                border-right: 1px solid var(--border-hairline);
+                overflow-y: auto;
+                overflow-x: hidden;
+                overscroll-behavior: contain;
+                scrollbar-gutter: stable;
+                border-right: none;
                 border-bottom: none !important;
+            }
+            body.report-2col #panelReport .rp-layout-splitter {
+                grid-column: 2;
+                grid-row: 1;
+                display: flex;
             }
             body.report-2col #panelReport .rp-preview-area,
             body.report-2col #panelReport #reportPreview {
-                flex: 1 1 50% !important;
+                grid-column: 3;
+                grid-row: 1;
+                width: auto;
+                flex: none !important;
                 min-width: 0;
-                height: auto !important;
+                min-height: 0;
+                height: 100% !important;
                 max-height: none !important;
+                overflow-y: auto;
+                overflow-x: hidden;
+                overscroll-behavior: contain;
+                scrollbar-gutter: stable;
             }
             @media (max-width: 900px) {
-                body.report-2col #panelReport .rp-body {
-                    flex-direction: column;
+                body.report-2col #panelReport {
+                    overflow-y: auto;
+                    overflow-x: hidden;
                 }
+                body.report-2col #panelReport .rp-body {
+                    display: flex;
+                    flex-direction: column;
+                    overflow-y: auto;
+                    overflow-x: hidden;
+                }
+                body.report-2col #panelReport .rp-layout-splitter { display: none; }
                 body.report-2col #panelReport .rp-edit-area,
                 body.report-2col #panelReport #reportEditor,
                 body.report-2col #panelReport .rp-preview-area,
                 body.report-2col #panelReport #reportPreview {
                     flex: 0 0 auto !important;
                     width: 100%;
+                    height: auto !important;
+                    min-height: 0;
+                    overflow: visible;
+                    scrollbar-gutter: auto;
                     border-right: none;
                 }
                 body.report-2col #panelReport .rp-edit-area,
@@ -1482,21 +1688,15 @@ window.Report = (function () {
         `;
         document.head.appendChild(s);
         try {
-            // BUG FIX 2026-06-16: user reported that the "2-col layout"
-            // checkbox was defaulting to ON even though the HTML markup
-            // had no `checked` attribute. Root cause: localStorage was
-            // restoring the body.report-2col class from a previous
-            // session, which silently made the layout 2-col WITHOUT
-            // checking the actual checkbox. Now we ALSO sync the
-            // checkbox element from the same stored value so the UI
-            // and the layout are always consistent.
-            //
-            // The user explicitly wants 2-col to DEFAULT TO OFF. If
-            // no user-initiated value is stored, ensure the class is
-            // absent and the checkbox is unchecked.
+            // The 2-col layout is the default for a new browser profile.
+            // A stored value still represents an explicit user preference:
+            // `0` keeps the layout off, while `1` keeps it on. This preserves
+            // a deliberate opt-out instead of silently overriding it on
+            // every reload.
             const stored = localStorage.getItem('brachyplan_report_2col');
             const cb = document.querySelector('.rp-2col-toggle input[type="checkbox"]');
-            if (stored === '1') {
+            const enabled = stored === null || stored === '1';
+            if (enabled) {
                 document.body.classList.add('report-2col');
                 if (cb) cb.checked = true;
             } else {
@@ -1509,6 +1709,7 @@ window.Report = (function () {
     // ---------- Boot ----------
     function boot() {
         _install2colCss();
+        _scheduleReport2colLayout();
         _installChatPalette();
         _installChatScanner();
         _installShortcuts();

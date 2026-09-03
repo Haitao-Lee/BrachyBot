@@ -618,8 +618,8 @@ def test_needle_render_scheduler_survives_mixed_static_asset_revisions():
     # Keep this contract aligned with the actual cache-busting revisions in
     # index.html. A stale assertion here falsely reports a deployment bug and
     # hides whether the endpoint interaction bundle is really versioned.
-    assert "brachybot-viewer-layout.js?v=37" in index
-    assert "brachybot-3d-manual.js?v=71" in index
+    assert "brachybot-viewer-layout.js?v=38" in index
+    assert "brachybot-3d-manual.js?v=80" in index
     assert "scene3D.requestRender(1)" in layout
     assert "scene3D.requestRender(2)" in layout
     assert "window.requestRender = requestRender;" in manual
@@ -708,9 +708,9 @@ def test_dose_overlay_opacity_is_invariant_during_slice_scrubbing():
     assert "_composite2DViewerCanvas(cfg.ax, { doseOpacity: 0.75 })" in report_editor
     assert "_composite2DViewerCanvas(cfg.ax, { doseOpacity: 0.75 })" in dvh_planning
     assert "_composite2DViewerCanvas(a.ax, { doseOpacity: 0.7 })" in ui_api
-    assert "brachybot-viewer-volume.js?v=45" in index
-    assert "brachybot-3d-manual.js?v=71" in index
-    assert "brachybot-manual-annotation.js?v=19" in index
+    assert "brachybot-viewer-volume.js?v=48" in index
+    assert "brachybot-3d-manual.js?v=80" in index
+    assert "brachybot-manual-annotation.js?v=21" in index
 
 
 def test_manual_seed_defaults_to_needle_middle_and_is_proximity_selectable():
@@ -721,7 +721,7 @@ def test_manual_seed_defaults_to_needle_middle_and_is_proximity_selectable():
     Regression: seeds added at frac near 0.22 / 0.88 could sit on the needle
     endpoint, merge with the endpoint handle sphere, and become ungrabbable."""
     manual = (ROOT / "web/app/static/js/brachybot-3d-manual.js").read_text(encoding="utf-8")
-    add_block = manual.split("async function addManualSeed()", 1)[1].split("_upsertSceneMesh(seed.id", 1)[0]
+    add_block = manual.split("async function addManualSeed(targetNeedleId = null, options = {})", 1)[1].split("_upsertSceneMesh(seed.id", 1)[0]
     # Seed placement now delegates to the free-slot search. The helper keeps
     # the same usable span away from both endpoint handles (0.18-0.82) and
     # places each seed at the candidate with the largest nearest-neighbour

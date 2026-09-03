@@ -1298,25 +1298,43 @@ class ToolResultPipeline:
         elif tool_name == "oar_segmentation":
             organ_names = meta.get("organ_names", {})
             count = len(organ_names) if organ_names else 0
+            is_full_oar = bool(meta.get("oar_is_full", True))
+            requested_organs = list(meta.get("requested_organs") or [])
             if lang == "zh":
                 lines = [
-                    "## 🎯 OAR 分割",
+                    "## 🎯 OAR 分割" if is_full_oar else "## 🎯 定向器官分割",
                     "",
                     "| 指标 | 数值 |",
                     "|--------|-------|",
-                    f"| 已分割器官 | {count} |",
+                    (
+                        f"| 已分割器官 | {count} |"
+                        if is_full_oar
+                        else f"| 已保留结构 | {', '.join(requested_organs) or count} |"
+                    ),
                     "",
-                    "✅ 结果已在查看器面板中显示。",
+                    (
+                        "✅ 完整 OAR 结果已在查看器面板中显示。"
+                        if is_full_oar
+                        else "✅ 仅请求的结构已在查看器面板中显示；完整 OAR 尚未生成。"
+                    ),
                 ]
             else:
                 lines = [
-                    "## 🎯 OAR Segmentation",
+                    "## 🎯 OAR Segmentation" if is_full_oar else "## 🎯 Focused Organ Segmentation",
                     "",
                     "| Metric | Value |",
                     "|--------|-------|",
-                    f"| Organs segmented | {count} |",
+                    (
+                        f"| Organs segmented | {count} |"
+                        if is_full_oar
+                        else f"| Retained structures | {', '.join(requested_organs) or count} |"
+                    ),
                     "",
-                    "✅ Results displayed in the Viewer panel.",
+                    (
+                        "✅ Full OAR results are displayed in the Viewer panel."
+                        if is_full_oar
+                        else "✅ Only the requested structures are displayed; full OAR is not yet generated."
+                    ),
                 ]
             return "\n".join(lines)
         elif tool_name == "biomedparse_segmentation":
@@ -1625,6 +1643,10 @@ class ToolResultPipeline:
                 "focus",
                 "slice_indices",
                 "overlays",
+                "visual_purpose",
+                "analysis_required",
+                "annotation_policy",
+                "target_refs",
             )
         else:
             return source
@@ -2082,10 +2104,19 @@ class ToolResultPipeline:
         ]
         raw_fallback = "\n\n".join(raw_parts)
         if not raw_fallback:
+            request_excerpt = re.sub(r"\s+", " ", str(user_message or "")).strip()
+            if len(request_excerpt) > 100:
+                request_excerpt = request_excerpt[:97] + "..."
             raw_fallback = (
-                "相关检索或处理步骤已结束，但当前没有生成可展示的综合回复。请重新提问，或提供更明确的分析目标。"
+                (
+                    f"我理解你当前的问题是“{request_excerpt}”，但本轮没有得到可核验的工具结果或有效综合答复。"
+                    "系统没有因此修改病例或规划；请直接重试同一问题。"
+                )
                 if lang == "zh" else
-                "The requested retrieval or processing steps finished, but no user-facing synthesis was generated. Please retry with a more specific question."
+                (
+                    f'I understand the current request as "{request_excerpt}", but this turn produced neither '
+                    "a verifiable tool result nor a valid synthesis. The case and Planning were not changed; retry the same request."
+                )
             )
 
         if not brain_router:
