@@ -331,13 +331,122 @@ function _getMprGeometry(axis, shape, spacing) {
     return { width: X, height: Math.max(1, Math.round(Z * ratio)), resampleRatio: ratio };
 }
 
+/**
+ * MPR coordinate contract
+ * ------------------------
+ * The browser volume is always the server's canonical LPI array with shape
+ * [Z, Y, X].  The axial slider is a *display* index and intentionally runs in
+ * the historical viewer order, so its corresponding array index is reversed.
+ * Sagittal/coronal canvases use the array Z order vertically after the spacing
+ * correction.  Keeping these conversions here prevents pointer interaction,
+ * crosshairs, overlays and annotations from each inventing a slightly
+ * different coordinate system.
+ */
+function _clampViewerIndex(value, count, rounder = Math.round) {
+    const size = Math.max(0, Number(count) || 0);
+    const max = Math.max(0, size - 1);
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) return 0;
+    const rounded = typeof rounder === 'function' ? rounder(numeric) : Math.round(numeric);
+    return Math.max(0, Math.min(max, rounded));
+}
+
 function _displayYToVolumeZ(py, resampleRatio, zCount) {
-    return Math.max(0, Math.min(Math.floor(py / (resampleRatio || 1)), zCount - 1));
+    return _clampViewerIndex(
+        Number(py) / (Number(resampleRatio) || 1),
+        zCount,
+        Math.floor,
+    );
 }
 
 function _volumeZToDisplayY(z, resampleRatio) {
-    return z * (resampleRatio || 1);
+    return Number(z) * (Number(resampleRatio) || 1);
 }
+
+function _viewerAxialDisplayToVolumeZ(sliceIndex, zCount) {
+    return Math.max(0, (Number(zCount) || 1) - 1 - _clampViewerIndex(sliceIndex, zCount));
+}
+
+function _viewerVolumeZToAxialDisplay(volumeZ, zCount) {
+    return Math.max(0, (Number(zCount) || 1) - 1 - _clampViewerIndex(volumeZ, zCount));
+}
+
+/**
+ * Convert a pixel in an MPR canvas to a voxel in the canonical [Z,Y,X]
+ * volume.  `imgX`/`imgY` are image-pixel coordinates, not CSS coordinates.
+ * The returned `displayZ` is the axial slider value for the same physical
+ * location and must be used when synchronising the axial viewer.
+ */
+function _viewerMprImageToVoxel(axis, imgX, imgY, options = {}) {
+    const shape = Array.isArray(options.shape) && options.shape.length === 3
+        ? options.shape
+        : (typeof volumeShape !== 'undefined' && volumeShape ? volumeShape : null);
+    if (!shape || shape.length !== 3) return null;
+
+    const zCount = Number(shape[0]) || 0;
+    const yCount = Number(shape[1]) || 0;
+    const xCount = Number(shape[2]) || 0;
+    if (zCount < 1 || yCount < 1 || xCount < 1) return null;
+
+    const spacing = Array.isArray(options.spacing) && options.spacing.length >= 3
+        ? options.spacing
+        : (typeof volumeSpacing !== 'undefined' && volumeSpacing
+            ? volumeSpacing
+            : [0.68, 0.68, 5.0]);
+    const slices = options.slices || (typeof state !== 'undefined' && state?.slices) || {};
+    const pixelRounder = typeof options.pixelRounder === 'function'
+        ? options.pixelRounder
+        : Math.floor;
+    const zRounder = typeof options.zRounder === 'function'
+        ? options.zRounder
+        : Math.round;
+    // The image column means X in axial/coronal but Y in sagittal.  Keep the
+    // two projections named separately so a future caller cannot accidentally
+    // use the axial image row for a sagittal Y coordinate.
+    const xAtImageColumn = _clampViewerIndex(imgX, xCount, pixelRounder);
+    const yAtImageColumn = _clampViewerIndex(imgX, yCount, pixelRounder);
+    let x;
+    let y;
+    let z;
+
+    if (axis === 'axial') {
+        x = xAtImageColumn;
+        y = _clampViewerIndex(imgY, yCount, pixelRounder);
+        z = _viewerAxialDisplayToVolumeZ(slices.axial, zCount);
+    } else if (axis === 'sagittal') {
+        const sagittalSlice = _clampViewerIndex(slices.sagittal, xCount);
+        const ratio = _getMprGeometry('sagittal', [zCount, yCount, xCount], spacing).resampleRatio;
+        x = sagittalSlice;
+        y = yAtImageColumn;
+        z = _clampViewerIndex(Number(imgY) / ratio, zCount, zRounder);
+    } else if (axis === 'coronal') {
+        const coronalSlice = _clampViewerIndex(slices.coronal, yCount);
+        const ratio = _getMprGeometry('coronal', [zCount, yCount, xCount], spacing).resampleRatio;
+        x = xAtImageColumn;
+        y = coronalSlice;
+        z = _clampViewerIndex(Number(imgY) / ratio, zCount, zRounder);
+    } else {
+        return null;
+    }
+
+    return {
+        x,
+        y,
+        z,
+        zyx: [z, y, x],
+        displayZ: _viewerVolumeZToAxialDisplay(z, zCount),
+    };
+}
+
+// Explicitly export the contract for later-loaded modules and diagnostics.
+window.viewerMprCoordinates = {
+    clampIndex: _clampViewerIndex,
+    displayYToVolumeZ: _displayYToVolumeZ,
+    volumeZToDisplayY: _volumeZToDisplayY,
+    axialDisplayToVolumeZ: _viewerAxialDisplayToVolumeZ,
+    volumeZToAxialDisplay: _viewerVolumeZToAxialDisplay,
+    imageToVoxel: _viewerMprImageToVoxel,
+};
 
 async function loadVolumeData(options = {}) {
     const scope = _captureViewerDataScope(options.sessionId);
@@ -1450,14 +1559,12 @@ function renderOverlayFromVolume(axis, sliceIndex) {
 
     for (let py = 0; py < height; py++) {
         for (let px = 0; px < width; px++) {
-            // Map display coords to volume coords.
-            // Keep sagittal/coronal Z in the same display order used by
-            // crosshair and dose overlays. Axial keeps its historical
-            // slice-index flip below, but vertical Z in reformatted views
-            // must not be inverted.
+            // Map display coords to the canonical [Z,Y,X] volume.  Axial uses
+            // the display-index inverse; sagittal/coronal use direct display
+            // Z order.  This is the same contract used by pointer navigation.
             let volZ, volY, volX;
             if (axis === 'axial') {
-                volZ = (Z - 1) - sliceIndex; volY = py; volX = px;
+                volZ = _viewerAxialDisplayToVolumeZ(sliceIndex, Z); volY = py; volX = px;
             }
             else if (axis === 'sagittal') {
                 volZ = _displayYToVolumeZ(py, resampleRatio, Z);
@@ -1584,12 +1691,10 @@ function renderSliceFromVolume(axis, sliceIndex) {
     }
     const pixels = _pixelBuffer;
 
-    // Extract and transform pixels in one pass.
-    // Axial keeps the historical Z slice-index flip. Sagittal/coronal
-    // reformats do not flip display Y; dose, crosshair, and contours already
-    // use the non-flipped Z order there.
+    // Extract and transform pixels in one pass.  This must stay in lockstep
+    // with _viewerMprImageToVoxel and the overlay lookup below.
     if (axis === 'axial') {
-        const srcSliceIdx = (Z - 1) - sliceIndex;
+        const srcSliceIdx = _viewerAxialDisplayToVolumeZ(sliceIndex, Z);
         const offset = srcSliceIdx * Y * X;
         for (let i = 0; i < pixelCount; i++) {
             const val = volumeData[offset + i];
@@ -1654,12 +1759,11 @@ function renderSliceFromVolume(axis, sliceIndex) {
 
     for (let py = 0; py < height; py++) {
         for (let px = 0; px < width; px++) {
-            // Map display coords to volume coords for label lookup.
-            // Match the CT extraction above: axial slice index is flipped,
-            // sagittal/coronal display Y is not.
+            // Map display coords to volume coords for label lookup using the
+             // exact same orientation as the CT extraction above.
             let volZ, volY2, volX2;
             if (axis === 'axial') {
-                volZ = (Z - 1) - sliceIndex; volY2 = py; volX2 = px;
+                volZ = _viewerAxialDisplayToVolumeZ(sliceIndex, Z); volY2 = py; volX2 = px;
             }
             else if (axis === 'sagittal') {
                 volZ = _displayYToVolumeZ(py, resampleRatio, Z);

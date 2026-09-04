@@ -296,6 +296,43 @@ def _clamp_viewer_slice_index(value, axis_name, shape, axis_map=None):
     return max(0, min(requested, maximum)), axis
 
 
+def _viewer_mpr_z_resample_indices(source_depth, spacing, axis_name):
+    """Return the nearest-neighbor Z map shared by all PNG MPR fallbacks.
+
+    The browser volume renderer uses ``round(Z * spacing_z / spacing_in_plane)``
+    output rows and maps each output row back with ``floor(row / ratio)``.
+    Keeping that calculation here prevents the CT, label, and dose fallback
+    endpoints from drifting apart for anisotropic studies.
+    """
+    if axis_name not in {"sagittal", "coronal"}:
+        return None
+    try:
+        depth = int(source_depth)
+    except (TypeError, ValueError):
+        return None
+    if depth < 1:
+        return None
+    try:
+        values = list(spacing or ())
+        spacing_x = float(values[0]) or 0.68
+        spacing_y = float(values[1]) or 0.68
+        spacing_z = float(values[2]) or 5.0
+    except (TypeError, ValueError, IndexError):
+        spacing_x, spacing_y, spacing_z = 0.68, 0.68, 5.0
+    denominator = spacing_y if axis_name == "sagittal" else spacing_x
+    try:
+        ratio = max(spacing_z / denominator, 0.01)
+    except (TypeError, ValueError, ZeroDivisionError):
+        ratio = 1.0
+    if abs(ratio - 1.0) <= 1e-12:
+        return None
+    target_depth = max(1, int(np.floor(depth * ratio + 0.5)))
+    return np.minimum(
+        (np.arange(target_depth) / ratio).astype(np.intp),
+        depth - 1,
+    )
+
+
 def _requires_label_faithful_mesh(agent, source: str, label_id: int) -> bool:
     """Return whether a mesh must preserve the exact planning-mask boundary.
 
@@ -772,26 +809,39 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
             ct_windowed = np.clip(ct_data, lower, upper)
             ct_windowed = ((ct_windowed - lower) / (upper - lower) * 255).astype(np.uint8)
 
-            # Get slice - with LPI orientation, ct_data is (Z, Y, X)
-            # axial: axis 0 -> (Y, X) = (512, 512), no transpose needed
-            # sagittal: axis 2 -> (Z, Y) = (48, 512), transpose for Z vertical
-            # coronal: axis 1 -> (Z, X) = (48, 512), transpose for Z vertical
+            # Get a slice from the canonical LPI array (Z, Y, X).  The viewer
+            # keeps the historical axial display-index direction, while the
+            # vertical coordinate of sagittal/coronal reformats follows array
+            # Z directly.  This is intentionally the same contract as the
+            # browser volume renderer and its linked crosshair interaction.
             slice_data = np.take(ct_windowed, slice_index, axis=axis)
 
-            # Apply Z-flip to match raw DICOM ordering in sagittal/coronal views.
-            # DICOMOrient('LPI') reverses array Z so LPI Z=0 = head. We invert again at
-            # render time so the user sees raw DICOM convention (slider 0 = feet).
-            # Axial: single slice, flip via (Z-1)-sliceIndex in the take above.
+            # Axial is a single plane, so map its display index to the reversed
+            # canonical Z index.  Sagittal/coronal already have Z as their
+            # first image dimension; do not reverse it or the fallback path
+            # would disagree with the client-side volume path.
             if axis_name == 'axial':
                 src_idx = ct_data.shape[0] - 1 - slice_index
                 slice_data = np.take(ct_windowed, src_idx, axis=axis)
             elif axis_name == 'sagittal':
-                # (Z, Y) -> (Y, Z) with Z flipped so top of canvas = raw Z=0 (feet)
-                z_arr = np.arange(ct_data.shape[0])[::-1]
-                slice_data = ct_windowed[z_arr, :, slice_index].T
+                # (Z, Y): image height=Z, width=Y.
+                slice_data = ct_windowed[:, :, slice_index]
             elif axis_name == 'coronal':
-                z_arr = np.arange(ct_data.shape[0])[::-1]
-                slice_data = ct_windowed[z_arr, slice_index, :].T
+                # (Z, X): image height=Z, width=X.
+                slice_data = ct_windowed[:, slice_index, :]
+
+            # Match the browser MPR geometry when this request is served by
+            # the PNG fallback (for example while the volume blob is still
+            # hydrating).  Keeping the resampled height and nearest-neighbor
+            # Z lookup identical is necessary for mouse coordinates and
+            # crosshairs to remain valid across the two rendering paths.
+            z_resample_indices = _viewer_mpr_z_resample_indices(
+                slice_data.shape[0],
+                agent.memory.retrieve("ct_spacing") or (0.6836, 0.6836, 5.0),
+                axis_name,
+            )
+            if z_resample_indices is not None:
+                slice_data = slice_data[z_resample_indices, :]
 
             # Apply threshold overlay if requested
             if threshold is not None:
@@ -803,11 +853,11 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
                     src_idx = mask.shape[0] - 1 - slice_index
                     mask_slice = np.take(mask, src_idx, axis=axis)
                 elif axis_name == 'sagittal':
-                    z_arr = np.arange(mask.shape[0])[::-1]
-                    mask_slice = mask[z_arr, :, slice_index].T
+                    mask_slice = mask[:, :, slice_index]
                 elif axis_name == 'coronal':
-                    z_arr = np.arange(mask.shape[0])[::-1]
-                    mask_slice = mask[z_arr, slice_index, :].T
+                    mask_slice = mask[:, slice_index, :]
+                if z_resample_indices is not None:
+                    mask_slice = mask_slice[z_resample_indices, :]
                 # Create RGB overlay
                 slice_rgb = np.stack([slice_data] * 3, axis=-1)
                 slice_rgb[mask_slice, 0] = np.minimum(255, slice_rgb[mask_slice, 0].astype(int) + 120)
@@ -1391,18 +1441,15 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
                 img_str = base64.b64encode(buffered.getvalue()).decode()
                 return jsonify({"success": True, "data": f"data:image/png;base64,{img_str}", "has_mask": False})
 
-            # Extract slice from mask: np.take with axis gives correct orientation
-            # mask_data is (Z, Y, X), axis_map: axial=0(Z), sagittal=2(X), coronal=1(Y)
-            # Z-flip applied so display matches raw DICOM ordering (slider 0 = feet).
+            # Extract slice from the canonical (Z, Y, X) mask using the same
+            # display contract as /api/viewer/slice and the browser renderer.
             if axis_name == 'axial':
                 src_idx = mask_data.shape[0] - 1 - slice_index
                 mask_slice = np.take(mask_data, src_idx, axis=axis)
             elif axis_name == 'sagittal':
-                z_arr = np.arange(mask_data.shape[0])[::-1]
-                mask_slice = mask_data[z_arr, :, slice_index]
+                mask_slice = mask_data[:, :, slice_index]
             elif axis_name == 'coronal':
-                z_arr = np.arange(mask_data.shape[0])[::-1]
-                mask_slice = mask_data[z_arr, slice_index, :]
+                mask_slice = mask_data[:, slice_index, :]
 
             # For sagittal/coronal: resample Z-axis to match isotropic display
             # Client expects: sagittal -> width=Y, height=Z_resampled
@@ -1410,17 +1457,13 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
             # After np.take: sagittal=(Z, Y), coronal=(Z, X)
             # Image.fromarray(H, W) -> image width=W, height=H
             # So (Z_resampled, Y) -> width=Y, height=Z_resampled ✓
-            if axis_name in ('sagittal', 'coronal'):
-                spacing = agent.memory.retrieve("ct_spacing") or (0.6836, 0.6836, 5.0)
-                spacing_x, spacing_y, spacing_z = float(spacing[0]), float(spacing[1]), float(spacing[2])
-                if axis_name == 'sagittal':
-                    resample_ratio = spacing_z / spacing_y
-                else:  # coronal
-                    resample_ratio = spacing_z / spacing_x
-                if resample_ratio != 1.0:
-                    new_z = int(mask_slice.shape[0] * resample_ratio)
-                    indices = np.minimum((np.arange(new_z) / resample_ratio).astype(int), mask_slice.shape[0] - 1)
-                    mask_slice = mask_slice[indices, :]
+            z_resample_indices = _viewer_mpr_z_resample_indices(
+                mask_slice.shape[0],
+                agent.memory.retrieve("ct_spacing") or (0.6836, 0.6836, 5.0),
+                axis_name,
+            )
+            if z_resample_indices is not None:
+                mask_slice = mask_slice[z_resample_indices, :]
                 # No transpose needed - (Z_resampled, Y/X) gives correct width/height
 
             # Create colored overlay with per-organ visibility/opacity
@@ -1695,7 +1738,13 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
             slice_index, mask_axis = _clamp_viewer_slice_index(
                 slice_index, axis, np.asarray(mask).shape, axis_map
             )
-            mask_slice = np.take(mask, slice_index, axis=mask_axis)
+            if axis == "axial":
+                # The threshold endpoint returns the same displayed axial
+                # plane as the main viewer, not the raw array plane at the
+                # same slider number.
+                mask_slice = np.take(mask, mask.shape[0] - 1 - slice_index, axis=mask_axis)
+            else:
+                mask_slice = np.take(mask, slice_index, axis=mask_axis)
 
             # Count voxels
             total_voxels = int(mask.sum())
