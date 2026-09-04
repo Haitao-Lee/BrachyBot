@@ -1563,6 +1563,11 @@ function _visualEvidenceDescriptor(item, index = 0, includeAll = false) {
     ).toLowerCase();
     const manifest = metadata.grounding_manifest || metadata.groundingManifest
         || item.grounding_manifest || item.groundingManifest || { version: 1, targets: [] };
+    const authoritativeCaseState = metadata.authoritative_case_state
+        || metadata.authoritativeCaseState
+        || item.authoritative_case_state
+        || item.authoritativeCaseState
+        || null;
     const manifestTargets = Array.isArray(manifest?.targets) ? manifest.targets : [];
     const annotatableCount = manifestTargets.filter(target => target?.annotatable === true).length;
     const score = (annotationPolicy === 'required' ? 100 : annotationPolicy === 'auto' ? 20 : 0)
@@ -1584,6 +1589,7 @@ function _visualEvidenceDescriptor(item, index = 0, includeAll = false) {
         planning_id: String(item.planning_id || item.planningId || metadata.planning_id || metadata.planningId || ''),
         data_version: String(item.data_version || item.dataVersion || metadata.data_version || metadata.dataVersion || ''),
         grounding_manifest: manifest,
+        authoritative_case_state: authoritativeCaseState,
     };
 }
 
@@ -3806,8 +3812,13 @@ async function sendChat(prefill, options) {
                 // the user can see that recovery is in progress.
                 const traceTerminal = !reconnectNeeded
                     && (turnCompleted || turnFailed || turnCancelled);
-                if (traceTerminal && chainEl && typeof finalizeThinkingChain === 'function') {
-                    finalizeThinkingChain(chainEl, headerEl, steps);
+                if (traceTerminal && chainEl) {
+                    if ((turnFailed || turnCancelled)
+                        && typeof cancelThinkingChain === 'function') {
+                        cancelThinkingChain(chainEl, headerEl);
+                    } else if (typeof finalizeThinkingChain === 'function') {
+                        finalizeThinkingChain(chainEl, headerEl, steps);
+                    }
                 }
                 if (traceTerminal && (turnFailed || turnCancelled)
                     && todo && typeof todo.fold === 'function') {

@@ -4247,16 +4247,34 @@ function _screenshot3DVisibility(id, mesh) {
             : node.visible !== false && node.visible3D !== false)
         : (appearance ? appearance.visible !== false : false);
     const status = String(node?.status || mesh?.userData?.status || 'ready').toLowerCase();
-    const currentStatus = !['loading', 'error', 'stale', 'expired', 'not_generated'].includes(status);
+    // Freshness and locatability are different state dimensions. A stale or
+    // expired guide is an existing generated artifact whose source Planning
+    // changed; if its decoded mesh is still visible, a location screenshot
+    // must be allowed to point to that real object while the prose warns that
+    // it is outdated. Treating stale as unloaded caused the camera focus and
+    // annotation manifest to discard a guide that was plainly on screen.
+    const unavailableStatus = [
+        'loading', 'error', 'failed', 'not_generated', 'not-generated',
+        'unresolved', 'missing', 'deleted',
+    ].includes(status);
+    const currentStatus = !unavailableStatus
+        && !['stale', 'expired', 'outdated'].includes(status);
+    const locatableStatus = !unavailableStatus;
     const sceneVisible = hierarchyVisible && materialVisible
         && !!(node || appearance) && appearance?.visible !== false;
+    const loaded = !!mesh && hierarchyVisible && materialVisible;
+    const locatable = sceneVisible && dataTreeVisible !== false && locatableStatus;
     return {
         node,
         status,
         sceneVisible,
         dataTreeVisible: dataTreeVisible !== false,
+        generated: !['not_generated', 'not-generated', 'missing', 'deleted', 'unresolved'].includes(status),
+        loaded,
         currentStatus,
-        annotatable: sceneVisible && dataTreeVisible !== false && currentStatus,
+        locatableStatus,
+        locatable,
+        annotatable: locatable,
     };
 }
 
@@ -4330,6 +4348,10 @@ function get3DScreenshotGroundingManifest(objectIds = []) {
                 data_tree_visible: false,
                 in_view: false,
                 annotatable: false,
+                generated: false,
+                loaded: false,
+                current: false,
+                availability: 'not_loaded',
                 status: 'unresolved',
                 reason: 'object_not_loaded_in_scene',
                 normalized_bounds: null,
@@ -4340,7 +4362,7 @@ function get3DScreenshotGroundingManifest(objectIds = []) {
             mesh,
             state: _screenshot3DVisibility(id, mesh),
         }));
-        const eligible = states.filter(entry => entry.state.annotatable);
+        const eligible = states.filter(entry => entry.state.locatable);
         const bounds = _unionNormalizedBounds(eligible.map(entry => _project3DObjectBounds(entry.mesh)));
         const sceneVisible = states.some(entry => entry.state.sceneVisible);
         const dataTreeVisible = states.some(entry => entry.state.dataTreeVisible);
@@ -4365,6 +4387,12 @@ function get3DScreenshotGroundingManifest(objectIds = []) {
             data_tree_visible: dataTreeVisible,
             in_view: !!bounds,
             annotatable: !!bounds && eligible.length > 0,
+            generated: states.some(entry => entry.state.generated),
+            loaded: states.some(entry => entry.state.loaded),
+            current: states.every(entry => entry.state.currentStatus),
+            availability: states.some(entry => entry.state.loaded)
+                ? (states.every(entry => entry.state.currentStatus) ? 'loaded_current' : 'loaded_stale')
+                : 'not_loaded',
             status,
             reason,
             normalized_bounds: bounds,
@@ -4390,12 +4418,11 @@ function focusPlanningObjectsForScreenshot(objectIds, options = {}) {
         mesh && _screenshot3DIdentityFor(id, mesh).some(identity => wanted.has(identity))
     );
     if (!targets.length) return null;
-    // Framing is allowed to move an offscreen camera, but it must never turn
-    // a hidden/stale object back on. The screenshot must describe the user's
-    // real display state; otherwise a later arrow would falsely claim that a
-    // Data Tree-hidden guide is visible in the 3D viewer.
+    // Framing is allowed to move an offscreen camera, but it must never turn a
+    // hidden or unloaded object back on. Stale is only a freshness warning:
+    // an already-loaded visible mesh remains a truthful location target.
     const visibleTargets = targets.filter(([id, mesh]) =>
-        _screenshot3DVisibility(id, mesh).annotatable
+        _screenshot3DVisibility(id, mesh).locatable
     );
     if (!visibleTargets.length) return null;
 

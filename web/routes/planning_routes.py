@@ -527,17 +527,17 @@ _valid_screenshot_request = _server_support._valid_screenshot_request
 _validate_path = _server_support._validate_path
 _oar_display_name_map = _server_support._oar_display_name_map
 
-_ANNOTATION_BLOCKED_STATUSES = frozenset({
+_ANNOTATION_UNAVAILABLE_STATUSES = frozenset({
     "loading",
     "error",
-    "stale",
-    "expired",
+    "failed",
     "not_generated",
     "not-generated",
     "unresolved",
     "missing",
     "deleted",
 })
+_ANNOTATION_OUTDATED_STATUSES = frozenset({"stale", "expired", "outdated"})
 _ANNOTATION_SHAPES = frozenset({"box", "arrow", "ellipse", "point"})
 
 
@@ -593,6 +593,79 @@ def _annotation_grounding_manifest(attachment: Mapping[str, Any]) -> Mapping[str
     return manifest if isinstance(manifest, Mapping) else {}
 
 
+def _screenshot_authoritative_case_state(agent: Any) -> Dict[str, Any]:
+    """Return a compact server-derived state contract for visual answers.
+
+    A screenshot proves pixels, but it cannot by itself distinguish a stale
+    generated artifact from an unloaded or absent artifact.  The hidden visual
+    child therefore receives this bounded state alongside the browser's
+    capture manifest.  Keeping lifecycle, persistence, mesh decoding, and
+    presentation as separate fields prevents one overloaded ``stale`` label
+    from turning into the false claim that a visible guide was never loaded.
+    """
+    if agent is None:
+        return {
+            "version": 1,
+            "source": "server",
+            "workspace": {
+                "data_ready": False,
+                "hydration_pending": True,
+                "hydration_phase": "initializing",
+                "hydration_error": None,
+            },
+            "surgical_guide": None,
+        }
+    hydration_error = str(getattr(agent, "_workspace_hydration_error", "") or "")[:400]
+    workspace = {
+        "data_ready": bool(getattr(agent, "_workspace_data_ready", True)),
+        "hydration_pending": bool(
+            getattr(agent, "_workspace_hydration_in_progress", False)
+            or not getattr(agent, "_workspace_data_ready", True)
+        ),
+        "hydration_phase": str(
+            getattr(agent, "_workspace_hydration_phase", "ready") or "ready"
+        )[:80],
+        "hydration_error": hydration_error or None,
+    }
+    try:
+        guide = guide_status_payload(agent)
+    except Exception as exc:  # pragma: no cover - defensive status transport
+        logger.warning("Unable to build screenshot guide state", exc_info=True)
+        guide = {
+            "state": "unavailable",
+            "reason": f"guide_status_unavailable:{type(exc).__name__}",
+        }
+    compact_guide = {
+        key: guide.get(key)
+        for key in (
+            "state",
+            "available",
+            "generated",
+            "persisted",
+            "persistence_known",
+            "mesh_loaded",
+            "presentation",
+            "source",
+            "active_planning_id",
+            "planning_id",
+            "version",
+            "status",
+            "stale_reason",
+            "plan_matches_current",
+            "hydration_pending",
+            "hydration_phase",
+            "hydration_error",
+            "reason",
+        )
+    }
+    return {
+        "version": 1,
+        "source": "server",
+        "workspace": workspace,
+        "surgical_guide": compact_guide,
+    }
+
+
 def _validate_screenshot_annotation_marks(
     source_attachment: Mapping[str, Any],
     raw_marks: Any,
@@ -602,9 +675,9 @@ def _validate_screenshot_annotation_marks(
     Pixel rendering stays in the browser, but the server independently checks
     the immutable capture manifest before accepting the derived image. In
     particular, a scene object must have been visible in both the THREE scene
-    and Data Tree at capture time. A Data Tree evidence-card row may still be
-    marked when its corresponding 3D object is hidden, because the mark points
-    to the row itself rather than to an invented location in the Viewer.
+    and Data Tree at capture time. A live Data Tree DOM row may still be marked
+    when its corresponding 3D object is hidden, because the mark points to the
+    captured row itself rather than to an invented location in the Viewer.
     """
     metadata = source_attachment.get("view_metadata")
     if not isinstance(metadata, Mapping):
@@ -619,6 +692,13 @@ def _validate_screenshot_annotation_marks(
     ).strip().lower()
     if policy == "none":
         raise ValueError("Annotation is disabled for this screenshot")
+    purpose = str(
+        source_attachment.get("visual_purpose")
+        or source_attachment.get("visualPurpose")
+        or metadata.get("visual_purpose")
+        or metadata.get("visualPurpose")
+        or "explain"
+    ).strip().lower()
     if not isinstance(raw_marks, list) or not raw_marks:
         raise ValueError("At least one grounded annotation mark is required")
 
@@ -671,14 +751,26 @@ def _validate_screenshot_annotation_marks(
         ):
             raise ValueError("Annotation target was not visible in the source screenshot")
         status = str(target.get("status") or "ready").strip().lower()
-        if status in _ANNOTATION_BLOCKED_STATUSES:
-            raise ValueError("Annotation target was stale or unavailable at capture time")
+        if status in _ANNOTATION_UNAVAILABLE_STATUSES or (
+            status in _ANNOTATION_OUTDATED_STATUSES and purpose != "locate"
+        ):
+            raise ValueError("Annotation target was outdated or unavailable at capture time")
         kind = str(target.get("kind") or "").strip().lower()
         if kind == "scene-object" and not (
             target.get("scene_visible", target.get("sceneVisible")) is True
             and target.get("data_tree_visible", target.get("dataTreeVisible")) is True
         ):
             raise ValueError("A hidden 3D object cannot be annotated")
+        if (
+            kind == "scene-object"
+            and status in _ANNOTATION_OUTDATED_STATUSES
+            and purpose == "locate"
+            and not (
+                target.get("generated") is True
+                and target.get("loaded") is True
+            )
+        ):
+            raise ValueError("An outdated 3D object must be generated and loaded before annotation")
         shape = str(raw_mark.get("shape") or "box").strip().lower()
         if shape not in _ANNOTATION_SHAPES:
             raise ValueError("Unsupported annotation shape")
@@ -7237,6 +7329,39 @@ def register_planning_routes(
                 store, user, session_id = request_case_context()
             except WorkspaceError:
                 return jsonify({"error": "Authentication required"}), 401
+            # Replace any browser-provided lifecycle hint with a server-derived
+            # contract for the authenticated case. The browser remains the
+            # authority for what was visibly rendered; the hydrated Agent is
+            # the authority for generated/persisted/loaded/current semantics.
+            try:
+                screenshot_agent = (
+                    get_cached_agent(session_id)
+                    if callable(get_cached_agent)
+                    else None
+                )
+                if screenshot_agent is None or not getattr(
+                    screenshot_agent, "_workspace_data_ready", True
+                ):
+                    screenshot_agent = get_agent()
+                view_metadata["authoritative_case_state"] = (
+                    _screenshot_authoritative_case_state(screenshot_agent)
+                )
+            except Exception:
+                logger.warning(
+                    "Unable to attach authoritative case state to screenshot",
+                    exc_info=True,
+                )
+                view_metadata["authoritative_case_state"] = {
+                    "version": 1,
+                    "source": "server",
+                    "workspace": {
+                        "data_ready": False,
+                        "hydration_pending": True,
+                        "hydration_phase": "unknown",
+                        "hydration_error": None,
+                    },
+                    "surgical_guide": None,
+                }
             filepath = store.write_screenshot(user["id"], session_id, filename, img_bytes)
             # Browser image elements cannot attach X-API-Key.  In API-key
             # deployments, persist a short-lived case-bound signed URL rather

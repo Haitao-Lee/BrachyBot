@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import pytest
+import web.routes.planning_routes as planning_routes
 
 from agent_runtime.visual_evidence import (
     VISUAL_EVIDENCE_PROTOCOL_MARKER,
@@ -9,6 +10,7 @@ from agent_runtime.visual_evidence import (
     normalize_visual_evidence_context,
 )
 from web.routes.planning_routes import (
+    _screenshot_authoritative_case_state,
     _snapshot_annotation_planning_state,
     _validate_screenshot_annotation_marks,
 )
@@ -40,19 +42,31 @@ def _target(
         "data_tree_visible": data_tree_visible,
         "in_view": True,
         "annotatable": True,
+        "generated": True,
+        "loaded": True,
+        "current": status not in {"stale", "expired", "outdated"},
+        "availability": "loaded_stale" if status in {"stale", "expired", "outdated"} else "loaded_current",
         "status": status,
         "normalized_bounds": [0.2, 0.25, 0.3, 0.35],
     }
 
 
-def _attachment(target: dict, *, policy: str = "required") -> dict:
+def _attachment(
+    target: dict,
+    *,
+    policy: str = "required",
+    purpose: str = "explain",
+) -> dict:
     return {
         "id": "shot-1",
         "session_id": "a" * 32,
         "planning_id": "planning-a",
         "data_version": "7",
         "annotation_policy": policy,
+        "visual_purpose": purpose,
         "view_metadata": {
+            "annotation_policy": policy,
+            "visual_purpose": purpose,
             "grounding_manifest": {
                 "version": 1,
                 "target": "viewer-3d",
@@ -85,6 +99,23 @@ def test_visual_v2_keeps_signed_urls_and_fails_closed_for_hidden_scene_objects()
             "annotation_policy": "required",
             "planning_id": "planning-a",
             "data_version": "7",
+            "authoritative_case_state": {
+                "version": 1,
+                "source": "server",
+                "workspace": {
+                    "data_ready": True,
+                    "hydration_pending": False,
+                    "hydration_phase": "ready",
+                },
+                "surgical_guide": {
+                    "state": "stale",
+                    "generated": True,
+                    "persisted": True,
+                    "mesh_loaded": True,
+                    "presentation": "loaded",
+                    "status": "stale",
+                },
+            },
             "grounding_manifest": {
                 "target": "viewer-3d",
                 "capture_state": {
@@ -105,11 +136,16 @@ def test_visual_v2_keeps_signed_urls_and_fails_closed_for_hidden_scene_objects()
     assert normalized_target["scene_visible"] is False
     assert normalized_target["data_tree_visible"] is False
     assert normalized_target["annotatable"] is False
+    guide_state = context["evidence"][0]["authoritative_case_state"]["surgical_guide"]
+    assert guide_state["generated"] is True
+    assert guide_state["mesh_loaded"] is True
+    assert guide_state["state"] == "stale"
 
     prompt = build_visual_evidence_prompt(context, "zh-CN")
     assert VISUAL_EVIDENCE_PROTOCOL_MARKER in prompt
     assert VISUAL_RESPONSE_PROTOCOL_MARKER in prompt
     assert "Never point to where a hidden" in prompt
+    assert "stale or expired means an existing artifact may be out of date" in prompt
     assert "Use Chinese for every user-visible sentence and annotation label" in prompt
 
 
@@ -132,7 +168,7 @@ def test_data_tree_evidence_row_can_be_boxed_without_claiming_hidden_3d_visibili
     target = _target(
         "surgical_guide:active",
         kind="data-tree-row",
-        locator="data-tree-card",
+        locator="live-data-tree-dom",
         scene_visible=False,
         data_tree_visible=True,
     )
@@ -148,7 +184,7 @@ def test_data_tree_evidence_row_can_be_boxed_without_claiming_hidden_3d_visibili
         "target_ref": "surgical_guide:active",
         "shape": "box",
         "label": "导板节点（当前在 3D 中隐藏）",
-        "locator": "data-tree-card",
+        "locator": "live-data-tree-dom",
     }]
 
 
@@ -174,9 +210,37 @@ def test_grounded_2d_viewer_object_can_be_annotated_from_capture_manifest():
 @pytest.mark.parametrize("status", ["loading", "stale", "error", "deleted"])
 def test_server_rejects_non_current_targets(status):
     source = _attachment(_target("seed_1", status=status))
-    with pytest.raises(ValueError, match="stale or unavailable"):
+    with pytest.raises(ValueError, match="outdated or unavailable"):
         _validate_screenshot_annotation_marks(source, [{
             "target_ref": "seed_1",
+            "shape": "arrow",
+        }])
+
+
+def test_location_evidence_can_mark_a_visible_loaded_stale_guide():
+    source = _attachment(
+        _target("surgical_guide:active", status="stale"),
+        purpose="locate",
+    )
+
+    marks = _validate_screenshot_annotation_marks(source, [{
+        "target_ref": "surgical_guide:active",
+        "shape": "arrow",
+        "label": "手术导板（已过期）",
+    }])
+
+    assert marks[0]["target_ref"] == "surgical_guide:active"
+    assert marks[0]["shape"] == "arrow"
+
+
+def test_location_evidence_rejects_a_stale_guide_without_a_loaded_mesh():
+    target = _target("surgical_guide:active", status="stale")
+    target["loaded"] = False
+    source = _attachment(target, purpose="locate")
+
+    with pytest.raises(ValueError, match="generated and loaded"):
+        _validate_screenshot_annotation_marks(source, [{
+            "target_ref": "surgical_guide:active",
             "shape": "arrow",
         }])
 
@@ -217,6 +281,43 @@ def test_server_reads_active_planning_generation_from_durable_snapshot():
     assert _snapshot_annotation_planning_state({}) == ("", "")
 
 
+def test_authoritative_case_state_keeps_guide_generation_loading_and_freshness_separate(monkeypatch):
+    class Agent:
+        _workspace_data_ready = True
+        _workspace_hydration_in_progress = False
+        _workspace_hydration_phase = "ready"
+        _workspace_hydration_error = ""
+
+    monkeypatch.setattr(planning_routes, "guide_status_payload", lambda _agent: {
+        "state": "stale",
+        "available": True,
+        "generated": True,
+        "persisted": True,
+        "persistence_known": True,
+        "mesh_loaded": True,
+        "presentation": "loaded",
+        "source": "active_alias",
+        "active_planning_id": "planning-2",
+        "planning_id": "planning-2",
+        "version": 1,
+        "status": "stale",
+        "stale_reason": "manual_geometry_changed",
+        "plan_matches_current": False,
+        "hydration_pending": False,
+        "hydration_phase": "ready",
+        "hydration_error": None,
+        "reason": "guide_does_not_match_current_planning_geometry",
+    })
+
+    state = _screenshot_authoritative_case_state(Agent())
+
+    assert state["workspace"]["data_ready"] is True
+    assert state["surgical_guide"]["generated"] is True
+    assert state["surgical_guide"]["mesh_loaded"] is True
+    assert state["surgical_guide"]["presentation"] == "loaded"
+    assert state["surgical_guide"]["state"] == "stale"
+
+
 def test_browser_annotation_pipeline_is_semantic_state_aware_and_non_mutating():
     chat = _source("web/app/static/js/brachybot-chat-todo.js")
     annotation = _source("web/app/static/js/brachybot-visual-annotation.js")
@@ -237,7 +338,10 @@ def test_browser_annotation_pipeline_is_semantic_state_aware_and_non_mutating():
     assert "scene_visible" in annotation
     assert "data_tree_visible" in annotation
     assert "state_changed_during_annotation" in annotation
-    assert "data-tree-card" in annotation
+    assert "live-data-tree-dom" in annotation
+    assert "policy !== 'required' || purpose !== 'locate'" in annotation
+    assert "kind === 'scene-object' ? 'arrow'" in annotation
+    assert "target?.annotatable === true" in annotation
     assert annotation.index("planning.dataVersion") < annotation.index("planning.version")
     assert "get3DScreenshotGroundingManifest" in viewer
     assert "appearance ? appearance.visible !== false : false" in viewer
@@ -256,7 +360,7 @@ def test_browser_annotation_pipeline_is_semantic_state_aware_and_non_mutating():
     assert "_validate_screenshot_annotation_marks" in route
     assert "/api/screenshot/annotation" in route
     assert "grounding_manifest: groundingManifest" in ui_api
-    assert "brachybot-visual-annotation.js?v=3" in index
+    assert "brachybot-visual-annotation.js?v=4" in index
 
 
 def test_screenshot_autoframing_is_target_derived_verified_and_reversible():
@@ -313,9 +417,9 @@ def test_screenshot_autoframing_is_target_derived_verified_and_reversible():
     # the temporary slice/camera has been restored; it does not demand that
     # the restored view still matches the immutable capture.
     assert "kind === 'viewer-object-2d'" in annotation
-    assert "mpr_object_currently_hidden_or_stale" in annotation
+    assert "mpr_object_currently_hidden_or_unavailable" in annotation
     assert "does not" in annotation and "remain inside the restored live camera" in annotation
 
-    assert "brachybot-ui-api.js?v=59" in index
-    assert "brachybot-3d-manual.js?v=80" in index
+    assert "brachybot-ui-api.js?v=60" in index
+    assert "brachybot-3d-manual.js?v=81" in index
     assert "brachybot-manual-annotation.js?v=22" in index

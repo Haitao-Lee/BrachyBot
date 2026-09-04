@@ -489,6 +489,54 @@ def test_visual_capture_parent_uses_a_typed_pending_contract_not_a_canned_reply(
     assert "我已按当前问题准备了 Viewer/Data Tree 的对应证据" not in contract
 
 
+def test_data_tree_location_capture_uses_the_real_sidebar_and_restores_it():
+    tool = _source("tool_factory/ui_screenshot/__init__.py")
+    ui_api = _source("web/app/static/js/brachybot-ui-api.js")
+
+    assert "Never synthesize a replacement Data " in tool
+    assert "Tree card." in tool
+    assert "'data-tree':        '#dataTreeContainer'" in ui_api
+    assert "function _prepareLiveDataTreeForScreenshot" in ui_api
+    assert "function _normalizeDataTreeEvidenceStatus" in ui_api
+    assert "not[\\s-]+generated" in ui_api
+    assert "live-data-tree-stable-id" in ui_api
+    assert "capture_surface: 'live-application-dom'" in ui_api
+    assert "locator: 'live-data-tree-dom'" in ui_api
+    assert "_restoreDataTreeUiState(treeSnapshot)" in ui_api
+    assert "data-tree-evidence-capture" not in ui_api
+    assert "left:-100000px" not in ui_api
+
+
+def test_execution_trace_waits_for_the_mounted_final_reply_before_collapsing():
+    core = _source("web/app/static/js/brachybot-chat-core.js")
+    todo = _source("web/app/static/js/brachybot-chat-todo.js")
+    finalize = core.split("function finalizeThinkingChain", 1)[1].split(
+        "function cancelThinkingChain", 1
+    )[0]
+
+    assert "notifyAssistantFinalResponseMounted" in core
+    assert "chainEl.dataset.awaitingFinalResponse = '1'" in finalize
+    assert "_collapseThinkingChainAfterReplyPaint" in finalize
+    assert "setTimeout(_collapse, 0)" not in finalize
+    assert "setTimeout(_collapse, 300)" not in finalize
+    assert "setTimeout(_collapse, 800)" not in finalize
+    assert "if ((turnFailed || turnCancelled)" in todo
+    assert "cancelThinkingChain(chainEl, headerEl)" in todo
+
+
+def test_visual_evidence_receives_server_derived_guide_lifecycle_state():
+    route = _source("web/routes/planning_routes.py")
+    chat = _source("web/app/static/js/brachybot-chat-todo.js")
+    evidence = _source("agent_runtime/visual_evidence.py")
+
+    assert "def _screenshot_authoritative_case_state" in route
+    assert 'view_metadata["authoritative_case_state"]' in route
+    assert "guide_status_payload(agent)" in route
+    assert "authoritative_case_state: authoritativeCaseState" in chat
+    assert "generated, persisted, mesh_loaded, presentation" in evidence
+    assert "stale or expired means an existing artifact may be out of date" in evidence
+
+
 def test_target_agnostic_screenshot_can_follow_only_a_recent_user_target():
     """Context resolves the object family without trusting assistant prose."""
     conversation = [
