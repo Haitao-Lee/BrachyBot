@@ -211,6 +211,43 @@
         return String(value || '').replace(/\\/g, '\\\\').replace(/"/g, '\\"');
     }
 
+    function semanticDataTreeTarget(targetRef) {
+        const ref = text(targetRef, 220).toLowerCase();
+        if (!ref) return null;
+        const rows = Array.from(document.querySelectorAll('#dataTreeBody .tree-item'));
+        const identity = row => [
+            row?.dataset?.objectId,
+            row?.dataset?.nodeId,
+            row?.dataset?.item,
+            row?.dataset?.organId,
+        ].map(value => text(value, 220).toLowerCase()).filter(Boolean);
+        const exact = rows.find(row => identity(row).some(value => value === ref));
+        const isGuide = /(?:surgical|puncture)[_\s:-]*guide|手术导板|穿刺导板|导板/.test(ref);
+        const row = exact || (isGuide ? rows.find(candidate => {
+            const haystack = [
+                candidate?.dataset?.nodeType,
+                candidate?.dataset?.artifactKey,
+                candidate?.dataset?.source,
+                candidate?.textContent,
+            ].map(value => text(value, 400).toLowerCase()).join(' ');
+            return /(?:surgical|puncture)[_\s:-]*guide|手术导板|穿刺导板|导板/.test(haystack);
+        }) : null);
+        if (!row) return null;
+        const style = window.getComputedStyle?.(row);
+        const rect = row.getBoundingClientRect?.();
+        const rendered = style?.display !== 'none' && style?.visibility !== 'hidden'
+            && Number(style?.opacity ?? 1) > 0.01
+            && Number(rect?.width || 0) > 0 && Number(rect?.height || 0) > 0;
+        const status = text(
+            row.dataset?.status
+            || row.getAttribute?.('data-status')
+            || row.querySelector?.('.item-status, .status')?.textContent
+            || 'ready',
+            80,
+        ).toLowerCase();
+        return { found: true, rendered, status, element: row };
+    }
+
     function currentDomTarget(targetRef) {
         const escaped = attributeEscape(targetRef);
         const selectors = [
@@ -235,9 +272,20 @@
             const rendered = style?.display !== 'none' && style?.visibility !== 'hidden'
                 && Number(style?.opacity ?? 1) > 0.01
                 && Number(rect?.width || 0) > 0 && Number(rect?.height || 0) > 0;
-            const status = text(element.dataset?.status || 'ready', 48).toLowerCase();
+            const status = text(
+                element.dataset?.status
+                || element.getAttribute?.('data-status')
+                || element.querySelector?.('.item-status, .status')?.textContent
+                || 'ready',
+                80,
+            ).toLowerCase();
             return { found: true, rendered, status, element };
         }
+        // ``surgical_guide:active`` is a stable semantic identity rather
+        // than a literal DOM attribute. Resolve it against the live Data Tree
+        // row so annotation is anchored to the real page the user sees.
+        const semantic = semanticDataTreeTarget(targetRef);
+        if (semantic) return semantic;
         return { found: false, rendered: false, status: 'unresolved', element: null };
     }
 
@@ -308,15 +356,24 @@
                 };
             }
         } else {
-            const current = currentDomTarget(targetRef);
             // Data Tree evidence is captured from the real live sidebar after
             // temporarily expanding/scrolling it. The transaction is restored
             // before annotation, so the same row may now be collapsed and have
             // a zero client rect. Its capture-time live-DOM bounds remain valid
             // as long as the stable node still exists and its status is still
-            // compatible. Ordinary UI screenshots still require rendering.
+            // compatible. Never let a same-named control, synthetic card, or
+            // stale hidden placeholder satisfy this check: live Data Tree
+            // evidence must resolve back to the real tree row first.
             const liveDataTreeCapture = text(captured.locator, 48).toLowerCase()
                 === 'live-data-tree-dom' && captured.captured_from_live_dom === true;
+            const current = liveDataTreeCapture
+                ? (semanticDataTreeTarget(targetRef) || {
+                    found: false,
+                    rendered: false,
+                    status: 'unresolved',
+                    element: null,
+                })
+                : currentDomTarget(targetRef);
             if (!current.found || (!liveDataTreeCapture && !current.rendered)
                 || !statusAllowedForEvidence(attachment, current.status)) {
                 return { ok: false, reason: 'ui_target_currently_hidden_or_unavailable' };
@@ -614,7 +671,12 @@
     async function applyVisualResponseAnnotations(envelope, evidence, context = {}) {
         const sessionId = text(context.sessionId || activeSessionIdValue(), 64);
         const result = { updated: [], skipped: [], requested: 0, notice: '' };
-        if (!envelope || !Array.isArray(envelope.attachments) || !sessionId) return result;
+        const hasEnvelope = !!(envelope && Array.isArray(envelope.attachments));
+        // A required locate request has a deterministic, capture-grounded
+        // fallback. It must not depend on the hidden model returning a
+        // perfectly formatted protocol envelope before a mark can be shown.
+        // Other evidence remains model-directed and is untouched here.
+        if (!sessionId) return result;
         if (sessionId !== activeSessionIdValue()) {
             result.skipped.push({ reason: 'session_changed' });
             return result;
@@ -626,7 +688,7 @@
         // target in the capture manifest. This is not image guessing: hidden,
         // unloaded, unresolved, or state-mismatched targets still fail the
         // same validation below.
-        const decisions = envelope.attachments.map(decision => ({
+        const decisions = (hasEnvelope ? envelope.attachments : []).map(decision => ({
             ...decision,
             marks: Array.isArray(decision?.marks) ? [...decision.marks] : [],
         }));
@@ -644,6 +706,8 @@
             );
             const manifest = captureManifestFor(attachment);
             if (!attachmentId || !manifest) return;
+            if (attachment.annotated_url || attachment.annotatedUrl
+                || Number(attachment.annotation?.count || 0) > 0) return;
             let decision = decisions.find(item => item?.attachment_id === attachmentId);
             if (!decision) {
                 decision = { attachment_id: attachmentId, annotate: true, marks: [] };

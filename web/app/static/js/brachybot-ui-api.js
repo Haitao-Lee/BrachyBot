@@ -7745,8 +7745,15 @@ function _normalizeStructuredScreenshotPlan(target, question, options = {}) {
         .includes(String(supplied.annotation_policy || supplied.annotationPolicy || '').toLowerCase())
         ? String(supplied.annotation_policy || supplied.annotationPolicy).toLowerCase()
         : 'auto';
+    const requestIntent = String(
+        supplied.request_intent || supplied.requestIntent || options.requestIntent || ''
+    ).trim().slice(0, 160);
+    const preserveCurrentView = supplied.preserve_current_view !== undefined
+        || supplied.preserveCurrentView !== undefined
+        ? (supplied.preserve_current_view ?? supplied.preserveCurrentView) === true
+        : visualPurpose === 'locate';
     return Object.assign({}, supplied, {
-        version: Math.max(4, Number(supplied.version || 4)),
+        version: Math.max(5, Number(supplied.version || 5)),
         mode,
         question: supplied.question || question || '',
         layout: supplied.layout || options.layout || 'auto',
@@ -7767,6 +7774,8 @@ function _normalizeStructuredScreenshotPlan(target, question, options = {}) {
         visual_purpose: visualPurpose,
         analysis_required: supplied.analysis_required ?? supplied.analysisRequired ?? true,
         annotation_policy: annotationPolicy,
+        request_intent: requestIntent,
+        preserve_current_view: preserveCurrentView,
         target_refs: [...new Set([
             ...(Array.isArray(supplied.target_refs) ? supplied.target_refs : []),
             ...(Array.isArray(supplied.targetRefs) ? supplied.targetRefs : []),
@@ -7919,6 +7928,7 @@ function _applyScreenshotOverlayPlan(plan) {
 }
 
 function _screenshotAutoFrameEnabled(plan, targetRefs) {
+    if (plan.preserve_current_view === true || plan.preserveCurrentView === true) return false;
     const focusKind = String(plan.focus?.kind || '').trim().toLowerCase();
     if (focusKind === 'current-view' || focusKind === 'overview') return false;
     if (focusKind === 'auto' || focusKind === 'close-up') return true;
@@ -8002,7 +8012,8 @@ async function _applyStructuredScreenshotPlan(plan, viewTarget) {
         // anatomical surface. Isolate only this strict locate transaction;
         // overview/explanation captures retain their surrounding context.
         const isolateTargetForStrictLocate = plan.visual_purpose === 'locate'
-            && plan.annotation_policy === 'required';
+            && plan.annotation_policy === 'required'
+            && plan.preserve_current_view !== true;
         const restoreFocus = window.focusPlanningObjectsForScreenshot(targetRefs, {
             hideUnrelated: !!plan.hide_unrelated || isolateTargetForStrictLocate,
             highlightObjectIds: plan.highlight_object_ids || [],
@@ -8104,6 +8115,64 @@ function _screenshotFailureMessage(galleryContext, errorCode) {
         : (language === 'zh'
             ? '\u672a\u80fd\u751f\u6210\u6709\u6548\u622a\u56fe\u3002\u8bf7\u786e\u8ba4\u76ee\u6807\u6570\u636e\u5df2\u52a0\u8f7d\u540e\u91cd\u8bd5\u3002'
             : 'A valid screenshot could not be generated. Confirm that the target data is loaded, then retry.');
+}
+
+async function _annotateRequiredScreenshotBeforeDisplay(attachment, context = {}) {
+    const policy = String(
+        attachment?.annotation_policy
+        || attachment?.view_metadata?.annotation_policy
+        || attachment?.viewMetadata?.annotationPolicy
+        || ''
+    ).toLowerCase();
+    const purpose = String(
+        attachment?.visual_purpose
+        || attachment?.view_metadata?.visual_purpose
+        || attachment?.viewMetadata?.visualPurpose
+        || ''
+    ).toLowerCase();
+    if (policy !== 'required' || purpose !== 'locate'
+        || attachment?.annotated_url || attachment?.annotatedUrl
+        || typeof window.applyVisualResponseAnnotations !== 'function') {
+        return attachment;
+    }
+    try {
+        // Run the capture-grounded deterministic path immediately, before the
+        // source image is rendered into chat. A hidden multimodal response
+        // may arrive later, but it must not decide whether a locating mark
+        // exists at all.
+        const result = await window.applyVisualResponseAnnotations(
+            null,
+            [attachment],
+            {
+                sessionId: context.sessionId || attachment.session_id || '',
+                requestId: context.requestId || attachment.request_id || '',
+                messageId: context.messageId || attachment.message_id || '',
+                responseLanguage: context.responseLanguage || attachment.response_language || '',
+            },
+        );
+        const attachmentId = String(attachment.id || attachment.attachment_id || '');
+        const updated = (Array.isArray(result?.updated) ? result.updated : []).find(item =>
+            String(item?.id || item?.attachment_id || '') === attachmentId
+        );
+        if (updated) {
+            return Object.assign({}, attachment, updated, {
+                view_metadata: Object.assign(
+                    {},
+                    attachment.view_metadata || attachment.viewMetadata || {},
+                    updated.view_metadata || updated.viewMetadata || {},
+                ),
+            });
+        }
+        if (result?.requested > 0 && !result?.updated?.length) {
+            console.warn('[screenshot] required locate annotation was not persisted:', result.skipped);
+        }
+    } catch (error) {
+        // Keep the immutable source available for diagnostics. The visual
+        // child will report the unmarked/temporarily unavailable state rather
+        // than fabricating a coordinate after a failed state check.
+        console.warn('[screenshot] required locate annotation deferred:', error);
+    }
+    return attachment;
 }
 
 async function _interceptScreenshot(target, question, galleryContext, options = {}) {
@@ -8271,6 +8340,9 @@ async function _interceptScreenshot(target, question, galleryContext, options = 
                         visual_purpose: plan.visual_purpose || 'explain',
                         analysis_required: plan.analysis_required !== false,
                         annotation_policy: plan.annotation_policy || 'auto',
+                        request_intent: plan.request_intent || plan.requestIntent || '',
+                        preserve_current_view: plan.preserve_current_view === true
+                            || plan.preserveCurrentView === true,
                         focus_result: captureSpec.__focusResult || null,
                         grounding_manifest: groundingManifest,
                     },
@@ -8316,6 +8388,9 @@ async function _interceptScreenshot(target, question, galleryContext, options = 
                             visual_purpose: plan.visual_purpose || 'explain',
                             analysis_required: plan.analysis_required !== false,
                             annotation_policy: plan.annotation_policy || 'auto',
+                            request_intent: plan.request_intent || plan.requestIntent || '',
+                            preserve_current_view: plan.preserve_current_view === true
+                                || plan.preserveCurrentView === true,
                             focus_result: captureSpec.__focusResult || null,
                             grounding_manifest: groundingManifest,
                         },
@@ -8324,14 +8399,21 @@ async function _interceptScreenshot(target, question, galleryContext, options = 
                     analysis_required: plan.analysis_required !== false,
                     annotation_policy: plan.annotation_policy || 'auto',
                     visual_purpose: plan.visual_purpose || 'explain',
+                    request_intent: plan.request_intent || plan.requestIntent || '',
+                    preserve_current_view: plan.preserve_current_view === true
+                        || plan.preserveCurrentView === true,
                 },
+            );
+            const displayAttachment = await _annotateRequiredScreenshotBeforeDisplay(
+                uploadedAttachment,
+                context,
             );
             const attachment = _appendScreenshotToGallery(
                 screenshotUrl,
                 viewTarget,
                 plan.question,
                 context,
-                uploadedAttachment,
+                displayAttachment,
             );
             if (attachment) attachments.push(attachment);
             } finally {

@@ -339,6 +339,8 @@ def test_browser_annotation_pipeline_is_semantic_state_aware_and_non_mutating():
     assert "data_tree_visible" in annotation
     assert "state_changed_during_annotation" in annotation
     assert "live-data-tree-dom" in annotation
+    assert "same-named control, synthetic card" in annotation
+    assert "semanticDataTreeTarget(targetRef)" in annotation
     assert "policy !== 'required' || purpose !== 'locate'" in annotation
     assert "kind === 'scene-object' ? 'arrow'" in annotation
     assert "target?.annotatable === true" in annotation
@@ -360,7 +362,10 @@ def test_browser_annotation_pipeline_is_semantic_state_aware_and_non_mutating():
     assert "_validate_screenshot_annotation_marks" in route
     assert "/api/screenshot/annotation" in route
     assert "grounding_manifest: groundingManifest" in ui_api
-    assert "brachybot-visual-annotation.js?v=4" in index
+    assert "brachybot-visual-annotation.js?v=5" in index
+    assert "_annotateRequiredScreenshotBeforeDisplay" in ui_api
+    assert "semanticDataTreeTarget" in annotation
+    assert "const hasEnvelope" in annotation
 
 
 def test_screenshot_autoframing_is_target_derived_verified_and_reversible():
@@ -373,7 +378,7 @@ def test_screenshot_autoframing_is_target_derived_verified_and_reversible():
 
     # The model names stable objects. It is explicitly told not to estimate
     # medical coordinates or slices from prose/image pixels.
-    assert '"version": 4' in tool
+    assert '"version": 5' in tool
     assert "not guess center_voxel or slice_indices" in tool
     assert "Those fields are expert" in tool
     assert "focus.kind=`auto` or `close-up`" in tool
@@ -420,6 +425,6 @@ def test_screenshot_autoframing_is_target_derived_verified_and_reversible():
     assert "mpr_object_currently_hidden_or_unavailable" in annotation
     assert "does not" in annotation and "remain inside the restored live camera" in annotation
 
-    assert "brachybot-ui-api.js?v=60" in index
+    assert "brachybot-ui-api.js?v=61" in index
     assert "brachybot-3d-manual.js?v=81" in index
     assert "brachybot-manual-annotation.js?v=22" in index
