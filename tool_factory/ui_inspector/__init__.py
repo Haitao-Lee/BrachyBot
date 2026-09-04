@@ -43,7 +43,15 @@ Use this when:
 For an actionable request, prefer the returned action_capabilities. Each
 capability is derived from the real DOM control or handler and contains the
 exact ui_controller target, command, value, and value semantics. Do not infer
-an action from a translated label or from a keyword-only source match."""
+an action from a translated label or from a keyword-only source match.
+
+For a question asking where a button/control is, inspect the actual
+action_capabilities first. If a visible control is requested as evidence,
+pass its stable DOM id to ui_screenshot with target=overlay-controls,
+visual_purpose=locate, and annotation_policy=required. The screenshot browser
+resolves the element bounds; never invent pixel coordinates or answer from a
+generic remembered layout. Keep this query read-only: do not click the
+control merely to explain where it is."""
 
     input_schema = {
         "query": {
@@ -156,6 +164,8 @@ an action from a translated label or from a keyword-only source match."""
              lambda m: {"target": "3d.fit", "command": "run"}),
             (r"fitView\s*\(\s*\)",
              lambda m: {"target": "viewer.fit_all", "command": "run"}),
+            (r"reconstruct3D\s*\(\s*\)",
+             lambda m: {"target": "viewer.reconstruct3d", "command": "run"}),
             (r"reset3DView\s*\(\s*\)",
              lambda m: {"target": "3d.reset", "command": "run"}),
             (r"setViewerLayout\(\s*['\"]([^'\"]+)['\"]\s*\)",
@@ -193,6 +203,8 @@ an action from a translated label or from a keyword-only source match."""
             return ["viewer zoom", "zoom in", "zoom out", "缩放", "放大图像", "缩小图像"]
         if target == "3d.fit":
             return ["fit camera", "fit visible meshes", "适配三维相机", "显示全部模型"]
+        if target == "viewer.reconstruct3d":
+            return ["3D reconstruction", "3D reconstruct", "reconstruct 3D", "3D重建", "三维重建"]
         if target == "viewer.fit_all":
             return ["fit 2D viewers", "适配图像", "显示完整切片"]
         return [str(label).strip()] if str(label).strip() else []

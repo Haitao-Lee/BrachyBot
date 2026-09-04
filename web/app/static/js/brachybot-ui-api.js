@@ -4482,6 +4482,25 @@ async function _executeUIActionRaw(a, options = {}) {
                 : 'The current planning result was refreshed and displayed in the Viewer.';
             return { success: true, target, command, message, refresh: refreshResult };
         }
+        if (target === 'viewer.reconstruct3d' && command === 'run') {
+            // Keep the toolbar action distinct from tree.reconstruct3d, which
+            // reconstructs one Data Tree organ. The same global function is
+            // used by the real button and by ui_controller so discovery and
+            // execution cannot drift apart.
+            if (typeof reconstruct3D !== 'function') {
+                return { success: false, error: '3D reconstruction is unavailable.' };
+            }
+            const reconstruction = await Promise.resolve(reconstruct3D());
+            if (reconstruction?.stale === true) return reconstruction;
+            return {
+                success: true,
+                target,
+                command,
+                message: typeof window._t === 'function'
+                    ? window._t('已启动三维重建。', '3D reconstruction started.')
+                    : '3D reconstruction started.',
+            };
+        }
         // ── Viewer settings ──
         if (target === 'viewer.window') {
             const el = document.getElementById('viewerWindow');
@@ -5769,7 +5788,18 @@ async function _captureScreenshotDataUrl(target, el, plan = {}) {
     }
     const targetEl = el || _resolveScreenshotTarget(target);
     if (!targetEl || typeof html2canvas === 'undefined') return null;
-    const canvas = await html2canvas(targetEl, { useCORS: true, allowTaint: true, scale: 1 });
+    // Toolbar-control evidence is intentionally rendered at 2x. The toolbar
+    // uses compact labels in the live application, but a location screenshot
+    // must remain readable after it is attached to chat. Normal viewer/report
+    // captures keep their existing scale and dimensions.
+    const uiEvidenceScale = target === 'overlay-controls' && _screenshotTargetRefs(plan).length
+        ? 2
+        : 1;
+    const canvas = await html2canvas(targetEl, {
+        useCORS: true,
+        allowTaint: true,
+        scale: uiEvidenceScale,
+    });
     return canvas.toDataURL('image/png');
 }
 
@@ -5955,6 +5985,7 @@ function _localizedScreenshotTargetLabelLegacy(target) {
         'dose-overview': ['剂量总览', 'Dose overview'],
         'dvh': ['DVH 曲线', 'DVH'],
         'data-tree': ['数据树', 'Data Tree'],
+        'overlay-controls': ['查看器工具栏', 'Viewer toolbar'],
     };
     const pair = labels[target] || [target || '截图', target || 'Screenshot'];
     const language = typeof window.conversationLanguageForSession === 'function'
@@ -6151,6 +6182,7 @@ function _localizedScreenshotTargetLabel(target, sessionId = _activeApiSessionId
         'viewer-3d': ['\u4e09\u7ef4\u67e5\u770b\u5668', '3D viewer'],
         'dvh': ['DVH \u66f2\u7ebf', 'DVH'],
         'data-tree': ['\u6570\u636e\u6811', 'Data Tree'],
+        'overlay-controls': ['\u67e5\u770b\u5668\u5de5\u5177\u680f', 'Viewer toolbar'],
         'metrics': ['\u89c4\u5212\u6307\u6807', 'Planning metrics'],
         'report': ['\u62a5\u544a\u622a\u56fe', 'Report figures'],
         'full': ['\u5b8c\u6574\u754c\u9762', 'Full application'],
@@ -8021,16 +8053,23 @@ async function _interceptScreenshot(target, question, galleryContext, options = 
     if (!ownerStillActive()) return { success: false, stale: true, error: 'case_changed' };
 
     // The loading notice intentionally remains non-blocking for ordinary UI
-    // work, but a screenshot is a serialized evidence read.  Wait for the
-    // case-owned visual restore transaction before reading the Data Tree or
-    // Viewer so a restart cannot capture temporary ``not_generated`` rows or
-    // frame a mesh before it has been restored.
-    const visualReadiness = typeof window.awaitWorkspaceVisualReady === 'function'
-        ? await window.awaitWorkspaceVisualReady(ownerSessionId, {
-            timeoutMs: 300000,
-            reason: 'screenshot-capture',
-        })
-        : { ready: true, legacy: true };
+    // work, but a screenshot is a serialized evidence read.  Case-backed
+    // Viewer/Data Tree captures wait for the restore transaction so a restart
+    // cannot capture temporary ``not_generated`` rows or frame a mesh before
+    // it has been restored. A pure DOM-control capture (toolbar/input/chat)
+    // does not depend on clinical resources, so it should remain available
+    // while the case is hydrating instead of waiting for up to five minutes.
+    const uiOnlyCapture = plan.views.length > 0 && plan.views.every(view => (
+        ['overlay-controls', 'input', 'planning', 'chat'].includes(String(view?.target || ''))
+    ));
+    const visualReadiness = uiOnlyCapture
+        ? { ready: true, reason: 'ui_dom_capture' }
+        : (typeof window.awaitWorkspaceVisualReady === 'function'
+            ? await window.awaitWorkspaceVisualReady(ownerSessionId, {
+                timeoutMs: 300000,
+                reason: 'screenshot-capture',
+            })
+            : { ready: true, legacy: true });
     if (visualReadiness?.ready === false) {
         return {
             success: false,

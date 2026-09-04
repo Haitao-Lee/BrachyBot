@@ -15,6 +15,8 @@ from agent_runtime.turn_policy import (
     resolve_session_content_presentation,
     resolve_session_content_target,
     resolve_session_visual_location_target,
+    is_ui_control_location_question,
+    resolve_ui_control_location_target,
     visual_analysis_policy,
 )
 from agent_runtime.visual_evidence import (
@@ -405,6 +407,70 @@ def test_explicit_annotation_wording_routes_to_the_same_grounded_guide_capture()
     assert params["visual_purpose"] == "locate"
     assert params["annotation_policy"] == "required"
     assert params["analysis_required"] is True
+
+
+def test_3d_reconstruction_button_question_uses_grounded_ui_capture():
+    """A UI-control location question must not fall into knowledge_query."""
+    message = "请问3D重建的按钮在哪里吗"
+
+    assert is_ui_control_location_question(message) is True
+    assert resolve_ui_control_location_target(message) == "ui_control:viewer.reconstruct3d"
+    assert resolve_session_visual_location_target(message) == "ui_control:viewer.reconstruct3d"
+
+    policy = classify_local_turn(message)
+    assert policy.intent == "session_visual_location_query"
+    assert policy.direct_execution is True
+    assert policy.execution_grants == frozenset({"ui_screenshot"})
+
+    calls = ResponseToolMixin()._detect_tool_request(message)
+    assert calls and len(calls) == 1
+    assert calls[0]["tool"] == "ui_screenshot"
+    params = calls[0]["params"]
+    assert params["views"] == ["overlay-controls"]
+    assert params["layout"] == "single"
+    assert params["target_refs"] == ["reconstruct3DButton"]
+    assert params["object_ids"] == []
+    assert params["data_tree_node_ids"] == []
+    assert params["highlight_object_ids"] == []
+    assert params["visual_purpose"] == "locate"
+    assert params["annotation_policy"] == "required"
+    assert params["analysis_required"] is True
+
+
+def test_unknown_ui_control_location_question_uses_inspector_read_path():
+    """Unknown controls go to live capability discovery, not a canned answer."""
+    message = "请问放大查看器的按钮在哪里"
+
+    assert is_ui_control_location_question(message) is True
+    assert resolve_ui_control_location_target(message) is None
+    policy = classify_local_turn(message)
+    assert policy.intent == "ui_control_location_query"
+    assert "ui_inspector" in policy.allow_tools
+    assert "ui_screenshot" in policy.allow_tools
+
+
+def test_ui_control_location_does_not_steal_case_object_location():
+    message = "请问3D查看器里的导板在哪里"
+
+    assert resolve_ui_control_location_target(message) is None
+    assert resolve_session_visual_location_target(message) == "surgical_guide"
+    assert classify_local_turn(message).intent == "session_visual_location_query"
+
+
+def test_reconstruction_control_is_backed_by_dom_capability_metadata():
+    index = _source("web/app/index.html")
+    inspector = _source("tool_factory/ui_inspector/__init__.py")
+    controller = _source("tool_factory/ui_controller/__init__.py")
+    ui_api = _source("web/app/static/js/brachybot-ui-api.js")
+
+    assert 'id="reconstruct3DButton"' in index
+    assert 'data-ui-target="viewer.reconstruct3d"' in index
+    assert 'data-ui-command="run"' in index
+    assert "reconstruct3D" in inspector
+    assert "viewer.reconstruct3d" in inspector
+    assert '"viewer.reconstruct3d"' in controller
+    assert "target === 'viewer.reconstruct3d'" in ui_api
+    assert "target === 'overlay-controls'" in ui_api
 
 
 def test_visual_capture_parent_uses_a_typed_pending_contract_not_a_canned_reply():
