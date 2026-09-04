@@ -112,7 +112,11 @@ class UIScreenshotTool(BaseTool):
             "mask cross-section or loaded scene bounds, verifies the framing, "
             "captures it, and restores the operator's original slice/camera. Do "
             "not guess center_voxel or slice_indices. Those fields are expert "
-            "overrides only."
+            "overrides only. For a question asking where a button/control is, "
+            "use `overlay-controls` and pass the stable DOM id returned by "
+            "ui_inspector as target_refs; set visual_purpose=`locate` and "
+            "annotation_policy=`required`. The browser computes the element "
+            "bounds and the visual child writes the user-facing explanation."
         )
 
     @property

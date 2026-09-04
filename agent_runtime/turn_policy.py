@@ -398,7 +398,8 @@ def _is_location_question(message: str) -> bool:
     if not text:
         return False
     chinese_location = bool(re.search(
-        r"(?:哪里|哪儿|在哪(?:里)?|哪个(?:面板|窗口|视图|地方)|怎么找|如何找|找到|找得到)",
+        r"(?:哪里|哪儿|在哪(?:里)?|哪个(?:面板|窗口|视图|地方|位置)|"
+        r"什么位置|所在位置|怎么找|如何找|找到|找得到)",
         text,
     ))
     english_location = bool(re.search(
@@ -436,6 +437,64 @@ def _has_visual_annotation_request(message: str) -> bool:
         text,
         flags=re.IGNORECASE,
     ))
+
+
+def is_ui_control_location_question(message: str) -> bool:
+    """Recognize a request to locate an interface control, not a case object.
+
+    This is a semantic boundary for the UI evidence workflow, not a response
+    whitelist.  The actual control identity must still come from the live DOM
+    capability metadata (or from ``ui_inspector`` for an unknown control), and
+    the browser must produce the coordinates and visibility evidence.
+    """
+    text = re.sub(r"\s+", " ", str(message or "").strip().lower())
+    if not text or not (_is_location_question(text) or _has_visual_annotation_request(text)):
+        return False
+    has_control_word = _contains_any(text, (
+        "按钮", "控件", "图标", "菜单", "工具栏", "操作键", "按键",
+        "button", "control", "icon", "menu", "toolbar", "action", "command",
+    ))
+    has_ui_context = _contains_any(text, (
+        "viewer", "查看器", "面板", "窗口", "界面", "工具栏", "顶部",
+        "data tree", "数据树", "3d", "3-d", "三维", "2d", "2-d", "二维",
+        "reconstruct", "reconstruction", "重建", "放大", "缩放", "全屏",
+    ))
+    # ``哪个按钮/which button`` is already an interface-location request
+    # even when the user has not named a panel or viewer yet.  Let the real
+    # inspector discover the control instead of guessing one from prose.
+    generic_button_question = _contains_any(text, (
+        "哪个按钮", "什么按钮", "which button", "what button",
+    ))
+    return has_control_word and (has_ui_context or generic_button_question)
+
+
+def resolve_ui_control_location_target(message: str) -> Optional[str]:
+    """Resolve a known UI-control location to a stable semantic target.
+
+    Only the full Viewer toolbar's 3D reconstruction action is resolved here
+    because it has an explicit stable DOM capability.  Other controls stay on
+    the inspector-driven path; hard-coding a pixel target for them would be
+    less reliable than asking the current UI capability catalog.
+    """
+    text = re.sub(r"\s+", " ", str(message or "").strip().lower())
+    if not is_ui_control_location_question(text):
+        return None
+    has_3d = _contains_any(text, ("3d", "3-d", "三维"))
+    has_reconstruction = _contains_any(text, (
+        "reconstruct", "reconstruction", "reconstruct 3d", "3d reconstruct",
+        "重建", "三维重建",
+    ))
+    if not (has_3d and has_reconstruction):
+        return None
+    # A Data Tree organ-row action is a different capability from the global
+    # Viewer toolbar action.  Keep that wording on the inspector path so the
+    # model can inspect the selected node and its actual row menu.
+    if _contains_any(text, (
+        "data tree", "数据树", "organ", "器官", "right click", "右键",
+        "context menu", "右键菜单", "节点",
+    )):
+        return None
+    return "ui_control:viewer.reconstruct3d"
 
 
 def _visual_target_from_text(message: str) -> Optional[str]:
@@ -1232,6 +1291,9 @@ def resolve_session_visual_location_target(
         return None
     if _is_guide_generation_help_query(text):
         return None
+    ui_control_target = resolve_ui_control_location_target(text)
+    if ui_control_target:
+        return ui_control_target
     target = _visual_target_from_text(text)
     if target:
         return target
@@ -1442,6 +1504,20 @@ def classify_local_turn(
             frozenset({"ui_screenshot"}),
             direct_execution=True,
             execution_grants=frozenset({"ui_screenshot"}),
+        )
+
+    # An unknown control still needs live UI capability discovery.  Keep the
+    # request read-only and let the LLM use ui_inspector followed by a
+    # structured ui_screenshot plan; the browser remains the only source of
+    # coordinates and annotations.
+    if is_ui_control_location_question(text):
+        return LocalTurnPolicy(
+            "ui_control_location_query",
+            "low",
+            False,
+            False,
+            False,
+            UI_TOOLS,
         )
 
     if is_report_generation_request(text):

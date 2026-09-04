@@ -402,9 +402,36 @@ print(json.dumps(result))
             if ref not in stable_refs:
                 stable_refs.append(ref)
 
-        if target == "surgical_guide":
+        # UI-control location is a different visual contract from a case
+        # object location.  Capture the real toolbar, and use the stable DOM
+        # id as the sole annotation target.  It must not be copied into the
+        # planning-object or Data Tree identity fields.
+        object_refs = list(stable_refs)
+        data_tree_refs = list(stable_refs)
+        layout = ""
+        if target == "ui_control:viewer.reconstruct3d":
+            views = ["overlay-controls"]
+            stable_refs = ["reconstruct3DButton"]
+            object_refs = []
+            data_tree_refs = []
+            layout = "single"
+            title = "3D重建按钮位置" if is_zh else "3D reconstruction button location"
+            description = (
+                "定位 Viewer 工具栏中真实存在的 3D 重建按钮，并在截图中标注。"
+                if is_zh
+                else "Locate the real 3D reconstruction button in the Viewer toolbar and mark it in the screenshot."
+            )
+            focus = {"kind": "current-view"}
+            overlays = {}
+            hide_unrelated = False
+            # A location question is itself a request for an unambiguous mark,
+            # even when the user did not repeat the words "圈出" or "标注".
+            annotation_policy = "required"
+        elif target == "surgical_guide":
             views = ["viewer-3d", "data-tree"]
             stable_refs = ["surgical_guide:active"]
+            object_refs = list(stable_refs)
+            data_tree_refs = list(stable_refs)
             title = "手术导板位置" if is_zh else "Surgical guide location"
             description = (
                 "定位当前已保存且实际可见的手术导板；仅在 Viewer/Data Tree 中验证后标注。"
@@ -459,13 +486,13 @@ print(json.dumps(result))
         return {
             "mode": "chat",
             "views": views,
-            "layout": "side-by-side" if len(views) == 2 else "auto",
+            "layout": layout or ("side-by-side" if len(views) == 2 else "auto"),
             "question": text,
             "title": title,
             "description": description,
-            "object_ids": list(stable_refs),
-            "data_tree_node_ids": list(stable_refs),
-            "highlight_object_ids": list(stable_refs),
+            "object_ids": object_refs,
+            "data_tree_node_ids": data_tree_refs,
+            "highlight_object_ids": object_refs,
             "hide_unrelated": hide_unrelated,
             "focus": focus,
             "overlays": overlays,
@@ -2245,6 +2272,22 @@ Output (JSON array of strings):"""
                 )
                 return []
             tool_calls = visual_calls
+        if getattr(active_policy, "intent", None) == "ui_control_location_query":
+            # Unknown-control location questions are read-only.  The model may
+            # inspect the real capability catalog and request a screenshot,
+            # but it must not click, toggle, or mutate a UI control while
+            # answering where that control is.
+            inspector_calls = [
+                call for call in (tool_calls or [])
+                if str(call.get("tool") or "") in {"ui_inspector", "ui_screenshot"}
+            ]
+            if not inspector_calls:
+                logger.error(
+                    "Rejected non-read-only provider calls for a UI control "
+                    "location turn"
+                )
+                return []
+            tool_calls = inspector_calls
         if (
             getattr(active_policy, "intent", None) == "surgical_guide_generation"
             and not (

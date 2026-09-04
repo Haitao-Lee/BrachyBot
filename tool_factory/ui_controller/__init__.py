@@ -94,6 +94,14 @@ CONTROL_REGISTRY = {
             "refresh; it does not rerun planning or recompute dose."
         )
     },
+    "viewer.reconstruct3d": {
+        "commands": ["run"],
+        "description": (
+            "Run the global 3D reconstruction action from the Viewer toolbar "
+            "using the currently loaded CT and planning data. This is the "
+            "toolbar action, not the per-organ Data Tree reconstruction command."
+        )
+    },
     "viewer.preset": {
         "commands": ["set"],
         "values": ["soft", "bone", "lung", "brain", "custom"],
@@ -857,6 +865,7 @@ class UIControllerTool(BaseTool):
         if target == "viewer.reset": return "Viewer settings reset to defaults"
         if target == "viewer.fit_all": return "All viewers fitted to image"
         if target == "viewer.refresh_planning": return "Planning results refresh requested in Viewer"
+        if target == "viewer.reconstruct3d": return "Global 3D reconstruction started from the Viewer toolbar"
         if target == "viewer.preset": return f"Applied {value} window preset"
         if target == "viewer.transform": return f"Viewer transform: {command}"
         if target == "viewer.tool": return f"Activated viewer tool: {value}"
