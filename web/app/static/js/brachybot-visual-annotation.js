@@ -615,14 +615,173 @@
         };
     }
 
+    function normalizeAnnotationLanguage(value) {
+        const raw = String(value == null ? '' : value).trim().toLowerCase().replace(/_/g, '-');
+        if (!raw) return '';
+        if (raw === 'zh' || raw.startsWith('zh-') || raw === '中文' || raw.startsWith('中文')) {
+            return 'zh';
+        }
+        if (raw === 'en' || raw.startsWith('en-') || raw === 'english' || raw === '英文') {
+            return 'en';
+        }
+        return '';
+    }
+
     function languageFor(attachment, context = {}) {
+        // A screenshot is a reply artifact. Its language must be resolved from
+        // the visible turn and persisted on the attachment, not from the
+        // current UI/Data Tree locale (which may change before a delayed
+        // annotation or a Session replay).
+        const attachmentMetadata = metadataFor(attachment);
+        const attachmentLanguage = attachment?.response_language
+            || attachment?.responseLanguage
+            || attachmentMetadata?.response_language
+            || attachmentMetadata?.responseLanguage
+            || '';
+        const question = attachment?.question || attachmentMetadata?.question || '';
+        const questionLanguage = /[\u3400-\u4dbf\u4e00-\u9fff]/.test(String(question))
+            ? 'zh'
+            : (/[A-Za-z]/.test(String(question)) ? 'en' : '');
         const raw = context.responseLanguage || context.response_language
-            || attachment?.response_language || attachment?.responseLanguage
+            || attachmentLanguage
+            || questionLanguage
             || (typeof window.conversationLanguageForSession === 'function'
                 ? window.conversationLanguageForSession(activeSessionIdValue())
                 : '')
             || window._responseLanguage || window._i18nLang || 'en';
-        return String(raw).toLowerCase().startsWith('zh') ? 'zh' : 'en';
+        return normalizeAnnotationLanguage(raw) || 'en';
+    }
+
+    function hasCjk(value) {
+        return /[\u3400-\u4dbf\u4e00-\u9fff]/.test(String(value || ''));
+    }
+
+    function annotationSemanticKind(mark, captured, attachment) {
+        const metadata = metadataFor(attachment);
+        const values = [
+            mark?.target_ref,
+            mark?.targetRef,
+            mark?.label,
+            captured?.target_ref,
+            captured?.targetRef,
+            captured?.label,
+            captured?.node_type,
+            captured?.nodeType,
+            captured?.artifact_key,
+            captured?.artifactKey,
+            captured?.kind,
+            metadata?.request_intent,
+            metadata?.requestIntent,
+            attachment?.request_intent,
+            attachment?.requestIntent,
+            attachment?.target,
+        ].map(value => text(value, 220).toLowerCase()).filter(Boolean);
+        const haystack = values.join(' ');
+        if (/(?:surgical|puncture)[_\s:-]*guide|手术导板|穿刺导板|导板/.test(haystack)) {
+            return 'guide';
+        }
+        if (/reconstruct3d|(?:reconstruct(?:ion)?|3d)[_\s:-]*(?:reconstruct|reconstruction|重建)|3d重建|重建按钮/.test(haystack)) {
+            return 'reconstruct-button';
+        }
+        if (/\bseed(?:s)?\b|seed[_\s:-]*\d|粒子|种子/.test(haystack)) return 'seed';
+        if (/\bneedle(?:s)?\b|needle[_\s:-]*\d|穿刺针|针道/.test(haystack)) return 'needle';
+        if (/\btrajectory(?:ies)?\b|traj[_\s:-]*\d|轨迹/.test(haystack)) return 'trajectory';
+        if (/\bctv\b|靶区|肿瘤/.test(haystack)) return 'ctv';
+        if (/\boar\b|organ[_\s:-]*at[_\s:-]*risk|危及器官/.test(haystack)) return 'oar';
+        const kind = text(captured?.kind, 48).toLowerCase();
+        if (kind === 'data-tree-row') return 'data-tree';
+        if (kind === 'ui-element') return 'ui';
+        if (kind === 'viewer-object-2d') return 'viewer-2d';
+        if (kind === 'scene-object') return 'scene-object';
+        return 'target';
+    }
+
+    function annotationOrdinal(mark, captured, semanticKind) {
+        if (!['seed', 'needle', 'trajectory'].includes(semanticKind)) return '';
+        const values = [
+            mark?.target_ref,
+            mark?.targetRef,
+            mark?.label,
+            captured?.target_ref,
+            captured?.targetRef,
+            captured?.label,
+        ];
+        const names = semanticKind === 'seed'
+            ? '(?:seed|粒子|种子)'
+            : (semanticKind === 'needle' ? '(?:needle|针道|穿刺针)' : '(?:trajectory|traj|轨迹)');
+        for (const value of values) {
+            const match = String(value || '').match(new RegExp(`${names}[_\\s:-]*(?:id[_\\s:-]*)?(\\d+)`, 'i'));
+            if (match) return match[1];
+        }
+        return '';
+    }
+
+    function annotationVersion(mark, captured) {
+        const values = [
+            mark?.target_ref,
+            mark?.targetRef,
+            mark?.label,
+            captured?.target_ref,
+            captured?.targetRef,
+            captured?.label,
+        ];
+        for (const value of values) {
+            const match = String(value || '').match(/\bv\d+(?:\.\d+)?\b/i);
+            if (match) return match[0].toLowerCase();
+        }
+        return '';
+    }
+
+    function localizedAnnotationLabel(mark, captured, attachment, context = {}) {
+        const language = languageFor(attachment, context);
+        const raw = text(mark?.label || captured?.label, 120);
+        const semanticKind = annotationSemanticKind(mark, captured, attachment);
+        const ordinal = annotationOrdinal(mark, captured, semanticKind);
+        const version = annotationVersion(mark, captured);
+        const suffix = version || ordinal;
+        const labels = language === 'zh'
+            ? {
+                guide: '穿刺导板',
+                'reconstruct-button': '3D 重建按钮',
+                seed: '粒子',
+                needle: '针道',
+                trajectory: '针道轨迹',
+                ctv: 'CTV 靶区',
+                oar: 'OAR 危及器官',
+                'data-tree': '数据树节点',
+                ui: '界面目标',
+                'viewer-2d': '2D 查看器目标',
+                'scene-object': '三维场景对象',
+                target: '标注目标',
+            }
+            : {
+                guide: 'Puncture guide',
+                'reconstruct-button': '3D reconstruction button',
+                seed: 'Seed',
+                needle: 'Needle',
+                trajectory: 'Trajectory',
+                ctv: 'CTV target',
+                oar: 'OAR',
+                'data-tree': 'Data Tree node',
+                ui: 'UI target',
+                'viewer-2d': '2D viewer target',
+                'scene-object': '3D scene object',
+                target: 'Annotated target',
+            };
+        const canonical = labels[semanticKind] || labels.target;
+        // Stable IDs and versions are useful to the user and are not prose;
+        // preserve their number while translating the semantic label.
+        if (suffix && ['guide', 'seed', 'needle', 'trajectory'].includes(semanticKind)) {
+            return `${canonical} ${suffix}`;
+        }
+        if (semanticKind !== 'target') return canonical;
+        // Unknown targets can retain a label only when it already uses the
+        // requested script. A mismatched Data Tree/model label is replaced by
+        // a language-consistent semantic fallback instead of leaking UI text.
+        if (raw && ((language === 'zh' && hasCjk(raw)) || (language === 'en' && !hasCjk(raw)))) {
+            return raw;
+        }
+        return canonical;
     }
 
     function setTileState(attachment, state) {
@@ -634,8 +793,9 @@
         });
     }
 
-    async function uploadAnnotation(attachment, rendered, sessionId) {
+    async function uploadAnnotation(attachment, rendered, sessionId, context = {}) {
         const apiBase = typeof API !== 'undefined' ? API : '/api';
+        const annotationLanguage = languageFor(attachment, context);
         const response = await fetch(`${apiBase}/screenshot/annotation`, {
             method: 'POST',
             headers: {
@@ -648,6 +808,7 @@
                 source_sha256: attachment.sha256 || '',
                 planning_id: attachment.planning_id || attachment.planningId || '',
                 data_version: attachment.data_version || attachment.dataVersion || '',
+                annotation_language: annotationLanguage,
                 image: rendered.image,
                 marks: rendered.marks,
             }),
@@ -762,7 +923,24 @@
             const validMarks = [];
             decision.marks.slice(0, MAX_MARKS).forEach(mark => {
                 const validated = validateTargetState(attachment, manifest, mark, sessionId);
-                if (validated.ok) validMarks.push({ mark, validated });
+                if (validated.ok) {
+                    validMarks.push({
+                        mark: {
+                            ...mark,
+                            // The model may return a label in the wrong
+                            // language and the live Data Tree may use the
+                            // global UI locale. Localize only after the stable
+                            // target has passed all grounding checks.
+                            label: localizedAnnotationLabel(
+                                mark,
+                                validated.captured,
+                                attachment,
+                                context,
+                            ),
+                        },
+                        validated,
+                    });
+                }
                 else result.skipped.push({
                     attachment_id: decision.attachment_id,
                     target_ref: mark.target_ref,
@@ -803,7 +981,12 @@
                 continue;
             }
             try {
-                const updated = await uploadAnnotation(item.attachment, item.rendered, sessionId);
+                const updated = await uploadAnnotation(
+                    item.attachment,
+                    item.rendered,
+                    sessionId,
+                    context,
+                );
                 result.updated.push(updated);
                 setTileState(item.attachment, 'done');
                 if (typeof window.updateAssistantAttachmentVariant === 'function') {
@@ -836,4 +1019,9 @@
     window.parseVisualResponseEnvelope = parseVisualResponseEnvelope;
     window.applyVisualResponseAnnotations = applyVisualResponseAnnotations;
     window.validateVisualAnnotationTargetState = validateTargetState;
+    // Read-only helpers used by screenshot/replay diagnostics and contract
+    // tests. They never read or mutate the global UI locale when a turn or
+    // attachment language is available.
+    window.visualAnnotationLanguageFor = languageFor;
+    window.localizeVisualAnnotationLabel = localizedAnnotationLabel;
 })();
