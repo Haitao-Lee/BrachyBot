@@ -498,7 +498,7 @@ def test_workspace_transitions_publish_measurable_first_paint_and_restore_stages
     # Versioned URLs are intentional cache invalidation points. Keep this
     # assertion aligned with the workspace/report artifact restore contract.
     assert "brachybot-workspace.js?v=40" in index
-    assert "brachybot-ui-api.js?v=60" in index
+    assert "brachybot-ui-api.js?v=61" in index
     assert "brachybot-viewer-volume.js?v=51" in index
     assert "brachybot-manual-annotation.js?v=22" in index
 
@@ -740,7 +740,7 @@ def test_chat_connection_placeholder_does_not_claim_a_router_execution():
     assert "title: zh ? '\\u8bf7\\u6c42\\u5206\\u6790' : 'Request analysis'" in chat_todo
     assert "Determining execution path..." in chat_todo
     assert "title: zh ? '\\u591a\\u667a\\u80fd\\u4f53\\u8def\\u7531' : 'Multi-Agent Router'" not in chat_todo
-    assert 'static/js/brachybot-chat-todo.js?v=25' in index
+    assert 'static/js/brachybot-chat-todo.js?v=26' in index
 
 
 def test_task_replay_is_deduplicated_and_bound_to_the_original_case():

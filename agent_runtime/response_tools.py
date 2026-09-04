@@ -438,9 +438,15 @@ print(json.dumps(result))
                 if is_zh
                 else "Locate the saved surgical guide and annotate it only after it is verified visible in the Viewer and Data Tree."
             )
-            focus = {"kind": "close-up", "padding": 0.35}
-            overlays = {"surgical_guide": True}
-            hide_unrelated = True
+            # A "where is it?" answer must point into the scene the operator
+            # is looking at.  Do not silently replace that scene with an
+            # isolated/highlighted camera composition; the screenshot marker
+            # is the explanation, while the live viewer remains the source of
+            # truth.  If the guide is not currently visible, the manifest
+            # reports that fact instead of turning it on for the screenshot.
+            focus = {"kind": "current-view"}
+            overlays = {}
+            hide_unrelated = False
             annotation_policy = "required"
         elif target == "data_tree":
             views = ["data-tree"]
@@ -492,7 +498,14 @@ print(json.dumps(result))
             "description": description,
             "object_ids": object_refs,
             "data_tree_node_ids": data_tree_refs,
-            "highlight_object_ids": object_refs,
+            # Annotation is rendered on the immutable screenshot. Keep the
+            # live Viewer appearance untouched for current-view location
+            # evidence; scene highlight IDs are only meaningful for an
+            # explicitly framed capture.
+            "highlight_object_ids": [] if target in {
+                "ui_control:viewer.reconstruct3d", "surgical_guide", "data_tree",
+                "dvh", "metrics", "dose", "ct",
+            } else object_refs,
             "hide_unrelated": hide_unrelated,
             "focus": focus,
             "overlays": overlays,
@@ -500,6 +513,8 @@ print(json.dumps(result))
             "analysis_required": True,
             "annotation_policy": annotation_policy,
             "target_refs": list(stable_refs),
+            "request_intent": "session_visual_location_query",
+            "preserve_current_view": True,
         }
 
     def _detect_tool_request(self, message: str) -> Optional[List[Dict]]:

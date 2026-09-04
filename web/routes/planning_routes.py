@@ -2048,6 +2048,8 @@ def register_planning_routes(
                                 "visual_purpose",
                                 "analysis_required",
                                 "annotation_policy",
+                                "request_intent",
+                                "preserve_current_view",
                                 "target_refs",
                             )
                             if plan.get(key) not in (None, "", [], {})

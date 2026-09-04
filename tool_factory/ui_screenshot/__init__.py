@@ -184,9 +184,9 @@ class UIScreenshotTool(BaseTool):
                     "default": False,
                     "description": (
                         "Temporarily hide unrelated 3D objects when a local close-up is required. "
-                        "A locate request with required annotation enforces this during capture "
-                        "to prevent an otherwise visible target from being occluded; the browser "
-                        "restores the original scene immediately afterwards."
+                        "A locate request that sets preserve_current_view keeps the operator's "
+                        "current 3D composition instead; the browser restores any temporary "
+                        "Data Tree scroll/width change immediately afterwards."
                     ),
                 },
                 "focus": {
@@ -280,6 +280,24 @@ class UIScreenshotTool(BaseTool):
                         "grounded and is actually visible in that captured view."
                     ),
                 },
+                "request_intent": {
+                    "type": "string",
+                    "description": (
+                        "Typed user intent for this evidence request. Preserve it "
+                        "for replay and annotation decisions; do not infer it from "
+                        "the screenshot filename or a translated label."
+                    ),
+                },
+                "preserve_current_view": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": (
+                        "For a location question, keep the current 2D slice, 3D "
+                        "camera, visibility, and appearance. The browser may still "
+                        "scroll the real Data Tree to the target row for a readable "
+                        "capture, then restores that sidebar state."
+                    ),
+                },
                 "target_refs": {
                     "type": "array",
                     "items": {"type": "string"},
@@ -324,7 +342,7 @@ class UIScreenshotTool(BaseTool):
 
         question = str(kwargs.get("question") or "").strip()
         plan: Dict[str, Any] = {
-            "version": 4,
+            "version": 5,
             "mode": mode,
             "views": views,
             "layout": layout,
@@ -345,6 +363,10 @@ class UIScreenshotTool(BaseTool):
             "visual_purpose": visual_purpose,
             "analysis_required": bool(kwargs.get("analysis_required", True)),
             "annotation_policy": annotation_policy,
+            "request_intent": str(
+                kwargs.get("request_intent") or kwargs.get("requestIntent") or ""
+            ).strip()[:160],
+            "preserve_current_view": bool(kwargs.get("preserve_current_view", kwargs.get("preserveCurrentView", False))),
             "target_refs": [
                 str(v).strip()
                 for v in (kwargs.get("target_refs") or [])

@@ -382,12 +382,14 @@ def test_existing_guide_location_question_is_read_only_grounded_screenshot():
     assert params["target_refs"] == ["surgical_guide:active"]
     assert params["object_ids"] == ["surgical_guide:active"]
     assert params["data_tree_node_ids"] == ["surgical_guide:active"]
-    assert params["highlight_object_ids"] == ["surgical_guide:active"]
+    assert params["highlight_object_ids"] == []
     assert params["visual_purpose"] == "locate"
     assert params["annotation_policy"] == "required"
     assert params["analysis_required"] is True
-    assert params["hide_unrelated"] is True
-    assert params["focus"]["kind"] == "close-up"
+    assert params["hide_unrelated"] is False
+    assert params["focus"] == {"kind": "current-view"}
+    assert params["preserve_current_view"] is True
+    assert params["highlight_object_ids"] == []
 
 
 def test_explicit_annotation_wording_routes_to_the_same_grounded_guide_capture():
@@ -484,7 +486,10 @@ def test_visual_capture_parent_uses_a_typed_pending_contract_not_a_canned_reply(
     assert 'llm_meta["visual_analysis_pending"] = True' in workflow
     assert "not visual_analysis_pending" in workflow
     assert "self._visual_analysis_pending = True" in response_tools
-    assert "legacyVisualAck" in chat
+    assert "_visualResponseNeedsGroundedFallback" in chat
+    assert "_visualEvidenceFallbackResponse" in chat
+    assert "_visualEvidenceTargetTerms" in chat
+    assert "_visualResponseHasGroundedLocationClaim" in chat
     assert "没有得到可验证的图像解读" in contract
     assert "我已按当前问题准备了 Viewer/Data Tree 的对应证据" not in contract
 

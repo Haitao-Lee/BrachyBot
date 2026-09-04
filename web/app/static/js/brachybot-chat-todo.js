@@ -1103,6 +1103,199 @@ function _visualAnalysisUnavailableMessage(sessionId, responseLanguage = '') {
         : 'The screenshot was captured, but visual analysis is temporarily unavailable. The image remains attached to the original reply.';
 }
 
+function _visualEvidenceTargetTerms(attachment) {
+    const metadata = attachment?.view_metadata || attachment?.viewMetadata || {};
+    const manifest = metadata.grounding_manifest || metadata.groundingManifest
+        || attachment?.grounding_manifest || attachment?.groundingManifest || {};
+    const targets = Array.isArray(manifest.targets) ? manifest.targets : [];
+    const values = [
+        attachment?.title,
+        attachment?.label,
+        metadata.title,
+        metadata.label,
+        attachment?.target,
+        ...targets.flatMap(target => [
+            target?.label,
+            target?.target_ref || target?.targetRef,
+        ]),
+    ].map(value => String(value || '').trim().toLowerCase()).filter(Boolean);
+    const terms = new Set();
+    values.forEach(value => {
+        terms.add(value);
+        value.split(/[^a-z0-9\u3400-\u4dbf\u4e00-\u9fff]+/i)
+            .filter(term => term.length >= 2)
+            .forEach(term => terms.add(term));
+        // A localized label may be longer than the phrase used by the model
+        // (for example "手术导板位置" vs "手术导板"). Generate only
+        // short CJK n-grams from the live manifest, never a user-phrase list.
+        const cjkRuns = value.match(/[\u3400-\u4dbf\u4e00-\u9fff]{2,}/g) || [];
+        cjkRuns.forEach(run => {
+            const chars = [...run];
+            for (let width = 2; width <= Math.min(6, chars.length); width += 1) {
+                for (let start = 0; start + width <= chars.length; start += 1) {
+                    terms.add(chars.slice(start, start + width).join(''));
+                }
+            }
+        });
+    });
+    return [...terms].filter(term => term.length >= 2);
+}
+
+function _visualResponseHasGroundedLocationClaim(value, evidence = []) {
+    const clean = String(value || '').replace(/\s+/g, ' ').trim().toLowerCase();
+    if (!clean) return false;
+    // View names such as "Viewer/Data Tree" are capture metadata, not a
+    // location claim. Require a spatial/lifecycle assertion and a term that
+    // refers to one of the targets in this capture manifest. This catches
+    // provider acknowledgements without maintaining a brittle canned-reply
+    // blacklist.
+    const spatialSignal = /(?:位置|定位|位于|标注|圈出|框出|方框|箭头|指向|显示在|可见于|隐藏|加载|生成|过期|左侧|右侧|上方|下方|中央|节点|按钮|对象|导板|location|located|marked|annotat(?:ed|ion)|boxed|box|arrow|point(?:s|ing)?|visible|hidden|loaded|generated|stale|left|right|above|below|inside|under|row|node|button|object|target)/i.test(clean);
+    if (!spatialSignal) return false;
+    const terms = (Array.isArray(evidence) ? evidence : [])
+        .flatMap(item => _visualEvidenceTargetTerms(item))
+        .filter(term => term.length >= 2);
+    return terms.some(term => clean.includes(term));
+}
+
+// Build a useful, state-grounded answer when a visual child returns no
+// protocol envelope (for example after a provider timeout or an older
+// deployment returns plain text).  This is deliberately derived from the
+// capture manifest and the server state carried by each attachment; it is not
+// a list of recognized user phrases or a guessed pixel location.
+function _visualEvidenceFallbackResponse(evidence, sessionId, responseLanguage = '', userText = '') {
+    const language = String(
+        responseLanguage || _chatLanguageForSession(sessionId) || window._responseLanguage || ''
+    ).toLowerCase();
+    const zh = language.startsWith('zh');
+    const items = (Array.isArray(evidence) ? evidence : [])
+        .filter(item => item && item.url)
+        .slice(0, 4);
+    if (!items.length) return _visualAnalysisUnavailableMessage(sessionId, responseLanguage);
+
+    const targetLabel = target => {
+        const key = String(target || '').toLowerCase();
+        return ({
+            'viewer-3d': zh ? '3D 查看器' : '3D Viewer',
+            'viewer-axial': zh ? '轴位查看器' : 'axial viewer',
+            'viewer-sagittal': zh ? '矢状位查看器' : 'sagittal viewer',
+            'viewer-coronal': zh ? '冠状位查看器' : 'coronal viewer',
+            'data-tree': zh ? '真实 Data Tree' : 'the live Data Tree',
+            'overlay-controls': zh ? 'Viewer 工具栏' : 'the Viewer toolbar',
+            'dvh': zh ? 'DVH 查看器' : 'the DVH viewer',
+        }[key] || (zh ? '当前界面' : 'the current interface'));
+    };
+    const stateText = (attachment, target) => {
+        const metadata = attachment.view_metadata || attachment.viewMetadata || {};
+        const authoritative = metadata.authoritative_case_state
+            || metadata.authoritativeCaseState
+            || attachment.authoritative_case_state
+            || attachment.authoritativeCaseState
+            || {};
+        const guide = authoritative.surgical_guide || {};
+        const status = String(target?.status || '').toLowerCase();
+        if (status === 'stale' || status === 'expired' || status === 'outdated') {
+            return zh ? '对象已生成，但当前标记显示为过期（stale）' : 'the object is generated, but the captured state is marked stale';
+        }
+        if (guide.state === 'persisted_not_loaded' || guide.state === 'restoring') {
+            return zh ? '对象已保存，当前 Session 仍在恢复资源' : 'the object is persisted while this Session is still restoring its resources';
+        }
+        if (guide.state === 'failed') {
+            return zh ? `生成失败：${String(guide.reason || '原因未返回')}` : `generation failed: ${String(guide.reason || 'no reason returned')}`;
+        }
+        return '';
+    };
+    const rows = [];
+    let markedCount = 0;
+    let requestedCount = 0;
+    items.forEach(attachment => {
+        const metadata = attachment.view_metadata || attachment.viewMetadata || {};
+        const manifest = metadata.grounding_manifest || metadata.groundingManifest
+            || attachment.grounding_manifest || attachment.groundingManifest || {};
+        const targets = Array.isArray(manifest.targets) ? manifest.targets : [];
+        const annotationRefs = new Set((Array.isArray(attachment.annotation?.marks)
+            ? attachment.annotation.marks : [])
+            .map(mark => String(mark?.target_ref || mark?.targetRef || '').trim()));
+        const markedTarget = targets.find(item => annotationRefs.has(String(
+            item?.target_ref || item?.targetRef || '',
+        ).trim()));
+        const target = markedTarget || targets.find(item => item?.annotatable === true
+            && item?.visible === true
+            && (item?.in_view === true || item?.inView === true))
+            || targets[0]
+            || null;
+        const attachmentTarget = String(attachment.target || metadata.target || '');
+        const view = targetLabel(attachmentTarget);
+        const label = String(target?.label || metadata.title || attachment.title || '')
+            .replace(/\s+/g, ' ').trim();
+        const annotated = !!(attachment.annotated_url || attachment.annotatedUrl
+            || attachment.annotation?.count > 0 || annotationRefs.size > 0);
+        const requested = targets.length > 0;
+        if (requested) requestedCount += 1;
+        if (annotated && target) {
+            markedCount += 1;
+            const state = stateText(attachment, target);
+            rows.push(zh
+                ? `${view}：已在截图中的${label || '目标对象'}位置加框/箭头标注${state ? `（${state}）` : ''}。`
+                : `${view}: the ${label || 'target object'} is marked with a box/arrow in the screenshot${state ? ` (${state})` : ''}.`);
+        } else if (target && target.annotatable === false) {
+            const reason = String(target.reason || '').toLowerCase();
+            const unavailable = /hidden|not_loaded|unresolved|outside|unavailable|loading/.test(reason)
+                || ['hidden', 'unresolved', 'loading', 'not_generated'].includes(String(target.status || '').toLowerCase());
+            rows.push(zh
+                ? `${view}：已截取当前界面，但${label || '目标'}在这张图中${unavailable ? '当前不可见或尚未加载' : '没有通过可核验的定位条件'}，因此没有盲目标注。`
+                : `${view}: the current interface was captured, but ${label || 'the target'} was ${unavailable ? 'hidden or not loaded' : 'not verifiable'} in this image, so no mark was guessed.`);
+        } else {
+            rows.push(zh
+                ? `${view}：截图已生成，但没有足够的稳定目标信息可以安全标注。`
+                : `${view}: the screenshot was captured, but it did not contain a stable target that could be marked safely.`);
+        }
+    });
+    const isLocate = items.some(item => String(
+        item.visual_purpose || item.visualPurpose
+        || item.view_metadata?.visual_purpose || item.viewMetadata?.visualPurpose || ''
+    ).toLowerCase() === 'locate');
+    if (isLocate && markedCount > 0) {
+        return (zh
+            ? '我已根据当前实际显示的界面定位目标；截图中的标记直接落在经过状态核验的 Viewer 对象或 Data Tree 行上：'
+            : 'I located the target from the currently displayed interface; the marks are anchored to verified Viewer objects or live Data Tree rows:')
+            + `\n\n${rows.map(row => `- ${row}`).join('\n')}`
+            + (requestedCount > markedCount
+                ? `\n\n${zh ? '对不可见或未加载目标没有强行标注，避免把错误位置当成事实。' : 'Hidden or unloaded targets were not marked, so an incorrect location is not presented as fact.'}`
+                : '');
+    }
+    const requestHint = String(userText || '').trim();
+    return (zh
+        ? `我已截取${requestHint ? '与您问题对应的' : '当前'}界面，并保留了原始显示状态。`
+        : `I captured the ${requestHint ? 'interface relevant to your question' : 'current interface'} and preserved its original display state.`)
+        + `\n\n${rows.map(row => `- ${row}`).join('\n')}`;
+}
+
+function _visualResponseNeedsGroundedFallback(value, evidence = []) {
+    const clean = String(value || '').replace(/\s+/g, ' ').trim();
+    if (!clean || /^(?:\(no reply\)|\(No validated response\)|Tools executed\. Check the execution trace above for results\.)$/i.test(clean)) {
+        return true;
+    }
+    // A response that only acknowledges capture/attachment has no answer for
+    // the user. Detect this by semantic information content (capture terms
+    // without a view, target, state, or spatial claim), not by matching one
+    // exact canned sentence.
+    const captureOnly = /(?:截图|证据|附件|screenshot|evidence|attached|image)/i.test(clean)
+        && !/(?:位置|定位|标注|方框|箭头|可见|隐藏|加载|导板|数据树|查看器|对象|显示|图中|where|located|marked|visible|hidden|loaded|viewer|data tree|object|target|shows)/i.test(clean);
+    if (captureOnly) return true;
+    const locateEvidence = (Array.isArray(evidence) ? evidence : []).some(item => String(
+        item?.visual_purpose || item?.visualPurpose
+        || item?.view_metadata?.visual_purpose || item?.viewMetadata?.visualPurpose || ''
+    ).toLowerCase() === 'locate');
+    if (locateEvidence && !_visualResponseHasGroundedLocationClaim(clean, evidence)) {
+        return true;
+    }
+    if (clean.length < 48 && Array.isArray(evidence) && evidence.length
+        && !/(?:位置|定位|标注|方框|箭头|可见|隐藏|加载|显示|图中|where|location|located|marked|visible|hidden|loaded|viewer|data tree|object|target|shows|contains|curve|dose|剂量|曲线)/i.test(clean)) {
+        return true;
+    }
+    return false;
+}
+
 async function _presentJsonSessionContent(steps, sessionId, turnIdentity) {
     const commands = (Array.isArray(steps) ? steps : [])
         .filter(step => step && step.tool === 'ui_content')
@@ -1548,11 +1741,6 @@ window._cancelVisualFollowups = _cancelVisualFollowups;
 function _visualEvidenceDescriptor(item, index = 0, includeAll = false) {
     if (!item || !item.url) return null;
     const metadata = item.view_metadata || item.viewMetadata || {};
-    const explicitAnalysis = item.analysis_required ?? item.analysisRequired
-        ?? metadata.analysis_required ?? metadata.analysisRequired;
-    const analysisRequired = explicitAnalysis === true
-        || (explicitAnalysis !== false && (item.visual_analysis === true || includeAll));
-    if (!analysisRequired) return null;
     const annotationPolicy = String(
         item.annotation_policy || item.annotationPolicy
         || metadata.annotation_policy || metadata.annotationPolicy || 'auto'
@@ -1561,6 +1749,15 @@ function _visualEvidenceDescriptor(item, index = 0, includeAll = false) {
         item.visual_purpose || item.visualPurpose
         || metadata.visual_purpose || metadata.visualPurpose || 'explain'
     ).toLowerCase();
+    const explicitAnalysis = item.analysis_required ?? item.analysisRequired
+        ?? metadata.analysis_required ?? metadata.analysisRequired;
+    const analysisRequired = explicitAnalysis === true
+        || (explicitAnalysis !== false && (item.visual_analysis === true || includeAll))
+        // Required locate evidence has a user-facing state explanation and a
+        // deterministic annotation fallback even if it came from an older
+        // screenshot payload that omitted analysis_required.
+        || (annotationPolicy === 'required' && visualPurpose === 'locate');
+    if (!analysisRequired) return null;
     const manifest = metadata.grounding_manifest || metadata.groundingManifest
         || item.grounding_manifest || item.groundingManifest || { version: 1, targets: [] };
     const authoritativeCaseState = metadata.authoritative_case_state
@@ -2557,7 +2754,12 @@ async function sendChat(prefill, options) {
                 addChat(
                     isInternalFollowup ? 'bot-response' : 'error',
                     isInternalFollowup
-                        ? _visualAnalysisUnavailableMessage(turnSessionId, turnIdentity.responseLanguage)
+                        ? _visualEvidenceFallbackResponse(
+                            opts.visualEvidence || [],
+                            turnSessionId,
+                            turnIdentity.responseLanguage,
+                            text,
+                        )
                         : _chatUserVisibleFailure(turnSessionId, 'request'),
                     true,
                     Date.now(),
@@ -2968,6 +3170,11 @@ async function sendChat(prefill, options) {
                                     object_ids: _ssPlan.object_ids || [],
                                     data_tree_node_ids: _ssPlan.data_tree_node_ids || [],
                                     focus: _ssPlan.focus || {},
+                                    request_intent: _ssPlan.request_intent || _ssPlan.requestIntent || '',
+                                    preserve_current_view: _ssPlan.preserve_current_view === true
+                                        || _ssPlan.preserveCurrentView === true,
+                                    visual_purpose: _ssPlan.visual_purpose || _ssPlan.visualPurpose || '',
+                                    annotation_policy: _ssPlan.annotation_policy || _ssPlan.annotationPolicy || '',
                                 });
                                 const _ssKey = `${turnRequestId}|${_ssFingerprint}`;
                                 if (screenshotTaskKeys.has(_ssKey)) {
@@ -3291,7 +3498,12 @@ async function sendChat(prefill, options) {
                         // console and through the server-side log correlation.
                         if (!responseText) {
                             responseText = isInternalFollowup
-                                ? _visualAnalysisUnavailableMessage(turnSessionId, turnIdentity.responseLanguage)
+                                ? _visualEvidenceFallbackResponse(
+                                    opts.visualEvidence || [],
+                                    turnSessionId,
+                                    turnIdentity.responseLanguage,
+                                    text,
+                                )
                                 : _chatUserVisibleFailure(turnSessionId, 'request');
                             finalResponseReceived = true;
                         }
@@ -3571,54 +3783,47 @@ async function sendChat(prefill, options) {
             const visualEnvelope = typeof window.parseVisualResponseEnvelope === 'function'
                 ? window.parseVisualResponseEnvelope(renderedFinalText)
                 : null;
-            if (visualEnvelope) {
-                renderedFinalText = String(
-                    visualEnvelope.answer_text
-                    || _visualAnalysisUnavailableMessage(turnSessionId, turnIdentity.responseLanguage)
-                );
-                if (typeof window.applyVisualResponseAnnotations === 'function') {
-                    try {
-                        const annotationResult = await window.applyVisualResponseAnnotations(
-                            visualEnvelope,
-                            opts.visualEvidence || [],
-                            {
-                                sessionId: turnSessionId,
-                                requestId: turnIdentity.requestId,
-                                messageId: turnIdentity.messageId,
-                                responseLanguage: turnIdentity.responseLanguage,
-                            },
-                        );
-                        if (annotationResult?.notice) {
-                            renderedFinalText = `${renderedFinalText.trim()}\n\n${annotationResult.notice}`.trim();
-                        }
-                    } catch (error) {
-                        // Annotation is a presentation enhancement. The model's
-                        // textual answer and immutable source screenshots must
-                        // still be delivered if drawing or persistence fails.
-                        console.warn('[visual annotation] follow-up rendering failed:', error);
-                    }
+            let annotationResult = null;
+            if (typeof window.applyVisualResponseAnnotations === 'function') {
+                try {
+                    // This also handles a missing/malformed envelope for
+                    // required locate evidence. The browser has a complete
+                    // capture manifest and can draw only verified bounds.
+                    annotationResult = await window.applyVisualResponseAnnotations(
+                        visualEnvelope,
+                        opts.visualEvidence || [],
+                        {
+                            sessionId: turnSessionId,
+                            requestId: turnIdentity.requestId,
+                            messageId: turnIdentity.messageId,
+                            responseLanguage: turnIdentity.responseLanguage,
+                        },
+                    );
+                } catch (error) {
+                    // Annotation is state-checked independently from prose. A
+                    // failed draw/upload must never invent a location.
+                    console.warn('[visual annotation] follow-up rendering failed:', error);
                 }
+            }
+            if (visualEnvelope) {
+                renderedFinalText = String(visualEnvelope.answer_text || renderedFinalText || '');
             }
             renderedFinalText = _stripVisualAttachmentEchoes(
                 renderedFinalText,
                 opts.visualAttachmentLabels || [],
             );
-            // A hidden child is the only stage allowed to supply visible
-            // prose for a visual-evidence turn. If the provider returns an
-            // empty response, a transport acknowledgement, or the legacy
-            // canned capture sentence, replace it with a truthful typed
-            // failure message instead of leaving a blank bubble or repeating
-            // the mechanical sentence the user never asked to see.
-            const normalizedVisualChildText = String(renderedFinalText || '')
-                .replace(/\s+/g, ' ')
-                .trim();
-            const legacyVisualAck = /^(?:我已按当前问题准备了 Viewer\/Data Tree 的对应证据，截图会附在本条回复中。文字结论以当前 Session 中实际保存并返回的结果为准。|I prepared the relevant Viewer\/Data Tree evidence for the current question; the screenshot will be attached to this reply\. The textual conclusion is limited to results actually saved and returned for the current Session\.)$/i;
-            if (!normalizedVisualChildText || genericFinalResponse.test(normalizedVisualChildText)
-                || legacyVisualAck.test(normalizedVisualChildText)) {
-                renderedFinalText = _visualAnalysisUnavailableMessage(
+            let usedGroundedFallback = false;
+            if (_visualResponseNeedsGroundedFallback(renderedFinalText, opts.visualEvidence || [])) {
+                renderedFinalText = _visualEvidenceFallbackResponse(
+                    opts.visualEvidence || [],
                     turnSessionId,
                     turnIdentity.responseLanguage,
+                    text,
                 );
+                usedGroundedFallback = true;
+            }
+            if (annotationResult?.notice && !usedGroundedFallback) {
+                renderedFinalText = `${renderedFinalText.trim()}\n\n${annotationResult.notice}`.trim();
             }
             // Merge the child answer into the original screenshot reply. The
             // child has its own server task/request ID, but no visible user
@@ -3765,9 +3970,12 @@ async function sendChat(prefill, options) {
             console.warn('[chat] Send failed', e);
             if (typeof addChat === 'function') {
                 const visualFailure = isInternalFollowup
-                    ? (String(turnIdentity.responseLanguage || '').toLowerCase().startsWith('zh')
-                        ? '截图已生成，但当前图像分析暂时不可用；截图仍保留在原回复中。'
-                        : 'The screenshot was captured, but visual analysis is temporarily unavailable. The image remains attached to the original reply.')
+                    ? _visualEvidenceFallbackResponse(
+                        opts.visualEvidence || [],
+                        turnSessionId,
+                        turnIdentity.responseLanguage,
+                        text,
+                    )
                     : _chatUserVisibleFailure(turnSessionId, 'request');
                 addChat(isInternalFollowup ? 'bot-response' : 'error', visualFailure, true,
                     Date.now(), false, turnSessionId, turnIdentity);
