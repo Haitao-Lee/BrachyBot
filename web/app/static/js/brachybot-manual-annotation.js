@@ -967,8 +967,12 @@ function drawLinkedCrosshairs(volX, volY, volZ, sourceAxis) {
 
         let cx, cy;
 
-        // Get spacing for coordinate conversion
-        const spacing = volumeSpacing || [0.68, 0.68, 5.0];
+        // Use the same resampled geometry as the CT renderer.  In particular,
+        // sagittal/coronal vertical coordinates are direct volume-Z positions;
+        // the axial display-index inverse is handled when the source point is
+        // obtained from a click.
+        const spacing = volumeSpacing || state.ctSpacing || [0.68, 0.68, 5.0];
+        const mprGeometry = _getMprGeometry(axis, state.ctShape, spacing);
 
         // Map volume coordinates to canvas pixel coordinates
         // ctShape = [Z, Y, X]
@@ -978,11 +982,13 @@ function drawLinkedCrosshairs(volX, volY, volZ, sourceAxis) {
         } else if (axis === 'sagittal') {
             // Canvas: width=Y, height=resampled_Z. Map volZ (original) to resampled position
             cx = (volY / state.ctShape[1]) * w;
-            cy = (volZ / state.ctShape[0]) * h;
+            const displayY = _volumeZToDisplayY(volZ, mprGeometry.resampleRatio);
+            cy = (displayY / Math.max(1, mprGeometry.height)) * h;
         } else {
             // Canvas: width=X, height=resampled_Z. Map volZ (original) to resampled position
             cx = (volX / state.ctShape[2]) * w;
-            cy = (volZ / state.ctShape[0]) * h;
+            const displayY = _volumeZToDisplayY(volZ, mprGeometry.resampleRatio);
+            cy = (displayY / Math.max(1, mprGeometry.height)) * h;
         }
 
         // Draw crosshair lines
@@ -2808,7 +2814,9 @@ function createMaskFromFreehand(axis, points) {
     const zCount = shape[0] || 0;
     const yCount = shape[1] || 0;
     const xCount = shape[2] || 0;
-    const spacing = window.volumeSpacing || [0.68, 0.68, 5.0];
+    const spacing = window.volumeSpacing || state.ctSpacing || [0.68, 0.68, 5.0];
+    const sagittalRatio = _getMprGeometry('sagittal', shape, spacing).resampleRatio;
+    const coronalRatio = _getMprGeometry('coronal', shape, spacing).resampleRatio;
     const voxelSet = new Set();
     for (let py = 0; py < h; py++) {
         for (let px = 0; px < w; px++) {
@@ -2817,13 +2825,13 @@ function createMaskFromFreehand(axis, points) {
                 let volX, volY, volZ;
                 if (axis === 'axial') {
                     volX = px; volY = py;
-                    volZ = (zCount - 1) - (state.slices.axial || 0);
+                    volZ = _viewerAxialDisplayToVolumeZ(state.slices.axial, zCount);
                 } else if (axis === 'sagittal') {
                     volX = state.slices.sagittal || 0; volY = px;
-                    volZ = Math.floor(py * spacing[1] / spacing[2]);
+                    volZ = _displayYToVolumeZ(py, sagittalRatio, zCount);
                 } else {
                     volX = px; volY = state.slices.coronal || 0;
-                    volZ = Math.floor(py * spacing[0] / spacing[2]);
+                    volZ = _displayYToVolumeZ(py, coronalRatio, zCount);
                 }
                 if (volX >= 0 && volX < xCount && volY >= 0 && volY < yCount && volZ >= 0 && volZ < zCount) {
                     voxelSet.add(`${volX},${volY},${volZ}`);
@@ -2873,7 +2881,9 @@ function eraseMaskArea(axis, points) {
     const zCount = shape[0] || 0;
     const yCount = shape[1] || 0;
     const xCount = shape[2] || 0;
-    const spacing = window.volumeSpacing || [0.68, 0.68, 5.0];
+    const spacing = window.volumeSpacing || state.ctSpacing || [0.68, 0.68, 5.0];
+    const sagittalRatio = _getMprGeometry('sagittal', shape, spacing).resampleRatio;
+    const coronalRatio = _getMprGeometry('coronal', shape, spacing).resampleRatio;
     let erased = 0;
     for (const [id, mask] of Object.entries(state.maskLabels)) {
         if (!mask.visible) continue;
@@ -2884,13 +2894,13 @@ function eraseMaskArea(axis, points) {
                     let volX, volY, volZ;
                     if (axis === 'axial') {
                         volX = px; volY = py;
-                        volZ = (zCount - 1) - (state.slices.axial || 0);
+                        volZ = _viewerAxialDisplayToVolumeZ(state.slices.axial, zCount);
                     } else if (axis === 'sagittal') {
                         volX = state.slices.sagittal || 0; volY = px;
-                        volZ = Math.floor(py * spacing[1] / spacing[2]);
+                        volZ = _displayYToVolumeZ(py, sagittalRatio, zCount);
                     } else {
                         volX = px; volY = state.slices.coronal || 0;
-                        volZ = Math.floor(py * spacing[0] / spacing[2]);
+                        volZ = _displayYToVolumeZ(py, coronalRatio, zCount);
                     }
                     const key = `${volX},${volY},${volZ}`;
                     if (mask.voxels.has(key)) {
@@ -3017,18 +3027,19 @@ function screenToImageCoords(axis, screenX, screenY) {
 function _sliceImageCoordsToVoxel(axis, coords) {
     if (!state.ctShape || state.ctShape.length !== 3) return null;
     const spacing = window.volumeSpacing || state.ctSpacing || [0.68, 0.68, 5.0];
-    let x, y, z;
-    if (axis === 'axial') {
-        x = Math.round(coords.x); y = Math.round(coords.y); z = Math.round(state.slices.axial);
-    } else if (axis === 'sagittal') {
-        const ratio = _getMprGeometry('sagittal', state.ctShape, spacing).resampleRatio;
-        x = Math.round(state.slices.sagittal); y = Math.round(coords.x); z = Math.round(coords.y / ratio);
-    } else {
-        const ratio = _getMprGeometry('coronal', state.ctShape, spacing).resampleRatio;
-        x = Math.round(coords.x); y = Math.round(state.slices.coronal); z = Math.round(coords.y / ratio);
-    }
-    if (x < 0 || x >= state.ctShape[2] || y < 0 || y >= state.ctShape[1] || z < 0 || z >= state.ctShape[0]) return null;
-    return { x, y, z, zyx: [z, y, x] };
+    const mapVoxel = typeof _viewerMprImageToVoxel === 'function'
+        ? _viewerMprImageToVoxel
+        : null;
+    if (!mapVoxel) return null;
+    return mapVoxel(axis, coords.x, coords.y, {
+        shape: state.ctShape,
+        spacing,
+        slices: state.slices,
+        // Preserve the annotation tool's nearest-voxel behavior while using
+        // the same axial display-index inverse as the viewer interaction.
+        pixelRounder: Math.round,
+        zRounder: Math.round,
+    });
 }
 
 function sat3dPromptPayload() {
@@ -3133,7 +3144,7 @@ function setupAnnotationTool(axis) {
             if (tool === 'measure') {
                 const dx = toolState.currentX - toolState.startX;
                 const dy = toolState.currentY - toolState.startY;
-                const volSpacing = window.volumeSpacing || [0.68, 0.68, 5.0];
+                const volSpacing = window.volumeSpacing || state.ctSpacing || [0.68, 0.68, 5.0];
                 let sx, sy;
                 if (axis === 'axial') { sx = volSpacing[0]; sy = volSpacing[1]; }
                 else if (axis === 'sagittal') { sx = volSpacing[1]; sy = volSpacing[2]; }
@@ -3209,7 +3220,7 @@ function setupAnnotationTool(axis) {
         toolState.currentX = coords.displayX;
         toolState.currentY = coords.displayY;
 
-        const volSpacing = window.volumeSpacing || [0.68, 0.68, 5.0];
+        const volSpacing = window.volumeSpacing || state.ctSpacing || [0.68, 0.68, 5.0];
         // Get pixel spacing for this axis
         let pxSpacingX, pxSpacingY;
         if (axis === 'axial') { pxSpacingX = volSpacing[0]; pxSpacingY = volSpacing[1]; }
@@ -3392,29 +3403,20 @@ function setupBasicInteractions(axis, canvas) {
 
         // Linked MPR crosshairs
         if (state.ctShape && (!state.viewerSettings.activeTool || state.viewerSettings.activeTool === 'crosshair')) {
-            const zAxial = state.slices.axial;
-            const zSag = state.slices.sagittal;
-            const zCor = state.slices.coronal;
+            // Convert through the single MPR coordinate contract.  The result
+            // is in canonical [Z,Y,X] volume coordinates even though the
+            // axial slider has a reversed display order.
+            const spacing = volumeSpacing || state.ctSpacing || [0.68, 0.68, 5.0];
+            const voxel = typeof _viewerMprImageToVoxel === 'function'
+                ? _viewerMprImageToVoxel(axis, imgX, imgY, {
+                    shape: state.ctShape,
+                    spacing,
+                    slices: state.slices,
+                })
+                : null;
 
-            // Get spacing for coordinate conversion
-            const spacing = volumeSpacing || [0.68, 0.68, 5.0];
-
-            let volX, volY, volZ;
-            if (axis === 'axial') {
-                // axial: imgX = X, imgY = Y
-                volX = imgX; volY = imgY; volZ = zAxial;
-            } else if (axis === 'sagittal') {
-                // sagittal: imgX = Y, imgY = Z (resampled)
-                // Need to convert from resampled Z to original Z
-                const resampleRatio = _getMprGeometry('sagittal', state.ctShape, spacing).resampleRatio;
-                volX = zSag; volY = imgX; volZ = Math.round(imgY / resampleRatio);
-            } else {
-                // coronal: imgX = X, imgY = Z (resampled)
-                const resampleRatio = _getMprGeometry('coronal', state.ctShape, spacing).resampleRatio;
-                volX = imgX; volY = zCor; volZ = Math.round(imgY / resampleRatio);
-            }
-
-            if (volX >= 0 && volX < state.ctShape[2] && volY >= 0 && volY < state.ctShape[1] && volZ >= 0 && volZ < state.ctShape[0]) {
+            if (voxel) {
+                const { x: volX, y: volY, z: volZ } = voxel;
                 drawLinkedCrosshairs(volX, volY, volZ, axis);
                 fetchHUValue(volX, volY, volZ);
 
@@ -3425,10 +3427,10 @@ function setupBasicInteractions(axis, canvas) {
                         updates.sagittal = volX;
                         updates.coronal = volY;
                     } else if (axis === 'sagittal') {
-                        updates.axial = volZ;
+                        updates.axial = voxel.displayZ;
                         updates.coronal = volY;
                     } else {
-                        updates.axial = volZ;
+                        updates.axial = voxel.displayZ;
                         updates.sagittal = volX;
                     }
 
@@ -3494,22 +3496,16 @@ function setupBasicInteractions(axis, canvas) {
         const imgY = Math.floor(mouseY / displayScale);
 
         if (!state.ctShape) return;
-        const spacing = volumeSpacing || [0.68, 0.68, 5.0];
-
-        let volX, volY, volZ;
-        if (axis === 'axial') {
-            volX = imgX; volY = imgY; volZ = state.slices.axial;
-        } else if (axis === 'sagittal') {
-            const resampleRatio = _getMprGeometry('sagittal', state.ctShape, spacing).resampleRatio;
-            volX = state.slices.sagittal; volY = imgX;
-            volZ = Math.round(imgY / resampleRatio);
-        } else {
-            const resampleRatio = _getMprGeometry('coronal', state.ctShape, spacing).resampleRatio;
-            volX = imgX; volY = state.slices.coronal;
-            volZ = Math.round(imgY / resampleRatio);
-        }
-
-        if (volX < 0 || volX >= state.ctShape[2] || volY < 0 || volY >= state.ctShape[1] || volZ < 0 || volZ >= state.ctShape[0]) return;
+        const spacing = volumeSpacing || state.ctSpacing || [0.68, 0.68, 5.0];
+        const voxel = typeof _viewerMprImageToVoxel === 'function'
+            ? _viewerMprImageToVoxel(axis, imgX, imgY, {
+                shape: state.ctShape,
+                spacing,
+                slices: state.slices,
+            })
+            : null;
+        if (!voxel) return;
+        const { x: volX, y: volY, z: volZ } = voxel;
 
         // Draw crosshairs
         drawLinkedCrosshairs(volX, volY, volZ, axis);
@@ -3521,10 +3517,10 @@ function setupBasicInteractions(axis, canvas) {
             updates.sagittal = volX;
             updates.coronal = volY;
         } else if (axis === 'sagittal') {
-            updates.axial = volZ;
+            updates.axial = voxel.displayZ;
             updates.coronal = volY;
         } else {
-            updates.axial = volZ;
+            updates.axial = voxel.displayZ;
             updates.sagittal = volX;
         }
 
