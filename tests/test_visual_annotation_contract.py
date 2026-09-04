@@ -362,10 +362,21 @@ def test_browser_annotation_pipeline_is_semantic_state_aware_and_non_mutating():
     assert "_validate_screenshot_annotation_marks" in route
     assert "/api/screenshot/annotation" in route
     assert "grounding_manifest: groundingManifest" in ui_api
-    assert "brachybot-visual-annotation.js?v=5" in index
+    assert "brachybot-visual-annotation.js?v=6" in index
     assert "_annotateRequiredScreenshotBeforeDisplay" in ui_api
     assert "semanticDataTreeTarget" in annotation
     assert "const hasEnvelope" in annotation
+    assert "function normalizeAnnotationLanguage" in annotation
+    assert "function localizedAnnotationLabel" in annotation
+    assert "readAttachment(" in annotation
+    assert "questionLanguage" in annotation
+    assert "annotation_language: annotationLanguage" in annotation
+    assert "window.localizeVisualAnnotationLabel" in annotation
+    assert '"response_language": response_language' in route
+    assert 'view_metadata["response_language"] = response_language' in route
+    assert "source_response_language" in route
+    assert '"language": annotation_language' in route
+    assert "the source language is only a replay fallback" in route
 
 
 def test_screenshot_autoframing_is_target_derived_verified_and_reversible():

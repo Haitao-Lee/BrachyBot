@@ -7257,9 +7257,14 @@ def register_planning_routes(
         data_version = str(data.get("data_version") or "")[:160]
         question = str(data.get("question") or "")[:2000]
         layout = str(data.get("layout") or "auto")[:32]
-        response_language = str(
-            data.get("response_language") or data.get("responseLanguage") or ""
-        )[:8]
+        response_language = normalize_language(
+            data.get("response_language") or data.get("responseLanguage"),
+            default="",
+        ) or ""
+        if not response_language and question:
+            response_language = (
+                detect_language(question, fallback="").get("code") or ""
+            )
         view_metadata = data.get("view_metadata")
         if not isinstance(view_metadata, dict):
             view_metadata = {}
@@ -7292,9 +7297,31 @@ def register_planning_routes(
         # Store normalized values in the nested metadata too, so old clients
         # and new replay code observe one identical contract.
         view_metadata = dict(view_metadata)
+        # Keep the visible-turn language beside the screenshot contract. The
+        # UI locale may be changed later, while delayed annotation and Session
+        # replay must still use the language selected for this reply.
+        view_metadata["response_language"] = response_language
         view_metadata["analysis_required"] = analysis_required
         view_metadata["visual_purpose"] = raw_visual_purpose
         view_metadata["annotation_policy"] = raw_annotation_policy
+        view_metadata["request_intent"] = str(
+            view_metadata.get("request_intent")
+            or view_metadata.get("requestIntent")
+            or data.get("request_intent")
+            or data.get("requestIntent")
+            or ""
+        )[:160]
+        raw_preserve_current_view = view_metadata.get(
+            "preserve_current_view",
+            view_metadata.get(
+                "preserveCurrentView",
+                data.get("preserve_current_view", data.get("preserveCurrentView", False)),
+            ),
+        )
+        view_metadata["preserve_current_view"] = (
+            raw_preserve_current_view is True
+            or str(raw_preserve_current_view).strip().lower() in {"1", "true", "yes"}
+        )
 
         if not image_data:
             return jsonify({"error": "No image data provided"}), 400
@@ -7389,6 +7416,7 @@ def register_planning_routes(
                 "message_id": message_id or None,
                 "request_id": request_id or None,
                 "data_version": data_version or None,
+                "response_language": response_language,
                 "sha256": content_sha256,
                 "created_at": time.time(),
                 "view_metadata": view_metadata,
@@ -7396,6 +7424,8 @@ def register_planning_routes(
                 "analysis_required": analysis_required,
                 "annotation_policy": raw_annotation_policy,
                 "visual_purpose": raw_visual_purpose,
+                "request_intent": view_metadata["request_intent"],
+                "preserve_current_view": view_metadata["preserve_current_view"],
             }
 
             # Persist the attachment independently from the long-running chat
@@ -7537,6 +7567,23 @@ def register_planning_routes(
         if str(source_attachment.get("session_id") or session_id) != session_id:
             return jsonify({"error": "Source screenshot ownership mismatch"}), 403
 
+        source_metadata = source_attachment.get("view_metadata")
+        source_metadata = source_metadata if isinstance(source_metadata, Mapping) else {}
+        source_response_language = normalize_language(
+            source_attachment.get("response_language")
+            or source_attachment.get("responseLanguage")
+            or source_metadata.get("response_language")
+            or source_metadata.get("responseLanguage"),
+            default="",
+        ) or ""
+        annotation_language = normalize_language(
+            data.get("annotation_language") or data.get("annotationLanguage"),
+            default="",
+        ) or source_response_language or "en"
+        # An explicit language on the current annotation request wins. This
+        # permits a later user follow-up to re-annotate an older screenshot in
+        # the follow-up language; the source language is only a replay fallback.
+
         try:
             source_file = store.session_artifact_path(
                 user["id"], session_id, "screenshots", source_filename
@@ -7609,14 +7656,19 @@ def register_planning_routes(
             "original_url": str(source_attachment.get("url") or source_url),
             "annotated_url": annotated_url,
             "annotation_sha256": annotation_sha256,
+            "annotation_language": annotation_language,
             "annotation": {
                 "version": 1,
+                "language": annotation_language,
                 "source_sha256": authoritative_source_sha256,
                 "marks": safe_marks,
                 "count": len(safe_marks),
                 "created_at": time.time(),
             },
         })
+        updated_metadata = copy.deepcopy(source_metadata)
+        updated_metadata["annotation_language"] = annotation_language
+        updated_attachment["view_metadata"] = updated_metadata
 
         for message in messages:
             if not isinstance(message, dict):

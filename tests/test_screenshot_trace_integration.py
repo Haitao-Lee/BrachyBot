@@ -965,9 +965,10 @@ def test_chat_images_survive_out_of_order_capture_and_session_restore():
     endpoint = routes.split('@app.route("/api/screenshot"', 1)[1].split(
         '@app.route("/api/sessions/<session_id>/screenshots/<filename>"', 1
     )[0]
-    assert 'response_language = str(' in endpoint
+    assert 'response_language = normalize_language(' in endpoint
     assert 'getattr(task, "response_language"' not in endpoint
     assert 'chat_patch = {"attachments": [attachment]}' in endpoint
+    assert '"response_language": response_language' in endpoint
 
     # Restore must merge equal-length messages by stable identity, not replace
     # a richer local attachment list with a stale server copy.
