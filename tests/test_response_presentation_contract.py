@@ -66,11 +66,19 @@ def test_server_and_browser_preserve_text_for_screenshot_questions():
 def test_data_tree_evidence_capture_is_focused_readable_and_restored():
     ui_api = (ROOT / "web" / "app" / "static" / "js" / "brachybot-ui-api.js").read_text(encoding="utf-8")
 
+    # Evidence must come from the actual visible Data Tree, not an off-screen
+    # synthetic card that loses the node's real hierarchy and interaction state.
     assert "function _captureDataTreeEvidenceDataUrl" in ui_api
-    assert "data-tree-evidence-capture" in ui_api
-    assert "Surgical-guide-related nodes were located automatically" in ui_api
+    assert "function _prepareLiveDataTreeForScreenshot" in ui_api
+    assert "function _captureDataTreeEvidenceBundle" in ui_api
+    assert "locator: 'live-data-tree-dom'" in ui_api
+    assert "captured_from_live_dom: true" in ui_api
+    assert "capture_surface: 'live-application-dom'" in ui_api
+    assert "data-tree-evidence-capture" not in ui_api
     assert "scale: 2" in ui_api
     assert "function _snapshotDataTreeUiState" in ui_api
     assert "function _restoreDataTreeUiState" in ui_api
-    assert "_restoreDataTreeUiState(snapshot.dataTree)" in ui_api
+    assert "_restoreDataTreeUiState(treeSnapshot)" in ui_api
+    assert "originalContainerStyle" in ui_api
+    assert "ui_state_restored_after_capture: true" in ui_api
     assert "data_tree_node_ids: [...new Set" in ui_api

@@ -5236,7 +5236,10 @@ const _SCREENSHOT_TARGET_MAP = {
     'viewer-sagittal':  '#viewerSagittal',
     'viewer-coronal':   '#viewerCoronal',
     'viewer-3d':        '#canvas3D',
-    'data-tree':        '#dataTreeBody',
+    // Capture the real sidebar, including its header and hierarchy context.
+    // The body is still used for scrolling/focus, but a detached synthetic
+    // card is never an acceptable substitute for the application's UI.
+    'data-tree':        '#dataTreeContainer',
     'chat':             '#chatMessages',
     'metrics':          '#panelMetrics',
     'dvh':              '#dvhChart',
@@ -5558,201 +5561,271 @@ function _dataTreeEvidenceRows(plan = {}) {
     };
 }
 
-async function _captureDataTreeEvidenceBundle(plan = {}) {
-    if (typeof html2canvas === 'undefined') return { dataUrl: null, groundingManifest: null };
-    if (typeof window.awaitWorkspaceVisualReady === 'function') {
-        const readiness = await window.awaitWorkspaceVisualReady(
-            plan.session_id || plan.sessionId || _activeApiSessionId(),
-            { timeoutMs: 300000, reason: 'data-tree-screenshot' },
-        );
-        if (readiness?.ready === false) {
-            throw new Error('workspace_visual_restore_incomplete');
-        }
+function _dataTreeRowIdentities(row) {
+    return [
+        row?.dataset?.objectId,
+        row?.dataset?.nodeId,
+        row?.dataset?.item,
+        row?.dataset?.organId,
+    ].map(value => String(value || '').trim()).filter(Boolean);
+}
+
+function _dataTreeRowForTargetRef(targetRef, evidence) {
+    const ref = String(targetRef || '').trim().toLowerCase();
+    if (!ref) return null;
+    const rows = Array.from(document.querySelectorAll('#dataTreeBody .tree-item'));
+    const exact = rows.find(row => _dataTreeRowIdentities(row)
+        .some(identity => identity.toLowerCase() === ref));
+    if (exact) return exact;
+    const compatible = rows.find(row => _dataTreeRowIdentities(row).some(identity => {
+        const key = identity.toLowerCase();
+        return key.length >= 4 && ref.length >= 4 && (key.endsWith(ref) || ref.endsWith(key));
+    }));
+    if (compatible) return compatible;
+    if (/surgical[_:-]?guide|puncture[_:-]?guide/.test(ref)) {
+        return evidence?.guideRows?.[0] || null;
     }
-    const body = document.querySelector('#dataTreeBody');
-    if (!body) return { dataUrl: null, groundingManifest: null };
-    const evidence = _dataTreeEvidenceRows(plan);
-    const language = _screenshotLanguage(
-        plan.session_id || plan.sessionId || _activeApiSessionId(),
-        plan.response_language || plan.responseLanguage || '',
-    );
-    const zh = language === 'zh';
-    const card = document.createElement('section');
-    card.className = 'data-tree-evidence-capture';
-    card.setAttribute('aria-hidden', 'true');
-    card.style.cssText = [
-        'position:absolute',
-        'left:-100000px',
-        'top:0',
-        'width:1080px',
-        'box-sizing:border-box',
-        'padding:32px 36px 36px',
-        'background:#0b1220',
-        'color:#f8fafc',
-        'font-family:Inter,Segoe UI,Arial,sans-serif',
-        'font-size:17px',
-        'line-height:1.45',
-        'letter-spacing:.01em',
-        'pointer-events:none',
-        'z-index:-1000',
-        'border:1px solid #334155',
-        'border-radius:14px',
-    ].join(';');
+    return null;
+}
 
-    const make = (tag, text, css) => {
-        const element = document.createElement(tag);
-        if (text !== undefined) element.textContent = String(text || '');
-        if (css) element.style.cssText = css;
-        return element;
-    };
-    const heading = make(
-        'div',
-        zh ? '数据树证据 · 规划产物定位' : 'Data Tree Evidence · Planning Artifact Location',
-        'font-size:28px;font-weight:700;color:#ffffff;margin:0 0 8px;',
-    );
-    card.appendChild(heading);
-    const subtitleParts = [];
-    if (evidence.groupLabel) subtitleParts.push(evidence.groupLabel);
-    const activeRun = body.querySelector('.tree-group.planning-active-run .tree-group-header')
-        || body.querySelector('.tree-group[data-group="planning_run_active"] .tree-group-header');
-    const activeRunText = String(activeRun?.textContent || '').replace(/\s+/g, ' ').trim();
-    if (activeRunText && !subtitleParts.includes(activeRunText)) subtitleParts.push(activeRunText);
-    card.appendChild(make(
-        'div',
-        subtitleParts.join('  /  ') || (zh ? '当前 Session 的可用节点' : 'Available nodes in the current Session'),
-        'font-size:17px;color:#cbd5e1;margin-bottom:22px;',
-    ));
-
-    const intro = make(
-        'div',
-        evidence.guideRows.length
-            ? (zh ? '已自动定位到手术导板相关节点：' : 'Surgical-guide-related nodes were located automatically:')
-            : (evidence.requestedRows.length
-                ? (zh ? '已定位到请求的 Data Tree 节点：' : 'The requested Data Tree nodes were located:')
-                : (zh ? '当前 Data Tree 中可用于定位的节点：' : 'Data Tree nodes available for locating the result:')),
-        'font-size:16px;color:#94a3b8;margin-bottom:10px;',
-    );
-    card.appendChild(intro);
-
-    const list = make('div', undefined, 'display:flex;flex-direction:column;gap:9px;');
-    const captureRows = [];
-    const nodeSnapshots = typeof window.getDataTreeNodeSnapshot === 'function'
+function _dataTreeSnapshotForRow(row) {
+    const identities = _dataTreeRowIdentities(row);
+    const snapshots = typeof window.getDataTreeNodeSnapshot === 'function'
         ? window.getDataTreeNodeSnapshot()
         : [];
-    const snapshotForRow = row => {
-        const identities = [row?.dataset?.objectId, row?.dataset?.nodeId, row?.dataset?.item]
-            .map(value => String(value || '')).filter(Boolean);
-        return nodeSnapshots.find(node => identities.includes(String(node?.objectId || ''))
-            || identities.includes(String(node?.nodeId || ''))
-            || identities.includes(String(node?.id || ''))) || null;
-    };
-    evidence.rows.forEach(row => {
-        const isGuide = evidence.guideMatch(row);
-        const isRequested = evidence.requestedMatch(row);
-        const label = String(row.querySelector('.item-label')?.textContent || '').replace(/\s+/g, ' ').trim()
-            || String(row.dataset.nodeId || row.dataset.item || '').trim()
-            || (zh ? '未命名节点' : 'Unnamed node');
-        const info = String(row.querySelector('.item-info')?.textContent || '').replace(/\s+/g, ' ').trim();
-        const status = String(row.querySelector('.item-status')?.textContent || row.dataset.status || '')
-            .replace(/\s+/g, ' ').trim();
-        const item = make('div', undefined, [
-            'display:flex',
-            'align-items:center',
-            'gap:14px',
-            'min-height:46px',
-            'padding:8px 14px',
-            'box-sizing:border-box',
-            'border-radius:9px',
-            `border:1px solid ${isGuide ? '#38bdf8' : '#334155'}`,
-            `background:${isGuide ? '#12304a' : '#111c2f'}`,
-            `box-shadow:${isGuide ? '0 0 0 1px rgba(56,189,248,.22)' : 'none'}`,
-        ].join(';'));
-        item.appendChild(make('span', isGuide ? '◆' : '●', `flex:0 0 19px;text-align:center;font-size:16px;color:${isGuide ? '#38bdf8' : (isRequested ? '#fbbf24' : '#94a3b8')};`));
-        const textBlock = make('div', undefined, 'min-width:0;flex:1;');
-        textBlock.appendChild(make('div', label, `font-size:18px;font-weight:${isGuide || isRequested ? '700' : '600'};color:${isGuide ? '#f0f9ff' : '#f8fafc'};white-space:normal;word-break:break-word;`));
-        const detail = [info, status].filter(Boolean).join('  ·  ');
-        if (detail) textBlock.appendChild(make('div', detail, `font-size:15px;color:${status && status.toLowerCase() !== 'ready' ? '#fbbf24' : '#cbd5e1'};margin-top:2px;`));
-        item.appendChild(textBlock);
-        list.appendChild(item);
-        const node = snapshotForRow(row);
-        const targetRef = String(
-            row?.dataset?.objectId
-            || node?.objectId
-            || row?.dataset?.nodeId
-            || node?.nodeId
-            || row?.dataset?.item
-            || node?.id
-            || label
-        );
-        item.dataset.targetRef = targetRef;
-        captureRows.push({ item, row, node, targetRef, label });
-    });
-    if (!evidence.rows.length) {
-        list.appendChild(make(
-            'div',
-            zh ? '当前页面没有找到匹配节点；未对原始 Data Tree 做任何修改。' : 'No matching node was found in the current page; the original Data Tree was not modified.',
-            'padding:18px 14px;color:#fbbf24;border:1px solid #92400e;border-radius:9px;background:#29180b;font-size:16px;',
-        ));
+    return snapshots.find(node => identities.includes(String(node?.objectId || ''))
+        || identities.includes(String(node?.nodeId || ''))
+        || identities.includes(String(node?.id || ''))) || null;
+}
+
+function _normalizeDataTreeEvidenceStatus(value) {
+    const normalized = String(value || '')
+        .trim()
+        .toLowerCase()
+        .replace(/not[\s-]+generated/g, 'not_generated')
+        .replace(/[\s·|/,;:()-]+/g, '_')
+        .replace(/^_+|_+$/g, '');
+    if (!normalized) return 'ready';
+    // A rendered row can contain both a machine status and a translated
+    // display label (for example "stale · Stale"). Resolve the lifecycle
+    // token instead of treating that composite text as a new unknown state.
+    const lifecycleStates = [
+        'not_generated', 'loading', 'error', 'failed', 'unresolved',
+        'missing', 'deleted', 'stale', 'expired', 'outdated',
+        'ready', 'complete', 'completed', 'generated', 'available',
+    ];
+    const parts = normalized.split('_').filter(Boolean);
+    return lifecycleStates.find(state => normalized === state
+        || normalized.startsWith(`${state}_`)
+        || normalized.endsWith(`_${state}`)
+        || parts.includes(state)) || normalized;
+}
+
+async function _prepareLiveDataTreeForScreenshot(plan = {}) {
+    const body = document.getElementById('dataTreeBody');
+    const container = document.getElementById('dataTreeContainer');
+    if (!body || !container) return { restoreFocus: null, focusResult: null };
+    const treeSnapshot = _snapshotDataTreeUiState();
+    const originalContainerStyle = container.getAttribute('style');
+    const evidence = _dataTreeEvidenceRows(plan);
+    const targetRefs = _screenshotTargetRefs(plan);
+    const targetRows = [...new Set(targetRefs
+        .map(ref => _dataTreeRowForTargetRef(ref, evidence))
+        .filter(Boolean))];
+    if (!targetRows.length) {
+        targetRows.push(...(evidence.requestedRows?.length
+            ? evidence.requestedRows
+            : evidence.guideRows || []).slice(0, 1));
     }
-    card.appendChild(list);
-    card.appendChild(make(
-        'div',
-        zh ? '截图为证据视图：仅用于说明节点位置，不改变当前 Data Tree 的展开、选择或滚动状态。' : 'Evidence view only: the capture does not change the Data Tree expansion, selection, or scroll state.',
-        'margin-top:20px;font-size:14px;color:#94a3b8;',
-    ));
-    document.body.appendChild(card);
-    return _waitScreenshotFrames(2).then(async () => {
-        try {
-            const canvas = await html2canvas(card, {
-                backgroundColor: '#0b1220',
-                scale: 2,
-                useCORS: true,
-                allowTaint: true,
-                logging: false,
-            });
-            const cardRect = card.getBoundingClientRect();
-            const targets = captureRows.map(entry => {
-                const rect = entry.item.getBoundingClientRect();
-                const left = Math.max(0, rect.left - cardRect.left) / Math.max(1, cardRect.width);
-                const top = Math.max(0, rect.top - cardRect.top) / Math.max(1, cardRect.height);
-                const width = Math.min(rect.width, cardRect.right - rect.left) / Math.max(1, cardRect.width);
-                const height = Math.min(rect.height, cardRect.bottom - rect.top) / Math.max(1, cardRect.height);
-                const node = entry.node || {};
-                const sceneVisible = typeof window.isDataTreeNodeVisible3D === 'function'
-                    ? window.isDataTreeNodeVisible3D(node)
-                    : node.visible !== false && node.visible3D !== false;
-                return {
-                    target_ref: entry.targetRef,
-                    label: entry.label,
-                    kind: 'data-tree-row',
-                    locator: 'data-tree-card',
-                    visible: true,
-                    scene_visible: sceneVisible,
-                    data_tree_visible: true,
-                    in_view: width > 0 && height > 0,
-                    annotatable: width > 0 && height > 0,
-                    status: String(node.status || entry.row?.dataset?.status || 'ready'),
-                    reason: sceneVisible ? '' : 'scene_hidden_by_data_tree',
-                    normalized_bounds: [left, top, width, height].map(value => Number(value.toFixed(6))),
-                };
-            });
-            return {
-                dataUrl: canvas.toDataURL('image/png'),
-                groundingManifest: {
-                    version: 1,
-                    target: 'data-tree',
-                    image_width: canvas.width,
-                    image_height: canvas.height,
-                    targets,
-                },
-            };
-        } finally {
-            card.remove();
+    if (!targetRows.length) {
+        return {
+            restoreFocus: null,
+            focusResult: {
+                version: 1,
+                status: 'unresolved',
+                method: 'live-data-tree-stable-id',
+                reason: 'target_node_not_found_in_live_data_tree',
+                target_refs: targetRefs,
+            },
+        };
+    }
+
+    // A readable evidence capture may temporarily widen the real sidebar,
+    // but it stays in the visible application and is restored byte-for-byte.
+    // This is a presentation transaction, not a synthetic replacement UI.
+    const desiredWidth = Math.round(Math.min(620, Math.max(480, window.innerWidth * 0.34)));
+    container.style.width = `${desiredWidth}px`;
+    container.style.minWidth = `${desiredWidth}px`;
+    container.style.maxWidth = `${desiredWidth}px`;
+    container.style.flex = `0 0 ${desiredWidth}px`;
+    container.dataset.screenshotCapture = 'live-data-tree';
+
+    const expandedGroups = new Set();
+    const expandedGroupState = new Map();
+    targetRows.forEach(row => {
+        row.dataset.screenshotTarget = 'true';
+        row.classList.add('screenshot-capture-target');
+        let group = row.closest('.tree-group');
+        while (group && body.contains(group)) {
+            expandedGroups.add(group);
+            const items = group.querySelector(':scope > .tree-group-items');
+            const arrow = group.querySelector(':scope > .tree-group-header .arrow');
+            if (!expandedGroupState.has(group)) {
+                expandedGroupState.set(group, {
+                    itemsCollapsed: items?.classList.contains('collapsed') || false,
+                    arrowCollapsed: arrow?.classList.contains('collapsed') || false,
+                    expandedAttribute: group.hasAttribute('data-expanded')
+                        ? group.getAttribute('data-expanded') : null,
+                });
+            }
+            if (items) items.classList.remove('collapsed');
+            if (arrow) arrow.classList.remove('collapsed');
+            group.dataset.expanded = 'true';
+            group = group.parentElement?.closest?.('.tree-group') || null;
         }
-    }, error => {
-        card.remove();
-        throw error;
     });
+    await _waitScreenshotFrames(3);
+
+    const bodyRect = body.getBoundingClientRect();
+    const firstRow = targetRows[0];
+    const rowRect = firstRow.getBoundingClientRect();
+    const hierarchyHeaders = [...expandedGroups]
+        .map(group => group.querySelector(':scope > .tree-group-header'))
+        .filter(Boolean);
+    const contentY = element => element.getBoundingClientRect().top - bodyRect.top + body.scrollTop;
+    const targetTop = contentY(firstRow);
+    const targetBottom = targetTop + rowRect.height;
+    const hierarchyTop = hierarchyHeaders.length
+        ? Math.min(...hierarchyHeaders.map(contentY))
+        : targetTop;
+    const availableHeight = Math.max(120, body.clientHeight - 20);
+    const hierarchyFits = targetBottom - hierarchyTop <= availableHeight;
+    const desiredScroll = hierarchyFits
+        ? hierarchyTop - 10
+        : targetTop - Math.min(availableHeight * 0.52, 280);
+    body.scrollTop = Math.max(0, Math.min(body.scrollHeight - body.clientHeight, desiredScroll));
+    await _waitScreenshotFrames(3);
+
+    const finalBodyRect = body.getBoundingClientRect();
+    const matchedRows = targetRows.filter(row => {
+        const rect = row.getBoundingClientRect();
+        return rect.bottom > finalBodyRect.top && rect.top < finalBodyRect.bottom;
+    });
+    const restore = () => {
+        targetRows.forEach(row => {
+            row.classList.remove('screenshot-capture-target');
+            delete row.dataset.screenshotTarget;
+        });
+        delete container.dataset.screenshotCapture;
+        if (originalContainerStyle === null) container.removeAttribute('style');
+        else container.setAttribute('style', originalContainerStyle);
+        expandedGroupState.forEach((saved, group) => {
+            const items = group.querySelector(':scope > .tree-group-items');
+            const arrow = group.querySelector(':scope > .tree-group-header .arrow');
+            if (items) items.classList.toggle('collapsed', saved.itemsCollapsed);
+            if (arrow) arrow.classList.toggle('collapsed', saved.arrowCollapsed);
+            if (saved.expandedAttribute === null) group.removeAttribute('data-expanded');
+            else group.setAttribute('data-expanded', saved.expandedAttribute);
+        });
+        _restoreDataTreeUiState(treeSnapshot);
+    };
+    restore.focusResult = {
+        version: 1,
+        status: matchedRows.length === targetRows.length ? 'resolved' : 'unverified',
+        method: 'live-data-tree-stable-id',
+        reason: matchedRows.length === targetRows.length ? '' : 'target_row_outside_live_capture',
+        target_refs: targetRefs,
+        matched_object_ids: targetRows.flatMap(_dataTreeRowIdentities),
+        hierarchy_context_preserved: hierarchyFits,
+        live_dom_capture: true,
+        ui_state_restored_after_capture: true,
+    };
+    return { restoreFocus: restore, focusResult: restore.focusResult };
+}
+
+async function _captureDataTreeEvidenceBundle(plan = {}) {
+    if (typeof html2canvas === 'undefined') return { dataUrl: null, groundingManifest: null };
+    const container = document.getElementById('dataTreeContainer');
+    const body = document.getElementById('dataTreeBody');
+    if (!container || !body) return { dataUrl: null, groundingManifest: null };
+    await _waitScreenshotFrames(2);
+    const canvas = await html2canvas(container, {
+        backgroundColor: null,
+        scale: 2,
+        useCORS: true,
+        allowTaint: true,
+        logging: false,
+    });
+    const rootRect = container.getBoundingClientRect();
+    const evidence = _dataTreeEvidenceRows(plan);
+    const refs = _screenshotTargetRefs(plan);
+    const requestedRefs = refs.length ? refs : _dataTreeRowIdentities(
+        evidence.requestedRows?.[0] || evidence.guideRows?.[0],
+    ).slice(0, 1);
+    const targets = requestedRefs.map(targetRef => {
+        const row = _dataTreeRowForTargetRef(targetRef, evidence);
+        const node = _dataTreeSnapshotForRow(row) || {};
+        const rect = row?.getBoundingClientRect?.();
+        const style = row && window.getComputedStyle ? window.getComputedStyle(row) : null;
+        const rendered = !!row && style?.display !== 'none' && style?.visibility !== 'hidden'
+            && Number(style?.opacity ?? 1) > 0.01 && rect.width > 0 && rect.height > 0;
+        const leftPx = rendered ? Math.max(rootRect.left, rect.left) : 0;
+        const topPx = rendered ? Math.max(rootRect.top, rect.top) : 0;
+        const rightPx = rendered ? Math.min(rootRect.right, rect.right) : 0;
+        const bottomPx = rendered ? Math.min(rootRect.bottom, rect.bottom) : 0;
+        const inView = rendered && rightPx > leftPx && bottomPx > topPx;
+        const bounds = inView ? [
+            (leftPx - rootRect.left) / Math.max(1, rootRect.width),
+            (topPx - rootRect.top) / Math.max(1, rootRect.height),
+            (rightPx - leftPx) / Math.max(1, rootRect.width),
+            (bottomPx - topPx) / Math.max(1, rootRect.height),
+        ].map(value => Number(Math.max(0, Math.min(1, value)).toFixed(6))) : null;
+        const status = _normalizeDataTreeEvidenceStatus(
+            node.status
+            || row?.dataset?.status
+            || row?.querySelector?.('.item-status')?.textContent
+            || 'ready'
+        );
+        const unavailable = [
+            'loading', 'error', 'failed', 'not_generated', 'not-generated',
+            'unresolved', 'missing', 'deleted',
+        ].includes(status);
+        const sceneVisible = row && typeof window.isDataTreeNodeVisible3D === 'function'
+            ? window.isDataTreeNodeVisible3D(node)
+            : node.visible !== false && node.visible3D !== false;
+        return {
+            target_ref: targetRef,
+            label: String(row?.querySelector?.('.item-label')?.textContent || targetRef)
+                .replace(/\s+/g, ' ').trim().slice(0, 160),
+            kind: 'data-tree-row',
+            locator: 'live-data-tree-dom',
+            captured_from_live_dom: true,
+            visible: rendered,
+            scene_visible: sceneVisible,
+            data_tree_visible: true,
+            in_view: inView,
+            annotatable: inView && !unavailable,
+            generated: !['not_generated', 'not-generated', 'missing', 'deleted', 'unresolved'].includes(status),
+            loaded: node.meshLoaded === true || node.loaded === true || undefined,
+            current: !unavailable && !['stale', 'expired', 'outdated'].includes(status),
+            availability: unavailable ? 'unavailable'
+                : (['stale', 'expired', 'outdated'].includes(status) ? 'present_stale' : 'present_current'),
+            status,
+            reason: inView ? '' : (row ? 'outside_captured_live_data_tree' : 'target_node_not_found'),
+            normalized_bounds: bounds,
+        };
+    });
+    return {
+        dataUrl: canvas.toDataURL('image/png'),
+        groundingManifest: {
+            version: 1,
+            target: 'data-tree',
+            image_width: canvas.width,
+            image_height: canvas.height,
+            capture_surface: 'live-application-dom',
+            targets,
+        },
+    };
 }
 
 async function _captureDataTreeEvidenceDataUrl(plan = {}) {
@@ -7864,6 +7937,9 @@ async function _applyStructuredScreenshotPlan(plan, viewTarget) {
     _applyScreenshotOverlayPlan(plan);
     const targetRefs = _screenshotTargetRefs(plan);
     const autoFrame = _screenshotAutoFrameEnabled(plan, targetRefs);
+    if (viewTarget === 'data-tree') {
+        return _prepareLiveDataTreeForScreenshot(plan);
+    }
     const axisMatch = String(viewTarget || '').match(/^viewer-(axial|sagittal|coronal)$/);
     if (axisMatch && typeof updateSlice === 'function') {
         const axis = axisMatch[1];
@@ -7912,7 +7988,7 @@ async function _applyStructuredScreenshotPlan(plan, viewTarget) {
             focusResult = {
                 version: 1,
                 status: autoFrame ? 'unresolved' : 'not_requested',
-                reason: autoFrame ? 'target_hidden_stale_or_unavailable' : '',
+                reason: autoFrame ? 'target_hidden_or_unavailable' : '',
                 axis,
             };
         }
@@ -7948,7 +8024,7 @@ async function _applyStructuredScreenshotPlan(plan, viewTarget) {
             focusResult: {
                 version: 1,
                 status: 'unresolved',
-                reason: 'target_hidden_stale_or_unavailable',
+                reason: 'target_hidden_or_unavailable',
                 method: 'stable-id-scene-focus',
                 target_refs: targetRefs,
             },

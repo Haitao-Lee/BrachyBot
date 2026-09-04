@@ -1602,6 +1602,9 @@ function addChat(type, content, scroll, timestamp, fromSession, sessionId = acti
                     if (fromSession !== true && typeof saveSessionMessage === 'function') {
                         saveSessionMessage(type, c, null, timestamp || Date.now(), ownerSessionId, safeMeta);
                     }
+                    if (fromSession !== true && c.trim() && messageKind === 'assistant_final') {
+                        notifyAssistantFinalResponseMounted(requestId, messageId);
+                    }
                     return shell.response;
                 }
             }
@@ -1698,6 +1701,13 @@ function addChat(type, content, scroll, timestamp, fromSession, sessionId = acti
             row.appendChild(avatar);
             row.appendChild(wrapper);
             container.appendChild(row);
+            if (safeType === 'bot' && fromSession !== true && c.trim()
+                && row.dataset.messageKind === 'assistant_final') {
+                notifyAssistantFinalResponseMounted(
+                    row.dataset.requestId,
+                    row.dataset.messageId,
+                );
+            }
         } else {
             // System and error events use a compact left-aligned timeline row.
             // These are user-action/status records, not assistant messages, so
@@ -2952,6 +2962,49 @@ function updateChainHeader(headerEl, steps) {
     if (countEl) countEl.textContent = doneSteps + '/' + logicalSteps.length + _chainI18n('steps_suffix', traceLanguage);
 }
 
+const _mountedAssistantFinalRequestIds = new Set();
+
+function _collapseFinalizedThinkingChain(chainEl) {
+    if (!chainEl || chainEl.dataset.finalized !== '1'
+        || chainEl.dataset.finalResponseMounted !== '1') return;
+    const toggle = chainEl.querySelector('.thinking-toggle');
+    const stepsDiv = chainEl.querySelector('.thinking-steps');
+    const timeEl = chainEl.querySelector('.thinking-time');
+    if (toggle) toggle.classList.remove('expanded');
+    if (stepsDiv) {
+        stepsDiv.classList.remove('expanded');
+        stepsDiv.querySelectorAll('.step-body').forEach(body => body.classList.remove('expanded'));
+    }
+    if (timeEl) timeEl.style.display = 'none';
+    requestChatScrollToBottom();
+}
+
+function _collapseThinkingChainAfterReplyPaint(chainEl) {
+    // DOM insertion is not yet a paint boundary. Two animation frames ensure
+    // the final assistant text and attachments have actually been laid out
+    // before the trace folds underneath them.
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+        _collapseFinalizedThinkingChain(chainEl);
+    }));
+}
+
+function notifyAssistantFinalResponseMounted(requestId, messageId = '') {
+    const stableRequestId = String(requestId || '').trim();
+    if (!stableRequestId) return;
+    _mountedAssistantFinalRequestIds.add(stableRequestId);
+    while (_mountedAssistantFinalRequestIds.size > 512) {
+        _mountedAssistantFinalRequestIds.delete(_mountedAssistantFinalRequestIds.values().next().value);
+    }
+    document.querySelectorAll('.thinking-chain').forEach(chain => {
+        if (String(chain.dataset.requestId || '') !== stableRequestId) return;
+        chain.dataset.finalResponseMounted = '1';
+        delete chain.dataset.awaitingFinalResponse;
+        if (messageId) chain.dataset.finalResponseMessageId = String(messageId);
+        _collapseThinkingChainAfterReplyPaint(chain);
+    });
+}
+window.notifyAssistantFinalResponseMounted = notifyAssistantFinalResponseMounted;
+
 function finalizeThinkingChain(chainEl, headerEl, steps) {
     if (!chainEl) return;
     // Mark as finalized so late SSE events (text_chunk, step) cannot
@@ -2968,37 +3021,18 @@ function finalizeThinkingChain(chainEl, headerEl, steps) {
         clearInterval(headerEl._timer);
         headerEl._timer = null;
     }
-    // Auto-collapse: hide the steps panel AND the time elapser so the
-    // user sees a single collapsed header (▶ Execution Trace 11/17 steps)
-    // immediately. Without this, the chain stays expanded and the
-    // intermediate tool calls cover the final AI response.
-    // Do the collapse in BOTH a setTimeout (the original 500ms path) AND
-    // synchronously (in case the setTimeout is delayed by an event-loop
-    // back-pressure from the SSE pump).
-    const _collapse = () => {
-        const toggle = chainEl.querySelector('.thinking-toggle');
-        const stepsDiv = chainEl.querySelector('.thinking-steps');
-        const timeEl = chainEl.querySelector('.thinking-time');
-        if (toggle) toggle.classList.remove('expanded');
-        if (stepsDiv) {
-            stepsDiv.classList.remove('expanded');
-            // Also collapse every individual step body so even if the
-            // outer container's display is overridden, each step's body
-            // (params, tool name, result) is hidden.
-            stepsDiv.querySelectorAll('.step-body').forEach(b => b.classList.remove('expanded'));
-        }
-        if (timeEl) timeEl.style.display = 'none';
-        requestChatScrollToBottom();
-    };
-    // Push the collapse to the next frame so the response text is
-    // definitely visible before the trace folds.  A synchronous
-    // collapse hides the steps before the browser has painted the
-    // answer bubble.
-    setTimeout(_collapse, 0);
-    // Then again after a delay (covers cases where late SSE events re-added
-    // the .expanded class after the sync call).
-    setTimeout(_collapse, 300);
-    setTimeout(_collapse, 800);
+    // A terminal SSE step is not a user-visible completion boundary. Keep
+    // the trace expanded until addChat/finalizeStreamingResponse confirms
+    // that the final assistant response has been mounted. This also covers
+    // screenshot turns whose visible prose arrives from a hidden multimodal
+    // child after the parent task has already reached Response delivered.
+    const requestId = String(chainEl.dataset.requestId || '');
+    if (_mountedAssistantFinalRequestIds.has(requestId)) {
+        chainEl.dataset.finalResponseMounted = '1';
+        _collapseThinkingChainAfterReplyPaint(chainEl);
+    } else {
+        chainEl.dataset.awaitingFinalResponse = '1';
+    }
 }
 
 function cancelThinkingChain(chainEl, headerEl) {
@@ -3068,6 +3102,11 @@ function finalizeStreamingResponse(el, text, sessionId = activeSessionId, meta =
     el.removeAttribute('aria-busy');
     el.innerHTML = renderMarkdown(text);
     requestChatScrollToBottom();
+    const mountedRequestId = meta?.requestId || meta?.request_id || el.dataset.requestId || '';
+    const mountedMessageId = meta?.messageId || meta?.message_id || el.dataset.messageId || '';
+    if (String(text || '').trim()) {
+        notifyAssistantFinalResponseMounted(mountedRequestId, mountedMessageId);
+    }
     try {
         const ownerSessionId = String(sessionId || '');
         const stableMeta = Object.assign({}, meta || {}, {

@@ -9,10 +9,11 @@
 (function brachybotVisualAnnotation() {
     const RESPONSE_TAG = 'BRACHYBOT_VISUAL_RESPONSE_V2';
     const SHAPES = new Set(['box', 'arrow', 'ellipse', 'point']);
-    const BLOCKED_STATUSES = new Set([
-        'loading', 'error', 'stale', 'expired', 'not_generated',
-        'not-generated', 'unresolved', 'missing', 'deleted',
+    const UNAVAILABLE_STATUSES = new Set([
+        'loading', 'error', 'failed', 'not_generated', 'not-generated',
+        'unresolved', 'missing', 'deleted',
     ]);
+    const OUTDATED_STATUSES = new Set(['stale', 'expired', 'outdated']);
     const MAX_ATTACHMENTS = 4;
     const MAX_MARKS = 3;
 
@@ -184,7 +185,26 @@
 
     function statusIsCurrent(value) {
         const status = text(value || 'ready', 48).toLowerCase();
-        return !BLOCKED_STATUSES.has(status);
+        return !UNAVAILABLE_STATUSES.has(status) && !OUTDATED_STATUSES.has(status);
+    }
+
+    function statusIsLocatable(value) {
+        return !UNAVAILABLE_STATUSES.has(text(value || 'ready', 48).toLowerCase());
+    }
+
+    function isLocationEvidence(attachment) {
+        return text(readAttachment(
+            attachment,
+            'visual_purpose',
+            'visualPurpose',
+            'explain',
+        ), 24).toLowerCase() === 'locate';
+    }
+
+    function statusAllowedForEvidence(attachment, value) {
+        return isLocationEvidence(attachment)
+            ? statusIsLocatable(value)
+            : statusIsCurrent(value);
     }
 
     function attributeEscape(value) {
@@ -234,7 +254,7 @@
             || (captured.in_view !== true && captured.inView !== true) || !bounds) {
             return { ok: false, reason: text(captured.reason, 160) || 'target_not_visible_in_capture' };
         }
-        if (!statusIsCurrent(captured.status)) {
+        if (!statusAllowedForEvidence(attachment, captured.status)) {
             return { ok: false, reason: `capture_status_${text(captured.status, 48)}` };
         }
         const kind = text(captured.kind, 48).toLowerCase();
@@ -243,6 +263,9 @@
             const treeVisible = captured.data_tree_visible === true || captured.dataTreeVisible === true;
             if (!sceneVisible || !treeVisible) {
                 return { ok: false, reason: 'scene_object_hidden_in_capture' };
+            }
+            if (captured.loaded === false || captured.generated === false) {
+                return { ok: false, reason: 'scene_object_not_loaded_at_capture' };
             }
             if (typeof window.get3DScreenshotGroundingManifest !== 'function') {
                 return { ok: false, reason: 'scene_state_unavailable' };
@@ -255,10 +278,11 @@
             // require the object to remain inside the restored live camera.
             if (!current || current.visible !== true
                 || current.scene_visible !== true || current.data_tree_visible !== true
-                || !statusIsCurrent(current.status)) {
+                || current.loaded === false || current.generated === false
+                || !statusAllowedForEvidence(attachment, current.status)) {
                 return {
                     ok: false,
-                    reason: text(current?.reason, 160) || 'scene_object_currently_hidden_or_stale',
+                    reason: text(current?.reason, 160) || 'scene_object_currently_hidden_or_unavailable',
                 };
             }
         } else if (kind === 'viewer-object-2d') {
@@ -277,25 +301,25 @@
             // remains visible and current in the active Session/Planning.
             if (!current || current.visible !== true
                 || current.scene_visible !== true || current.data_tree_visible !== true
-                || !statusIsCurrent(current.status)) {
+                || !statusAllowedForEvidence(attachment, current.status)) {
                 return {
                     ok: false,
-                    reason: text(current?.reason, 160) || 'mpr_object_currently_hidden_or_stale',
+                    reason: text(current?.reason, 160) || 'mpr_object_currently_hidden_or_unavailable',
                 };
             }
         } else {
             const current = currentDomTarget(targetRef);
-            // A Data Tree evidence card is an immutable, high-contrast
-            // reconstruction of a real node. The live group may remain
-            // collapsed (and therefore have a zero client rect) without
-            // invalidating the row captured in that card. Existence, status,
-            // Session, Planning, and data-version checks still apply. Normal
-            // UI screenshots must continue to require a currently rendered
-            // element.
-            const dataTreeCard = text(captured.locator, 48).toLowerCase() === 'data-tree-card';
-            if (!current.found || (!dataTreeCard && !current.rendered)
-                || !statusIsCurrent(current.status)) {
-                return { ok: false, reason: 'ui_target_currently_hidden_or_stale' };
+            // Data Tree evidence is captured from the real live sidebar after
+            // temporarily expanding/scrolling it. The transaction is restored
+            // before annotation, so the same row may now be collapsed and have
+            // a zero client rect. Its capture-time live-DOM bounds remain valid
+            // as long as the stable node still exists and its status is still
+            // compatible. Ordinary UI screenshots still require rendering.
+            const liveDataTreeCapture = text(captured.locator, 48).toLowerCase()
+                === 'live-data-tree-dom' && captured.captured_from_live_dom === true;
+            if (!current.found || (!liveDataTreeCapture && !current.rendered)
+                || !statusAllowedForEvidence(attachment, current.status)) {
+                return { ok: false, reason: 'ui_target_currently_hidden_or_unavailable' };
             }
         }
         return { ok: true, captured, bounds, kind };
@@ -596,8 +620,62 @@
             return result;
         }
 
+        // The multimodal child normally chooses whether and how to mark each
+        // image. For an explicit locate+required contract, deterministically
+        // fill only omissions that already have a stable, visible, bounded
+        // target in the capture manifest. This is not image guessing: hidden,
+        // unloaded, unresolved, or state-mismatched targets still fail the
+        // same validation below.
+        const decisions = envelope.attachments.map(decision => ({
+            ...decision,
+            marks: Array.isArray(decision?.marks) ? [...decision.marks] : [],
+        }));
+        (Array.isArray(evidence) ? evidence : []).forEach(attachment => {
+            const policy = text(readAttachment(
+                attachment, 'annotation_policy', 'annotationPolicy', 'auto',
+            ), 24).toLowerCase();
+            const purpose = text(readAttachment(
+                attachment, 'visual_purpose', 'visualPurpose', 'explain',
+            ), 24).toLowerCase();
+            if (policy !== 'required' || purpose !== 'locate') return;
+            const attachmentId = text(
+                attachment.id || attachment.attachment_id || attachment.attachmentId,
+                180,
+            );
+            const manifest = captureManifestFor(attachment);
+            if (!attachmentId || !manifest) return;
+            let decision = decisions.find(item => item?.attachment_id === attachmentId);
+            if (!decision) {
+                decision = { attachment_id: attachmentId, annotate: true, marks: [] };
+                decisions.push(decision);
+            }
+            const existing = new Set(decision.marks.map(mark => text(mark?.target_ref, 220)));
+            const eligible = (Array.isArray(manifest.targets) ? manifest.targets : [])
+                .filter(target => target?.annotatable === true
+                    && target?.visible === true
+                    && (target?.in_view === true || target?.inView === true)
+                    && normalizeBounds(
+                        target?.normalized_bounds ?? target?.normalizedBounds ?? target?.bounds,
+                    ))
+                .slice(0, MAX_MARKS);
+            eligible.forEach(target => {
+                const targetRef = text(target.target_ref ?? target.targetRef, 220);
+                if (!targetRef || existing.has(targetRef)) return;
+                const kind = text(target.kind, 48).toLowerCase();
+                decision.marks.push({
+                    target_ref: targetRef,
+                    shape: kind === 'scene-object' ? 'arrow'
+                        : (kind === 'viewer-object-2d' ? 'ellipse' : 'box'),
+                    label: text(target.label || targetRef, 120),
+                    priority: 1,
+                });
+                existing.add(targetRef);
+            });
+            decision.annotate = decision.marks.length > 0;
+        });
+
         const prepared = [];
-        envelope.attachments.forEach(decision => {
+        decisions.forEach(decision => {
             if (!decision?.annotate || !decision.marks?.length) return;
             result.requested += decision.marks.length;
             const attachment = findEvidenceAttachment(evidence, decision.attachment_id);
@@ -682,11 +760,11 @@
             const partial = result.updated.length > 0;
             result.notice = language === 'zh'
                 ? (partial
-                    ? '注：部分目标因当前已隐藏、过期、切换规划或与截图状态不一致，已安全跳过标注。'
-                    : '注：目标当前已隐藏、过期、切换规划或与截图状态不一致，因此未在图中绘制定位标注；原始截图仍保留。')
+                    ? '注：部分目标因当前不可见、未加载、不可用、已切换规划，或当前任务要求最新状态但目标已过期，已安全跳过标注。'
+                    : '注：目标当前不可见、未加载、不可用、已切换规划，或当前任务要求最新状态但目标已过期，因此未绘制定位标注；原始截图仍保留。')
                 : (partial
-                    ? 'Note: Some marks were safely omitted because their targets are now hidden, stale, from another plan, or inconsistent with the captured state.'
-                    : 'Note: No locating mark was drawn because the target is hidden, stale, from another plan, or inconsistent with the captured state; the original screenshot is preserved.');
+                    ? 'Note: Some marks were safely omitted because their targets are hidden, unloaded, unavailable, from another plan, or outdated where current evidence is required.'
+                    : 'Note: No locating mark was drawn because the target is hidden, unloaded, unavailable, from another plan, or outdated where current evidence is required; the original screenshot is preserved.');
         }
         return result;
     }
