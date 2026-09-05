@@ -223,7 +223,7 @@ def test_report_restore_and_export_deduplicate_by_stable_subfigure_role():
     assert "const seen = new Set();" in export
     assert "${figureNumber}(${escHtml(headingSubfigure)})" in export
     assert "function _reportFigureStableKey" in api
-    assert "seenFigureKeys.has(stableKey)" in api
+    assert "const existingIndex = figures.findIndex" in api
 
 
 def test_report_attachment_registry_prefers_new_content_version_for_same_role():

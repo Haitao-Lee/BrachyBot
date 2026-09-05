@@ -665,6 +665,19 @@
     transition: transform var(--t-base) var(--ease);
 }
 .chat-image-container img:hover { transform: scale(1.02); }
+.chat-image-container.chat-image-unavailable {
+    min-height: 108px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-color: rgba(251, 191, 36, 0.55);
+    background: rgba(30, 41, 59, 0.72);
+}
+.chat-image-unavailable-label {
+    padding: 0.65rem;
+    color: var(--text-secondary);
+    font-size: 0.72rem;
+}
 .chat-image-caption {
     font-size: 0.7rem;
     color: var(--text-secondary);

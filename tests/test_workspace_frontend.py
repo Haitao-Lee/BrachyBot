@@ -281,11 +281,17 @@ def test_report_figure_restore_and_chat_accept_versioned_catalog_urls():
     workspace = read("web/app/static/js/brachybot-workspace.js")
     viewer = read("web/app/static/js/brachybot-viewer-volume.js")
     ui_api = read("web/app/static/js/brachybot-ui-api.js")
-    assert "catalogUrlMatchesOwner" in workspace
-    assert "item?.url || item?.screenshot_url" in workspace
+    chat = read("web/app/static/js/brachybot-chat-core.js")
+    report = read("web/app/static/js/brachybot-report-editor.js")
+    assert "resolveSessionScreenshotFigureUrl" in workspace
+    assert "item?.url || item?.screenshot_url || item?.screenshotUrl" in workspace
     assert "url: String(item.url || item.screenshot_url || '')" in viewer
-    assert "(?:\\?[^#]*)?$" in ui_api
-    assert "item?.url || item?.screenshot_url" in ui_api
+    assert "resolveSessionScreenshotUrl" in ui_api
+    assert "_catalogScreenshotUrl" in ui_api
+    assert "recoverSessionScreenshotImage" in ui_api
+    assert "item?.url || item?.screenshot_url || item?.screenshotUrl" in ui_api
+    assert "authenticated recovery failed" in chat
+    assert "data-report-figure-index" in report
 
 
 def test_report_quality_columns_are_persisted_and_auto_fill_is_awaited():
@@ -497,8 +503,8 @@ def test_workspace_transitions_publish_measurable_first_paint_and_restore_stages
     assert "restore.fully_interactive" in ui_api
     # Versioned URLs are intentional cache invalidation points. Keep this
     # assertion aligned with the workspace/report artifact restore contract.
-    assert "brachybot-workspace.js?v=40" in index
-    assert "brachybot-ui-api.js?v=63" in index
+    assert "brachybot-workspace.js?v=41" in index
+    assert "brachybot-ui-api.js?v=64" in index
     assert "brachybot-viewer-volume.js?v=51" in index
     assert "brachybot-manual-annotation.js?v=22" in index
 

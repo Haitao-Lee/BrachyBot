@@ -1431,44 +1431,119 @@ function _renderAssistantAttachmentButton(button, attachment, index, total, sess
     const originalUrl = _chatAttachmentOriginalUrl(attachment);
     const annotatedUrl = String(attachment.annotated_url || attachment.annotatedUrl || '');
     const displayUrl = _chatAttachmentDisplayUrl(attachment);
+    const planningId = String(
+        attachment.planning_id || attachment.planningId
+        || attachment.view_metadata?.planning_id || attachment.viewMetadata?.planningId || '',
+    );
+    const resolveScreenshotUrl = candidate => {
+        const value = String(candidate || '').trim();
+        if (!value) return '';
+        if (typeof window.resolveSessionScreenshotUrl === 'function') {
+            return window.resolveSessionScreenshotUrl(value, sessionId, { planningId }) || '';
+        }
+        return value;
+    };
+    const canonicalOriginalUrl = resolveScreenshotUrl(originalUrl);
+    const canonicalAnnotatedUrl = resolveScreenshotUrl(annotatedUrl);
+    const initialDisplayCandidate = canonicalAnnotatedUrl || canonicalOriginalUrl
+        || resolveScreenshotUrl(displayUrl);
+    let currentDisplayUrl = initialDisplayCandidate
+        || (typeof window.resolveSessionScreenshotUrl === 'function' ? '' : displayUrl);
     const language = _chatAttachmentLanguage(attachment, sessionId);
     const title = attachment.title || attachment.label || attachment.target
         || (language === 'zh' ? '\u622a\u56fe' : 'Screenshot');
     button.type = 'button';
     button.className = 'chat-image-container chat-gallery-item';
     button.dataset.attachmentId = attachmentId;
-    button.dataset.attachmentUrl = originalUrl;
-    button.dataset.displayUrl = displayUrl;
-    button.dataset.annotatedUrl = annotatedUrl;
-    button.setAttribute('aria-label', annotatedUrl
+    button.dataset.attachmentUrl = canonicalOriginalUrl;
+    button.dataset.displayUrl = currentDisplayUrl;
+    button.dataset.annotatedUrl = canonicalAnnotatedUrl;
+    button.setAttribute('aria-label', canonicalAnnotatedUrl
         ? `${title} · ${language === 'zh' ? '\u5df2\u6807\u6ce8' : 'Annotated'}`
         : title);
 
     const image = document.createElement('img');
     image.className = 'chat-screenshot';
-    image.src = displayUrl;
-    const fallback = String(attachment.fallback_url || attachment.fallbackUrl || originalUrl || '');
-    if (fallback && fallback !== displayUrl) {
-        image.addEventListener('error', () => {
-            if (image.src !== fallback) image.src = fallback;
-        }, { once: true });
-    }
     image.alt = title;
+    const fallbackCandidates = [
+        currentDisplayUrl,
+        displayUrl,
+        canonicalAnnotatedUrl,
+        canonicalOriginalUrl,
+        annotatedUrl,
+        originalUrl,
+        attachment.fallback_url,
+        attachment.fallbackUrl,
+    ].map(value => String(value || '').trim()).filter(Boolean);
+    let recoveryStarted = false;
+    const setUnavailable = () => {
+        image.hidden = true;
+        image.style.display = 'none';
+        button.classList.add('chat-image-unavailable');
+        let placeholder = button.querySelector('.chat-image-unavailable-label');
+        if (!placeholder) {
+            placeholder = document.createElement('span');
+            placeholder.className = 'chat-image-unavailable-label';
+            button.appendChild(placeholder);
+        }
+        placeholder.textContent = language === 'zh'
+            ? '\u56fe\u7247\u6682\u65f6\u65e0\u6cd5\u52a0\u8f7d'
+            : 'Image temporarily unavailable';
+    };
+    const setAvailable = () => {
+        image.hidden = false;
+        image.style.display = '';
+        button.classList.remove('chat-image-unavailable');
+        button.querySelector('.chat-image-unavailable-label')?.remove();
+    };
+    const recoverImage = async () => {
+        if (recoveryStarted) return;
+        recoveryStarted = true;
+        const candidates = [...new Set(fallbackCandidates)];
+        for (const rawCandidate of candidates) {
+            const candidate = resolveScreenshotUrl(rawCandidate);
+            if (!candidate) continue;
+            try {
+                if (typeof window.recoverSessionScreenshotImage === 'function') {
+                    const recoveredUrl = await window.recoverSessionScreenshotImage(
+                        image,
+                        candidate,
+                        sessionId,
+                        { planningId },
+                    );
+                    if (!recoveredUrl) continue;
+                    currentDisplayUrl = recoveredUrl;
+                } else {
+                    currentDisplayUrl = candidate;
+                    image.src = candidate;
+                }
+                button.dataset.displayUrl = currentDisplayUrl;
+                setAvailable();
+                return;
+            } catch (error) {
+                console.debug('[chat-image] authenticated recovery failed:', error);
+            }
+        }
+        setUnavailable();
+    };
+    image.addEventListener('error', () => { void recoverImage(); });
     const caption = document.createElement('span');
     caption.className = 'chat-image-caption';
     caption.textContent = title;
     button.replaceChildren(image, caption);
-    if (annotatedUrl) {
+    if (canonicalAnnotatedUrl) {
         const badge = document.createElement('span');
         badge.className = 'chat-image-annotation-badge';
         badge.textContent = language === 'zh' ? '\u5df2\u6807\u6ce8' : 'Annotated';
         button.appendChild(badge);
     }
+    if (currentDisplayUrl) image.src = currentDisplayUrl;
+    else void recoverImage();
     button.onclick = () => {
         if (typeof _openScreenshotModal !== 'function') return;
-        _openScreenshotModal(displayUrl, title, index, total, {
-            originalUrl,
-            annotatedUrl,
+        _openScreenshotModal(currentDisplayUrl, title, index, total, {
+            originalUrl: canonicalOriginalUrl,
+            annotatedUrl: canonicalAnnotatedUrl,
             responseLanguage: attachment.response_language || attachment.responseLanguage || '',
         });
     };
