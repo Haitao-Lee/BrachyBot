@@ -2935,8 +2935,34 @@ class WorkspaceStore:
                     "workspace hydration could not reconcile uploaded-mask metadata session=%s",
                     session_id,
                 )
+        # An uploaded label promotion is a newer, object-level source
+        # contract.  Do not run the legacy whole-volume ``target_value``
+        # migration over it: that fallback cannot distinguish the selected
+        # Upload Mask child from its sibling labels and would either select
+        # the wrong child or put the complete raw multi-label file back into
+        # the active CTV.  The effective Structure Set repair below owns this
+        # case; the legacy path remains for direct/manual CTV imports that have
+        # no uploaded source objects at all.
+        has_explicit_uploaded_ctv = bool(
+            any(
+                isinstance(item, Mapping)
+                and any(
+                    str(item.get(key) or "").strip().lower() == "ctv"
+                    for key in ("classification", "moved_to", "movedTo")
+                )
+                and (
+                    str(item.get("kind") or "").strip().lower() == "uploaded_mask_label"
+                    or str(item.get("source") or "").strip().lower() == "uploaded_mask"
+                    or str(item.get("upload_mask_id") or "").strip()
+                )
+                for item in (decoded_results.get("generic_segmentation_masks") or [])
+            )
+            if isinstance(decoded_results.get("generic_segmentation_masks"), list)
+            else False
+        )
         manual_ctv_repaired = bool(
             include_planning_results
+            and not has_explicit_uploaded_ctv
             and _repair_restored_manual_ctv(decoded_results, ui_state)
         )
         planning_versions = (

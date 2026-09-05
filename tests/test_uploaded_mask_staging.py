@@ -290,6 +290,55 @@ def test_hydrated_explicit_upload_promotion_creates_registry_without_losing_chil
     assert memory.retrieve("generic_segmentation_masks")[0]["object_id"] == "mask:upload_restore_label_1"
 
 
+def test_live_legacy_move_does_not_reintroduce_unselected_raw_upload_labels():
+    """Promoting a child must also repair an old live raw multi-label base."""
+    memory = _Memory()
+    shape = (4, 5, 6)
+    raw = np.zeros(shape, dtype=np.uint8)
+    raw[0:2, 0:2, 0:2] = 1
+    raw[2:4, 3:5, 3:5] = 2
+    selected = (raw == 1).astype(np.uint8)
+    sibling = (raw == 2).astype(np.uint8)
+    source_path = "/case/uploads/legacy-labels.nii.gz"
+    memory.store("ctv_array", raw)
+    memory.store("ctv_source", "classified")
+    memory.store("ctv_mask_path", source_path)
+    memory.store("generic_segmentation_masks", [
+        {
+            "mask_id": "upload_live_label_1",
+            "object_id": "mask:upload_live_label_1",
+            "kind": "uploaded_mask_label",
+            "source": "uploaded_mask",
+            "upload_mask_id": "upload_live",
+            "source_path": source_path,
+            "source_label": 1,
+            "classification": "unclassified",
+            "mask_array": selected,
+            "volume_mm3": float(np.count_nonzero(selected)),
+        },
+        {
+            "mask_id": "upload_live_label_2",
+            "object_id": "mask:upload_live_label_2",
+            "kind": "uploaded_mask_label",
+            "source": "uploaded_mask",
+            "upload_mask_id": "upload_live",
+            "source_path": source_path,
+            "source_label": 2,
+            "classification": "unclassified",
+            "mask_array": sibling,
+            "volume_mm3": float(np.count_nonzero(sibling)),
+        },
+    ])
+
+    effective = reclassify_generic_segmentation_masks(
+        memory, ["mask:upload_live_label_1"], "ctv",
+    )
+
+    assert np.array_equal(effective.ctv_array > 0, selected > 0)
+    assert memory.retrieve("structure_base_ctv_array") is None
+    assert memory.retrieve("generic_segmentation_masks")[1]["classification"] == "unclassified"
+
+
 def test_implausible_uploaded_child_is_rejected_at_ctv_promotion():
     memory = _Memory()
     shape = (3, 3, 3)
