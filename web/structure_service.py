@@ -15,6 +15,15 @@ from typing import Any, Dict, Iterable, Mapping, Optional
 import numpy as np
 
 
+_UPLOADED_MASK_SOURCES = frozenset({
+    "manual_label",
+    "manual_upload",
+    "uploaded",
+    "uploaded_unknown",
+    "label_path",
+})
+
+
 _BASE_KEYS = (
     "structure_base_ctv_array",
     "structure_base_ctv_full_labels",
@@ -429,12 +438,67 @@ def build_effective_structures(memory: Any) -> EffectiveStructures:
 def initialize_structure_registry(memory: Any) -> None:
     if memory.retrieve("structure_registry_initialized"):
         return
+    ctv_array = _copy_array(memory.retrieve("ctv_array"))
+    ctv_full_labels = _copy_array(memory.retrieve("ctv_full_labels"))
+    ctv_label_map = dict(memory.retrieve("ctv_label_map") or {})
+    ctv_source = str(memory.retrieve("ctv_source") or "").strip().lower()
+
+    # Some pre-Structure-Set snapshots contain both the raw uploaded
+    # multi-label CTV array and the Upload Mask child rows.  If the registry is
+    # initialized while the operator promotes a child, retaining that raw
+    # array would make every positive source label an unintended CTV.  The
+    # explicit Upload Mask provenance is enough to discard only that legacy
+    # base source; a named model source remains untouched.
+    generic = memory.retrieve("generic_segmentation_masks") or []
+    uploaded_children = [
+        item for item in generic
+        if isinstance(item, Mapping)
+        and (
+            str(item.get("kind") or "").strip().lower() == "uploaded_mask_label"
+            or str(item.get("source") or "").strip().lower() == "uploaded_mask"
+            or str(item.get("upload_mask_id") or "").strip()
+        )
+    ] if isinstance(generic, list) else []
+    drop_legacy_uploaded_ctv = bool(uploaded_children) and (
+        ctv_source in _UPLOADED_MASK_SOURCES
+        or ctv_source == "classified"
+    )
+    if not drop_legacy_uploaded_ctv and uploaded_children:
+        current_paths = [
+            memory.retrieve(key)
+            for key in ("ctv_mask_path", "ctv_path", "label_path", "ctv_source_path")
+        ]
+        for item in uploaded_children:
+            source_path = str(item.get("source_path") or "").strip()
+            if not source_path:
+                continue
+            for current_path in current_paths:
+                left = str(current_path or "").strip()
+                if not left:
+                    continue
+                try:
+                    same_path = (
+                        Path(source_path).expanduser().resolve()
+                        == Path(left).expanduser().resolve()
+                    )
+                except (OSError, RuntimeError, ValueError):
+                    same_path = source_path == left
+                if same_path:
+                    drop_legacy_uploaded_ctv = True
+                    break
+            if drop_legacy_uploaded_ctv:
+                break
+    if drop_legacy_uploaded_ctv:
+        ctv_array = None
+        ctv_full_labels = None
+        ctv_label_map = {}
+        ctv_source = ""
     updates = {
         "structure_registry_initialized": True,
-        "structure_base_ctv_array": _copy_array(memory.retrieve("ctv_array")),
-        "structure_base_ctv_full_labels": _copy_array(memory.retrieve("ctv_full_labels")),
-        "structure_base_ctv_label_map": dict(memory.retrieve("ctv_label_map") or {}),
-        "structure_base_ctv_source": str(memory.retrieve("ctv_source") or ""),
+        "structure_base_ctv_array": ctv_array,
+        "structure_base_ctv_full_labels": ctv_full_labels,
+        "structure_base_ctv_label_map": ctv_label_map,
+        "structure_base_ctv_source": ctv_source,
         "structure_base_oar_array": _copy_array(memory.retrieve("oar_array"), dtype=np.uint16),
         "structure_base_organ_names": dict(memory.retrieve("organ_names") or {}),
         "structure_base_oar_source": str(memory.retrieve("oar_source") or ""),
@@ -526,7 +590,13 @@ def ensure_structure_registry_for_hydrated_uploads(memory: Any) -> bool:
         # the snapshot also contains an explicitly promoted Upload Mask child,
         # the raw volume belongs to that source unless a distinct path above
         # proves otherwise.
-        return current_source in uploaded_sources
+        # ``classified`` is a derived source label written by the previous
+        # effective-Structure-Set commit.  In a legacy snapshot it can sit on
+        # top of the original multi-label uploaded array; retaining that raw
+        # array would silently reintroduce every unselected upload label on
+        # the first post-restart rebuild.  A genuine model source keeps its
+        # own provenance name and is therefore not removed here.
+        return current_source in uploaded_sources or current_source == "classified"
 
     def base_values(classification: str) -> tuple[Any, Any, Dict[int, Any], str]:
         if classification == "ctv":
