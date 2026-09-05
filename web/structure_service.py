@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Dict, Iterable, Mapping, Optional
 
 import numpy as np
@@ -101,6 +102,24 @@ def _copy_array(value: Any, dtype=None) -> Optional[np.ndarray]:
     if array.ndim != 3:
         return None
     return np.array(array, copy=True)
+
+
+def _explicit_structure_classification(value: Mapping[str, Any]) -> str:
+    """Read a valid structure class without trusting placeholder fields.
+
+    Older Upload Mask rows may carry ``classification=unclassified`` beside
+    a real legacy ``moved_to=ctv/oar`` value.  A truthy-first expression would
+    discard the explicit move and make the effective Structure Set incomplete.
+    """
+    for raw_value in (
+        value.get("classification"),
+        value.get("moved_to"),
+        value.get("movedTo"),
+    ):
+        classification = str(raw_value or "").strip().lower()
+        if classification in {"ctv", "oar"}:
+            return classification
+    return ""
 
 
 def _is_model_ctv_source(source: Any) -> bool:
@@ -276,9 +295,7 @@ def _source_structures(memory: Any) -> list[Dict[str, Any]]:
         for raw_entry in generic_masks:
             if not isinstance(raw_entry, Mapping):
                 continue
-            classification = str(
-                raw_entry.get("classification") or raw_entry.get("moved_to") or ""
-            ).strip().lower()
+            classification = _explicit_structure_classification(raw_entry)
             if classification not in {"ctv", "oar"}:
                 continue
             mask = _copy_array(raw_entry.get("mask_array"), dtype=np.uint8)
@@ -427,6 +444,127 @@ def initialize_structure_registry(memory: Any) -> None:
     _batch_memory_update(memory, updates)
 
 
+def ensure_structure_registry_for_hydrated_uploads(memory: Any) -> bool:
+    """Migrate a legacy promoted Upload Mask into the source registry.
+
+    Before the Structure Set transaction was introduced, a browser could show
+    an uploaded label under CTV while the durable memory still contained only
+    the raw multi-label ``ctv_array``.  Rebuilding an effective set from that
+    state would either duplicate the uploaded label or, worse, reintroduce
+    every positive label from the source file after a restart.  This helper is
+    intentionally called only during hydration when an explicit uploaded
+    child classification is present.  It establishes the immutable base
+    source first, then lets ``build_effective_structures`` union the promoted
+    children.
+
+    A raw CTV/OAR volume is excluded from the migrated base only when its
+    provenance explicitly points to an uploaded/manual source (or its path
+    matches a promoted upload).  An unrelated model segmentation is retained;
+    the migration must never infer a clinical deletion from a UI placement.
+    Returns whether the registry was created.
+    """
+    if memory.retrieve("structure_registry_initialized"):
+        return False
+
+    generic = memory.retrieve("generic_segmentation_masks") or []
+    if not isinstance(generic, list):
+        return False
+
+    uploaded_sources = {
+        "manual_label",
+        "manual_upload",
+        "uploaded",
+        "uploaded_unknown",
+        "label_path",
+    }
+
+    def uploaded_promotions(classification: str) -> list[Mapping[str, Any]]:
+        result = []
+        for item in generic:
+            if not isinstance(item, Mapping):
+                continue
+            if _explicit_structure_classification(item) != classification:
+                continue
+            source = str(item.get("source") or "").strip().lower()
+            kind = str(item.get("kind") or "").strip().lower()
+            if (
+                source == "uploaded_mask"
+                or kind == "uploaded_mask_label"
+                or str(item.get("upload_mask_id") or "").strip()
+            ):
+                result.append(item)
+        return result
+
+    def same_path(left: Any, right: Any) -> bool:
+        left_text = str(left or "").strip()
+        right_text = str(right or "").strip()
+        if not left_text or not right_text:
+            return False
+        try:
+            return Path(left_text).expanduser().resolve() == Path(right_text).expanduser().resolve()
+        except (OSError, RuntimeError, ValueError):
+            return left_text == right_text
+
+    def should_drop_raw(classification: str, promotions: list[Mapping[str, Any]]) -> bool:
+        if not promotions:
+            return False
+        current_source = str(
+            memory.retrieve("ctv_source" if classification == "ctv" else "oar_source")
+            or ""
+        ).strip().lower()
+        path_keys = (
+            ("ctv_mask_path", "ctv_path", "label_path", "ctv_source_path")
+            if classification == "ctv"
+            else ("oar_mask_path", "oar_path", "oar_source_path")
+        )
+        current_paths = [memory.retrieve(key) for key in path_keys]
+        for item in promotions:
+            source_path = item.get("source_path")
+            if source_path and any(same_path(source_path, path) for path in current_paths):
+                return True
+        # ``manual_label`` is the provenance used by the old upload route.  If
+        # the snapshot also contains an explicitly promoted Upload Mask child,
+        # the raw volume belongs to that source unless a distinct path above
+        # proves otherwise.
+        return current_source in uploaded_sources
+
+    def base_values(classification: str) -> tuple[Any, Any, Dict[int, Any], str]:
+        if classification == "ctv":
+            promotions = uploaded_promotions("ctv")
+            drop = should_drop_raw("ctv", promotions)
+            return (
+                None if drop else _copy_array(memory.retrieve("ctv_array")),
+                None if drop else _copy_array(memory.retrieve("ctv_full_labels")),
+                {} if drop else dict(memory.retrieve("ctv_label_map") or {}),
+                "" if drop else str(memory.retrieve("ctv_source") or ""),
+            )
+        promotions = uploaded_promotions("oar")
+        drop = should_drop_raw("oar", promotions)
+        return (
+            None if drop else _copy_array(memory.retrieve("oar_array"), dtype=np.uint16),
+            None,
+            {} if drop else dict(memory.retrieve("organ_names") or {}),
+            "" if drop else str(memory.retrieve("oar_source") or ""),
+        )
+
+    ctv_array, ctv_full, ctv_map, ctv_source = base_values("ctv")
+    oar_array, _, organ_names, oar_source = base_values("oar")
+    updates = {
+        "structure_registry_initialized": True,
+        "structure_base_ctv_array": ctv_array,
+        "structure_base_ctv_full_labels": ctv_full,
+        "structure_base_ctv_label_map": ctv_map,
+        "structure_base_ctv_source": ctv_source,
+        "structure_base_oar_array": oar_array,
+        "structure_base_organ_names": organ_names,
+        "structure_base_oar_source": oar_source,
+        "structure_overrides": dict(memory.retrieve("structure_overrides") or {}),
+        "structure_deleted_ids": list(memory.retrieve("structure_deleted_ids") or []),
+    }
+    _batch_memory_update(memory, updates)
+    return True
+
+
 def replace_structure_source(memory: Any, classification: str) -> EffectiveStructures:
     """Replace one authoritative segmentation source after a real rerun/import.
 
@@ -519,9 +657,23 @@ def _stale_updates(memory: Any, reason: str) -> Dict[str, Any]:
 
 
 def _commit_effective(memory: Any, effective: EffectiveStructures, reason: str) -> None:
+    ctv_source_object_ids = [
+        str(item.get("object_id"))
+        for item in effective.structures
+        if str(item.get("classification") or "").strip().lower() == "ctv"
+        and item.get("object_id")
+    ]
     updates = {
         "ctv_array": effective.ctv_array,
         "ctv_mask": effective.ctv_array,
+        # The label-coded array is retained for viewer/Data Tree presentation;
+        # this binary companion is the unambiguous planning/DVH target contract
+        # and is the union of every CTV source object.
+        "ctv_binary_array": (
+            (np.asarray(effective.ctv_array) > 0).astype(np.uint8)
+            if effective.ctv_array is not None else None
+        ),
+        "ctv_source_object_ids": ctv_source_object_ids,
         "ctv_label_map": effective.ctv_label_map,
         "ctv_source": "classified",
         "oar_array": effective.oar_array,

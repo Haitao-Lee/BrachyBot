@@ -368,20 +368,38 @@ def _is_open_generic_mask_entry(entry):
     """
     if not isinstance(entry, dict):
         return False
-    classification = str(
-        entry.get("classification") or entry.get("moved_to") or ""
-    ).strip().lower()
+    classification = next(
+        (
+            str(value or "").strip().lower()
+            for value in (
+                entry.get("classification"),
+                entry.get("moved_to"),
+                entry.get("movedTo"),
+            )
+            if str(value or "").strip().lower() in {"ctv", "oar"}
+        ),
+        "",
+    )
     return classification not in {"ctv", "oar"}
 
 
 def _generic_mask_entries(agent):
-    """Return JSON-safe metadata for session-owned open segmentation masks."""
+    """Return JSON-safe metadata for every session-owned mask child.
+
+    Promoted uploaded labels remain durable source objects even though their
+    voxel volume is rendered through the effective CTV/OAR label volume.  The
+    catalogue therefore must include them as metadata after restart; filtering
+    them here made the browser forget the source row and confused a successful
+    promotion with deletion.  Standalone volume requests still use the
+    open-mask predicate below and never expose promoted masks as duplicate
+    meshes.
+    """
     raw = agent.memory.retrieve("generic_segmentation_masks") or []
     entries = []
     if not isinstance(raw, list):
         return entries
     for item in raw:
-        if not _is_open_generic_mask_entry(item) or not item.get("mask_id"):
+        if not item.get("mask_id"):
             continue
         entry = dict(item)
         # The binary payload is served separately so the catalogue stays fast
@@ -1211,6 +1229,14 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
             response.headers['X-CTV-Object-Map'] = _json.dumps({
                 str(key): value for key, value in ctv_object_map.items()
             })
+            response.headers['X-CTV-Structure-Catalog'] = _json.dumps([
+                {
+                    key: value for key, value in item.items()
+                    if key not in {"mask", "mask_array", "voxels", "data"}
+                }
+                for item in (effective.structures if effective is not None else [])
+                if str(item.get("classification") or "").strip().lower() == "ctv"
+            ])
 
             # Also return organ metadata for data tree
             organ_names = (
@@ -1277,7 +1303,7 @@ def register_viewer_routes(app, get_agent, load_ct_image, extract_dicom_tags):
     @require_api_key
     @rate_limit
     def api_viewer_generic_masks():
-        """List open BiomedParse masks for the active session."""
+        """List all generic mask children and their current classification."""
         agent = get_agent(_lightweight=True)
         if agent is None:
             return jsonify({

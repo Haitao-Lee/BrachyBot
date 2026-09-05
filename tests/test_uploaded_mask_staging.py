@@ -4,13 +4,23 @@ from __future__ import annotations
 
 import threading
 import time
+from types import SimpleNamespace
 
 import numpy as np
 import SimpleITK as sitk
 import pytest
 
-from web.structure_service import StructureError, reclassify_generic_segmentation_masks
-from web.uploaded_mask_service import stage_uploaded_ctv_mask
+from web.structure_service import (
+    StructureError,
+    build_effective_structures,
+    ensure_structure_registry_for_hydrated_uploads,
+    initialize_structure_registry,
+    reclassify_generic_segmentation_masks,
+)
+from web.uploaded_mask_service import (
+    normalize_uploaded_mask_results,
+    stage_uploaded_ctv_mask,
+)
 
 
 class _Memory:
@@ -121,6 +131,163 @@ def test_only_explicit_ctv_move_promotes_selected_uploaded_child():
     assert entries[0]["classification"] == "ctv"
     assert entries[0]["ctv_promoted_from_upload"]["source_label"] == 1
     assert entries[1]["classification"] == "unclassified"
+
+
+def test_all_explicit_ctv_children_are_merged_for_planning_but_keep_source_rows():
+    memory = _Memory()
+    shape = (4, 5, 6)
+    first = np.zeros(shape, dtype=np.uint8)
+    first[0:2, 1:3, 1:3] = 1
+    second = np.zeros(shape, dtype=np.uint8)
+    second[2:4, 3:5, 3:5] = 1
+    memory.store("generic_segmentation_masks", [
+        {
+            "mask_id": "upload_union_label_1",
+            "object_id": "mask:upload_union_label_1",
+            "kind": "uploaded_mask_label",
+            "source": "uploaded_mask",
+            "upload_mask_id": "upload_union",
+            "source_label": 1,
+            "classification": "unclassified",
+            "mask_array": first,
+            "spacing": [1.0, 1.0, 1.0],
+            "volume_mm3": float(np.count_nonzero(first)),
+        },
+        {
+            "mask_id": "upload_union_label_2",
+            "object_id": "mask:upload_union_label_2",
+            "kind": "uploaded_mask_label",
+            "source": "uploaded_mask",
+            "upload_mask_id": "upload_union",
+            "source_label": 2,
+            "classification": "unclassified",
+            "mask_array": second,
+            "spacing": [1.0, 1.0, 1.0],
+            "volume_mm3": float(np.count_nonzero(second)),
+        },
+    ])
+
+    reclassify_generic_segmentation_masks(
+        memory, ["mask:upload_union_label_1"], "ctv",
+    )
+    effective_one = build_effective_structures(memory)
+    assert np.array_equal(effective_one.ctv_array > 0, first > 0)
+
+    effective_both = reclassify_generic_segmentation_masks(
+        memory, ["mask:upload_union_label_2"], "ctv",
+    )
+    expected = (first > 0) | (second > 0)
+    assert np.array_equal(effective_both.ctv_array > 0, expected)
+    assert set(memory.retrieve("ctv_source_object_ids")) == {
+        "mask:upload_union_label_1",
+        "mask:upload_union_label_2",
+    }
+    # The Data Tree source rows remain durable even though planning consumes
+    # one binary union mask.
+    assert len(memory.retrieve("generic_segmentation_masks")) == 2
+    assert all(item["classification"] == "ctv" for item in memory.retrieve("generic_segmentation_masks"))
+
+
+def test_planning_loads_the_effective_binary_union_not_the_raw_uploaded_path(tmp_path):
+    ct_path, label_path, labels = _write_case(tmp_path)
+    memory = _Memory()
+    ct = sitk.ReadImage(str(ct_path))
+    memory.store("ct_image", ct)
+    memory.store("ct_data", sitk.GetArrayFromImage(ct))
+    staged = stage_uploaded_ctv_mask(memory, str(ct_path), str(label_path))
+    # Label 2 has enough voxels for the same clinical plausibility guard used
+    # by the real Move-to-CTV route; label 1 is intentionally a tiny distractor.
+    selected_id = next(
+        item["object_id"] for item in staged["children"]
+        if int(item["source_label"]) == 2
+    )
+    reclassify_generic_segmentation_masks(memory, [selected_id], "ctv")
+
+    from tool_factory.seed_plan.planning_pipeline import PlanningPipelineTool
+
+    loaded = PlanningPipelineTool.__new__(PlanningPipelineTool)._load_ctv(
+        {"ctv_mask_path": str(label_path)}, SimpleNamespace(memory=memory), ct,
+    )
+    assert loaded is not None
+    assert np.array_equal(loaded > 0, labels == 2)
+
+
+def test_raw_multilabel_path_is_rejected_until_an_upload_label_is_classified(tmp_path):
+    ct_path, label_path, _ = _write_case(tmp_path)
+    memory = _Memory()
+    ct = sitk.ReadImage(str(ct_path))
+    memory.store("ct_image", ct)
+    memory.store("ct_data", sitk.GetArrayFromImage(ct))
+    stage_uploaded_ctv_mask(memory, str(ct_path), str(label_path))
+
+    from tool_factory.seed_plan.planning_pipeline import PlanningPipelineTool
+
+    loaded = PlanningPipelineTool.__new__(PlanningPipelineTool)._load_ctv(
+        {"ctv_mask_path": str(label_path)}, SimpleNamespace(memory=memory), ct,
+    )
+    assert loaded is None
+
+
+def test_ctv_node_with_multiple_transport_labels_is_merged_to_one_planning_target():
+    memory = _Memory()
+    shape = (3, 4, 5)
+    labels = np.zeros(shape, dtype=np.uint8)
+    labels[0, 0, 0] = 1
+    labels[2, 3, 4] = 2
+    memory.store("ctv_array", labels)
+    memory.store("ctv_source", "manual_label")
+    memory.store("ctv_label_map", {1: "lesion A", 2: "lesion B"})
+    initialize_structure_registry(memory)
+
+    effective = build_effective_structures(memory)
+    assert np.array_equal(effective.ctv_array > 0, labels > 0)
+    assert {item["source_label"] for item in effective.structures
+            if item["classification"] == "ctv"} == {1, 2}
+
+
+def test_legacy_placeholder_does_not_hide_moved_to_classification():
+    results = {
+        "generic_segmentation_masks": [{
+            "mask_id": "upload_legacy_label_2",
+            "object_id": "mask:upload_legacy_label_2",
+            "kind": "uploaded_mask_label",
+            "source": "uploaded_mask",
+            "upload_mask_id": "upload_legacy",
+            "classification": "unclassified",
+            "moved_to": "ctv",
+            "mask_array": np.ones((2, 2, 2), dtype=np.uint8),
+        }],
+    }
+    assert normalize_uploaded_mask_results(results) is True
+    entry = results["generic_segmentation_masks"][0]
+    assert entry["classification"] == "ctv"
+    assert entry["parent_group"] == "ctv"
+
+
+def test_hydrated_explicit_upload_promotion_creates_registry_without_losing_child():
+    memory = _Memory()
+    source = np.zeros((2, 3, 4), dtype=np.uint8)
+    source[0, 1, 1] = 1
+    memory.store("ctv_array", np.zeros_like(source))
+    memory.store("ctv_source", "manual_label")
+    memory.store("generic_segmentation_masks", [{
+        "mask_id": "upload_restore_label_1",
+        "object_id": "mask:upload_restore_label_1",
+        "kind": "uploaded_mask_label",
+        "source": "uploaded_mask",
+        "upload_mask_id": "upload_restore",
+        "source_label": 1,
+        "classification": "ctv",
+        "moved_to": "ctv",
+        "mask_array": source,
+        "volume_mm3": 1.0,
+    }])
+
+    assert ensure_structure_registry_for_hydrated_uploads(memory) is True
+    effective = build_effective_structures(memory)
+    assert np.array_equal(effective.ctv_array > 0, source > 0)
+    assert memory.retrieve("structure_registry_initialized") is True
+    assert memory.retrieve("generic_segmentation_masks")[0]["object_id"] == "mask:upload_restore_label_1"
 
 
 def test_implausible_uploaded_child_is_rejected_at_ctv_promotion():
@@ -275,4 +442,4 @@ def test_uploaded_mask_label_ids_use_registry_for_all_tree_controls():
     assert "window.isDataTreeMaskId" in manual_3d
     assert "brachybot-viewer-volume.js?v=51" in index
     assert "brachybot-viewer-layout.js?v=38" in index
-    assert "brachybot-3d-manual.js?v=81" in index
+    assert "brachybot-3d-manual.js?v=82" in index

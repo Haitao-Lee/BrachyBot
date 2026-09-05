@@ -7,7 +7,7 @@ based medical advice keep the normal routing and review gates.
 
 from dataclasses import dataclass, field
 import re
-from typing import FrozenSet, Iterable, Optional
+from typing import Any, Dict, FrozenSet, Iterable, List, Mapping, Optional, Tuple
 
 from agent_runtime.action_plan import ActionPlan
 
@@ -20,6 +20,13 @@ KNOWLEDGE_TOOLS: FrozenSet[str] = frozenset({
 UI_TOOLS: FrozenSet[str] = frozenset({
     "ui_controller", "ui_inspector", "ui_screenshot", "ui_content", "ui_annotate",
     "viewer_command", "auto_navigate", "query_metrics", "dvh_curve",
+})
+
+# Location discovery is deliberately read-only.  Unknown or newly added
+# objects may be inspected and captured, but a "where is X" turn can never
+# click a control or start a clinical operation while trying to discover X.
+VISUAL_DISCOVERY_TOOLS: FrozenSet[str] = frozenset({
+    "ui_inspector", "ui_screenshot",
 })
 
 CLINICAL_TOOLS: FrozenSet[str] = frozenset({
@@ -497,6 +504,76 @@ def resolve_ui_control_location_target(message: str) -> Optional[str]:
     return "ui_control:viewer.reconstruct3d"
 
 
+def _visual_targets_from_text(message: str) -> Tuple[str, ...]:
+    """Return every canonical visual capability named in the current turn.
+
+    These aliases are a fast path for common clinical object families.  They
+    are not the complete object vocabulary: exact Data Tree rows, scene
+    objects, controls, newly added plug-in objects, and object parts are
+    resolved from the browser's live ``visual_target_catalog`` below.
+    """
+    text = re.sub(r"\s+", " ", str(message or "").strip().lower())
+    if not text:
+        return ()
+
+    visual_objects = (
+        (
+            "surgical_guide",
+            ("surgical guide", "puncture guide", "guide mesh", "手术导板", "穿刺导板", "导板"),
+        ),
+        (
+            "ctv",
+            ("clinical target volume", "target volume", "tumor", "tumour", "lesion", "ctv", "肿瘤", "肿块", "病灶", "靶区"),
+        ),
+        (
+            "oar",
+            ("organ at risk", "organs at risk", "oar", "危及器官"),
+        ),
+        (
+            "trajectories",
+            ("trajectory", "trajectories", "needle path", "needle paths", "轨迹", "针道路径"),
+        ),
+        (
+            "needles",
+            ("needle", "needles", "puncture needle", "puncture needles", "穿刺针", "针道"),
+        ),
+        (
+            "seeds",
+            ("seed", "seeds", "radioactive seed", "radioactive seeds", "粒子", "种子"),
+        ),
+    )
+    found: List[str] = []
+    for capability, aliases in visual_objects:
+        if any(alias in text for alias in aliases) and capability not in found:
+            found.append(capability)
+
+    if found:
+        return tuple(found)
+
+    target = resolve_session_content_target(text)
+    if target in {
+        "surgical_guide", "ctv", "oar", "seeds", "needles", "trajectories",
+        "planning", "structures", "data_tree", "artifact",
+        "dose", "dvh", "ct", "metrics",
+    }:
+        return (target,)
+    if any(term in text for term in ("data tree", "数据树")):
+        return ("data_tree",)
+    if any(term in text for term in ("dvh", "dose-volume histogram", "剂量体积直方图")):
+        return ("dvh",)
+    if any(term in text for term in ("metric", "metrics", "指标")):
+        return ("metrics",)
+    if any(term in text for term in ("dose", "剂量")):
+        return ("dose",)
+    if any(term in text for term in ("planning", "规划")):
+        return ("planning",)
+    if any(term in text for term in ("ct", "image", "scan", "影像", "图像")):
+        return ("ct",)
+    if any(term in text for term in ("structure", "structures", "segmentation", "mask", "结构", "分割", "掩膜", "面具")):
+        return ("structures",)
+    return ()
+
+
 def _visual_target_from_text(message: str) -> Optional[str]:
     """Find a live visual resource family from target words alone.
 
@@ -506,34 +583,8 @@ def _visual_target_from_text(message: str) -> Optional[str]:
     retaining the content resolver's conservative behaviour for ordinary
     conversation.
     """
-    text = re.sub(r"\s+", " ", str(message or "").strip().lower())
-    if not text:
-        return None
-    target = resolve_session_content_target(text)
-    if target in {
-        "surgical_guide", "planning", "structures", "data_tree", "artifact",
-        "dose", "dvh", "ct", "metrics",
-    }:
-        return target
-    if any(term in text for term in (
-        "surgical guide", "puncture guide", "guide mesh", "手术导板", "穿刺导板", "导板",
-    )):
-        return "surgical_guide"
-    if any(term in text for term in ("data tree", "数据树")):
-        return "data_tree"
-    if any(term in text for term in ("dvh", "dose-volume histogram", "剂量体积直方图")):
-        return "dvh"
-    if any(term in text for term in ("metric", "metrics", "指标")):
-        return "metrics"
-    if any(term in text for term in ("dose", "剂量")):
-        return "dose"
-    if any(term in text for term in ("planning", "needles", "seeds", "规划", "穿刺针", "粒子")):
-        return "planning"
-    if any(term in text for term in ("ct", "image", "scan", "影像", "图像")):
-        return "ct"
-    if any(term in text for term in ("structure", "structures", "segmentation", "mask", "ctv", "oar", "结构", "分割", "掩膜", "面具")):
-        return "structures"
-    return None
+    targets = _visual_targets_from_text(message)
+    return targets[0] if targets else None
 
 
 def _recent_user_visual_target(conversation: Optional[Iterable[object]]) -> Optional[str]:
@@ -1262,9 +1313,230 @@ def resolve_session_content_target(message: str) -> Optional[str]:
     return None
 
 
+_CANONICAL_VISUAL_TARGET_REFS: Dict[str, Tuple[str, ...]] = {
+    "surgical_guide": ("surgical_guide:active",),
+    "ctv": ("structure:ctv:active",),
+    "oar": ("structure:oar:active",),
+    "seeds": ("group:planning:seeds",),
+    "needles": ("group:planning:needles",),
+    "trajectories": ("group:planning:trajectories",),
+    "ui_control:viewer.reconstruct3d": ("reconstruct3DButton",),
+}
+
+
+def _target_agnostic_visual_followup(message: str) -> bool:
+    """Return whether the turn refers only to a previously named target.
+
+    Previous-target inheritance is intentionally narrow.  An explicit but
+    unknown noun (including a nonexistent object) must go through live
+    discovery and may not silently inherit the previous guide, CTV, or row.
+    """
+    text = re.sub(r"\s+", " ", str(message or "").strip().lower())
+    if not text:
+        return False
+    reduced = text
+    removable = (
+        "screenshot", "screen shot", "capture", "image", "picture",
+        "where", "located", "location", "locate", "find", "show", "mark",
+        "annotate", "box", "circle", "arrow", "point out", "which one",
+        "截图", "截屏", "图片", "图像", "在哪里", "哪里", "哪儿", "在哪", "位置",
+        "定位", "找到", "找出", "显示", "展示", "圈出", "圈起来", "框出",
+        "标注", "箭头", "指出", "哪个", "哪一个", "告诉", "请问", "请",
+        "给我", "一下", "出来", "看看", "看一下", "呢", "吗", "吧",
+        "it", "this", "that", "them", "those", "these", "the object",
+        "它", "这个", "那个", "该对象", "目标", "对象",
+    )
+    for phrase in sorted(removable, key=len, reverse=True):
+        reduced = reduced.replace(phrase, " ")
+    reduced = re.sub(r"[^a-z0-9\u3400-\u4dbf\u4e00-\u9fff]+", "", reduced)
+    return not reduced
+
+
+def _live_visual_catalog(ui_state: Optional[Mapping[str, Any]]) -> List[Mapping[str, Any]]:
+    if not isinstance(ui_state, Mapping):
+        return []
+    raw = ui_state.get("visual_target_catalog", ui_state.get("visualTargets"))
+    if not isinstance(raw, (list, tuple)):
+        return []
+    return [item for item in raw[:512] if isinstance(item, Mapping)]
+
+
+def _catalog_target_matches(
+    message: str,
+    ui_state: Optional[Mapping[str, Any]],
+) -> List[Dict[str, Any]]:
+    """Resolve exact live labels/aliases to stable IDs without coordinates."""
+    text = re.sub(r"\s+", " ", str(message or "").strip().lower())
+    matches: List[Dict[str, Any]] = []
+    seen = set()
+    for item in _live_visual_catalog(ui_state):
+        refs = item.get("target_refs", item.get("targetRefs", item.get("identities", [])))
+        if isinstance(refs, str):
+            refs = [refs]
+        if not isinstance(refs, (list, tuple)):
+            refs = []
+        normalized_refs = list(dict.fromkeys(
+            str(value or "").strip()
+            for value in refs
+            if str(value or "").strip()
+        ))[:16]
+        ref = normalized_refs[0] if normalized_refs else ""
+        if not ref or ref in seen:
+            continue
+        labels = [
+            item.get("label"), item.get("name"), item.get("text"),
+            *(item.get("aliases") if isinstance(item.get("aliases"), (list, tuple)) else []),
+        ]
+        normalized_labels = [
+            re.sub(r"\s+", " ", str(value or "").strip().lower())
+            for value in labels
+            if str(value or "").strip()
+        ]
+        # Exact live labels may be arbitrary plug-in names or user-created
+        # object names.  Requiring at least two characters avoids matching a
+        # one-letter control label everywhere in the sentence.
+        def label_matches(label: str) -> bool:
+            if len(label) < 2:
+                return False
+            # CJK and punctuation-bearing display labels are naturally
+            # phrase-like. Pure ASCII words/IDs need token boundaries so a
+            # short row such as ``CT`` cannot match ``current``.
+            if re.search(r"[^a-z0-9_ -]", label):
+                return label in text
+            return bool(re.search(
+                rf"(?<![a-z0-9_]){re.escape(label)}(?![a-z0-9_])",
+                text,
+                flags=re.IGNORECASE,
+            ))
+
+        if not any(label_matches(label) for label in normalized_labels):
+            continue
+        seen.add(ref)
+        matches.append({
+            "target_ref": ref,
+            "target_refs": normalized_refs,
+            "family": str(item.get("family") or item.get("kind") or "dynamic").strip().lower(),
+            "label": next((label for label in normalized_labels if label), ref),
+            "surfaces": [
+                str(value or "").strip().lower()
+                for value in (
+                    item.get("surfaces")
+                    if isinstance(item.get("surfaces"), (list, tuple)) else []
+                )
+                if str(value or "").strip()
+            ],
+        })
+        if len(matches) >= 32:
+            break
+    return matches
+
+
+def _is_session_visual_discovery_question(
+    message: str,
+    ui_state: Optional[Mapping[str, Any]] = None,
+) -> bool:
+    """Recognize a location request that needs runtime object discovery.
+
+    This predicate is capability-based: an explicit UI/viewer/current-case
+    context, an active medical viewer, or a label in the live target catalog
+    is enough.  It does not assume that the requested object exists.
+    """
+    text = re.sub(r"\s+", " ", str(message or "").strip().lower())
+    if not text or not (_is_location_question(text) or _has_visual_annotation_request(text)):
+        return False
+    if _catalog_target_matches(text, ui_state):
+        return True
+    if _contains_any(text, (
+        "screenshot", "viewer", "data tree", "ui", "button", "control", "panel",
+        "截图", "视图", "查看器", "数据树", "界面", "按钮", "控件", "面板",
+        "current case", "this case", "patient", "当前病例", "本病例", "患者",
+        "图中", "画面中", "屏幕上", "圈出", "框出", "标注", "箭头",
+    )):
+        return True
+    viewer = ui_state.get("viewer") if isinstance(ui_state, Mapping) else None
+    return bool(isinstance(viewer, Mapping) and viewer.get("ct_loaded"))
+
+
+def resolve_session_visual_location_request(
+    message: str,
+    conversation: Optional[Iterable[object]] = None,
+    ui_state: Optional[Mapping[str, Any]] = None,
+) -> Optional[Dict[str, Any]]:
+    """Resolve a location turn into a current-target integrity contract."""
+    text = re.sub(r"\s+", " ", str(message or "").strip().lower())
+    if not text or not (_is_location_question(text) or _has_visual_annotation_request(text)):
+        return None
+    if _is_image_tumor_measurement_request(text):
+        return None
+    if _has_explicit_guide_generation_command(text) or _is_guide_generation_help_query(text):
+        return None
+
+    control_target = resolve_ui_control_location_target(text)
+    current_targets = list(_visual_targets_from_text(text))
+    if control_target:
+        current_targets = [control_target]
+
+    catalog_matches = _catalog_target_matches(text, ui_state)
+    target_refs: List[str] = []
+    semantic_targets: List[str] = []
+    source = "canonical"
+    if current_targets:
+        semantic_targets = current_targets
+        for target in current_targets:
+            target_refs.extend(_CANONICAL_VISUAL_TARGET_REFS.get(target, ()))
+        # A request may combine a canonical family with an arbitrary live row
+        # or object part (for example "CTV and custom bracket"). Preserve
+        # both instead of letting the common-family fast path erase the
+        # dynamic half of the request.
+        if catalog_matches:
+            source = "canonical+live_catalog"
+            for item in catalog_matches:
+                target_refs.extend(item.get("target_refs") or [item["target_ref"]])
+                family = item.get("family") or "dynamic"
+                if family not in semantic_targets:
+                    semantic_targets.append(family)
+    elif catalog_matches:
+        source = "live_catalog"
+        for item in catalog_matches:
+            target_refs.extend(item.get("target_refs") or [item["target_ref"]])
+            semantic_targets.append(item.get("family") or "dynamic")
+    elif _target_agnostic_visual_followup(text):
+        inherited = _recent_user_visual_target(conversation)
+        if inherited:
+            source = "conversation_reference"
+            semantic_targets = [inherited]
+            target_refs.extend(_CANONICAL_VISUAL_TARGET_REFS.get(inherited, ()))
+
+    target_refs = list(dict.fromkeys(ref for ref in target_refs if ref))[:32]
+    semantic_targets = list(dict.fromkeys(target for target in semantic_targets if target))[:32]
+    if semantic_targets or target_refs:
+        return {
+            "semantic_targets": semantic_targets,
+            "target_refs": target_refs,
+            "target_query": text,
+            "target_source": source,
+            "target_surfaces": list(dict.fromkeys(
+                surface
+                for item in catalog_matches
+                for surface in item.get("surfaces", [])
+            )),
+            "requires_discovery": False,
+        }
+    if _is_session_visual_discovery_question(text, ui_state):
+        return {
+            "semantic_targets": [],
+            "target_refs": [],
+            "target_query": text,
+            "target_source": "live_discovery",
+            "requires_discovery": True,
+        }
+    return None
+
+
 def resolve_session_visual_location_target(
     message: str,
     conversation: Optional[Iterable[object]] = None,
+    ui_state: Optional[Mapping[str, Any]] = None,
 ) -> Optional[str]:
     """Resolve a request to locate a live Session object visually.
 
@@ -1275,33 +1547,15 @@ def resolve_session_visual_location_target(
     answer; the browser validates the stable identity, visibility, freshness,
     and current Session before capturing or annotating anything.
     """
-    text = re.sub(r"\s+", " ", str(message or "").strip().lower())
-    if not text or not (_is_location_question(text) or _has_visual_annotation_request(text)):
+    request = resolve_session_visual_location_request(
+        message,
+        conversation=conversation,
+        ui_state=ui_state,
+    )
+    if not request or request.get("requires_discovery"):
         return None
-    # "肿瘤在哪里/有多大" is a patient-specific image-analysis request,
-    # not a request to locate a UI/Data Tree object. Keep it on the existing
-    # CTV/measurement path; otherwise the generic word "where" would steal
-    # the request before the segmentation boundary can inspect the CT.
-    if _is_image_tumor_measurement_request(text):
-        return None
-    # A request that explicitly starts a guide-generation action may also ask
-    # for its eventual location. It is a compound clinical turn, not a
-    # read-only screenshot capability; leave it for semantic action planning.
-    if _has_explicit_guide_generation_command(text):
-        return None
-    if _is_guide_generation_help_query(text):
-        return None
-    ui_control_target = resolve_ui_control_location_target(text)
-    if ui_control_target:
-        return ui_control_target
-    target = _visual_target_from_text(text)
-    if target:
-        return target
-    # ``截图给我在哪里`` is intentionally target-agnostic on its own.  If a
-    # nearby user turn identified the object, carry only that stable resource
-    # family into the screenshot capability; otherwise let the normal LLM ask
-    # for clarification instead of making an ungrounded capture.
-    return _recent_user_visual_target(conversation)
+    targets = request.get("semantic_targets") or []
+    return str(targets[0]) if targets else None
 
 
 def resolve_session_content_presentation(message: str, target: Optional[str] = None) -> str:
@@ -1327,6 +1581,7 @@ def classify_local_turn(
     message: str,
     pending_tumor_site: bool = False,
     conversation: Optional[Iterable[object]] = None,
+    ui_state: Optional[Mapping[str, Any]] = None,
 ) -> LocalTurnPolicy:
     """Classify a turn without an LLM, using conservative intent boundaries."""
     text = str(message or "").strip()
@@ -1493,8 +1748,12 @@ def classify_local_turn(
     # handling so ``手术导板在哪里`` cannot become
     # ``surgical_guide(action=generate)`` while image-grounded tumor
     # measurement questions above retain their analytical route.
-    visual_location_target = resolve_session_visual_location_target(text, conversation=conversation)
-    if visual_location_target:
+    visual_location_request = resolve_session_visual_location_request(
+        text,
+        conversation=conversation,
+        ui_state=ui_state,
+    )
+    if visual_location_request and not visual_location_request.get("requires_discovery"):
         return LocalTurnPolicy(
             "session_visual_location_query",
             "low",
@@ -1504,6 +1763,25 @@ def classify_local_turn(
             frozenset({"ui_screenshot"}),
             direct_execution=True,
             execution_grants=frozenset({"ui_screenshot"}),
+        )
+
+    # Arbitrary current-case objects, user-created rows, plug-in controls,
+    # object subparts, combinations, and nonexistent names all enter the same
+    # open discovery path.  The model may inspect the browser-published live
+    # catalog and capture exact returned IDs; it may not mutate the UI or
+    # substitute a different object when discovery returns no match.
+    if (
+        visual_location_request
+        and visual_location_request.get("requires_discovery")
+        and not is_ui_control_location_question(text)
+    ):
+        return LocalTurnPolicy(
+            "session_visual_discovery_query",
+            "low",
+            False,
+            False,
+            False,
+            VISUAL_DISCOVERY_TOOLS,
         )
 
     # An unknown control still needs live UI capability discovery.  Keep the

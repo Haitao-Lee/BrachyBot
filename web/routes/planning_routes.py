@@ -712,6 +712,69 @@ def _validate_screenshot_annotation_marks(
         if isinstance(target, Mapping)
         and str(target.get("target_ref") or target.get("targetRef") or "").strip()
     }
+    semantic_targets = []
+    raw_semantic_targets = metadata.get(
+        "semantic_targets", metadata.get("semanticTargets", [])
+    )
+    if isinstance(raw_semantic_targets, list):
+        semantic_targets.extend(str(value or "").strip().lower()
+                                for value in raw_semantic_targets)
+    semantic_targets.append(str(
+        metadata.get("semantic_target")
+        or metadata.get("semanticTarget")
+        or source_attachment.get("semantic_target")
+        or ""
+    ).strip().lower())
+    semantic_targets = list(dict.fromkeys(
+        value for value in semantic_targets if value
+    ))
+
+    def matches_semantic_target(target_ref: str) -> bool:
+        if not semantic_targets or any(
+            value in {"dynamic", "composite"} for value in semantic_targets
+        ):
+            return True
+        ref = str(target_ref or "").strip().lower()
+        for family in semantic_targets:
+            if family == "surgical_guide" and re.search(
+                r"(?:surgical|puncture)[_:-]?guide", ref
+            ):
+                return True
+            if family == "ctv" and (
+                ref.startswith("structure:ctv:") or ref.startswith("ctv_")
+            ):
+                return True
+            if family == "oar" and ref.startswith(
+                ("structure:oar:", "organ_", "oar_")
+            ):
+                return True
+            if family == "seeds" and (
+                ref in {"seeds", "group:planning:seeds"}
+                or ref.startswith(("seed:", "seed_"))
+            ):
+                return True
+            if family == "needles" and (
+                ref in {"needles", "group:planning:needles"}
+                or ref.startswith(("needle:", "needle_"))
+            ):
+                return True
+            if family == "trajectories" and (
+                ref == "group:planning:trajectories"
+                or ref.startswith(("trajectory:", "trajectory_"))
+            ):
+                return True
+            if family == "ui_control:viewer.reconstruct3d" and ref in {
+                "reconstruct3dbutton", "viewer.reconstruct3d",
+            }:
+                return True
+            if family not in {
+                "surgical_guide", "ctv", "oar", "seeds", "needles",
+                "trajectories", "ui_control:viewer.reconstruct3d",
+            }:
+                # Future families are accepted only after the browser has put
+                # the exact ref into this immutable manifest.
+                return True
+        return False
 
     safe_marks: list[Dict[str, str]] = []
     for raw_mark in raw_marks[:12]:
@@ -720,6 +783,8 @@ def _validate_screenshot_annotation_marks(
         target_ref = str(
             raw_mark.get("target_ref") or raw_mark.get("targetRef") or ""
         ).strip()[:220]
+        if not matches_semantic_target(target_ref):
+            raise ValueError("Annotation target does not match the current user request")
         target = indexed_targets.get(target_ref)
         if not target:
             raise ValueError("Annotation target is not present in the source manifest")
@@ -7311,6 +7376,35 @@ def register_planning_routes(
             or data.get("requestIntent")
             or ""
         )[:160]
+        view_metadata["semantic_target"] = str(
+            view_metadata.get("semantic_target")
+            or view_metadata.get("semanticTarget")
+            or data.get("semantic_target")
+            or data.get("semanticTarget")
+            or ""
+        ).strip().lower()[:160]
+        raw_semantic_targets = view_metadata.get(
+            "semantic_targets", view_metadata.get("semanticTargets", [])
+        )
+        if not isinstance(raw_semantic_targets, list):
+            raw_semantic_targets = []
+        view_metadata["semantic_targets"] = list(dict.fromkeys(
+            str(value or "").strip().lower()[:160]
+            for value in [*raw_semantic_targets, view_metadata["semantic_target"]]
+            if str(value or "").strip()
+        ))[:32]
+        view_metadata["target_query"] = str(
+            view_metadata.get("target_query")
+            or view_metadata.get("targetQuery")
+            or data.get("target_query")
+            or question
+        )[:8000]
+        view_metadata["target_source"] = str(
+            view_metadata.get("target_source")
+            or view_metadata.get("targetSource")
+            or data.get("target_source")
+            or ""
+        ).strip().lower()[:80]
         raw_preserve_current_view = view_metadata.get(
             "preserve_current_view",
             view_metadata.get(
@@ -7425,6 +7519,10 @@ def register_planning_routes(
                 "annotation_policy": raw_annotation_policy,
                 "visual_purpose": raw_visual_purpose,
                 "request_intent": view_metadata["request_intent"],
+                "semantic_target": view_metadata["semantic_target"],
+                "semantic_targets": view_metadata["semantic_targets"],
+                "target_query": view_metadata["target_query"],
+                "target_source": view_metadata["target_source"],
                 "preserve_current_view": view_metadata["preserve_current_view"],
             }
 

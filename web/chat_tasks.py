@@ -265,6 +265,10 @@ class ChatTask:
 
     def public_state(self) -> Dict[str, Any]:
         with self._condition:
+            raw_brain_available = getattr(self.agent, "brain_available", None)
+            brain_available = (
+                raw_brain_available if isinstance(raw_brain_available, bool) else None
+            )
             public_message = self.message
             if self.internal_followup:
                 public_message = (
@@ -284,6 +288,10 @@ class ChatTask:
                 "response_language": self.response_language or None,
                 "ui_language": self.ui_language or None,
                 "session_id": self.session_id,
+                # Lightweight Session status deliberately reports unknown.
+                # Once this task owns a hydrated Agent, expose the real model
+                # availability so the header cannot remain falsely Offline.
+                "brain_available": brain_available,
                 "status": self.status,
                 "phase": (
                     "finalizing"
@@ -501,6 +509,7 @@ class ChatTaskManager:
                 # application extensions; install an app context, but never a
                 # browser session cookie. The task's owner/case is explicit.
                 with app.app_context():
+                    hydrated_agent_now = False
                     if task.agent is None and agent_supplier is not None:
                         trace_zh = str(
                             task.response_language or task.ui_language or ""
@@ -521,6 +530,7 @@ class ChatTaskManager:
                             },
                         ))
                         task.agent = agent_supplier()
+                        hydrated_agent_now = True
                         if task.agent is None:
                             raise RuntimeError("Case resources are not available")
                         if not task.is_running():
@@ -539,6 +549,21 @@ class ChatTaskManager:
                     if task.agent is None:
                         raise RuntimeError("Agent not available")
                     agent = task.agent
+                    # A cold task needs a status event as soon as hydration
+                    # resolves the Agent.  A pre-hydrated task normally gets
+                    # the same value through task_meta, but lightweight
+                    # adapters are allowed to omit the workflow ``start``
+                    # event; the worker fills that protocol gap below.
+                    brain_status_sent = False
+                    if hydrated_agent_now:
+                        task.publish(task.encode_event(
+                            "brain_status",
+                            {
+                                "available": bool(getattr(agent, "brain_available", False)),
+                                "source": "hydrated_agent",
+                            },
+                        ))
+                        brain_status_sent = True
                     agent.memory.set_ui_state(ui_state or {})
                     previous_turn_context = getattr(agent, "_active_turn_context", None)
                     agent._active_turn_context = {
@@ -555,6 +580,7 @@ class ChatTaskManager:
                         "ui_language": task.ui_language,
                     }
                     turn_stream = None
+                    provider_start_seen = False
                     try:
                         turn_stream = agent.chat_with_stream(task.message)
                         for event in turn_stream:
@@ -564,11 +590,29 @@ class ChatTaskManager:
                             # owning case or leak into a later replay.
                             if not task.is_running():
                                 break
+                            event_name, _ = _event_parts(event)
+                            # A protocol-compliant workflow emits ``start``
+                            # and the task_meta handshake already carries the
+                            # status.  Some small adapters emit only response
+                            # and done; publish the status before their first
+                            # event so the replay journal remains self-
+                            # describing without adding a duplicate event to
+                            # the normal trace.
+                            if event_name == "start":
+                                provider_start_seen = True
+                            elif not brain_status_sent and not provider_start_seen:
+                                task.publish(task.encode_event(
+                                    "brain_status",
+                                    {
+                                        "available": bool(getattr(agent, "brain_available", False)),
+                                        "source": "prehydrated_agent",
+                                    },
+                                ))
+                                brain_status_sent = True
                             # The Agent's ``done`` event is a protocol boundary,
                             # not proof that case data is durable. Hold it until
                             # arrays, chat, report state, and operation metadata
                             # have committed to the owning workspace.
-                            event_name, _ = _event_parts(event)
                             if event_name == "done":
                                 terminal_event = (
                                     event.decode("utf-8", errors="replace")
@@ -578,6 +622,19 @@ class ChatTaskManager:
                             if not task.is_running():
                                 break
                             task.publish(event)
+                        # An empty pre-hydrated stream has no provider event
+                        # from which to infer the status boundary.  Publish it
+                        # before the task's terminal response in that rare
+                        # case, while keeping normal ``start`` traces intact.
+                        if not brain_status_sent and not provider_start_seen and task.is_running():
+                            task.publish(task.encode_event(
+                                "brain_status",
+                                {
+                                    "available": bool(getattr(agent, "brain_available", False)),
+                                    "source": "prehydrated_agent",
+                                },
+                            ))
+                            brain_status_sent = True
                     finally:
                         # The workflow wrapper uses generator finalization to
                         # restore its temporary internal memory snapshot. An

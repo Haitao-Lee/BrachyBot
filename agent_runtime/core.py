@@ -1214,6 +1214,20 @@ class ToolResultPipeline:
                 else (result.message or "Document metadata extracted.")
             )
 
+        visual_catalog = ui_state.get("visual_target_catalog")
+        if isinstance(visual_catalog, list):
+            visible_count = sum(
+                1 for item in visual_catalog
+                if isinstance(item, dict) and item.get("visible") is not False
+            )
+            parts.append(
+                "Live visual target catalog: "
+                f"{len(visual_catalog)} identities ({visible_count} currently visible). "
+                "Use ui_inspector(query='state') to resolve arbitrary current "
+                "Data Tree objects, scene objects/parts, and UI controls to stable IDs; "
+                "an absent target must be reported as not found, never substituted."
+            )
+
         def _vector(key: str, fallback: str = "") -> str:
             value = values.get(key)
             if not isinstance(value, (list, tuple)):

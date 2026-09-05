@@ -40,6 +40,7 @@ class _Agent:
         self.events = events
         self.delay = delay
         self.cancelled = False
+        self.brain_available = True
 
     def chat_with_stream(self, _message):
         for event in self.events:
@@ -403,6 +404,21 @@ def test_visual_followup_has_independent_execution_identity_and_redacted_state()
     assert state["parent_request_id"] == "parent-request"
     assert state["message"] == "正在分析已捕获的图像。"
     assert "/api/sessions" not in state["message"]
+    assert state["brain_available"] is None
+
+
+def test_task_state_and_stream_publish_hydrated_brain_availability():
+    manager = ChatTaskManager()
+    agent = _Agent([_event("response", {"response": "ok"}), _event("done", {})])
+    task = manager.start(_App(), "user-a", "case-a", agent, "hello", {})
+    deadline = time.time() + 2
+    while task.status == "running" and time.time() < deadline:
+        time.sleep(0.01)
+
+    assert task.public_state()["brain_available"] is True
+    journal = "".join(task.iter_events())
+    assert "event: brain_status" in journal
+    assert '"available": true' in journal
 
 
 def test_worker_exposes_turn_context_without_persisting_transport_identity():

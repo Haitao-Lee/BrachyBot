@@ -536,6 +536,67 @@ def _planning_json_value(value):
     return str(value)
 
 
+def _planning_ctv_provenance(agent, ctv_mask):
+    """Describe the exact effective CTV source consumed by this run.
+
+    ``ctv_mask_path`` is an input transport path, not necessarily the clinical
+    target: an uploaded multi-label file may contain several independent
+    candidates while the Structure Set contains only the labels the operator
+    promoted.  Persist the effective source IDs and binary-mask fingerprint so
+    the Planning record remains auditable and a later run cannot be mistaken
+    for the same target merely because it reused the same file path.
+    """
+    memory = getattr(agent, "memory", None) if agent is not None else None
+
+    def entry_classification(item):
+        if not isinstance(item, dict):
+            return ""
+        for raw_value in (
+            item.get("classification"),
+            item.get("moved_to"),
+            item.get("movedTo"),
+        ):
+            classification = str(raw_value or "").strip().lower()
+            if classification in {"ctv", "oar"}:
+                return classification
+        return ""
+
+    registry = bool(_memory_value(memory, "structure_registry_initialized", False))
+    source = str(
+        _memory_value(memory, "ctv_source", "")
+        or ("effective_structure_set" if registry else "input_mask")
+    )
+    object_ids = []
+    raw_catalog = _memory_value(memory, "structure_catalog", [])
+    if isinstance(raw_catalog, list):
+        for item in raw_catalog:
+            if not isinstance(item, dict):
+                continue
+            if entry_classification(item) != "ctv":
+                continue
+            object_id = str(item.get("object_id") or "").strip()
+            if object_id:
+                object_ids.append(object_id)
+    if not object_ids:
+        raw_masks = _memory_value(memory, "generic_segmentation_masks", [])
+        if isinstance(raw_masks, list):
+            for item in raw_masks:
+                if not isinstance(item, dict):
+                    continue
+                if entry_classification(item) != "ctv":
+                    continue
+                object_id = str(item.get("object_id") or "").strip()
+                if object_id:
+                    object_ids.append(object_id)
+    return {
+        "source": source,
+        "object_ids": sorted(set(object_ids)),
+        "structure_registry_initialized": registry,
+        "structure_version": int(_memory_value(memory, "planning_version", 0) or 0),
+        "mask": _needle_safety_array_fingerprint(ctv_mask),
+    }
+
+
 def build_planning_request_provenance(
     args,
     *,
@@ -2156,6 +2217,11 @@ class PlanningPipelineTool(BaseTool):
             "oar_path": kwargs.get("oar_mask_path") or _memory_value(
                 getattr(agent, "memory", None), "oar_path"
             ),
+            # Keep the transport paths for compatibility, but make the
+            # effective target explicit.  This is what distinguishes a run
+            # using one promoted upload label from a run using the whole raw
+            # multi-label file.
+            "ctv_effective": _planning_ctv_provenance(agent, ctv_mask),
         }
         planning_provenance, planning_fingerprint = build_planning_request_provenance(
             provenance_args,
@@ -2441,7 +2507,95 @@ class PlanningPipelineTool(BaseTool):
         """Load CTV mask from path or agent memory. Returns None if not available."""
         import SimpleITK as sitk
 
+        memory = getattr(agent, "memory", None) if agent is not None else None
+        generic_entries = _memory_value(memory, "generic_segmentation_masks", [])
+        if not isinstance(generic_entries, list):
+            generic_entries = []
+        def generic_classification(item):
+            if not isinstance(item, dict):
+                return ""
+            for raw_value in (
+                item.get("classification"),
+                item.get("moved_to"),
+                item.get("movedTo"),
+            ):
+                classification = str(raw_value or "").strip().lower()
+                if classification in {"ctv", "oar"}:
+                    return classification
+            return ""
+
+        classified_generic = [
+            item for item in generic_entries
+            if isinstance(item, dict)
+            and generic_classification(item) in {"ctv", "oar"}
+        ]
+        classified_ctv = [
+            item for item in classified_generic
+            if generic_classification(item) == "ctv"
+        ]
+        has_uploaded_candidates = any(
+            isinstance(item, dict)
+            and (
+                str(item.get("kind") or "").strip().lower() == "uploaded_mask_label"
+                or str(item.get("source") or "").strip().lower() == "uploaded_mask"
+                or str(item.get("upload_mask_id") or "").strip()
+            )
+            for item in generic_entries
+        )
+
+        # Once a Structure Set has been built, it is the clinical source of
+        # truth.  The same is true for a restored/legacy case that contains a
+        # classified generic source even if its registry flag was not written
+        # by an older build.  In particular, do not let the raw uploaded
+        # multi-label path overwrite the effective CTV selected by the
+        # operator. Planning and dose evaluation receive the union of all
+        # currently classified CTV source objects, represented as one binary
+        # mask.
+        if (
+            bool(_memory_value(memory, "structure_registry_initialized", False))
+            or bool(classified_ctv)
+        ):
+            try:
+                from web.structure_service import build_effective_structures
+
+                effective = build_effective_structures(memory)
+                if effective.ctv_array is not None and np.any(effective.ctv_array > 0):
+                    ctv_mask = (np.asarray(effective.ctv_array) > 0).astype(np.uint8)
+                    logger.info(
+                        "Using effective Structure Set CTV for planning: voxels=%d source_ids=%s",
+                        int(np.count_nonzero(ctv_mask)),
+                        [
+                            str(item.get("object_id"))
+                            for item in effective.structures
+                            if str(item.get("classification") or "").lower() == "ctv"
+                        ],
+                    )
+                    return _normalize_mask_to_ct_grid(ctv_mask, ct_image, "CTV", agent)
+            except Exception:
+                logger.exception("Failed to resolve the effective CTV Structure Set")
+            # A registry without a hydrated effective mask is not permission
+            # to fall back to a raw path: doing that would silently reintroduce
+            # every label from an uploaded file.  Let the caller report the
+            # missing CTV and wait for hydration instead.
+            logger.warning(
+                "CTV Structure Set is initialized but has no hydrated effective mask; "
+                "raw ctv_mask_path will not be used"
+            )
+            return None
+
         ctv_mask_path = kwargs.get("ctv_mask_path")
+        if ctv_mask_path and has_uploaded_candidates:
+            # A staged Upload Mask is a set of independent label candidates,
+            # not an implicit CTV.  Falling through to the file path here
+            # would reintroduce every positive label and make planning/DVH
+            # disagree with the label the operator explicitly moved.  Require
+            # the normal classification transaction instead; the caller can
+            # then report that CTV selection is still required.
+            logger.warning(
+                "Uploaded mask candidates exist but no CTV source is classified; "
+                "raw ctv_mask_path is rejected until a label is moved to CTV"
+            )
+            return None
         if ctv_mask_path:
             try:
                 logger.info(f"Loading CTV mask from path: {ctv_mask_path}")
@@ -2449,9 +2603,22 @@ class PlanningPipelineTool(BaseTool):
                 # Orient to LPI to match CT orientation
                 ctv_img = _safe_dicom_orient(ctv_img, 'LPI', context="for CTV mask")
                 ctv_mask = sitk.GetArrayFromImage(ctv_img)
+                ctv_mask = _normalize_mask_to_ct_grid(ctv_mask, ct_image, "CTV", agent)
+                if ctv_mask is None:
+                    return None
+                # The planner's target contract is always binary. Preserve a
+                # full source label volume separately when it is available so
+                # model-specific obstacle metadata is not lost, but never put
+                # the raw label IDs in ctv_array where dose evaluation treats
+                # every positive voxel as target.
+                ctv_full_labels = np.asarray(ctv_mask)
+                ctv_binary = (ctv_full_labels > 0).astype(np.uint8)
                 if agent:
-                    agent.memory.store("ctv_array", ctv_mask)
-                return _normalize_mask_to_ct_grid(ctv_mask, ct_image, "CTV", agent)
+                    if np.unique(ctv_full_labels).size > 2 and memory.retrieve("ctv_full_labels") is None:
+                        agent.memory.store("ctv_full_labels", ctv_full_labels)
+                    agent.memory.store("ctv_array", ctv_binary)
+                    agent.memory.store("ctv_mask", ctv_binary)
+                return ctv_binary
             except Exception as e:
                 logger.warning(f"Failed to load CTV mask from path '{ctv_mask_path}': {e}. Falling back to memory.")
 
@@ -2482,7 +2649,13 @@ class PlanningPipelineTool(BaseTool):
                         ctv_mask.shape,
                         int(np.count_nonzero(ctv_mask)),
                     )
-                return _normalize_mask_to_ct_grid(ctv_mask, ct_image, "CTV", agent)
+                normalized = _normalize_mask_to_ct_grid(ctv_mask, ct_image, "CTV", agent)
+                if normalized is None:
+                    return None
+                # Memory may contain a legacy label-coded array.  Planning and
+                # DVH consume one merged binary target even when the Data Tree
+                # keeps multiple CTV labels for presentation.
+                return (np.asarray(normalized) > 0).astype(np.uint8)
             else:
                 logger.debug("[LOAD_CTV] CTV mask not found in agent memory")
                 # Debug: check what's in planning_results

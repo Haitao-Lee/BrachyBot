@@ -51,7 +51,16 @@ pass its stable DOM id to ui_screenshot with target=overlay-controls,
 visual_purpose=locate, and annotation_policy=required. The screenshot browser
 resolves the element bounds; never invent pixel coordinates or answer from a
 generic remembered layout. Keep this query read-only: do not click the
-control merely to explain where it is."""
+control merely to explain where it is.
+
+For any current-case location question, including arbitrary Data Tree data,
+scene objects, object subparts, combinations, user-created/plugin objects, or
+possibly nonexistent names, call query=state and inspect state.visual_targets.
+Each entry is published by the live browser and carries labels, stable
+target_refs, supported screenshot surfaces, visibility, loading state, and
+hierarchy. Pass only matching stable IDs to ui_screenshot. If no entry matches,
+say that the requested target was not found in the current UI; never use the
+selected row, a previous-turn object, or a semantically neighboring object."""
 
     input_schema = {
         "query": {
@@ -456,6 +465,11 @@ control merely to explain where it is."""
                 "ref_direc_auto": None,
                 "plan_mode": None,
             },
+            # Populated from the live browser on every user turn.  Unlike the
+            # static HTML scan, this catalog contains current Data Tree rows,
+            # loaded scene objects, user-created names, object parts, and
+            # rendered controls with stable screenshot identities.
+            "visual_targets": [],
         }
 
         if agent and hasattr(agent, 'memory'):
@@ -471,6 +485,11 @@ control merely to explain where it is."""
             # Live UI inputs from the frontend snapshot (POST /api/ui/state).
             ui_state = memory.get_ui_state() if hasattr(memory, 'get_ui_state') else None
             if isinstance(ui_state, dict):
+                catalog = ui_state.get("visual_target_catalog")
+                if isinstance(catalog, list):
+                    state["visual_targets"] = [
+                        item for item in catalog[:512] if isinstance(item, dict)
+                    ]
                 planning_state = ui_state.get("planning") if isinstance(ui_state.get("planning"), dict) else {}
                 plan_mode = ui_state.get("plan_mode")
                 ref_direc = planning_state.get("reference_direc")

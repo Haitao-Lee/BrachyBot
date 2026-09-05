@@ -26,6 +26,7 @@ _LATEST_COLLECTION = "uploaded_mask_latest"
 _MASKS = "generic_segmentation_masks"
 _LATEST_MASK = "generic_segmentation_latest"
 _PRESENTATION_KEYS = ("color", "opacity", "visible", "visible2D", "visible3D", "data_version")
+_STRUCTURE_CLASSIFICATIONS = frozenset({"ctv", "oar"})
 
 
 def _batch(memory: Any, updates: Mapping[str, Any]) -> None:
@@ -147,6 +148,186 @@ def _entries(memory: Any) -> list[Dict[str, Any]]:
     return [dict(item) for item in value if isinstance(item, Mapping)] if isinstance(value, list) else []
 
 
+def _normalised_classification(entry: Mapping[str, Any]) -> str:
+    """Return the persisted clinical classification, if one exists."""
+    # ``classification`` was introduced after ``moved_to``.  In legacy
+    # browser snapshots the former can contain the placeholder
+    # ``unclassified`` while the latter already contains the user's explicit
+    # destination, so a truthy-first lookup would lose a real promotion.
+    for raw_value in (
+        entry.get("classification"),
+        entry.get("moved_to"),
+        entry.get("movedTo"),
+    ):
+        value = str(raw_value or "").strip().lower()
+        if value in _STRUCTURE_CLASSIFICATIONS:
+            return value
+    return ""
+
+
+def normalize_uploaded_mask_results(planning_results: Mapping[str, Any]) -> bool:
+    """Repair uploaded-mask metadata without touching voxel data.
+
+    Uploaded labels are durable source objects.  Their classification must not
+    be inferred from whether the browser happened to render a standalone row.
+    Older snapshots can contain the authoritative ``structure_catalog`` (or
+    the Upload Mask parent's promotion record) while the child metadata still
+    says ``unclassified``.  Reconcile those records at hydration time so a
+    restart cannot silently move a promoted label back to Upload Mask.
+
+    The function mutates only the supplied decoded planning-results mapping and
+    returns whether any metadata changed.  It is deliberately array-agnostic,
+    so it is safe during the lightweight metadata hydration pass as well as
+    full array hydration.
+    """
+    if not isinstance(planning_results, dict):
+        return False
+    raw_entries = planning_results.get(_MASKS)
+    if not isinstance(raw_entries, list):
+        return False
+
+    catalog_by_id: Dict[str, Mapping[str, Any]] = {}
+    raw_catalog = planning_results.get("structure_catalog")
+    if isinstance(raw_catalog, list):
+        for item in raw_catalog:
+            if not isinstance(item, Mapping):
+                continue
+            object_id = _object_id(item.get("object_id") or item.get("mask_id"))
+            classification = _normalised_classification(item)
+            if object_id and classification in _STRUCTURE_CLASSIFICATIONS:
+                catalog_by_id[object_id] = item
+
+    promoted_by_upload: Dict[str, Dict[str, Mapping[str, Any]]] = {}
+    raw_collections = planning_results.get(_COLLECTIONS)
+    if isinstance(raw_collections, list):
+        for collection in raw_collections:
+            if not isinstance(collection, Mapping):
+                continue
+            upload_id = str(collection.get("upload_id") or "").strip()
+            if not upload_id:
+                continue
+            promoted = collection.get("promoted_children")
+            if isinstance(promoted, Mapping):
+                promoted_by_upload[upload_id] = {
+                    str(key): value for key, value in promoted.items()
+                    if isinstance(value, Mapping)
+                }
+
+    changed = False
+    normalised_entries: list[Dict[str, Any]] = []
+    effective_promotions: Dict[str, Dict[str, Dict[str, Any]]] = {}
+    for raw_entry in raw_entries:
+        if not isinstance(raw_entry, Mapping):
+            continue
+        entry = dict(raw_entry)
+        if not is_uploaded_mask_label(entry):
+            normalised_entries.append(entry)
+            continue
+
+        mask_id = str(entry.get("mask_id") or "").strip()
+        stable_id = _object_id(entry.get("object_id") or mask_id)
+        if stable_id and entry.get("object_id") != stable_id:
+            entry["object_id"] = stable_id
+            changed = True
+
+        classification = _normalised_classification(entry)
+        catalog_item = catalog_by_id.get(stable_id)
+        if not classification and catalog_item is not None:
+            classification = _normalised_classification(catalog_item)
+        upload_id = str(entry.get("upload_mask_id") or "").strip()
+        parent_promotions = promoted_by_upload.get(upload_id, {})
+        promotion = parent_promotions.get(mask_id) or parent_promotions.get(stable_id)
+        if not classification and isinstance(promotion, Mapping):
+            classification = _normalised_classification(promotion)
+        if classification not in _STRUCTURE_CLASSIFICATIONS:
+            classification = ""
+
+        if classification:
+            desired = {
+                "classification": classification,
+                "moved_to": classification,
+                "parent_group": classification,
+            }
+            for key, value in desired.items():
+                if entry.get(key) != value:
+                    entry[key] = value
+                    changed = True
+            if not isinstance(entry.get("ctv_promoted_from_upload"), Mapping) and classification == "ctv":
+                entry["ctv_promoted_from_upload"] = {
+                    "upload_mask_id": upload_id,
+                    "object_id": stable_id,
+                    "source_label": int(entry.get("source_label") or 0),
+                    "source_path": str(entry.get("source_path") or ""),
+                }
+                changed = True
+            effective_promotions.setdefault(upload_id, {})[mask_id] = {
+                "object_id": stable_id,
+                "classification": classification,
+                "source_label": int(entry.get("source_label") or 0),
+                "updated_at": entry.get("ctv_promoted_at") or entry.get("updated_at") or time.time(),
+            }
+        else:
+            # An unclassified upload label remains a selectable Upload Mask
+            # child.  Do not overwrite a user's explicit presentation values.
+            if not entry.get("parent_group"):
+                entry["parent_group"] = "upload_masks"
+                changed = True
+        normalised_entries.append(entry)
+
+    if changed:
+        planning_results[_MASKS] = normalised_entries
+
+    if isinstance(raw_collections, list):
+        next_collections: list[Dict[str, Any]] = []
+        collections_changed = False
+        for raw_collection in raw_collections:
+            if not isinstance(raw_collection, Mapping):
+                continue
+            collection = dict(raw_collection)
+            upload_id = str(collection.get("upload_id") or "").strip()
+            if upload_id in effective_promotions:
+                existing_promotions = collection.get("promoted_children")
+                merged = {
+                    **(
+                        {str(key): dict(value) for key, value in existing_promotions.items()
+                         if isinstance(value, Mapping)}
+                        if isinstance(existing_promotions, Mapping) else {}
+                    ),
+                    **effective_promotions[upload_id],
+                }
+                # Keep only children that are still present in this collection.
+                child_ids = {str(value) for value in collection.get("child_mask_ids") or []}
+                merged = {
+                    key: value for key, value in merged.items()
+                    if key in child_ids or str(value.get("object_id") or "") in {
+                        _object_id(child_id) for child_id in child_ids
+                    }
+                }
+                if collection.get("promoted_children") != merged:
+                    collection["promoted_children"] = merged
+                    collections_changed = True
+            next_collections.append(collection)
+        if collections_changed:
+            planning_results[_COLLECTIONS] = next_collections
+            changed = True
+    return changed
+
+
+def normalize_uploaded_mask_state(memory: Any) -> bool:
+    """Reconcile uploaded-mask metadata in live AgentMemory."""
+    with memory._lock:
+        results = memory.planning_results
+        changed = normalize_uploaded_mask_results(results)
+        updates = {
+            key: results.get(key)
+            for key in (_MASKS, _COLLECTIONS)
+            if key in results
+        }
+    if changed and updates:
+        _batch(memory, updates)
+    return changed
+
+
 def _existing_collection(memory: Any, signature: str) -> Optional[Dict[str, Any]]:
     value = memory.retrieve(_COLLECTIONS) or []
     if not isinstance(value, list):
@@ -168,6 +349,10 @@ def _stage(
 ) -> Dict[str, Any]:
     array = _validated_source(source)
     labels, counts = _labels(array)
+    # Normalize metadata before looking up a reusable collection.  Re-staging
+    # the same source after a restart must preserve which children were moved
+    # into the effective Structure Set.
+    normalize_uploaded_mask_state(memory)
     existing = _existing_collection(memory, signature)
     entries = _entries(memory)
     by_id = {str(item.get("mask_id") or ""): item for item in entries if item.get("mask_id")}
@@ -224,6 +409,7 @@ def _stage(
         prior = by_id.get(mask_id, {})
         binary = np.ascontiguousarray(array == label, dtype=np.uint8)
         count = int(np.count_nonzero(binary))
+        prior_classification = _normalised_classification(prior)
         child = {
             **prior,
             "mask_id": mask_id,
@@ -241,9 +427,13 @@ def _stage(
             "source_label": int(label),
             "source_label_count": count,
             "source_signature": signature,
-            "classification": str(prior.get("classification") or "unclassified").lower(),
-            "parent_group": "upload_masks",
-            "moved_to": prior.get("moved_to"),
+            "classification": prior_classification or "unclassified",
+            "parent_group": (
+                prior_classification
+                if prior_classification in _STRUCTURE_CLASSIFICATIONS
+                else "upload_masks"
+            ),
+            "moved_to": prior_classification or None,
             "session_id": str(getattr(memory, "session_id", "")),
             "case_id": str(memory.retrieve("case_id") or getattr(memory, "session_id", "")),
             "planning_id": memory.retrieve("active_planning_id"),
@@ -261,6 +451,18 @@ def _stage(
             if key in prior:
                 child[key] = prior[key]
         children.append(child)
+
+    promoted_children = {
+        str(child["mask_id"]): {
+            "object_id": child["object_id"],
+            "classification": child["classification"],
+            "source_label": int(child.get("source_label") or 0),
+            "updated_at": child.get("updated_at") or now,
+        }
+        for child in children
+        if str(child.get("classification") or "").lower() in _STRUCTURE_CLASSIFICATIONS
+    }
+    parent["promoted_children"] = promoted_children
 
     next_entries = [item for item in entries if str(item.get("upload_mask_id") or "") != upload_id]
     next_entries.extend(children)
@@ -388,9 +590,10 @@ def remove_uploaded_mask_child(memory: Any, stable_id: str) -> bool:
 __all__ = [
     "UploadedMaskError",
     "is_uploaded_mask_label",
+    "normalize_uploaded_mask_results",
+    "normalize_uploaded_mask_state",
     "public_uploaded_mask_collections",
     "remove_uploaded_mask_child",
     "stage_uploaded_ctv_array",
     "stage_uploaded_ctv_mask",
 ]
-

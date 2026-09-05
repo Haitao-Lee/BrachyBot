@@ -362,7 +362,7 @@ def test_browser_annotation_pipeline_is_semantic_state_aware_and_non_mutating():
     assert "_validate_screenshot_annotation_marks" in route
     assert "/api/screenshot/annotation" in route
     assert "grounding_manifest: groundingManifest" in ui_api
-    assert "brachybot-visual-annotation.js?v=6" in index
+    assert "brachybot-visual-annotation.js?v=7" in index
     assert "_annotateRequiredScreenshotBeforeDisplay" in ui_api
     assert "semanticDataTreeTarget" in annotation
     assert "const hasEnvelope" in annotation
@@ -436,6 +436,6 @@ def test_screenshot_autoframing_is_target_derived_verified_and_reversible():
     assert "mpr_object_currently_hidden_or_unavailable" in annotation
     assert "does not" in annotation and "remain inside the restored live camera" in annotation
 
-    assert "brachybot-ui-api.js?v=61" in index
-    assert "brachybot-3d-manual.js?v=81" in index
+    assert "brachybot-ui-api.js?v=62" in index
+    assert "brachybot-3d-manual.js?v=82" in index
     assert "brachybot-manual-annotation.js?v=22" in index

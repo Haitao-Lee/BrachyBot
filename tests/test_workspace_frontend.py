@@ -498,7 +498,7 @@ def test_workspace_transitions_publish_measurable_first_paint_and_restore_stages
     # Versioned URLs are intentional cache invalidation points. Keep this
     # assertion aligned with the workspace/report artifact restore contract.
     assert "brachybot-workspace.js?v=40" in index
-    assert "brachybot-ui-api.js?v=61" in index
+    assert "brachybot-ui-api.js?v=62" in index
     assert "brachybot-viewer-volume.js?v=51" in index
     assert "brachybot-manual-annotation.js?v=22" in index
 
@@ -740,7 +740,7 @@ def test_chat_connection_placeholder_does_not_claim_a_router_execution():
     assert "title: zh ? '\\u8bf7\\u6c42\\u5206\\u6790' : 'Request analysis'" in chat_todo
     assert "Determining execution path..." in chat_todo
     assert "title: zh ? '\\u591a\\u667a\\u80fd\\u4f53\\u8def\\u7531' : 'Multi-Agent Router'" not in chat_todo
-    assert 'static/js/brachybot-chat-todo.js?v=26' in index
+    assert 'static/js/brachybot-chat-todo.js?v=27' in index
 
 
 def test_task_replay_is_deduplicated_and_bound_to_the_original_case():
@@ -1516,6 +1516,30 @@ def test_background_snapshot_restore_cannot_clear_live_task_identity():
     assert "Preserve the local hint until" in workspace
     assert "preserveClinicalData: true" in ui_api
     assert "skipChat: true" in ui_api
+
+
+def test_brain_indicator_uses_unknown_until_a_hydrated_agent_reports():
+    ui_api = read("web/app/static/js/brachybot-ui-api.js")
+    chat = read("web/app/static/js/brachybot-chat-todo.js")
+    index = read("web/app/index.html")
+
+    assert "brainAvailable: null" in ui_api
+    assert "function updateBrainStatusIndicator" in ui_api
+    assert "brain_available: null" in ui_api
+    assert "currentEvent === 'brain_status'" in chat
+    assert "updateBrainStatusIndicator?.(data.brain_available, 'chat-task')" in chat
+    assert 'id="brainStatusText" data-i18n-zh="检测中"' in index
+
+
+def test_visual_target_catalog_is_extensible_for_plugins_and_object_parts():
+    ui_api = read("web/app/static/js/brachybot-ui-api.js")
+    manual_3d = read("web/app/static/js/brachybot-3d-manual.js")
+
+    assert "function registerVisualTargetProvider" in ui_api
+    assert "window.registerVisualTargetProvider" in ui_api
+    assert "visualTargetProviders.forEach" in ui_api
+    assert "function get3DVisualTargetCatalog" in manual_3d
+    assert "partId" in manual_3d
 
 
 def test_ui_controller_waits_for_async_viewer_and_manual_planning_actions():

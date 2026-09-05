@@ -222,8 +222,11 @@
             row?.dataset?.organId,
         ].map(value => text(value, 220).toLowerCase()).filter(Boolean);
         const exact = rows.find(row => identity(row).some(value => value === ref));
+        const registered = typeof window.matchDataTreeRowTargetRef === 'function'
+            ? rows.find(row => window.matchDataTreeRowTargetRef(row, ref))
+            : null;
         const isGuide = /(?:surgical|puncture)[_\s:-]*guide|手术导板|穿刺导板|导板/.test(ref);
-        const row = exact || (isGuide ? rows.find(candidate => {
+        const row = exact || registered || (isGuide ? rows.find(candidate => {
             const haystack = [
                 candidate?.dataset?.nodeType,
                 candidate?.dataset?.artifactKey,
@@ -289,8 +292,34 @@
         return { found: false, rendered: false, status: 'unresolved', element: null };
     }
 
+    function markMatchesSemanticTarget(attachment, targetRef) {
+        const metadata = metadataFor(attachment);
+        const families = [...new Set([
+            ...(Array.isArray(attachment?.semantic_targets) ? attachment.semantic_targets : []),
+            ...(Array.isArray(metadata.semantic_targets) ? metadata.semantic_targets : []),
+            attachment?.semantic_target,
+            metadata.semantic_target,
+        ].map(value => text(value, 160).toLowerCase()).filter(Boolean))];
+        if (!families.length || families.includes('dynamic') || families.includes('composite')) return true;
+        const ref = text(targetRef, 220).toLowerCase();
+        const match = family => {
+            if (family === 'surgical_guide') return /(?:surgical|puncture)[_:-]?guide/.test(ref);
+            if (family === 'ctv') return ref.startsWith('structure:ctv:') || ref.startsWith('ctv_');
+            if (family === 'oar') return ref.startsWith('structure:oar:') || ref.startsWith('organ_') || ref.startsWith('oar_');
+            if (family === 'seeds') return ref === 'group:planning:seeds' || ref === 'seeds' || /^seed[:_-]/.test(ref);
+            if (family === 'needles') return ref === 'group:planning:needles' || ref === 'needles' || /^needle[:_-]/.test(ref);
+            if (family === 'trajectories') return ref === 'group:planning:trajectories' || /^trajectory[:_-]/.test(ref);
+            if (family === 'ui_control:viewer.reconstruct3d') return ['reconstruct3dbutton', 'viewer.reconstruct3d'].includes(ref);
+            return true;
+        };
+        return families.some(match);
+    }
+
     function validateTargetState(attachment, manifest, mark, expectedSessionId) {
         const targetRef = mark.target_ref;
+        if (!markMatchesSemanticTarget(attachment, targetRef)) {
+            return { ok: false, reason: 'semantic_target_mismatch' };
+        }
         const captureState = stateMatchesCapture(attachment, manifest, expectedSessionId);
         if (!captureState.ok) return captureState;
         const captured = capturedTargetFor(manifest, targetRef);

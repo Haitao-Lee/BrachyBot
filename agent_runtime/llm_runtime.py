@@ -128,42 +128,26 @@ def _tool_fallback_message(
     current_request = re.sub(r"\s+", " ", str(user_message or "")).strip()
     if len(current_request) > 100:
         current_request = current_request[:97] + "..."
-    viewer_question = bool(re.search(
-        r"viewer|data\s*tree|3d|2d|\u67e5\u770b\u5668|\u7c92\u5b50|\u9488\u9053|\u6d88\u5931|\u663e\u793a",
-        current_request,
-        re.IGNORECASE,
-    ))
     if lang == "zh":
         if has_failures:
             if detail:
                 return f"{detail}\n\n这次操作没有完成。请根据上面的可用控件说明重新发出请求。"
             return "部分处理步骤未完成，且当前没有生成可展示的正式回复。请查看执行追踪中的错误，并重试或调整请求。"
-        if viewer_question:
-            return (
-                "我理解你在询问当前 Viewer/Data Tree 中的规划对象为何没有显示，"
-                "但本轮没有获得可核验的界面状态，也没有执行任何删除、恢复或重算操作。"
-                "因此我不能把‘未显示’误判为‘数据已删除’；请重试当前请求，让系统先读取并刷新当前 Planning 的显示状态。"
-            )
         if current_request:
             return (
-                f"我理解你当前的问题是“{current_request}”，但本轮模型没有返回有效答复，"
-                "也没有执行任何操作。系统没有因此修改病例或规划；请直接重试同一问题。"
+                f"本轮未能完成“{current_request}”：模型没有返回可验证的答复或可执行的工具结果。"
+                "系统未修改当前病例、规划或界面状态；请重试同一问题。"
             )
         return "本轮模型没有返回有效答复，也没有执行任何操作。系统没有修改病例或规划；请重试。"
     if has_failures:
         if detail:
             return f"{detail}\n\nThe action was not completed. Retry using the capability described above."
         return "Some processing steps did not complete, and no user-facing answer was generated. Review the execution trace and retry or refine the request."
-    if viewer_question:
-        return (
-            "I understand that you are asking why planning objects are not visible in the Viewer/Data Tree, "
-            "but this turn did not obtain verifiable UI state and performed no delete, restore, or recompute action. "
-            "I cannot equate hidden content with deleted data; retry the request so the current Planning display can be inspected and refreshed."
-        )
     if current_request:
         return (
-            f'I understand the current request as "{current_request}", but the model returned no valid answer '
-            "and no operation was executed. The case and Planning were not changed; retry the same request."
+            f'This turn could not complete "{current_request}": the model returned no '
+            "verifiable answer or executable tool result. The current case, Planning, and UI state "
+            "were not changed; retry the same request."
         )
     return "The model returned no valid answer and no operation was executed. The case and Planning were not changed; please retry."
 

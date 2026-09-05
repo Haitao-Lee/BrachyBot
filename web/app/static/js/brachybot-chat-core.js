@@ -2139,6 +2139,7 @@ function renderMarkdown(text) {
         'header.disconnected':        { zh: '已断开', en: 'Disconnected' },
         'header.brain_online':        { zh: '在线', en: 'Online' },
         'header.brain_offline':       { zh: '离线', en: 'Offline' },
+        'header.brain_checking':      { zh: '检测中', en: 'Checking' },
         'header.brain_busy':          { zh: '工作中', en: 'Busy' },
         'header.session':             { zh: '会话', en: 'Session' },
         'header.lang_toggle_tooltip': { zh: '切换界面语言 / Switch UI language', en: 'Switch UI language' },

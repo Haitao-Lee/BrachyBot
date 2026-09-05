@@ -194,6 +194,171 @@ def _repair_restored_manual_ctv(
     return True
 
 
+def _repair_restored_uploaded_mask_from_ui(
+    planning_results: Dict[str, Any],
+    ui_state: Any,
+) -> bool:
+    """Recover an explicit legacy Upload Mask promotion from UI metadata.
+
+    A few pre-transaction snapshots recorded the browser's ``movedTo`` value
+    but not the corresponding server-side generic-mask metadata.  That state
+    can be migrated safely only when the snapshot contains a stable mask
+    identity *and* an explicit ``classification``/``movedTo`` value.  Parent
+    placement, visibility, label text, and DOM order are intentionally not
+    treated as evidence: they describe presentation, not a clinical
+    operation.  New snapshots normally do not need this path because the
+    PATCH classification route persists the source object synchronously.
+    """
+
+    raw_entries = planning_results.get("generic_segmentation_masks")
+    if not isinstance(raw_entries, list):
+        return False
+
+    def refs(*values: Any) -> set[str]:
+        result: set[str] = set()
+        for value in values:
+            token = str(value or "").strip()
+            if not token:
+                continue
+            result.add(token)
+            if token.startswith("mask:"):
+                result.add(token[5:])
+            elif token.startswith("mask_"):
+                result.add(token)
+                result.add(f"mask:{token[5:]}")
+            else:
+                result.add(f"mask:{token}")
+        return result
+
+    data_tree = ui_state.get("data_tree") if isinstance(ui_state, Mapping) else None
+    if not isinstance(data_tree, Mapping) and isinstance(ui_state, Mapping):
+        data_tree = ui_state.get("dataTree")
+    if not isinstance(data_tree, Mapping):
+        # Some bridge snapshots wrap the state one level deeper.
+        nested = ui_state.get("state") if isinstance(ui_state, Mapping) else None
+        if isinstance(nested, Mapping):
+            data_tree = nested.get("data_tree") or nested.get("dataTree")
+    nodes = data_tree.get("nodes") if isinstance(data_tree, Mapping) else None
+    if not isinstance(nodes, list):
+        return False
+
+    explicit_by_ref: Dict[str, str] = {}
+    for node in nodes:
+        if not isinstance(node, Mapping):
+            continue
+        # ``classification`` is also used by the browser as a display
+        # placeholder (``unclassified``).  Do not let that truthy placeholder
+        # hide an explicit legacy ``movedTo=ctv/oar`` value.  The same
+        # valid-value precedence is used by the live structure builder and the
+        # uploaded-mask normalizer.
+        classification = ""
+        for raw_value in (
+            node.get("classification"),
+            node.get("movedTo"),
+            node.get("moved_to"),
+        ):
+            candidate = str(raw_value or "").strip().lower()
+            if candidate in {"ctv", "oar"}:
+                classification = candidate
+                break
+        if classification not in {"ctv", "oar"}:
+            continue
+        # Require an explicit upload-mask identity.  This prevents a generic
+        # Data Tree row or a parent group's visual placement from migrating a
+        # different structure after a restart.
+        kind = str(node.get("kind") or node.get("type") or "").strip().lower()
+        source = str(node.get("source") or "").strip().lower()
+        upload_id = node.get("uploadMaskId") or node.get("upload_mask_id")
+        mask_id = node.get("maskId") or node.get("mask_id")
+        looks_like_upload = (
+            kind == "uploaded_mask_label"
+            or source == "uploaded_mask"
+            or bool(str(upload_id or "").strip())
+            or bool(str(mask_id or "").strip())
+        )
+        if not looks_like_upload:
+            continue
+        identity_refs = refs(
+            node.get("objectId"),
+            node.get("object_id"),
+            node.get("nodeId"),
+            node.get("node_id"),
+            node.get("id"),
+            mask_id,
+        )
+        for identity in identity_refs:
+            explicit_by_ref[identity] = classification
+
+    if not explicit_by_ref:
+        return False
+
+    changed = False
+    normalised_entries: List[Dict[str, Any]] = []
+    for raw_entry in raw_entries:
+        if not isinstance(raw_entry, Mapping):
+            continue
+        entry = dict(raw_entry)
+        kind = str(entry.get("kind") or "").strip().lower()
+        source = str(entry.get("source") or "").strip().lower()
+        if not (
+            kind == "uploaded_mask_label"
+            or source == "uploaded_mask"
+            or str(entry.get("upload_mask_id") or "").strip()
+        ):
+            normalised_entries.append(entry)
+            continue
+        current = ""
+        for raw_value in (
+            entry.get("classification"),
+            entry.get("moved_to"),
+            entry.get("movedTo"),
+        ):
+            candidate = str(raw_value or "").strip().lower()
+            if candidate in {"ctv", "oar"}:
+                current = candidate
+                break
+        if current in {"ctv", "oar"}:
+            normalised_entries.append(entry)
+            continue
+        identity_refs = refs(
+            entry.get("object_id"),
+            entry.get("mask_id"),
+            entry.get("data_tree_node_id"),
+        )
+        classification = next(
+            (explicit_by_ref[identity] for identity in identity_refs if identity in explicit_by_ref),
+            "",
+        )
+        if not classification:
+            normalised_entries.append(entry)
+            continue
+        entry["classification"] = classification
+        entry["moved_to"] = classification
+        entry["parent_group"] = classification
+        entry["data_version"] = (
+            f"{entry.get('data_version')}:legacy-ui-migration:{classification}"
+            if entry.get("data_version")
+            else f"legacy-ui-migration:{classification}"
+        )
+        if classification == "ctv":
+            entry["ctv_promoted_from_upload"] = {
+                "upload_mask_id": str(entry.get("upload_mask_id") or ""),
+                "object_id": str(entry.get("object_id") or ""),
+                "source_label": int(entry.get("source_label") or 0),
+                "source_path": str(entry.get("source_path") or ""),
+                "migrated_from": "explicit_ui_state",
+            }
+        normalised_entries.append(entry)
+        changed = True
+
+    if changed:
+        planning_results["generic_segmentation_masks"] = normalised_entries
+        logger.warning(
+            "Migrated explicit legacy Upload Mask classifications from UI state"
+        )
+    return changed
+
+
 def _is_internal_visual_record(record: Any) -> bool:
     """Recognize explicit or legacy hidden screenshot-follow-up records.
 
@@ -2613,7 +2778,7 @@ class WorkspaceStore:
         those two operations.
         """
         with self._checkpoint_work_lock(user_id, session_id):
-            return self._hydrate_agent_locked(
+            snapshot = self._hydrate_agent_locked(
                 user_id,
                 session_id,
                 agent,
@@ -2623,6 +2788,35 @@ class WorkspaceStore:
                 cancel_event=cancel_event,
                 phase_callback=phase_callback,
             )
+        # Hydration repairs legacy metadata before publishing it to the live
+        # agent.  Persist that repaired state after the work lock is released:
+        # calling snapshot_agent while holding the lock would deadlock, and
+        # leaving the repair only in RAM would make the next restart reproduce
+        # the same stale Upload Mask/empty CTV state.  The snapshot is already
+        # atomically published, so a failed best-effort write does not corrupt
+        # the live case and will be retried by the next normal checkpoint.
+        if (
+            include_planning_results
+            and getattr(agent, "_workspace_hydration_repaired", False)
+        ):
+            try:
+                self.flush_agent_checkpoint(
+                    user_id,
+                    session_id,
+                    agent,
+                    reason="workspace.hydration.repair",
+                )
+                setattr(agent, "_workspace_hydration_repaired", False)
+                logger.info(
+                    "workspace hydration repair checkpoint persisted session=%s",
+                    session_id,
+                )
+            except Exception:
+                logger.exception(
+                    "workspace hydration repair checkpoint failed session=%s",
+                    session_id,
+                )
+        return snapshot
 
     def _hydrate_agent_locked(
         self,
@@ -2710,6 +2904,37 @@ class WorkspaceStore:
         conversation_state = _restore_json(state.get("conversation_state") or {})
         user_lang = str(state.get("user_lang") or "en")
         ui_state = _restore_json(state.get("ui_state") or {})
+        uploaded_mask_repaired = False
+        uploaded_mask_ui_repaired = False
+        if include_planning_results:
+            # Uploaded-mask children are durable source objects.  Reconcile
+            # their classification from the persisted Structure Set catalog
+            # and Upload Mask promotion metadata before publishing the decoded
+            # results.  This repairs snapshots written by older builds where a
+            # browser-only move was visible until restart but the child itself
+            # remained marked as an unclassified upload.
+            try:
+                from web.uploaded_mask_service import normalize_uploaded_mask_results
+
+                uploaded_mask_repaired = bool(
+                    normalize_uploaded_mask_results(decoded_results)
+                )
+                # A legacy browser checkpoint may contain an explicit
+                # stable-id + movedTo/classification pair even when the
+                # server-side generic entry was written as unclassified.
+                # Recover that evidence before the decoded results become
+                # visible to routes or the viewer.
+                uploaded_mask_ui_repaired = bool(
+                    _repair_restored_uploaded_mask_from_ui(decoded_results, ui_state)
+                )
+                uploaded_mask_repaired = bool(
+                    uploaded_mask_repaired or uploaded_mask_ui_repaired
+                )
+            except Exception:
+                logger.exception(
+                    "workspace hydration could not reconcile uploaded-mask metadata session=%s",
+                    session_id,
+                )
         manual_ctv_repaired = bool(
             include_planning_results
             and _repair_restored_manual_ctv(decoded_results, ui_state)
@@ -2769,9 +2994,96 @@ class WorkspaceStore:
             memory.conversation_state["data_available"] = sorted(
                 memory.planning_results.keys()
             )
+        uploaded_mask_effective_rebuilt = False
+        uploaded_mask_registry_repaired = False
+        uploaded_mask_clinical_repair = bool(
+            any(
+                isinstance(item, Mapping)
+                and any(
+                    str(item.get(key) or "").strip().lower() in {"ctv", "oar"}
+                    for key in ("classification", "moved_to", "movedTo")
+                )
+                and (
+                    str(item.get("kind") or "").strip().lower() == "uploaded_mask_label"
+                    or str(item.get("source") or "").strip().lower() == "uploaded_mask"
+                    or str(item.get("upload_mask_id") or "").strip()
+                )
+                for item in (memory.retrieve("generic_segmentation_masks") or [])
+            )
+        )
+        if include_planning_results and (
+            uploaded_mask_ui_repaired
+            or uploaded_mask_clinical_repair
+            or (
+                uploaded_mask_clinical_repair
+                and not memory.retrieve("structure_registry_initialized")
+            )
+        ):
+            # The UI migration repairs the durable source classification, but
+            # an old snapshot may not have persisted the derived effective
+            # CTV/OAR arrays. Rebuild only when the clinical arrays actually
+            # differ; metadata-only reconciliation must not make a completed
+            # plan stale on every restart.
+            try:
+                from web.structure_service import (
+                    _commit_effective,
+                    build_effective_structures,
+                    ensure_structure_registry_for_hydrated_uploads,
+                )
+
+                uploaded_mask_registry_repaired = bool(
+                    ensure_structure_registry_for_hydrated_uploads(memory)
+                )
+                effective = build_effective_structures(memory)
+                current_ctv = memory.retrieve("ctv_array")
+                if hasattr(current_ctv, "GetSize"):
+                    import SimpleITK as sitk
+
+                    current_ctv = sitk.GetArrayFromImage(current_ctv)
+                current_ctv = np.asarray(current_ctv) if current_ctv is not None else None
+                effective_ctv = (
+                    np.asarray(effective.ctv_array)
+                    if effective.ctv_array is not None else None
+                )
+                arrays_differ = (
+                    (current_ctv is None) != (effective_ctv is None)
+                    or (
+                        current_ctv is not None
+                        and effective_ctv is not None
+                        and (
+                            current_ctv.shape != effective_ctv.shape
+                            or not np.array_equal(
+                                current_ctv > 0,
+                                effective_ctv > 0,
+                            )
+                        )
+                    )
+                )
+                if arrays_differ:
+                    _commit_effective(
+                        memory,
+                        effective,
+                        "legacy uploaded-mask promotion restored",
+                    )
+                    uploaded_mask_effective_rebuilt = True
+            except Exception:
+                logger.exception(
+                    "workspace hydration could not rebuild effective structures "
+                    "after legacy Upload Mask migration session=%s",
+                    session_id,
+                )
         restored_aliases: List[str] = []
         planning_reconciliation: Dict[str, Any] = {}
-        setattr(agent, "_workspace_hydration_repaired", manual_ctv_repaired)
+        setattr(
+            agent,
+            "_workspace_hydration_repaired",
+            bool(
+                manual_ctv_repaired
+                or uploaded_mask_repaired
+                or uploaded_mask_registry_repaired
+                or uploaded_mask_effective_rebuilt
+            ),
+        )
         if include_planning_results:
             # Historical Planning snapshots are immutable and authoritative.
             # Reconcile the registry and select a complete restore point before
@@ -2793,6 +3105,9 @@ class WorkspaceStore:
                     "_workspace_hydration_repaired",
                     bool(
                         manual_ctv_repaired
+                        or uploaded_mask_repaired
+                        or uploaded_mask_registry_repaired
+                        or uploaded_mask_effective_rebuilt
                         or getattr(agent, "_workspace_hydration_repaired", False)
                         or planning_reconciliation.get("changed")
                         or restored_aliases
