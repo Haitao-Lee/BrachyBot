@@ -920,6 +920,19 @@ function _updateReportPreview() {
     if (!pagesEl) return;
     if (!window.reportForm) window.reportForm = _newEmptyReportForm();
     const f = window.reportForm;
+    const reportOwnerSessionId = String(f.sessionId || (typeof activeSessionId !== 'undefined' ? activeSessionId : '') || '');
+    const reportArtifacts = typeof dataTreeState !== 'undefined' && Array.isArray(dataTreeState?.exportArtifacts) ? dataTreeState.exportArtifacts : [];
+    const reportPlanningId = String(f.planningId || f.active_planning_id || '');
+    const reportFigureImageUrl = figure => {
+        const resolved = typeof window.resolveSessionScreenshotFigureUrl === 'function'
+            ? window.resolveSessionScreenshotFigureUrl(
+                figure,
+                reportOwnerSessionId,
+                { planningId: figure?.planningId || figure?.planning_id || reportPlanningId, artifacts: reportArtifacts },
+            )
+            : '';
+        return _safeReportImageUrl(resolved || figure?.dataUrl || figure?._serverUrl);
+    };
     syncReportQualityAssessment(f, { preserveStored: true });
     const s = (typeof REPORT_STRINGS !== 'undefined') ? REPORT_STRINGS[f.language] : null;
     if (!s) return;
@@ -975,14 +988,14 @@ function _updateReportPreview() {
                 <div class="hp-running-header"><span>${escHtml(s.confidentiality)}</span><span class="right">${escHtml(groupTitle)}</span></div>
                 <h2 class="hp-section-title">${escHtml(s.figCaption)} ${figureNumber}(${escHtml(headingSubfigure)}) - ${escHtml(groupTitle)}</h2>
                 <div class="hp-subfigure-list">${pageRows.map((figure, pageIndex) => {
-                    const imageUrl = _safeReportImageUrl(figure.dataUrl);
+                    const imageUrl = reportFigureImageUrl(figure);
                     if (!imageUrl) return '';
                     const fallbackIndex = offset + pageIndex;
                     const subfigure = String(figure.subfigure || String.fromCharCode(97 + fallbackIndex)).toLowerCase();
                     const display = _reportFigureDisplayText(figure);
                     return `<figure class="hp-subfigure">
                         <div class="hp-subfigure-media">
-                            <img src="${escHtml(imageUrl)}" alt="${escHtml(display.title)}"/>
+                            <img data-report-screenshot="true" src="${escHtml(imageUrl)}" alt="${escHtml(display.title)}"/>
                         </div>
                         <figcaption><b>${escHtml(s.figCaption)} ${figureNumber}(${escHtml(subfigure)}) - ${escHtml(display.title)}</b>${display.caption ? ': ' + escHtml(display.caption) : ''}</figcaption>
                     </figure>`;
@@ -1258,6 +1271,29 @@ function _updateReportPreview() {
     p5 += `${pageFooter(nextPageNo)}</div>`;
 
     pagesEl.innerHTML = p1 + figure1Pages + p2 + figure2Pages + supplementalPages + p3Pages + p4 + p5;
+    pagesEl.querySelectorAll('img[data-report-screenshot="true"]').forEach(image => {
+        const candidate = String(image.getAttribute('src') || '').trim();
+        const markUnavailable = () => {
+            image.alt = f.language === 'zh'
+                ? '报告图暂时无法加载'
+                : 'Report figure temporarily unavailable';
+            image.style.display = 'none';
+        };
+        image.addEventListener('error', () => {
+            if (image.dataset.brachyReportRecoveryStarted === 'true') return;
+            image.dataset.brachyReportRecoveryStarted = 'true';
+            if (typeof window.recoverSessionScreenshotImage !== 'function') {
+                markUnavailable();
+                return;
+            }
+            void window.recoverSessionScreenshotImage(
+                image,
+                candidate,
+                reportOwnerSessionId,
+                { planningId: reportPlanningId, artifacts: reportArtifacts },
+            ).catch(markUnavailable);
+        }, { once: true });
+    });
     // Every page is portrait A4. Recalculate fit after the DOM commit so the
     // fixed paper boxes and image intrinsic sizes have been measured together.
     window.requestAnimationFrame(() => window.Report?.preview?.refresh?.());
