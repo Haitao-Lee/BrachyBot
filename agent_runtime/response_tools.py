@@ -8,7 +8,7 @@ import json
 import logging
 import math
 import re
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Mapping, Optional
 
 
 from agent_runtime.core import ToolResultPipeline
@@ -21,7 +21,7 @@ from agent_runtime.turn_policy import (
     requires_planning_before_guide,
     resolve_report_request_action,
     resolve_session_content_target,
-    resolve_session_visual_location_target,
+    resolve_session_visual_location_request,
     _has_visual_annotation_request,
 )
 from plans.dose_pre.model_loader import resolve_prescription_gy
@@ -377,7 +377,7 @@ print(json.dumps(result))
 """
 
     @staticmethod
-    def _session_visual_location_screenshot_params(message: str, target: str) -> Dict:
+    def _session_visual_location_screenshot_params(message: str, target: Any) -> Dict:
         """Build a grounded screenshot plan for a live location question.
 
         The route deliberately produces a structured evidence request rather
@@ -386,10 +386,26 @@ print(json.dumps(result))
         actually loaded/visible before it frames or annotates it.
         """
         text = str(message or "").strip()
-        target = str(target or "").strip().lower()
+        request = dict(target) if isinstance(target, Mapping) else {
+            "semantic_targets": [str(target or "").strip().lower()],
+            "target_refs": [],
+            "target_query": text,
+            "target_source": "legacy",
+            "target_surfaces": [],
+        }
+        semantic_targets = list(dict.fromkeys(
+            str(value or "").strip().lower()
+            for value in (request.get("semantic_targets") or [])
+            if str(value or "").strip()
+        ))[:32]
+        target = semantic_targets[0] if len(semantic_targets) == 1 else "composite"
         is_zh = bool(re.search(r"[\u3400-\u4dbf\u4e00-\u9fff]", text))
 
-        stable_refs: List[str] = []
+        stable_refs: List[str] = [
+            str(value or "").strip()
+            for value in (request.get("target_refs") or [])
+            if str(value or "").strip()
+        ]
         for raw in re.findall(
             r"\b(?:needle|seed|trajectory|planning)[_-][a-z0-9][a-z0-9_-]*\b",
             text.lower(),
@@ -444,6 +460,85 @@ print(json.dumps(result))
             # is the explanation, while the live viewer remains the source of
             # truth.  If the guide is not currently visible, the manifest
             # reports that fact instead of turning it on for the screenshot.
+            focus = {"kind": "current-view"}
+            overlays = {}
+            hide_unrelated = False
+            annotation_policy = "required"
+        elif target in {"ctv", "oar", "seeds", "needles", "trajectories"}:
+            # A visual-location request must name one current-turn semantic
+            # object all the way through capture and annotation.  The active
+            # aliases are resolved against the live scene/Data Tree registry;
+            # they are never substituted with a previously selected artifact.
+            stable_ref_by_target = {
+                "ctv": "structure:ctv:active",
+                "oar": "structure:oar:active",
+                "seeds": "group:planning:seeds",
+                "needles": "group:planning:needles",
+                "trajectories": "group:planning:trajectories",
+            }
+            stable_refs = [stable_ref_by_target[target]]
+            object_refs = list(stable_refs)
+            data_tree_refs = list(stable_refs)
+            views = ["viewer-3d", "data-tree"]
+            labels = {
+                "ctv": ("CTV 靶区位置", "CTV target location"),
+                "oar": ("危及器官位置", "OAR location"),
+                "seeds": ("粒子位置", "Seed locations"),
+                "needles": ("穿刺针位置", "Needle locations"),
+                "trajectories": ("针道轨迹位置", "Trajectory locations"),
+            }
+            descriptions = {
+                "ctv": ("定位当前病例中已加载且可见的 CTV 肿瘤靶区。", "Locate the loaded, visible CTV tumor target in the current case."),
+                "oar": ("定位当前病例中已加载且可见的危及器官。", "Locate the loaded, visible organs at risk in the current case."),
+                "seeds": ("定位当前规划中已加载且可见的粒子。", "Locate the loaded, visible seeds in the current plan."),
+                "needles": ("定位当前规划中已加载且可见的穿刺针。", "Locate the loaded, visible needles in the current plan."),
+                "trajectories": ("定位当前规划中已加载且可见的针道轨迹。", "Locate the loaded, visible trajectories in the current plan."),
+            }
+            title = labels[target][0 if is_zh else 1]
+            description = descriptions[target][0 if is_zh else 1]
+            # Preserve the operator's present composition. Exact scene
+            # projection/Data Tree bounds provide the marker; if the target is
+            # hidden or outside this capture, the browser must report that
+            # instead of changing visibility or marking a replacement object.
+            focus = {"kind": "current-view"}
+            overlays = {}
+            hide_unrelated = False
+            annotation_policy = "required"
+        elif target == "composite" or request.get("target_source") == "live_catalog":
+            surfaces = set(str(value or "").strip().lower() for value in (
+                request.get("target_surfaces") or []
+            ))
+            ui_surface_order = [
+                "overlay-controls", "input", "metrics", "planning", "report", "full",
+            ]
+            ui_views = [surface for surface in ui_surface_order if surface in surfaces]
+            visual_object_surfaces = surfaces.intersection({
+                "3d", "viewer-3d", "scene", "data-tree", "tree", "data_tree",
+            })
+            if ui_views and not visual_object_surfaces:
+                views = ui_views[:4]
+                object_refs = []
+                data_tree_refs = []
+                layout = "single" if len(views) == 1 else "auto"
+            else:
+                views = []
+                if not surfaces or surfaces.intersection({"3d", "viewer-3d", "scene"}):
+                    views.append("viewer-3d")
+                if not surfaces or surfaces.intersection({"data-tree", "tree", "data_tree"}):
+                    views.append("data-tree")
+                if not views:
+                    # A stable ID with an unknown/new provider may be exposed
+                    # on either current visual surface.  Capture both and let
+                    # each live manifest independently prove or reject it.
+                    views = ["viewer-3d", "data-tree"]
+                object_refs = list(stable_refs)
+                data_tree_refs = list(stable_refs)
+            title = "目标对象位置" if is_zh else "Requested object locations"
+            description = (
+                "按当前请求中的多个或动态对象身份定位；只标注实时目录与截图清单共同验证的目标。"
+                if is_zh else
+                "Locate the requested dynamic or combined identities and mark only targets verified by both the live catalog and capture manifest."
+            )
             focus = {"kind": "current-view"}
             overlays = {}
             hide_unrelated = False
@@ -503,8 +598,9 @@ print(json.dumps(result))
             # evidence; scene highlight IDs are only meaningful for an
             # explicitly framed capture.
             "highlight_object_ids": [] if target in {
-                "ui_control:viewer.reconstruct3d", "surgical_guide", "data_tree",
-                "dvh", "metrics", "dose", "ct",
+                "ui_control:viewer.reconstruct3d", "surgical_guide", "ctv", "oar",
+                "seeds", "needles", "trajectories", "data_tree",
+                "dvh", "metrics", "dose", "ct", "composite",
             } else object_refs,
             "hide_unrelated": hide_unrelated,
             "focus": focus,
@@ -513,6 +609,14 @@ print(json.dumps(result))
             "analysis_required": True,
             "annotation_policy": annotation_policy,
             "target_refs": list(stable_refs),
+            # This canonical object family is a cross-layer integrity key. The
+            # browser and visual child reject any capture/mark whose stable ID
+            # does not belong to the current request, preventing a prior turn's
+            # guide annotation from satisfying a later CTV question.
+            "semantic_target": semantic_targets[0] if len(semantic_targets) == 1 else "composite",
+            "semantic_targets": semantic_targets,
+            "target_query": str(request.get("target_query") or text)[:8000],
+            "target_source": str(request.get("target_source") or "canonical")[:80],
             "request_intent": "session_visual_location_query",
             "preserve_current_view": True,
         }
@@ -557,17 +661,21 @@ print(json.dumps(result))
         # one state-safe screenshot plan before the generic clinical/action
         # scan so a provider cannot turn "where is the guide?" into a
         # mutating surgical_guide(action=generate) call.
-        visual_location_target = resolve_session_visual_location_target(
+        memory = getattr(self, "memory", None)
+        getter = getattr(memory, "get_ui_state", None)
+        ui_state = getter() if callable(getter) else {}
+        visual_location_request = resolve_session_visual_location_request(
             message,
             conversation=getattr(getattr(self, "memory", None), "conversation", None),
+            ui_state=ui_state,
         )
-        if visual_location_target:
+        if visual_location_request and not visual_location_request.get("requires_discovery"):
             return [{
                 "id": "tool_direct_session_visual_location",
                 "tool": "ui_screenshot",
                 "params": self._session_visual_location_screenshot_params(
                     message,
-                    visual_location_target,
+                    visual_location_request,
                 ),
             }]
 
@@ -2287,6 +2395,67 @@ Output (JSON array of strings):"""
                 )
                 return []
             tool_calls = visual_calls
+        if getattr(active_policy, "intent", None) == "session_visual_discovery_query":
+            # Open discovery is not open-ended execution.  The only legal
+            # sequence is: inspect the current browser-published registry,
+            # then optionally capture stable IDs that registry actually
+            # contains.  If the requested object does not exist, the model
+            # answers that fact and no neighboring/previous object is used.
+            read_only_calls = [
+                call for call in (tool_calls or [])
+                if str(call.get("tool") or "") in {"ui_inspector", "ui_screenshot"}
+            ]
+            ui_state = self.memory.get_ui_state() if hasattr(self.memory, "get_ui_state") else {}
+            catalog = ui_state.get("visual_target_catalog") if isinstance(ui_state, dict) else []
+            catalog_refs = {
+                str(ref or "").strip()
+                for item in (catalog if isinstance(catalog, list) else [])
+                if isinstance(item, dict)
+                for ref in (
+                    item.get("target_refs")
+                    if isinstance(item.get("target_refs"), list) else []
+                )
+                if str(ref or "").strip()
+            }
+            filtered_calls = []
+            def _list_param(params: Dict, key: str) -> List[Any]:
+                value = params.get(key)
+                if isinstance(value, (list, tuple)):
+                    return list(value)
+                return [value] if value not in (None, "") else []
+
+            for call in read_only_calls:
+                if str(call.get("tool") or "") != "ui_screenshot":
+                    filtered_calls.append(call)
+                    continue
+                params = call.get("params") if isinstance(call.get("params"), dict) else {}
+                refs = [
+                    str(ref or "").strip()
+                    for ref in [
+                        *_list_param(params, "target_refs"),
+                        *_list_param(params, "object_ids"),
+                        *_list_param(params, "data_tree_node_ids"),
+                    ]
+                    if str(ref or "").strip()
+                ]
+                verified_refs = [ref for ref in refs if ref in catalog_refs]
+                if not verified_refs:
+                    logger.warning(
+                        "Dropping discovery screenshot without a live catalog target"
+                    )
+                    continue
+                params["target_refs"] = list(dict.fromkeys(verified_refs))[:32]
+                params["object_ids"] = list(params["target_refs"])
+                params["data_tree_node_ids"] = list(params["target_refs"])
+                params["visual_purpose"] = "locate"
+                params["annotation_policy"] = "required"
+                params["analysis_required"] = True
+                params["request_intent"] = "session_visual_discovery_query"
+                params["semantic_target"] = "dynamic"
+                params["semantic_targets"] = ["dynamic"]
+                call["params"] = params
+                filtered_calls.append(call)
+            tool_calls = filtered_calls
         if getattr(active_policy, "intent", None) == "ui_control_location_query":
             # Unknown-control location questions are read-only.  The model may
             # inspect the real capability catalog and request a screenshot,

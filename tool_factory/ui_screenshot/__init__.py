@@ -307,6 +307,29 @@ class UIScreenshotTool(BaseTool):
                         "Tree node/object id, seed/needle id, or surgical_guide:active."
                     ),
                 },
+                "semantic_target": {
+                    "type": "string",
+                    "description": (
+                        "Canonical current-turn target family. This is an integrity key, "
+                        "not a display label; use dynamic for a live-catalog identity."
+                    ),
+                },
+                "semantic_targets": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "maxItems": 32,
+                    "description": (
+                        "All current-turn target families for a combined location request."
+                    ),
+                },
+                "target_query": {
+                    "type": "string",
+                    "description": "The unresolved/current object phrase used for live catalog discovery.",
+                },
+                "target_source": {
+                    "type": "string",
+                    "description": "How stable target identities were resolved (canonical, live_catalog, or live_discovery).",
+                },
             },
             "required": ["question"],
         }
@@ -372,6 +395,20 @@ class UIScreenshotTool(BaseTool):
                 for v in (kwargs.get("target_refs") or [])
                 if str(v).strip()
             ],
+            "semantic_target": str(
+                kwargs.get("semantic_target") or kwargs.get("semanticTarget") or ""
+            ).strip()[:160],
+            "semantic_targets": [
+                str(v).strip()[:160]
+                for v in (kwargs.get("semantic_targets") or kwargs.get("semanticTargets") or [])
+                if str(v).strip()
+            ][:32],
+            "target_query": str(
+                kwargs.get("target_query") or kwargs.get("targetQuery") or question
+            ).strip()[:8000],
+            "target_source": str(
+                kwargs.get("target_source") or kwargs.get("targetSource") or ""
+            ).strip()[:80],
         }
 
         # The text is consumed by the model only. Frontend trace rendering uses

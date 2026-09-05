@@ -48,6 +48,26 @@ logger = logging.getLogger(__name__)
 
 
 class ChatWorkflowMixin:
+    def _ui_state_snapshot(self) -> Dict[str, Any]:
+        """Return a best-effort UI snapshot without coupling workflow tests/stubs.
+
+        The production AgentMemory exposes ``get_ui_state``. Small workflow
+        adapters and older restored agents may expose only ``_ui_state`` (or no
+        UI bridge at all); a missing optional presentation snapshot must never
+        abort a clinical turn or its final response.
+        """
+        memory = getattr(self, "memory", None)
+        getter = getattr(memory, "get_ui_state", None)
+        if callable(getter):
+            try:
+                value = getter()
+                return dict(value) if isinstance(value, Mapping) else {}
+            except Exception:
+                logger.debug("Unable to read optional UI state snapshot", exc_info=True)
+                return {}
+        value = getattr(memory, "_ui_state", {})
+        return dict(value) if isinstance(value, Mapping) else {}
+
     @staticmethod
     def _internal_followup_language(turn_context: Dict[str, Any]) -> str:
         """Return the original user language for a hidden child turn.
@@ -2268,7 +2288,7 @@ class ChatWorkflowMixin:
 
     def _build_3d_status_response(self, lang: str = "en") -> str:
         """Explain the current 3D state without inventing a rendering cause."""
-        ui_state = self.memory.get_ui_state() or {}
+        ui_state = self._ui_state_snapshot()
         viewer = ui_state.get("viewer") if isinstance(ui_state.get("viewer"), dict) else {}
         three_d = viewer.get("three_d") if isinstance(viewer.get("three_d"), dict) else {}
         mesh_count = three_d.get("mesh_count")
@@ -2659,6 +2679,7 @@ class ChatWorkflowMixin:
                 message,
                 pending_tumor_site=self._pending_tumor_site_clarification(),
                 conversation=getattr(self.memory, "conversation", None),
+                ui_state=self._ui_state_snapshot(),
             )
         )
         self._activate_turn_policy(local_policy)
@@ -2831,6 +2852,7 @@ class ChatWorkflowMixin:
                 message,
                 pending_tumor_site=self._pending_tumor_site_clarification(),
                 conversation=getattr(self.memory, "conversation", None),
+                ui_state=self._ui_state_snapshot(),
             )
         )
         self._activate_turn_policy(local_policy)
@@ -3571,7 +3593,7 @@ class ChatWorkflowMixin:
                 else "This request was stopped. Any already-started inference may finish in the background, but no downstream planning steps will run."
             )
             yield from final_response_events({"response": message_text, "steps": steps, "llm_meta": llm_meta})
-            yield yield_event("done", {"cancelled": True, "context": {"ui_state": self.memory.get_ui_state()}})
+            yield yield_event("done", {"cancelled": True, "context": {"ui_state": self._ui_state_snapshot()}})
 
         # Start.  Language was resolved once at the turn boundary above and
         # is reused here so the start event, trace labels, tool loop, and final
@@ -3637,6 +3659,7 @@ class ChatWorkflowMixin:
                 message,
                 pending_tumor_site=self._pending_tumor_site_clarification(),
                 conversation=getattr(self.memory, "conversation", None),
+                ui_state=self._ui_state_snapshot(),
             )
         )
         self._activate_turn_policy(local_policy)
@@ -5149,7 +5172,7 @@ class ChatWorkflowMixin:
                 "summary": self.memory.context_summary or None,
                 "compaction_count": self.memory.compaction_count,
                 "message_count": len(self.memory.conversation),
-                "ui_state": self.memory.get_ui_state(),
+                "ui_state": self._ui_state_snapshot(),
             }
         })
 

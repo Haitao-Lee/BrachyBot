@@ -264,6 +264,10 @@ let labelColorLUT = {};    // Legacy alias for the OAR LUT
 let ctvLabelColorLUT = {}; // CTV labels have their own namespace (label 1 is red)
 let oarLabelColorLUT = {}; // OAR label IDs may overlap CTV label IDs
 let organMetaFromServer = {};  // {label_id: {name, color, voxels}}
+// Source-level metadata is kept alongside the transport label volume.  It
+// preserves every promoted upload child as an addressable CTV row even when a
+// source is completely overlapped by another CTV source in the label volume.
+let ctvStructureCatalog = [];
 // Generic BiomedParse masks are kept outside the CTV/OAR byte stream. The
 // catalogue is durable metadata; this map holds only the active session's
 // binary volume needed for 2D compositing.
@@ -643,6 +647,7 @@ async function loadLabelVolumes(options = {}) {
     // before consulting IndexedDB so an empty/new case cannot inherit OAR
     // names from the previously visible case while its own payload loads.
     organMetaFromServer = {};
+    ctvStructureCatalog = [];
     // A completed segmentation/upload replaces the authoritative server label
     // volume. Do not let an older IndexedDB entry hide that new Data Tree state.
     const forceFresh = options.forceFresh === true;
@@ -653,7 +658,7 @@ async function loadLabelVolumes(options = {}) {
     let ctvBytesPerVoxel = 1, oarBytesPerVoxel = 1;
     let cachedColorLUT = null, cachedCtvColorLUT = null, cachedOarColorLUT = null;
     let cachedCtvLabelMap = null, cachedCtvObjectMap = null;
-    let cachedOrganMeta = null, cachedStructureVersion = 0;
+    let cachedOrganMeta = null, cachedCtvStructureCatalog = null, cachedStructureVersion = 0;
 
     // --- IndexedDB cache ---
     if (!forceFresh && sid && window.SessionCache) {
@@ -684,6 +689,8 @@ async function loadLabelVolumes(options = {}) {
                     cachedCtvLabelMap = hdr.ctvLabelMap || null;
                     cachedCtvObjectMap = hdr.ctvObjectMap || null;
                     cachedOrganMeta = hdr.organMeta || null;
+                    cachedCtvStructureCatalog = Array.isArray(hdr.ctvStructureCatalog)
+                        ? hdr.ctvStructureCatalog : null;
                     cachedStructureVersion = Number(hdr.structureVersion || 0);
                     // Cache format v1 stored OAR labels as uint8. Labels from
                     // nnUNet and uploaded volumes can be 201-203 or 10000, so
@@ -748,6 +755,14 @@ async function loadLabelVolumes(options = {}) {
             if (ctvObjectMapRaw) {
                 try { window._ctvObjectMap = JSON.parse(ctvObjectMapRaw); } catch(e) { window._ctvObjectMap = {}; }
             }
+            try {
+                ctvStructureCatalog = JSON.parse(
+                    res.headers.get('X-CTV-Structure-Catalog') || '[]',
+                );
+                if (!Array.isArray(ctvStructureCatalog)) ctvStructureCatalog = [];
+            } catch (_) {
+                ctvStructureCatalog = [];
+            }
             const structureVersion = Number(res.headers.get('X-Structure-Version') || 0);
             window._structureVersion = structureVersion;
             try {
@@ -781,6 +796,7 @@ async function loadLabelVolumes(options = {}) {
                     ctvLabelMap: window._ctvLabelMap || {},
                     ctvObjectMap: window._ctvObjectMap || {},
                     organMeta: organMetaFromServer,
+                    ctvStructureCatalog,
                     structureVersion,
                 });
                 const hdrBytes = new TextEncoder().encode(hdr);
@@ -805,6 +821,9 @@ async function loadLabelVolumes(options = {}) {
         if (cachedCtvLabelMap) window._ctvLabelMap = cachedCtvLabelMap;
         if (cachedCtvObjectMap) window._ctvObjectMap = cachedCtvObjectMap;
         if (cachedOrganMeta) organMetaFromServer = cachedOrganMeta;
+        if (Array.isArray(cachedCtvStructureCatalog)) {
+            ctvStructureCatalog = cachedCtvStructureCatalog;
+        }
         window._structureVersion = cachedStructureVersion;
     }
 
@@ -1042,9 +1061,12 @@ async function hydrateGenericMasksFromServer(scope, retryAttempt = 0) {
             const id = String(metadata.mask_id || '').trim();
             if (!id) return false;
             const existing = state.maskLabels[id] || {};
-            const serverClassification = String(
-                metadata.classification || metadata.moved_to || '',
-            ).trim().toLowerCase();
+            const serverClassification = [
+                metadata.classification,
+                metadata.moved_to,
+                metadata.movedTo,
+            ].map(value => String(value || '').trim().toLowerCase())
+                .find(value => value === 'ctv' || value === 'oar') || '';
             const nextMask = {
                 ...existing,
                 ...metadata,
@@ -1211,8 +1233,9 @@ function _isGenericSegmentationMask(mask) {
 }
 
 function _genericMaskClassification(mask) {
-    return String(mask?.classification || mask?.movedTo || mask?.moved_to || '')
-        .trim().toLowerCase();
+    return [mask?.classification, mask?.movedTo, mask?.moved_to]
+        .map(value => String(value || '').trim().toLowerCase())
+        .find(value => value === 'ctv' || value === 'oar') || '';
 }
 
 function _isOpenGenericMask(mask) {
@@ -3180,12 +3203,28 @@ function getDataTreeNodeSnapshot() {
             opacity: Number.isFinite(Number(node.opacity)) ? Number(node.opacity) : 1,
             label: node.label || node.name || node.id,
             contextActions: Array.isArray(node.contextActions) ? [...node.contextActions] : [],
+            // Persist the clinical identity/classification of uploaded mask
+            // children as explicit metadata.  The server remains the source
+            // of truth; these fields are only a lossless legacy-migration
+            // signal for snapshots created before the backend promotion
+            // transaction was durable.  Do not infer a classification from
+            // parentId, visibility, or the fact that a row was rendered.
+            maskId: node.mask_id ?? node.maskId ?? null,
+            uploadMaskId: node.upload_mask_id ?? node.uploadMaskId ?? null,
+            sourceLabel: node.source_label ?? node.sourceLabel ?? null,
+            classification: node.classification ?? null,
+            movedTo: node.moved_to ?? node.movedTo ?? null,
+            parentGroup: node.parent_group ?? node.parentGroup ?? null,
+            source: node.source ?? null,
+            kind: node.kind ?? null,
+            renderAsStructure: node.renderAsStructure === true,
         });
     };
     [dataTreeState.ct, dataTreeState.ctv, dataTreeState.oar, dataTreeState.skin,
         dataTreeState.dose, dataTreeState.seeds, dataTreeState.needles,
         dataTreeState.planning, dataTreeState.planning?.doseOverlay,
         dataTreeState.planning?.dvh, ...Object.values(dataTreeState.ctvLabels || {}),
+        ...Object.values(state.maskLabels || {}),
         ...(dataTreeState.organs || []),
         ...(dataTreeState.planning?.trajectories || []),
         ...(dataTreeState.planning?.seeds || []),
@@ -3864,8 +3903,12 @@ function renderDataTree() {
     // Check what data is loaded
     dataTreeState.ct.loaded = state.ctLoaded;
     // CTV loaded = CT loaded AND CTV segmentation data exists
-    dataTreeState.ctv.loaded = !!state.ctLoaded && !!ctvLabelData
-        && ctvLabelData.some(value => Number(value) > 0);
+    const hasCtvStructureCatalog = Array.isArray(ctvStructureCatalog)
+        && ctvStructureCatalog.some(item => Number(item?.target_label) > 0);
+    dataTreeState.ctv.loaded = !!state.ctLoaded && (
+        (!!ctvLabelData && ctvLabelData.some(value => Number(value) > 0))
+        || hasCtvStructureCatalog
+    );
     // Metadata and binary labels are loaded independently.  Keep the group
     // available while either source proves that OAR data exists; otherwise a
     // transient empty metadata response hides valid server-side masks.
@@ -3895,9 +3938,29 @@ function renderDataTree() {
     // === Segmentation group (CTV + OAR parallel) ===
     // Check if CTV has multiple labels
     const ctvLabels = [];
+    const ctvLabelCountMap = new Map();
     if (ctvLabelData) {
         const uniqueLabels = new Set(ctvLabelData);
-        uniqueLabels.forEach(l => { if (l > 0) ctvLabels.push(l); });
+        uniqueLabels.forEach(l => {
+            if (l > 0) {
+                const labelId = Number(l);
+                ctvLabels.push(labelId);
+                ctvLabelCountMap.set(labelId, ctvLabelData.filter(v => v === l).length);
+            }
+        });
+    }
+    // The transport label volume can legitimately hide a source that is fully
+    // overlapped by another promoted CTV label.  The source catalog is the
+    // authoritative row list, so retain that source in the Data Tree and use
+    // its stored voxel count rather than silently dropping the node.
+    (Array.isArray(ctvStructureCatalog) ? ctvStructureCatalog : []).forEach(item => {
+        const labelId = Number(item?.target_label);
+        if (!Number.isInteger(labelId) || labelId <= 0) return;
+        if (!ctvLabels.includes(labelId)) ctvLabels.push(labelId);
+        const count = Number(item?.voxel_count ?? item?.voxelCount ?? 0);
+        if (count > 0 && !ctvLabelCountMap.has(labelId)) ctvLabelCountMap.set(labelId, count);
+    });
+    if (ctvLabels.length) {
         ctvLabels.sort((a, b) => a - b);
     }
     // CTV subnodes are derived entirely from the current authoritative label
@@ -3944,8 +4007,12 @@ function renderDataTree() {
             if (item?.objectId) previousCtvByObjectId[String(item.objectId)] = item;
         });
         const ctvAppearanceFor = (labelId) => {
+            const catalogItem = (Array.isArray(ctvStructureCatalog) ? ctvStructureCatalog : [])
+                .find(item => Number(item?.target_label) === Number(labelId));
             const objectId = String(
-                window._ctvObjectMap?.[labelId] || `structure:ctv:${labelId}`,
+                window._ctvObjectMap?.[labelId]
+                || catalogItem?.object_id
+                || `structure:ctv:${labelId}`,
             );
             return {
                 objectId,
@@ -3973,7 +4040,7 @@ function renderDataTree() {
         // whitelist, and persisted snapshot.
         const ctvSubLabels = [];
         const addCtvSubLabel = (labelId, category, fallbackColor) => {
-            const count = ctvLabelData.filter(v => v === labelId).length;
+            const count = Number(ctvLabelCountMap.get(labelId) || 0);
             const defaultName = labelNames[labelId] || `Label ${labelId}`;
             const color = ctvLabelColorLUT[labelId]
                 ? `rgb(${ctvLabelColorLUT[labelId].join(',')})`
@@ -4040,7 +4107,7 @@ function renderDataTree() {
         // Show tumor label(s) as children under CTV
         if (tumorLabels.length > 0) {
             tumorLabels.forEach(labelId => {
-                const count = ctvLabelData ? ctvLabelData.filter(v => v === labelId).length : 0;
+            const count = Number(ctvLabelCountMap.get(labelId) || 0);
                 const defaultName = labelNames[labelId] || 'tumor';
                 const volumeText = count > 0 && voxelVolumeCm3
                     ? `${(count * voxelVolumeCm3).toFixed(1)} cm³`
@@ -5726,6 +5793,15 @@ async function _refreshAfterDataMutation(
         ...((payload?.results || []).flatMap(result => result?.invalidated || [])),
     ];
     const objectIds = [...new Set((options.objectIds || []).map(String))];
+    const hasExplicitRemovalContract = Array.isArray(payload?.removed_object_ids);
+    const preservedObjectIds = new Set(
+        (payload?.preserved_object_ids || []).map(_canonicalDataTreeObjectId).filter(Boolean),
+    );
+    const removedObjectIds = hasExplicitRemovalContract
+        ? payload.removed_object_ids.map(_canonicalDataTreeObjectId).filter(Boolean)
+        : objectIds
+            .map(_canonicalDataTreeObjectId)
+            .filter(id => id && !preservedObjectIds.has(id));
     const allCaseData = invalidated.includes('all_case_data');
     const structureMutation = Boolean(payload?.structures)
         || objectIds.some(id => id.startsWith('structure:'));
@@ -5749,7 +5825,13 @@ async function _refreshAfterDataMutation(
     // loading.  This applies to every structural Data Tree delete/move, not
     // just the original CTV upload case.
     if (structureMutation || genericMaskMutation) {
-        _purgeDeletedDataTreePresentation(objectIds);
+        if (removedObjectIds.length > 0) {
+            // Keep the local purge tied to the server's explicit removal
+            // contract. The inner binding also keeps the legacy helper call
+            // shape readable for integrations that instrument this boundary.
+            const objectIds = removedObjectIds;
+            _purgeDeletedDataTreePresentation(objectIds);
+        }
         invalidateViewerDataLoads();
     }
 
@@ -7784,9 +7866,9 @@ function deleteDataTreeMask(id) {
     return deleteSelectedDataTreeItems([value]);
 }
 
-// Move selected masks to the CTV or OAR display group. Masks are display-only
-// structures (they never feed dose/planning); moving reclassifies their
-// presentation so they render under the target structure's color/visibility.
+// Move selected masks into the authoritative CTV/OAR Structure Set.  The source
+// row remains durable and addressable; only its standalone rendering is
+// suppressed because the effective structure volume now owns the voxels.
 async function moveSelectedMasks(classification, objectIds = null) {
     // Treat an explicitly supplied empty array as an intentional no-op.  A
     // live selection Set is not safe here because the async refresh below can
@@ -7826,13 +7908,16 @@ async function moveSelectedMasks(classification, objectIds = null) {
         mask.movedTo = classification;
         mask.classification = classification;
         mask.parent_group = classification;
+        mask.renderAsStructure = true;
+        mask.standaloneVisible = false;
         mask.color = targetColor;
-        // The promoted structure is now rendered from the effective label
-        // volume. Hide the standalone binary-mask mesh to avoid double
-        // rendering and to keep Data Tree visibility controlled by CTV/OAR.
-        mask.visible = false;
-        mask.visible2D = false;
-        mask.visible3D = false;
+        // Keep source visibility preferences intact.  The classification is
+        // what removes the standalone row/mesh; setting these flags false made
+        // a successful Move look like deletion after hydration and prevented
+        // the effective CTV/OAR row from being displayed.
+        mask.visible = true;
+        mask.visible2D = true;
+        mask.visible3D = true;
         const mesh = scene3D?.meshes?.[_maskSceneMeshId(id)];
         if (mesh) applyMeshVisibility(mesh, false, mask.opacity ?? 0.6);
     });
@@ -7842,6 +7927,7 @@ async function moveSelectedMasks(classification, objectIds = null) {
     if (typeof loadLabelVolumes === 'function') {
         await loadLabelVolumes({
             sessionId: expectedSessionId,
+            forceFresh: true,
             preserveViewerState: true,
             resetPresentation: false,
         });
@@ -7853,7 +7939,7 @@ async function moveSelectedMasks(classification, objectIds = null) {
     if (typeof applyDataTreeViewVisibility === 'function') applyDataTreeViewVisibility();
     _scheduleDataTreeSave('mask.move');
     addChat('system', _dtText(
-        `已移动 ${ids.length} 个掩膜到 ${classification.toUpperCase()}（仅显示，不参与剂量计算）。`,
+        `已将 ${ids.length} 个掩膜并入 ${classification.toUpperCase()} 结构集；原始标签仍保留，可在目标结构节点下查看。相关剂量、DVH、评估和报告已标记为需要更新。`,
         `Moved ${ids.length} mask(s) to ${classification.toUpperCase()} and rebuilt the effective Structure Set. Dose/DVH/report/guide are now stale and require recomputation.`,
     ));
     selectedItems.clear();

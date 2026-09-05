@@ -14,6 +14,7 @@ from agent_runtime.turn_policy import (
     resolve_report_request_action,
     resolve_session_content_presentation,
     resolve_session_content_target,
+    resolve_session_visual_location_request,
     resolve_session_visual_location_target,
     is_ui_control_location_question,
     resolve_ui_control_location_target,
@@ -552,6 +553,139 @@ def test_target_agnostic_screenshot_can_follow_only_a_recent_user_target():
     assert classify_local_turn("截图给我在哪里", conversation=conversation).intent == "session_visual_location_query"
     assistant_only = [{"role": "assistant", "content": "手术导板在三维查看器中。"}]
     assert resolve_session_visual_location_target("截图给我在哪里", assistant_only) is None
+
+
+def test_current_tumor_target_cannot_inherit_previous_guide():
+    conversation = [
+        {"role": "user", "content": "请问手术导板在哪里"},
+        {"role": "assistant", "content": "已定位导板。"},
+    ]
+    message = "那患者的肿瘤在哪里呢"
+
+    request = resolve_session_visual_location_request(message, conversation)
+
+    assert request["semantic_targets"] == ["ctv"]
+    assert request["target_refs"] == ["structure:ctv:active"]
+    assert request["target_source"] == "canonical"
+    assert classify_local_turn(message, conversation=conversation).intent == "session_visual_location_query"
+
+
+def test_arbitrary_live_catalog_target_uses_exact_stable_identity():
+    message = "请圈出 custom vessel branch B 在哪里"
+    ui_state = {
+        "viewer": {"ct_loaded": True},
+        "visual_target_catalog": [{
+            "family": "plugin_vessel_part",
+            "kind": "scene-object-part",
+            "label": "custom vessel branch B",
+            "target_refs": ["plugin:vessel:branch-b"],
+            "surfaces": ["viewer-3d"],
+            "visible": True,
+        }],
+    }
+
+    request = resolve_session_visual_location_request(message, ui_state=ui_state)
+
+    assert request["target_refs"] == ["plugin:vessel:branch-b"]
+    assert request["semantic_targets"] == ["plugin_vessel_part"]
+    assert request["target_source"] == "live_catalog"
+    assert request["target_surfaces"] == ["viewer-3d"]
+    assert classify_local_turn(message, ui_state=ui_state).intent == "session_visual_location_query"
+
+
+def test_unknown_or_nonexistent_target_never_borrows_previous_object():
+    conversation = [{"role": "user", "content": "手术导板在哪里"}]
+    ui_state = {"viewer": {"ct_loaded": True}, "visual_target_catalog": []}
+    message = "请问不存在的蓝色固定翼在哪里"
+
+    request = resolve_session_visual_location_request(
+        message, conversation=conversation, ui_state=ui_state
+    )
+
+    assert request["requires_discovery"] is True
+    assert request["target_refs"] == []
+    policy = classify_local_turn(message, conversation=conversation, ui_state=ui_state)
+    assert policy.intent == "session_visual_discovery_query"
+    assert policy.allow_tools == frozenset({"ui_inspector", "ui_screenshot"})
+
+
+def test_combined_location_request_preserves_every_named_target():
+    message = "请把肿瘤、穿刺针和粒子都圈出来"
+    request = resolve_session_visual_location_request(message)
+
+    assert request["semantic_targets"] == ["ctv", "needles", "seeds"]
+    assert request["target_refs"] == [
+        "structure:ctv:active",
+        "group:planning:needles",
+        "group:planning:seeds",
+    ]
+    params = ResponseToolMixin._session_visual_location_screenshot_params(message, request)
+    assert params["semantic_target"] == "composite"
+    assert params["semantic_targets"] == ["ctv", "needles", "seeds"]
+    assert params["annotation_policy"] == "required"
+    assert params["target_refs"] == request["target_refs"]
+
+
+def test_combined_canonical_and_dynamic_target_keeps_both_identities():
+    message = "请把 CTV 和 custom bracket arm 都圈出来"
+    ui_state = {
+        "viewer": {"ct_loaded": True},
+        "visual_target_catalog": [{
+            "family": "implant_component",
+            "label": "custom bracket arm",
+            "target_refs": ["plugin:bracket:arm", "scene-part:arm-7"],
+            "surfaces": ["viewer-3d"],
+        }],
+    }
+
+    request = resolve_session_visual_location_request(message, ui_state=ui_state)
+
+    assert request["semantic_targets"] == ["ctv", "implant_component"]
+    assert request["target_refs"] == [
+        "structure:ctv:active", "plugin:bracket:arm", "scene-part:arm-7",
+    ]
+    assert request["target_source"] == "canonical+live_catalog"
+    params = ResponseToolMixin._session_visual_location_screenshot_params(message, request)
+    assert params["semantic_target"] == "composite"
+    assert params["target_refs"] == request["target_refs"]
+
+
+def test_short_ascii_catalog_label_requires_token_boundaries():
+    ui_state = {
+        "viewer": {"ct_loaded": True},
+        "visual_target_catalog": [{
+            "family": "ct",
+            "label": "CT",
+            "target_refs": ["image:ct:active"],
+            "surfaces": ["viewer-axial"],
+        }],
+    }
+
+    request = resolve_session_visual_location_request(
+        "where is the current custom fixture", ui_state=ui_state
+    )
+
+    assert request["requires_discovery"] is True
+    assert request["target_refs"] == []
+
+
+def test_browser_visual_catalog_and_target_integrity_are_cross_layer_contracts():
+    ui_api = _source("web/app/static/js/brachybot-ui-api.js")
+    scene = _source("web/app/static/js/brachybot-3d-manual.js")
+    annotation = _source("web/app/static/js/brachybot-visual-annotation.js")
+    evidence = _source("agent_runtime/visual_evidence.py")
+
+    assert "function collectVisualTargetCatalog" in ui_api
+    assert "visual_target_catalog: visualTargetCatalog" in ui_api
+    assert "function get3DVisualTargetCatalog" in scene
+    assert "scene-object-part" in scene
+    assert "semantic_target_mismatch" in annotation
+    assert "semantic_target_mismatch" in evidence
+    # Composite presentation must not act as a wildcard that reuses a stale
+    # guide/seed reference when the current request targets another object.
+    assert "const constrainedSemantics = semanticTargets.filter" in ui_api
+    assert "const hasLiveTargetSource" in ui_api
+    assert "return false;" in ui_api
 
 
 @pytest.mark.parametrize(

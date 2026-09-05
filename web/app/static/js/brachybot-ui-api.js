@@ -186,6 +186,163 @@ function _cloneUiStateValue(value, fallback = {}) {
     return jsonClone(value, fallback);
 }
 
+function _visualCatalogFamily(value = {}) {
+    const text = [
+        value.family, value.kind, value.nodeType, value.source,
+        value.objectId, value.nodeId, value.id,
+    ].map(item => String(item || '').toLowerCase()).join(' ');
+    if (/surgical[_\s:-]?guide|puncture[_\s:-]?guide/.test(text)) return 'surgical_guide';
+    if (/\bctv\b|structure:ctv/.test(text)) return 'ctv';
+    if (/\boar\b|organ_|structure:oar/.test(text)) return 'oar';
+    if (/trajectory/.test(text)) return 'trajectories';
+    if (/needle/.test(text)) return 'needles';
+    if (/seed/.test(text)) return 'seeds';
+    if (/dose/.test(text)) return 'dose';
+    if (/dvh/.test(text)) return 'dvh';
+    return String(value.family || value.kind || value.nodeType || value.source || 'dynamic').toLowerCase();
+}
+
+const visualTargetProviders = new Map();
+
+function registerVisualTargetProvider(providerId, provider) {
+    const id = String(providerId || '').trim();
+    if (!id || typeof provider !== 'function') return () => {};
+    visualTargetProviders.set(id, provider);
+    return () => visualTargetProviders.delete(id);
+}
+window.registerVisualTargetProvider = registerVisualTargetProvider;
+
+function collectVisualTargetCatalog() {
+    const candidates = [];
+    const add = item => {
+        if (!item || typeof item !== 'object') return;
+        const refs = [...new Set((Array.isArray(item.target_refs) ? item.target_refs : [])
+            .map(value => String(value || '').trim()).filter(Boolean))].slice(0, 16);
+        if (!refs.length) return;
+        candidates.push({
+            family: _visualCatalogFamily(item),
+            kind: String(item.kind || 'dynamic').slice(0, 80),
+            label: String(item.label || item.name || item.text || refs[0])
+                .replace(/\s+/g, ' ').trim().slice(0, 160),
+            aliases: [...new Set((Array.isArray(item.aliases) ? item.aliases : [])
+                .map(value => String(value || '').replace(/\s+/g, ' ').trim())
+                .filter(Boolean))].slice(0, 12),
+            target_refs: refs,
+            surfaces: [...new Set((Array.isArray(item.surfaces) ? item.surfaces : [])
+                .map(value => String(value || '').trim().toLowerCase()).filter(Boolean))].slice(0, 8),
+            visible: item.visible !== false,
+            loaded: item.loaded !== false,
+            status: String(item.status || 'ready').slice(0, 48),
+            parent_ref: String(item.parent_ref || item.parentRef || item.owner_ref || '').slice(0, 180),
+        });
+    };
+
+    const nodeSnapshots = typeof window.getDataTreeNodeSnapshot === 'function'
+        ? window.getDataTreeNodeSnapshot()
+        : [];
+    (Array.isArray(nodeSnapshots) ? nodeSnapshots : []).forEach(node => {
+        if (!node || typeof node !== 'object') return;
+        const refs = [node.objectId, node.nodeId, node.id, node.organId]
+            .map(value => String(value || '').trim()).filter(Boolean);
+        if (!refs.length) return;
+        const family = _visualCatalogFamily(node);
+        const surfaces = ['data-tree'];
+        if (['ctv', 'oar', 'seeds', 'needles', 'trajectories', 'surgical_guide'].includes(family)) {
+            surfaces.unshift('viewer-3d');
+        }
+        add({
+            ...node,
+            family,
+            kind: node.nodeType || node.type || 'data-tree-node',
+            label: node.label || node.name || refs[0],
+            target_refs: refs,
+            surfaces,
+            visible: node.visible !== false,
+            loaded: !['not_generated', 'missing', 'deleted', 'unresolved'].includes(String(node.status || '').toLowerCase()),
+            parent_ref: node.parentId || node.parentNodeId || node.group || '',
+        });
+    });
+
+    if (typeof window.get3DVisualTargetCatalog === 'function') {
+        const sceneTargets = window.get3DVisualTargetCatalog();
+        (Array.isArray(sceneTargets) ? sceneTargets : []).forEach(add);
+    }
+
+    // New modules and plug-ins can publish object parts or non-DOM visual
+    // content without changing this collector. Providers return the same
+    // stable-identity contract and never supply screenshot coordinates;
+    // coordinates are still resolved from the live capture surface.
+    visualTargetProviders.forEach((provider, providerId) => {
+        try {
+            const provided = provider();
+            (Array.isArray(provided) ? provided : []).forEach(item => add({
+                ...item,
+                kind: item?.kind || `provider:${providerId}`,
+            }));
+        } catch (error) {
+            console.warn(`[visual-target-catalog] Provider ${providerId} failed:`, error);
+        }
+    });
+
+    const excludedControlIds = new Set([
+        'authPassword', 'currentPassword', 'newPassword', 'authDeploymentKey',
+    ]);
+    document.querySelectorAll(
+        'button[id], input[id], select[id], textarea[id], [role="button"][id], '
+        + '[data-ui-control], [data-ui-target]'
+    ).forEach(element => {
+        const id = String(element.id || '').trim();
+        const semanticId = String(element.getAttribute('data-ui-target') || '').trim();
+        if ((!id && !semanticId) || excludedControlIds.has(id)) return;
+        const type = String(element.getAttribute('type') || '').toLowerCase();
+        if (type === 'password' || type === 'hidden') return;
+        const panel = element.closest('[id^="panel"]')?.id || '';
+        let surface = 'full';
+        if (panel === 'panelViewers' || element.closest('#overlayControls')) surface = 'overlay-controls';
+        else if (panel === 'panelInput') surface = 'input';
+        else if (panel === 'panelAnalysis') surface = 'metrics';
+        else if (panel === 'panelReport') surface = 'report';
+        const rect = element.getBoundingClientRect?.();
+        const style = window.getComputedStyle ? window.getComputedStyle(element) : null;
+        const visible = !!rect && rect.width > 0 && rect.height > 0
+            && style?.display !== 'none' && style?.visibility !== 'hidden'
+            && Number(style?.opacity ?? 1) > 0.01;
+        add({
+            family: 'ui_control',
+            kind: 'ui-control',
+            label: element.getAttribute('aria-label') || element.title || element.textContent || id || semanticId,
+            aliases: [id, semanticId],
+            target_refs: [id || semanticId, semanticId].filter(Boolean),
+            surfaces: [surface],
+            visible,
+            loaded: true,
+            status: element.disabled ? 'disabled' : (visible ? 'ready' : 'hidden'),
+            parent_ref: panel,
+        });
+    });
+
+    // Merge one logical target emitted by multiple providers (for example a
+    // Data Tree row and its loaded 3D mesh).  This keeps every supported
+    // surface while avoiding a prompt-sized duplicate registry.
+    const merged = new Map();
+    candidates.forEach(item => {
+        const key = item.target_refs[0];
+        const current = merged.get(key);
+        if (!current) {
+            merged.set(key, item);
+            return;
+        }
+        current.target_refs = [...new Set([...current.target_refs, ...item.target_refs])].slice(0, 16);
+        current.surfaces = [...new Set([...current.surfaces, ...item.surfaces])].slice(0, 8);
+        current.aliases = [...new Set([...current.aliases, ...item.aliases])].slice(0, 12);
+        current.visible = current.visible || item.visible;
+        current.loaded = current.loaded || item.loaded;
+        if (!current.label && item.label) current.label = item.label;
+    });
+    return [...merged.values()].slice(0, 512);
+}
+window.collectVisualTargetCatalog = collectVisualTargetCatalog;
+
 function collectUIState() {
     // A broken optional presentation field must never prevent a clinical or
     // conversational request from reaching the server. This boundary is
@@ -247,6 +404,7 @@ function _collectUIState() {
     }).length;
     const _canvas3d = document.getElementById('canvas3D');
     const _rendererCanvas3d = _scene3d?.renderer?.domElement;
+    const visualTargetCatalog = collectVisualTargetCatalog();
     return {
         ct_path: gv('ctPath'),
         ctv_path: gv('ctvPath'),
@@ -375,6 +533,10 @@ function _collectUIState() {
             goal: trainingMonitorState.goal || '',
         } : {},
         controls,
+        // Open, runtime-owned location registry.  The model receives stable
+        // identities and state only; pixel coordinates are computed later by
+        // the capture manifest so names can never become guessed locations.
+        visual_target_catalog: visualTargetCatalog,
         viewer: {
             ct_loaded: !!(state && state.ctLoaded),
             ct_shape: (state && state.ctShape) || null,
@@ -399,7 +561,9 @@ function _collectUIState() {
 }
 
 const state = {
-    brainAvailable: false,
+    // Tri-state: null means the lightweight status endpoint intentionally did
+    // not hydrate the model. It must not be rendered as a false "Offline".
+    brainAvailable: null,
     sessionId: 'web',
     metrics: {},
     seeds: [],
@@ -513,6 +677,26 @@ var trainingMonitorState = {
     // one chronological chat message instead of a separate floating gallery.
     screenshotGalleryContext: null,
 };
+
+function updateBrainStatusIndicator(value, source = '') {
+    const available = value === true ? true : (value === false ? false : null);
+    state.brainAvailable = available;
+    const dot = document.getElementById('brainDot');
+    const label = document.getElementById('brainStatusText');
+    if (dot) dot.className = `dot ${available === true ? 'green' : (available === false ? 'yellow' : 'yellow')}`;
+    if (label) {
+        const pair = available === true
+            ? ['在线', 'Online']
+            : (available === false ? ['离线', 'Offline'] : ['检测中', 'Checking']);
+        label.textContent = typeof window._t === 'function' ? window._t(pair[0], pair[1]) : pair[1];
+        label.dataset.i18nZh = pair[0];
+        label.dataset.i18nEn = pair[1];
+        label.dataset.brainState = available === true ? 'online' : (available === false ? 'offline' : 'checking');
+        if (source) label.dataset.brainSource = String(source).slice(0, 80);
+    }
+    return available;
+}
+window.updateBrainStatusIndicator = updateBrainStatusIndicator;
 
 function _clearMonitorFeedbackTimer() {
     if (trainingMonitorState.feedbackTimer) {
@@ -2690,7 +2874,9 @@ function _statusFromWorkspaceSnapshot(workspace, sessionId) {
         ctv_path: value(['ctv_path', 'ctvPath', 'ctv_mask_path', 'ctvMaskPath']),
         oar_path: value(['oar_path', 'oarPath', 'oar_mask_path', 'oarMaskPath']),
         stored_keys: Object.keys(results),
-        brain_available: false,
+        // A persisted workspace snapshot does not instantiate the configured
+        // model. Preserve "unknown" until a real Agent/task reports status.
+        brain_available: null,
         runtime: agent.runtime_state || {},
         workspace: {
             revision: workspace?.session?.revision ?? workspace?.workspace?.revision ?? null,
@@ -2799,7 +2985,7 @@ async function _restoreActiveSessionWorkspace(options = {}) {
         trainingMonitorState.lastFeedbackAt = 0;
         trainingMonitorState.lastScreenshotAt = 0;
     }
-    state.brainAvailable = !!status.brain_available;
+    updateBrainStatusIndicator(status.brain_available, status.lightweight ? 'lightweight-status' : 'status');
     const sessionDisplay = document.getElementById('sessionDisplay');
     if (sessionDisplay) sessionDisplay.textContent = state.sessionId;
     // DICOM-RT metadata is lightweight and case-scoped. Restore its summary
@@ -3468,10 +3654,8 @@ async function init() {
         if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
         const data = await resp.json();
         _statusData = data;
-        state.brainAvailable = data.brain_available;
+        updateBrainStatusIndicator(data.brain_available, 'startup-status');
         state.sessionId = data.session_id || 'web';
-        document.getElementById('brainDot').className = 'dot ' + (data.brain_available ? 'green' : 'yellow');
-        document.getElementById('brainStatusText').textContent = data.brain_available ? _t('在线', 'Online') : _t('离线', 'Offline');
         document.getElementById('sessionDisplay').textContent = state.sessionId;
     }).catch(e => {
         document.getElementById('serverDot').className = 'dot red';
@@ -5467,6 +5651,70 @@ async function _captureDoseOverviewDataUrl() {
     }
 }
 
+function _dataTreeRowSemanticIdentity(row) {
+    const normalize = value => String(value || '').trim().toLowerCase();
+    return {
+        identities: [
+            row?.dataset?.nodeId,
+            row?.dataset?.item,
+            row?.dataset?.objectId,
+            row?.dataset?.organId,
+        ].map(normalize).filter(Boolean),
+        nodeType: normalize(row?.dataset?.nodeType),
+        source: normalize(row?.dataset?.source),
+        organId: normalize(row?.dataset?.organId),
+        text: normalize(row?.textContent).replace(/\s+/g, ' '),
+        group: normalize(row?.closest?.('.tree-group[data-group]')?.dataset?.group),
+    };
+}
+
+function _dataTreeRowMatchesTargetRef(row, targetRef) {
+    const ref = String(targetRef || '').trim().toLowerCase();
+    if (!row || !ref) return false;
+    const semantic = _dataTreeRowSemanticIdentity(row);
+    if (semantic.identities.some(identity => identity === ref
+        || (identity.length >= 4 && ref.length >= 4
+            && (identity.endsWith(ref) || ref.endsWith(identity))))) return true;
+
+    // Active aliases are capabilities, not literal node IDs. Resolve them
+    // against typed live rows. In particular, CTV label 1 is the tumor target;
+    // auxiliary labels emitted by a CTV model must not satisfy that request.
+    if (ref === 'structure:ctv:active') {
+        const primaryCtv = semantic.identities.some(identity =>
+            identity === 'ctv' || identity === 'ctv_1'
+            || identity === 'structure:ctv:1'
+            || identity.endsWith(':ctv:1'));
+        const singleCtv = semantic.group === 'ctv'
+            && semantic.nodeType === 'segmentation'
+            && !semantic.organId.startsWith('ctv_');
+        return primaryCtv || singleCtv;
+    }
+    if (ref === 'structure:oar:active') {
+        return semantic.nodeType === 'oar_mask'
+            || semantic.organId.startsWith('organ_')
+            || semantic.identities.some(identity => identity.startsWith('structure:oar:'));
+    }
+    if (ref === 'group:planning:seeds') {
+        return semantic.nodeType === 'seed'
+            || semantic.identities.some(identity => identity.startsWith('seed'));
+    }
+    if (ref === 'group:planning:needles') {
+        return semantic.nodeType === 'needle'
+            || semantic.identities.some(identity => identity.startsWith('needle'));
+    }
+    if (ref === 'group:planning:trajectories') {
+        return semantic.nodeType === 'trajectory'
+            || semantic.identities.some(identity => identity.startsWith('trajectory'));
+    }
+    if (/(?:surgical|puncture)[_:-]?guide/.test(ref)) {
+        return semantic.nodeType === 'surgical_guide'
+            || semantic.source === 'surgical_guide'
+            || /surgical[_\s-]?guide|puncture[_\s-]?guide|手术导板|穿刺导板/.test(semantic.text);
+    }
+    return false;
+}
+window.matchDataTreeRowTargetRef = _dataTreeRowMatchesTargetRef;
+
 function _dataTreeEvidenceRows(plan = {}) {
     const body = document.querySelector('#dataTreeBody');
     if (!body) return { rows: [], groupLabel: '', requested: [] };
@@ -5485,13 +5733,8 @@ function _dataTreeEvidenceRows(plan = {}) {
         row?.dataset?.objectId,
         row?.dataset?.organId,
     ].map(normalize).filter(Boolean);
-    const requestedMatch = row => {
-        const identities = rowIdentities(row);
-        if (!identities.length || !requestedKeys.size) return false;
-        return identities.some(identity => requestedKeys.has(identity)
-            || [...requestedKeys].some(key => key.length >= 4
-                && (identity.endsWith(key) || key.endsWith(identity))));
-    };
+    const requestedMatch = row => requested.length > 0
+        && requested.some(targetRef => _dataTreeRowMatchesTargetRef(row, targetRef));
     const guideMatch = row => {
         const haystack = [
             row?.dataset?.nodeType,
@@ -5530,7 +5773,7 @@ function _dataTreeEvidenceRows(plan = {}) {
             : guideRows;
         selectedRows = groupRows.length ? groupRows : guideRows;
         groupLabel = groupLabelFor(guideGroup);
-    } else if (!selectedRows.length) {
+    } else if (!requestedKeys.size && !selectedRows.length) {
         const artifactsGroup = body.querySelector('.tree-group[data-group="planning_meshes"]')
             || body.querySelector('.tree-group.planning-active-run');
         if (artifactsGroup) {
@@ -5538,10 +5781,10 @@ function _dataTreeEvidenceRows(plan = {}) {
             groupLabel = groupLabelFor(artifactsGroup);
         }
     }
-    if (!selectedRows.length) {
+    if (!requestedKeys.size && !selectedRows.length) {
         selectedRows = rows.filter(row => row.classList.contains('selected')).slice(0, 18);
     }
-    if (!selectedRows.length) selectedRows = rows.slice(0, 18);
+    if (!requestedKeys.size && !selectedRows.length) selectedRows = rows.slice(0, 18);
 
     // Avoid turning a very large OAR tree into a tiny unreadable poster. Keep
     // requested/guide rows first, then a short amount of hierarchy context.
@@ -5574,13 +5817,7 @@ function _dataTreeRowForTargetRef(targetRef, evidence) {
     const ref = String(targetRef || '').trim().toLowerCase();
     if (!ref) return null;
     const rows = Array.from(document.querySelectorAll('#dataTreeBody .tree-item'));
-    const exact = rows.find(row => _dataTreeRowIdentities(row)
-        .some(identity => identity.toLowerCase() === ref));
-    if (exact) return exact;
-    const compatible = rows.find(row => _dataTreeRowIdentities(row).some(identity => {
-        const key = identity.toLowerCase();
-        return key.length >= 4 && ref.length >= 4 && (key.endsWith(ref) || ref.endsWith(key));
-    }));
+    const compatible = rows.find(row => _dataTreeRowMatchesTargetRef(row, ref));
     if (compatible) return compatible;
     if (/surgical[_:-]?guide|puncture[_:-]?guide/.test(ref)) {
         return evidence?.guideRows?.[0] || null;
@@ -5633,9 +5870,13 @@ async function _prepareLiveDataTreeForScreenshot(plan = {}) {
         .map(ref => _dataTreeRowForTargetRef(ref, evidence))
         .filter(Boolean))];
     if (!targetRows.length) {
-        targetRows.push(...(evidence.requestedRows?.length
-            ? evidence.requestedRows
-            : evidence.guideRows || []).slice(0, 1));
+        targetRows.push(...(evidence.requestedRows || []).slice(0, 1));
+    }
+    if (!targetRows.length && !targetRefs.length) {
+        // Compatibility only for old target-less guide captures. A current
+        // typed request must fail closed rather than borrowing a guide or the
+        // selected row from another turn.
+        targetRows.push(...(evidence.guideRows || []).slice(0, 1));
     }
     if (!targetRows.length) {
         return {
@@ -5877,12 +6118,61 @@ async function _captureScreenshotDataUrl(target, el, plan = {}) {
 }
 
 function _screenshotTargetRefs(plan = {}) {
-    return [...new Set([
+    const rawRefs = [...new Set([
         ...(Array.isArray(plan.target_refs) ? plan.target_refs : []),
         ...(Array.isArray(plan.object_ids) ? plan.object_ids : []),
         ...(Array.isArray(plan.data_tree_node_ids) ? plan.data_tree_node_ids : []),
         ...(Array.isArray(plan.highlight_object_ids) ? plan.highlight_object_ids : []),
     ].map(value => String(value || '').trim()).filter(Boolean))].slice(0, 32);
+    const semanticTargets = [...new Set([
+        ...(Array.isArray(plan.semantic_targets) ? plan.semantic_targets : []),
+        plan.semantic_target,
+    ].map(value => String(value || '').trim().toLowerCase()).filter(Boolean))];
+    const targetSource = String(plan.target_source || '').toLowerCase();
+    const hasLiveTargetSource = targetSource.split(/[+,\s]+/).some(value =>
+        value === 'live_catalog' || value === 'live_discovery'
+    );
+    if (!semanticTargets.length
+        || semanticTargets.includes('dynamic')
+        || hasLiveTargetSource) return rawRefs;
+
+    // ``composite`` describes the presentation of several already-resolved
+    // semantic targets; it is not a wildcard target family.  Once a request
+    // has one or more constrained families, an unknown family must not make
+    // an old guide/seed reference eligible for this turn.  Live catalog IDs
+    // take the explicit branch above and are already validated by the server
+    // and the browser grounding manifest.
+    const constrainedSemantics = semanticTargets.filter(semantic =>
+        semantic !== 'dynamic' && semantic !== 'composite'
+    );
+
+    const matches = (ref, semantic) => {
+        const value = String(ref || '').toLowerCase();
+        if (semantic === 'surgical_guide') return /(?:surgical|puncture)[_:-]?guide/.test(value);
+        if (semantic === 'ctv') return /(?:^|:)structure:ctv:|^ctv[_:-]/.test(value);
+        if (semantic === 'oar') return /(?:^|:)structure:oar:|^organ[_:-]|^oar[_:-]/.test(value);
+        if (semantic === 'seeds') return value === 'seeds' || value.includes('group:planning:seeds') || /^seed[:_-]/.test(value);
+        if (semantic === 'needles') return value === 'needles' || value.includes('group:planning:needles') || /^needle[:_-]/.test(value);
+        if (semantic === 'trajectories') return value.includes('group:planning:trajectories') || /^trajectory[:_-]/.test(value);
+        if (semantic === 'ui_control:viewer.reconstruct3d') return value === 'reconstruct3dbutton' || value === 'viewer.reconstruct3d';
+        // Generic resources and future semantic families are valid only when
+        // the live-catalog branch above resolved their exact stable IDs.
+        return false;
+    };
+    const filtered = constrainedSemantics.length
+        ? rawRefs.filter(ref => constrainedSemantics.some(semantic => matches(ref, semantic)))
+        : rawRefs;
+    if (filtered.length) return filtered.slice(0, 32);
+    const canonical = {
+        surgical_guide: 'surgical_guide:active',
+        ctv: 'structure:ctv:active',
+        oar: 'structure:oar:active',
+        seeds: 'group:planning:seeds',
+        needles: 'group:planning:needles',
+        trajectories: 'group:planning:trajectories',
+        'ui_control:viewer.reconstruct3d': 'reconstruct3DButton',
+    };
+    return constrainedSemantics.map(target => canonical[target]).filter(Boolean).slice(0, 32);
 }
 
 function _screenshotImageDimensions(dataUrl) {
@@ -7748,6 +8038,14 @@ function _normalizeStructuredScreenshotPlan(target, question, options = {}) {
     const requestIntent = String(
         supplied.request_intent || supplied.requestIntent || options.requestIntent || ''
     ).trim().slice(0, 160);
+    const semanticTarget = String(
+        supplied.semantic_target || supplied.semanticTarget || options.semanticTarget || ''
+    ).trim().toLowerCase().slice(0, 160);
+    const semanticTargets = [...new Set([
+        ...(Array.isArray(supplied.semantic_targets) ? supplied.semantic_targets : []),
+        ...(Array.isArray(supplied.semanticTargets) ? supplied.semanticTargets : []),
+        semanticTarget,
+    ].map(value => String(value || '').trim().toLowerCase()).filter(Boolean))].slice(0, 32);
     const preserveCurrentView = supplied.preserve_current_view !== undefined
         || supplied.preserveCurrentView !== undefined
         ? (supplied.preserve_current_view ?? supplied.preserveCurrentView) === true
@@ -7775,6 +8073,12 @@ function _normalizeStructuredScreenshotPlan(target, question, options = {}) {
         analysis_required: supplied.analysis_required ?? supplied.analysisRequired ?? true,
         annotation_policy: annotationPolicy,
         request_intent: requestIntent,
+        semantic_target: semanticTarget || (semanticTargets.length === 1 ? semanticTargets[0] : ''),
+        semantic_targets: semanticTargets,
+        target_query: String(supplied.target_query || supplied.targetQuery || question || '')
+            .trim().slice(0, 8000),
+        target_source: String(supplied.target_source || supplied.targetSource || '')
+            .trim().toLowerCase().slice(0, 80),
         preserve_current_view: preserveCurrentView,
         target_refs: [...new Set([
             ...(Array.isArray(supplied.target_refs) ? supplied.target_refs : []),
@@ -8341,6 +8645,10 @@ async function _interceptScreenshot(target, question, galleryContext, options = 
                         analysis_required: plan.analysis_required !== false,
                         annotation_policy: plan.annotation_policy || 'auto',
                         request_intent: plan.request_intent || plan.requestIntent || '',
+                        semantic_target: plan.semantic_target || plan.semanticTarget || '',
+                        semantic_targets: plan.semantic_targets || plan.semanticTargets || [],
+                        target_query: plan.target_query || plan.targetQuery || plan.question || '',
+                        target_source: plan.target_source || plan.targetSource || '',
                         preserve_current_view: plan.preserve_current_view === true
                             || plan.preserveCurrentView === true,
                         focus_result: captureSpec.__focusResult || null,
@@ -8389,6 +8697,10 @@ async function _interceptScreenshot(target, question, galleryContext, options = 
                             analysis_required: plan.analysis_required !== false,
                             annotation_policy: plan.annotation_policy || 'auto',
                             request_intent: plan.request_intent || plan.requestIntent || '',
+                            semantic_target: plan.semantic_target || plan.semanticTarget || '',
+                            semantic_targets: plan.semantic_targets || plan.semanticTargets || [],
+                            target_query: plan.target_query || plan.targetQuery || plan.question || '',
+                            target_source: plan.target_source || plan.targetSource || '',
                             preserve_current_view: plan.preserve_current_view === true
                                 || plan.preserveCurrentView === true,
                             focus_result: captureSpec.__focusResult || null,
@@ -8400,6 +8712,10 @@ async function _interceptScreenshot(target, question, galleryContext, options = 
                     annotation_policy: plan.annotation_policy || 'auto',
                     visual_purpose: plan.visual_purpose || 'explain',
                     request_intent: plan.request_intent || plan.requestIntent || '',
+                    semantic_target: plan.semantic_target || plan.semanticTarget || '',
+                    semantic_targets: plan.semantic_targets || plan.semanticTargets || [],
+                    target_query: plan.target_query || plan.targetQuery || plan.question || '',
+                    target_source: plan.target_source || plan.targetSource || '',
                     preserve_current_view: plan.preserve_current_view === true
                         || plan.preserveCurrentView === true,
                 },

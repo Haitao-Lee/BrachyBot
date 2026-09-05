@@ -238,10 +238,21 @@ def register_data_routes(
                 "object_id": stable_id,
                 "classification": payload.get("classification"),
             })
+            # A structure move changes the clinical Structure Set.  The normal
+            # memory notification is intentionally debounced for high-frequency
+            # UI edits, but this boundary must survive an immediate server
+            # restart.  Flush after the transaction so the durable snapshot
+            # contains both the classification and the rebuilt effective mask.
+            store.flush_agent_checkpoint(
+                str(user["id"]), session_id, agent,
+                reason="structure.reclassified.durable",
+            )
             return jsonify({
                 "success": True,
                 "session_id": session_id,
                 "object_id": stable_id,
+                "preserved_object_ids": [stable_id],
+                "removed_object_ids": [],
                 "structures": effective.public_catalog(),
                 "invalidated": [
                     "dose", "dvh", "evaluation", "report", "surgical_guide",
@@ -277,10 +288,16 @@ def register_data_routes(
                 "object_ids": stable_ids,
                 "classification": classification,
             })
+            store.flush_agent_checkpoint(
+                str(user["id"]), session_id, agent,
+                reason="structures.reclassified.durable",
+            )
             return jsonify({
                 "success": True,
                 "session_id": session_id,
                 "object_ids": stable_ids,
+                "preserved_object_ids": stable_ids,
+                "removed_object_ids": [],
                 "structures": effective.public_catalog(),
                 "invalidated": [
                     "dose", "dvh", "evaluation", "report", "surgical_guide",
@@ -316,10 +333,20 @@ def register_data_routes(
                 "object_ids": [_generic_mask_object_id(value) for value in raw_ids],
                 "classification": classification,
             })
+            # Classification is a clinical source-of-truth mutation, not a
+            # cosmetic browser move.  Persist it synchronously so a restart
+            # between this response and the debounced checkpoint cannot revert
+            # the selected child to Upload Mask or leave an empty CTV behind.
+            store.flush_agent_checkpoint(
+                str(user["id"]), session_id, agent,
+                reason="generic_masks.reclassified.durable",
+            )
             return jsonify({
                 "success": True,
                 "session_id": session_id,
                 "object_ids": [str(item["object_id"]) for item in updated],
+                "preserved_object_ids": [str(item["object_id"]) for item in updated],
+                "removed_object_ids": [],
                 "generic_masks": updated,
                 "structures": effective.public_catalog(),
                 "invalidated": [

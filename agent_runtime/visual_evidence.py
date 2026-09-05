@@ -27,6 +27,37 @@ _ANNOTATION_POLICIES = {"none", "auto", "required"}
 _VISUAL_PURPOSES = {"overview", "locate", "explain", "compare", "verify", "document"}
 
 
+def _target_ref_matches_semantic(target_ref: str, semantic: str) -> bool:
+    ref = str(target_ref or "").strip().lower()
+    family = str(semantic or "").strip().lower()
+    if not ref or not family:
+        return False
+    if family == "dynamic":
+        return True
+    if family == "composite":
+        # Composite is a presentation mode, not a target family.  The caller
+        # must validate each concrete semantic family or exact live-catalog ID.
+        return False
+    if family == "surgical_guide":
+        return bool(re.search(r"(?:surgical|puncture)[_:-]?guide", ref))
+    if family == "ctv":
+        return ref.startswith("structure:ctv:") or ref.startswith("ctv_")
+    if family == "oar":
+        return ref.startswith("structure:oar:") or ref.startswith(("organ_", "oar_"))
+    if family == "seeds":
+        return ref == "seeds" or ref == "group:planning:seeds" or ref.startswith(("seed:", "seed_"))
+    if family == "needles":
+        return ref == "needles" or ref == "group:planning:needles" or ref.startswith(("needle:", "needle_"))
+    if family == "trajectories":
+        return ref == "group:planning:trajectories" or ref.startswith(("trajectory:", "trajectory_"))
+    if family == "ui_control:viewer.reconstruct3d":
+        return ref in {"reconstruct3dbutton", "viewer.reconstruct3d"}
+    # Future/live families are validated by exact catalog and manifest IDs at
+    # the browser boundary.  An unknown family is not a wildcard and must not
+    # make a stale reference annotatable.
+    return False
+
+
 def _bounded_text(value: Any, limit: int) -> str:
     return str(value or "").strip()[:limit]
 
@@ -244,6 +275,35 @@ def normalize_visual_evidence_context(
         ).lower()
         if purpose not in _VISUAL_PURPOSES:
             purpose = "explain"
+        semantic_target = _bounded_text(
+            item.get("semantic_target", item.get("semanticTarget", "")), 160
+        ).lower()
+        raw_semantic_targets = item.get(
+            "semantic_targets", item.get("semanticTargets", [])
+        )
+        semantic_targets: List[str] = []
+        if isinstance(raw_semantic_targets, (list, tuple)):
+            for value in raw_semantic_targets[:32]:
+                family = _bounded_text(value, 160).lower()
+                if family and family not in semantic_targets:
+                    semantic_targets.append(family)
+        if semantic_target and semantic_target not in semantic_targets:
+            semantic_targets.append(semantic_target)
+        normalized_manifest = _normalize_manifest(
+            item.get("grounding_manifest", item.get("groundingManifest"))
+        )
+        constrained_families = [
+            family for family in semantic_targets
+            if family not in {"", "dynamic", "composite"}
+        ]
+        if constrained_families:
+            for target in normalized_manifest.get("targets", []):
+                if any(_target_ref_matches_semantic(
+                    target.get("target_ref", ""), family
+                ) for family in constrained_families):
+                    continue
+                target["annotatable"] = False
+                target["reason"] = "semantic_target_mismatch"
         evidence.append({
             "attachment_id": _safe_id(
                 item.get("attachment_id", item.get("attachmentId", item.get("id", f"evidence-{index}")))
@@ -258,8 +318,14 @@ def normalize_visual_evidence_context(
             ) is not False,
             "planning_id": _safe_id(item.get("planning_id", item.get("planningId")), 180),
             "data_version": _safe_id(item.get("data_version", item.get("dataVersion")), 180),
-            "grounding_manifest": _normalize_manifest(
-                item.get("grounding_manifest", item.get("groundingManifest"))
+            "grounding_manifest": normalized_manifest,
+            "semantic_target": semantic_target,
+            "semantic_targets": semantic_targets,
+            "target_query": _bounded_text(
+                item.get("target_query", item.get("targetQuery", parent_request)), 8000
+            ),
+            "target_source": _bounded_text(
+                item.get("target_source", item.get("targetSource", "")), 80
             ),
             "authoritative_case_state": _normalize_authoritative_case_state(
                 item.get("authoritative_case_state", item.get("authoritativeCaseState"))
@@ -308,6 +374,10 @@ def build_visual_evidence_prompt(context: Dict[str, Any], response_language: str
                 "title": item.get("title"),
                 "annotation_policy": item.get("annotation_policy"),
                 "visual_purpose": item.get("visual_purpose"),
+                "semantic_target": item.get("semantic_target"),
+                "semantic_targets": item.get("semantic_targets"),
+                "target_query": item.get("target_query"),
+                "target_source": item.get("target_source"),
                 "grounding_manifest": item.get("grounding_manifest"),
                 "authoritative_case_state": item.get("authoritative_case_state"),
             }
@@ -345,7 +415,10 @@ def build_visual_evidence_prompt(context: Dict[str, Any], response_language: str
         "eligible Data Tree row and explain how to show it, or return no mark. Annotation_policy=none forbids "
         "marks. Annotation_policy=required still does not override these visibility rules. Use box for UI/Data "
         "Tree rows, arrow for a small 3D target, ellipse for a broad irregular target, and at most three marks "
-        "per image. Mention uncertainty instead of inventing details.\n"
+        "per image. semantic_target/semantic_targets and target_query describe the CURRENT request. Never "
+        "replace them with a different object merely because another manifest label is available. If no "
+        "manifest target belongs to the current request, return no mark and say that the requested object "
+        "was not found or could not be verified in the current UI. Mention uncertainty instead of inventing details.\n"
         f"Return exactly one envelope and no prose outside it:\n"
         f"<{VISUAL_RESPONSE_PROTOCOL_MARKER}>\n"
         '{"answer_text":"...","attachments":[{"attachment_id":"...","annotate":true,'

@@ -1114,6 +1114,12 @@ function _visualEvidenceTargetTerms(attachment) {
         metadata.title,
         metadata.label,
         attachment?.target,
+        attachment?.semantic_target,
+        ...(Array.isArray(attachment?.semantic_targets) ? attachment.semantic_targets : []),
+        attachment?.target_query,
+        metadata.semantic_target,
+        ...(Array.isArray(metadata.semantic_targets) ? metadata.semantic_targets : []),
+        metadata.target_query,
         ...targets.flatMap(target => [
             target?.label,
             target?.target_ref || target?.targetRef,
@@ -1255,9 +1261,21 @@ function _visualEvidenceFallbackResponse(evidence, sessionId, responseLanguage =
         || item.view_metadata?.visual_purpose || item.viewMetadata?.visualPurpose || ''
     ).toLowerCase() === 'locate');
     if (isLocate && markedCount > 0) {
+        const locatedLabels = [...new Set(items.flatMap(attachment => {
+            const metadata = attachment.view_metadata || attachment.viewMetadata || {};
+            const manifest = metadata.grounding_manifest || metadata.groundingManifest
+                || attachment.grounding_manifest || attachment.groundingManifest || {};
+            return (Array.isArray(manifest.targets) ? manifest.targets : [])
+                .filter(target => target?.visible === true)
+                .map(target => String(target?.label || '').replace(/\s+/g, ' ').trim())
+                .filter(Boolean);
+        }))].slice(0, 4);
+        const subject = locatedLabels.length
+            ? locatedLabels.join(zh ? '、' : ', ')
+            : (zh ? '所请求的对象' : 'the requested object');
         return (zh
-            ? '我已根据当前实际显示的界面定位目标；截图中的标记直接落在经过状态核验的 Viewer 对象或 Data Tree 行上：'
-            : 'I located the target from the currently displayed interface; the marks are anchored to verified Viewer objects or live Data Tree rows:')
+            ? `已在当前实际界面中定位到${subject}。标记直接锚定到经过核验的 Viewer 对象或真实 Data Tree 行：`
+            : `I located ${subject} in the currently displayed interface. Each mark is anchored to a verified Viewer object or live Data Tree row:`)
             + `\n\n${rows.map(row => `- ${row}`).join('\n')}`
             + (requestedCount > markedCount
                 ? `\n\n${zh ? '对不可见或未加载目标没有强行标注，避免把错误位置当成事实。' : 'Hidden or unloaded targets were not marked, so an incorrect location is not presented as fact.'}`
@@ -1765,6 +1783,17 @@ function _visualEvidenceDescriptor(item, index = 0, includeAll = false) {
         || item.authoritative_case_state
         || item.authoritativeCaseState
         || null;
+    const semanticTarget = String(
+        item.semantic_target || item.semanticTarget
+        || metadata.semantic_target || metadata.semanticTarget || ''
+    ).trim().toLowerCase();
+    const semanticTargets = [...new Set([
+        ...(Array.isArray(item.semantic_targets) ? item.semantic_targets : []),
+        ...(Array.isArray(item.semanticTargets) ? item.semanticTargets : []),
+        ...(Array.isArray(metadata.semantic_targets) ? metadata.semantic_targets : []),
+        ...(Array.isArray(metadata.semanticTargets) ? metadata.semanticTargets : []),
+        semanticTarget,
+    ].map(value => String(value || '').trim().toLowerCase()).filter(Boolean))].slice(0, 32);
     const manifestTargets = Array.isArray(manifest?.targets) ? manifest.targets : [];
     const annotatableCount = manifestTargets.filter(target => target?.annotatable === true).length;
     const score = (annotationPolicy === 'required' ? 100 : annotationPolicy === 'auto' ? 20 : 0)
@@ -1787,6 +1816,16 @@ function _visualEvidenceDescriptor(item, index = 0, includeAll = false) {
         data_version: String(item.data_version || item.dataVersion || metadata.data_version || metadata.dataVersion || ''),
         grounding_manifest: manifest,
         authoritative_case_state: authoritativeCaseState,
+        semantic_target: semanticTarget,
+        semantic_targets: semanticTargets,
+        target_query: String(
+            item.target_query || item.targetQuery
+            || metadata.target_query || metadata.targetQuery || ''
+        ).trim().slice(0, 8000),
+        target_source: String(
+            item.target_source || item.targetSource
+            || metadata.target_source || metadata.targetSource || ''
+        ).trim().slice(0, 80),
     };
 }
 
@@ -2780,6 +2819,9 @@ async function sendChat(prefill, options) {
             // Server didn't stream — fall back to plain JSON
             if (thinkingEl && typeof removeThinkingIndicator === 'function') removeThinkingIndicator(thinkingEl);
             const data = await resp.json().catch(() => null);
+            if (data && Object.prototype.hasOwnProperty.call(data, 'brain_available')) {
+                window.updateBrainStatusIndicator?.(data.brain_available, 'chat-response');
+            }
             const presentation = await _presentJsonSessionContent(data?.steps, turnSessionId, turnIdentity);
             const uiActions = await _executeJsonUIActions(data?.steps, turnSessionId);
             const uiFailure = uiActions.failed
@@ -2914,6 +2956,9 @@ async function sendChat(prefill, options) {
                     }
 
                     if (currentEvent === 'task_meta' && data) {
+                        if (Object.prototype.hasOwnProperty.call(data, 'brain_available')) {
+                            window.updateBrainStatusIndicator?.(data.brain_available, 'chat-task');
+                        }
                         if (data.task_id && data.session_id) {
                             turnTaskId = String(data.task_id);
                             window._sessionChatTaskIds[data.session_id] = data.task_id;
@@ -2924,6 +2969,12 @@ async function sendChat(prefill, options) {
                             }
                         }
                         if (!text && data.message) text = String(data.message);
+                    }
+                    if (currentEvent === 'brain_status' && data) {
+                        const available = Object.prototype.hasOwnProperty.call(data, 'available')
+                            ? data.available : data.brain_available;
+                        window.updateBrainStatusIndicator?.(available, data.source || 'agent');
+                        continue;
                     }
                     if (currentEvent === 'start' && data) {
                         // The start event carries the dialogue language for
@@ -3171,6 +3222,10 @@ async function sendChat(prefill, options) {
                                     data_tree_node_ids: _ssPlan.data_tree_node_ids || [],
                                     focus: _ssPlan.focus || {},
                                     request_intent: _ssPlan.request_intent || _ssPlan.requestIntent || '',
+                                    semantic_target: _ssPlan.semantic_target || _ssPlan.semanticTarget || '',
+                                    semantic_targets: _ssPlan.semantic_targets || _ssPlan.semanticTargets || [],
+                                    target_query: _ssPlan.target_query || _ssPlan.targetQuery || '',
+                                    target_source: _ssPlan.target_source || _ssPlan.targetSource || '',
                                     preserve_current_view: _ssPlan.preserve_current_view === true
                                         || _ssPlan.preserveCurrentView === true,
                                     visual_purpose: _ssPlan.visual_purpose || _ssPlan.visualPurpose || '',
@@ -4220,6 +4275,9 @@ window.resumeSessionChatTask = async function resumeSessionChatTask(options = {}
         // flight. Do not attach this replay to another case's chat shell.
         if (activeSessionId !== sessionId) return false;
         const task = payload?.task;
+        if (task && Object.prototype.hasOwnProperty.call(task, 'brain_available')) {
+            window.updateBrainStatusIndicator?.(task.brain_available, 'task-resume');
+        }
         // The server owns task identity. Browser memory and a workspace
         // checkpoint are only hints because either can be stale after a
         // refresh, a case switch, or a fast task finalization race.

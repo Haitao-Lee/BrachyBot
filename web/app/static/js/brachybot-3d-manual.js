@@ -4198,10 +4198,32 @@ function _screenshot3DIdentityFor(id, mesh) {
     }
     if ((type === 'needle' || String(id).startsWith('needle_'))
         && mesh?.userData?.type !== 'needle_handle') {
-        identities.push(`needle:${id}`, 'needles', 'group:planning:needles');
+        identities.push(
+            `needle:${id}`,
+            'needles',
+            'group:planning:needles',
+            // The rendered puncture line is also the scene representation of
+            // its planned trajectory. Keep both semantic capabilities on the
+            // same stable object rather than inventing duplicate geometry.
+            'group:planning:trajectories',
+        );
     }
-    if (String(id).startsWith('ctv_')) identities.push(`structure:ctv:${String(id).replace('ctv_', '')}`);
-    if (String(id).startsWith('organ_')) identities.push(`structure:oar:${String(id).replace('organ_', '')}`);
+    if (String(id).startsWith('ctv_')) {
+        const labelId = String(id).replace('ctv_', '');
+        identities.push(`structure:ctv:${labelId}`);
+        // CTV label 1 is the tumor target by the label-volume contract; other
+        // labels in the same model output can be vessels or auxiliary anatomy
+        // and must not be boxed when the user asks where the tumor is.
+        if (labelId === '1' || Number(mesh?.userData?.labelId) === 1) {
+            identities.push('structure:ctv:active');
+        }
+    }
+    if (String(id).startsWith('organ_')) {
+        identities.push(
+            `structure:oar:${String(id).replace('organ_', '')}`,
+            'structure:oar:active',
+        );
+    }
     return [...new Set(identities)];
 }
 
@@ -4330,14 +4352,85 @@ function _unionNormalizedBounds(boundsList) {
     return [left, top, right - left, bottom - top].map(value => Number(value.toFixed(6)));
 }
 
+function _screenshot3DObjectEntries() {
+    const results = [];
+    const seenObjects = new Set();
+    Object.entries(scene3D?.meshes || {}).forEach(([ownerId, ownerMesh]) => {
+        if (!ownerMesh) return;
+        const append = (id, mesh, isPart = false) => {
+            if (!mesh || seenObjects.has(mesh)) return;
+            const identities = _screenshot3DIdentityFor(id, mesh);
+            if (!identities.length) return;
+            seenObjects.add(mesh);
+            results.push({
+                id: String(id || ownerId),
+                mesh,
+                ownerId: String(ownerId),
+                ownerMesh,
+                identities,
+                isPart,
+            });
+        };
+        append(ownerId, ownerMesh, false);
+        ownerMesh.traverse?.(child => {
+            if (child === ownerMesh) return;
+            const childId = child?.userData?.objectId
+                || child?.userData?.nodeId
+                || child?.userData?.id
+                || child?.userData?.seedId
+                || child?.userData?.needleId
+                || child?.userData?.partId
+                || '';
+            // Geometry internals without a stable semantic identity are not
+            // exposed as locatable parts.  Plug-ins can opt in by publishing
+            // any of the stable userData IDs above; no central whitelist or
+            // coordinate registration is required.
+            if (childId) append(childId, child, true);
+        });
+    });
+    return results;
+}
+
+function _screenshot3DFamily(entry) {
+    const identities = entry?.identities || [];
+    if (identities.includes('surgical_guide:active')) return 'surgical_guide';
+    if (identities.some(value => value.startsWith('structure:ctv:'))) return 'ctv';
+    if (identities.some(value => value.startsWith('structure:oar:'))) return 'oar';
+    if (identities.some(value => value.startsWith('seed:'))) return 'seeds';
+    if (identities.some(value => value.startsWith('needle:'))) return 'needles';
+    return String(entry?.mesh?.userData?.type || entry?.mesh?.userData?.source || 'scene-object').toLowerCase();
+}
+
+function get3DVisualTargetCatalog() {
+    return _screenshot3DObjectEntries().slice(0, 512).map(entry => {
+        const state = _screenshot3DVisibility(entry.ownerId, entry.ownerMesh);
+        const label = String(
+            entry.mesh?.userData?.label
+            || entry.mesh?.userData?.name
+            || state.node?.label
+            || entry.id
+        ).replace(/\s+/g, ' ').trim().slice(0, 160);
+        return {
+            family: _screenshot3DFamily(entry),
+            kind: entry.isPart ? 'scene-object-part' : 'scene-object',
+            label,
+            target_refs: entry.identities.slice(0, 16),
+            surfaces: ['viewer-3d'],
+            visible: !!state.locatable,
+            loaded: !!state.loaded,
+            status: state.status,
+            owner_ref: entry.ownerId,
+        };
+    });
+}
+window.get3DVisualTargetCatalog = get3DVisualTargetCatalog;
+
 function get3DScreenshotGroundingManifest(objectIds = []) {
     const requested = [...new Set((Array.isArray(objectIds) ? objectIds : [])
         .map(value => String(value || '').trim()).filter(Boolean))].slice(0, 32);
-    const entries = Object.entries(scene3D?.meshes || {});
+    const entries = _screenshot3DObjectEntries();
     const targets = requested.map(targetRef => {
-        const matched = entries.filter(([id, mesh]) =>
-            mesh && _screenshot3DIdentityFor(id, mesh).includes(targetRef)
-        );
+        const matched = entries.filter(entry => entry.identities.includes(targetRef));
         if (!matched.length) {
             return {
                 target_ref: targetRef,
@@ -4357,10 +4450,11 @@ function get3DScreenshotGroundingManifest(objectIds = []) {
                 normalized_bounds: null,
             };
         }
-        const states = matched.map(([id, mesh]) => ({
-            id,
-            mesh,
-            state: _screenshot3DVisibility(id, mesh),
+        const states = matched.map(entry => ({
+            id: entry.id,
+            mesh: entry.mesh,
+            ownerMesh: entry.ownerMesh,
+            state: _screenshot3DVisibility(entry.ownerId, entry.ownerMesh),
         }));
         const eligible = states.filter(entry => entry.state.locatable);
         const bounds = _unionNormalizedBounds(eligible.map(entry => _project3DObjectBounds(entry.mesh)));
