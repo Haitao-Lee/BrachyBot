@@ -397,7 +397,7 @@ def test_viewer_result_display_is_a_provider_independent_ui_action():
     assert result.metadata["actions"] == calls[0]["params"]["actions"]
     zh = ToolResultPipeline.format("ui_controller", result, "zh")
     en = ToolResultPipeline.format("ui_controller", result, "en")
-    assert "Viewer" in zh
+    assert "查看器" in zh
     assert "规划结果" in zh
     assert "planning result" in en
 
@@ -514,7 +514,7 @@ def test_viewer_script_dependency_contract_is_cache_busted_and_syntax_safe():
     # versions whenever this cross-bundle contract changes, otherwise an old
     # 3D bundle can coexist with a new UI action bundle and hide its parse
     # failure as a missing global helper.
-    assert 'brachybot-ui-api.js?v=62' in index
+    assert 'brachybot-ui-api.js?v=63' in index
     assert 'brachybot-3d-manual.js?v=82' in index
     assert "window._normalizeTrajectoryId = function _normalizeTrajectoryId" in ui_api
 
@@ -657,7 +657,99 @@ def test_ui_controller_registers_manual_mask_commands():
 
     assert "annotate" in CONTROL_REGISTRY["viewer.tool"]["values"]
     assert "eraser" in CONTROL_REGISTRY["viewer.tool"]["values"]
+    assert "sat3d_positive" in CONTROL_REGISTRY["viewer.tool"]["values"]
+    assert "sat3d_negative" in CONTROL_REGISTRY["viewer.tool"]["values"]
     assert CONTROL_REGISTRY["mask.move"]["values"] == ["ctv", "oar"]
+    assert CONTROL_REGISTRY["mask.move"]["structured_value"] is True
+
+
+def test_ui_operation_resolver_uses_live_capabilities_and_never_mutates_for_questions():
+    from agent_runtime.ui_operations import resolve_ui_operation_request
+
+    catalog = [
+        {
+            "ref": "dom:oar-opacity",
+            "label": "OAR opacity",
+            "label_zh": "OAR透明度",
+            "tag": "input",
+            "type": "range",
+            "group": "oar",
+            "semantic_property": "opacity",
+            "action": {"target": "ui.control", "command": "set", "semantic_property": "opacity"},
+        },
+        {
+            "ref": "dom:report-template",
+            "label": "Report template",
+            "tag": "select",
+            "options": [{"value": "liver", "label": "Liver"}],
+            "semantic_property": "action",
+            "action": {"target": "ui.control", "command": "select", "semantic_property": "action"},
+        },
+    ]
+
+    opacity = resolve_ui_operation_request("请将所有OAR设为半透明", {"ui_operation_catalog": catalog})
+    assert opacity and opacity["ambiguous"] is False
+    assert opacity["actions"][0]["target"] == "ui.control"
+    assert '"ref":"dom:oar-opacity"' in opacity["actions"][0]["value"]
+    assert '"value":50' in opacity["actions"][0]["value"]
+
+    selection = resolve_ui_operation_request("选择报告模板 liver", {"ui_operation_catalog": catalog})
+    assert selection and selection["ambiguous"] is False
+    assert '"ref":"dom:report-template"' in selection["actions"][0]["value"]
+    assert '"value":"liver"' in selection["actions"][0]["value"]
+
+    # A location/capability question must be left to the read/help and
+    # screenshot routes; it must never be converted into a click action.
+    assert resolve_ui_operation_request("请问3D重建按钮在哪里", {"ui_operation_catalog": catalog}) is None
+
+
+def test_ui_operation_resolver_preserves_live_fixed_values_and_event_boundaries():
+    import json
+
+    from agent_runtime.ui_operations import resolve_ui_operation_request
+
+    catalog = [
+        {
+            "ref": "dom:panel-report",
+            "label": "Report",
+            "label_zh": "报告",
+            "tag": "button",
+            "semantic_property": "panel",
+            "action": {"target": "panel", "command": "switch", "value": "report", "semantic_property": "panel"},
+        },
+        {
+            "ref": "dom:viewer-fullscreen",
+            "label": "3D viewer",
+            "label_zh": "三维查看器",
+            "tag": "button",
+            "semantic_property": "layout",
+            "action": {"target": "viewer.fullscreen", "command": "toggle", "value": "3d", "semantic_property": "layout"},
+        },
+        {
+            "ref": "dom:viewer-canvas",
+            "label": "Viewer canvas",
+            "tag": "canvas",
+            "semantic_property": "action",
+            "registered_events": ["pointerdown"],
+            "action": {"target": "ui.control", "command": "pointerdown", "semantic_property": "action"},
+        },
+    ]
+
+    panel = resolve_ui_operation_request("切换到报告面板", {"ui_operation_catalog": catalog})
+    assert panel and panel["confidence"] >= 0.75
+    assert panel["actions"] == [{"target": "panel", "command": "switch", "value": "report"}]
+
+    fullscreen = resolve_ui_operation_request("最大化3D viewer", {"ui_operation_catalog": catalog})
+    assert fullscreen and fullscreen["confidence"] >= 0.75
+    assert fullscreen["actions"] == [{"target": "viewer.fullscreen", "command": "toggle", "value": "3d"}]
+
+    pointer = resolve_ui_operation_request(
+        "在Viewer canvas执行pointerdown，坐标120,80",
+        {"ui_operation_catalog": catalog},
+    )
+    assert pointer and pointer["ambiguous"] is False
+    assert pointer["actions"][0]["command"] == "pointerdown"
+    assert json.loads(pointer["actions"][0]["value"])["value"] == {"x": 120.0, "y": 80.0}
 
 
 def test_ui_controller_registers_parameter_targets():
@@ -690,6 +782,15 @@ def test_ui_controller_registers_parameter_targets():
         "value": '{"id":"organ_1","color":"#ff0000"}',
     }])
     assert ok.success is True
+    ok = tool.execute(actions=[{
+        "target": "mask.move", "command": "set",
+        "value": '{"id":"mask_1","destination":"ctv"}',
+    }])
+    assert ok.success is True
+    bad_structured = tool.execute(actions=[{
+        "target": "mask.move", "command": "set", "value": "ctv-ish",
+    }])
+    assert bad_structured.success is False
     ok = tool.execute(actions=[{
         "target": "report.field.set", "command": "set",
         "value": '{"key":"planning.prescriptionGy","value":120}',

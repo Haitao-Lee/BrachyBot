@@ -22,6 +22,7 @@ from agent_runtime.turn_policy import (
     resolve_report_request_action,
     resolve_session_content_target,
     resolve_session_visual_location_request,
+    resolve_ui_operation_request,
     _has_visual_annotation_request,
 )
 from plans.dose_pre.model_loader import resolve_prescription_gy
@@ -679,6 +680,43 @@ print(json.dumps(result))
                 ),
             }]
 
+        # UI mutations use the same capability contract as the local turn
+        # policy.  Resolve them before the legacy clinical keyword scan so a
+        # command mentioning OAR/Viewer cannot fall into ui_content or a
+        # segmentation route.  Only a unique, high-confidence capability is
+        # executed here; an unresolved request remains available to the
+        # inspector-driven semantic path.
+        active_policy = getattr(self, "_active_turn_policy", None)
+        ui_operation = getattr(active_policy, "ui_operation", None)
+        if not isinstance(ui_operation, dict):
+            ui_operation = resolve_ui_operation_request(message, ui_state=ui_state)
+        ui_actions = ui_operation.get("actions") if isinstance(ui_operation, dict) else None
+        ui_confidence = float((ui_operation or {}).get("confidence") or 0.0) if isinstance(ui_operation, dict) else 0.0
+        if (
+            isinstance(ui_actions, list)
+            and ui_actions
+            and not (ui_operation or {}).get("ambiguous")
+            and ui_confidence >= 0.75
+        ):
+            # Preserve the historical trace identity for this already
+            # published typed capability.  The routing decision is still made
+            # by the live/typed capability contract; this identifier is only
+            # a compatibility label for existing trace consumers.
+            trace_id = "tool_direct_ui_operation"
+            if len(ui_actions) == 1:
+                first_action = ui_actions[0] if isinstance(ui_actions[0], dict) else {}
+                if (
+                    first_action.get("target") == "tree.group.reconstruct3d"
+                    and first_action.get("command") == "run"
+                    and first_action.get("value") == "oar"
+                ):
+                    trace_id = "tool_ui_reconstruct_all_oar"
+            return [{
+                "id": trace_id,
+                "tool": "ui_controller",
+                "params": {"actions": ui_actions},
+            }]
+
         msg = message.strip().lower()
         generic_target = self._open_segmentation_target(message)
         ct_path = self.memory.retrieve("ct_path") or ""
@@ -735,29 +773,6 @@ print(json.dumps(result))
                 "surgical_guide",
             })
         )
-
-        # Explicit reconstruction commands are deterministic UI actions, not
-        # clinical segmentation requests. Route them directly so an existing
-        # uploaded OAR mask is reconstructed instead of being sent through
-        # the LLM's segmentation/completeness path.
-        wants_all_oar_3d = bool(re.search(
-            r"(?:all|every|全部|所有).*(?:oar|organ|危及器官|器官).*(?:3d|3-d|三维).*(?:reconstruct|重建)"
-            r"|(?:3d|3-d|三维).*(?:reconstruct|重建).*(?:all|every|全部|所有).*(?:oar|organ|危及器官|器官)",
-            msg,
-            re.IGNORECASE,
-        ))
-        if wants_all_oar_3d:
-            return [{
-                "id": "tool_ui_reconstruct_all_oar",
-                "tool": "ui_controller",
-                "params": {
-                    "actions": [{
-                        "target": "tree.group.reconstruct3d",
-                        "command": "run",
-                        "value": "oar",
-                    }]
-                },
-            }]
 
         # Materialize an explicitly authorized local business plan before any
         # terminal-action shortcut.  The provider may have emitted only the

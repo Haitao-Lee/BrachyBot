@@ -5365,8 +5365,12 @@ function showGroupContextMenu(x, y, category) {
             <span class="ctx-icon">&#128465;</span> Clear Planning</div>`;
     }
 
-    // Opacity belongs to visual groups only.
-    if (!['image', 'segmentation'].includes(category)) {
+    // Opacity/color belong to groups with a real presentation executor. The
+    // Artifacts group contains durable report/screenshot records, not a
+    // single renderable scene collection; advertising these controls there
+    // used to open a menu whose actions silently fell through to the OAR
+    // branch. Keep the menu and the controller catalogue in lock-step.
+    if (!['image', 'segmentation', 'artifacts'].includes(category)) {
         items += `<div class="ctx-menu-sep"></div>`;
         items += `<div class="ctx-menu-item" style="opacity:0.5;cursor:default;font-size:0.6rem;">
             <span class="ctx-icon">&#127912;</span> Opacity</div>`;

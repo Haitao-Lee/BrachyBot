@@ -1214,20 +1214,6 @@ class ToolResultPipeline:
                 else (result.message or "Document metadata extracted.")
             )
 
-        visual_catalog = ui_state.get("visual_target_catalog")
-        if isinstance(visual_catalog, list):
-            visible_count = sum(
-                1 for item in visual_catalog
-                if isinstance(item, dict) and item.get("visible") is not False
-            )
-            parts.append(
-                "Live visual target catalog: "
-                f"{len(visual_catalog)} identities ({visible_count} currently visible). "
-                "Use ui_inspector(query='state') to resolve arbitrary current "
-                "Data Tree objects, scene objects/parts, and UI controls to stable IDs; "
-                "an absent target must be reported as not found, never substituted."
-            )
-
         def _vector(key: str, fallback: str = "") -> str:
             value = values.get(key)
             if not isinstance(value, (list, tuple)):
@@ -1593,6 +1579,16 @@ class ToolResultPipeline:
                 return "界面操作未执行：当前请求与可用控件能力不匹配。请说明是展开查看器、适配相机，还是调整图像缩放。"
             return "The UI action was not applied: the request did not match an available control capability. Specify whether to maximize the viewer, fit the camera, or change image magnification."
         if tool_name == "ui_controller":
+            localized = meta.get("display_message_i18n") if isinstance(meta, dict) else None
+            if isinstance(localized, dict):
+                text = str(
+                    localized.get("zh" if lang == "zh" else "en")
+                    or localized.get("en")
+                    or localized.get("zh")
+                    or ""
+                ).strip()
+                if text:
+                    return text
             actions = meta.get("actions") if isinstance(meta, dict) else None
             if isinstance(actions, list) and any(
                 isinstance(action, dict)

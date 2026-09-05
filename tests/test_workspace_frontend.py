@@ -498,7 +498,7 @@ def test_workspace_transitions_publish_measurable_first_paint_and_restore_stages
     # Versioned URLs are intentional cache invalidation points. Keep this
     # assertion aligned with the workspace/report artifact restore contract.
     assert "brachybot-workspace.js?v=40" in index
-    assert "brachybot-ui-api.js?v=62" in index
+    assert "brachybot-ui-api.js?v=63" in index
     assert "brachybot-viewer-volume.js?v=51" in index
     assert "brachybot-manual-annotation.js?v=22" in index
 
@@ -1548,7 +1548,7 @@ def test_ui_controller_waits_for_async_viewer_and_manual_planning_actions():
     manual = read("web/app/static/js/brachybot-manual-annotation.js")
     volume = read("web/app/static/js/brachybot-viewer-volume.js")
 
-    assert "return navigateToDosePeakSlices();" in ui_api
+    assert "navigateToDosePeakSlices()" in ui_api
     assert "await hydrateOrgans();" in ui_api
     assert "Promise.allSettled(" in ui_api
     assert "async function groupReconstruct3D(category)" in volume

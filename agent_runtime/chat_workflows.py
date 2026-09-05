@@ -2728,6 +2728,32 @@ class ChatWorkflowMixin:
             self._finish_turn(response)
             return response
 
+        # A resolved UI operation is already a complete, capability-checked
+        # command.  Execute it locally through the same controller contract
+        # used by the streaming route; do not send it through the LLM again.
+        # This matters when the provider is offline, and also prevents a
+        # command such as "make all OAR semi-transparent" from being reduced
+        # to a read-only structures query by a second model call.
+        if local_policy.intent == "ui_operation" and local_policy.direct_execution:
+            operation = dict(local_policy.ui_operation or {})
+            params = {"actions": list(operation.get("actions") or [])}
+            try:
+                result = self._execute_tool_with_memory("ui_controller", params)
+                response = ToolResultPipeline.format(
+                    "ui_controller", result, self.memory.user_lang,
+                )
+            except Exception as error:
+                logger.exception("UI operation execution failed")
+                response = (
+                    f"界面操作未执行：{error}"
+                    if self.memory.user_lang == "zh"
+                    else f"The UI operation was not applied: {error}"
+                )
+            self.memory.add_message("assistant", response)
+            self._record_experience(message, response)
+            self._finish_turn(response)
+            return response
+
         if not internal_followup and local_policy.intent == "session_content_query":
             target = resolve_session_content_target(message) or "session_summary"
             response = self._session_content_response(target, self.memory.user_lang)
@@ -2736,7 +2762,7 @@ class ChatWorkflowMixin:
             self._finish_turn(response)
             return response
 
-        if self.enhanced and not internal_followup:
+        if getattr(self, "enhanced", None) and not internal_followup:
             self.enhanced.pre_task_hook(message)
 
         if self.brain_available:
@@ -2765,7 +2791,7 @@ class ChatWorkflowMixin:
         if not internal_followup:
             self._record_experience(message, response)
 
-        if self.enhanced and not internal_followup:
+        if getattr(self, "enhanced", None) and not internal_followup:
             tool_chain = []
             tool_results = []
             for step in self.memory.tool_results[-10:]:
@@ -3074,7 +3100,7 @@ class ChatWorkflowMixin:
                 },
             }
 
-        if self.enhanced and not internal_followup:
+        if getattr(self, "enhanced", None) and not internal_followup:
             pre_ctx = self.enhanced.pre_task_hook(message)
             if self._planning_requested(message) and pre_ctx.get("matched_sop"):
                 sop = pre_ctx["matched_sop"]
@@ -3147,7 +3173,7 @@ class ChatWorkflowMixin:
         if not internal_followup:
             self._record_experience(message, response, steps)
 
-        if self.enhanced and not internal_followup:
+        if getattr(self, "enhanced", None) and not internal_followup:
             tool_chain = [s.get("tool", "") for s in steps if s.get("type") == "tool"]
             tool_results = [(s.get("tool", ""), s.get("status") == "done", s.get("result", "")) for s in steps if s.get("type") == "tool"]
             self.enhanced.post_task_hook(
@@ -4093,6 +4119,7 @@ class ChatWorkflowMixin:
                     "dose_recompute",
                     "viewer_display",
                     "session_visual_location_query",
+                    "ui_operation",
                 )
             )
             or _has_explicit_planning_action_plan
@@ -4314,6 +4341,14 @@ class ChatWorkflowMixin:
                         for step in steps
                     ),
                 )
+            elif local_policy.intent == "ui_operation" and _direct_tool_names == {"ui_controller"}:
+                # The capability resolver and browser controller have already
+                # executed and verified the command.  A second synthesis call
+                # would only add latency and could turn a precise state change
+                # into a generic explanation.  The controller's localized
+                # result is the authoritative user-facing acknowledgement.
+                response = raw_response
+                llm_meta["route"] = "direct_ui_operation"
             elif has_planning:
                 response = self._build_planning_report(_lang, steps)
             else:
@@ -4412,7 +4447,7 @@ class ChatWorkflowMixin:
             return
 
         # Enhanced context
-        if self.enhanced and not internal_followup:
+        if getattr(self, "enhanced", None) and not internal_followup:
             pre_ctx = self.enhanced.pre_task_hook(message)
             if self._planning_requested(message) and pre_ctx.get("matched_sop"):
                 sop = pre_ctx["matched_sop"]
@@ -6337,7 +6372,7 @@ class ChatWorkflowMixin:
             status["experiences"] = self.exp_memory.get_summary()
         if self.evolution_engine:
             status["evolution"] = self.evolution_engine.get_evolution_summary()
-        if self.enhanced:
+        if getattr(self, "enhanced", None):
             status["enhanced"] = self.enhanced.get_agent_status()
         return status
 
