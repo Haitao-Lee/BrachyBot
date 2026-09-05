@@ -280,11 +280,18 @@ function renderReportEditor() {
     `);
     // Figures
     const figList = (f.figures || []).map((fig, i) => {
-        const safeImageUrl = _safeReportImageUrl(fig.dataUrl);
+        const persistedFigureUrl = typeof window.resolveSessionScreenshotFigureUrl === 'function'
+            ? window.resolveSessionScreenshotFigureUrl(
+                fig,
+                f.sessionId || (typeof activeSessionId !== 'undefined' ? activeSessionId : ''),
+                { planningId: fig.planningId || fig.planning_id || f.planningId || '' },
+            )
+            : String(fig.dataUrl || fig._serverUrl || '');
+        const safeImageUrl = _safeReportImageUrl(persistedFigureUrl);
         if (!safeImageUrl) return '';
         return `
         <div class="rp-figure-card">
-            <img src="${escHtml(safeImageUrl)}" alt="${escHtml(fig.title || '')}"/>
+            <img data-report-figure-index="${i}" src="${escHtml(safeImageUrl)}" alt="${escHtml(fig.title || '')}"/>
             <div class="rp-figure-meta">
                 <div style="font-weight:500;">${escHtml(fig.title || '(untitled)')}</div>
                 <div class="rp-figure-sub">${fig.axis ? `${fig.axis} slice ${fig.sliceIdx ?? '?'}` : ''} · ${fig.capturedAt ? new Date(fig.capturedAt).toLocaleString() : ''}</div>
@@ -318,6 +325,35 @@ function renderReportEditor() {
     `);
 
     host.innerHTML = html;
+    // Report editor images use the same recovery contract as chat images.
+    // This covers a restore race where the editor rendered a legacy URL
+    // before the case-owned catalog finished hydrating.
+    host.querySelectorAll('img[data-report-figure-index]').forEach(image => {
+        const index = Number(image.getAttribute('data-report-figure-index'));
+        const figure = Number.isInteger(index) ? f.figures?.[index] : null;
+        const candidate = String(figure?.dataUrl || figure?._serverUrl || '').trim();
+        if (!candidate) return;
+        const ownerSessionId = String(
+            f.sessionId || (typeof activeSessionId !== 'undefined' ? activeSessionId : ''),
+        );
+        const planningId = String(figure?.planningId || figure?.planning_id || f.planningId || '');
+        image.addEventListener('error', () => {
+            if (image.dataset.brachyReportRecoveryStarted === 'true'
+                || typeof window.recoverSessionScreenshotImage !== 'function') return;
+            image.dataset.brachyReportRecoveryStarted = 'true';
+            void window.recoverSessionScreenshotImage(
+                image,
+                candidate,
+                ownerSessionId,
+                { planningId },
+            ).catch(() => {
+                image.alt = _reportLang === 'zh'
+                    ? '\u62a5\u544a\u56fe\u6682\u65f6\u65e0\u6cd5\u52a0\u8f7d'
+                    : 'Report figure unavailable';
+                image.style.display = 'none';
+            });
+        }, { once: true });
+    });
     _updateLanguageButtons();
     _updateReportStatusbar();
 }

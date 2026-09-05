@@ -8708,10 +8708,12 @@ function _reportFigureStableKey(figure, index = 0) {
     return `other:${figure?._serverUrl || figure?.dataUrl || figure?.id || index}`;
 }
 
-function _reportFiguresFromArtifactCatalog(ownerSessionId, activePlanningId) {
-    const artifacts = typeof dataTreeState !== 'undefined'
-        && Array.isArray(dataTreeState?.exportArtifacts)
-        ? dataTreeState.exportArtifacts : [];
+function _reportFiguresFromArtifactCatalog(ownerSessionId, activePlanningId, artifactsOverride = null) {
+    const artifacts = Array.isArray(artifactsOverride)
+        ? artifactsOverride
+        : typeof dataTreeState !== 'undefined'
+            && Array.isArray(dataTreeState?.exportArtifacts)
+            ? dataTreeState.exportArtifacts : [];
     return artifacts.map((item, index) => {
         const dataType = String(item?.dataType || item?.type || '');
         const objectId = String(item?.objectId || item?.object_id || '');
@@ -8739,10 +8741,24 @@ function _reportFiguresFromArtifactCatalog(ownerSessionId, activePlanningId) {
             || item?.viewMetadata?.sha256
             || '',
         ).trim().slice(0, 32);
-        const catalogUrl = String(item?.url || item?.screenshot_url || '').trim();
-        const serverUrl = /^\/api\/sessions\/[^/]+\/screenshots\/[A-Za-z0-9_.-]+\.(?:png|jpe?g|webp)(?:\?[^#]*)?$/i.test(catalogUrl)
-            ? catalogUrl
-            : (contentVersion ? `${baseUrl}?v=${encodeURIComponent(contentVersion)}` : baseUrl);
+        const catalogUrl = String(
+            item?.url || item?.screenshot_url || item?.screenshotUrl || '',
+        ).trim();
+        const fallbackUrl = String(
+            item?.dataUrl
+            || item?.data_url
+            || catalogUrl
+            || (contentVersion ? `${baseUrl}?v=${encodeURIComponent(contentVersion)}` : baseUrl),
+        ).trim();
+        const serverUrl = typeof window.resolveSessionScreenshotUrl === 'function'
+            ? (
+                window.resolveSessionScreenshotUrl(
+                    fallbackUrl,
+                    ownerSessionId,
+                    { planningId: ownerPlanningId || activePlanningId, artifacts },
+                ) || fallbackUrl
+            )
+            : fallbackUrl;
         return Object.assign({
             id: `report-artifact-${filename.replace(/[^A-Za-z0-9_-]/g, '_')}`,
             type: 'screenshot',
@@ -8828,7 +8844,7 @@ async function _appendPersistedReportFigures(plan, galleryContext, ownerSessionI
         || form?.active_planning_id
         || ''
     );
-    const figures = formSessionMatches && Array.isArray(form?.figures)
+    let figures = formSessionMatches && Array.isArray(form?.figures)
         ? form.figures.filter(figure => {
             if (!figure || typeof figure !== 'object') return false;
             const figurePlanningId = String(figure.planningId || figure.planning_id || '');
@@ -8836,30 +8852,93 @@ async function _appendPersistedReportFigures(plan, galleryContext, ownerSessionI
         }).slice()
         : [];
 
-    // A report is restored independently from the chat shell.  If a user asks
+    // A report is restored independently from the chat shell. If a user asks
     // for its figures during that narrow window, fall back to the durable
-    // catalog instead of trying to rasterize the report panel or reporting a
-    // false "not loaded" error.
+    // catalog instead of trying to rasterize an unmounted report panel or
+    // reporting a false "not loaded" error.
+    let catalogArtifacts = typeof dataTreeState !== 'undefined'
+        && Array.isArray(dataTreeState?.exportArtifacts)
+        ? dataTreeState.exportArtifacts : [];
     if (typeof hydrateDataTreeArtifactCatalog === 'function'
         && String(ownerSessionId) === String(_activeApiSessionId())) {
-        try { await hydrateDataTreeArtifactCatalog(); } catch (_) {}
+        try {
+            const hydrated = await hydrateDataTreeArtifactCatalog();
+            if (Array.isArray(hydrated)) catalogArtifacts = hydrated;
+        } catch (_) {}
     }
+    if (!Array.isArray(catalogArtifacts)) catalogArtifacts = [];
+
+    const canonicalizeFigure = figure => {
+        const planningId = String(
+            figure?.planningId || figure?.planning_id || activePlanningId || '',
+        );
+        const url = typeof window.resolveSessionScreenshotFigureUrl === 'function'
+            ? window.resolveSessionScreenshotFigureUrl(
+                figure,
+                ownerSessionId,
+                { planningId, artifacts: catalogArtifacts },
+            )
+            : _safePersistedReportFigureUrl(
+                figure?._serverUrl || figure?.dataUrl,
+                ownerSessionId,
+            );
+        return url
+            ? Object.assign({}, figure, { dataUrl: url, _serverUrl: url })
+            : figure;
+    };
+    figures = figures.map(canonicalizeFigure);
+
     const seenUrls = new Set(
-        figures.map(figure => _safePersistedReportFigureUrl(
-            figure?._serverUrl || figure?.dataUrl,
+        figures.map(figure => _canonicalScreenshotFigureUrl(
+            figure,
             ownerSessionId,
+            {
+                planningId: String(figure?.planningId || figure?.planning_id || activePlanningId || ''),
+                artifacts: catalogArtifacts,
+            },
         )).filter(Boolean),
     );
     const seenFigureKeys = new Set(
         figures.map((figure, index) => _reportFigureStableKey(figure, index)),
     );
-    _reportFiguresFromArtifactCatalog(ownerSessionId, activePlanningId).forEach(figure => {
-        const url = _safePersistedReportFigureUrl(figure._serverUrl, ownerSessionId);
+    _reportFiguresFromArtifactCatalog(
+        ownerSessionId,
+        activePlanningId,
+        catalogArtifacts,
+    ).forEach(figure => {
+        const url = _canonicalScreenshotFigureUrl(
+            figure,
+            ownerSessionId,
+            { planningId: activePlanningId, artifacts: catalogArtifacts },
+        );
         const stableKey = _reportFigureStableKey(figure, figures.length);
-        if (!url || seenUrls.has(url) || seenFigureKeys.has(stableKey)) return;
+        const existingIndex = figures.findIndex((current, index) =>
+            _reportFigureStableKey(current, index) === stableKey
+        );
+        if (existingIndex >= 0) {
+            // A cache-backed figure can have a stable report identity but no
+            // usable URL while IndexedDB is still restoring. Fill that exact
+            // slot from the signed catalog instead of letting de-duplication
+            // hide the only recoverable image.
+            const existing = figures[existingIndex];
+            const existingUrl = _canonicalScreenshotFigureUrl(
+                existing,
+                ownerSessionId,
+                { planningId: activePlanningId, artifacts: catalogArtifacts },
+            );
+            if (!existingUrl && url) {
+                figures[existingIndex] = Object.assign({}, figure, existing, {
+                    dataUrl: url,
+                    _serverUrl: url,
+                });
+                seenUrls.add(url);
+            }
+            return;
+        }
+        if (!url || seenUrls.has(url)) return;
         seenUrls.add(url);
         seenFigureKeys.add(stableKey);
-        figures.push(figure);
+        figures.push(Object.assign({}, figure, { dataUrl: url, _serverUrl: url }));
     });
 
     const language = _screenshotLanguage(ownerSessionId, context.responseLanguage);
@@ -8874,7 +8953,16 @@ async function _appendPersistedReportFigures(plan, galleryContext, ownerSessionI
     const attachments = [];
     selectedFigures.forEach(({ figure, index }) => {
         const url = _safePersistedReportFigureUrl(
-            figure._serverUrl || figure.dataUrl,
+            _canonicalScreenshotFigureUrl(
+                figure,
+                ownerSessionId,
+                {
+                    planningId: String(
+                        figure?.planningId || figure?.planning_id || activePlanningId || '',
+                    ),
+                    artifacts: catalogArtifacts,
+                },
+            ),
             ownerSessionId,
         );
         if (!url) return;
@@ -8966,7 +9054,7 @@ function _sessionScreenshotArtifacts(ownerSessionId, activePlanningId, options =
             dataType,
             index,
             isReport,
-            url: String(item?.url || item?.screenshot_url || '') || (() => {
+            url: String(item?.url || item?.screenshot_url || item?.screenshotUrl || '') || (() => {
                 const base = `/api/sessions/${encodeURIComponent(ownerSessionId)}/screenshots/${encodeURIComponent(filename)}`;
                 const version = String(
                     item?.sha256
@@ -9008,7 +9096,17 @@ async function _appendPersistedSessionScreenshots(command, galleryContext, owner
     const selectedArtifacts = _selectSessionContentItems(artifacts, selection);
     const attachments = [];
     selectedArtifacts.forEach((artifact, index) => {
-        const url = _safeSessionScreenshotUrl(artifact.url, ownerSessionId);
+        const url = typeof window.resolveSessionScreenshotUrl === 'function'
+            ? window.resolveSessionScreenshotUrl(
+                artifact.url,
+                ownerSessionId,
+                {
+                    planningId: artifact.planningId || activePlanningId,
+                    artifacts: typeof dataTreeState !== 'undefined'
+                        ? dataTreeState?.exportArtifacts : [],
+                },
+            )
+            : _safeSessionScreenshotUrl(artifact.url, ownerSessionId);
         if (!url) return;
         const title = artifact.isReport
             ? (language === 'zh' ? '\u62a5\u544a\u622a\u56fe' : 'Report figure')
@@ -9084,7 +9182,17 @@ async function _appendReferencedReplyAttachments(command, galleryContext, ownerS
     const attachments = [];
     selected.forEach((rawAttachment, index) => {
         const original = rawAttachment && typeof rawAttachment === 'object' ? rawAttachment : {};
-        const url = _safeReferencedReplyAttachmentUrl(original.url, ownerSessionId);
+        const url = typeof window.resolveSessionScreenshotUrl === 'function'
+            ? window.resolveSessionScreenshotUrl(
+                original.url,
+                ownerSessionId,
+                {
+                    planningId: original.planning_id || original.planningId || '',
+                    artifacts: typeof dataTreeState !== 'undefined'
+                        ? dataTreeState?.exportArtifacts : [],
+                },
+            )
+            : _safeReferencedReplyAttachmentUrl(original.url, ownerSessionId);
         if (!url) return;
         const sourceAttachmentId = String(
             original.id || original.attachment_id || original.attachmentId || url,
@@ -10892,3 +11000,194 @@ window.executeStructuredScreenshotPlan = (plan, context = {}) => _interceptScree
 );
 
 /******** PANEL SWITCHING ********/
+// Durable screenshot URLs are rendered by an image element, so the browser
+// cannot attach the X-API-Key header that the normal fetch wrapper adds to API
+// requests. The server therefore publishes a case-bound sig query parameter
+// in the artifact catalog. Older workspace snapshots can still contain the
+// same URL without that signature (or can contain an obsolete URL which wins
+// de-duplication before the catalog is hydrated). Keep URL validation and
+// catalog repair in one place so report, chat, and referenced reply
+// attachments cannot diverge.
+function _isScreenshotDataUrl(value) {
+    return /^data:image\/(?:png|jpe?g|webp);base64,[a-z0-9+/=\s]+$/i.test(
+        String(value || '').trim(),
+    );
+}
+
+function _parseSessionScreenshotUrl(candidate, ownerSessionId) {
+    const value = String(candidate || '').trim();
+    if (_isScreenshotDataUrl(value)) return { dataUrl: value };
+    if (!value) return null;
+    let parsed;
+    try {
+        parsed = new URL(value, window.location.origin);
+    } catch (_) {
+        return null;
+    }
+    if (parsed.origin !== window.location.origin || parsed.hash) return null;
+    const match = parsed.pathname.match(
+        /^\/api\/sessions\/([^/]+)\/screenshots\/([^/]+)$/i,
+    );
+    if (!match) return null;
+    let sessionId = '';
+    let filename = '';
+    try {
+        sessionId = decodeURIComponent(match[1]);
+        filename = decodeURIComponent(match[2]);
+    } catch (_) {
+        return null;
+    }
+    if (sessionId !== String(ownerSessionId || '')
+        || !/^[A-Za-z0-9_.-]+\.(?:png|jpe?g|webp)$/i.test(filename)) {
+        return null;
+    }
+    return {
+        value: `${parsed.pathname}${parsed.search}`,
+        filename,
+        hasSignature: parsed.searchParams.has('sig'),
+    };
+}
+
+function _screenshotArtifactFilename(item) {
+    const objectId = String(item?.objectId || item?.object_id || '');
+    const raw = objectId.includes(':')
+        ? objectId.split(':').slice(1).join(':')
+        : objectId || item?.filename || item?.name || '';
+    const filename = String(raw || '').split(/[\\/]/).pop() || '';
+    if (/^[A-Za-z0-9_.-]+\.(?:png|jpe?g|webp)$/i.test(filename)) return filename;
+    const url = String(item?.url || item?.screenshot_url || item?.screenshotUrl || item?.dataUrl || '').trim();
+    const match = url.match(/\/screenshots\/([^/?#]+)(?:[?#]|$)/i);
+    if (!match) return '';
+    try {
+        const decoded = decodeURIComponent(match[1]);
+        return /^[A-Za-z0-9_.-]+\.(?:png|jpe?g|webp)$/i.test(decoded) ? decoded : '';
+    } catch (_) {
+        return '';
+    }
+}
+
+function _screenshotArtifactRows(artifacts) {
+    if (Array.isArray(artifacts)) return artifacts;
+    return typeof dataTreeState !== 'undefined'
+        && Array.isArray(dataTreeState?.exportArtifacts)
+        ? dataTreeState.exportArtifacts : [];
+}
+
+function _urlHasScreenshotSignature(value) {
+    try {
+        return new URL(String(value || ''), window.location.origin)
+            .searchParams.has('sig');
+    } catch (_) {
+        return false;
+    }
+}
+
+function _catalogScreenshotUrl(candidate, ownerSessionId, options = {}) {
+    const parsed = _parseSessionScreenshotUrl(candidate, ownerSessionId);
+    if (!parsed) return '';
+    if (parsed.dataUrl) return parsed.dataUrl;
+    const opts = typeof options === 'string' ? { planningId: options } : (options || {});
+    const planningId = String(opts.planningId || opts.planning_id || '').trim();
+    const rows = _screenshotArtifactRows(opts.artifacts);
+    const matches = rows.filter(item => {
+        const rowSessionId = String(item?.session_id || item?.sessionId || '').trim();
+        if (rowSessionId && rowSessionId !== String(ownerSessionId || '')) return false;
+        if (_screenshotArtifactFilename(item).toLowerCase() !== parsed.filename.toLowerCase()) return false;
+        const rowPlanningId = String(item?.planningId || item?.planning_id || '').trim();
+        return !planningId || !rowPlanningId || rowPlanningId === planningId;
+    }).sort((left, right) => {
+        const leftPlanning = String(left?.planningId || left?.planning_id || '').trim();
+        const rightPlanning = String(right?.planningId || right?.planning_id || '').trim();
+        const leftExact = planningId && leftPlanning === planningId ? 1 : 0;
+        const rightExact = planningId && rightPlanning === planningId ? 1 : 0;
+        if (leftExact !== rightExact) return rightExact - leftExact;
+        const leftUrl = String(left?.url || left?.screenshot_url || left?.screenshotUrl || left?.dataUrl || '').trim();
+        const rightUrl = String(right?.url || right?.screenshot_url || right?.screenshotUrl || right?.dataUrl || '').trim();
+        return Number(_urlHasScreenshotSignature(rightUrl)) - Number(_urlHasScreenshotSignature(leftUrl));
+    });
+
+    for (const item of matches) {
+        const dataUrl = String(item?.dataUrl || item?.data_url || '').trim();
+        if (_isScreenshotDataUrl(dataUrl)) return dataUrl;
+        const catalogUrl = String(
+            item?.url || item?.screenshot_url || item?.screenshotUrl || '',
+        ).trim();
+        const catalog = _parseSessionScreenshotUrl(catalogUrl, ownerSessionId);
+        if (!catalog || catalog.filename.toLowerCase() !== parsed.filename.toLowerCase()) continue;
+        // Preserve a known-good signed candidate if a legacy catalog row has
+        // not yet been upgraded by the server-side URL enrichment.
+        if (parsed.hasSignature && !catalog.hasSignature) return parsed.value;
+        return catalog.value;
+    }
+    // A bare URL remains a safe, same-Session fallback. It is deliberately
+    // not rendered as trusted proof: the image renderer will fetch it with
+    // the authenticated request wrapper if an image request gets a 401.
+    return parsed.value;
+}
+
+function _canonicalScreenshotFigureUrl(figure, ownerSessionId, options = {}) {
+    const item = figure && typeof figure === 'object' ? figure : {};
+    const candidates = [
+        item.dataUrl,
+        item.data_url,
+        item._serverUrl,
+        item.serverUrl,
+        item.url,
+        item.original_url,
+    ].map(value => String(value || '').trim()).filter(Boolean);
+    const dataUrl = candidates.find(_isScreenshotDataUrl);
+    if (dataUrl) return dataUrl;
+    const resolved = candidates.map(candidate => _catalogScreenshotUrl(
+        candidate,
+        ownerSessionId,
+        options,
+    )).filter(Boolean);
+    return resolved.find(_urlHasScreenshotSignature) || resolved[0] || '';
+}
+
+window.resolveSessionScreenshotUrl = function resolveSessionScreenshotUrl(
+    candidate,
+    ownerSessionId,
+    options = {},
+) {
+    return _catalogScreenshotUrl(candidate, ownerSessionId, options);
+};
+window.resolveSessionScreenshotFigureUrl = function resolveSessionScreenshotFigureUrl(
+    figure,
+    ownerSessionId,
+    options = {},
+) {
+    return _canonicalScreenshotFigureUrl(figure, ownerSessionId, options);
+};
+
+async function _recoverSessionScreenshotImage(image, candidate, ownerSessionId, options = {}) {
+    if (!image) return '';
+    const resolved = _catalogScreenshotUrl(candidate, ownerSessionId, options);
+    if (!resolved) return '';
+    if (_isScreenshotDataUrl(resolved)) {
+        image.src = resolved;
+        return resolved;
+    }
+    const response = await fetch(resolved, {
+        cache: 'no-store',
+        credentials: 'same-origin',
+    });
+    if (!response.ok) throw new Error(`screenshot_fetch_${response.status}`);
+    const blob = await response.blob();
+    const contentType = String(
+        blob?.type || response.headers.get('Content-Type') || '',
+    ).toLowerCase();
+    if (!contentType.startsWith('image/')) throw new Error('screenshot_not_image');
+    if (!window.URL || typeof window.URL.createObjectURL !== 'function') {
+        throw new Error('screenshot_blob_url_unavailable');
+    }
+    const objectUrl = window.URL.createObjectURL(blob);
+    const previousUrl = image.dataset?.brachyScreenshotObjectUrl || '';
+    if (previousUrl && typeof window.URL.revokeObjectURL === 'function') {
+        try { window.URL.revokeObjectURL(previousUrl); } catch (_) {}
+    }
+    if (image.dataset) image.dataset.brachyScreenshotObjectUrl = objectUrl;
+    image.src = objectUrl;
+    return objectUrl;
+}
+window.recoverSessionScreenshotImage = _recoverSessionScreenshotImage;

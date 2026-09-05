@@ -297,7 +297,7 @@ class Round9RegressionTests(unittest.TestCase):
         )
         self.assertIn("_drawReport3DDoseColorbar(", report)
         self.assertIn("candidate.clone().intersect(context)", report)
-        self.assertIn("brachybot-report-editor.js?v=31", index)
+        self.assertIn("brachybot-report-editor.js?v=32", index)
 
 
 if __name__ == "__main__":

@@ -1867,6 +1867,25 @@
             try { artifacts = await hydrateDataTreeArtifactCatalog(); } catch (_) { artifacts = []; }
         }
         if (!isCurrentReport()) return 0;
+        // The report snapshot may arrive before its raster cache. Repair
+        // every existing figure against the same case/planning catalog
+        // before stable-identity de-duplication runs.
+        const canonicalFigureUrl = figure => {
+            const figurePlanningId = String(
+                figure?.planningId || figure?.planning_id || expectedPlanningId || '',
+            );
+            const url = typeof window.resolveSessionScreenshotFigureUrl === 'function'
+                ? window.resolveSessionScreenshotFigureUrl(
+                    figure,
+                    sessionId,
+                    { planningId: figurePlanningId, artifacts },
+                )
+                : '';
+            return url
+                ? Object.assign({}, figure, { dataUrl: url, _serverUrl: url })
+                : figure;
+        };
+        targetForm.figures = targetForm.figures.map(canonicalFigureUrl);
         const screenshots = artifacts.filter(item => {
             const dataType = String(item?.dataType || item?.type || '');
             const objectId = String(item?.objectId || '');
@@ -1923,18 +1942,24 @@
                 || item?.view_metadata?.sha256
                 || '',
             ).trim().slice(0, 32);
-            const catalogUrl = String(item?.url || item?.screenshot_url || '').trim();
-            const catalogUrlMatchesOwner = (() => {
-                const match = catalogUrl.match(/^\/api\/sessions\/([^/]+)\/screenshots\/[A-Za-z0-9_.-]+\.png(?:\?[^#]*)?$/i);
-                try {
-                    return !!match && decodeURIComponent(match[1]) === String(sessionId || '');
-                } catch (_) {
-                    return false;
-                }
-            })();
-            const serverUrl = catalogUrlMatchesOwner
-                ? catalogUrl
-                : (contentVersion ? `${baseUrl}?v=${encodeURIComponent(contentVersion)}` : baseUrl);
+            const catalogUrl = String(
+                item?.url || item?.screenshot_url || item?.screenshotUrl || '',
+            ).trim();
+            const fallbackUrl = String(
+                item?.dataUrl
+                || item?.data_url
+                || catalogUrl
+                || (contentVersion ? baseUrl + '?v=' + encodeURIComponent(contentVersion) : baseUrl),
+            ).trim();
+            const serverUrl = typeof window.resolveSessionScreenshotUrl === 'function'
+                ? (
+                    window.resolveSessionScreenshotUrl(
+                        fallbackUrl,
+                        sessionId,
+                        { planningId: planningId || expectedPlanningId, artifacts },
+                    ) || fallbackUrl
+                )
+                : fallbackUrl;
             return {
                 id: `restored-report-${filename.replace(/[^a-zA-Z0-9_-]/g, '_')}`,
                 type: 'screenshot',
