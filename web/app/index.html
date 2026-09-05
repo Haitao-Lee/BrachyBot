@@ -653,7 +653,9 @@
                     </div>
                 </div>
 
-                <div class="form-section-title" style="cursor:pointer" onclick="toggleHyperparams()">
+                <div class="form-section-title" style="cursor:pointer" role="button" tabindex="0"
+                     aria-expanded="false" aria-controls="hyperparamsSection"
+                     data-ui-semantic="expansion" onclick="toggleHyperparams()">
                     <span>&#9881; Hyperparameters</span>
                     <span id="hyperparamToggle" style="font-size:0.6rem;color:var(--text-dim);">&#9654;</span>
                 </div>
@@ -800,7 +802,9 @@
                     </button>
                 </div>
 
-                <div class="form-section-title" style="cursor:pointer" onclick="toggleStepButtons()">
+                <div class="form-section-title" style="cursor:pointer" role="button" tabindex="0"
+                     aria-expanded="true" aria-controls="stepButtonsSection"
+                     data-ui-semantic="expansion" onclick="toggleStepButtons()">
                     <span>Step-by-Step (manual)</span>
                     <span id="stepToggle" style="font-size:0.6rem;color:var(--text-dim);">&#9660;</span>
                 </div>
@@ -1567,7 +1571,7 @@
 -->
 <script src="static/js/brachybot-chat-core.js?v=17"></script>
 <script src="static/js/brachybot-chat-todo.js?v=27"></script>
-<script src="static/js/brachybot-ui-api.js?v=62"></script>
+<script src="static/js/brachybot-ui-api.js?v=63"></script>
 <script src="static/js/brachybot-auth.js?v=10"></script>
 <script src="static/js/brachybot-viewer-volume.js?v=51"></script>
 <script src="static/js/brachybot-viewer-layout.js?v=38"></script>

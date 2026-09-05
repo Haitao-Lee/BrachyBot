@@ -45,6 +45,13 @@ capability is derived from the real DOM control or handler and contains the
 exact ui_controller target, command, value, and value semantics. Do not infer
 an action from a translated label or from a keyword-only source match.
 
+The live state also exposes ``ui_operations``.  This is the complete mounted
+operation catalogue: it includes ordinary controls, dynamically rendered Data
+Tree rows/groups, and scene-object/context actions.  Each entry has a stable
+ref and an exact controller action.  Use it as the source of truth for both
+simple controls and context-menu operations; if an entry is unavailable or
+ambiguous, explain that state instead of guessing.
+
 For a question asking where a button/control is, inspect the actual
 action_capabilities first. If a visible control is requested as evidence,
 pass its stable DOM id to ui_screenshot with target=overlay-controls,
@@ -143,7 +150,12 @@ selected row, a previous-turn object, or a semantically neighboring object."""
         return re.sub(r"\s+", " ", text).strip()
 
     @classmethod
-    def _action_from_markup(cls, attrs: Dict[str, str], handler: str = "") -> Optional[Dict[str, Any]]:
+    def _action_from_markup(
+        cls,
+        attrs: Dict[str, str],
+        handler: str = "",
+        role: str = "button",
+    ) -> Optional[Dict[str, Any]]:
         """Translate a real control handler into the controller contract.
 
         This is capability discovery, not a natural-language keyword router:
@@ -165,8 +177,45 @@ selected row, a previous-turn object, or a semantically neighboring object."""
                 action["value_source"] = "control"
             return action
 
+        # A component may publish its complete capability as JSON.  This is
+        # the static counterpart of the live DOM contract and lets plug-ins
+        # add a new operation without extending this inspector's function
+        # name table. Ignore non-JSON intent text rather than treating it as
+        # executable input.
+        declared_action = attrs.get("data-ui-action", "").strip()
+        if declared_action:
+            try:
+                parsed = json.loads(declared_action)
+            except (TypeError, ValueError):
+                parsed = None
+            if isinstance(parsed, dict) and parsed.get("target") and parsed.get("command"):
+                return dict(parsed)
+
         source = str(handler or "").replace("&quot;", '"').replace("&#39;", "'")
         patterns = (
+            (r"setGroupOpacity\(\s*['\"]([^'\"]+)['\"]",
+             lambda m: {"target": "tree.group.opacity", "command": "set",
+                        "value_template": f"{m.group(1)},{{value}}",
+                        "value_source": "control", "semantic_property": "opacity",
+                        "group": m.group(1)}),
+            (r"setGroupVisibility\(\s*['\"]([^'\"]+)['\"]\s*,\s*(true|false)",
+             lambda m: {"target": "tree.group.visibility", "command": "set",
+                        "value": f"{m.group(1)},{'show' if m.group(2).lower() == 'true' else 'hide'}",
+                        "semantic_property": "visibility", "group": m.group(1)}),
+            (r"setGroupViewVisibility\(\s*['\"]([^'\"]+)['\"]\s*,\s*['\"](2d|3d)['\"]",
+             lambda m: {"target": "tree.group.view_visibility", "command": "set",
+                        "value_source": "control", "semantic_property": "visibility",
+                        "group": m.group(1), "view": m.group(2)}),
+            (r"setDataItemVisibility\(\s*['\"]([^'\"]+)['\"]",
+             lambda m: {"target": "tree.visibility", "command": "set",
+                        "value_template": f"{m.group(1)},{{value}}",
+                        "value_source": "control", "semantic_property": "visibility",
+                        "node_id": m.group(1)}),
+            (r"setDataOpacity\(\s*['\"]([^'\"]+)['\"]",
+             lambda m: {"target": "tree.opacity", "command": "set",
+                        "value_template": f"{m.group(1)},{{value}}",
+                        "value_source": "control", "semantic_property": "opacity",
+                        "node_id": m.group(1)}),
             (r"toggleViewerFullscreen\(\s*['\"](axial|sagittal|coronal|3d)['\"]\s*\)",
              lambda m: {"target": "viewer.fullscreen", "command": "toggle", "value": m.group(1)}),
             (r"fitCameraToScene\s*\(\s*\)",
@@ -191,12 +240,181 @@ selected row, a previous-turn object, or a semantically neighboring object."""
              lambda m: {"target": "3d.mesh_opacity", "command": "set", "value_source": "control"}),
             (r"updateDoseOpacity\s*\(",
              lambda m: {"target": "3d.dose_opacity", "command": "set", "value_source": "control"}),
+            (r"setDoseOverlayOpacity\s*\(",
+             lambda m: {"target": "overlay.dose.opacity", "command": "set", "value_source": "control"}),
+            (r"toggleDoseTextureMode\s*\(",
+             lambda m: {"target": "3d.dose_surface", "command": "toggle"}),
+            (r"toggleOverlay\s*\(",
+             lambda m: {"target": "ui.control", "command": "toggle", "value_source": "control",
+                        "semantic_property": "visibility"}),
+            (r"applyViewerSettings\s*\(",
+             lambda m: {"target": "ui.control", "command": "set", "value_source": "control"}),
         )
         for pattern, builder in patterns:
             match = re.search(pattern, source, re.IGNORECASE)
             if match:
                 return builder(match)
+        # Event listeners attached with addEventListener are not recoverable
+        # from static source text.  Still publish the real element as a
+        # generic stable-ref capability; the live browser catalogue will
+        # resolve the exact mounted handler and the controller will dispatch
+        # the same DOM event.  This is the catch-all that keeps new controls
+        # routable without adding a phrase or function-name whitelist.
+        control_type = str(attrs.get("type") or "").lower()
+        role_lower = str(role or "button").lower()
+        if role_lower in {"select", "input", "textarea"} or control_type in {
+            "range", "number", "text", "color", "date", "datetime-local", "file",
+            "checkbox", "radio", "search", "email", "url",
+        }:
+            if role_lower == "select":
+                command = "select"
+            elif control_type in {"checkbox", "radio"}:
+                command = "toggle"
+            elif control_type == "file":
+                command = "click"
+            else:
+                command = "set"
+            return {
+                "target": "ui.control",
+                "command": command,
+                "value_source": "control",
+                "semantic_property": "visibility" if control_type in {"checkbox", "radio"} else None,
+            }
+        if role_lower in {"button", "menuitem", "link", "summary", "canvas"} or any(
+            attrs.get(key) for key in (
+                "id", "title", "aria-label", "data-action", "data-ui-action",
+                "data-node-id", "data-object-id", "data-group", "tabindex",
+                "onclick", "ondblclick", "oncontextmenu", "onkeydown", "onkeyup",
+                "onkeypress", "onwheel", "onscroll", "onsubmit", "onpointerdown",
+                "onpointermove", "onpointerup", "onpointerover", "onpointerout",
+                "onpointercancel", "onpointerenter", "onpointerleave", "onmousedown",
+                "onmousemove", "onmouseup", "onmouseover", "onmouseout", "onmouseenter",
+                "onmouseleave", "onfocus", "onblur", "oninput", "onchange",
+            )
+        ):
+            return {
+                "target": "ui.control",
+                "command": "contextmenu" if attrs.get("oncontextmenu") and not attrs.get("onclick") else "click",
+                "value_source": "control",
+            }
         return None
+
+    @staticmethod
+    def _native_actions_from_markup(
+        attrs: Dict[str, str],
+        primary: Optional[Dict[str, Any]],
+        role: str = "button",
+    ) -> List[Dict[str, Any]]:
+        """Publish every native gesture visible in static markup.
+
+        Static inspection cannot see listeners attached by JavaScript after
+        mount, so the browser catalogue remains authoritative at runtime.
+        It can nevertheless describe the complete *shape* of a control:
+        keyboard, pointer, wheel, drag, focus and value events are all
+        represented here.  This keeps the cold-start/fallback contract
+        aligned with the live executor without maintaining a sentence list.
+        """
+        role_lower = str(role or "button").lower()
+        tag = str(attrs.get("_tag") or role_lower).lower()
+        control_type = str(attrs.get("type") or "").lower()
+        handler_keys = (
+            "onclick", "ondblclick", "oncontextmenu", "onkeydown", "onkeyup",
+            "onkeypress", "onwheel", "onscroll", "onpointerdown",
+            "onpointermove", "onpointerup", "onpointerover", "onpointerout",
+            "onpointercancel", "onpointerenter", "onpointerleave",
+            "onmousedown", "onmousemove", "onmouseup", "onmouseover", "onmouseout",
+            "onmouseenter", "onmouseleave", "ondrag", "ondragstart", "ondragend",
+            "oninput", "onchange", "onsubmit", "onfocus", "onblur",
+        )
+        has = lambda *keys: any(attrs.get(key) for key in keys)
+        actions: List[Dict[str, Any]] = []
+        seen = set()
+
+        def add(command: str, semantic_property: str = "action") -> None:
+            action = {
+                "target": "ui.control",
+                "command": command,
+                "value_source": "control",
+                "semantic_property": semantic_property,
+            }
+            key = (action["target"], action["command"])
+            if primary and key == (primary.get("target"), primary.get("command")):
+                return
+            if key in seen:
+                return
+            seen.add(key)
+            actions.append(action)
+
+        interactive = (
+            tag in {"button", "a", "summary", "canvas", "form"}
+            or role_lower in {"button", "menuitem", "tab", "checkbox", "radio", "switch", "option", "link", "slider"}
+            or has("onclick", "data-node-id", "data-object-id", "data-group", "data-ui-action")
+            or bool(attrs.get("tabindex"))
+        )
+        if interactive and tag != "form":
+            add("click")
+        # Preserve the generic browser operation even when a component has
+        # published an application-specific primary action that the server
+        # registry does not know yet. The live stable ref still points to the
+        # exact input, so set/toggle remains a safe fallback for plug-ins.
+        if tag in {"input", "textarea"} or attrs.get("contenteditable") == "true":
+            add("set")
+        if control_type in {"checkbox", "radio"} or role_lower in {"checkbox", "radio", "switch"}:
+            add("toggle")
+        if tag == "select":
+            add("select")
+        if attrs.get("aria-expanded") is not None or attrs.get("data-ui-semantic", "").lower() == "expansion":
+            for command in ("expand", "collapse", "toggle"):
+                add(command, "expansion")
+        if tag == "select" or control_type in {"range", "number"} or role_lower == "slider":
+            for command in ("next", "prev", "first", "last"):
+                add(command)
+        if tag == "form" or has("onsubmit"):
+            add("submit")
+        if has("ondblclick") or tag == "canvas" or attrs.get("data-doubleclick"):
+            add("doubleclick")
+        if has("oncontextmenu") or attrs.get("data-node-id") or attrs.get("data-object-id") or attrs.get("data-group"):
+            add("contextmenu")
+        if has("onkeydown", "onkeyup", "onkeypress") or tag in {"input", "select", "textarea"} or attrs.get("contenteditable") == "true":
+            add("keypress")
+        if has("onkeydown"):
+            add("keydown")
+        if has("onkeyup"):
+            add("keyup")
+        if has("onwheel", "onscroll") or tag == "canvas":
+            add("scroll")
+        if has("onpointerdown", "onmousedown") or tag == "canvas" or attrs.get("draggable") == "true":
+            add("pointerdown")
+        if has("onpointermove", "onmousemove") or tag == "canvas" or attrs.get("draggable") == "true":
+            add("pointermove")
+        if has("onpointerup", "onmouseup") or tag == "canvas" or attrs.get("draggable") == "true":
+            add("pointerup")
+        for command, key in (
+            ("pointerover", "onpointerover"), ("pointerout", "onpointerout"),
+            ("pointercancel", "onpointercancel"), ("pointerenter", "onpointerenter"),
+            ("pointerleave", "onpointerleave"), ("mousedown", "onmousedown"),
+            ("mousemove", "onmousemove"), ("mouseup", "onmouseup"),
+            ("mouseover", "onmouseover"), ("mouseout", "onmouseout"),
+            ("mouseenter", "onmouseenter"), ("mouseleave", "onmouseleave"),
+        ):
+            if has(key):
+                add(command)
+        if has("ondrag", "ondragstart", "ondragend") or attrs.get("draggable") == "true" or tag == "canvas":
+            add("drag")
+        if control_type in {"range", "number"} or role_lower == "slider":
+            for command in ("increase", "decrease", "increment", "decrement"):
+                add(command)
+        if has("onmouseenter", "onmouseover") or interactive:
+            add("hover")
+        if has("onfocus") or tag in {"input", "select", "textarea", "button"}:
+            add("focus")
+        if has("onblur") or tag in {"input", "select", "textarea", "button"}:
+            add("blur")
+        if has("oninput") or tag in {"input", "select", "textarea"}:
+            add("input")
+        if has("onchange") or tag in {"input", "select", "textarea"}:
+            add("change")
+        return actions
 
     @staticmethod
     def _action_intents(action: Optional[Dict[str, Any]], attrs: Dict[str, str], label: str) -> List[str]:
@@ -222,19 +440,39 @@ selected row, a previous-turn object, or a semantically neighboring object."""
     def _capability_from_control(
         cls, attrs: Dict[str, str], label: str, handler: str = "", role: str = "button"
     ) -> Optional[Dict[str, Any]]:
-        action = cls._action_from_markup(attrs, handler)
+        action = cls._action_from_markup(attrs, handler, role=role)
         if not action:
             return None
         item: Dict[str, Any] = {
             "role": role,
             "id": attrs.get("id") or None,
             "label": label or attrs.get("title") or attrs.get("aria-label") or "",
+            "label_zh": attrs.get("data-i18n-zh") or None,
+            "label_en": attrs.get("data-i18n-en") or None,
             "action": action,
             "semantic_intents": cls._action_intents(action, attrs, label),
         }
         for key in ("title", "aria-label", "min", "max", "step", "type"):
             if attrs.get(key) not in (None, ""):
                 item[key.replace("-", "_")] = attrs[key]
+        item["actions"] = cls._native_actions_from_markup(attrs, action, role=role)
+        # Preserve event attributes in static capability output.  They are
+        # useful to the model and let the resolver distinguish a keyboard or
+        # pointer capability from an ordinary click without reading source
+        # code again.
+        for key in (
+            "onclick", "ondblclick", "oncontextmenu", "onkeydown", "onkeyup",
+            "onkeypress", "onwheel", "onscroll", "onpointerdown",
+            "onpointermove", "onpointerup", "onpointerover", "onpointerout",
+            "onpointercancel", "onpointerenter", "onpointerleave",
+            "onmousedown", "onmousemove", "onmouseup", "onmouseover", "onmouseout",
+            "onmouseenter", "onmouseleave", "ondrag", "ondragstart", "ondragend",
+            "oninput", "onchange", "onsubmit", "onfocus", "onblur",
+            "data-action", "data-ui-action", "data-ui-semantic", "data-control-id",
+            "data-node-id", "data-object-id", "data-group", "data-category",
+        ):
+            if attrs.get(key) not in (None, ""):
+                item[key.replace("-", "_")] = attrs[key][:240]
         if action.get("target") == "viewer.zoom":
             item["value_semantics"] = {
                 "set": "absolute percent",
@@ -293,6 +531,7 @@ selected row, a previous-turn object, or a semantically neighboring object."""
             capability = self._capability_from_control(attrs, label, onclick)
             if capability:
                 button["action"] = capability["action"]
+                button["actions"] = capability.get("actions", [])
                 button["semantic_intents"] = capability["semantic_intents"]
                 elements["action_capabilities"].append(capability)
             elements["buttons"].append(button)
@@ -318,9 +557,66 @@ selected row, a previous-turn object, or a semantically neighboring object."""
             }
             if capability:
                 control["action"] = capability["action"]
+                control["actions"] = capability.get("actions", [])
                 control["semantic_intents"] = capability["semantic_intents"]
                 elements["action_capabilities"].append(capability)
             elements["inputs"].append(control)
+
+        # The shell also contains clickable summaries, canvas surfaces,
+        # Data Tree placeholders and plugin-owned elements that are not
+        # buttons or form controls.  Scan their interactive attributes too;
+        # this is deliberately attribute-driven and therefore continues to
+        # work when a feature adds a new control without changing this file.
+        generic_pattern = re.compile(
+            r"<(?P<tag>div|span|li|a|summary|form|canvas|label|option)\b(?P<attrs>[^>]*)>",
+            re.IGNORECASE | re.DOTALL,
+        )
+        event_names = (
+            "onclick", "ondblclick", "oncontextmenu", "onkeydown", "onkeyup",
+            "onkeypress", "onwheel", "onscroll", "onpointerdown", "onpointermove",
+            "onpointerup", "onpointerover", "onpointerout", "onpointercancel",
+            "onpointerenter", "onpointerleave", "onmousedown", "onmousemove",
+            "onmouseup", "onmouseover", "onmouseout", "ondrag", "ondragstart",
+            "ondragend", "oninput", "onchange", "onsubmit", "onfocus", "onblur",
+            "onmouseenter", "onmouseleave",
+        )
+        for match in generic_pattern.finditer(html):
+            tag = match.group("tag").lower()
+            attrs = self._parse_tag_attributes(match.group("attrs"))
+            attrs["_tag"] = tag
+            interactive = (
+                tag in {"canvas", "summary", "form"}
+                or any(attrs.get(key) for key in event_names)
+                or any(attrs.get(key) for key in (
+                    "role", "tabindex", "draggable", "data-draggable", "data-ui-control",
+                    "data-ui-target", "data-ui-action", "data-action", "data-node-id",
+                    "data-object-id", "data-group", "data-category", "data-control-id",
+                    "data-ui-semantic", "contenteditable",
+                ))
+            )
+            if not interactive:
+                continue
+            label = attrs.get("aria-label") or attrs.get("title") or attrs.get("data-i18n-zh") or attrs.get("id", "")
+            handler = ";".join(attrs.get(key, "") for key in event_names if attrs.get(key))
+            capability = self._capability_from_control(
+                attrs, label, handler, role=attrs.get("role") or tag,
+            )
+            if not capability:
+                continue
+            capability["tag"] = tag
+            capability["id"] = attrs.get("id") or None
+            capability["static_ref"] = (
+                f"dom:{attrs.get('id')}" if attrs.get("id")
+                else f"dom:static:{tag}:{match.start()}"
+            )
+            elements["action_capabilities"].append(capability)
+            elements.setdefault("interactive_elements", []).append({
+                "tag": tag,
+                "id": attrs.get("id") or None,
+                "label": label,
+                "action": capability["action"],
+                "actions": capability.get("actions", []),
+            })
 
         # Find viewer cards
         viewer_pattern = r'class="viewer-card[^"]*"[^>]*id="([^"]*)"'
@@ -470,6 +766,11 @@ selected row, a previous-turn object, or a semantically neighboring object."""
             # loaded scene objects, user-created names, object parts, and
             # rendered controls with stable screenshot identities.
             "visual_targets": [],
+            # Populated from the live browser operation catalogue.  This is
+            # deliberately separate from visual_targets: a node can be a valid
+            # screenshot target without exposing an executable operation, and
+            # a toolbar control can be executable without being a scene object.
+            "ui_operations": [],
         }
 
         if agent and hasattr(agent, 'memory'):
@@ -489,6 +790,20 @@ selected row, a previous-turn object, or a semantically neighboring object."""
                 if isinstance(catalog, list):
                     state["visual_targets"] = [
                         item for item in catalog[:512] if isinstance(item, dict)
+                    ]
+                # The live operation catalogue is an independent contract.
+                # Do not make it conditional on visual-target publication:
+                # during hydration, a page may expose executable controls
+                # before it has rendered any scene/tree target (and a page
+                # may legitimately have no visual target at all).
+                operations = (
+                    ui_state.get("ui_operation_catalog")
+                    or ui_state.get("ui_operations")
+                    or ui_state.get("action_capabilities")
+                )
+                if isinstance(operations, list):
+                    state["ui_operations"] = [
+                        item for item in operations[:4096] if isinstance(item, dict)
                     ]
                 planning_state = ui_state.get("planning") if isinstance(ui_state.get("planning"), dict) else {}
                 plan_mode = ui_state.get("plan_mode")

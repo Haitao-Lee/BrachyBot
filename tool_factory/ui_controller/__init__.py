@@ -12,7 +12,7 @@ Architecture:
 
 import json
 import logging
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, Tuple
 from tool_factory import BaseTool, ToolResult
 
 logger = logging.getLogger(__name__)
@@ -113,7 +113,10 @@ CONTROL_REGISTRY = {
     },
     "viewer.tool": {
         "commands": ["set"],
-        "values": ["crosshair", "measure", "angle", "rect", "zoombox", "annotate", "eraser"],
+        "values": [
+            "crosshair", "measure", "angle", "rect", "zoombox", "annotate", "eraser",
+            "sat3d_positive", "sat3d_negative",
+        ],
         "description": "Activate a 2D viewer interaction tool"
     },
     "mask.create": {
@@ -138,6 +141,11 @@ CONTROL_REGISTRY = {
     "mask.move": {
         "commands": ["set"],
         "values": ["ctv", "oar"],
+        # The aliases above document the destination, while the executor
+        # accepts the stable mask id (and optional destination) as JSON.
+        # Keep both forms in one contract instead of treating the JSON as an
+        # invalid enum value during validation.
+        "structured_value": True,
         "description": "Reclassify a mask as display CTV or OAR (presentation only). Value is JSON {\"id\":\"mask_1\"}."
     },
     "mask.delete": {
@@ -215,9 +223,14 @@ CONTROL_REGISTRY = {
     },
     # ── Data tree ──
     "data_tree": {
-        "commands": ["expand", "collapse", "expand_all", "collapse_all"],
-        "values": ["segmentation", "oar", "non_traversable", "traversable", "dose"],
-        "description": "Expand or collapse data tree groups. expand_all/collapse_all affects all groups."
+        "commands": ["expand", "collapse", "toggle", "expand_all", "collapse_all"],
+        "values": [
+            "image", "segmentation", "ctv", "oar", "non_traversable", "traversable",
+            "masks", "upload_masks", "generic_masks", "planning", "planning_trajectories",
+            "planning_seeds", "planning_needles", "dose_isosurfaces", "planning_meshes",
+            "artifacts",
+        ],
+        "description": "Expand, collapse, or toggle any mounted Data Tree group. expand_all/collapse_all affects all groups."
     },
     "tree.visibility": {
         "commands": ["set"],
@@ -235,7 +248,7 @@ CONTROL_REGISTRY = {
         "description": "3D reconstruct an organ node. Value: organ_id (e.g. 'ctv_1', 'organ_52')"
     },
     "tree.group.visibility": {
-        "commands": ["set"],
+        "commands": ["set", "toggle"],
         "value_type": "string",
         "description": "Toggle visibility for an entire data-tree group. Value is 'group_name,show' or 'group_name,hide'. Valid groups include ctv, oar, non_traversable, traversable, masks, planning_trajectories, planning_seeds, planning_needles, planning_meshes, planning_artifacts."
     },
@@ -354,9 +367,47 @@ CONTROL_REGISTRY = {
         "description": "Inspect the declarative UI command catalog before choosing a control action"
     },
     "ui.control": {
-        "commands": ["click", "set", "toggle", "focus", "blur"],
+        "commands": [
+            "click", "set", "toggle", "increase", "decrease",
+            "increment", "decrement", "select", "contextmenu", "focus", "blur",
+            "keypress", "keydown", "keyup", "submit", "scroll", "wheel",
+            "doubleclick", "dblclick", "rightclick", "hover", "drag",
+            "pointerdown", "pointermove", "pointerup", "mousedown", "mousemove",
+            "pointerover", "pointerout", "pointercancel", "pointerenter", "pointerleave",
+            "mouseup", "mouseover", "mouseout", "mouseenter", "mouseleave",
+            "click_once", "input", "change", "run", "reset",
+            "expand", "collapse", "next", "prev", "first", "last",
+        ],
         "value_type": "string",
-        "description": "Generic safe DOM control by id or CSS selector. Value may be an id, selector, or JSON like {\"id\":\"viewerWindow\",\"value\":450}."
+        "description": (
+            "Generic safe DOM control by a live stable ref or id. "
+            "Value is normally JSON like "
+            "{\"ref\":\"dom:viewerWindow\",\"value\":450}. "
+            "Use contextmenu to open the actual menu on a Data Tree/Viewer element; "
+            "use increment/decrement or next/prev/first/last for numeric controls, "
+            "and select for a select element. expand/collapse operates disclosure "
+            "controls through their published aria-expanded state. The live UI "
+            "operation catalog is authoritative; do not guess a selector."
+        )
+    },
+    "ui.context_action": {
+        "commands": ["run"],
+        "value_type": "string",
+        "description": (
+            "Execute a capability exposed by a live Data Tree or 3D scene object. "
+            "Value is JSON containing the stable ref plus action_id, object_ids, "
+            "category, view, or other arguments published by ui_inspector. This "
+            "is the safe bridge for context-menu actions; never invent action_id "
+            "or object identifiers."
+        )
+    },
+    "tree.group.view_visibility": {
+        "commands": ["set", "toggle"],
+        "value_type": "string",
+        "description": (
+            "Set one Data Tree group's independent 2D or 3D visibility. "
+            "Value is group,view,show|hide, for example oar,3d,hide."
+        ),
     },
     "training.mode": {
         "commands": ["start", "stop", "status", "advice"],
@@ -533,6 +584,11 @@ CONTROL_REGISTRY = {
         "values": ["zh", "en"],
         "description": "Set the UI and LLM response language"
     },
+    "chat.theme": {
+        "commands": ["set", "toggle"],
+        "values": ["dark", "light"],
+        "description": "Set or toggle the global UI theme"
+    },
     "chat.clear_history": {
         "commands": ["run"],
         "destructive": True,
@@ -551,7 +607,10 @@ CONTROL_REGISTRY = {
     # ── Tools ──
     "tool": {
         "commands": ["set"],
-        "values": ["crosshair", "measure", "angle", "rect", "zoombox", "annotate", "eraser"],
+        "values": [
+            "crosshair", "measure", "angle", "rect", "zoombox", "annotate", "eraser",
+            "sat3d_positive", "sat3d_negative",
+        ],
         "description": "Active annotation/measurement tool"
     },
     "planning.parameter": {
@@ -720,8 +779,17 @@ class UIControllerTool(BaseTool):
 
             # Validate value
             # Commands that change a numeric, selection, or structured value
-            # must receive one. Commands such as run/toggle/fit remain value-free.
-            requires_value = reg.get("value_required", command in {"set", "increase", "decrease"})
+            # must receive one. Commands such as run/toggle/fit and native
+            # interaction events remain value-free; their browser adapter has
+            # safe defaults (the control's step, its center point, or the
+            # platform event defaults).  This keeps the generic contract
+            # expressive without forcing the model to invent coordinates.
+            requires_value = reg.get(
+                "value_required",
+                command in {
+                    "set", "select", "keypress", "keydown", "keyup", "submit",
+                },
+            )
             if requires_value and value is None:
                 errors.append(f"Action {i}: command '{command}' for '{target}' requires a value")
                 repair_hints.append({
@@ -738,7 +806,33 @@ class UIControllerTool(BaseTool):
                 continue
 
             if "values" in reg and value is not None:
-                if value not in reg["values"]:
+                # A few capabilities document scalar aliases while accepting
+                # a structured JSON payload at runtime (for example
+                # mask.move and report.field.set).  Only validate the finite
+                # alias list for scalar values; never reject a structured
+                # action merely because it is not a list member.
+                structured_value = value if isinstance(value, (dict, list)) else None
+                if reg.get("structured_value") and isinstance(value, str):
+                    try:
+                        parsed_value = json.loads(value)
+                    except (TypeError, ValueError):
+                        parsed_value = None
+                    if isinstance(parsed_value, (dict, list)):
+                        structured_value = parsed_value
+                    else:
+                        errors.append(
+                            f"Action {i}: value for '{target}' must be a JSON object or array"
+                        )
+                        repair_hints.append({
+                            "action_index": i,
+                            "requested": {"target": target, "command": command, "value": value},
+                            "kind": "structured_value_type",
+                            "target": target,
+                            "command": command,
+                            "value_type": "json_object_or_array",
+                        })
+                        continue
+                if structured_value is None and value not in reg["values"]:
                     errors.append(f"Action {i}: invalid value '{value}' for '{target}'. Valid: {reg['values']}")
                     repair_hints.append({
                         "action_index": i,
@@ -831,14 +925,252 @@ class UIControllerTool(BaseTool):
         if errors:
             summary += f" ({len(errors)} errors skipped)"
 
+        localized_parts = [
+            self._describe_action_i18n(a["target"], a["command"], a.get("value"))
+            for a in validated
+        ]
+        display_i18n = {
+            "zh": "；".join(item["zh"] for item in localized_parts if item.get("zh"))
+                or "界面操作已提交。",
+            "en": " | ".join(item["en"] for item in localized_parts if item.get("en"))
+                or "UI action submitted.",
+        }
+
         return ToolResult(
             success=True,
             message=summary,
             metadata={
                 **result_data,
                 "display_message": " | ".join(display_parts),
+                # Final chat text follows the current turn language; the
+                # global UI language may be different and is used only for
+                # non-dialogue chrome/trace labels.
+                "display_message_i18n": display_i18n,
+                "trace_summary_i18n": display_i18n,
             },
         )
+
+    @staticmethod
+    def _describe_action_i18n(target: str, command: str, value: Any = None) -> Dict[str, str]:
+        """Return a user-facing bilingual summary for a validated action.
+
+        The description is derived from the controller contract, not from a
+        finite set of natural-language request strings.  Thus different user
+        languages and newly discovered aliases converge on one reliable
+        result description.
+        """
+        target = str(target or "")
+        command = str(command or "")
+        raw = str(value if value is not None else "")
+
+        def group_label(group: str) -> Tuple[str, str]:
+            names = {
+                "oar": ("全部 OAR", "all OARs"),
+                "ctv": ("全部 CTV", "all CTV"),
+                "non_traversable": ("不可穿刺 OAR", "non-traversable OARs"),
+                "traversable": ("可穿刺 OAR", "traversable OARs"),
+                "masks": ("掩膜组", "mask group"),
+                "upload_masks": ("上传掩膜组", "uploaded masks"),
+                "generic_masks": ("其他分割掩膜组", "additional masks"),
+                "planning": ("规划对象组", "planning objects"),
+                "planning_trajectories": ("轨迹组", "trajectories"),
+                "planning_seeds": ("粒子组", "seeds"),
+                "planning_needles": ("针道组", "needles"),
+                "dose_isosurfaces": ("等剂量面组", "dose isosurfaces"),
+                "planning_meshes": ("规划网格组", "planning meshes"),
+                "segmentation": ("分割对象组", "segmentation objects"),
+                "image": ("影像组", "image group"),
+                "artifacts": ("工件与标注组", "artifacts and annotations"),
+            }
+            return names.get(group, (group, group))
+
+        if target in {"tree.group.opacity", "overlay.ctv.opacity", "overlay.oar.opacity", "overlay.dose.opacity"}:
+            if target == "tree.group.opacity":
+                group, _, percent = raw.partition(",")
+            else:
+                group, percent = target.split(".")[1], raw
+            try:
+                number = max(0, min(100, int(float(percent))))
+            except (TypeError, ValueError):
+                number = percent or "?"
+            zh_group, en_group = group_label(group)
+            if number == 0:
+                zh_state, en_state = "完全透明", "fully transparent"
+            elif number == 100:
+                zh_state, en_state = "完全不透明", "fully opaque"
+            elif number == 50:
+                zh_state, en_state = "半透明", "semi-transparent"
+            else:
+                zh_state, en_state = f"{number}% 不透明度", f"{number}% opacity"
+            return {
+                "zh": f"已将{zh_group}设置为{zh_state}（{number}% 不透明度）。",
+                "en": f"Set {en_group} to {en_state} ({number}% opacity).",
+            }
+
+        # ``viewer.refresh_planning`` is emitted by the provider-independent
+        # direct-result path.  Keep its acknowledgement human-facing instead
+        # of falling through to the internal target/command representation;
+        # the latter was especially confusing in Chinese turns and made a
+        # normal display refresh look like an opaque implementation detail.
+        if target == "viewer.refresh_planning" and command == "run":
+            return {
+                "zh": "已在查看器中刷新并显示当前规划结果。",
+                "en": "Refreshed and displayed the current planning result in the Viewer.",
+            }
+
+        if target in {"tree.group.visibility", "overlay.ctv", "overlay.oar"}:
+            if target == "tree.group.visibility":
+                group, _, state = raw.partition(",")
+                zh_group, en_group = group_label(group)
+            else:
+                zh_group, en_group = (("CTV", "CTV") if "ctv" in target else ("OAR", "OAR"))
+                state = command
+            shown = str(state).lower() in {"show", "on", "visible"}
+            return {
+                "zh": f"已{'显示' if shown else '隐藏'}{zh_group}。",
+                "en": f"{'Shown' if shown else 'Hidden'} {en_group}.",
+            }
+
+        if target == "ui.control":
+            try:
+                payload = json.loads(raw) if raw else {}
+            except (TypeError, ValueError):
+                payload = {}
+            if not isinstance(payload, dict):
+                payload = {}
+            label = str(payload.get("label") or payload.get("name") or payload.get("ref") or "界面控件").strip()[:120]
+            value_text = payload.get("value", "")
+            if command in {"click", "doubleclick", "dblclick"}:
+                zh_verb = "双击" if command in {"doubleclick", "dblclick"} else "点击"
+                en_verb = "Double-clicked" if command in {"doubleclick", "dblclick"} else "Clicked"
+                return {"zh": f"已{zh_verb}“{label}”。", "en": f'{en_verb} “{label}”.'}
+            if command in {"run", "reset"}:
+                zh_verb = "执行" if command == "run" else "重置"
+                en_verb = "Ran" if command == "run" else "Reset"
+                return {"zh": f"已{zh_verb}“{label}”。", "en": f'{en_verb} “{label}”.'}
+            if command in {"expand", "collapse"}:
+                zh_verb = "展开" if command == "expand" else "收起"
+                en_verb = "Expanded" if command == "expand" else "Collapsed"
+                return {"zh": f"已{zh_verb}“{label}”。", "en": f'{en_verb} “{label}”.'}
+            if command in {"next", "prev", "first", "last"}:
+                zh_names = {"next": "下一项", "prev": "上一项", "first": "首项", "last": "末项"}
+                en_names = {"next": "next item", "prev": "previous item", "first": "first item", "last": "last item"}
+                return {"zh": f'已在“{label}”上移至{zh_names[command]}。', "en": f'Moved “{label}” to the {en_names[command]}.'}
+            if command == "toggle":
+                checked = payload.get("checked")
+                if checked is True:
+                    return {"zh": f"已打开“{label}”。", "en": f'Enabled “{label}”.'}
+                if checked is False:
+                    return {"zh": f"已关闭“{label}”。", "en": f'Disabled “{label}”.'}
+                return {"zh": f"已切换“{label}”。", "en": f'Toggled “{label}”.'}
+            if command in {"set", "select", "increment", "decrement", "increase", "decrease"}:
+                return {"zh": f"已将“{label}”设置为 {value_text}。", "en": f'Set “{label}” to {value_text}.'}
+            if command == "keypress":
+                key = payload.get("key") or payload.get("value") or ""
+                return {"zh": f"已在“{label}”上执行按键 {key}。", "en": f'Pressed {key} on “{label}”.'}
+            if command == "submit":
+                return {"zh": f"已提交“{label}”。", "en": f'Submitted “{label}”.'}
+            if command in {"scroll", "wheel"}:
+                return {"zh": f"已在“{label}”上滚动。", "en": f'Scrolled “{label}”.'}
+            if command == "drag":
+                return {"zh": f"已拖动“{label}”。", "en": f'Dragged “{label}”.'}
+            if command in {"hover"}:
+                return {"zh": f"已将鼠标悬停在“{label}”上。", "en": f'Hovered over “{label}”.'}
+            if command in {"rightclick", "contextmenu"}:
+                return {"zh": f"已在“{label}”上打开右键菜单。", "en": f'Opened the context menu for “{label}”.'}
+            if command in {"keydown", "keyup"}:
+                key = payload.get("key") or payload.get("value") or ""
+                return {"zh": f"已在“{label}”上发送按键 {key}。", "en": f'Sent {key} to “{label}”.'}
+            if command in {
+                "pointerdown", "pointermove", "pointerup", "pointerover", "pointerout",
+                "pointercancel", "pointerenter", "pointerleave", "mousedown", "mousemove",
+                "mouseup", "mouseover", "mouseout", "mouseenter", "mouseleave",
+            }:
+                return {"zh": f"已在“{label}”上执行 {command} 事件。", "en": f'Dispatched {command} on “{label}”.'}
+            if command in {"input", "change"}:
+                return {"zh": f"已在“{label}”上触发 {command} 事件。", "en": f'Dispatched the {command} event on “{label}”.'}
+            return {"zh": f"已执行“{label}”的界面操作。", "en": f'Applied the requested operation to “{label}”.'}
+
+        if target == "ui.context_action":
+            # The browser publishes the action id and object identity as JSON
+            # in ``value``.  Decode it here so the final acknowledgement names
+            # the actual operation rather than exposing an opaque payload.
+            try:
+                payload = json.loads(raw) if raw else {}
+            except (TypeError, ValueError):
+                payload = {}
+            action_id = str(payload.get("action_id") or "").lower()
+            labels = {
+                "group_opacity": ("组透明度", "group opacity"),
+                "group_show_2d": ("在 2D 中显示组", "showing the group in 2D"),
+                "group_hide_2d": ("在 2D 中隐藏组", "hiding the group in 2D"),
+                "group_show_3d": ("在 3D 中显示组", "showing the group in 3D"),
+                "group_hide_3d": ("在 3D 中隐藏组", "hiding the group in 3D"),
+                "group_show": ("显示组", "showing the group"),
+                "group_hide": ("隐藏组", "hiding the group"),
+                "group_solo": ("仅显示该组", "showing only the group"),
+                "group_rename": ("重命名组", "renaming the group"),
+                "group_color": ("设置组颜色", "setting the group color"),
+                "group_export": ("导出组", "exporting the group"),
+                "group_delete": ("删除组", "deleting the group"),
+                "group_reconstruct3d": ("重建组的 3D 模型", "reconstructing the group in 3D"),
+                "group_reconstruct_dose": ("重建等剂量面", "rebuilding the dose surfaces"),
+                "clear_planning": ("清除规划显示", "clearing the planning display"),
+                "show_all_organs": ("显示所有器官", "showing all organs"),
+                "node_rename": ("重命名数据树节点", "renaming the Data Tree node"),
+                "node_move_ctv": ("将节点移动到 CTV", "moving the node to CTV"),
+                "node_move_oar": ("将节点移动到 OAR", "moving the node to OAR"),
+                "node_show_2d": ("在 2D 中显示节点", "showing the node in 2D"),
+                "node_hide_2d": ("在 2D 中隐藏节点", "hiding the node in 2D"),
+                "node_show_3d": ("在 3D 中显示节点", "showing the node in 3D"),
+                "node_hide_3d": ("在 3D 中隐藏节点", "hiding the node in 3D"),
+                "node_solo": ("仅显示该节点", "showing only the node"),
+                "node_opacity": ("设置节点透明度", "setting the node opacity"),
+                "node_export": ("导出节点", "exporting the node"),
+                "node_delete": ("删除节点", "deleting the node"),
+                "node_reconstruct3d": ("重建节点的 3D 模型", "reconstructing the node in 3D"),
+                "node_color": ("设置节点颜色", "setting the node color"),
+                "node_add_seed": ("在针道上添加粒子", "adding a seed to the needle"),
+                "node_restore_algorithm": ("恢复算法针道", "restoring the algorithm needle"),
+                "scene_seed_highlight": ("高亮粒子", "highlighting the seed"),
+                "scene_seed_show_dose": ("显示粒子剂量", "showing the seed dose"),
+                "scene_seed_show": ("显示粒子", "showing the seed"),
+                "scene_seed_hide": ("隐藏粒子", "hiding the seed"),
+                "scene_seed_delete": ("删除粒子", "deleting the seed"),
+                "scene_needle_show_seeds": ("显示针道上的粒子", "showing the needle seeds"),
+                "scene_needle_show": ("显示针道", "showing the needle"),
+                "scene_needle_hide": ("隐藏针道", "hiding the needle"),
+                "scene_needle_delete": ("删除针道", "deleting the needle"),
+                "scene_needle_add_seed": ("在针道上添加粒子", "adding a seed to the needle"),
+                "scene_needle_restore_algorithm": ("恢复算法针道", "restoring the algorithm needle"),
+                "scene_needle_opacity": ("设置针道透明度", "setting the needle opacity"),
+                "scene_seed_opacity": ("设置粒子透明度", "setting the seed opacity"),
+            }
+            zh_action, en_action = labels.get(
+                action_id,
+                ("执行数据树/场景操作", "executing the Data Tree/scene operation"),
+            )
+            category = str(payload.get("category") or "").strip()
+            object_id = str(payload.get("object_id") or "").strip()
+            raw_value = payload.get("value")
+            if action_id == "group_opacity" and raw_value is not None:
+                try:
+                    percent = max(0, min(100, int(float(raw_value))))
+                    zh_action = f"将{group_label(category)[0]}设置为{percent}% 不透明度"
+                    en_action = f"setting {group_label(category)[1]} to {percent}% opacity"
+                except (TypeError, ValueError):
+                    pass
+            subject_zh = f"（{category}）" if category else (f"（{object_id}）" if object_id else "")
+            subject_en = f" ({category})" if category else (f" ({object_id})" if object_id else "")
+            return {
+                "zh": f"已{zh_action}{subject_zh}。",
+                "en": f"Applied: {en_action}{subject_en}.",
+            }
+
+        return {
+            "zh": f"已执行界面操作：{target}（{command}{f'，值为 {raw}' if raw else ''}）。",
+            "en": UIControllerTool._describe_action(target, command, value),
+        }
 
     @staticmethod
     def _describe_action(target: str, command: str, value: Any = None) -> str:
@@ -898,6 +1230,8 @@ class UIControllerTool(BaseTool):
         if target == "data_tree":
             if command in ("expand_all", "collapse_all"):
                 return f"All data tree groups {command.replace('_', ' ')}"
+            if command == "toggle":
+                return f"Toggled data tree group '{value}'"
             return f"Data tree '{value}' group {command}ed"
         if target == "tree.visibility":
             parts = value.split(",") if value else []
@@ -907,7 +1241,7 @@ class UIControllerTool(BaseTool):
             return f"Organ {parts[0]} opacity set to {parts[1] if len(parts) > 1 else '?'}%"
         if target == "tree.reconstruct3d":
             return f"3D reconstruction started for '{value}'"
-        if target in ("tree.group.visibility", "tree.group.opacity"):
+        if target in ("tree.group.visibility", "tree.group.opacity", "tree.group.view_visibility"):
             return f"Group {value} updated"
         if target == "tree.group.reconstruct3d":
             return f"3D reconstruction started for group '{value}'"
@@ -937,7 +1271,13 @@ class UIControllerTool(BaseTool):
         if target == "plan.run_manual_step": return f"Manual workflow step started: {value}"
         if target == "ui.state": return "UI state snapshot synchronized"
         if target == "ui.catalog": return "UI command catalog inspected"
-        if target == "ui.control": return f"UI control {command}: {value}"
+        if target == "ui.control":
+            try:
+                payload = json.loads(str(value)) if value else {}
+            except (TypeError, ValueError):
+                payload = {}
+            label = payload.get("label") or payload.get("ref") or "requested control" if isinstance(payload, dict) else "requested control"
+            return f"{command.capitalize()} {label}"
         if target == "training.mode":
             if command == "start": return f"Planning monitor started: {value or 'default goal'}"
             if command == "stop": return "Planning monitor stopped"
@@ -1008,6 +1348,8 @@ class UIControllerTool(BaseTool):
 
         # Chat
         if target == "chat.language": return f"Language set to {value}"
+        if target == "chat.theme":
+            return "UI theme toggled" if command == "toggle" else f"UI theme set to {value}"
         if target == "chat.clear_history": return "⚠️ Chat history cleared"
         if target == "chat.sidebar.toggle": return "Session sidebar toggled"
 

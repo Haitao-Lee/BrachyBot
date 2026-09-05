@@ -133,6 +133,15 @@ def _tool_fallback_message(
             if detail:
                 return f"{detail}\n\n这次操作没有完成。请根据上面的可用控件说明重新发出请求。"
             return "部分处理步骤未完成，且当前没有生成可展示的正式回复。请查看执行追踪中的错误，并重试或调整请求。"
+        if current_request and re.search(
+            r"viewer|data\s*tree|查看器|数据树|粒子|种子|针道|穿刺针|导板|剂量|消失|不见|找不到|隐藏|显示",
+            current_request,
+            re.IGNORECASE,
+        ):
+            return (
+                "这次没有收到可验证的分析结果。当前没有执行任何删除，也没有修改病例或规划；"
+                "请在 Viewer/Data Tree 中检查目标是否被隐藏、当前规划是否已加载，或重新说明希望查看的对象。"
+            )
         if current_request:
             return (
                 f"本轮未能完成“{current_request}”：模型没有返回可验证的答复或可执行的工具结果。"
@@ -143,6 +152,15 @@ def _tool_fallback_message(
         if detail:
             return f"{detail}\n\nThe action was not completed. Retry using the capability described above."
         return "Some processing steps did not complete, and no user-facing answer was generated. Review the execution trace and retry or refine the request."
+    if current_request and re.search(
+        r"viewer|data\s*tree|particle|seed|needle|guide|dose|disappear|missing|not\s+found|hidden|show",
+        current_request,
+        re.IGNORECASE,
+    ):
+        return (
+            "This turn did not return a verifiable analysis result. No deletion or case/Planning change was performed; "
+            "check the target in the Viewer/Data Tree for hidden state or unloaded planning data, or restate what you want to inspect."
+        )
     if current_request:
         return (
             f'This turn could not complete "{current_request}": the model returned no '
@@ -862,6 +880,7 @@ class LLMRuntimeMixin:
                         "surgical_guide_generation",
                         "dose_recompute",
                         "session_visual_location_query",
+                        "ui_operation",
                     )
                 )
                 or _has_explicit_planning_action_plan

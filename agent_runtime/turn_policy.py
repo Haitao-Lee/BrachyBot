@@ -10,6 +10,7 @@ import re
 from typing import Any, Dict, FrozenSet, Iterable, List, Mapping, Optional, Tuple
 
 from agent_runtime.action_plan import ActionPlan
+from agent_runtime.ui_operations import resolve_ui_operation_request
 
 
 KNOWLEDGE_TOOLS: FrozenSet[str] = frozenset({
@@ -73,6 +74,11 @@ class LocalTurnPolicy:
     execution_grants: FrozenSet[str] = field(default_factory=frozenset)
     workflow_grants: FrozenSet[str] = field(default_factory=frozenset)
     action_plan: Optional[ActionPlan] = None
+    # Structured capability resolution for an imperative UI turn.  Keeping
+    # this on the policy makes the same decision available to the direct
+    # executor, provider-tool filter, trace, and response formatter without
+    # reparsing the user's sentence in several layers.
+    ui_operation: Optional[Dict[str, Any]] = None
 
 
 def visual_analysis_policy() -> LocalTurnPolicy:
@@ -1837,6 +1843,34 @@ def classify_local_turn(
             execution_grants=frozenset({"surgical_guide"}),
         )
 
+    # Imperative UI mutations are resolved against the live capability
+    # catalogue after domain-specific clinical/report actions have had the
+    # first opportunity to claim their own workflow.  This ordering is
+    # intentional: ``重新生成报告`` remains report generation, while
+    # ``点击报告模板`` or ``将 OAR 设为半透明`` is handled by the generic
+    # capability-driven UI route.  The resolver uses mounted control/action
+    # metadata and semantic properties, not a sentence whitelist.
+    ui_operation = resolve_ui_operation_request(text, ui_state=ui_state)
+    if ui_operation:
+        actions = ui_operation.get("actions") or []
+        confidence = float(ui_operation.get("confidence") or 0.0)
+        if actions and not ui_operation.get("ambiguous") and confidence >= 0.75:
+            return LocalTurnPolicy(
+                "ui_operation",
+                "low",
+                False,
+                False,
+                False,
+                frozenset({"ui_controller"}),
+                direct_execution=True,
+                execution_grants=frozenset({"ui_controller"}),
+                ui_operation=ui_operation,
+            )
+        # An unresolved capability must not pre-empt a known domain route or
+        # be presented as a successful UI action.  The normal UI branch below
+        # grants inspector/controller access when the text contains a real UI
+        # surface; otherwise the ordinary semantic route remains available.
+
     # A request to view a persisted Session artifact is not a new screenshot,
     # a viewer mutation, or a knowledge lookup. Keep it out of the expensive
     # router and let the Session-content bridge resolve real stored data.
@@ -1924,7 +1958,8 @@ def classify_local_turn(
         "viewer", "切片", "窗口", "放大", "缩小", "显示", "隐藏", "透明度",
         "颜色", "截图", "调节", "设置", "切换", "拖拽", "3d", "2d",
         "viewer", "slice", "zoom", "show", "hide", "opacity", "screenshot",
-        "set", "adjust", "toggle", "drag",
+        "set", "adjust", "toggle", "drag", "button", "control", "menu", "form", "input",
+        "select", "slider", "tab", "按钮", "控件", "菜单", "表单", "输入框", "选择器", "滑块", "标签页",
         # Monitor/training-mode control is a UI command (start/stop live
         # planning monitoring), not a clinical execution or knowledge query.
         # Without these keywords a request like "请停止monitor" fell through

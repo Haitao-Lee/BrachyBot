@@ -343,6 +343,1046 @@ function collectVisualTargetCatalog() {
 }
 window.collectVisualTargetCatalog = collectVisualTargetCatalog;
 
+// ---------------------------------------------------------------------------
+// Live UI operation catalogue
+// ---------------------------------------------------------------------------
+// The visual-target catalogue answers "where is this object?".  The
+// operation catalogue answers the complementary question "which actions can
+// a user perform on the currently mounted UI, and how can the agent invoke
+// exactly the same handler?".  It is built from the live DOM on every bridge
+// snapshot, including dynamically rendered Data Tree rows and context-menu
+// items.  No coordinates or translated prose are persisted as an action
+// identity.
+
+// addEventListener handlers are not visible through HTML attributes.  The
+// viewer modules use them for resize handles, canvases, keyboard shortcuts,
+// and plug-in controls, so attribute-only discovery would systematically
+// omit real manual operations. Install a small, transparent ledger before the
+// feature modules are loaded. It records only event type/element identity;
+// dispatch still goes through the browser's native EventTarget methods.
+(function installUIEventListenerLedger() {
+    const proto = window.EventTarget && window.EventTarget.prototype;
+    if (!proto || proto.__brachyUiEventLedgerInstalled) return;
+    const nativeAdd = proto.addEventListener;
+    const nativeRemove = proto.removeEventListener;
+    const records = new WeakMap();
+    const targets = new Set();
+    const elementTarget = target => typeof window.Element === 'function' && target instanceof window.Element;
+    const captureOf = options => options === true || !!(options && options.capture);
+    const remember = (target, type, listener, options) => {
+        if (!elementTarget(target) || typeof listener !== 'function' && !(listener && typeof listener.handleEvent === 'function')) return;
+        const normalized = String(type || '').toLowerCase();
+        if (!normalized) return;
+        let byType = records.get(target);
+        if (!byType) { byType = new Map(); records.set(target, byType); }
+        let listeners = byType.get(normalized);
+        if (!listeners) { listeners = []; byType.set(normalized, listeners); }
+        const capture = captureOf(options);
+        if (!listeners.some(item => item.listener === listener && item.capture === capture)) {
+            listeners.push({ listener, capture });
+        }
+        targets.add(target);
+    };
+    const forget = (target, type, listener, options) => {
+        if (!elementTarget(target)) return;
+        const normalized = String(type || '').toLowerCase();
+        const byType = records.get(target);
+        const listeners = byType?.get(normalized);
+        if (!listeners) return;
+        const capture = captureOf(options);
+        const remaining = listeners.filter(item => !(item.listener === listener && item.capture === capture));
+        if (remaining.length) byType.set(normalized, remaining);
+        else byType.delete(normalized);
+        if (!byType.size) {
+            records.delete(target);
+            targets.delete(target);
+        }
+    };
+    proto.addEventListener = function(type, listener, options) {
+        remember(this, type, listener, options);
+        return nativeAdd.call(this, type, listener, options);
+    };
+    proto.removeEventListener = function(type, listener, options) {
+        forget(this, type, listener, options);
+        return nativeRemove.call(this, type, listener, options);
+    };
+    proto.__brachyUiEventLedgerInstalled = true;
+    window.__getBrachyUiEventTypes = element => {
+        const byType = records.get(element);
+        return byType ? Array.from(byType.keys()) : [];
+    };
+    window.__getBrachyUiEventTargets = () => Array.from(targets).filter(element => element?.isConnected);
+})();
+
+function _uiOperationHash(value) {
+    let hash = 2166136261;
+    const text = String(value || '');
+    for (let i = 0; i < text.length; i += 1) {
+        hash ^= text.charCodeAt(i);
+        hash = Math.imul(hash, 16777619);
+    }
+    return (hash >>> 0).toString(16);
+}
+
+function _uiOperationPanel(element) {
+    const panel = element?.closest?.('[id^="panel"]')?.id || '';
+    if (panel === 'panelViewers' || element?.closest?.('#overlayControls')) return 'viewers';
+    if (panel === 'panelInput') return 'input';
+    if (panel === 'panelAnalysis') return 'metrics';
+    if (panel === 'panelReport') return 'report';
+    return panel || 'global';
+}
+
+function _uiOperationVisible(element) {
+    const rect = element?.getBoundingClientRect?.();
+    const style = window.getComputedStyle ? window.getComputedStyle(element) : null;
+    return !!rect && rect.width > 0 && rect.height > 0
+        && style?.display !== 'none'
+        && style?.visibility !== 'hidden'
+        && Number(style?.opacity ?? 1) > 0.01;
+}
+
+function _uiOperationRef(element, ordinal) {
+    if (!element) return '';
+    const existing = String(element.getAttribute('data-brachy-control-ref') || '').trim();
+    if (existing) return existing;
+    const id = String(element.id || '').trim();
+    if (id) {
+        const ref = `dom:${id}`;
+        element.setAttribute('data-brachy-control-ref', ref);
+        return ref;
+    }
+    const dataIdentity = [
+        element.getAttribute('data-node-id'),
+        element.getAttribute('data-object-id'),
+        element.getAttribute('data-item'),
+        element.getAttribute('data-control-id'),
+        element.getAttribute('name'),
+        element.getAttribute('aria-label'),
+        element.getAttribute('title'),
+    ].map(value => String(value || '').trim()).find(Boolean) || '';
+    const owner = element.closest?.('[data-node-id], [data-group], [id]');
+    const ownerId = owner?.getAttribute?.('data-node-id')
+        || owner?.getAttribute?.('data-group')
+        || owner?.id
+        || _uiOperationPanel(element);
+    const handler = [
+        element.getAttribute('onclick'), element.getAttribute('oninput'),
+        element.getAttribute('onchange'), element.getAttribute('oncontextmenu'),
+        element.getAttribute('ondblclick'), element.getAttribute('onkeydown'),
+        element.getAttribute('onkeyup'), element.getAttribute('onwheel'),
+        element.getAttribute('onscroll'), element.getAttribute('onpointerdown'),
+        element.getAttribute('onpointermove'), element.getAttribute('onpointerup'),
+        element.getAttribute('onmousedown'), element.getAttribute('onmousemove'),
+        element.getAttribute('onmouseup'), element.getAttribute('ondrag'),
+        element.getAttribute('ondragstart'), element.getAttribute('ondragend'),
+        element.getAttribute('onkeypress'), element.getAttribute('onsubmit'),
+        element.getAttribute('onfocus'), element.getAttribute('onblur'),
+        element.getAttribute('onmouseenter'), element.getAttribute('onmouseover'),
+        element.getAttribute('onmouseleave'), element.getAttribute('onpointerover'),
+        element.getAttribute('onpointerout'), element.getAttribute('onpointercancel'),
+        element.getAttribute('onpointerenter'), element.getAttribute('onpointerleave'),
+        element.getAttribute('onmouseover'), element.getAttribute('onmouseout'),
+        element.getAttribute('onmouseenter'), element.getAttribute('onmouseleave'),
+        element.getAttribute('data-action'), element.getAttribute('data-ui-action'),
+        element.getAttribute('data-ui-intents'), element.getAttribute('data-ui-semantic'),
+    ].concat(typeof window.__getBrachyUiEventTypes === 'function'
+        ? window.__getBrachyUiEventTypes(element).sort()
+        : []).filter(Boolean).join('|').replace(/\s+/g, ' ').slice(0, 320);
+    const label = _uiOperationLabel(element);
+    // The ordinal is only the final tie-breaker for genuinely indistinguishable
+    // siblings.  The owner, data identity, label, class and full event surface
+    // keep refs stable across a Data Tree re-render or a panel refresh.
+    const signature = [ownerId, dataIdentity, label, element.tagName, element.getAttribute('type') || '',
+        element.className || '', handler, String(ordinal)].join('|');
+    const ref = `dom:auto:${_uiOperationHash(signature)}`;
+    element.setAttribute('data-brachy-control-ref', ref);
+    return ref;
+}
+
+function _uiOperationActionFromElement(element) {
+    if (!element) return null;
+    const attr = name => String(element.getAttribute(name) || '').trim();
+    const registeredEvents = new Set(typeof window.__getBrachyUiEventTypes === 'function'
+        ? window.__getBrachyUiEventTypes(element) : []);
+    const hasRuntimeEvent = eventName => registeredEvents.has(eventName)
+        || typeof element[`on${eventName}`] === 'function';
+    const registeredPrimary = [
+        'click', 'dblclick', 'contextmenu', 'submit', 'keydown', 'keyup', 'keypress',
+        'input', 'change', 'wheel', 'scroll', 'pointerdown', 'pointermove', 'pointerup',
+        'pointerover', 'pointerout', 'pointercancel', 'pointerenter', 'pointerleave',
+        'mousedown', 'mousemove', 'mouseup', 'mouseover', 'mouseout', 'mouseenter', 'mouseleave',
+        'focus', 'blur', 'drag',
+    ].find(hasRuntimeEvent);
+    const explicitTarget = attr('data-ui-target');
+    const explicitCommand = attr('data-ui-command');
+    if (explicitTarget && explicitCommand) {
+        const action = { target: explicitTarget, command: explicitCommand };
+        const explicitValue = attr('data-ui-value');
+        if (explicitValue) action.value = explicitValue;
+        else if (['range', 'number', 'color', 'text'].includes(attr('type').toLowerCase())) action.value_source = 'control';
+        return action;
+    }
+    // Components may publish a complete capability declaratively.  Prefer it
+    // over function-name heuristics, but accept only a JSON object with a
+    // target and command; arbitrary data attributes must never become an
+    // executable action by accident.
+    const declaredAction = attr('data-ui-action');
+    if (declaredAction) {
+        try {
+            const parsed = JSON.parse(declaredAction);
+            if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+                && parsed.target && parsed.command) {
+                return { ...parsed, semantic_property: parsed.semantic_property || 'action' };
+            }
+        } catch (_) {
+            // The attribute may be a human-readable intent token.  It remains
+            // searchable metadata and is handled by the generic fallback.
+        }
+    }
+    const source = [
+        attr('onclick'), attr('oninput'), attr('onchange'), attr('oncontextmenu'),
+        attr('ondblclick'), attr('onkeydown'), attr('onkeyup'), attr('onwheel'),
+        attr('onscroll'), attr('onpointerdown'), attr('onpointermove'),
+        attr('onpointerup'), attr('onmousedown'), attr('onmousemove'),
+        attr('onmouseup'), attr('onpointerover'), attr('onpointerout'),
+        attr('onpointercancel'), attr('onpointerenter'), attr('onpointerleave'),
+        attr('onmouseover'), attr('onmouseout'), attr('onmouseenter'), attr('onmouseleave'),
+        attr('ondrag'), attr('ondragstart'), attr('ondragend'),
+        attr('onkeypress'), attr('onsubmit'), attr('onfocus'), attr('onblur'),
+        attr('onmouseenter'), attr('onmouseover'), attr('onmouseleave'),
+        attr('onpointerover'), attr('onpointerout'),
+        attr('data-action'), attr('data-handler'), attr('data-ui-intents'),
+    ].filter(Boolean).join(';').replace(/&quot;/g, '"').replace(/&#39;/g, "'");
+    const languageButton = attr('data-lang-btn').toLowerCase();
+    if (languageButton === 'zh' || languageButton === 'en') return {
+        target: 'chat.language', command: 'set', value: languageButton,
+        semantic_property: 'language',
+    };
+    let languageMatch = source.match(/setUiLanguage\s*\(\s*['"](zh|en)['"]\s*\)/i);
+    if (languageMatch) return {
+        target: 'chat.language', command: 'set', value: languageMatch[1].toLowerCase(),
+        semantic_property: 'language',
+    };
+    if (/toggleUiTheme\s*\(|toggleTheme\s*\(/i.test(source)
+        || element.hasAttribute('data-theme-toggle')) {
+        return { target: 'chat.theme', command: 'toggle', semantic_property: 'theme' };
+    }
+    let themeMatch = source.match(/setUiTheme\s*\(\s*['"](dark|light)['"]\s*\)/i);
+    if (themeMatch) return {
+        target: 'chat.theme', command: 'set', value: themeMatch[1].toLowerCase(),
+        semantic_property: 'theme',
+    };
+    if (/newChat\s*\(/i.test(source)) return { target: 'session.new', command: 'run', semantic_property: 'session' };
+    if (/toggleSessionSidebar\s*\(/i.test(source)) return { target: 'chat.sidebar.toggle', command: 'run', semantic_property: 'session' };
+    if (/closeSessionSidebar\s*\(/i.test(source)) return { target: 'ui.control', command: 'click', semantic_property: 'session' };
+    if (/toggleContextPanel\s*\(/i.test(source)) return { target: 'ui.control', command: 'click', semantic_property: 'panel' };
+    if (/clearLocalChatData\s*\(/i.test(source)) return {
+        target: 'session.clear_all', command: 'run', requires_confirm: true, semantic_property: 'session',
+    };
+    if (/runPlanning\s*\(/i.test(source)) return { target: 'plan.run', command: 'run', semantic_property: 'action' };
+    if (/resetSession\s*\(/i.test(source)) return { target: 'plan.reset', command: 'run', requires_confirm: true, semantic_property: 'action' };
+    let segmentationMatch = source.match(/runSegmentationStep\s*\(\s*['"]([^'"]+)['"]\s*\)/i);
+    if (segmentationMatch) return { target: 'plan.run_manual_step', command: 'run', value: segmentationMatch[1], semantic_property: 'action' };
+    let planningStepMatch = source.match(/runPlanningStep\s*\(\s*['"]([^'"]+)['"]\s*\)/i);
+    if (planningStepMatch) return { target: 'plan.run_manual_step', command: 'run', value: planningStepMatch[1], semantic_property: 'action' };
+    let resultMatch = source.match(/showStepResults\s*\(\s*['"]([^'"]+)['"]\s*\)/i);
+    if (resultMatch) return { target: 'ui.control', command: 'click', value: resultMatch[1], semantic_property: 'action' };
+    if (/startTrainingMode\s*\(/i.test(source)) return { target: 'training.mode', command: 'start', semantic_property: 'action' };
+    if (/stopTrainingMode\s*\(/i.test(source)) return { target: 'training.mode', command: 'stop', semantic_property: 'action' };
+    if (/addManualNeedle\s*\(/i.test(source)) return { target: 'manual.needle.create', command: 'run', semantic_property: 'action' };
+    if (/addManualSeed\s*\(/i.test(source)) return { target: 'manual.seed.add', command: 'run', semantic_property: 'action' };
+    if (/recomputeManualDose\s*\(/i.test(source)) return { target: 'manual.dose.recompute', command: 'run', semantic_property: 'action' };
+    if (/replanManualPlan\s*\(/i.test(source)) return { target: 'manual.plan.replan', command: 'run', semantic_property: 'action' };
+    if (/generateSurgicalGuide\s*\(/i.test(source)) return { target: 'ui.control', command: 'click', semantic_property: 'action' };
+    if (/exportSurgicalGuideSTL\s*\(/i.test(source)) return { target: 'ui.control', command: 'click', semantic_property: 'action' };
+    if (/exportDicomRT\s*\(/i.test(source)) return { target: 'ui.control', command: 'click', semantic_property: 'action' };
+    if (/exportSTL\s*\(/i.test(source)) return { target: 'ui.control', command: 'click', semantic_property: 'action' };
+    if (/exportReport\s*\(/i.test(source)) return { target: 'report.export', command: 'run', value: 'pdf', semantic_property: 'report' };
+    let reportExportMatch = source.match(/Report\.export\.(pdf|html|markdown|json)\s*\(/i);
+    if (reportExportMatch) return {
+        target: 'report.export', command: 'run', value: reportExportMatch[1].toLowerCase(), semantic_property: 'report',
+    };
+    if (/Report\.persist\.importJSON\s*\(/i.test(source)) return { target: 'report.import', command: 'run', semantic_property: 'report' };
+    if (/Report\.autoFill\.fromAll\s*\(/i.test(source)) return { target: 'report.autofill', command: 'run', semantic_property: 'report' };
+    if (/Report\.snapshots\.save\s*\(/i.test(source)) return { target: 'report.snapshot.save', command: 'run', semantic_property: 'report' };
+    if (/Report\.snapshots\.openModal\s*\(/i.test(source)) return { target: 'report.snapshot.open', command: 'run', semantic_property: 'report' };
+    if (/Report\.audit\.openModal\s*\(/i.test(source)) return { target: 'report.audit.open', command: 'run', semantic_property: 'report' };
+    if (/Report\.review\.openModal\s*\(/i.test(source)) return { target: 'report.review.open', command: 'run', semantic_property: 'report' };
+    if (/Report\.validation\.openModal\s*\(/i.test(source)) return { target: 'report.validation.open', command: 'run', semantic_property: 'report' };
+    if (/Report\.preview\.zoomOut\s*\(/i.test(source)) return { target: 'report.preview.zoom', command: 'decrease', value_source: 'control', semantic_property: 'zoom' };
+    if (/Report\.preview\.zoomIn\s*\(/i.test(source)) return { target: 'report.preview.zoom', command: 'increase', value_source: 'control', semantic_property: 'zoom' };
+    if (/Report\.preview\.zoomReset\s*\(/i.test(source)) return { target: 'report.preview.zoom', command: 'reset', semantic_property: 'zoom' };
+    if (/Report\.persist\.clear\s*\(/i.test(source)) return { target: 'report.clear', command: 'run', requires_confirm: true, semantic_property: 'report' };
+    let reportLayoutMatch = source.match(/Report\.panels\.layout2col\s*\(\s*([^)]*)\)/i);
+    if (reportLayoutMatch) return { target: 'report.layout', command: 'set', value_source: 'control', semantic_property: 'layout' };
+    if (/insertSlashCommand\s*\(/i.test(source)) return { target: 'ui.control', command: 'click', semantic_property: 'action' };
+    let match = source.match(/setGroupOpacity\(\s*['"]([^'"]+)['"]\s*,\s*(?:this\.value|value|[^)]*)\)/i);
+    if (match) return {
+        target: 'tree.group.opacity', command: 'set',
+        value_template: `${match[1]},{value}`, semantic_property: 'opacity',
+        group: match[1], value_source: 'control',
+    };
+    match = source.match(/setGroupVisibility\(\s*['"]([^'"]+)['"]\s*,\s*(true|false)\s*\)/i);
+    if (match) return {
+        target: 'tree.group.visibility', command: 'set',
+        value: `${match[1]},${match[2] === 'true' ? 'show' : 'hide'}`,
+        semantic_property: 'visibility', group: match[1],
+    };
+    match = source.match(/setGroupViewVisibility\(\s*['"]([^'"]+)['"]\s*,\s*['"](2d|3d)['"]\s*,\s*(true|false)\s*\)/i);
+    if (match) return {
+        target: 'tree.group.view_visibility', command: 'set',
+        value: `${match[1]},${match[2]},${match[3] === 'true' ? 'show' : 'hide'}`,
+        semantic_property: 'visibility', group: match[1], view: match[2],
+    };
+    match = source.match(/setDataItemVisibility\(\s*['"]([^'"]+)['"]\s*,\s*(true|false)\s*\)/i);
+    if (match) return {
+        target: 'tree.visibility', command: 'set',
+        value: `${match[1]},${match[2] === 'true' ? 'on' : 'off'}`,
+        semantic_property: 'visibility', node_id: match[1],
+    };
+    match = source.match(/setDataOpacity\(\s*['"]([^'"]+)['"]\s*,\s*(?:this\.value|value|[^)]*)\)/i);
+    if (match) return {
+        target: 'tree.opacity', command: 'set',
+        value_template: `${match[1]},{value}`, semantic_property: 'opacity', node_id: match[1],
+    };
+    match = source.match(/toggleDataVisibility\(\s*['"]([^'"]+)['"]\s*\)/i);
+    if (match) return {
+        target: 'ui.control', command: 'click', semantic_property: 'visibility', node_id: match[1],
+    };
+    match = source.match(/toggleViewerFullscreen\(\s*['"]([^'"]+)['"]\s*\)/i);
+    if (match) return { target: 'viewer.fullscreen', command: 'toggle', value: match[1], semantic_property: 'layout' };
+    if (/fitCameraToScene\s*\(\s*\)/i.test(source)) return { target: '3d.fit', command: 'run', semantic_property: 'layout' };
+    if (/fitView\s*\(\s*\)/i.test(source)) return { target: 'viewer.fit_all', command: 'run', semantic_property: 'layout' };
+    if (/reconstruct3D\s*\(\s*\)/i.test(source)) return { target: 'viewer.reconstruct3d', command: 'run', semantic_property: 'reconstruct' };
+    if (/reset3DView\s*\(\s*\)/i.test(source)) return { target: '3d.reset', command: 'run', semantic_property: 'layout' };
+    match = source.match(/setViewerLayout\(\s*['"]([^'"]+)['"]\s*\)/i);
+    if (match) return { target: 'layout', command: 'set', value: match[1], semantic_property: 'layout' };
+    match = source.match(/switchPanel\(\s*['"]([^'"]+)['"]/i);
+    if (match) return { target: 'panel', command: 'switch', value: match[1], semantic_property: 'panel' };
+    match = source.match(/setViewerTool\(\s*['"]([^'"]+)['"]\s*\)/i);
+    if (match) return { target: 'viewer.tool', command: 'set', value: match[1], semantic_property: 'tool' };
+    match = source.match(/updateSlice\(\s*['"](axial|sagittal|coronal)['"]/i);
+    if (match) return { target: `slice.${match[1]}`, command: 'set', value_source: 'control', semantic_property: 'slice' };
+    if (/applyZoom\s*\(/i.test(source)) return { target: 'viewer.zoom', command: 'set', value_source: 'control', semantic_property: 'zoom' };
+    if (/applyViewerSettings\s*\(/i.test(source)) return { target: 'ui.control', command: 'set', value_source: 'control' };
+    if (/update3DMeshOpacity\s*\(/i.test(source)) return { target: '3d.mesh_opacity', command: 'set', value_source: 'control', semantic_property: 'opacity' };
+    if (/updateDoseOpacity\s*\(/i.test(source)) return { target: '3d.dose_opacity', command: 'set', value_source: 'control', semantic_property: 'opacity' };
+    if (/setDoseOverlayOpacity\s*\(/i.test(source)) return { target: 'overlay.dose.opacity', command: 'set', value_source: 'control', semantic_property: 'opacity' };
+    if (/toggleDoseTextureMode\s*\(/i.test(source)) return { target: '3d.dose_surface', command: 'toggle', semantic_property: 'visibility' };
+    if (/toggleOverlay\s*\(/i.test(source)) return { target: 'ui.control', command: 'toggle', value_source: 'control', semantic_property: 'visibility' };
+    if (/setDisplayMode\s*\(/i.test(source)) return { target: 'overlay.display_mode', command: 'set', value_source: 'control', semantic_property: 'layout' };
+    if (/setViewerTool\s*\(/i.test(source)) return { target: 'viewer.tool', command: 'set', value_source: 'control', semantic_property: 'tool' };
+    if (/viewerFlipH\s*\(/i.test(source)) return { target: 'viewer.transform', command: 'flip_h', semantic_property: 'layout' };
+    if (/viewerFlipV\s*\(/i.test(source)) return { target: 'viewer.transform', command: 'flip_v', semantic_property: 'layout' };
+    if (/viewerRotate\s*\(/i.test(source)) return { target: 'viewer.transform', command: 'rotate', semantic_property: 'layout' };
+    if (/viewerUndo\s*\(/i.test(source)) return { target: 'viewer.transform', command: 'undo', semantic_property: 'layout' };
+    if (/viewerRedo\s*\(/i.test(source)) return { target: 'viewer.transform', command: 'redo', semantic_property: 'layout' };
+    if (/toggle3DWireframe\s*\(/i.test(source)) return { target: '3d.wireframe', command: 'toggle', value_source: 'control', semantic_property: 'visibility' };
+    if (/toggle3DSkin\s*\(/i.test(source)) return { target: '3d.skin', command: 'toggle', value_source: 'control', semantic_property: 'visibility' };
+    if (/updateLabelImage\s*\(/i.test(source)) return { target: '3d.labels', command: 'toggle', value_source: 'control', semantic_property: 'visibility' };
+    if (/toggleDoseColorbarPanel\s*\(/i.test(source)) return { target: 'ui.control', command: 'click', semantic_property: 'layout' };
+    if (/closeDoseColorbarPanel\s*\(/i.test(source)) return { target: 'ui.control', command: 'click', semantic_property: 'layout' };
+    if (/applyDoseColorbarSettings\s*\(/i.test(source)) return { target: 'viewer.colorbar', command: 'set', value_source: 'control', semantic_property: 'color' };
+    if (/resetDoseColorbarSettings\s*\(/i.test(source)) return { target: 'viewer.colorbar', command: 'reset', semantic_property: 'color' };
+    if (/resetViewer\s*\(/i.test(source)) return { target: 'viewer.reset', command: 'run', semantic_property: 'layout' };
+    if (/fitView\s*\(/i.test(source)) return { target: 'viewer.fit_all', command: 'run', semantic_property: 'layout' };
+    if (/applyWindowPreset\s*\(/i.test(source)) return { target: 'viewer.preset', command: 'set', value_source: 'control' };
+    if (/applyThreshold\s*\(/i.test(source)) return { target: 'viewer.threshold', command: 'set', value_source: 'control' };
+    if (/ondblclick|dblclick/i.test(source)) return { target: 'ui.control', command: 'doubleclick', value_source: 'control', semantic_property: 'action' };
+    if (/oncontextmenu|contextmenu|right[-_]?click/i.test(source)) return { target: 'ui.control', command: 'contextmenu', value_source: 'control', semantic_property: 'action' };
+    if (/onkeydown/i.test(source)) return { target: 'ui.control', command: 'keydown', value_source: 'control', semantic_property: 'action' };
+    if (/onkeyup/i.test(source)) return { target: 'ui.control', command: 'keyup', value_source: 'control', semantic_property: 'action' };
+    if (/onkeypress/i.test(source)) return { target: 'ui.control', command: 'keypress', value_source: 'control', semantic_property: 'action' };
+    if (/onwheel|onscroll/i.test(source)) return { target: 'ui.control', command: 'scroll', value_source: 'control', semantic_property: 'action' };
+    if (/onpointerdown|onmousedown/i.test(source)) return { target: 'ui.control', command: 'pointerdown', value_source: 'control', semantic_property: 'action' };
+    if (/onpointermove|onmousemove/i.test(source)) return { target: 'ui.control', command: 'pointermove', value_source: 'control', semantic_property: 'action' };
+    if (/onpointerup|onmouseup/i.test(source)) return { target: 'ui.control', command: 'pointerup', value_source: 'control', semantic_property: 'action' };
+    if (/ondrag(?:start|end)?/i.test(source)) return { target: 'ui.control', command: 'drag', value_source: 'control', semantic_property: 'action' };
+    if (/onmouseenter|onmouseover|onpointerover/i.test(source)) return { target: 'ui.control', command: 'hover', value_source: 'control', semantic_property: 'action' };
+    if (/onfocus/i.test(source)) return { target: 'ui.control', command: 'focus', value_source: 'control', semantic_property: 'action' };
+    if (/onblur/i.test(source)) return { target: 'ui.control', command: 'blur', value_source: 'control', semantic_property: 'action' };
+    if (/onsubmit/i.test(source)) return { target: 'ui.control', command: 'submit', value_source: 'control', semantic_property: 'action' };
+
+    const tag = String(element.tagName || '').toLowerCase();
+    const type = attr('type').toLowerCase();
+    if (tag === 'form') {
+        return { target: 'ui.control', command: 'submit', value_source: 'control', semantic_property: 'action' };
+    }
+    if (tag === 'select') {
+        return { target: 'ui.control', command: 'select', value_source: 'control', semantic_property: 'action' };
+    }
+    if (tag === 'input' || tag === 'textarea') {
+        return {
+            target: 'ui.control',
+            command: type === 'checkbox' || type === 'radio' ? 'toggle'
+                : type === 'file' ? 'click' : 'set',
+            value_source: 'control',
+        };
+    }
+    if (element.isContentEditable || attr('contenteditable') === 'true') {
+        return { target: 'ui.control', command: 'set', value_source: 'control' };
+    }
+    if (tag === 'canvas') {
+        return {
+            target: 'ui.control',
+            command: 'drag',
+            value_source: 'control',
+            semantic_property: 'action',
+        };
+    }
+    if (tag === 'button' || tag === 'summary' || tag === 'a'
+        || ['button', 'menuitem', 'tab', 'checkbox', 'radio', 'switch', 'option', 'link', 'slider'].includes(attr('role'))
+        || attr('onclick') || attr('oncontextmenu') || attr('onpointerover') || attr('onpointerout')
+        || attr('onpointercancel') || attr('onpointerenter') || attr('onpointerleave')
+        || attr('onmouseover') || attr('onmouseout') || attr('onmouseenter') || attr('onmouseleave')
+        || attr('onmousedown') || attr('onmousemove') || attr('onmouseup') || attr('data-node-id') || attr('data-object-id')
+        || attr('data-group') || attr('data-ui-control') || attr('data-ui-action') || attr('data-action')
+        || attr('tabindex') || registeredPrimary) {
+        return {
+            target: 'ui.control',
+            command: registeredPrimary
+                || (attr('oncontextmenu') && !attr('onclick') ? 'contextmenu' : 'click'),
+            value_source: 'control',
+            semantic_property: _uiOperationSemanticProperty(element) || 'action',
+        };
+    }
+    return null;
+}
+
+function _uiOperationNativeActions(element, primary = null) {
+    // A single DOM node can expose several manual gestures (for example a
+    // viewer canvas supports click, double-click, wheel and drag).  Publish
+    // each gesture as a separate capability while retaining one primary
+    // semantic action for ordinary property requests.
+    if (!element) return [];
+    const attr = name => String(element.getAttribute(name) || '').trim();
+    const tag = String(element.tagName || '').toLowerCase();
+    const type = attr('type').toLowerCase();
+    const role = attr('role').toLowerCase();
+    const registeredEvents = new Set(typeof window.__getBrachyUiEventTypes === 'function'
+        ? window.__getBrachyUiEventTypes(element) : []);
+    const hasEvent = (...names) => names.some(name => registeredEvents.has(name)
+        || !!attr(`on${name}`) || typeof element[`on${name}`] === 'function');
+    const add = (command, extra = {}) => ({
+        target: extra.target || 'ui.control', command, value_source: 'control',
+        semantic_property: 'action', ...extra,
+    });
+    const actions = [];
+    const seen = new Set();
+    const push = action => {
+        if (!action) return;
+        const key = `${action.target || ''}:${action.command || ''}:${action.semantic_property || ''}:${action.value || ''}`;
+        if (seen.has(key)) return;
+        seen.add(key);
+        if (!primary || key !== `${primary.target || ''}:${primary.command || ''}:${primary.semantic_property || ''}:${primary.value || ''}`) {
+            actions.push(action);
+        }
+    };
+    const interactive = tag === 'button' || tag === 'a' || tag === 'summary'
+        || ['input', 'select', 'textarea', 'canvas'].includes(tag)
+        || ['button', 'menuitem', 'tab', 'checkbox', 'radio', 'switch', 'option', 'link', 'slider'].includes(role)
+        || !!attr('onclick') || !!attr('data-node-id') || !!attr('data-object-id')
+        || !!attr('data-group') || !!attr('data-ui-control') || !!attr('data-ui-action')
+        || !!attr('data-action') || element.hasAttribute('tabindex');
+    if (interactive) push(add('click'));
+    // Keep a generic value/toggle capability beside a custom declarative
+    // action. A plug-in may publish an application-specific primary target,
+    // but the underlying input is still manually editable and must remain
+    // controllable through the stable DOM ref if that target is not part of
+    // the server registry yet.
+    if (['input', 'textarea'].includes(tag) || element.isContentEditable) push(add('set'));
+    if (type === 'checkbox' || type === 'radio' || ['checkbox', 'radio', 'switch'].includes(role)) {
+        push(add('toggle'));
+    }
+    if (tag === 'select') push(add('select'));
+    if (element.getAttribute('aria-expanded') !== null
+        || attr('data-ui-semantic').toLowerCase() === 'expansion') {
+        ['expand', 'collapse', 'toggle'].forEach(command => push(add(command, {
+            semantic_property: 'expansion',
+        })));
+    }
+    if (tag === 'select' || type === 'range' || type === 'number' || role === 'slider') {
+        ['next', 'prev', 'first', 'last'].forEach(command => push(add(command)));
+    }
+    if (String(primary?.target || '').startsWith('slice.')) {
+        // A slice slider is also manually operable as next/previous/first/
+        // last. Publish those typed actions beside the generic range events
+        // so natural-language navigation uses the same coordinate-safe
+        // updateSlice path as the real slider.
+        ['next', 'prev', 'first', 'last'].forEach(command => push(add(command, {
+            target: primary.target,
+            semantic_property: 'slice',
+        })));
+    }
+    if (hasEvent('dblclick') || tag === 'canvas' || element.hasAttribute('data-doubleclick')) push(add('doubleclick'));
+    if (hasEvent('contextmenu') || attr('data-node-id') || attr('data-group')) push(add('contextmenu'));
+    if (hasEvent('keydown') || hasEvent('keyup') || hasEvent('keypress') || element.isContentEditable
+        || ['input', 'textarea', 'select'].includes(tag)) {
+        push(add('keypress'));
+        if (hasEvent('keydown')) push(add('keydown'));
+        if (hasEvent('keyup')) push(add('keyup'));
+    }
+    if (tag === 'form' || hasEvent('submit')) push(add('submit'));
+    if (hasEvent('wheel') || hasEvent('scroll') || tag === 'canvas'
+        || (element.scrollHeight > element.clientHeight || element.scrollWidth > element.clientWidth)) {
+        push(add('scroll'));
+    }
+    if (hasEvent('pointerdown') || hasEvent('mousedown') || tag === 'canvas' || attr('data-draggable') === 'true') push(add('pointerdown'));
+    if (hasEvent('pointermove') || hasEvent('mousemove') || tag === 'canvas' || attr('data-draggable') === 'true') push(add('pointermove'));
+    if (hasEvent('pointerup') || hasEvent('mouseup') || tag === 'canvas' || attr('data-draggable') === 'true') push(add('pointerup'));
+    ['pointerover', 'pointerout', 'pointercancel', 'pointerenter', 'pointerleave',
+        'mousedown', 'mousemove', 'mouseup', 'mouseover', 'mouseout', 'mouseenter', 'mouseleave']
+        .forEach(eventName => { if (hasEvent(eventName)) push(add(eventName)); });
+    if (hasEvent('drag') || hasEvent('dragstart') || hasEvent('dragend') || element.draggable || attr('data-draggable') === 'true'
+        || tag === 'canvas' || /resize|splitter|handle/i.test(attr('class') + ' ' + attr('id'))) push(add('drag'));
+    if (type === 'range' || type === 'number' || role === 'slider') {
+        push(add('increase'));
+        push(add('decrease'));
+        push(add('increment'));
+        push(add('decrement'));
+    }
+    if (hasEvent('mouseenter') || hasEvent('mouseover') || hasEvent('pointerover') || interactive) push(add('hover'));
+    if (hasEvent('focus') || ['input', 'select', 'textarea', 'button'].includes(tag)
+        || element.hasAttribute('tabindex')) push(add('focus'));
+    if (hasEvent('blur') || ['input', 'select', 'textarea', 'button'].includes(tag)
+        || element.hasAttribute('tabindex')) push(add('blur'));
+    if (hasEvent('input') || type === 'range' || type === 'number' || ['input', 'select', 'textarea'].includes(tag)) push(add('input'));
+    if (hasEvent('change') || ['input', 'select', 'textarea'].includes(tag)) push(add('change'));
+    return actions;
+}
+
+function _uiOperationLabel(element) {
+    if (!element) return '';
+    return String(
+        element.getAttribute('aria-label')
+        || element.getAttribute('title')
+        || element.textContent
+        || element.getAttribute('name')
+        || element.id
+        || '',
+    ).replace(/\s+/g, ' ').trim().slice(0, 180);
+}
+
+function _uiOperationSemanticProperty(element, action = null) {
+    if (action?.semantic_property) return action.semantic_property;
+    const declared = String(element?.getAttribute?.('data-ui-semantic') || '').trim().toLowerCase();
+    if (declared) {
+        const known = new Set([
+            'opacity', 'visibility', 'zoom', 'slice', 'color', 'layout', 'panel',
+            'tool', 'reconstruct', 'file', 'window', 'threshold', 'expansion',
+            'language', 'theme', 'session', 'report', 'action',
+        ]);
+        if (known.has(declared)) return declared;
+    }
+    const identity = [
+        element?.id,
+        element?.getAttribute?.('name'),
+        element?.getAttribute?.('aria-label'),
+        element?.getAttribute?.('title'),
+        // Visible button/menu text is the primary human-facing identity for
+        // controls without an aria-label. Include it in semantic inference so
+        // “click the 3D reconstruction button” resolves to that mounted
+        // control instead of being rejected as an unrelated generic click.
+        String(element?.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 240),
+        element?.getAttribute?.('data-i18n-zh'),
+        element?.getAttribute?.('data-i18n-en'),
+        element?.getAttribute?.('data-ui-intents'),
+        element?.getAttribute?.('onclick'),
+        element?.getAttribute?.('oninput'),
+        element?.getAttribute?.('onchange'),
+        element?.getAttribute?.('oncontextmenu'),
+        element?.getAttribute?.('ondblclick'),
+        element?.getAttribute?.('onkeydown'),
+        element?.getAttribute?.('onkeyup'),
+        element?.getAttribute?.('onkeypress'),
+        element?.getAttribute?.('onwheel'),
+        element?.getAttribute?.('onscroll'),
+        element?.getAttribute?.('onsubmit'),
+        element?.getAttribute?.('onfocus'),
+        element?.getAttribute?.('onblur'),
+        element?.getAttribute?.('onmouseenter'),
+        element?.getAttribute?.('onmouseover'),
+        element?.getAttribute?.('onmouseleave'),
+        element?.getAttribute?.('onpointerover'),
+        element?.getAttribute?.('onpointerout'),
+        element?.getAttribute?.('onpointercancel'),
+        element?.getAttribute?.('onpointerenter'),
+        element?.getAttribute?.('onpointerleave'),
+        element?.getAttribute?.('onmousedown'),
+        element?.getAttribute?.('onmousemove'),
+        element?.getAttribute?.('onmouseup'),
+        element?.getAttribute?.('onmouseover'),
+        element?.getAttribute?.('onmouseout'),
+        element?.getAttribute?.('onmouseenter'),
+        element?.getAttribute?.('onmouseleave'),
+        element?.getAttribute?.('data-action'),
+        element?.getAttribute?.('data-ui-action'),
+        element?.getAttribute?.('data-ui-control'),
+        element?.getAttribute?.('data-ui-semantic'),
+        element?.getAttribute?.('aria-expanded'),
+        element?.getAttribute?.('aria-controls'),
+        element?.getAttribute?.('data-theme-toggle'),
+        element?.getAttribute?.('data-lang-btn'),
+    ].filter(Boolean).join(' ').toLowerCase();
+    if (/opacity|alpha|transparen|不透明度|透明度|半透明/.test(identity)) return 'opacity';
+    if (/visibility|visible|show|hide|display|显示|隐藏|可见/.test(identity)) return 'visibility';
+    if (/zoom|magnif|缩放|放大|缩小/.test(identity)) return 'zoom';
+    if (/slice|slider(axial|sagittal|coronal)|切片|层面/.test(identity)) return 'slice';
+    if (/color|colour|颜色|色彩/.test(identity)) return 'color';
+    if (/layout|排列|布局/.test(identity)) return 'layout';
+    if (/panel|tab|面板|标签页/.test(identity)) return 'panel';
+    if (/threshold|阈值/.test(identity)) return 'threshold';
+    if (/reconstruct|重建/.test(identity)) return 'reconstruct';
+    if (/file|browse|upload|文件|浏览|上传/.test(identity)) return 'file';
+    if (/expand|collapse|展开|收起|折叠/.test(identity)) return 'expansion';
+    if (/language|lang|中文|英文|汉语|语言/.test(identity)) return 'language';
+    if (/theme|dark|light|深色|浅色|主题/.test(identity)) return 'theme';
+    if (/session|case|会话|病例/.test(identity)) return 'session';
+    if (/report|报告/.test(identity)) return 'report';
+    if (/click|dblclick|keypress|keydown|keyup|scroll|wheel|drag|hover|focus|blur|pointer|mouse|input|change|点击|双击|滚动|拖动|悬停|聚焦|失焦|指针|鼠标/.test(identity)) return 'action';
+    return null;
+}
+
+function _uiOperationVirtualTreeActions(nodes) {
+    const items = [];
+    (Array.isArray(nodes) ? nodes : []).forEach(node => {
+        if (!node || typeof node !== 'object') return;
+        const id = String(node.id || node.nodeId || node.objectId || '').trim();
+        if (!id) return;
+        const label = String(node.label || node.name || id).replace(/\s+/g, ' ').trim().slice(0, 160);
+        const parent = String(node.parentId || node.parentGroup || '').trim();
+        const nodeBase = { node_id: id, nodeId: node.nodeId || id, objectId: node.objectId || id,
+            label, aliases: [id, node.type, node.kind, parent].filter(Boolean),
+            panel: 'viewers', kind: 'data-tree-virtual', visible: node.visible !== false,
+            scope: 'leaf',
+            enabled: node.status !== 'loading' && node.status !== 'restoring',
+            available: node.status !== 'loading' && node.status !== 'restoring',
+        };
+        const add = (suffix, action, actionLabel, semanticProperty) => items.push({
+            ...nodeBase,
+            ref: `data-tree:${id}:${suffix}`,
+            label: `${label} — ${actionLabel}`,
+            aliases: [...nodeBase.aliases, actionLabel],
+            action: { ...action, semantic_property: semanticProperty, node_id: id },
+        });
+        const lower = `${id} ${label} ${node.type || ''} ${node.kind || ''}`.toLowerCase();
+        const isMask = lower.includes('mask') || /^mask[:_]/.test(id);
+        const isStructure = isMask || lower.includes('organ') || lower.includes('structure')
+            || lower.includes('ctv') || lower.includes('oar') || id.startsWith('organ_') || id.startsWith('ctv_');
+        const isDose = id.startsWith('dose_iso_') || lower.includes('dose') || lower.includes('isodose');
+        const isNeedle = id.startsWith('needle_') || lower.includes('needle') || lower.includes('穿刺');
+        const isTrajectory = id.startsWith('traj_') || id.startsWith('trajectory_') || lower.includes('trajectory') || lower.includes('轨迹');
+        const isPlanning = !!node.planningId || parent === 'planning'
+            || lower.includes('planning') || isDose || isNeedle || isTrajectory;
+        // Report/screenshot rows under the real Artifacts group are durable
+        // records, not rendered scene objects.  The human context menu returns
+        // early for them, so publishing visibility/opacity/reconstruct here
+        // would make the agent claim it changed an object that cannot be
+        // shown in the Viewer.  Manual annotations remain visual and are not
+        // classified as export artifacts because they live under a different
+        // parent.
+        const isNonVisualArtifact = parent === 'artifacts' && node.renderAsStructure !== true;
+        const hasVisualPresentation = !isNonVisualArtifact;
+        const isColorable = isStructure || isPlanning || isMask || node.color != null;
+        if (hasVisualPresentation) {
+            add('visibility', { target: 'tree.visibility', command: 'set', value: `${id},on` }, 'Show / hide', 'visibility');
+            add('opacity', { target: 'tree.opacity', command: 'set', value_template: `${id},{value}` }, 'Opacity', 'opacity');
+        }
+        if (isStructure) {
+            add('reconstruct3d', { target: 'tree.reconstruct3d', command: 'run', value: id }, '3D reconstruct', 'reconstruct');
+            add('color', { target: 'tree.color', command: 'set', value: JSON.stringify({ id }) }, 'Color', 'color');
+        }
+        if (isDose) {
+            add('reconstruct-dose', { target: 'ui.context_action', command: 'run', action_id: 'node_reconstruct_dose', object_ids: [id], object_id: id, source: 'data-tree' }, '3D reconstruct', 'reconstruct');
+        }
+        if (isMask) {
+            add('rename', { target: 'ui.context_action', command: 'run', action_id: 'node_rename', object_ids: [id], object_id: id, source: 'data-tree' }, 'Rename', 'action');
+            add('move_ctv', { target: 'ui.context_action', command: 'run', action_id: 'node_move_ctv', object_ids: [id], object_id: id, source: 'data-tree' }, 'Move to CTV', 'action');
+            add('move_oar', { target: 'ui.context_action', command: 'run', action_id: 'node_move_oar', object_ids: [id], object_id: id, source: 'data-tree' }, 'Move to OAR', 'action');
+        }
+        if (String(node.type || node.kind || '').toLowerCase().includes('organ') || id.startsWith('organ_')) {
+            // These are the category moves exposed by the human leaf menu.
+            // Publish the actual menu action, including the stable node id,
+            // instead of asking the model to emulate a click by label.
+            ['non_traversable', 'traversable'].forEach(category => add(
+                `move_${category}`,
+                { target: 'ui.context_action', command: 'run', action_id: `node_move_${category}`,
+                    object_ids: [id], object_id: id, source: 'data-tree', category },
+                category === 'non_traversable' ? 'Move to Non-traversable' : 'Move to Traversable',
+                'action',
+            ));
+        }
+
+        // The right-click menu exposes the same operations for every visual
+        // row.  Publish them as stable context capabilities rather than
+        // asking the model to reconstruct a menu from a screenshot.  The
+        // browser dispatcher below calls the existing menu handlers and keeps
+        // the user's real selection/confirmation semantics intact.
+        const addContext = (suffix, actionId, actionLabel, semanticProperty = 'action', extra = {}) => add(
+            `context:${suffix}`,
+            {
+                target: 'ui.context_action', command: 'run', action_id: actionId,
+                object_ids: [id], object_id: id, source: 'data-tree', ...extra,
+            },
+            actionLabel,
+            semanticProperty,
+        );
+        // A server/plugin provider may publish additional context actions on
+        // the node. Preserve those descriptors verbatim so the core agent is
+        // extensible without another sentence-specific branch. The browser
+        // still validates the stable node identity before dispatching it.
+        (Array.isArray(node.contextActions) ? node.contextActions : []).forEach((descriptor, index) => {
+            if (!descriptor) return;
+            const item = typeof descriptor === 'string' ? { action_id: descriptor, label: descriptor } : descriptor;
+            if (!item || typeof item !== 'object') return;
+            const actionId = String(item.action_id || item.actionId || item.id || item.operation || '').trim();
+            if (!actionId) return;
+            if (isNonVisualArtifact && !new Set([
+                'node_export', 'node_delete', 'node_clear_selection',
+                'export', 'delete', 'clear_selection',
+            ]).has(actionId.toLowerCase())) return;
+            const actionLabel = String(item.label || item.name || actionId).trim();
+            const publishedAction = item.target && item.target !== 'ui.context_action'
+                ? { ...item, node_id: id, object_id: id, object_ids: [id], source: item.source || 'data-tree' }
+                : { target: 'ui.context_action', command: 'run', action_id: actionId,
+                    object_ids: [id], object_id: id, source: 'data-tree', ...item };
+            add(`published:${index}`, publishedAction, actionLabel, item.semantic_property || 'action');
+        });
+        if (isMask || isStructure || isDose || isNeedle || isTrajectory || isPlanning || node.type === 'manual_annotation') {
+            addContext('rename-any', 'node_rename', 'Rename');
+        }
+        if (isNonVisualArtifact) {
+            // This is the exact early-return menu contract in
+            // showContextMenu(): export, delete, clear selection only.
+            addContext('export', 'node_export', 'Export');
+            addContext('delete', 'node_delete', 'Delete');
+            addContext('clear-selection', 'node_clear_selection', 'Clear selection');
+        } else {
+            addContext('export', 'node_export', 'Export');
+            addContext('delete', 'node_delete', 'Delete');
+            addContext('solo', 'node_solo', 'Show only this');
+            addContext('show2d', 'node_show_2d', 'Show in 2D', 'visibility');
+            addContext('hide2d', 'node_hide_2d', 'Hide in 2D', 'visibility');
+            addContext('show3d', 'node_show_3d', 'Show in 3D', 'visibility');
+            addContext('hide3d', 'node_hide_3d', 'Hide in 3D', 'visibility');
+            if (isColorable) addContext('color-any', 'node_color', 'Change color', 'color');
+            if (isStructure || id === 'skin_surface') addContext('reconstruct-any', 'node_reconstruct3d', '3D reconstruct', 'reconstruct');
+            if (isNeedle || isTrajectory) {
+                addContext('add-seed', 'node_add_seed', 'Add seed');
+            }
+            if (isNeedle) addContext('restore-algorithm', 'node_restore_algorithm', 'Restore algorithm position');
+            if (id === 'dose_overlay' || lower.includes('dose overlay')) {
+                addContext('colorbar-2d', 'node_colorbar_2d', 'Show 2D color bar', 'visibility', { visible: true });
+                addContext('colorbar-3d', 'node_colorbar_3d', 'Show 3D color bar', 'visibility', { visible: true });
+            }
+            [100, 75, 50, 25].forEach(percent => addContext(
+                `opacity${percent}`, 'node_opacity', `${percent}% opacity`, 'opacity', { value: percent },
+            ));
+        }
+    });
+
+    // Group headers are DOM rows too, but they are not leaf nodes in
+    // getDataTreeNodeSnapshot().  Keep a capability for each real group so
+    // commands such as “all OAR” resolve to one group operation instead of a
+    // random child row.  The list mirrors the group keys used by the Data Tree
+    // renderer; no natural-language sentence is encoded here.
+    const groups = [
+        ['ctv', 'CTV', ['靶区', 'clinical target']],
+        ['oar', 'OAR', ['危及器官', 'organs at risk']],
+        ['non_traversable', 'Non-traversable OAR', ['不可穿刺 OAR']],
+        ['traversable', 'Traversable OAR', ['可穿刺 OAR']],
+        ['masks', 'Masks', ['掩膜', '蒙版']],
+        ['upload_masks', 'Uploaded masks', ['上传掩膜', '上传的掩膜']],
+        ['generic_masks', 'Additional masks', ['其他分割掩膜']],
+        ['planning', 'Planning', ['规划', '计划']],
+        ['planning_trajectories', 'Trajectories', ['轨迹', '针道路径']],
+        ['planning_seeds', 'Seeds', ['粒子', '种子']],
+        ['planning_needles', 'Needles', ['穿刺针', '针道']],
+        ['dose_isosurfaces', 'Dose isosurfaces', ['等剂量面', '剂量面']],
+        ['planning_meshes', 'Planning meshes', ['规划网格', '导板']],
+        ['image', 'Image', ['影像', '图像', 'CT']],
+        ['segmentation', 'Segmentation', ['分割', '结构']],
+        ['artifacts', 'Artifacts & annotations', ['工件', '产物', '标注', '注释']],
+    ];
+    groups.forEach(([group, groupLabel, aliases]) => {
+        const base = {
+            ref: `data-tree-group:${group}`,
+            label: groupLabel,
+            aliases: [group, groupLabel, ...aliases],
+            panel: 'viewers', kind: 'data-tree-group-virtual', group,
+            scope: 'group', visible: true, enabled: true,
+            available: typeof _dataTreeGroupObjectIds === 'function'
+                ? _dataTreeGroupObjectIds(group).length > 0 : true,
+        };
+        const addGroup = (suffix, action, actionLabel, semanticProperty = 'action') => items.push({
+            ...base,
+            ref: `${base.ref}:${suffix}`,
+            label: `${groupLabel} — ${actionLabel}`,
+            aliases: [...base.aliases, actionLabel],
+            action: { ...action, group, semantic_property: semanticProperty, scope: 'group' },
+        });
+        // Expansion is a Data Tree operation, not a visibility operation. It
+        // is published for every real header (including Image and Artifacts)
+        // even when the group currently has no visual object IDs.
+        ['expand', 'collapse', 'toggle'].forEach(command => {
+            items.push({
+                ...base,
+                ref: `${base.ref}:${command}`,
+                label: `${groupLabel} — ${command}`,
+                aliases: [...base.aliases, command, command === 'expand' ? '展开' : command === 'collapse' ? '收起' : '切换'],
+                available: true,
+                action: { target: 'data_tree', command, group, semantic_property: 'expansion', scope: 'group' },
+            });
+        });
+        if (group !== 'artifacts') addGroup('visibility', { target: 'tree.group.visibility', command: 'set', value_template: `${group},{value}` }, 'Show / hide', 'visibility');
+        if (group !== 'artifacts') {
+            addGroup('show', { target: 'ui.context_action', command: 'run', action_id: 'group_show', category: group, source: 'data-tree' }, 'Show all', 'visibility');
+            addGroup('hide', { target: 'ui.context_action', command: 'run', action_id: 'group_hide', category: group, source: 'data-tree' }, 'Hide all', 'visibility');
+            addGroup('show2d', { target: 'ui.context_action', command: 'run', action_id: 'group_show_2d', category: group, source: 'data-tree' }, 'Show in 2D', 'visibility');
+            addGroup('hide2d', { target: 'ui.context_action', command: 'run', action_id: 'group_hide_2d', category: group, source: 'data-tree' }, 'Hide in 2D', 'visibility');
+            addGroup('show3d', { target: 'ui.context_action', command: 'run', action_id: 'group_show_3d', category: group, source: 'data-tree' }, 'Show in 3D', 'visibility');
+            addGroup('hide3d', { target: 'ui.context_action', command: 'run', action_id: 'group_hide_3d', category: group, source: 'data-tree' }, 'Hide in 3D', 'visibility');
+        }
+        // The real Artifacts group has no group-level opacity/color executor;
+        // its durable rows are evidence files, not scene meshes. Image and
+        // Segmentation are also abstract containers. Do not publish controls
+        // that the live menu cannot execute, otherwise a command can appear
+        // successful while leaving the viewer unchanged.
+        if (!['image', 'segmentation', 'artifacts'].includes(group)) {
+            addGroup('opacity', { target: 'tree.group.opacity', command: 'set', value_template: `${group},{value}` }, 'Opacity', 'opacity');
+            [100, 75, 50, 25].forEach(percent => addGroup(
+                `opacity${percent}`,
+                { target: 'ui.context_action', command: 'run', action_id: 'group_opacity', category: group, source: 'data-tree', value: percent },
+                `${percent}% opacity`, 'opacity',
+            ));
+            addGroup('color', { target: 'ui.context_action', command: 'run', action_id: 'group_color', category: group, source: 'data-tree' }, 'Group color', 'color');
+        }
+        if (group === 'ctv' || group === 'oar') {
+            addGroup('rename', { target: 'ui.context_action', command: 'run', action_id: 'group_rename', category: group, source: 'data-tree' }, 'Rename group');
+            const destination = group === 'ctv' ? 'oar' : 'ctv';
+            addGroup(`move-${destination}`, { target: 'ui.context_action', command: 'run', action_id: `group_move_${destination}`, category: group, source: 'data-tree' }, `Move all to ${destination.toUpperCase()}`);
+        }
+        if (group === 'oar' || ['non_traversable', 'traversable'].includes(group)) {
+            addGroup('solo', { target: 'ui.context_action', command: 'run', action_id: 'group_solo', category: group, source: 'data-tree' }, 'Show only this group');
+        }
+        if (base.available) {
+            addGroup('export', { target: 'ui.context_action', command: 'run', action_id: 'group_export', category: group, source: 'data-tree' }, 'Export group');
+            addGroup('delete', { target: 'ui.context_action', command: 'run', action_id: 'group_delete', category: group, source: 'data-tree' }, 'Delete group');
+        }
+        if (group === 'oar' || ['non_traversable', 'traversable'].includes(group)) {
+            addGroup('reconstruct3d', { target: 'ui.context_action', command: 'run', action_id: 'group_reconstruct3d', category: group, source: 'data-tree' }, '3D reconstruct', 'reconstruct');
+        }
+        if (group === 'dose_isosurfaces') {
+            addGroup('reconstruct3d', { target: 'ui.context_action', command: 'run', action_id: 'group_reconstruct_dose', category: group, source: 'data-tree' }, 'Rebuild dose surfaces', 'reconstruct');
+        }
+        if (['planning', 'planning_trajectories', 'planning_seeds', 'planning_needles', 'dose_isosurfaces', 'planning_meshes'].includes(group)) {
+            addGroup('clear', { target: 'ui.context_action', command: 'run', action_id: 'clear_planning', category: group, source: 'data-tree' }, 'Clear planning display');
+        }
+    });
+    items.push({
+        ref: 'data-tree:all-organs', label: 'Show all organs', aliases: ['show all organs', '显示所有器官'],
+        panel: 'viewers', kind: 'data-tree-global-virtual', scope: 'group', visible: true,
+        enabled: true, available: true,
+        action: { target: 'ui.context_action', command: 'run', action_id: 'show_all_organs', source: 'data-tree', semantic_property: 'visibility' },
+    });
+    return items;
+}
+
+function _uiOperationSceneActions() {
+    const items = [];
+    const meshes = (typeof scene3D !== 'undefined' && scene3D?.meshes && typeof scene3D.meshes === 'object')
+        ? Object.keys(scene3D.meshes) : [];
+    meshes.forEach(id => {
+        const normalized = String(id || '');
+        if (!normalized) return;
+        const isSeed = normalized.startsWith('seed_');
+        const isNeedle = normalized.startsWith('needle_');
+        if (!isSeed && !isNeedle) return;
+        const label = isSeed ? `Seed ${normalized.replace(/^seed_/, '')}` : `Needle ${normalized.replace(/^needle_/, '')}`;
+        const base = {
+            ref: `scene-3d:${normalized}`,
+            id: normalized, object_id: normalized, objectId: normalized,
+            label, aliases: [normalized, label, isSeed ? 'seed particle 粒子' : 'needle 穿刺针'],
+            panel: 'viewers', kind: 'scene-3d-virtual', scope: 'leaf', visible: true, enabled: true, available: true,
+        };
+        const add = (suffix, actionId, actionLabel, semanticProperty = 'action', extra = {}) => items.push({
+            ...base, ref: `${base.ref}:${suffix}`, label: `${label} — ${actionLabel}`,
+            aliases: [...base.aliases, actionLabel],
+            action: {
+                target: 'ui.context_action', command: 'run', action_id: actionId,
+                object_id: normalized, object_ids: [normalized], source: 'scene-3d',
+                semantic_property: semanticProperty, ...extra,
+            },
+        });
+        add('highlight', isSeed ? 'scene_seed_highlight' : 'scene_needle_show_seeds', isSeed ? 'Highlight' : 'Show seeds');
+        add('show', isSeed ? 'scene_seed_show_dose' : 'scene_needle_show', isSeed ? 'Show dose' : 'Show');
+        add('hide', isSeed ? 'scene_seed_hide' : 'scene_needle_hide', 'Hide', 'visibility');
+        add('delete', isSeed ? 'scene_seed_delete' : 'scene_needle_delete', 'Delete');
+        if (isSeed) add('restore-plan', 'scene_seed_restore_plan', 'Restore algorithm planning');
+        if (isNeedle) add('restore-algorithm', 'scene_needle_restore_algorithm', 'Restore algorithm position');
+        if (isNeedle) add('add-seed', 'scene_needle_add_seed', 'Add seed');
+        add('opacity50', isSeed ? 'scene_seed_opacity' : 'scene_needle_opacity', '50% opacity', 'opacity', { value: 50 });
+    });
+    return items;
+}
+
+function collectUIOperationCatalog() {
+    const excluded = new Set(['authPassword', 'currentPassword', 'newPassword', 'authDeploymentKey', 'chatInput', 'messageInput']);
+    const selector = 'button, input, select, textarea, form, canvas, summary, a, [role="button"], [role="menuitem"], [role="tab"], [role="checkbox"], [role="radio"], [role="switch"], [role="option"], [role="link"], [role="slider"], [contenteditable="true"], [tabindex], [draggable="true"], [data-draggable], [data-node-id], [data-object-id], [data-group], [data-category], [data-control-id], [onclick], [oninput], [onchange], [oncontextmenu], [ondblclick], [onkeydown], [onkeyup], [onkeypress], [onwheel], [onscroll], [onsubmit], [onpointerdown], [onpointermove], [onpointerup], [onpointerover], [onpointerout], [onpointercancel], [onpointerenter], [onpointerleave], [onmousedown], [onmousemove], [onmouseup], [onmouseover], [onmouseout], [onmouseenter], [onmouseleave], [ondrag], [ondragstart], [ondragend], [onfocus], [onblur], [data-ui-control], [data-ui-target], [data-ui-action], [data-action], [data-theme-toggle], [data-lang-btn]';
+    const elements = Array.from(document.querySelectorAll(selector));
+    const seen = new Set(elements);
+    // Property-assigned handlers (element.onclick = fn) do not pass through
+    // addEventListener. Discover them from the mounted DOM as well, keeping
+    // the capability surface complete for small plug-ins and custom widgets.
+    const runtimeEventNames = [
+        'click', 'dblclick', 'contextmenu', 'keydown', 'keyup', 'keypress', 'wheel', 'scroll',
+        'submit', 'pointerdown', 'pointermove', 'pointerup', 'pointerover', 'pointerout',
+        'pointercancel', 'pointerenter', 'pointerleave', 'mousedown', 'mousemove', 'mouseup',
+        'mouseover', 'mouseout', 'mouseenter', 'mouseleave', 'drag', 'dragstart', 'dragend',
+        'focus', 'blur', 'input', 'change',
+    ];
+    document.querySelectorAll('*').forEach(element => {
+        if (!seen.has(element) && runtimeEventNames.some(name => typeof element[`on${name}`] === 'function')) {
+            seen.add(element);
+            elements.push(element);
+        }
+    });
+    // Include controls whose listeners were attached imperatively by a
+    // feature module (for example a splitter or a plug-in canvas). The
+    // listener ledger is a discovery mechanism, not a control-name list.
+    if (typeof window.__getBrachyUiEventTargets === 'function') {
+        window.__getBrachyUiEventTargets().forEach(element => {
+            if (element?.isConnected && !seen.has(element)) {
+                seen.add(element);
+                elements.push(element);
+            }
+        });
+    }
+    const entries = [];
+    elements.forEach((element, index) => {
+        const type = String(element.getAttribute('type') || '').toLowerCase();
+        const id = String(element.id || '').trim();
+        const ident = `${id} ${element.getAttribute('name') || ''} ${element.getAttribute('autocomplete') || ''} ${element.getAttribute('placeholder') || ''}`;
+        if (excluded.has(id) || type === 'password' || type === 'hidden' || /api[_-]?key|token|secret|password|authorization|bearer/i.test(ident)) return;
+        // Do not publish the conversation editor as an executable target; it
+        // is a transport field, not a meaningful UI operation.
+        if (element.matches?.('textarea') && /chat|message|prompt|command/i.test(ident)) return;
+        const ref = _uiOperationRef(element, index);
+        const action = _uiOperationActionFromElement(element);
+        if (!ref || !action) return;
+        const label = _uiOperationLabel(element) || ref;
+        const rect = element.getBoundingClientRect?.();
+        const visible = _uiOperationVisible(element);
+        const entry = {
+            ref,
+            id: id || null,
+            label,
+            label_zh: element.getAttribute('data-i18n-zh') || null,
+            label_en: element.getAttribute('data-i18n-en') || null,
+            aliases: [
+                id,
+                element.getAttribute('name'),
+                element.getAttribute('data-ui-target'),
+                element.getAttribute('data-group'),
+                element.getAttribute('data-ui-intents'),
+                element.getAttribute('data-ui-semantic'),
+                element.getAttribute('data-action'),
+                element.getAttribute('data-ui-action'),
+                element.getAttribute('data-control-id'),
+                element.getAttribute('data-i18n-zh'),
+                element.getAttribute('data-i18n-en'),
+                element.getAttribute('aria-label'),
+                element.getAttribute('title'),
+            ].filter(Boolean),
+            panel: _uiOperationPanel(element),
+            tag: String(element.tagName || '').toLowerCase(),
+            type: type || null,
+            role: element.getAttribute('role') || null,
+            handler: [
+                'onclick', 'oninput', 'onchange', 'oncontextmenu', 'ondblclick',
+                'onkeydown', 'onkeyup', 'onkeypress', 'onwheel', 'onscroll', 'onsubmit',
+                'onpointerdown', 'onpointermove', 'onpointerup', 'onpointerover',
+                'onpointerout', 'onpointercancel', 'onpointerenter', 'onpointerleave',
+                'onmousedown', 'onmousemove', 'onmouseup', 'onmouseover', 'onmouseout',
+                'onmouseenter', 'onmouseleave', 'onfocus', 'onblur',
+                'ondrag', 'ondragstart', 'ondragend',
+            ].map(name => element.getAttribute(name)).filter(Boolean).join(';').slice(0, 640),
+            registered_events: typeof window.__getBrachyUiEventTypes === 'function'
+                ? window.__getBrachyUiEventTypes(element) : [],
+            action,
+            actions: _uiOperationNativeActions(element, action),
+            semantic_property: action.semantic_property || _uiOperationSemanticProperty(element, action),
+            group: action.group || element.getAttribute('data-group') || null,
+            name: element.getAttribute('name') || null,
+            semantic_tokens: element.getAttribute('data-ui-intents') || element.getAttribute('data-ui-semantic') || null,
+            data_action: element.getAttribute('data-action') || null,
+            data_ui_action: element.getAttribute('data-ui-action') || null,
+            data_control_id: element.getAttribute('data-control-id') || null,
+            current_value: ('value' in element && type !== 'password') ? String(element.value ?? '').slice(0, 120) : null,
+            // Select options are part of the live capability contract.  They
+            // let the resolver choose the exact value the human would pick,
+            // while keeping arbitrary controls discoverable without a
+            // sentence-specific backend mapping.
+            options: String(element.tagName || '').toLowerCase() === 'select'
+                ? Array.from(element.options || []).slice(0, 128).map(option => ({
+                    value: String(option.value ?? ''),
+                    label: String(option.textContent || option.value || '').replace(/\s+/g, ' ').trim().slice(0, 160),
+                    disabled: !!option.disabled,
+                }))
+                : null,
+            checked: ('checked' in element) ? !!element.checked : null,
+            min: element.getAttribute('min'),
+            max: element.getAttribute('max'),
+            step: element.getAttribute('step'),
+            aria_expanded: element.getAttribute('aria-expanded'),
+            aria_controls: element.getAttribute('aria-controls'),
+            visible,
+            enabled: !element.disabled,
+            disabled: !!element.disabled,
+            available: !element.disabled && (visible || !!id || !!element.getAttribute('data-ui-target')),
+            bounds: rect && visible ? { x: Math.round(rect.x), y: Math.round(rect.y), width: Math.round(rect.width), height: Math.round(rect.height) } : null,
+        };
+        entries.push(entry);
+    });
+    const nodes = typeof window.getDataTreeNodeSnapshot === 'function' ? window.getDataTreeNodeSnapshot() : [];
+    entries.push(..._uiOperationVirtualTreeActions(nodes));
+    entries.push(..._uiOperationSceneActions());
+
+    // Providers can add actions for plug-in panels/scene objects without
+    // changing this core collector. Their entries must still carry a stable
+    // ref and a controller action; coordinates remain browser-owned.
+    if (typeof window.getUIOperationCatalogExtensions === 'function') {
+        try {
+            const extensions = window.getUIOperationCatalogExtensions();
+            if (Array.isArray(extensions)) entries.push(...extensions.filter(item => item && item.ref && item.action));
+        } catch (error) {
+            console.warn('[ui-operation-catalog] extension provider failed:', error);
+        }
+    }
+    const deduped = new Map();
+    entries.forEach(entry => {
+        const key = String(entry.ref || `${entry.action?.target || ''}:${entry.label || ''}`);
+        if (!key) return;
+        const current = deduped.get(key);
+        if (!current) deduped.set(key, entry);
+        else {
+            current.aliases = [...new Set([...(current.aliases || []), ...(entry.aliases || [])])].slice(0, 16);
+            current.visible = current.visible || entry.visible;
+            current.enabled = current.enabled || entry.enabled;
+            current.available = current.available || entry.available;
+        }
+    });
+    // Keep the full mounted capability surface.  A case with many OAR rows
+    // can exceed the old 1024-entry truncation and silently lose group or
+    // leaf operations at the end of the Data Tree.  The bridge state already
+    // bounds individual strings; this cap is only a guard for pathological
+    // plugin pages, not a normal-case whitelist.
+    return [...deduped.values()].slice(0, 4096);
+}
+window.collectUIOperationCatalog = collectUIOperationCatalog;
+window.getUIOperationCatalog = collectUIOperationCatalog;
+
 function collectUIState() {
     // A broken optional presentation field must never prevent a clinical or
     // conversational request from reaching the server. This boundary is
@@ -405,6 +1445,7 @@ function _collectUIState() {
     const _canvas3d = document.getElementById('canvas3D');
     const _rendererCanvas3d = _scene3d?.renderer?.domElement;
     const visualTargetCatalog = collectVisualTargetCatalog();
+    const uiOperationCatalog = collectUIOperationCatalog();
     return {
         ct_path: gv('ctPath'),
         ctv_path: gv('ctvPath'),
@@ -537,6 +1578,11 @@ function _collectUIState() {
         // identities and state only; pixel coordinates are computed later by
         // the capture manifest so names can never become guessed locations.
         visual_target_catalog: visualTargetCatalog,
+        // Every mounted button/input/row handler is published separately from
+        // visual objects. The server uses this capability contract to resolve
+        // imperative UI commands and never has to infer a selector from a
+        // translated label.
+        ui_operation_catalog: uiOperationCatalog,
         viewer: {
             ct_loaded: !!(state && state.ctLoaded),
             ct_shape: (state && state.ctShape) || null,
@@ -1186,6 +2232,47 @@ function _parseUIControlPayload(value) {
 
 function _resolveUIControlElement(payload) {
     const p = _parseUIControlPayload(payload);
+    const ref = String(p.ref || p.control_ref || p.controlRef || '').trim();
+    if (ref) {
+        // Stable refs are issued by collectUIOperationCatalog().  Do not turn
+        // them into a CSS selector: refs may contain punctuation and must be
+        // resolved by exact attribute equality against the current DOM.
+        const byRef = Array.from(document.querySelectorAll('[data-brachy-control-ref]'))
+            .find(element => element.getAttribute('data-brachy-control-ref') === ref);
+        if (byRef) return byRef;
+        // A ref generated from an element id remains recoverable after a
+        // component rerender even when the attribute has not been restored.
+        if (ref.startsWith('dom:')) {
+            const id = ref.slice(4);
+            if (id) {
+                const byId = document.getElementById(id);
+                if (byId) return byId;
+            }
+        }
+        // A component may have been re-rendered between the state snapshot
+        // and execution. Rebuild the live catalogue and recover an automatic
+        // ref only when its identity is still unique; never fall back to the
+        // first button or a coordinate.
+        if (ref.startsWith('dom:auto:') && typeof collectUIOperationCatalog === 'function') {
+            try {
+                const refreshed = collectUIOperationCatalog();
+                const wantedLabel = String(p.label || '').trim();
+                const wantedId = String(p.id || '').trim();
+                const matches = (Array.isArray(refreshed) ? refreshed : []).filter(item =>
+                    item && item.ref && item.action?.target === 'ui.control'
+                    && (!wantedId || String(item.id || '') === wantedId)
+                    && (!wantedLabel || String(item.label || '').trim() === wantedLabel),
+                );
+                if (matches.length === 1) {
+                    const recovered = Array.from(document.querySelectorAll('[data-brachy-control-ref]'))
+                        .find(element => element.getAttribute('data-brachy-control-ref') === matches[0].ref);
+                    if (recovered) return recovered;
+                }
+            } catch (error) {
+                console.debug('[UIAction] automatic-ref recovery skipped:', error);
+            }
+        }
+    }
     if (p.id) return document.getElementById(String(p.id).replace(/^#/, ''));
     if (p.selector) {
         try { return document.querySelector(String(p.selector)); } catch (_) { return null; }
@@ -1195,19 +2282,172 @@ function _resolveUIControlElement(payload) {
 
 function executeGenericUIControl(command, value) {
     const payload = _parseUIControlPayload(value);
+    // Gesture coordinates/options may be supplied either at the top level or
+    // as the semantic value produced by the resolver (for example
+    // {"value":{"x":120,"y":80}}). Keep both forms supported without
+    // changing the value contract for ordinary inputs.
+    const gesture = payload && payload.value && typeof payload.value === 'object'
+        ? payload.value
+        : (payload && payload.gesture && typeof payload.gesture === 'object' ? payload.gesture : {});
     const el = _resolveUIControlElement(payload);
+    const requestedCommand = String(command || payload.command || 'click').trim().toLowerCase();
+    const cmd = requestedCommand === 'increase' ? 'increment'
+        : requestedCommand === 'decrease' ? 'decrement'
+            : requestedCommand === 'dblclick' ? 'doubleclick'
+                : requestedCommand === 'rightclick' ? 'contextmenu'
+                    : requestedCommand === 'wheel' ? 'scroll'
+                        : requestedCommand === 'click_once' ? 'click'
+                : requestedCommand;
     if (!el) {
-        if (typeof addChat === 'function') addChat('error', `UI control not found: ${JSON.stringify(value)}`);
-        return false;
+        const error = typeof window._t === 'function'
+            ? window._t('当前页面中找不到该界面控件。', 'The requested UI control is not available on the current page.')
+            : 'The requested UI control is not available on the current page.';
+        if (typeof addChat === 'function') addChat('error', error);
+        return { success: false, error, requested: value };
     }
-    const cmd = command || payload.command || 'click';
-    if (cmd === 'click') {
-        el.click();
+    if (el.disabled || el.getAttribute('aria-disabled') === 'true') {
+        const error = typeof window._t === 'function'
+            ? window._t('该界面控件当前不可用。', 'The requested UI control is currently disabled.')
+            : 'The requested UI control is currently disabled.';
+        return { success: false, error, ref: el.getAttribute('data-brachy-control-ref') || null };
+    }
+    const dispatchValueEvents = () => {
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+        el.dispatchEvent(new Event('change', { bubbles: true }));
+    };
+    const elementPoint = () => {
+        const rect = el.getBoundingClientRect?.() || { left: 0, top: 0, width: 1, height: 1 };
+        return {
+            x: Number(payload.clientX ?? payload.x ?? gesture.clientX ?? gesture.x ?? rect.left + (rect.width || 1) / 2),
+            y: Number(payload.clientY ?? payload.y ?? gesture.clientY ?? gesture.y ?? rect.top + (rect.height || 1) / 2),
+        };
+    };
+    const dispatchMouse = (type, init = {}) => {
+        const point = elementPoint();
+        el.dispatchEvent(new MouseEvent(type, {
+            bubbles: true, cancelable: true, view: window,
+            clientX: point.x, clientY: point.y, button: Number(init.button ?? 0),
+            buttons: Number(init.buttons ?? 0), detail: Number(init.detail ?? 0), ...init,
+        }));
+    };
+    const dispatchPointer = (type, init = {}) => {
+        const point = elementPoint();
+        const eventInit = {
+            bubbles: true, cancelable: true, composed: true, view: window,
+            clientX: point.x, clientY: point.y, button: Number(init.button ?? 0),
+            buttons: Number(init.buttons ?? 0), pointerId: Number(payload.pointerId || 1),
+            pointerType: 'mouse', ...init,
+        };
+        if (typeof window.PointerEvent === 'function') el.dispatchEvent(new window.PointerEvent(type, eventInit));
+        else el.dispatchEvent(new MouseEvent(type.replace(/^pointer/, 'mouse'), eventInit));
+    };
+    const numericControl = ['range', 'number'].includes(String(el.type || '').toLowerCase());
+    const currentNumeric = Number(el.value);
+    const requestedNumeric = Number(payload.value ?? value);
+    const min = Number(el.min);
+    const max = Number(el.max);
+    const clamp = next => Math.max(
+        Number.isFinite(min) ? min : -Infinity,
+        Math.min(Number.isFinite(max) ? max : Infinity, next),
+    );
+    let applied = payload.value !== undefined ? payload.value : null;
+    if (cmd === 'run') {
+        // ``run`` is the generic lifecycle alias used by declarative plug-in
+        // controls. Preserve a form's native submit contract; for every other
+        // mounted control it is the same operation as a human click.
+        if (String(el.tagName || '').toLowerCase() === 'form') {
+            if (typeof el.requestSubmit === 'function') el.requestSubmit();
+            else el.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+        } else {
+            el.click();
+        }
+        applied = 'run';
+    } else if (cmd === 'reset') {
+        const form = String(el.tagName || '').toLowerCase() === 'form' ? el : el.form;
+        if (form && typeof form.reset === 'function') {
+            form.reset();
+            dispatchValueEvents();
+            applied = 'reset';
+        } else if (/^(button|a|summary)$/i.test(String(el.tagName || ''))
+            || el.getAttribute('role') === 'button') {
+            // A visible reset control is a normal command button, not a
+            // value-bearing form field.  Treating every reset request as a
+            // defaultValue assignment used to make these controls report
+            // failure even though a human can click them.
+            el.click();
+            applied = 'reset';
+        } else if ('value' in el && el.defaultValue !== undefined) {
+            el.value = el.defaultValue;
+            dispatchValueEvents();
+            applied = el.value;
+        } else {
+            const error = typeof window._t === 'function'
+                ? window._t('该界面控件不支持重置。', 'The requested UI control does not support reset.')
+                : 'The requested UI control does not support reset.';
+            return { success: false, error };
+        }
+    } else if (cmd === 'expand' || cmd === 'collapse') {
+        const rawExpanded = el.getAttribute('aria-expanded');
+        const currentExpanded = rawExpanded === null ? null : rawExpanded === 'true';
+        const desired = cmd === 'expand';
+        // With an explicit aria-expanded state, avoid a second click when the
+        // requested state is already present. This makes retries idempotent.
+        if (currentExpanded === null || currentExpanded !== desired) el.click();
+        applied = el.getAttribute('aria-expanded') || desired;
+    } else if (cmd === 'next' || cmd === 'prev' || cmd === 'first' || cmd === 'last') {
+        const tagName = String(el.tagName || '').toLowerCase();
+        if (tagName === 'select') {
+            const options = Array.from(el.options || []);
+            if (!options.length) {
+                const error = typeof window._t === 'function'
+                    ? window._t('该选择器没有可用选项。', 'The requested select control has no options.')
+                    : 'The requested select control has no options.';
+                return { success: false, error };
+            }
+            const currentIndex = Math.max(0, options.findIndex(option => option.selected));
+            const index = cmd === 'first' ? 0
+                : cmd === 'last' ? options.length - 1
+                    : Math.max(0, Math.min(options.length - 1, currentIndex + (cmd === 'next' ? 1 : -1)));
+            el.value = options[index].value;
+            applied = el.value;
+            dispatchValueEvents();
+        } else if (numericControl && Number.isFinite(currentNumeric)) {
+            const step = Number.isFinite(Number(el.step)) && Number(el.step) > 0 ? Number(el.step) : 1;
+            const next = cmd === 'first' ? (Number.isFinite(min) ? min : currentNumeric)
+                : cmd === 'last' ? (Number.isFinite(max) ? max : currentNumeric)
+                    : currentNumeric + (cmd === 'next' ? step : -step);
+            el.value = String(clamp(next));
+            applied = el.value;
+            dispatchValueEvents();
+        } else if (/^(button|a|summary)$/i.test(tagName)
+            || el.getAttribute('role') === 'button') {
+            // Pagination, stepper and carousel controls are often buttons
+            // whose semantic operation is exposed as next/prev/first/last.
+            // The live element remains the source of truth; clicking it is
+            // exactly the browser operation available to the user.
+            el.click();
+            applied = cmd;
+        } else {
+            const error = typeof window._t === 'function'
+                ? window._t('只有选择器或数值型控件支持首项、末项和前后项操作。', 'First/last/next/previous are supported only for select or numeric controls.')
+                : 'First/last/next/previous are supported only for select or numeric controls.';
+            return { success: false, error };
+        }
+    } else if (cmd === 'click') {
+        // Ordinary buttons should use HTMLElement.click() so native default
+        // actions are preserved. Canvas/viewer surfaces additionally need a
+        // meaningful client point for their registered mouse handlers.
+        if (String(el.tagName || '').toLowerCase() === 'canvas'
+            || payload.x !== undefined || payload.clientX !== undefined) {
+            dispatchMouse('click', { detail: 1 });
+        } else {
+            el.click();
+        }
     } else if (cmd === 'toggle') {
         if ('checked' in el) {
             el.checked = payload.checked !== undefined ? !!payload.checked : !el.checked;
-            el.dispatchEvent(new Event('input', { bubbles: true }));
-            el.dispatchEvent(new Event('change', { bubbles: true }));
+            applied = !!el.checked;
+            dispatchValueEvents();
         } else {
             el.click();
         }
@@ -1215,23 +2455,227 @@ function executeGenericUIControl(command, value) {
         const nextValue = payload.value !== undefined ? payload.value : payload.text;
         if ('checked' in el && (el.type === 'checkbox' || el.type === 'radio')) {
             el.checked = !!nextValue;
+            applied = !!el.checked;
         } else if ('value' in el) {
-            el.value = nextValue === undefined ? '' : String(nextValue);
+            let normalized = nextValue === undefined ? '' : nextValue;
+            if (numericControl && Number.isFinite(Number(normalized))) normalized = clamp(Number(normalized));
+            el.value = String(normalized);
+            applied = el.value;
         } else if (nextValue !== undefined) {
             el.textContent = String(nextValue);
+            applied = String(nextValue);
         }
-        el.dispatchEvent(new Event('input', { bubbles: true }));
-        el.dispatchEvent(new Event('change', { bubbles: true }));
+        dispatchValueEvents();
+    } else if (cmd === 'increment' || cmd === 'decrement') {
+        if (!numericControl || !Number.isFinite(currentNumeric)) {
+            const error = typeof window._t === 'function'
+                ? window._t('只有数值型界面控件支持增加或减少。', 'Only numeric UI controls support increment and decrement.')
+                : 'Only numeric UI controls support increment and decrement.';
+            return { success: false, error };
+        }
+        const step = Number.isFinite(requestedNumeric) && requestedNumeric > 0
+            ? requestedNumeric
+            : (Number.isFinite(Number(el.step)) && Number(el.step) > 0 ? Number(el.step) : 1);
+        const next = clamp(currentNumeric + (cmd === 'increment' ? step : -step));
+        el.value = String(next);
+        applied = el.value;
+        dispatchValueEvents();
+    } else if (cmd === 'select') {
+        if (String(el.tagName || '').toLowerCase() !== 'select') {
+            const error = typeof window._t === 'function'
+                ? window._t('该界面控件不是下拉选择器。', 'The requested UI control is not a select element.')
+                : 'The requested UI control is not a select element.';
+            return { success: false, error };
+        }
+        const requested = payload.value !== undefined ? payload.value : payload.option;
+        const wanted = String(requested ?? '').trim();
+        const option = Array.from(el.options || []).find(item =>
+            String(item.value) === wanted || String(item.textContent || '').trim() === wanted,
+        );
+        if (!option) {
+            const error = typeof window._t === 'function'
+                ? window._t('下拉选择器中没有该选项。', 'The requested option is not present in this select control.')
+                : 'The requested option is not present in this select control.';
+            return { success: false, error, options: Array.from(el.options || []).map(item => item.value).slice(0, 32) };
+        }
+        el.value = option.value;
+        applied = el.value;
+        dispatchValueEvents();
+    } else if (cmd === 'contextmenu') {
+        dispatchMouse('contextmenu', { button: 2, buttons: 2 });
+        applied = 'contextmenu';
+    } else if (cmd === 'doubleclick') {
+        // Do not call click() twice: custom controls may implement the two
+        // events differently. Dispatch the same browser event a human
+        // double-click produces and let the mounted handler decide what to
+        // do. The stable ref, rather than screen coordinates, identifies the
+        // current element.
+        const event = new MouseEvent('dblclick', {
+            bubbles: true,
+            cancelable: true,
+            view: window,
+            detail: 2,
+        });
+        el.dispatchEvent(event);
+        applied = 'doubleclick';
+    } else if (cmd === 'keypress' || cmd === 'keydown' || cmd === 'keyup') {
+        const rawKey = payload.key ?? payload.value ?? payload.text;
+        const key = String(rawKey ?? '').trim();
+        if (!key) {
+            const error = typeof window._t === 'function'
+                ? window._t('按键操作需要提供 key。', 'A key is required for a keypress action.')
+                : 'A key is required for a keypress action.';
+            return { success: false, error };
+        }
+        const keyAliases = {
+            enter: 'Enter', return: 'Enter', 回车: 'Enter',
+            escape: 'Escape', esc: 'Escape', 退出: 'Escape',
+            space: ' ', 空格: ' ', tab: 'Tab', 制表: 'Tab',
+            backspace: 'Backspace', 退格: 'Backspace',
+            delete: 'Delete', 删除: 'Delete',
+            home: 'Home', 主页: 'Home', end: 'End', 末尾: 'End',
+            arrowup: 'ArrowUp', arrowdown: 'ArrowDown',
+            arrowleft: 'ArrowLeft', arrowright: 'ArrowRight',
+        };
+        const normalizedKey = keyAliases[key.toLowerCase()] || key;
+        const eventType = String(payload.event || payload.event_type
+            || (cmd === 'keyup' ? 'keyup' : 'keydown')).toLowerCase();
+        const eventInit = {
+            key: normalizedKey,
+            code: String(payload.code || (normalizedKey.length === 1 ? `Key${normalizedKey.toUpperCase()}` : normalizedKey)),
+            bubbles: true,
+            cancelable: true,
+            composed: true,
+            ctrlKey: !!payload.ctrlKey,
+            shiftKey: !!payload.shiftKey,
+            altKey: !!payload.altKey,
+            metaKey: !!payload.metaKey,
+            repeat: !!payload.repeat,
+        };
+        const KeyEvent = window.KeyboardEvent || window.Event;
+        el.dispatchEvent(new KeyEvent(eventType, eventInit));
+        if (eventType === 'keydown' && payload.dispatchKeyup !== false && cmd === 'keypress') {
+            el.dispatchEvent(new KeyEvent('keyup', { ...eventInit, cancelable: false }));
+        }
+        applied = normalizedKey;
+    } else if (cmd === 'submit') {
+        const form = String(el.tagName || '').toLowerCase() === 'form' ? el : el.form;
+        if (!form) {
+            const error = typeof window._t === 'function'
+                ? window._t('该控件没有可提交的表单。', 'The requested control does not belong to a form.')
+                : 'The requested control does not belong to a form.';
+            return { success: false, error };
+        }
+        const submitter = el !== form && /^(button|input)$/i.test(String(el.tagName || ''))
+            && ['submit', 'image'].includes(String(el.type || 'submit').toLowerCase())
+            ? el : undefined;
+        if (typeof form.requestSubmit === 'function') form.requestSubmit(submitter);
+        else form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+        applied = 'submit';
+    } else if (cmd === 'scroll') {
+        const direction = String(payload.direction || gesture.direction || payload.value || '').toLowerCase();
+        const deltaX = Number(payload.deltaX ?? payload.dx ?? (
+            /left|right|向左|向右/.test(direction) ? (/(left|向左)/.test(direction) ? -240 : 240) : 0
+        ));
+        const deltaY = Number(payload.deltaY ?? payload.dy ?? (
+            /up|down|上|下/.test(direction) ? (/(up|上)/.test(direction) ? -240 : 240) : 240
+        ));
+        const x = Number(payload.clientX ?? payload.x ?? (el.getBoundingClientRect?.().left || 0) + (el.getBoundingClientRect?.().width || 0) / 2);
+        const y = Number(payload.clientY ?? payload.y ?? (el.getBoundingClientRect?.().top || 0) + (el.getBoundingClientRect?.().height || 0) / 2);
+        const WheelEventCtor = window.WheelEvent || window.MouseEvent;
+        el.dispatchEvent(new WheelEventCtor('wheel', {
+            bubbles: true, cancelable: true, view: window, clientX: x, clientY: y,
+            deltaX: Number.isFinite(deltaX) ? deltaX : 0,
+            deltaY: Number.isFinite(deltaY) ? deltaY : 240,
+            deltaMode: Number(payload.deltaMode || 0),
+        }));
+        // Native scrolling is part of the manual operation for scrollable
+        // panels. It is harmless for a canvas and keeps custom wheel handlers
+        // and ordinary overflow containers consistent.
+        if (typeof el.scrollBy === 'function') el.scrollBy({
+            left: Number.isFinite(deltaX) ? deltaX : 0,
+            top: Number.isFinite(deltaY) ? deltaY : 240,
+            behavior: 'auto',
+        });
+        applied = { deltaX: Number.isFinite(deltaX) ? deltaX : 0, deltaY: Number.isFinite(deltaY) ? deltaY : 240 };
+    } else if (cmd === 'drag') {
+        const rect = el.getBoundingClientRect?.() || { left: 0, top: 0, width: 1, height: 1 };
+        const direction = String(payload.direction || payload.value || '').toLowerCase();
+        const from = payload.from && typeof payload.from === 'object'
+            ? payload.from
+            : (gesture.from && typeof gesture.from === 'object' ? gesture.from : {});
+        const to = payload.to && typeof payload.to === 'object'
+            ? payload.to
+            : (gesture.to && typeof gesture.to === 'object' ? gesture.to : {});
+        const startX = Number(from.x ?? from.clientX ?? payload.startX ?? payload.x ?? rect.left + rect.width / 2);
+        const startY = Number(from.y ?? from.clientY ?? payload.startY ?? payload.y ?? rect.top + rect.height / 2);
+        const defaultDistance = Math.max(24, Math.round(Math.min(rect.width || 120, rect.height || 120) * 0.25));
+        const signed = (positive, negative) => direction.match(positive) ? defaultDistance : direction.match(negative) ? -defaultDistance : 0;
+        const dx = Number(to.x ?? to.clientX ?? payload.endX ?? payload.dx ?? signed(/right|向右/, /left|向左/));
+        const dy = Number(to.y ?? to.clientY ?? payload.endY ?? payload.dy ?? signed(/down|向下/, /up|向上/));
+        const endX = Number.isFinite(dx) && (to.x !== undefined || to.clientX !== undefined || payload.endX !== undefined)
+            ? dx : startX + (Number.isFinite(dx) ? dx : 0);
+        const endY = Number.isFinite(dy) && (to.y !== undefined || to.clientY !== undefined || payload.endY !== undefined)
+            ? dy : startY + (Number.isFinite(dy) ? dy : 0);
+        const dispatchPointer = (type, xPos, yPos, buttons) => {
+            const init = { bubbles: true, cancelable: true, view: window, clientX: xPos, clientY: yPos,
+                button: 0, buttons, pointerId: Number(payload.pointerId || 1), pointerType: 'mouse' };
+            if (typeof window.PointerEvent === 'function') el.dispatchEvent(new window.PointerEvent(type, init));
+            else el.dispatchEvent(new MouseEvent(type.replace('pointer', 'mouse'), init));
+        };
+        dispatchPointer('pointerdown', startX, startY, 1);
+        dispatchPointer('pointermove', endX, endY, 1);
+        dispatchPointer('pointerup', endX, endY, 0);
+        applied = { from: { x: startX, y: startY }, to: { x: endX, y: endY } };
+    } else if (cmd === 'hover') {
+        dispatchPointer('pointerover', { buttons: 0 });
+        dispatchMouse('mouseover', { buttons: 0 });
+        dispatchMouse('mouseenter', { buttons: 0 });
+        applied = 'hover';
+    } else if (['pointerdown', 'pointermove', 'pointerup', 'pointerover', 'pointerout',
+        'pointercancel', 'pointerenter', 'pointerleave'].includes(cmd)) {
+        dispatchPointer(cmd, {
+            buttons: ['pointerdown', 'pointermove'].includes(cmd) ? 1 : 0,
+        });
+        applied = cmd;
+    } else if (['mousedown', 'mousemove', 'mouseup', 'mouseover', 'mouseout',
+        'mouseenter', 'mouseleave'].includes(cmd)) {
+        dispatchMouse(cmd, {
+            buttons: ['mousedown', 'mousemove'].includes(cmd) ? 1 : 0,
+        });
+        applied = cmd;
+    } else if (cmd === 'input' || cmd === 'change') {
+        el.dispatchEvent(new Event(cmd, { bubbles: true, cancelable: true }));
+        applied = cmd;
     } else if (cmd === 'focus') {
         el.focus();
+        applied = 'focus';
     } else if (cmd === 'blur') {
         el.blur();
+        applied = 'blur';
     } else {
         console.warn('[UIAction] Unsupported generic control command:', cmd);
-        return false;
+        const error = typeof window._t === 'function'
+            ? window._t('不支持该界面操作命令。', 'This UI control command is not supported.')
+            : 'This UI control command is not supported.';
+        return { success: false, error, command: cmd };
     }
-    reportUIEvent('ui.control', payload.id || payload.selector || el.id || el.tagName.toLowerCase(), { command: cmd, payload });
-    return true;
+    const ref = el.getAttribute('data-brachy-control-ref') || payload.ref || payload.id || payload.selector || el.id || el.tagName.toLowerCase();
+    reportUIEvent('ui.control', ref, { command: cmd, payload, applied });
+    if (typeof syncUIBridgeState === 'function') syncUIBridgeState();
+    return {
+        success: true,
+        ref,
+        id: el.id || null,
+        label: _uiOperationLabel(el),
+        command: cmd,
+        applied,
+        checked: ('checked' in el) ? !!el.checked : null,
+        value: ('value' in el && String(el.type || '').toLowerCase() !== 'password')
+            ? String(el.value ?? '') : null,
+        aria_expanded: el.getAttribute('aria-expanded'),
+        visible: _uiOperationVisible(el),
+    };
 }
 
 function instrumentUIControls() {
@@ -3622,7 +5066,30 @@ window.restoreActiveSessionWorkspace = restoreActiveSessionWorkspace;
 const _staticUiHelpers = {
     insertSlashCommand(cmd) { const i = document.getElementById('chatInput'); if (i) { i.value = cmd; i.focus(); } },
     toggleContextPanel() { const el = document.querySelector('.context-panel'); if (el) el.style.display = (el.style.display === 'none' ? '' : 'none'); },
-    toggleHyperparams()  { const el = document.getElementById('hyperparamsSection'); if (el) el.style.display = (el.style.display === 'none' ? '' : 'none'); const t = document.getElementById('hyperparamToggle'); if (t) t.textContent = (el && el.style.display === 'none') ? '▶' : '▼'; },
+    toggleHyperparams()  {
+        const el = document.getElementById('hyperparamsSection');
+        if (!el) return { success: false, error: 'Hyperparameter section is unavailable.' };
+        const expanded = el.style.display === 'none' || el.hidden;
+        el.hidden = !expanded;
+        el.style.display = expanded ? 'flex' : 'none';
+        const toggle = document.getElementById('hyperparamToggle');
+        if (toggle) toggle.textContent = expanded ? '▼' : '▶';
+        const title = toggle?.closest?.('.form-section-title');
+        if (title) title.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+        return { success: true, expanded };
+    },
+    toggleStepButtons() {
+        const el = document.getElementById('stepButtonsSection');
+        if (!el) return { success: false, error: 'Step-by-step section is unavailable.' };
+        const expanded = el.style.display === 'none' || el.hidden;
+        el.hidden = !expanded;
+        el.style.display = expanded ? 'flex' : 'none';
+        const toggle = document.getElementById('stepToggle');
+        if (toggle) toggle.textContent = expanded ? '▼' : '▶';
+        const title = toggle?.closest?.('.form-section-title');
+        if (title) title.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+        return { success: true, expanded };
+    },
 };
 for (const [name, fn] of Object.entries(_staticUiHelpers)) {
     if (typeof window[name] !== 'function') window[name] = fn;
@@ -4622,10 +6089,452 @@ async function navigateToDosePeakSlices() {
     return { success: true, slices: requested };
 }
 
+// ---------------------------------------------------------------------------
+// Data Tree / 3D context-action dispatcher
+// ---------------------------------------------------------------------------
+// The browser already owns the right-click menu handlers.  This adapter is a
+// deliberately small command bus over those handlers: the live operation
+// catalogue publishes an action_id and stable object identity, and this
+// function invokes the same state-changing functions a human menu click
+// would invoke.  It never falls back to coordinates, labels, or a random
+// neighbouring node when an identity cannot be resolved.
+function _uiContextPayload(value) {
+    const payload = _parseUIControlPayload(value);
+    if (payload && typeof payload === 'object' && !Array.isArray(payload)) return payload;
+    return {};
+}
+
+function _uiContextMessage(zh, en) {
+    return typeof window._t === 'function' ? window._t(zh, en) : en;
+}
+
+function _uiContextFailure(zh, en, extra = {}) {
+    const error = _uiContextMessage(zh, en);
+    return { success: false, error, error_i18n: { zh, en }, ...extra };
+}
+
+function _uiContextSuccess(actionId, applied, extra = {}) {
+    return {
+        success: true,
+        target: 'ui.context_action',
+        command: 'run',
+        action_id: actionId,
+        applied,
+        ...extra,
+    };
+}
+
+function _uiContextApplied(actionId, result, extra = {}, failureZh = '界面操作未能应用。', failureEn = 'The UI operation could not be applied.') {
+    // Context executors come from the viewer/data-tree modules and historically
+    // used three different return conventions: a structured result, false, or
+    // undefined after a successful side effect.  Normalize those conventions
+    // at this boundary so the agent never turns a structured failure into a
+    // successful acknowledgement, while preserving void-returning legacy
+    // handlers as successful when they were actually invoked.
+    if (result === false || (result && typeof result === 'object' && result.success === false)) {
+        return result && typeof result === 'object' && result.success === false
+            ? result : _uiContextFailure(failureZh, failureEn);
+    }
+    return _uiContextSuccess(actionId, result ?? true, extra);
+}
+
+function _uiContextRawObjectIds(payload) {
+    const values = [];
+    if (Array.isArray(payload.object_ids)) values.push(...payload.object_ids);
+    ['object_id', 'objectId', 'node_id', 'nodeId', 'id'].forEach(key => {
+        if (payload[key] !== undefined && payload[key] !== null) values.push(payload[key]);
+    });
+    return [...new Set(values.map(value => String(value || '').trim()).filter(Boolean))];
+}
+
+function _uiContextSnapshot() {
+    try {
+        return typeof window.getDataTreeNodeSnapshot === 'function'
+            ? window.getDataTreeNodeSnapshot() : [];
+    } catch (error) {
+        console.warn('[ui-context] Data Tree snapshot failed:', error);
+        return [];
+    }
+}
+
+function _uiContextNodeId(payload, { allowScene = false } = {}) {
+    const rawIds = _uiContextRawObjectIds(payload);
+    const snapshot = _uiContextSnapshot();
+    const match = snapshot.find(node => rawIds.some(raw => [
+        node?.id, node?.nodeId, node?.objectId, node?.object_id,
+    ].some(candidate => String(candidate || '') === raw)));
+    if (match?.id) return String(match.id);
+    if (rawIds.length === 1 && allowScene) {
+        const raw = rawIds[0];
+        if (typeof scene3D !== 'undefined' && scene3D?.meshes?.[raw]) return raw;
+    }
+    return match?.id ? String(match.id) : (rawIds.length === 1 ? rawIds[0] : '');
+}
+
+function _uiContextNode(payload, { allowScene = false } = {}) {
+    const id = _uiContextNodeId(payload, { allowScene });
+    if (!id) return { id: '', node: null, snapshot: null };
+    let node = null;
+    try {
+        if (typeof _findDataTreeNode === 'function') node = _findDataTreeNode(id);
+    } catch (_) { /* the live tree may not be initialized yet */ }
+    const snapshot = _uiContextSnapshot().find(item => String(item?.id || '') === id
+        || String(item?.nodeId || '') === id || String(item?.objectId || '') === id) || null;
+    if (!node && allowScene && typeof scene3D !== 'undefined' && scene3D?.meshes?.[id]) {
+        node = { id, label: id, visible: scene3D.meshes[id].visible !== false };
+    }
+    return { id, node, snapshot };
+}
+
+function _uiContextCategory(payload) {
+    return String(payload.category || payload.group || '').trim().toLowerCase();
+}
+
+function _uiContextNormalizeColor(value) {
+    const raw = String(value || '').trim().toLowerCase();
+    if (/^#[0-9a-f]{6}$/i.test(raw)) return raw;
+    const named = {
+        red: '#ef4444', green: '#22c55e', blue: '#3b82f6', yellow: '#eab308',
+        orange: '#f97316', purple: '#a855f7', cyan: '#06b6d4', white: '#ffffff',
+        black: '#000000', 红色: '#ef4444', 绿色: '#22c55e', 蓝色: '#3b82f6',
+        黄色: '#eab308', 橙色: '#f97316', 紫色: '#a855f7', 青色: '#06b6d4',
+        白色: '#ffffff', 黑色: '#000000',
+    };
+    return named[raw] || '';
+}
+
+function _uiContextPercent(payload, fallback = null) {
+    const raw = payload.value ?? payload.opacity ?? payload.percent;
+    const value = Number(raw);
+    if (Number.isFinite(value) && value >= 0 && value <= 100) return value;
+    return fallback;
+}
+
+function _uiContextSetNodeView(node, view, visible) {
+    if (!node || !['2d', '3d'].includes(view)) return false;
+    if (typeof _setNodeViewVisibility === 'function') _setNodeViewVisibility(node, view, visible);
+    else node[view === '2d' ? 'visible2D' : 'visible3D'] = !!visible;
+    if (typeof applyDataTreeViewVisibility === 'function') applyDataTreeViewVisibility();
+    if (typeof renderDataTree === 'function') renderDataTree();
+    if (typeof _scheduleDataTreeSave === 'function') _scheduleDataTreeSave(`ui.context.node_${view}`);
+    if (typeof syncUIBridgeState === 'function') syncUIBridgeState('ui.context.node_view').catch(() => {});
+    return true;
+}
+
+async function _uiContextWithSelection(ids, callback) {
+    if (typeof selectedItems === 'undefined') return { success: false, error: 'Selection state is unavailable.' };
+    const previous = [...selectedItems];
+    selectedItems.clear();
+    ids.forEach(id => selectedItems.add(id));
+    try {
+        return await callback();
+    } finally {
+        selectedItems.clear();
+        previous.forEach(id => selectedItems.add(id));
+        if (typeof renderDataTree === 'function') renderDataTree();
+    }
+}
+
+async function executeUIContextAction(value, options = {}) {
+    const payload = _uiContextPayload(value);
+    const actionId = String(payload.action_id || payload.actionId || payload.operation || '').trim().toLowerCase();
+    if (!actionId) return _uiContextFailure(
+        '界面上下文操作缺少 action_id。',
+        'The UI context action is missing its action_id.',
+    );
+    const category = _uiContextCategory(payload);
+    const { id: nodeId, node } = _uiContextNode(payload, {
+        allowScene: String(payload.source || '').toLowerCase() === 'scene-3d'
+            || actionId.startsWith('scene_'),
+    });
+    const objectIds = _uiContextRawObjectIds(payload);
+    const missingCategory = !category && actionId.startsWith('group_');
+    if (missingCategory) return _uiContextFailure(
+        '组操作缺少当前数据树组标识。',
+        'The group identity is missing from this context action.',
+    );
+    const needNode = actionId.startsWith('node_') || actionId.startsWith('dose_');
+    if (needNode && (!nodeId || !node)) return _uiContextFailure(
+        '当前病例中找不到该数据树节点，操作未执行。',
+        'The requested Data Tree node is not available in the current case; nothing was changed.',
+        { action_id: actionId, object_ids: objectIds },
+    );
+
+    try {
+        // Group actions mirror showGroupContextMenu().
+        if (actionId === 'group_show' || actionId === 'group_hide') {
+            if (typeof setGroupVisibility !== 'function') return _uiContextFailure('组可见性执行器不可用。', 'The group visibility executor is unavailable.');
+            const visible = actionId === 'group_show';
+            const result = await Promise.resolve(setGroupVisibility(category, visible));
+            return _uiContextApplied(actionId, result, { category, visible }, '组可见性未能应用。', 'The group visibility change could not be applied.');
+        }
+        if (/^group_(show|hide)_(2d|3d)$/.test(actionId)) {
+            if (typeof setGroupViewVisibility !== 'function') return _uiContextFailure('组视图可见性执行器不可用。', 'The group view-visibility executor is unavailable.');
+            const [, verb, view] = actionId.match(/^group_(show|hide)_(2d|3d)$/);
+            const visible = verb === 'show';
+            const result = await Promise.resolve(setGroupViewVisibility(category, view, visible));
+            return _uiContextApplied(actionId, result, { category, view, visible }, '组视图可见性未能应用。', 'The group view-visibility change could not be applied.');
+        }
+        if (actionId === 'group_opacity') {
+            const percent = _uiContextPercent(payload, null);
+            if (percent === null) return _uiContextFailure('组透明度操作需要 0–100 的数值。', 'Group opacity requires a number from 0 to 100.');
+            if (typeof setGroupOpacityValue !== 'function') return _uiContextFailure('组透明度执行器不可用。', 'The group opacity executor is unavailable.');
+            const result = await Promise.resolve(setGroupOpacityValue(category, percent));
+            return _uiContextApplied(actionId, result, { category, opacity: percent }, '组透明度未能应用。', 'The group opacity change could not be applied.');
+        }
+            if (actionId === 'group_solo') {
+            if (typeof soloGroup !== 'function') return _uiContextFailure('组独显执行器不可用。', 'The group-solo executor is unavailable.');
+            const result = await Promise.resolve(soloGroup(category));
+            return _uiContextApplied(actionId, result, { category }, '组独显未能应用。', 'The group-solo operation could not be applied.');
+        }
+        if (actionId === 'group_rename') {
+            const name = String(payload.name ?? payload.new_name ?? payload.text ?? '').trim();
+            if (!name) return _uiContextFailure('重命名需要提供新的名称。', 'Renaming requires a new name.');
+            if (typeof renameDataTreeNode !== 'function') return _uiContextFailure('数据树重命名执行器不可用。', 'The Data Tree rename executor is unavailable.');
+            const result = await Promise.resolve(renameDataTreeNode(category, name));
+            return _uiContextApplied(actionId, result, { category, name }, '组重命名未能应用。', 'The group rename could not be applied.');
+        }
+        if (actionId === 'group_color') {
+            const color = _uiContextNormalizeColor(payload.color ?? payload.value);
+            if (!color) return _uiContextFailure('组颜色需要十六进制颜色值或标准颜色名。', 'Group color requires a hexadecimal color or a supported color name.');
+            if (typeof setGroupColor !== 'function') return _uiContextFailure('组颜色执行器不可用。', 'The group color executor is unavailable.');
+            const result = await Promise.resolve(setGroupColor(category, color));
+            return _uiContextApplied(actionId, result, { category, color }, '组颜色未能应用。', 'The group color change could not be applied.');
+        }
+        if (actionId === 'group_export') {
+            if (typeof exportDataTreeGroup !== 'function') return _uiContextFailure('组导出执行器不可用。', 'The group export executor is unavailable.');
+            const result = await exportDataTreeGroup(category);
+            return result === false
+                ? _uiContextFailure('当前组没有可导出的数据。', 'The group has no exportable data.')
+                : _uiContextSuccess(actionId, { category });
+        }
+        if (actionId === 'group_delete') {
+            if (typeof deleteDataTreeGroup !== 'function') return _uiContextFailure('组删除执行器不可用。', 'The group delete executor is unavailable.');
+            const result = await deleteDataTreeGroup(category);
+            return result === false
+                ? _uiContextFailure('组删除已取消或没有可删除的数据。', 'Group deletion was cancelled or there is no deletable data.')
+                : _uiContextSuccess(actionId, { category });
+        }
+        if (actionId === 'group_move_ctv' || actionId === 'group_move_oar') {
+            const destination = actionId.endsWith('_ctv') ? 'ctv' : 'oar';
+            if (typeof moveDataTreeGroup !== 'function') return _uiContextFailure('组分类移动执行器不可用。', 'The group classification executor is unavailable.');
+            const result = await moveDataTreeGroup(category, destination);
+            return result === false
+                ? _uiContextFailure('组移动未执行或已取消。', 'The group move was cancelled or could not be applied.')
+                : _uiContextSuccess(actionId, { category, destination });
+        }
+        if (actionId === 'group_reconstruct3d') {
+            if (typeof groupReconstruct3D !== 'function') return _uiContextFailure('组 3D 重建执行器不可用。', 'The group 3D reconstruction executor is unavailable.');
+            return _uiContextApplied(actionId, await groupReconstruct3D(category), { category }, '组 3D 重建未能完成。', 'The group 3D reconstruction could not be completed.');
+        }
+        if (actionId === 'group_reconstruct_dose') {
+            if (typeof reconstructDoseIsosurfaces3D !== 'function') return _uiContextFailure('等剂量面重建执行器不可用。', 'The dose-surface reconstruction executor is unavailable.');
+            return _uiContextApplied(actionId, await reconstructDoseIsosurfaces3D(), { category }, '等剂量面重建未能完成。', 'The dose-surface reconstruction could not be completed.');
+        }
+        if (actionId === 'clear_planning') {
+            if (typeof clearPlanningVisualization !== 'function') return _uiContextFailure('规划显示清除执行器不可用。', 'The planning-display clear executor is unavailable.');
+            clearPlanningVisualization();
+            return _uiContextSuccess(actionId, { category });
+        }
+        if (actionId === 'show_all_organs') {
+            if (typeof showAllOrgans !== 'function') return _uiContextFailure('显示所有器官执行器不可用。', 'The show-all-organs executor is unavailable.');
+            showAllOrgans();
+            return _uiContextSuccess(actionId, { category: 'oar' });
+        }
+
+        // Data Tree leaf actions mirror showContextMenu().
+        if (actionId === 'node_rename') {
+            const name = String(payload.name ?? payload.new_name ?? payload.text ?? '').trim();
+            if (!name) return _uiContextFailure('重命名需要提供新的名称。', 'Renaming requires a new name.');
+            if (typeof renameDataTreeNode !== 'function') return _uiContextFailure('数据树重命名执行器不可用。', 'The Data Tree rename executor is unavailable.');
+            const result = await Promise.resolve(renameDataTreeNode(nodeId, name));
+            return _uiContextApplied(actionId, result, { node_id: nodeId, name }, '节点重命名未能应用。', 'The node rename could not be applied.');
+        }
+        if (actionId === 'node_move_ctv' || actionId === 'node_move_oar') {
+            const destination = actionId.endsWith('_ctv') ? 'ctv' : 'oar';
+            const result = typeof _isDataTreeMaskId === 'function' && _isDataTreeMaskId(nodeId)
+                ? (typeof moveSelectedMasks === 'function' ? await moveSelectedMasks(destination, [nodeId]) : false)
+                : (typeof moveSelectedStructures === 'function' ? await moveSelectedStructures(destination, [nodeId]) : false);
+            return result === false
+                ? _uiContextFailure('节点移动未执行或已取消。', 'The node move was cancelled or could not be applied.')
+                : _uiContextSuccess(actionId, { node_id: nodeId, destination });
+        }
+        if (actionId === 'node_move_non_traversable' || actionId === 'node_move_traversable') {
+            const destination = actionId.endsWith('_non_traversable') ? 'non_traversable' : 'traversable';
+            if (typeof batchMoveToCategory !== 'function') return _uiContextFailure('OAR 穿刺分类执行器不可用。', 'The OAR traversability executor is unavailable.');
+            const result = await _uiContextWithSelection([nodeId], () => {
+                batchMoveToCategory(destination);
+                return true;
+            });
+            return result === false
+                ? _uiContextFailure('节点分类移动未执行或已取消。', 'The node classification move was cancelled or could not be applied.')
+                : _uiContextSuccess(actionId, { node_id: nodeId, destination });
+        }
+        if (actionId === 'node_delete') {
+            if (typeof deleteSelectedDataTreeItems !== 'function') return _uiContextFailure('数据树删除执行器不可用。', 'The Data Tree delete executor is unavailable.');
+            const result = await deleteSelectedDataTreeItems([nodeId]);
+            return result === false
+                ? _uiContextFailure('节点删除已取消或失败。', 'Node deletion was cancelled or failed.')
+                : _uiContextSuccess(actionId, { node_id: nodeId });
+        }
+        if (actionId === 'node_export') {
+            if (typeof exportSelectedDataTreeItems !== 'function') return _uiContextFailure('数据树导出执行器不可用。', 'The Data Tree export executor is unavailable.');
+            const result = await exportSelectedDataTreeItems([nodeId]);
+            return result === false
+                ? _uiContextFailure('节点没有可导出的数据。', 'The node has no exportable data.')
+                : _uiContextSuccess(actionId, { node_id: nodeId });
+        }
+        if (actionId === 'node_solo') {
+            const result = await _uiContextWithSelection([nodeId], () => {
+                if (typeof batchSolo !== 'function') return false;
+                batchSolo();
+                return true;
+            });
+            return result === false
+                ? _uiContextFailure('节点独显执行器不可用。', 'The node-solo executor is unavailable.')
+                : _uiContextSuccess(actionId, { node_id: nodeId });
+        }
+        if (/^node_(show|hide)_(2d|3d)$/.test(actionId)) {
+            const [, verb, view] = actionId.match(/^node_(show|hide)_(2d|3d)$/);
+            const visible = verb === 'show';
+            if (!_uiContextSetNodeView(node, view, visible)) return _uiContextFailure('节点视图可见性执行器不可用。', 'The node view-visibility executor is unavailable.');
+            return _uiContextSuccess(actionId, { node_id: nodeId, view, visible });
+        }
+        if (actionId === 'node_show' || actionId === 'node_hide') {
+            if (typeof setDataItemVisibility !== 'function') return _uiContextFailure('节点可见性执行器不可用。', 'The node visibility executor is unavailable.');
+            const visible = actionId === 'node_show';
+            if (!setDataItemVisibility(nodeId, visible)) return _uiContextFailure('当前节点没有可用的可见性状态。', 'The current node has no available visibility state.');
+            return _uiContextSuccess(actionId, { node_id: nodeId, visible });
+        }
+        if (actionId === 'node_opacity') {
+            const percent = _uiContextPercent(payload, null);
+            if (percent === null) return _uiContextFailure('节点透明度操作需要 0–100 的数值。', 'Node opacity requires a number from 0 to 100.');
+            if (typeof setDataOpacity !== 'function') return _uiContextFailure('节点透明度执行器不可用。', 'The node opacity executor is unavailable.');
+            const result = await Promise.resolve(setDataOpacity(nodeId, percent));
+            return _uiContextApplied(actionId, result, { node_id: nodeId, opacity: percent }, '节点透明度未能应用。', 'The node opacity change could not be applied.');
+        }
+        if (actionId === 'node_color') {
+            const color = _uiContextNormalizeColor(payload.color ?? payload.value);
+            if (!color) return _uiContextFailure('节点颜色需要十六进制颜色值或标准颜色名。', 'Node color requires a hexadecimal color or a supported color name.');
+            if (typeof setDataTreeItemColor !== 'function' || !setDataTreeItemColor(nodeId, color)) return _uiContextFailure('当前节点不支持颜色设置。', 'The current node does not support color changes.');
+            return _uiContextSuccess(actionId, { node_id: nodeId, color });
+        }
+        if (actionId === 'node_reconstruct3d') {
+            if (typeof reconstructOrgan3D !== 'function') return _uiContextFailure('节点 3D 重建执行器不可用。', 'The node 3D reconstruction executor is unavailable.');
+            return _uiContextApplied(actionId, await reconstructOrgan3D(nodeId), { node_id: nodeId }, '节点 3D 重建未能完成。', 'The node 3D reconstruction could not be completed.');
+        }
+        if (actionId === 'node_reconstruct_dose') {
+            if (typeof reconstructDoseIsosurface3D !== 'function') return _uiContextFailure('等剂量面重建执行器不可用。', 'The dose-surface reconstruction executor is unavailable.');
+            return _uiContextApplied(actionId, await reconstructDoseIsosurface3D(nodeId), { node_id: nodeId }, '节点等剂量面重建未能完成。', 'The node dose-surface reconstruction could not be completed.');
+        }
+        if (actionId === 'node_add_seed') {
+            if (typeof addManualSeedToPlanningNode !== 'function') return _uiContextFailure('针道添加粒子执行器不可用。', 'The add-seed executor is unavailable.');
+            const result = await addManualSeedToPlanningNode(nodeId, { source: 'ui_controller' });
+            return result === false ? _uiContextFailure('无法在当前针道添加粒子。', 'A seed could not be added to the current needle.') : _uiContextSuccess(actionId, result, { node_id: nodeId });
+        }
+        if (actionId === 'node_restore_algorithm') {
+            if (typeof restoreNeedleToAlgorithm !== 'function') return _uiContextFailure('恢复算法针道执行器不可用。', 'The restore-algorithm-needle executor is unavailable.');
+            const result = await restoreNeedleToAlgorithm(nodeId);
+            return result === false ? _uiContextFailure('无法恢复当前算法针道。', 'The current algorithm needle could not be restored.') : _uiContextSuccess(actionId, result, { node_id: nodeId });
+        }
+        if (actionId === 'node_colorbar_2d' || actionId === 'node_colorbar_3d') {
+            if (typeof setDoseColorbarViewVisibility !== 'function') return _uiContextFailure('剂量色标可见性执行器不可用。', 'The dose-colorbar visibility executor is unavailable.');
+            const view = actionId.endsWith('_2d') ? '2d' : '3d';
+            const visible = payload.visible !== undefined ? !!payload.visible : true;
+            setDoseColorbarViewVisibility(view, visible);
+            return _uiContextSuccess(actionId, { view, visible });
+        }
+        if (actionId === 'node_clear_selection') {
+            if (typeof selectedItems === 'undefined') return _uiContextFailure('选择状态不可用。', 'Selection state is unavailable.');
+            selectedItems.clear();
+            if (typeof renderDataTree === 'function') renderDataTree();
+            return _uiContextSuccess(actionId, { cleared: true });
+        }
+
+        // 3D scene context actions mirror brachybot-3d-manual.js.
+        if (actionId === 'scene_seed_highlight') {
+            if (typeof highlightSeed !== 'function') return _uiContextFailure('粒子高亮执行器不可用。', 'The seed-highlight executor is unavailable.');
+            highlightSeed(nodeId); return _uiContextSuccess(actionId, { object_id: nodeId });
+        }
+        if (actionId === 'scene_seed_show_dose') {
+            if (typeof showSeedDose !== 'function') return _uiContextFailure('粒子剂量查看执行器不可用。', 'The seed-dose executor is unavailable.');
+            showSeedDose(nodeId); return _uiContextSuccess(actionId, { object_id: nodeId });
+        }
+        if (actionId === 'scene_seed_restore_plan') {
+            if (typeof restoreAlgorithmPlan !== 'function') return _uiContextFailure('恢复算法规划执行器不可用。', 'The restore-algorithm-plan executor is unavailable.');
+            const result = await restoreAlgorithmPlan();
+            return result === false ? _uiContextFailure('算法规划恢复已取消或失败。', 'Restoring the algorithm plan was cancelled or failed.') : _uiContextSuccess(actionId, result, { object_id: nodeId });
+        }
+        if (actionId === 'scene_needle_show_seeds') {
+            if (typeof showNeedleSeeds !== 'function') return _uiContextFailure('针道粒子查看执行器不可用。', 'The needle-seed executor is unavailable.');
+            showNeedleSeeds(nodeId); return _uiContextSuccess(actionId, { object_id: nodeId });
+        }
+        if (actionId === 'scene_seed_show' || actionId === 'scene_seed_hide') {
+            const visible = actionId.endsWith('_show');
+            if (typeof setDataItemVisibility !== 'function' || !setDataItemVisibility(nodeId, visible)) return _uiContextFailure('粒子可见性执行器不可用。', 'The seed visibility executor is unavailable.');
+            return _uiContextSuccess(actionId, { object_id: nodeId, visible });
+        }
+        if (actionId === 'scene_needle_show' || actionId === 'scene_needle_hide') {
+            const visible = actionId.endsWith('_show');
+            if (typeof setNeedleVisibilityFrom3D !== 'function') return _uiContextFailure('针道可见性执行器不可用。', 'The needle visibility executor is unavailable.');
+            setNeedleVisibilityFrom3D(nodeId, visible);
+            return _uiContextSuccess(actionId, { object_id: nodeId, visible });
+        }
+        if (actionId === 'scene_seed_opacity' || actionId === 'scene_needle_opacity') {
+            const percent = _uiContextPercent(payload, null);
+            if (percent === null) return _uiContextFailure('场景对象透明度操作需要 0–100 的数值。', 'Scene-object opacity requires a number from 0 to 100.');
+            if (actionId.startsWith('scene_needle_')) {
+                if (typeof setNeedleOpacityFrom3D !== 'function') return _uiContextFailure('针道透明度执行器不可用。', 'The needle opacity executor is unavailable.');
+                setNeedleOpacityFrom3D(nodeId, percent / 100);
+            } else {
+                if (typeof setDataOpacity !== 'function') return _uiContextFailure('粒子透明度执行器不可用。', 'The seed opacity executor is unavailable.');
+                setDataOpacity(nodeId, percent);
+            }
+            return _uiContextSuccess(actionId, { object_id: nodeId, opacity: percent });
+        }
+        if (actionId === 'scene_seed_delete') {
+            if (typeof deleteSeed3D !== 'function') return _uiContextFailure('粒子删除执行器不可用。', 'The seed-delete executor is unavailable.');
+            const result = await deleteSeed3D(nodeId);
+            return result === false ? _uiContextFailure('粒子删除已取消或失败。', 'Seed deletion was cancelled or failed.') : _uiContextSuccess(actionId, { object_id: nodeId });
+        }
+        if (actionId === 'scene_needle_delete') {
+            if (typeof deleteNeedle3D !== 'function') return _uiContextFailure('针道删除执行器不可用。', 'The needle-delete executor is unavailable.');
+            const result = await deleteNeedle3D(nodeId);
+            return result === false ? _uiContextFailure('针道删除已取消或失败。', 'Needle deletion was cancelled or failed.') : _uiContextSuccess(actionId, { object_id: nodeId });
+        }
+        if (actionId === 'scene_needle_add_seed') {
+            if (typeof addManualSeedToPlanningNode !== 'function') return _uiContextFailure('针道添加粒子执行器不可用。', 'The add-seed executor is unavailable.');
+            const result = await addManualSeedToPlanningNode(nodeId, { source: 'scene_3d_context' });
+            return result === false ? _uiContextFailure('无法在当前针道添加粒子。', 'A seed could not be added to the current needle.') : _uiContextSuccess(actionId, result, { object_id: nodeId });
+        }
+        if (actionId === 'scene_needle_restore_algorithm') {
+            if (typeof restoreNeedleToAlgorithm !== 'function') return _uiContextFailure('恢复算法针道执行器不可用。', 'The restore-algorithm-needle executor is unavailable.');
+            const result = await restoreNeedleToAlgorithm(nodeId);
+            return result === false ? _uiContextFailure('无法恢复当前算法针道。', 'The current algorithm needle could not be restored.') : _uiContextSuccess(actionId, result, { object_id: nodeId });
+        }
+        return _uiContextFailure(
+            `当前页面未注册上下文操作“${actionId}”，未执行任何更改。`,
+            `The current page has not registered context action “${actionId}”; nothing was changed.`,
+            { action_id: actionId },
+        );
+    } catch (error) {
+        console.warn('[ui-context] action failed:', actionId, error);
+        return _uiContextFailure(
+            `界面操作“${actionId}”执行失败：${error?.message || error}`,
+            `UI context action “${actionId}” failed: ${error?.message || error}`,
+            { action_id: actionId },
+        );
+    }
+}
+window.executeUIContextAction = executeUIContextAction;
+
 async function _executeUIActionRaw(a, options = {}) {
     const ownerSessionId = String(options.sessionId || _activeApiSessionId());
     const { target, command, value } = a;
     try {
+        if (target === 'ui.context_action') {
+            return executeUIContextAction(value, { sessionId: ownerSessionId });
+        }
         if (target === 'ui.control') {
             return executeGenericUIControl(command, value);
         }
@@ -4633,9 +6542,12 @@ async function _executeUIActionRaw(a, options = {}) {
         if (target === 'panel' && command === 'switch') {
             const tab = document.querySelector(`.panel-tab[data-panel="${value}"]`)
                      || document.querySelector(`.panel-tab[onclick*="${value}"]`);
-            if (tab) switchPanel(value, tab);
-            else console.warn('[UIAction] Panel tab not found:', value);
-            return;
+            if (!tab) {
+                console.warn('[UIAction] Panel tab not found:', value);
+                return { success: false, error: `Panel tab is unavailable: ${value}` };
+            }
+            switchPanel(value, tab);
+            return { success: true, target, command, panel: value };
         }
         if (target === 'viewer.refresh_planning' && command === 'run') {
             // This is a display-only recovery action. It deliberately uses
@@ -4688,25 +6600,27 @@ async function _executeUIActionRaw(a, options = {}) {
         // ── Viewer settings ──
         if (target === 'viewer.window') {
             const el = document.getElementById('viewerWindow');
-            if (!el) return;
+            if (!el) return { success: false, error: 'Viewer window control is unavailable.' };
             let v = parseInt(el.value) || 400;
-            if (command === 'set') v = parseInt(value) || v;
-            else if (command === 'increase') v += parseInt(value) || 50;
-            else if (command === 'decrease') v -= parseInt(value) || 50;
+            const requested = Number(value);
+            if (command === 'set' && Number.isFinite(requested)) v = requested;
+            else if (command === 'increase') v += Number.isFinite(requested) ? requested : 50;
+            else if (command === 'decrease') v -= Number.isFinite(requested) ? requested : 50;
             el.value = v; state.viewerSettings.window = v;
-            if (state.ctLoaded) return loadAllSlices();
-            return;
+            if (state.ctLoaded) await Promise.resolve(loadAllSlices());
+            return { success: true, target, command, applied: v };
         }
         if (target === 'viewer.level') {
             const el = document.getElementById('viewerLevel');
-            if (!el) return;
+            if (!el) return { success: false, error: 'Viewer level control is unavailable.' };
             let v = parseInt(el.value) || 40;
-            if (command === 'set') v = parseInt(value) || v;
-            else if (command === 'increase') v += parseInt(value) || 20;
-            else if (command === 'decrease') v -= parseInt(value) || 20;
+            const requested = Number(value);
+            if (command === 'set' && Number.isFinite(requested)) v = requested;
+            else if (command === 'increase') v += Number.isFinite(requested) ? requested : 20;
+            else if (command === 'decrease') v -= Number.isFinite(requested) ? requested : 20;
             el.value = v; state.viewerSettings.level = v;
-            if (state.ctLoaded) return loadAllSlices();
-            return;
+            if (state.ctLoaded) await Promise.resolve(loadAllSlices());
+            return { success: true, target, command, applied: v };
         }
         if (target === 'viewer.zoom') {
             if (command === 'fit') {
@@ -4739,50 +6653,77 @@ async function _executeUIActionRaw(a, options = {}) {
         }
         if (target === 'viewer.threshold') {
             const el = document.getElementById('viewerThreshold');
-            if (el) { el.value = value; applyThreshold(); }
-            return;
+            if (!el) return { success: false, error: 'Viewer threshold control is unavailable.' };
+            el.value = value;
+            if (typeof applyThreshold !== 'function') return { success: false, error: 'Viewer threshold action is unavailable.' };
+            await Promise.resolve(applyThreshold());
+            return { success: true, target, command, applied: el.value };
         }
         if (target === 'viewer.fullscreen') {
-            return toggleViewerFullscreen(value);
+            if (typeof toggleViewerFullscreen !== 'function') return { success: false, error: 'Viewer fullscreen control is unavailable.' };
+            const result = await Promise.resolve(toggleViewerFullscreen(value));
+            if (result && result.success === false) return result;
+            return { success: true, target, command, viewer: value, applied: result ?? value };
         }
         if (target === 'viewer.reset') {
-            resetViewer(); return;
+            if (typeof resetViewer !== 'function') return { success: false, error: 'Viewer reset action is unavailable.' };
+            await Promise.resolve(resetViewer());
+            return { success: true, target, command };
         }
         if (target === 'viewer.fit_all') {
-            fitView(); return;
+            if (typeof fitView !== 'function') return { success: false, error: 'Viewer fit action is unavailable.' };
+            await Promise.resolve(fitView());
+            return { success: true, target, command };
         }
         if (target === 'viewer.preset') {
             const pp = document.getElementById('windowPreset');
-            if (pp) { pp.value = value; applyWindowPreset(); }
-            return;
+            if (!pp) return { success: false, error: 'Viewer window preset control is unavailable.' };
+            pp.value = value;
+            if (typeof applyWindowPreset !== 'function') return { success: false, error: 'Viewer window preset action is unavailable.' };
+            await Promise.resolve(applyWindowPreset());
+            return { success: true, target, command, applied: pp.value };
         }
         // ── Overlay controls ──
         if (target === 'overlay.ctv') {
             const cb = document.getElementById('overlayCTV');
-            if (cb) { cb.checked = command === 'show' || (command === 'toggle' && !cb.checked); toggleOverlay(); }
-            return;
+            if (!cb) return { success: false, error: 'CTV overlay control is unavailable.' };
+            cb.checked = command === 'show' || (command === 'toggle' && !cb.checked);
+            if (typeof toggleOverlay !== 'function') return { success: false, error: 'Overlay action is unavailable.' };
+            await Promise.resolve(toggleOverlay());
+            return { success: true, target, command, visible: !!cb.checked };
         }
         if (target === 'overlay.oar') {
             const cb = document.getElementById('overlayOAR');
-            if (cb) { cb.checked = command === 'show' || (command === 'toggle' && !cb.checked); toggleOverlay(); }
-            return;
+            if (!cb) return { success: false, error: 'OAR overlay control is unavailable.' };
+            cb.checked = command === 'show' || (command === 'toggle' && !cb.checked);
+            if (typeof toggleOverlay !== 'function') return { success: false, error: 'Overlay action is unavailable.' };
+            await Promise.resolve(toggleOverlay());
+            return { success: true, target, command, visible: !!cb.checked };
         }
         if (target === 'overlay.dose.opacity') {
-            setDoseOverlayOpacity(value);
-            return;
+            if (typeof setDoseOverlayOpacity !== 'function') return { success: false, error: 'Dose overlay opacity is unavailable.' };
+            await Promise.resolve(setDoseOverlayOpacity(value));
+            return { success: true, target, command, opacity: value };
         }
         if (target === 'overlay.ctv.opacity' || target === 'overlay.oar.opacity') {
             const axis = target.includes('ctv') ? 'ctv' : 'oar';
-            setGroupOpacity(axis, value);
-            return;
+            if (typeof setGroupOpacity !== 'function') return { success: false, error: 'Overlay opacity is unavailable.' };
+            await Promise.resolve(setGroupOpacity(axis, value));
+            return { success: true, target, command, opacity: value };
         }
         if (target === 'overlay.display_mode') {
             const dm = document.getElementById('displayMode');
-            if (dm) { dm.value = value; setDisplayMode(); }
-            return;
+            if (!dm) return { success: false, error: 'Display mode control is unavailable.' };
+            dm.value = value;
+            if (typeof setDisplayMode !== 'function') return { success: false, error: 'Display mode action is unavailable.' };
+            await Promise.resolve(setDisplayMode());
+            return { success: true, target, command, mode: dm.value };
         }
         if (target === 'viewer.dose_peak' && command === 'run') {
-            return navigateToDosePeakSlices();
+            if (typeof navigateToDosePeakSlices !== 'function') return { success: false, error: 'Dose-peak navigation is unavailable.' };
+            const result = await Promise.resolve(navigateToDosePeakSlices());
+            if (result && result.success === false) return result;
+            return { success: true, target, command, applied: result ?? 'dose_peak' };
         }
         if (target === 'viewer.transform') {
             const handlers = {
@@ -4795,34 +6736,47 @@ async function _executeUIActionRaw(a, options = {}) {
                 reset: window.resetViewer,
             };
             const handler = handlers[command];
-            if (typeof handler === 'function') return handler();
+            if (typeof handler === 'function') {
+                const result = await Promise.resolve(handler());
+                if (result && result.success === false) return result;
+                return { success: true, target, command, applied: result ?? command };
+            }
             return { success: false, error: `Viewer transform is unavailable: ${command}` };
         }
         if (target === 'viewer.tool') {
-            setViewerTool(value);
-            return;
+            if (typeof setViewerTool !== 'function') return { success: false, error: 'Viewer tool control is unavailable.' };
+            await Promise.resolve(setViewerTool(value));
+            return { success: true, target, command, tool: value };
         }
         // ── Manual / threshold masks ──
         if (target === 'mask.create') {
-            if (typeof setViewerTool === 'function') setViewerTool('annotate');
-            return;
+            if (typeof setViewerTool !== 'function') return { success: false, error: 'Mask drawing tool is unavailable.' };
+            await Promise.resolve(setViewerTool('annotate'));
+            return { success: true, target, command, tool: 'annotate' };
         }
         if (target === 'mask.finalize') {
-            if (typeof setViewerTool === 'function' && state.activeMaskId) setViewerTool('annotate');
-            return;
+            if (!state.activeMaskId) return { success: false, error: 'There is no active manual mask to finalize.' };
+            if (typeof setViewerTool !== 'function') return { success: false, error: 'Mask drawing tool is unavailable.' };
+            await Promise.resolve(setViewerTool('annotate'));
+            return { success: true, target, command, mask_id: state.activeMaskId };
         }
         if (target === 'mask.threshold') {
             const el = document.getElementById('viewerThreshold');
-            if (el) { el.value = String(value); }
-            if (typeof applyThreshold === 'function') applyThreshold();
-            return;
+            if (!el) return { success: false, error: 'Viewer threshold control is unavailable.' };
+            el.value = String(value);
+            if (typeof applyThreshold !== 'function') return { success: false, error: 'Threshold-mask action is unavailable.' };
+            await Promise.resolve(applyThreshold());
+            return { success: true, target, command, threshold: el.value };
         }
         if (target === 'mask.rename') {
             const cfg = _parseUIControlPayload(value);
-            if (cfg && cfg.id && typeof renameDataTreeMask === 'function') {
-                renameDataTreeMask(cfg.id, cfg.name);
-            }
-            return;
+            const id = cfg?.id || cfg?.mask_id || cfg?.node_id || null;
+            const name = String(cfg?.name ?? cfg?.label ?? '').trim();
+            if (!id || !name) return { success: false, error: 'mask.rename requires JSON {"id":"...","name":"..."}.' };
+            if (typeof renameDataTreeMask !== 'function') return { success: false, error: 'Data Tree mask rename is unavailable.' };
+            const result = await Promise.resolve(renameDataTreeMask(String(id), name));
+            if (result && result.success === false) return result;
+            return { success: true, target, command, mask_id: String(id), name, applied: result ?? name };
         }
         if (target === 'mask.move') {
             const cfg = _parseUIControlPayload(value);
@@ -4831,21 +6785,28 @@ async function _executeUIActionRaw(a, options = {}) {
             const cls = String(cfg?.to || cfg?.classification || (typeof value === 'string' && !value.startsWith('{') ? value : 'ctv')).toLowerCase();
             const id = cfg?.id || null;
             const targetCls = cls === 'oar' ? 'oar' : 'ctv';
-            if (typeof moveSelectedMasks === 'function' && (id || state.activeMaskId)) {
-                moveSelectedMasks(targetCls, id ? [String(id)] : null);
-            }
-            return;
+            if (typeof moveSelectedMasks !== 'function') return { success: false, error: 'Data Tree mask move is unavailable.' };
+            if (!(id || state.activeMaskId)) return { success: false, error: 'No mask is selected for moving.' };
+            const result = await Promise.resolve(moveSelectedMasks(targetCls, id ? [String(id)] : null));
+            if (result && result.success === false) return result;
+            return { success: true, target, command, mask_id: id ? String(id) : state.activeMaskId, classification: targetCls, applied: result ?? targetCls };
         }
         if (target === 'mask.delete') {
             const cfg = _parseUIControlPayload(value);
             const id = cfg?.id || value || null;
-            if (id && typeof deleteDataTreeMask === 'function') {
-                deleteDataTreeMask(String(id));
-            }
-            return;
+            if (!id) return { success: false, error: 'mask.delete requires a mask id.' };
+            if (typeof deleteDataTreeMask !== 'function') return { success: false, error: 'Data Tree mask deletion is unavailable.' };
+            const result = await Promise.resolve(deleteDataTreeMask(String(id)));
+            if (result && result.success === false) return result;
+            return { success: true, target, command, mask_id: String(id), applied: result ?? 'deleted' };
         }
         if (target === 'viewer.colorbar' || target === 'viewer.dose_scale') {
-            if (command === 'reset') return resetDoseColorbarSettings();
+            if (command === 'reset') {
+                if (typeof resetDoseColorbarSettings !== 'function') return { success: false, error: 'Dose colorbar reset is unavailable.' };
+                const result = await Promise.resolve(resetDoseColorbarSettings());
+                if (result && result.success === false) return result;
+                return { success: true, target, command, applied: result ?? 'reset' };
+            }
             const cfg = _parseUIControlPayload(value);
             const scope = cfg.scope === 'threeD' ? 'threeD' : 'twoD';
             const scopeEl = document.getElementById('doseColorbarScope');
@@ -4858,71 +6819,135 @@ async function _executeUIActionRaw(a, options = {}) {
             if (cfg.max !== undefined && maxEl) maxEl.value = cfg.max;
             if (cfg.maxGy !== undefined && maxEl) maxEl.value = cfg.maxGy;
             if (cfg.palette !== undefined && paletteEl) paletteEl.value = cfg.palette;
-            return applyDoseColorbarSettings();
+            if (typeof applyDoseColorbarSettings !== 'function') return { success: false, error: 'Dose colorbar settings are unavailable.' };
+            const result = await Promise.resolve(applyDoseColorbarSettings());
+            if (result && result.success === false) return result;
+            return { success: true, target, command, scope, settings: cfg, applied: result ?? scope };
         }
         // ── Slice navigation ──
         if (target.startsWith('slice.')) {
             const axis = target.split('.')[1];
             const slider = document.getElementById('slider' + capitalize(axis));
-            if (!slider) return;
+            if (!slider) return { success: false, error: `Slice control is unavailable: ${axis}` };
             let v = parseInt(slider.value) || 0;
             const max = parseInt(slider.max) || 0;
-            if (command === 'set') v = parseInt(value) || 0;
+            if (command === 'set') {
+                const requested = Number(value);
+                if (!Number.isFinite(requested)) return { success: false, error: `A numeric slice index is required for ${axis}.` };
+                v = requested;
+            }
             else if (command === 'next') v = Math.min(v + 1, max);
             else if (command === 'prev') v = Math.max(v - 1, 0);
             else if (command === 'first') v = 0;
             else if (command === 'last') v = max;
+            v = Math.max(0, Math.min(max, Math.round(v)));
             slider.value = v;
-            return updateSlice(axis, v);
+            if (typeof updateSlice !== 'function') return { success: false, error: `Slice action is unavailable: ${axis}` };
+            await Promise.resolve(updateSlice(axis, v));
+            return { success: true, target, command, axis, slice: v };
         }
         // ── Layout ──
         if (target === 'layout') {
-            setViewerLayout(value);
-            return;
+            if (typeof setViewerLayout !== 'function') return { success: false, error: 'Viewer layout control is unavailable.' };
+            await Promise.resolve(setViewerLayout(value));
+            return { success: true, target, command, layout: value };
         }
         // ── Data tree ──
         if (target === 'data_tree') {
             if (command === 'expand_all') {
-                if (typeof window.setAllTreeGroupsExpansion === 'function') {
-                    window.setAllTreeGroupsExpansion(true);
-                }
+                if (typeof window.setAllTreeGroupsExpansion !== 'function') return { success: false, error: 'Data Tree expansion control is unavailable.' };
+                window.setAllTreeGroupsExpansion(true);
             } else if (command === 'collapse_all') {
-                if (typeof window.setAllTreeGroupsExpansion === 'function') {
-                    window.setAllTreeGroupsExpansion(false);
-                }
+                if (typeof window.setAllTreeGroupsExpansion !== 'function') return { success: false, error: 'Data Tree expansion control is unavailable.' };
+                window.setAllTreeGroupsExpansion(false);
             } else {
                 if (typeof window.setTreeGroupExpansion === 'function'
                     && (command === 'expand' || command === 'collapse')) {
                     window.setTreeGroupExpansion(value, command === 'expand');
+                } else if (typeof window.setTreeGroupExpansion === 'function' && command === 'toggle') {
+                    const group = String(value || '').trim();
+                    const current = typeof window.getTreeGroupExpansion === 'function'
+                        ? !!window.getTreeGroupExpansion(group)
+                        : Array.from(document.querySelectorAll('[data-group], [data-tree-group]'))
+                            .filter(node => String(node.dataset.group || node.dataset.treeGroup || '') === group)
+                            .some(node => node.getAttribute('aria-expanded') === 'true'
+                                || node.dataset.expanded !== 'false');
+                    window.setTreeGroupExpansion(group, !current);
+                } else {
+                    return { success: false, error: 'Data Tree group expansion control is unavailable.' };
                 }
             }
-            return;
+            if (typeof syncUIBridgeState === 'function') syncUIBridgeState();
+            return { success: true, target, command, group: value };
         }
         if (target === 'tree.visibility') {
-            const parts = (value || '').split(',');
-            const id = parts[0], vis = parts[1] === 'on';
-            if (id) setDataItemVisibility(id, vis);
-            return;
+            const parts = String(value || '').split(',');
+            const id = parts[0], rawVisibility = String(parts[1] || '').toLowerCase();
+            if (!id || !['on', 'off'].includes(rawVisibility)) {
+                return { success: false, error: 'tree.visibility requires <node>,on or <node>,off.' };
+            }
+            const vis = rawVisibility === 'on';
+            const ok = typeof setDataItemVisibility === 'function'
+                && setDataItemVisibility(id, vis);
+            return ok ? { success: true, target, command, node_id: id, visible: vis }
+                : { success: false, error: `Data Tree node is unavailable: ${id}` };
         }
         if (target === 'tree.opacity') {
-            const parts = (value || '').split(',');
-            const id = parts[0], op = parseInt(parts[1]) || 50;
-            if (id) setDataOpacity(id, op);
-            return;
+            const parts = String(value || '').split(',');
+            const id = parts[0];
+            const op = Number(parts[1]);
+            if (!id || !Number.isFinite(op) || op < 0 || op > 100) {
+                return { success: false, error: 'tree.opacity requires <node>, a percentage from 0 to 100.' };
+            }
+            if (typeof setDataOpacity !== 'function') return { success: false, error: 'Data Tree opacity is unavailable.' };
+            setDataOpacity(id, op);
+            return { success: true, target, command, node_id: id, opacity: op };
         }
         if (target === 'tree.reconstruct3d') {
             // Use the same function as right-click → 3D reconstruction
-            return reconstructOrgan3D(value);
+            if (typeof reconstructOrgan3D !== 'function') return { success: false, error: 'Data Tree 3D reconstruction is unavailable.' };
+            const result = await Promise.resolve(reconstructOrgan3D(value));
+            if (result && result.success === false) return result;
+            return { success: true, target, command, object_id: value, applied: result ?? 'reconstructed' };
         }
         if (target === 'tree.group.visibility') {
-            const [group, vis] = (value || '').split(',');
-            if (group) setGroupVisibility(group, vis === 'show');
-            return;
+            const [group, vis] = String(value || '').split(',');
+            if (!group || !['show', 'hide', 'toggle'].includes(String(vis || '').toLowerCase())) {
+                return { success: false, error: 'tree.group.visibility requires <group>,show|hide|toggle.' };
+            }
+            const current = String(vis).toLowerCase() === 'toggle'
+                ? !(typeof _groupViewNodes === 'function' && _groupViewNodes(group).some(item => item.visible !== false))
+                : String(vis).toLowerCase() === 'show';
+            if (typeof setGroupVisibility !== 'function') return { success: false, error: 'Group visibility is unavailable.' };
+            setGroupVisibility(group, !!current);
+            return { success: true, target, command, group, visible: !!current };
+        }
+        if (target === 'tree.group.view_visibility') {
+            const [group, view, rawVisibility] = String(value || '').split(',');
+            const normalizedView = String(view || '').toLowerCase();
+            const normalizedVisibility = String(rawVisibility || '').toLowerCase();
+            if (!group || !['2d', '3d'].includes(normalizedView)
+                || !['show', 'hide', 'toggle'].includes(normalizedVisibility)) {
+                return { success: false, error: 'tree.group.view_visibility requires <group>,2d|3d,show|hide|toggle.' };
+            }
+            if (typeof setGroupViewVisibility !== 'function') return { success: false, error: 'Group view visibility is unavailable.' };
+            const nodes = typeof _groupViewNodes === 'function' ? _groupViewNodes(group) : [];
+            const key = normalizedView === '2d' ? 'visible2D' : 'visible3D';
+            const visible = normalizedVisibility === 'toggle'
+                ? nodes.some(item => item?.[key] !== false) === false
+                : normalizedVisibility === 'show';
+            setGroupViewVisibility(group, normalizedView, visible);
+            return { success: true, target, command, group, view: normalizedView, visible };
         }
         if (target === 'tree.group.opacity') {
-            const [group, op] = (value || '').split(',');
-            if (group) setGroupOpacity(group, parseInt(op) || 50);
-            return;
+            const [group, rawOpacity] = String(value || '').split(',');
+            const op = Number(rawOpacity);
+            if (!group || !Number.isFinite(op) || op < 0 || op > 100) {
+                return { success: false, error: 'tree.group.opacity requires <group>, a percentage from 0 to 100.' };
+            }
+            if (typeof setGroupOpacity !== 'function') return { success: false, error: 'Group opacity is unavailable.' };
+            setGroupOpacity(group, op);
+            return { success: true, target, command, group, opacity: op };
         }
         if (target === 'tree.group.reconstruct3d') {
             // Reconstruct all organs in the group using the data tree method
@@ -4974,27 +6999,30 @@ async function _executeUIActionRaw(a, options = {}) {
             }
         }
         if (target === 'tree.dose.visibility') {
-            if (state.doseOverlay) {
-                state.doseOverlay.visible = value === 'on';
-                if (state.ctLoaded) return loadAllSlices();
-            }
-            return;
+            if (!state.doseOverlay) return { success: false, error: 'Dose overlay is unavailable.' };
+            state.doseOverlay.visible = value === 'on';
+            if (state.ctLoaded && typeof loadAllSlices === 'function') await Promise.resolve(loadAllSlices());
+            return { success: true, target, command, visible: state.doseOverlay.visible };
         }
         if (target === 'tree.trajectories.visibility') {
+            if (typeof setGroupVisibility !== 'function') return { success: false, error: 'Trajectory visibility is unavailable.' };
             setGroupVisibility('planning_needles', value === 'on');
-            return;
+            return { success: true, target, command, visible: value === 'on' };
         }
         if (target === 'tree.seeds.visibility') {
+            if (typeof setGroupVisibility !== 'function') return { success: false, error: 'Seed visibility is unavailable.' };
             setGroupVisibility('planning_seeds', value === 'on');
-            return;
+            return { success: true, target, command, visible: value === 'on' };
         }
         if (target === 'tree.needles.visibility') {
+            if (typeof setGroupVisibility !== 'function') return { success: false, error: 'Needle visibility is unavailable.' };
             setGroupVisibility('planning_needles', value === 'on');
-            return;
+            return { success: true, target, command, visible: value === 'on' };
         }
         if (target === 'tree.isosurfaces.visibility') {
+            if (typeof setGroupVisibility !== 'function') return { success: false, error: 'Isosurface visibility is unavailable.' };
             setGroupVisibility('dose_isosurfaces', value === 'on');
-            return;
+            return { success: true, target, command, visible: value === 'on' };
         }
         // ── Session management ──
         if (target === 'session.new') return window.newChat();
@@ -5046,6 +7074,7 @@ async function _executeUIActionRaw(a, options = {}) {
         }
         // ── Planning ──
         if (target === 'plan.run') {
+            if (typeof runPlanning !== 'function') return { success: false, error: 'Planning action is unavailable.' };
             return runPlanning();
         }
         if (target === 'plan.run_manual_step') {
@@ -5053,11 +7082,13 @@ async function _executeUIActionRaw(a, options = {}) {
             if (step === 'ctv_segmentation' || step === 'oar_segmentation') {
                 return runSegmentationStep(step);
             } else if (step) {
+                if (typeof runPlanningStep !== 'function') return { success: false, error: 'Planning step action is unavailable.' };
                 return runPlanningStep(step);
             }
-            return;
+            return { success: false, error: 'A planning step is required.' };
         }
         if (target === 'plan.reset') {
+            if (typeof resetSession !== 'function') return { success: false, error: 'Planning reset action is unavailable.' };
             return resetSession();
         }
         if (target === 'ui.state') {
@@ -5079,8 +7110,17 @@ async function _executeUIActionRaw(a, options = {}) {
                 options: p.options,
                 value: p.value,
             }));
-            return { success: true, parameters: compact, count: compact.length,
-                     message: `UI parameter catalog has ${compact.length} editable parameters.` };
+            const operations = typeof collectUIOperationCatalog === 'function'
+                ? collectUIOperationCatalog()
+                : [];
+            return {
+                success: true,
+                parameters: compact,
+                count: compact.length,
+                operations,
+                operation_count: operations.length,
+                message: `UI catalog contains ${operations.length} mounted operations and ${compact.length} editable parameters.`,
+            };
         }
         if (target === 'parameter.catalog') {
             const schema = (typeof collectParameterSchema === 'function') ? collectParameterSchema() : [];
@@ -5203,9 +7243,10 @@ async function _executeUIActionRaw(a, options = {}) {
                     trainingMonitorState.active
                         ? monitorChatText('监测模式正在运行。', 'Monitor mode is active.')
                         : monitorChatText('监测模式未启用。', 'Monitor mode is not active.')
-                );
+                    );
+                return { success: true, target, command, active: !!trainingMonitorState.active };
             }
-            return;
+            return { success: false, error: 'Training monitor status is unavailable.' };
         }
         if (target === 'manual.needle.create') {
             return addManualNeedle();
@@ -5258,24 +7299,39 @@ async function _executeUIActionRaw(a, options = {}) {
             return { success: false, error: 'Report import is unavailable.' };
         }
         if (target === 'report.snapshot.save') {
-            if (typeof Report !== 'undefined' && Report.snapshots) Report.snapshots.save();
-            return;
+            if (typeof Report !== 'undefined' && Report.snapshots?.save) {
+                await Promise.resolve(Report.snapshots.save());
+                return { success: true, target, command };
+            }
+            return { success: false, error: 'Report snapshot save is unavailable.' };
         }
         if (target === 'report.snapshot.open') {
-            if (typeof Report !== 'undefined' && Report.snapshots) Report.snapshots.openModal();
-            return;
+            if (typeof Report !== 'undefined' && Report.snapshots?.openModal) {
+                await Promise.resolve(Report.snapshots.openModal());
+                return { success: true, target, command };
+            }
+            return { success: false, error: 'Report snapshot browser is unavailable.' };
         }
         if (target === 'report.audit.open') {
-            if (typeof Report !== 'undefined' && Report.audit) Report.audit.openModal();
-            return;
+            if (typeof Report !== 'undefined' && Report.audit?.openModal) {
+                await Promise.resolve(Report.audit.openModal());
+                return { success: true, target, command };
+            }
+            return { success: false, error: 'Report audit view is unavailable.' };
         }
         if (target === 'report.review.open') {
-            if (typeof Report !== 'undefined' && Report.review) Report.review.openModal();
-            return;
+            if (typeof Report !== 'undefined' && Report.review?.openModal) {
+                await Promise.resolve(Report.review.openModal());
+                return { success: true, target, command };
+            }
+            return { success: false, error: 'Report review view is unavailable.' };
         }
         if (target === 'report.validation.open') {
-            if (typeof Report !== 'undefined' && Report.validation) Report.validation.openModal();
-            return;
+            if (typeof Report !== 'undefined' && Report.validation?.openModal) {
+                await Promise.resolve(Report.validation.openModal());
+                return { success: true, target, command };
+            }
+            return { success: false, error: 'Report validation view is unavailable.' };
         }
         if (target === 'report.preview.zoom') {
             if (typeof Report !== 'undefined' && Report.preview) {
@@ -5283,41 +7339,70 @@ async function _executeUIActionRaw(a, options = {}) {
                 else if (command === 'set') Report.preview.setZoom(parseInt(value) / 100);
                 else if (command === 'increase') Report.preview.zoomIn();
                 else if (command === 'decrease') Report.preview.zoomOut();
+                else return { success: false, error: `Unsupported report preview zoom command: ${command}` };
+                return { success: true, target, command, value };
             }
-            return;
+            return { success: false, error: 'Report preview zoom is unavailable.' };
         }
         if (target === 'report.layout') {
-            if (typeof Report !== 'undefined' && Report.panels) Report.panels.layout2col(value === '2col');
-            return;
+            if (typeof Report !== 'undefined' && Report.panels?.layout2col) {
+                await Promise.resolve(Report.panels.layout2col(value === '2col'));
+                return { success: true, target, command, layout: value };
+            }
+            return { success: false, error: 'Report layout control is unavailable.' };
         }
-        if (target === 'report.section.toggle') { toggleReportSection(value); return; }
-        if (target === 'report.reference.add') { addReportReferenceFromCatalog(value); return; }
-        if (target === 'report.reference.remove') { removeReportReference(parseInt(value)); return; }
+        if (target === 'report.section.toggle') {
+            if (typeof toggleReportSection !== 'function') return { success: false, error: 'Report section control is unavailable.' };
+            await Promise.resolve(toggleReportSection(value));
+            return { success: true, target, command, section: value };
+        }
+        if (target === 'report.reference.add') {
+            if (typeof addReportReferenceFromCatalog !== 'function') return { success: false, error: 'Report reference control is unavailable.' };
+            await Promise.resolve(addReportReferenceFromCatalog(value));
+            return { success: true, target, command, reference: value };
+        }
+        if (target === 'report.reference.remove') {
+            if (typeof removeReportReference !== 'function') return { success: false, error: 'Report reference control is unavailable.' };
+            await Promise.resolve(removeReportReference(parseInt(value)));
+            return { success: true, target, command, reference: value };
+        }
         if (target === 'report.clear') {
-            if (typeof Report !== 'undefined' && Report.persist) Report.persist.clear();
-            return;
+            if (typeof Report !== 'undefined' && Report.persist?.clear) {
+                await Promise.resolve(Report.persist.clear());
+                return { success: true, target, command };
+            }
+            return { success: false, error: 'Report clear action is unavailable.' };
         }
         // ── 3D controls ──
         if (target === '3d.reconstruct') {
             // Use the same function as right-click → 3D reconstruction
-            return reconstructOrgan3D(value);
+            if (typeof reconstructOrgan3D !== 'function') return { success: false, error: '3D reconstruction is unavailable.' };
+            const result = await Promise.resolve(reconstructOrgan3D(value));
+            if (result && result.success === false) return result;
+            return { success: true, target, command, object_id: value, applied: result ?? 'reconstructed' };
         }
         if (target === '3d.wireframe') {
             const on = value === 'on' || (value === undefined);
             const cb = document.getElementById('wireframe3D');
-            if (cb) { cb.checked = on; toggle3DWireframe(on); }
-            return;
+            if (!cb || typeof toggle3DWireframe !== 'function') return { success: false, error: '3D wireframe control is unavailable.' };
+            cb.checked = on;
+            await Promise.resolve(toggle3DWireframe(on));
+            return { success: true, target, command, visible: on };
         }
         if (target === '3d.skin') {
             const on = value === 'on' || (value === undefined);
             const cb = document.getElementById('skinToggle3D');
-            if (cb) { cb.checked = on; toggle3DSkin(on); }
-            return;
+            if (!cb || typeof toggle3DSkin !== 'function') return { success: false, error: '3D skin control is unavailable.' };
+            cb.checked = on;
+            await Promise.resolve(toggle3DSkin(on));
+            return { success: true, target, command, visible: on };
         }
         if (target === '3d.dose_opacity') {
             const sl = document.getElementById('doseOpacity');
-            if (sl) { sl.value = value; updateDoseOpacity(value); }
-            return;
+            if (!sl || typeof updateDoseOpacity !== 'function') return { success: false, error: '3D dose opacity control is unavailable.' };
+            sl.value = value;
+            await Promise.resolve(updateDoseOpacity(value));
+            return { success: true, target, command, opacity: sl.value };
         }
         if (target === '3d.dose_surface') {
             const on = value === 'on' ? true : value === 'off' ? false : !state.doseTexture?.enabled;
@@ -5337,8 +7422,10 @@ async function _executeUIActionRaw(a, options = {}) {
         if (target === '3d.labels') {
             const checkbox = document.getElementById('labelShow3d');
             const on = value === 'on' || (value === undefined && !checkbox?.checked);
-            if (checkbox) checkbox.checked = on;
-            return updateLabelImage('3d');
+            if (!checkbox || typeof updateLabelImage !== 'function') return { success: false, error: '3D label control is unavailable.' };
+            checkbox.checked = on;
+            await Promise.resolve(updateLabelImage('3d'));
+            return { success: true, target, command, visible: on };
         }
         if (target === '3d.label_opacity') {
             const slider = document.getElementById('labelOp3d');
@@ -5358,32 +7445,54 @@ async function _executeUIActionRaw(a, options = {}) {
         if (target === '3d.reset') {
             if (typeof reset3DView === 'function') reset3DView();
             else fitCameraToScene();
-            return;
+            return { success: true, target, command };
         }
         if (target === '3d.show_all') {
-            showAllOrgans();
-            return;
+            if (typeof showAllOrgans !== 'function') return { success: false, error: 'Show-all-organ action is unavailable.' };
+            await Promise.resolve(showAllOrgans());
+            return { success: true, target, command };
         }
         if (target === '3d.hide_all') {
-            setGroupVisibility('ctv', false);
-            setGroupVisibility('oar', false);
-            setGroupVisibility('planning_seeds', false);
-            setGroupVisibility('planning_needles', false);
-            setGroupVisibility('dose_isosurfaces', false);
-            return;
+            if (typeof setGroupVisibility !== 'function') return { success: false, error: 'Hide-all action is unavailable.' };
+            ['ctv', 'oar', 'planning_seeds', 'planning_needles', 'dose_isosurfaces']
+                .forEach(group => setGroupVisibility(group, false));
+            return { success: true, target, command };
         }
         // ── Chat ──
-        if (target === 'chat.language') { setUiLanguage(value); return; }
+        if (target === 'chat.language') {
+            if (typeof setUiLanguage !== 'function') return { success: false, error: 'UI language control is unavailable.' };
+            setUiLanguage(value);
+            return { success: true, target, command, language: value };
+        }
+        if (target === 'chat.theme') {
+            if (command === 'toggle') {
+                if (typeof toggleUiTheme !== 'function') return { success: false, error: 'UI theme control is unavailable.' };
+                const applied = toggleUiTheme();
+                return { success: true, target, command, theme: applied || document.documentElement.dataset.theme || null };
+            }
+            if (typeof setUiTheme !== 'function') return { success: false, error: 'UI theme control is unavailable.' };
+            const applied = setUiTheme(value);
+            return { success: true, target, command, theme: applied || value };
+        }
         if (target === 'chat.clear_history') {
             return clearCurrentChatHistory({ skipConfirm: true });
         }
-        if (target === 'chat.sidebar.toggle') { toggleSessionSidebar(); return; }
+        if (target === 'chat.sidebar.toggle') {
+            if (typeof toggleSessionSidebar !== 'function') return { success: false, error: 'Session sidebar control is unavailable.' };
+            await Promise.resolve(toggleSessionSidebar());
+            return { success: true, target, command };
+        }
         // ── Screenshot ──
         if (target === 'screenshot') {
             return _captureScreenshot(value);
         }
         // ── Tools ──
-        if (target === 'tool') { setViewerTool(value); return; }
+        if (target === 'tool') {
+            if (typeof setViewerTool !== 'function') return { success: false, error: 'Viewer tool control is unavailable.' };
+            const result = await Promise.resolve(setViewerTool(value));
+            if (result && result.success === false) return result;
+            return { success: true, target, command, tool: value, applied: result ?? value };
+        }
         return { success: false, error: `No browser dispatcher is available for ${target}.` };
     } catch (e) {
         console.warn('[UIAction] Error executing:', target, command, value, e);
@@ -5406,9 +7515,15 @@ async function _captureScreenshot(view) {
         link.download = `brachybot_${view}_${Date.now()}.png`;
         link.href = dataUrl;
         link.click();
-        return;
+        return { success: true, target, view, downloaded: true, bytes: dataUrl.length };
     }
     if (!preparedEl) console.warn('[screenshot] Target not found:', view);
+    return {
+        success: false,
+        target,
+        view,
+        error: !preparedEl ? `Screenshot target is unavailable: ${view}` : `Screenshot capture failed: ${view}`,
+    };
 }
 
 // ── Unified screenshot target resolver ──
