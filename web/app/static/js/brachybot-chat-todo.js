@@ -679,6 +679,10 @@ window.clearCaseScopedProgressPresentation = function clearCaseScopedProgressPre
 // creating a new item if no match.
 function _todoUpdateFromStep(todo, step) {
     if (!todo || !step) return;
+    // Normalize provider terminal labels before updating the visual todo.
+    // The stream may say completed while the local todo model uses done.
+    const stepStatus = _isTerminalToolStatus(step.status)
+        ? 'done' : _isFailedToolStatus(step.status) ? 'error' : step.status;
     // UNFOLD: if the todo was folded (e.g. by a previous response)
     // and a new tool step arrives (e.g. quality review retry),
     // unfold it so the user can see the retry progress.
@@ -737,11 +741,11 @@ function _todoUpdateFromStep(todo, step) {
             return false;
         });
         if (existing) {
-            if (step.status === 'done') {
+            if (stepStatus === 'done') {
                 todo.markDone(existing);
-            } else if (step.status === 'pending') {
+            } else if (stepStatus === 'pending') {
                 todo.markActive(existing);
-            } else if (step.status === 'error') {
+            } else if (stepStatus === 'error') {
                 // Predicted items are commonly matched here. An error or
                 // clarification event must terminate their active timer;
                 // otherwise the row keeps breathing forever after the
@@ -759,13 +763,13 @@ function _todoUpdateFromStep(todo, step) {
     // The backend includes "elapsed_ms=1234" in done event content so
     // the frontend can display the ACTUAL wall-clock time instead of
     // measuring network delay between SSE events.
-    if (step.content && step.status === 'done') {
+    if (step.content && stepStatus === 'done') {
         const emMatch = step.content.match(/elapsed_ms=(\d+)/);
         if (emMatch) item._realElapsedMs = parseInt(emMatch[1]);
     }
-    if (step.status === 'pending') {
+    if (stepStatus === 'pending') {
         todo.markActive(item);
-    } else if (step.status === 'done') {
+    } else if (stepStatus === 'done') {
         // If item is still 'predicted' (never went through 'pending'),
         // force it through 'active' first so the user sees the breathing
         // animation before the ✓ appears. Without this, predicted→done
@@ -780,7 +784,7 @@ function _todoUpdateFromStep(todo, step) {
         } else {
             todo.markDone(item);
         }
-    } else if (step.status === 'error') {
+    } else if (stepStatus === 'error') {
         todo.markDone(item, step.requires_input ? 'User input required' : (step.error || 'failed'));
     }
     return item;
@@ -1580,7 +1584,7 @@ async function _presentJsonSessionContent(steps, sessionId, turnIdentity) {
 
 async function _executeJsonUIActions(steps, sessionId) {
     const actionGroups = (Array.isArray(steps) ? steps : [])
-        .filter(step => step && step.tool === 'ui_controller' && step.status === 'done')
+        .filter(step => step && step.tool === 'ui_controller' && _isTerminalToolStatus(step.status))
         .map(step => step.metadata?.actions || step.data?.actions || [])
         .filter(actions => Array.isArray(actions) && actions.length > 0);
     const results = [];
@@ -1851,6 +1855,21 @@ function _isMonitorStartRequest(text) {
 function _isMonitorStopRequest(text) {
     return /(?:stop|finish|end|summary|停止|结束|关闭|总结|完成监测|停止监测)/i.test(text || '')
         && /(?:monitor|training|coach|培训|训练|监测|监督|指导)/i.test(text || '');
+}
+
+// Tool providers use both "done" and "completed" for the same terminal
+// event. UI tools are browser-side effects, so treating the latter as a
+// non-terminal event silently drops the real action while the model can still
+// produce a plausible acknowledgement. Keep this protocol normalization in
+// one place and use it for every browser-side tool completion boundary.
+function _isTerminalToolStatus(status) {
+    return new Set(['done', 'completed', 'success', 'succeeded', 'ready'])
+        .has(String(status || '').trim().toLowerCase());
+}
+
+function _isFailedToolStatus(status) {
+    return new Set(['error', 'failed', 'failure', 'cancelled', 'canceled', 'stopped'])
+        .has(String(status || '').trim().toLowerCase());
 }
 
 window._pendingHiddenChats = window._pendingHiddenChats || [];
@@ -3334,7 +3353,9 @@ async function sendChat(prefill, options) {
                                 window._pendingReviewRetry = true;
                             }
                         }
-                        // Show tool progress (pending / done)
+                        // Show tool progress (pending / terminal)
+                        const toolCompleted = _isTerminalToolStatus(data.status);
+                        const toolFailed = _isFailedToolStatus(data.status);
                         if (data.type === 'tool' && data.status === 'pending') {
                             // If this is the SAME tool already showing progress,
                             // just update its content — don't create a new row.
@@ -3353,14 +3374,14 @@ async function sendChat(prefill, options) {
                                 // are the single progress surface for tools.
                                 progressEl = null;
                             }
-                        } else if (data.type === 'tool' && (data.status === 'done' || data.status === 'error')) {
+                        } else if (data.type === 'tool' && (toolCompleted || toolFailed)) {
                             if (progressEl && typeof updateToolProgress === 'function') {
                                 updateToolProgress(progressEl, lastToolName, data.status, data.result);
                             }
                             // Execute UI controller actions
                             // Actions live in data.metadata.actions (from ToolResult.metadata),
                             // NOT in data.result (which is the human-readable message string).
-                            if (data.status === 'done' && data.tool === 'ui_controller') {
+                            if (toolCompleted && data.tool === 'ui_controller') {
                                 try {
                                     let actions = null;
                                     const md = data.metadata || {};
@@ -3397,7 +3418,7 @@ async function sendChat(prefill, options) {
                             }
                             // Intercept ui_screenshot: capture the target element,
                             // upload to server, and display in chat.
-                            if (data.status === 'done' && data.tool === 'ui_screenshot' && data.metadata) {
+                            if (toolCompleted && data.tool === 'ui_screenshot' && data.metadata) {
                                 const _ssCmd = data.metadata.screenshot_command || data.metadata;
                                 const _ssPlan = data.metadata.screenshot_plan
                                     || _ssCmd.plan
@@ -3488,11 +3509,20 @@ async function sendChat(prefill, options) {
                             // chat history, etc.) in the same reply. It is not
                             // a screenshot capture and must not be routed to a
                             // browser canvas or emitted as a standalone log.
-                            if (data.status === 'done' && data.tool === 'ui_content' && data.metadata) {
+                            if (toolCompleted && data.tool === 'ui_content' && data.metadata) {
                                 const _contentCmd = data.metadata.content_command || data.metadata;
-                                const _contentKey = String(
-                                    data.id || `${_contentCmd.target || 'session_summary'}|${_contentCmd.planning_id || ''}`,
-                                );
+                                // Replay/reconnect can assign a new transport
+                                // event id to the same semantic request. The
+                                // content itself, not that event id, owns the
+                                // dedupe key; otherwise a completed+done pair
+                                // can render two attachments or two panels.
+                                const _contentKey = JSON.stringify({
+                                    request: turnRequestId,
+                                    target: _contentCmd.target || 'session_summary',
+                                    planning_id: _contentCmd.planning_id || '',
+                                    presentation: _contentCmd.presentation || 'auto',
+                                    selection: _contentCmd.selection || null,
+                                });
                                 if (sessionContentTaskKeys.has(_contentKey)) {
                                     uiDebugLog('[SSE-STEP] Ignoring duplicate Session content completion:', _contentKey);
                                 } else {
@@ -3587,7 +3617,7 @@ async function sendChat(prefill, options) {
                                 'oar_segmentation',
                                 'biomedparse_segmentation',
                             ];
-                            const isPlanDone = data.status === 'done' && (
+                            const isPlanDone = toolCompleted && (
                                 FINAL_PLANNING_TOOLS.includes(data.tool) ||
                                 FINAL_PLANNING_TOOLS.includes(data.parent_tool || '') ||
                                 LAST_PLANNING_SUBSTEPS.includes(data.tool || '')
@@ -3609,7 +3639,7 @@ async function sendChat(prefill, options) {
                             // Without this, masks are stored server-side but never
                             // fetched by the frontend.
                             const completedSegmentationTool = String(data.tool || data.parent_tool || '');
-                            if (data.status === 'done' && SEG_TOOLS.includes(completedSegmentationTool)) {
+                            if (toolCompleted && SEG_TOOLS.includes(completedSegmentationTool)) {
                                 if (completedSegmentationTool === 'biomedparse_segmentation') {
                                     // Open-ended masks are not part of the CTV/OAR
                                     // label-volume payload.  Hydrate their own
@@ -3810,7 +3840,7 @@ async function sendChat(prefill, options) {
                         // the FINAL_PLANNING_TOOLS check didn't fire
                         // because the step event format changed),
                         // trigger a refresh now on stream completion.
-                        const _planningToolsInSteps = steps.filter(s => s.status === 'done'
+                        const _planningToolsInSteps = steps.filter(s => _isTerminalToolStatus(s.status)
                             && PLANNING_EVENT_TOOLS.has(String(s.tool || '')));
                         uiDebugLog('[SSE-done] planning tools in steps:', _planningToolsInSteps.map(s => s.tool), 'sawPlanningWork:', turnSawPlanningWork);
                         if (_planningToolsInSteps.length > 0 || turnSawPlanningWork) {

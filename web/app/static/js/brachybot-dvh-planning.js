@@ -506,8 +506,32 @@ function _smoothDvhCurveForDisplay(doseBins, volPcts, maxSmoothDose = DVH_DEFAUL
 function drawDVH() {
     uiDebugLog('[drawDVH] called, dvhData:', !!state.dvhData, 'keys:', state.dvhData ? Object.keys(state.dvhData).length : 0);
     const placeholder = document.getElementById('dvhPlaceholder');
-    if (!state.dvhData || Object.keys(state.dvhData).length === 0) { uiDebugLog('[drawDVH] NO DATA, returning'); return; }
-    placeholder.style.display = 'none';
+    const dvhEl = document.getElementById('dvhChart');
+    if (!state.dvhData || Object.keys(state.dvhData).length === 0) {
+        if (placeholder) placeholder.style.display = '';
+        drawDVH._pending = false;
+        uiDebugLog('[drawDVH] NO DATA, returning');
+        return false;
+    }
+    if (!dvhEl) {
+        drawDVH._pending = true;
+        console.warn('[drawDVH] DVH container is not mounted yet');
+        return false;
+    }
+    // Plotly cannot size a chart while Analysis is display:none. Defer the
+    // render instead of committing a zero-sized/blank chart; switchPanel()
+    // calls ensureDvhChartRendered again when the panel becomes visible.
+    const rect = dvhEl.getBoundingClientRect?.();
+    if ((dvhEl.clientWidth || rect?.width || 0) < 2
+        || (dvhEl.clientHeight || rect?.height || 0) < 2
+        || dvhEl.offsetParent === null) {
+        drawDVH._pending = true;
+        if (placeholder) placeholder.style.display = '';
+        uiDebugLog('[drawDVH] container is hidden or has no size; deferring render');
+        return false;
+    }
+    drawDVH._pending = false;
+    if (placeholder) placeholder.style.display = 'none';
 
     // Skip re-render if the data hasn't actually changed. This prevents
     // Plotly's built-in transition animation from "flashing" the curves
@@ -515,12 +539,13 @@ function drawDVH() {
     // (e.g. once per SSE step event during planning).
     const rxGy = _getCurrentPrescriptionGyForDvh();
     const _newSig = _buildDvhSignature(state.dvhData, rxGy);
-    if (drawDVH._lastSig === _newSig) {
-        uiDebugLog('[drawDVH] Same signature, skipping');
-        _setupDvhResponsiveResize(document.getElementById('dvhChart'));
-        _setupDvhCustomTooltip(document.getElementById('dvhChart'));
+    const chartHasData = Array.isArray(dvhEl.data) && dvhEl.data.length > 0;
+    if (drawDVH._lastSig === _newSig && chartHasData) {
+        uiDebugLog('[drawDVH] Same signature, chart already rendered; resizing only');
+        _setupDvhResponsiveResize(dvhEl);
+        _setupDvhCustomTooltip(dvhEl);
         _resizeDVHChartSoon();
-        return;
+        return true;
     }
     uiDebugLog('[drawDVH] Rendering DVH with keys:', Object.keys(state.dvhData).slice(0, 5));
     // Render every available structure. Plotly's scrollable legend and the
@@ -589,7 +614,6 @@ function drawDVH() {
         i++;
     }
 
-    const dvhEl = document.getElementById('dvhChart');
     dvhEl.style.width = '100%';
     dvhEl.style.height = '100%';
 
@@ -753,9 +777,13 @@ function drawDVH() {
         _setupDvhAxisInteraction(dvhEl);
         _setupDvhCustomTooltip(dvhEl);
         _resizeDVHChartSoon();
+        drawDVH._pending = false;
+        return true;
     }).catch(error => {
         drawDVH._lastSig = '';
+        drawDVH._pending = true;
         console.warn('[drawDVH] Plotly render failed:', error);
+        return false;
     });
 }
 
@@ -781,18 +809,80 @@ function _isRenderableDvhPayload(value) {
     });
 }
 
+function _normalizeRenderableDvhPayload(value) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+    const normalized = {};
+    Object.entries(value).forEach(([name, curve]) => {
+        const direct = curve && Array.isArray(curve.dose_bins) && Array.isArray(curve.volume_pcts)
+            ? curve
+            : curve?.cumulative;
+        if (!direct || !Array.isArray(direct.dose_bins) || !Array.isArray(direct.volume_pcts)
+            || direct.dose_bins.length < 2 || direct.volume_pcts.length < 2) return;
+        normalized[name] = {
+            dose_bins: direct.dose_bins.slice(),
+            volume_pcts: direct.volume_pcts.slice(),
+        };
+    });
+    return normalized;
+}
+
 function _extractRenderableDvhPayload(data) {
     const candidates = [
         data?.dvh,
+        data?.dvh_data,
         data?.metrics?.dvh_data,
         data?.dose_metrics?.dvh_data,
         data?.planning?.dvh,
+        data?.algorithm_plan_dvh_data,
+        data?.metrics?.algorithm_plan_dvh_data,
     ];
     for (const candidate of candidates) {
-        if (_isRenderableDvhPayload(candidate)) return candidate;
+        const normalized = _normalizeRenderableDvhPayload(candidate);
+        if (_isRenderableDvhPayload(normalized)) return normalized;
     }
     return {};
 }
+
+// Render the active plan's durable DVH only after the chart has a real
+// viewport. This is used by planning hydration, Analysis-tab activation, and
+// the chat command path, so all three entry points share one lifecycle guard.
+async function ensureDvhChartRendered(dvhData = null) {
+    const payload = _normalizeRenderableDvhPayload(
+        dvhData || (typeof state !== 'undefined' ? state.dvhData : null),
+    );
+    if (Object.keys(payload).length) state.dvhData = payload;
+    if (!_isRenderableDvhPayload(state.dvhData)) {
+        return { success: false, error: 'dvh_data_unavailable', chart: null };
+    }
+    const chart = document.getElementById('dvhChart');
+    if (!chart) return { success: false, error: 'dvh_chart_not_mounted', chart: null };
+    // A panel transition can take a few animation frames to acquire its
+    // flex height. Waiting here avoids racing the CSS layout and makes a
+    // manual "draw DVH" command deterministic.
+    for (let attempt = 0; attempt < 12; attempt += 1) {
+        const rect = chart.getBoundingClientRect?.();
+        if ((chart.clientWidth || rect?.width || 0) >= 2
+            && (chart.clientHeight || rect?.height || 0) >= 2
+            && chart.offsetParent !== null) break;
+        await new Promise(resolve => requestAnimationFrame(resolve));
+    }
+    const rect = chart.getBoundingClientRect?.();
+    if ((chart.clientWidth || rect?.width || 0) < 2
+        || (chart.clientHeight || rect?.height || 0) < 2
+        || chart.offsetParent === null) {
+        return { success: false, error: 'dvh_chart_not_visible', chart };
+    }
+    const rendered = drawDVH();
+    if (rendered && typeof rendered.then === 'function') await rendered;
+    const ready = Array.isArray(chart.data) && chart.data.length > 0;
+    return {
+        success: ready,
+        error: ready ? '' : 'dvh_chart_render_failed',
+        chart,
+        curveCount: ready ? chart.data.length : 0,
+    };
+}
+window.ensureDvhChartRendered = ensureDvhChartRendered;
 
 // ----- refreshPlanningUI -----
 // Pull the latest plan summary from the server and re-render every

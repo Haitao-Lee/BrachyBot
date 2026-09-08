@@ -61,6 +61,24 @@ function switchPanel(name, el) {
     }
     if (name === 'metrics') {
         _resizeDVHChartSoon();
+        // Planning can finish while Analysis is hidden. In that case the
+        // initial Plotly call is intentionally deferred until this panel has
+        // a real flex height. Reuse the same guarded renderer here so the
+        // chart appears immediately on first open without another command.
+        if (typeof window.ensureDvhChartRendered === 'function'
+            && state?.dvhData
+            && Object.keys(state.dvhData).length) {
+            requestAnimationFrame(() => {
+                void window.ensureDvhChartRendered().catch(error =>
+                    console.warn('[switchPanel] DVH render retry failed:', error));
+            });
+        } else if (state?.dvhData && typeof drawDVH === 'function') {
+            requestAnimationFrame(() => {
+                try { drawDVH(); } catch (error) {
+                    console.warn('[switchPanel] legacy DVH render retry failed:', error);
+                }
+            });
+        }
     }
     // BUG FIX 2026-06-16 (report auto-screenshots): previously the
     // report panel opened with NO figures and the user had to

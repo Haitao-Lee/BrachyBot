@@ -1186,25 +1186,55 @@ function _reportFiguresForGroup(form, group) {
  * That means longer patient names, translated text, more OARs, or an expanded
  * interpretation all use the same safe path.
  */
+function _reportFlowScaleY(page, body) {
+    const bodyRect = body?.getBoundingClientRect?.();
+    const bodyCssHeight = Number(body?.offsetHeight || 0);
+    if (bodyRect?.height > 0 && bodyCssHeight > 0) {
+        return Math.max(0.05, bodyRect.height / bodyCssHeight);
+    }
+    const pageRect = page?.getBoundingClientRect?.();
+    const pageCssHeight = Number(page?.offsetHeight || 0);
+    if (pageRect?.height > 0 && pageCssHeight > 0) {
+        return Math.max(0.05, pageRect.height / pageCssHeight);
+    }
+    return 1;
+}
+
 function _reportFlowAvailableHeight(page, body) {
     const pageRect = page?.getBoundingClientRect?.();
     const bodyRect = body?.getBoundingClientRect?.();
-    if (!pageRect || !bodyRect || pageRect.height <= 0) return null;
+    if (!pageRect || !bodyRect || pageRect.height <= 0 || bodyRect.width <= 0) return null;
     const footer = page.querySelector('.hp-page-footer');
     const footerRect = footer?.getBoundingClientRect?.();
     const bottom = footerRect?.top ?? (pageRect.bottom - 6);
-    return Math.max(0, bottom - bodyRect.top - 2);
+    const scaleY = _reportFlowScaleY(page, body);
+    // getBoundingClientRect() is transformed in the screen preview, while
+    // scrollHeight/offsetHeight are CSS pixels. Normalize before comparing;
+    // otherwise a zoomed preview can accept content that later crosses the
+    // physical footer boundary.
+    const footerGap = Math.max(3, (footerRect?.height || 0) * 0.25) / scaleY;
+    return Math.max(0, (bottom - bodyRect.top) / scaleY - footerGap);
 }
 
 function _reportFlowFits(record) {
     const available = _reportFlowAvailableHeight(record.page, record.body);
-    // A hidden report tab has no measurable geometry yet.  Leave its DOM
+    // A hidden report tab has no measurable geometry yet. Leave its DOM
     // intact and let the next animation-frame pass paginate after it opens.
     if (available === null) return null;
-    return record.body.scrollHeight <= available + 0.5;
+    const bodyRect = record.body.getBoundingClientRect?.();
+    const scaleY = _reportFlowScaleY(record.page, record.body);
+    const childrenBottom = Array.from(record.body.children || []).reduce((max, child) => {
+        const rect = child?.getBoundingClientRect?.();
+        return rect?.bottom > 0 && bodyRect ? Math.max(max, (rect.bottom - bodyRect.top) / scaleY) : max;
+    }, 0);
+    const measuredHeight = Math.max(
+        Number(record.body.scrollHeight || 0),
+        childrenBottom,
+    );
+    return measuredHeight <= available + 0.5;
 }
 
-function _reportFlowSplitNode(node, documentRef) {
+function _reportFlowSplitNode(node, documentRef, chunkSizeOverride = null) {
     const tag = String(node?.tagName || '').toLowerCase();
     const children = tag === 'table'
         ? Array.from(node?.tBodies?.[0]?.rows || [])
@@ -1217,7 +1247,11 @@ function _reportFlowSplitNode(node, documentRef) {
     // continued safely with its header/list semantics preserved.  This also
     // prevents a single OAR table or reference list from being taller than a
     // physical page when the case contains many rows.
-    const chunkSize = tag === 'table' ? 12 : 8;
+    const defaultChunkSize = tag === 'table' ? 12 : 8;
+    const requestedChunkSize = Number(chunkSizeOverride);
+    const chunkSize = Number.isFinite(requestedChunkSize) && requestedChunkSize > 0
+        ? Math.max(1, Math.floor(requestedChunkSize))
+        : defaultChunkSize;
     const chunks = [];
     for (let offset = 0; offset < children.length; offset += chunkSize) {
         const clone = node.cloneNode(false);
@@ -1253,6 +1287,34 @@ function _reportFlowSectionInfo(section, documentRef) {
         heading: heading ? heading.cloneNode(true) : null,
         units,
     };
+}
+
+function _reportFlowSplitTextNode(node, documentRef) {
+    const tag = String(node?.tagName || '').toLowerCase();
+    if (!['p', 'blockquote', 'pre'].includes(tag)) return [];
+    const source = String(node.textContent || '').replace(/\s+/g, ' ').trim();
+    if (source.length < 240) return [];
+    const chunks = [];
+    let remaining = source;
+    while (remaining.length > 0) {
+        const target = Math.max(120, Math.ceil(remaining.length / 2));
+        let cut = remaining.lastIndexOf(' ', target);
+        if (cut < 80) cut = Math.min(target, remaining.length);
+        chunks.push(remaining.slice(0, cut).trim());
+        remaining = remaining.slice(cut).trim();
+    }
+    return chunks.filter(Boolean).map(value => {
+        const clone = node.cloneNode(false);
+        clone.textContent = value;
+        return clone;
+    });
+}
+
+function _reportFlowChildCount(node) {
+    const tag = String(node?.tagName || '').toLowerCase();
+    if (tag === 'table') return Array.from(node?.tBodies?.[0]?.rows || []).length;
+    if (tag === 'ul' || tag === 'ol') return Array.from(node?.children || []).length;
+    return 0;
 }
 
 function _reportFlowFragment(info, units, includeHeading, documentRef) {
@@ -1376,9 +1438,31 @@ function _paginateReportFlow(pagesEl, labels = {}) {
                 continue;
             }
             if (info.units.length) {
+                const oversized = info.units[unitIndex];
+                const childCount = _reportFlowChildCount(oversized);
+                if (childCount > 1) {
+                    // Reduce a too-large list/table chunk geometrically until
+                    // it fits. This keeps long OAR tables and interpretation
+                    // lists contiguous without allowing one chunk to cross
+                    // the footer boundary.
+                    const smaller = _reportFlowSplitNode(
+                        oversized,
+                        documentRef,
+                        Math.max(1, Math.ceil(childCount / 2)),
+                    );
+                    if (smaller.length > 1) {
+                        info.units.splice(unitIndex, 1, ...smaller);
+                        continue;
+                    }
+                }
+                const textFragments = _reportFlowSplitTextNode(oversized, documentRef);
+                if (textFragments.length > 1) {
+                    info.units.splice(unitIndex, 1, ...textFragments);
+                    continue;
+                }
                 current.body.appendChild(_reportFlowFragment(
                     info,
-                    [info.units[unitIndex]],
+                    [oversized],
                     includeHeading,
                     documentRef,
                 ));
@@ -2245,7 +2329,11 @@ function _printableCss() {
         .hp-running-header { display: flex; justify-content: space-between; align-items: center; font-size: 7.5pt; color: #94a3b8; border-bottom: 1px solid #e2e8f0; padding-bottom: 1.5mm; margin-bottom: 4mm; }
         .hp-page-footer { position: absolute; bottom: 8mm; left: 16mm; right: 16mm; display: flex; justify-content: space-between; align-items: center; font-size: 7.5pt; color: #94a3b8; border-top: 1px solid #e2e8f0; padding-top: 2mm; }
         .hp-page-footer .pageno { font-weight: 600; color: #475569; }
-        .report-flow-page-body { display: block; min-height: 0; overflow: visible; }
+        .report-flow-page-body {
+            display: block; min-height: 0;
+            padding-bottom: 12mm; box-sizing: border-box;
+            overflow: visible;
+        }
         .report-flow-section { display: block; margin: 0 0 3mm; break-inside: avoid; page-break-inside: avoid; }
         .report-flow-section + .report-flow-section { margin-top: 2mm; }
         .report-flow-page-body .hp-section-body { overflow-wrap: anywhere; }
