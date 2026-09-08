@@ -871,6 +871,11 @@
 .report-flow-page-body {
     display: block;
     min-height: 0;
+    /* Reserve the footer-safe zone in the measured flow itself. The footer
+       is absolutely positioned, so without this padding scrollHeight can
+       report a fit while the last lines paint underneath the page number. */
+    padding-bottom: 12mm;
+    box-sizing: border-box;
     overflow: visible;
 }
 .report-flow-section {

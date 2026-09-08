@@ -9884,15 +9884,25 @@ function _sessionContentDvhData(planning) {
 async function _ensureSessionDvhChart(planning) {
     const curves = _sessionContentDvhCurves(planning);
     if (!curves.length) return null;
-    if (typeof state !== 'undefined' && state) state.dvhData = _sessionContentDvhData(planning);
+    const dvhData = _sessionContentDvhData(planning);
+    if (typeof state !== 'undefined' && state) state.dvhData = dvhData;
     _openSessionContentPanel('dvh');
     await _waitScreenshotFrames(3);
-    if (typeof drawDVH === 'function') {
-        const renderResult = drawDVH();
+    let renderResult = null;
+    if (typeof window.ensureDvhChartRendered === 'function') {
+        renderResult = await window.ensureDvhChartRendered(dvhData);
+        if (!renderResult?.success) {
+            console.warn('[session-content] DVH chart was not rendered:', renderResult?.error);
+            return null;
+        }
+    } else if (typeof drawDVH === 'function') {
+        renderResult = drawDVH();
         if (renderResult && typeof renderResult.then === 'function') await renderResult;
     }
     await _waitScreenshotFrames(3);
-    return document.getElementById('dvhChart');
+    const chart = document.getElementById('dvhChart');
+    const hasPlotlyData = Array.isArray(chart?.data) && chart.data.length > 0;
+    return hasPlotlyData ? chart : null;
 }
 
 async function _captureSessionContentVisual(target, planning, command, context, ownerSessionId) {
@@ -10086,6 +10096,29 @@ window.presentSessionContent = async function presentSessionContent(command = {}
             );
             if (Array.isArray(visualCapture.attachments)) {
                 attachments.push(...visualCapture.attachments);
+            }
+            // A visual request is not successful merely because structured
+            // metrics exist. If the native chart cannot be rendered/captured,
+            // return an actionable message instead of allowing the model to
+            // claim that a screenshot was retained (or fall back to a report
+            // page from an earlier reply).
+            if (!visualCapture?.success) {
+                const visualError = String(visualCapture?.error || 'visual_capture_failed');
+                const visualMessage = language === 'zh'
+                    ? (target === 'dvh'
+                        ? 'DVH 数据已存在，但当前 Analysis 面板的 DVH 图表尚未成功绘制，因此没有生成截图。请先打开 Analysis 面板并确认图表出现后再重试；系统没有使用报告截图替代 DVH 图。'
+                        : '请求的可视化内容暂时无法生成。请确认对应 Viewer 已加载后重试。')
+                    : (target === 'dvh'
+                        ? 'DVH data exists, but the Analysis-panel chart was not rendered, so no screenshot was produced. Open Analysis and retry after the chart appears; a report page was not used as a substitute.'
+                        : 'The requested visual could not be generated yet. Confirm that the corresponding Viewer is loaded and retry.');
+                return {
+                    success: false,
+                    error: 'visual_capture_failed:' + visualError,
+                    userMessage: visualMessage,
+                    attachments: [],
+                    target,
+                    planning_id: requestedPlanningId,
+                };
             }
         }
         if (target === 'report_figures' || target === 'report') {
